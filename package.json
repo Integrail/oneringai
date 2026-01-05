@@ -1,0 +1,76 @@
+{
+  "name": "@oneringai/agents",
+  "version": "0.1.0",
+  "description": "Unified AI agent library with multi-vendor support for text generation, image generation, and agentic workflows",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./agents": {
+      "types": "./dist/capabilities/agents/index.d.ts",
+      "import": "./dist/capabilities/agents/index.js"
+    },
+    "./images": {
+      "types": "./dist/capabilities/images/index.d.ts",
+      "import": "./dist/capabilities/images/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build",
+    "example:agent": "tsx examples/basic-agent.ts",
+    "example:text": "tsx examples/simple-text.ts",
+    "example:conversation": "tsx examples/multi-turn-conversation.ts",
+    "example:chat": "tsx examples/interactive-chat.ts"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "agents",
+    "openai",
+    "anthropic",
+    "claude",
+    "gpt",
+    "image-generation",
+    "tool-calling",
+    "agentic",
+    "multi-vendor"
+  ],
+  "author": "OneRing AI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oneringai/agents"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@google/generative-ai": "^0.21.0",
+    "dotenv": "^17.2.3",
+    "openai": "^5.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "eslint": "^8.56.0",
+    "tsup": "^8.0.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
