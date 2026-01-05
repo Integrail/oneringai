@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-## Try the Interactive Chat (Fastest Way!)
+## Try the Interactive Chat with Vision! (Fastest Way!)
 
 ### 1. Set up your API key
 
@@ -30,22 +30,52 @@ That's it! You'll see:
 
 ```
 ╔════════════════════════════════════════════════════════════╗
-║           🤖 Interactive AI Chat Assistant                ║
+║      🤖 Interactive AI Chat Assistant with Vision         ║
 ╚════════════════════════════════════════════════════════════╝
 
-Welcome! I'm an AI assistant powered by GPT-4.
-Ask me anything, and I'll do my best to help.
+Welcome! I'm an AI assistant powered by GPT-4o (with vision).
+Ask me anything, and I can even analyze images!
 
 Commands:
   /exit     - Exit the chat
   /clear    - Clear conversation history
   /history  - Show conversation history
+  /paste    - Paste image URL from clipboard
+  /images   - Show attached images
   Ctrl+C    - Exit the chat
+
+Image Support:
+  • Type /paste to paste image URL from clipboard
+  • Type [img:URL] inline to attach an image
+  • Images are sent with your next message
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 👤 You: _
 ```
+
+### Bonus: Try Screenshot Paste! (Just like Claude Code)
+
+**Mac users:** Install `pngpaste` first for the best experience:
+```bash
+brew install pngpaste
+```
+
+Then in the chat:
+```
+1. Take a screenshot: Cmd+Ctrl+Shift+4 (select area)
+2. Press Cmd+V in the chat
+   📎 [image #1] Pasted from clipboard (128KB PNG)
+3. Type your question
+   👤 You: What is in this screenshot?
+   📸 Sending message with 1 image(s)...
+4. Get AI analysis
+   🤖 Assistant: I can see a code editor with...
+```
+
+**Works on Windows/Linux too!** See [CLIPBOARD_PASTE_SETUP.md](./CLIPBOARD_PASTE_SETUP.md) for setup.
+
+See [INTERACTIVE_CHAT_GUIDE.md](./INTERACTIVE_CHAT_GUIDE.md) for all image features.
 
 ## Chat Commands
 

@@ -35,7 +35,8 @@
     "example:agent": "tsx examples/basic-agent.ts",
     "example:text": "tsx examples/simple-text.ts",
     "example:conversation": "tsx examples/multi-turn-conversation.ts",
-    "example:chat": "tsx examples/interactive-chat.ts"
+    "example:chat": "tsx examples/interactive-chat.ts",
+    "example:vision": "tsx examples/vision-image-input.ts"
   },
   "keywords": [
     "ai",
@@ -59,8 +60,10 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
     "@google/generative-ai": "^0.21.0",
+    "clipboardy": "^5.0.2",
     "dotenv": "^17.2.3",
-    "openai": "^5.22.0"
+    "openai": "^5.22.0",
+    "readline-async": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

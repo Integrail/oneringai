@@ -106,3 +106,8 @@ export { TextManager } from './capabilities/text/index.js';
 export type { SimpleTextOptions } from './capabilities/text/index.js';
 
 export { ImageManager } from './capabilities/images/index.js';
+
+// Utilities
+export { MessageBuilder, createTextMessage, createMessageWithImages } from './utils/messageBuilder.js';
+export { readClipboardImage, hasClipboardImage } from './utils/clipboardImage.js';
+export type { ClipboardImageResult } from './utils/clipboardImage.js';

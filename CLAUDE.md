@@ -208,14 +208,30 @@ src/
 - System instructions
 - Multi-turn conversations
 
+**Vision/Image Input**:
+- Image analysis with vision-capable models (GPT-4o, GPT-4V)
+- MessageBuilder utility for complex inputs
+- Helper functions (createMessageWithImages, etc.)
+- **Clipboard image paste** (Ctrl+V/Cmd+V) - just like Claude Code!
+- Cross-platform clipboard support (Mac, Windows, Linux)
+- Automatic base64 conversion for screenshots
+- Multi-image support
+
+**Interactive Chat**:
+- Full-featured CLI chat with readline
+- Ctrl+V clipboard image paste support
+- Conversation history and context preservation
+- Multiple image attachment methods
+- Token usage tracking
+
 ### 🚧 Not Yet Implemented
 
 **Providers**:
-- Anthropic (Claude) - needs converter
-- Google (Gemini) - needs converter
+- Anthropic (Claude) - needs converter (supports vision!)
+- Google (Gemini) - needs converter (supports vision!)
 - Groq - similar to OpenAI
 
-**Image Generation**:
+**Image Generation** (creating images, not analyzing):
 - OpenAI DALL-E integration
 - Image editing/variations
 - Google Imagen
@@ -226,6 +242,10 @@ src/
 - Tool result caching
 - Conversation persistence
 - Rate limiting/retry logic (beyond SDK defaults)
+
+**Platform Support**:
+- Browser runtime (currently Node.js only)
+- React Native clipboard support
 
 ## Adding New Providers
 

@@ -119,25 +119,38 @@ Demonstrates:
 - Context preservation across turns
 - Following up on previous responses
 
-### 4. `interactive-chat.ts` - Interactive Chat Session ⭐
+### 4. `interactive-chat.ts` - Interactive Chat Session with Vision ⭐🖼️
 
-**Most Fun Example!** Have a real conversation with the AI:
+**Most Interactive Example!** Have a real conversation with the AI, including images:
 
 ```bash
 npm run example:chat
 ```
 
 Features:
-- Real-time interactive chat
-- Full conversation history maintained
-- Special commands:
-  - `/exit` - Exit the chat
-  - `/clear` - Clear conversation history
-  - `/history` - Show full conversation
-  - `/help` - Show help
-  - `Ctrl+C` - Exit
+- ✨ **Real-time interactive chat**
+- 🖼️ **Vision support** - Send images to the AI!
+- 💬 Full conversation history maintained
+- 📋 **Paste images from clipboard** with `/paste`
+- 🔗 **Inline image URLs** with `[img:URL]`
+- 📁 **Local file support** - Converts to base64 automatically
+
+**Image Commands:**
+- `/paste` - Paste image URL from clipboard (copy URL, then `/paste`)
+- `/images` - Show pending images
+- `[img:URL]` - Attach image inline: "What is this? [img:https://example.com/img.jpg]"
+
+**Other Commands:**
+- `/exit` - Exit the chat
+- `/clear` - Clear conversation history and images
+- `/history` - Show full conversation (including image indicators)
+- `/help` - Show help
+- `Ctrl+C` - Exit
+
+**Additional Features:**
 - Thinking animation while waiting
 - Token usage stats
+- GPT-4o vision model for image analysis
 
 **Example session:**
 ```
@@ -156,6 +169,44 @@ Features:
 👤 You: /exit
 👋 Goodbye! Thanks for chatting!
 ```
+
+### 5. `vision-image-input.ts` - Vision / Image Analysis 🖼️
+
+**Coolest Example!** Analyze images with AI vision:
+
+```bash
+npm run example:vision
+```
+
+Features:
+- Analyze single or multiple images
+- Compare images
+- Multi-turn conversations with images
+- Control image detail level (low/high/auto)
+- Works with public URLs or data URIs
+
+**Example output:**
+```
+🖼️  Vision / Image Input Examples
+
+Example 1: Analyze a Single Image
+──────────────────────────────────
+
+📸 Image: [nature photo URL]
+
+🤖 AI Response:
+I can see a beautiful natural landscape with a wooden boardwalk
+extending through a green grassy field under a blue sky...
+
+✅ Tokens used: 145
+```
+
+Demonstrates:
+- Using `createMessageWithImages()` helper
+- Using `MessageBuilder` for complex inputs
+- Image detail control for token optimization
+- Multi-image comparison
+- Vision in multi-turn conversations
 
 ## Troubleshooting
 

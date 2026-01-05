@@ -276,6 +276,7 @@ Check out the `/examples` directory for more usage examples:
 - `simple-text.ts` - Text generation and JSON output
 - `multi-turn-conversation.ts` - Complex multi-turn dialogues
 - `interactive-chat.ts` - **Interactive chat session** (try it: `npm run example:chat`)
+- `vision-image-input.ts` - **Vision/image analysis** (try it: `npm run example:vision`)
 
 ## Support
 
