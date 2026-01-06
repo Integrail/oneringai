@@ -71,7 +71,8 @@ const client = new OneRingAI({
 
 | Model | Context | Output | Best For |
 |-------|---------|--------|----------|
-| `claude-3-5-sonnet-20241022` | 200K | 8K | Best overall, vision |
+| `claude-sonnet-4-20250514` | 200K | 8K | Latest Sonnet (best overall, vision) |
+| `claude-3-5-sonnet-20240620` | 200K | 8K | Claude 3.5 Sonnet |
 | `claude-3-opus-20240229` | 200K | 4K | Most capable |
 | `claude-3-sonnet-20240229` | 200K | 4K | Balanced |
 | `claude-3-haiku-20240307` | 200K | 4K | Fastest, cheapest |
@@ -112,8 +113,8 @@ const client = new OneRingAI({
 | Model | Context | Output | Best For |
 |-------|---------|--------|----------|
 | `gemini-2.0-flash-exp` | 1M | 8K | Latest, fast, experimental |
-| `gemini-1.5-pro` | 1M | 8K | Most capable |
-| `gemini-1.5-flash` | 1M | 8K | Fast, cost-effective |
+| `gemini-1.5-pro-latest` | 1M | 8K | Most capable |
+| `gemini-1.5-flash-latest` | 1M | 8K | Fast, cost-effective |
 
 ### Features
 - ✅ Tool calling (functionCall/functionResponse)
@@ -299,7 +300,7 @@ const client = new OneRingAI({
 
 const response = await client.text.generate('What is AI?', {
   provider: 'anthropic',
-  model: 'claude-3-5-sonnet-20241022'
+  model: 'claude-sonnet-4-20250514'
 });
 ```
 
@@ -308,7 +309,7 @@ const response = await client.text.generate('What is AI?', {
 ```typescript
 const agent = client.agents.create({
   provider: 'google',
-  model: 'gemini-1.5-pro',
+  model: 'gemini-1.5-pro-latest',
   tools: [weatherTool, calculatorTool],
 });
 
@@ -327,7 +328,7 @@ const input = createMessageWithImages(
 
 const response = await client.text.generateRaw([input], {
   provider: 'anthropic',
-  model: 'claude-3-5-sonnet-20241022'
+  model: 'claude-sonnet-4-20250514'
 });
 ```
 
@@ -349,7 +350,7 @@ const client = new OneRingAI({
 // Use different providers for different tasks
 const gptAgent = client.agents.create({ provider: 'openai', model: 'gpt-4' });
 const claudeAgent = client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' });
-const geminiAgent = client.agents.create({ provider: 'google', model: 'gemini-1.5-pro' });
+const geminiAgent = client.agents.create({ provider: 'google', model: 'gemini-1.5-pro-latest' });
 ```
 
 ## Provider Comparison
@@ -362,8 +363,8 @@ const geminiAgent = client.agents.create({ provider: 'google', model: 'gemini-1.
 | OpenAI | gpt-4o-mini | $0.15 | $0.60 |
 | Anthropic | claude-3-5-sonnet | $3.00 | $15.00 |
 | Anthropic | claude-3-haiku | $0.25 | $1.25 |
-| Google | gemini-1.5-pro | $1.25 | $5.00 |
-| Google | gemini-1.5-flash | $0.075 | $0.30 |
+| Google | gemini-1.5-pro-latest | $1.25 | $5.00 |
+| Google | gemini-1.5-flash-latest | $0.075 | $0.30 |
 | Groq | llama-3.1-70b | Free tier | Free tier |
 | Together AI | llama-3.1-70b | $0.88 | $0.88 |
 
@@ -449,7 +450,7 @@ All providers support basic text generation:
 ```typescript
 const response = await client.text.generate('Hello, world!', {
   provider: 'anthropic', // or 'openai', 'google', etc.
-  model: 'claude-3-5-sonnet-20241022',
+  model: 'claude-sonnet-4-20250514',
 });
 ```
 
@@ -467,7 +468,7 @@ const response = await client.text.generate('Hello, world!', {
 ```typescript
 const agent = client.agents.create({
   provider: 'google', // Works with any provider!
-  model: 'gemini-1.5-pro',
+  model: 'gemini-1.5-pro-latest',
   tools: [myTool],
 });
 ```
@@ -493,7 +494,7 @@ const input = createMessageWithImages(
 
 const response = await client.text.generateRaw([input], {
   provider: 'google', // Works! Auto-converts URL to base64
-  model: 'gemini-1.5-pro',
+  model: 'gemini-1.5-pro-latest',
 });
 ```
 
@@ -539,7 +540,7 @@ const result = await client.text.generateJSON(
 - Gemini has the largest context (1M tokens)
 - Image URLs are automatically fetched and converted to base64
 - Very cost-effective ($1.25/M input tokens)
-- Use `gemini-1.5-flash` for speed
+- Use `gemini-1.5-flash-latest` for speed
 
 ### Groq
 - **Fastest inference** (100-300ms typical)
@@ -563,7 +564,7 @@ All examples work with any provider by just changing configuration:
 const agents = [
   client.agents.create({ provider: 'openai', model: 'gpt-4' }),
   client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' }),
-  client.agents.create({ provider: 'google', model: 'gemini-1.5-pro' }),
+  client.agents.create({ provider: 'google', model: 'gemini-1.5-pro-latest' }),
   client.agents.create({ provider: 'groq', model: 'llama-3.1-70b-versatile' }),
 ];
 
@@ -593,7 +594,7 @@ Check your .env file and ensure the key is correct for that provider.
 - Make sure you're using a vision-capable model
 - OpenAI: Use `gpt-4o` or `gpt-4-turbo`
 - Anthropic: Use Claude 3+ models
-- Google: Use `gemini-1.5-pro` or `gemini-1.5-flash`
+- Google: Use `gemini-1.5-pro-latest` or `gemini-1.5-flash-latest`
 - Together AI: Use `Llama-3.2-90B-Vision-Instruct`
 
 ### Tool calling not working

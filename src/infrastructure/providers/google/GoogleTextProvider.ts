@@ -60,32 +60,15 @@ export class GoogleTextProvider extends BaseTextProvider {
    * Get model capabilities
    */
   getModelCapabilities(model: string): ModelCapabilities {
-    // Gemini 2.0 Flash
-    if (model.includes('gemini-2.0-flash')) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 1048576, // 1M tokens
-        maxOutputTokens: 8192,
-      };
-    }
-
-    // Gemini 1.5 Pro
-    if (model.includes('gemini-1.5-pro') || model.includes('gemini-pro')) {
-      return {
-        supportsTools: true,
-        supportsVision: true,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 1048576, // 1M tokens
-        maxOutputTokens: 8192,
-      };
-    }
-
-    // Gemini 1.5 Flash
-    if (model.includes('gemini-1.5-flash') || model.includes('gemini-flash')) {
+    // All modern Gemini models (3.x, 2.5, 2.0, 1.5) have similar capabilities
+    if (
+      model.includes('gemini-3') ||
+      model.includes('gemini-2.5') ||
+      model.includes('gemini-2.0') ||
+      model.includes('gemini-1.5') ||
+      model.includes('gemini-pro') ||
+      model.includes('gemini-flash')
+    ) {
       return {
         supportsTools: true,
         supportsVision: true,

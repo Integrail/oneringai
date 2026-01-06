@@ -150,7 +150,7 @@ const weatherTool: ToolFunction = {
 
 const agent = client.agents.create({
   provider: 'anthropic',
-  model: 'claude-3-5-sonnet-20241022',
+  model: 'claude-sonnet-4-20250514',
   tools: [weatherTool],
   instructions: 'You are a helpful assistant.'
 });
@@ -178,7 +178,7 @@ const input = createMessageWithImages(
 
 const response = await client.text.generateRaw([input], {
   provider: 'google',
-  model: 'gemini-1.5-pro'
+  model: 'gemini-1.5-pro-latest'
 });
 
 console.log(response.output_text);
@@ -292,7 +292,7 @@ const client = new OneRingAI({
   }
 });
 
-// Models: claude-3-5-sonnet-20241022, claude-3-opus, claude-3-haiku
+// Models: claude-sonnet-4-20250514, claude-3-5-sonnet-20240620, claude-3-opus, claude-3-haiku
 ```
 
 Get API key: https://console.anthropic.com/
@@ -308,7 +308,7 @@ const client = new OneRingAI({
   }
 });
 
-// Models: gemini-2.0-flash-exp, gemini-1.5-pro, gemini-1.5-flash
+// Models: gemini-2.0-flash-exp, gemini-1.5-pro-latest, gemini-1.5-flash-latest
 ```
 
 Get API key: https://makersuite.google.com/app/apikey
@@ -416,7 +416,7 @@ const searchTool: ToolFunction = {
 
 const agent = client.agents.create({
   provider: 'anthropic',
-  model: 'claude-3-5-sonnet-20241022',
+  model: 'claude-sonnet-4-20250514',
   tools: [searchTool]
 });
 
@@ -439,7 +439,7 @@ builder.addUserMessageWithImages(
 
 const response = await client.text.generateRaw(builder.build(), {
   provider: 'google',
-  model: 'gemini-1.5-pro'
+  model: 'gemini-1.5-pro-latest'
 });
 ```
 
@@ -618,7 +618,7 @@ const messages = builder.build();
 |----------|--------|
 | OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo |
 | Anthropic | claude-3-5-sonnet, claude-3-opus, claude-3-sonnet, claude-3-haiku |
-| Google | gemini-1.5-pro, gemini-1.5-flash, gemini-2.0-flash |
+| Google | gemini-1.5-pro-latest, gemini-1.5-flash-latest, gemini-2.0-flash |
 | Grok | grok-2-vision |
 | Together AI | meta-llama/Llama-3.2-90B-Vision-Instruct |
 
@@ -648,7 +648,7 @@ const messages = builder.build();
 | Provider | Model | Input | Output |
 |----------|-------|-------|--------|
 | OpenAI | gpt-4o-mini | $0.15 | $0.60 |
-| Google | gemini-1.5-flash | $0.075 | $0.30 |
+| Google | gemini-1.5-flash-latest | $0.075 | $0.30 |
 | Anthropic | claude-3-haiku | $0.25 | $1.25 |
 | Groq | llama-3.1-70b | Free tier | Free tier |
 
@@ -747,7 +747,7 @@ Each provider has different model names. Check provider documentation:
 Make sure you're using a vision-capable model:
 - OpenAI: `gpt-4o`, `gpt-4-turbo`
 - Anthropic: Claude 3+ models
-- Google: `gemini-1.5-pro`, `gemini-1.5-flash`
+- Google: `gemini-1.5-pro-latest`, `gemini-1.5-flash-latest`
 
 ### Tool calling not working
 Most modern models support tools. Legacy models (GPT-3.5, Claude 2) may not.
@@ -936,14 +936,14 @@ const text = await client.text.generate('Question?', { provider: 'openai', model
 
 **Agent with tools:**
 ```typescript
-const agent = client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', tools: [...] });
+const agent = client.agents.create({ provider: 'anthropic', model: 'claude-sonnet-4-20250514', tools: [...] });
 const result = await agent.run('Do something');
 ```
 
 **Vision:**
 ```typescript
 const input = createMessageWithImages('Describe this', ['image.jpg']);
-const response = await client.text.generateRaw([input], { provider: 'google', model: 'gemini-1.5-pro' });
+const response = await client.text.generateRaw([input], { provider: 'google', model: 'gemini-1.5-pro-latest' });
 ```
 
 ---

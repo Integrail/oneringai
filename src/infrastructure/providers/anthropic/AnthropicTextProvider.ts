@@ -63,13 +63,25 @@ export class AnthropicTextProvider extends BaseTextProvider {
    * Get model capabilities
    */
   getModelCapabilities(model: string): ModelCapabilities {
+    // Claude 4.5 and Claude 4 (Sonnet, Opus, Haiku)
+    if (model.includes('claude-sonnet-4') || model.includes('claude-opus-4') || model.includes('claude-haiku-4')) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false, // Use prompt engineering
+        maxTokens: 200000,
+        maxOutputTokens: 8192,
+      };
+    }
+
     // Claude 3.5 Sonnet
     if (model.includes('claude-3-5-sonnet') || model.includes('claude-3-7-sonnet')) {
       return {
         supportsTools: true,
         supportsVision: true,
         supportsJSON: true,
-        supportsJSONSchema: false, // Use prompt engineering
+        supportsJSONSchema: false,
         maxTokens: 200000,
         maxOutputTokens: 8192,
       };

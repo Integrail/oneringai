@@ -1,22 +1,24 @@
 /**
- * Interactive chat example - Have a real conversation with an AI agent
+ * Interactive chat example - Multi-provider support with vision
  *
  * Usage:
  *   npm run example:chat
+ *
+ * Features:
+ *   • Auto-detects available providers from .env
+ *   • Lets you choose which AI provider to chat with
+ *   • Supports vision and clipboard paste (Ctrl+V)
+ *   • Switch providers mid-conversation with /switch
  *
  * Commands:
  *   /exit     - Exit the chat
  *   /clear    - Clear conversation history
  *   /history  - Show conversation history
- *   /paste    - Paste image from clipboard (URL or file path)
+ *   /switch   - Change AI provider
+ *   /provider - Show current provider info
  *   /images   - Show attached images
- *   Ctrl+V    - Paste image directly from clipboard
+ *   Ctrl+V    - Paste image from clipboard
  *   Ctrl+C    - Exit the chat
- *
- * Image Support:
- *   - Press Ctrl+V (or Cmd+V on Mac) to paste image from clipboard
- *   - Type [img:URL] inline to attach image URL
- *   - Images are sent with your next message
  */
 
 import 'dotenv/config';
@@ -31,7 +33,18 @@ import {
   ContentType,
   MessageBuilder,
 } from '../src/index.js';
-import { readClipboardImage, hasClipboardImage } from '../src/utils/clipboardImage.js';
+import { readClipboardImage } from '../src/utils/clipboardImage.js';
+
+// Provider information interface
+interface ProviderInfo {
+  name: string;
+  displayName: string;
+  model: string;
+  apiKey: string;
+  description: string;
+  hasVision: boolean;
+  baseURL?: string;
+}
 
 // Configure readline for interactive input
 const rl = readline.createInterface({
@@ -40,29 +53,173 @@ const rl = readline.createInterface({
   prompt: '👤 You: ',
 });
 
-// Conversation state
+// Global state
 let conversationHistory: InputItem[] = [];
 let isProcessing = false;
-let pendingImages: string[] = []; // URLs or data URIs of images to send
-let currentLine = ''; // Track current input line
+let pendingImages: string[] = [];
+let selectedProvider: ProviderInfo;
+let availableProviders: ProviderInfo[];
+let client: OneRingAI;
+
+/**
+ * Detect available providers from environment variables
+ */
+function detectAvailableProviders(): ProviderInfo[] {
+  const providers: ProviderInfo[] = [];
+
+  if (process.env.OPENAI_API_KEY) {
+    providers.push({
+      name: 'openai',
+      displayName: 'OpenAI',
+      model: 'gpt-4o',
+      apiKey: process.env.OPENAI_API_KEY,
+      description: 'Best for vision and general use',
+      hasVision: true,
+    });
+  }
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    providers.push({
+      name: 'anthropic',
+      displayName: 'Anthropic (Claude)',
+      model: 'claude-sonnet-4-5-20250929', // Claude Sonnet 4.5 (latest)
+      apiKey: process.env.ANTHROPIC_API_KEY,
+      description: 'Best for coding and analysis',
+      hasVision: true,
+    });
+  }
+
+  if (process.env.GOOGLE_API_KEY) {
+    providers.push({
+      name: 'google',
+      displayName: 'Google (Gemini)',
+      model: 'gemini-3-flash-preview', // Gemini 3 Flash (latest!)
+      apiKey: process.env.GOOGLE_API_KEY,
+      description: 'Latest Gemini 3, Pro-level at Flash speed',
+      hasVision: true,
+    });
+  }
+
+  if (process.env.GROQ_API_KEY) {
+    providers.push({
+      name: 'groq',
+      displayName: 'Groq',
+      model: 'llama-3.1-70b-versatile',
+      apiKey: process.env.GROQ_API_KEY,
+      description: 'Fastest inference (100-300ms)',
+      hasVision: false,
+      baseURL: 'https://api.groq.com/openai/v1',
+    });
+  }
+
+  if (process.env.TOGETHER_API_KEY) {
+    providers.push({
+      name: 'together-ai',
+      displayName: 'Together AI',
+      model: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+      apiKey: process.env.TOGETHER_API_KEY,
+      description: 'Cost-effective Llama models',
+      hasVision: false,
+      baseURL: 'https://api.together.xyz/v1',
+    });
+  }
+
+  if (process.env.GROK_API_KEY) {
+    providers.push({
+      name: 'grok',
+      displayName: 'Grok (xAI)',
+      model: 'grok-2-vision',
+      apiKey: process.env.GROK_API_KEY,
+      description: 'Latest from xAI',
+      hasVision: true,
+      baseURL: 'https://api.x.ai/v1',
+    });
+  }
+
+  return providers;
+}
+
+/**
+ * Let user select a provider
+ */
+async function selectProvider(providers: ProviderInfo[]): Promise<ProviderInfo> {
+  // If only one provider, auto-select
+  if (providers.length === 1) {
+    const selected = providers[0];
+    console.log(`\n✅ Auto-selected: ${selected.displayName} (only provider configured)\n`);
+    return selected;
+  }
+
+  // Show provider menu
+  console.log('\n🤖 Available AI Providers:\n');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+  for (let i = 0; i < providers.length; i++) {
+    const p = providers[i];
+    const visionBadge = p.hasVision ? ' 🖼️' : '';
+    console.log(`${i + 1}. ${p.displayName}${visionBadge}`);
+    console.log(`   Model: ${p.model}`);
+    console.log(`   ${p.description}`);
+    console.log('');
+  }
+
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+  // Prompt for selection
+  return new Promise((resolve) => {
+    const askSelection = () => {
+      rl.question(`Select a provider (1-${providers.length}): `, (answer) => {
+        const selection = parseInt(answer.trim());
+
+        if (selection >= 1 && selection <= providers.length) {
+          const selected = providers[selection - 1];
+          console.log(`\n✅ Selected: ${selected!.displayName} (${selected!.model})\n`);
+          resolve(selected!);
+        } else {
+          console.log('❌ Invalid selection. Please try again.\n');
+          askSelection();
+        }
+      });
+    };
+
+    askSelection();
+  });
+}
 
 async function main() {
-  // Create client
-  const client = new OneRingAI({
-    providers: {
-      openai: {
-        apiKey: process.env.OPENAI_API_KEY || '',
-      },
-    },
-  });
+  // Detect available providers
+  availableProviders = detectAvailableProviders();
 
-  // Check if API key is set
-  if (!process.env.OPENAI_API_KEY) {
-    console.error('❌ Error: OPENAI_API_KEY not found in environment variables');
-    console.error('Please create a .env file with your OpenAI API key');
-    console.error('Example: OPENAI_API_KEY=sk-your-key-here');
+  // Check if any providers are available
+  if (availableProviders.length === 0) {
+    console.error('❌ No API keys found!\n');
+    console.error('Please add at least one API key to your .env file:');
+    console.error('  OPENAI_API_KEY=sk-...');
+    console.error('  ANTHROPIC_API_KEY=sk-ant-...');
+    console.error('  GOOGLE_API_KEY=...');
+    console.error('  GROQ_API_KEY=gsk_...');
+    console.error('  TOGETHER_API_KEY=...');
+    console.error('  GROK_API_KEY=...\n');
+    console.error('See .env.example for all options.');
     process.exit(1);
   }
+
+  // Build provider config
+  const providerConfig: any = {};
+  for (const p of availableProviders) {
+    providerConfig[p.name] = {
+      apiKey: p.apiKey,
+      ...(p.baseURL && { baseURL: p.baseURL }),
+    };
+  }
+
+  // Create client with all available providers
+  client = new OneRingAI({
+    providers: providerConfig,
+  });
+
+  // Let user select provider
+  selectedProvider = await selectProvider(availableProviders);
 
   // Display welcome message
   console.clear();
@@ -70,24 +227,29 @@ async function main() {
   console.log('║      🤖 Interactive AI Chat Assistant with Vision         ║');
   console.log('╚════════════════════════════════════════════════════════════╝');
   console.log('');
-  console.log('Welcome! I\'m an AI assistant powered by GPT-4o (with vision).');
-  console.log('Ask me anything, and I can even analyze images!');
+  console.log(`Provider: ${selectedProvider.displayName}`);
+  console.log(`Model: ${selectedProvider.model}`);
+  console.log(`Vision: ${selectedProvider.hasVision ? '✅ Enabled' : '❌ Not available'}`);
   console.log('');
   console.log('Commands:');
   console.log('  /exit     - Exit the chat');
   console.log('  /clear    - Clear conversation history');
   console.log('  /history  - Show conversation history');
-  console.log('  /paste    - Paste image URL from clipboard');
+  console.log('  /switch   - Change AI provider');
+  console.log('  /provider - Show current provider info');
   console.log('  /images   - Show attached images');
-  console.log('  Ctrl+V    - Paste image directly from clipboard');
-  console.log('  Ctrl+C    - Exit the chat');
+  console.log('  Ctrl+V    - Paste image directly');
+  console.log('  Ctrl+C    - Exit');
   console.log('');
-  console.log('Image Support:');
-  console.log('  • Press Ctrl+V (Cmd+V on Mac) to paste screenshots!');
-  console.log('  • Take a screenshot (Cmd+Ctrl+Shift+4) and paste it');
-  console.log('  • Type [img:URL] inline to attach an image');
-  console.log('  • Images are sent with your next message');
-  console.log('');
+
+  if (selectedProvider.hasVision) {
+    console.log('📸 Image Support:');
+    console.log('  • Press Ctrl+V (Cmd+V on Mac) to paste screenshots!');
+    console.log('  • Take screenshot: Cmd+Ctrl+Shift+4 (Mac) / Win+Shift+S (Win)');
+    console.log('  • Type [img:URL] inline to attach images');
+    console.log('');
+  }
+
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
 
@@ -102,12 +264,9 @@ async function main() {
 
     // Detect Ctrl+V (or Cmd+V)
     if (key.ctrl && key.name === 'v' && !isProcessing) {
-      // Prevent default paste behavior
       await handleClipboardPaste();
       return;
     }
-
-    // Let readline handle other keys
   });
 
   // Show prompt
@@ -117,7 +276,6 @@ async function main() {
   rl.on('line', async (input: string) => {
     let userInput = input.trim();
 
-    // Skip empty input
     if (!userInput) {
       rl.prompt();
       return;
@@ -146,49 +304,51 @@ async function main() {
         const imageUrl = match[1]?.trim();
         if (imageUrl) {
           await addImage(imageUrl);
-          // Remove the [img:URL] from the text
           userInput = userInput.replace(match[0], '').trim();
         }
       }
 
-      // Build the message with text and images
+      // Warn if images with non-vision provider
+      if (pendingImages.length > 0 && !selectedProvider.hasVision) {
+        console.log(`\n⚠️  Warning: ${selectedProvider.displayName} does not support vision`);
+        console.log('   Your image(s) will NOT be sent to the AI');
+        console.log('   Use /switch to change to a vision-capable provider\n');
+        pendingImages = [];
+      }
+
+      // Build the message
       const builder = new MessageBuilder();
 
       if (pendingImages.length > 0) {
-        // Add message with images
         builder.addUserMessageWithImages(userInput, pendingImages);
         console.log(`\n📸 Sending message with ${pendingImages.length} image(s)...\n`);
       } else {
-        // Add simple text message
         builder.addUserMessage(userInput);
       }
 
-      // Add conversation history
       const messages = [...conversationHistory, ...builder.build()];
 
       // Show thinking indicator
       process.stdout.write('🤖 Assistant: ');
       const thinkingInterval = startThinkingAnimation();
 
-      // Generate response with vision-capable model
+      // Generate response
       const response = await client.text.generateRaw(messages, {
-        provider: 'openai',
-        model: 'gpt-4o', // Vision-capable model
+        provider: selectedProvider.name,
+        model: selectedProvider.model,
         instructions:
-          'You are a helpful, friendly, and knowledgeable AI assistant with vision capabilities. Be conversational, concise, and engaging. Use a warm tone. When analyzing images, be detailed and helpful.',
+          'You are a helpful, friendly, and knowledgeable AI assistant. Be conversational, concise, and engaging. Use a warm tone. When analyzing images, be detailed and helpful.',
         temperature: 0.7,
         max_output_tokens: 500,
       });
 
-      // Stop thinking animation
       stopThinkingAnimation(thinkingInterval);
 
-      // Display assistant response
       const assistantText = response.output_text || '';
       console.log(assistantText);
       console.log('');
 
-      // Update conversation history
+      // Update history
       conversationHistory.push(...builder.build());
       conversationHistory.push(
         ...response.output.filter(
@@ -197,13 +357,12 @@ async function main() {
         )
       );
 
-      // Clear pending images after sending
       pendingImages = [];
 
       // Show token usage
       const tokens = response.usage;
       console.log(
-        `\x1b[90m[Tokens: ${tokens.total_tokens} total (${tokens.input_tokens} in, ${tokens.output_tokens} out) | Messages: ${Math.floor(conversationHistory.length / 2)}]\x1b[0m`
+        `\x1b[90m[${selectedProvider.displayName} | Tokens: ${tokens.total_tokens} (${tokens.input_tokens} in, ${tokens.output_tokens} out) | Messages: ${Math.floor(conversationHistory.length / 2)}]\x1b[0m`
       );
       console.log('');
     } catch (error: any) {
@@ -221,7 +380,6 @@ async function main() {
     process.exit(0);
   });
 
-  // Handle close
   rl.on('close', () => {
     console.log('\n\n👋 Goodbye! Thanks for chatting!');
     process.exit(0);
@@ -229,28 +387,30 @@ async function main() {
 }
 
 /**
- * Handle Ctrl+V / Cmd+V clipboard paste for images
+ * Handle Ctrl+V / Cmd+V clipboard paste
  */
 async function handleClipboardPaste() {
-  // Show loading indicator
   process.stdout.write('\r📋 Reading clipboard...');
 
   const result = await readClipboardImage();
 
   if (result.success && result.dataUri) {
     pendingImages.push(result.dataUri);
-
-    // Calculate size in KB
     const sizeKB = Math.round((result.dataUri.length * 3) / 4 / 1024);
 
-    // Clear the loading message and show success
     readline.clearLine(process.stdout, 0);
     readline.cursorTo(process.stdout, 0);
     console.log(`📎 [image #${pendingImages.length}] Pasted from clipboard (${sizeKB}KB ${result.format || 'PNG'})`);
-    console.log('💡 Image will be sent with your next message');
+
+    if (!selectedProvider.hasVision) {
+      console.log(`⚠️  Note: ${selectedProvider.displayName} does not support vision`);
+      console.log('   Use /switch to change to a vision-capable provider');
+    } else {
+      console.log('💡 Image will be sent with your next message');
+    }
+
     console.log('');
   } else {
-    // Clear the loading message and show error
     readline.clearLine(process.stdout, 0);
     readline.cursorTo(process.stdout, 0);
     console.log('❌ Could not read image from clipboard');
@@ -258,14 +418,11 @@ async function handleClipboardPaste() {
     if (result.error?.includes('pngpaste') || result.error?.includes('osascript')) {
       console.log('');
       console.log('💡 To enable clipboard image paste on Mac:');
-      console.log('   1. Install pngpaste: brew install pngpaste');
-      console.log('   2. Or copy image URLs instead and use /paste');
+      console.log('   brew install pngpaste');
     } else if (result.error) {
       console.log(`   ${result.error}`);
     }
 
-    console.log('');
-    console.log('📝 Alternative: Use /paste to paste image URLs');
     console.log('');
   }
 
@@ -277,7 +434,6 @@ async function handleClipboardPaste() {
  */
 async function addImage(urlOrPath: string): Promise<void> {
   try {
-    // Check if it's a URL
     if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://')) {
       pendingImages.push(urlOrPath);
       console.log(
@@ -286,7 +442,6 @@ async function addImage(urlOrPath: string): Promise<void> {
       return;
     }
 
-    // Check if it's a data URI
     if (urlOrPath.startsWith('data:image/')) {
       pendingImages.push(urlOrPath);
       const sizeKB = Math.round((urlOrPath.length * 3) / 4 / 1024);
@@ -294,7 +449,6 @@ async function addImage(urlOrPath: string): Promise<void> {
       return;
     }
 
-    // Try as file path
     const resolvedPath = path.resolve(urlOrPath);
     if (fs.existsSync(resolvedPath)) {
       const ext = path.extname(resolvedPath).toLowerCase();
@@ -306,7 +460,6 @@ async function addImage(urlOrPath: string): Promise<void> {
         return;
       }
 
-      // Convert to base64 data URI
       const imageBuffer = fs.readFileSync(resolvedPath);
       const base64Image = imageBuffer.toString('base64');
       const mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : `image/${ext.slice(1)}`;
@@ -318,7 +471,6 @@ async function addImage(urlOrPath: string): Promise<void> {
       return;
     }
 
-    // Not a valid URL or file path
     console.log(`❌ Invalid image: Not a URL or existing file path`);
     console.log(`   Tried: ${urlOrPath}`);
   } catch (error: any) {
@@ -331,7 +483,6 @@ async function addImage(urlOrPath: string): Promise<void> {
  */
 async function handleCommand(command: string) {
   const cmd = command.toLowerCase().split(' ')[0];
-  const args = command.substring(cmd.length).trim();
 
   switch (cmd) {
     case '/exit':
@@ -351,6 +502,14 @@ async function handleCommand(command: string) {
 
     case '/history':
       showHistory();
+      break;
+
+    case '/switch':
+      await handleSwitch();
+      break;
+
+    case '/provider':
+      showProviderInfo();
       break;
 
     case '/paste':
@@ -373,7 +532,45 @@ async function handleCommand(command: string) {
 }
 
 /**
- * Handle /paste command - read text from clipboard (URLs/paths)
+ * Handle provider switching
+ */
+async function handleSwitch() {
+  if (availableProviders.length <= 1) {
+    console.log('❌ Only one provider configured\n');
+    console.log('Add more API keys to .env to switch providers:');
+    console.log('  ANTHROPIC_API_KEY=sk-ant-...');
+    console.log('  GOOGLE_API_KEY=...');
+    console.log('  GROQ_API_KEY=gsk_...\n');
+    return;
+  }
+
+  const newProvider = await selectProvider(availableProviders);
+  selectedProvider = newProvider;
+
+  console.log(`✅ Switched to ${selectedProvider.displayName}`);
+  console.log(`   Model: ${selectedProvider.model}`);
+  console.log(`   Vision: ${selectedProvider.hasVision ? '✅ Enabled' : '❌ Not available'}`);
+  console.log('📝 Note: Conversation history will be preserved\n');
+}
+
+/**
+ * Show current provider info
+ */
+function showProviderInfo() {
+  console.log(`\n📊 Current Provider\n`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+  console.log(`  Name: ${selectedProvider.displayName}`);
+  console.log(`  Model: ${selectedProvider.model}`);
+  console.log(`  Vision: ${selectedProvider.hasVision ? '✅ Enabled' : '❌ Not available'}`);
+  console.log(`  ${selectedProvider.description}`);
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+}
+
+/**
+ * Handle /paste command
+
+/**
+ * Handle /paste command
  */
 async function handleTextPaste() {
   try {
@@ -386,7 +583,6 @@ async function handleTextPaste() {
       return;
     }
 
-    // Check if it's an image URL or path
     const trimmed = clipboardContent.trim();
     if (
       trimmed.startsWith('http://') ||
@@ -397,32 +593,33 @@ async function handleTextPaste() {
       await addImage(trimmed);
     } else {
       console.log('❌ Clipboard does not contain an image URL or file path');
-      console.log(`   Found: ${trimmed.substring(0, 100)}${trimmed.length > 100 ? '...' : ''}`);
+      const preview = trimmed.substring(0, 100);
+      if (trimmed.length > 100) {
+        console.log('   Found: ' + preview + '...');
+      } else {
+        console.log('   Found: ' + preview);
+      }
       console.log('');
-      console.log('💡 Tips:');
-      console.log('   • For image URLs: Copy URL, then /paste');
-      console.log('   • For screenshots: Press Ctrl+V to paste image data directly');
+      console.log('💡 Tip: Press Ctrl+V to paste image data directly');
     }
 
     console.log('');
   } catch (error: any) {
-    console.log(`❌ Error reading clipboard: ${error.message}`);
+    console.log('❌ Error reading clipboard: ' + (error.message || 'Unknown error'));
     console.log('');
   }
 }
+
 
 /**
  * Show pending images
  */
 function showImages() {
   if (pendingImages.length === 0) {
-    console.log('📭 No pending images');
-    console.log('');
+    console.log('📭 No pending images\n');
     console.log('💡 Add images with:');
     console.log('   • Ctrl+V - Paste screenshot/image data');
-    console.log('   • /paste - Paste URL from clipboard');
-    console.log('   • [img:URL] - Inline in your message');
-    console.log('');
+    console.log('   • [img:URL] - Inline in your message\n');
     return;
   }
 
@@ -450,8 +647,7 @@ function showImages() {
  */
 function showHistory() {
   if (conversationHistory.length === 0) {
-    console.log('📭 No conversation history yet');
-    console.log('');
+    console.log('📭 No conversation history yet\n');
     return;
   }
 
@@ -495,21 +691,25 @@ function showHelp() {
   console.log('📖 Available Commands');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   console.log('  /exit, /quit, /q  - Exit the chat');
-  console.log('  /clear            - Clear conversation history and pending images');
+  console.log('  /clear            - Clear conversation history and images');
   console.log('  /history          - Show conversation history');
-  console.log('  /paste            - Paste image URL from clipboard');
+  console.log('  /switch           - Change AI provider');
+  console.log('  /provider         - Show current provider info');
   console.log('  /images           - Show pending images');
   console.log('  /help             - Show this help message');
-  console.log('  Ctrl+V            - Paste image directly from clipboard');
-  console.log('  Ctrl+C            - Exit the chat');
-  console.log('');
-  console.log('📸 Image Support:');
-  console.log('  • Press Ctrl+V (Cmd+V on Mac) to paste screenshots!');
-  console.log('  • Take screenshot: Cmd+Ctrl+Shift+4 (saves to clipboard)');
-  console.log('  • Type [img:URL] inline: "What is this? [img:URL]"');
-  console.log('  • Supports: Screenshots, URLs, file paths, base64');
-  console.log('  • Images are sent with your next message');
-  console.log('');
+  console.log('  Ctrl+V            - Paste image from clipboard');
+  console.log('  Ctrl+C            - Exit\n');
+
+  if (selectedProvider.hasVision) {
+    console.log('📸 Image Support:');
+    console.log('  • Ctrl+V - Paste screenshots directly');
+    console.log('  • [img:URL] - Attach image inline');
+    console.log('  • Images sent with your next message\n');
+  } else {
+    console.log('⚠️  Vision not available with current provider');
+    console.log('   Use /switch to change to: OpenAI, Anthropic, Google, or Grok\n');
+  }
+
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 }
 

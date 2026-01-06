@@ -52,9 +52,9 @@ async function main() {
 
   // Test each provider
   const providers = [
-    { name: 'openai', model: 'gpt-4', enabled: !!process.env.OPENAI_API_KEY },
-    { name: 'anthropic', model: 'claude-3-5-sonnet-20241022', enabled: !!process.env.ANTHROPIC_API_KEY },
-    { name: 'google', model: 'gemini-1.5-pro', enabled: !!process.env.GOOGLE_API_KEY },
+    { name: 'openai', model: 'gpt-4o', enabled: !!process.env.OPENAI_API_KEY },
+    { name: 'anthropic', model: 'claude-sonnet-4-5-20250929', enabled: !!process.env.ANTHROPIC_API_KEY },
+    { name: 'google', model: 'gemini-3-flash-preview', enabled: !!process.env.GOOGLE_API_KEY },
     { name: 'groq', model: 'llama-3.1-70b-versatile', enabled: !!process.env.GROQ_API_KEY },
     { name: 'together-ai', model: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', enabled: !!process.env.TOGETHER_API_KEY },
   ];
