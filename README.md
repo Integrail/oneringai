@@ -1,18 +1,20 @@
 # @oneringai/agents
 
-A unified AI agent library with multi-vendor support for text generation, image generation, and agentic workflows.
+> **A unified AI agent library with multi-provider support for text generation, image analysis, and agentic workflows.**
 
-> **🚀 Quick Start**: Want to try it now? See [QUICKSTART.md](./QUICKSTART.md) to chat with an AI in under 2 minutes!
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18+-green.svg)](https://nodejs.org/)
 
 ## Features
 
-- **🎯 Unified API**: Single client for 6+ AI providers (OpenAI, Anthropic, Google, Grok, Groq, Together AI, and more)
-- **🤖 Agentic Workflows**: Built-in support for tool calling and multi-turn conversations
-- **🖼️ Multi-Modal**: Text generation with vision, image analysis, and more
-- **🔧 Extensible**: Easy to add new providers and capabilities
-- **📦 Type-Safe**: Full TypeScript support with comprehensive types
-- **🏗️ Clean Architecture**: Domain-driven design with separation of concerns
-- **⚡ Provider Agnostic**: Same code works with any provider - just change the name!
+- 🎯 **Unified API** - One interface for 6+ AI providers
+- 🤖 **Agentic Workflows** - Built-in tool calling and multi-turn conversations
+- 🖼️ **Vision Support** - Analyze images with AI across all providers
+- 📸 **Clipboard Paste** - Ctrl+V screenshots directly (just like Claude Code!)
+- 🔧 **Extensible** - Easy to add new providers and capabilities
+- 📦 **Type-Safe** - Full TypeScript support
+- 🏗️ **Clean Architecture** - Domain-driven design
 
 ## Supported Providers
 
@@ -26,38 +28,63 @@ A unified AI agent library with multi-vendor support for text generation, image 
 | **Together AI** | ✅ | ⚠️ Some | ✅ | ❌ | 128K |
 | **Custom** | ✅ | Varies | ✅ | Varies | Varies |
 
-> See [PROVIDERS.md](./PROVIDERS.md) for detailed provider comparison, pricing, and configuration.
-
-## Installation
-
-```bash
-npm install @oneringai/agents
-```
+---
 
 ## Quick Start
 
-### Basic Usage
+### 1. Installation
+
+```bash
+npm install @oneringai/agents
+
+# Or install from GitHub (if not published to npm yet)
+npm install github:your-username/oneringai
+
+# Or for local development
+npm link  # in oneringai directory
+npm link @oneringai/agents  # in your project
+```
+
+### 2. Setup
+
+Create a `.env` file:
+
+```bash
+# Minimum (for OpenAI)
+OPENAI_API_KEY=sk-your-key-here
+
+# Optional (add as needed)
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=AIza...
+GROQ_API_KEY=gsk_...
+TOGETHER_API_KEY=...
+```
+
+### 3. Basic Usage
 
 ```typescript
 import { OneRingAI } from '@oneringai/agents';
 
-// Create a client with your API keys
 const client = new OneRingAI({
   providers: {
     openai: { apiKey: process.env.OPENAI_API_KEY }
   }
 });
 
-// Generate text
-const response = await client.text.generate('What is the capital of France?', {
+// Simple text generation
+const response = await client.text.generate('What is AI?', {
   provider: 'openai',
   model: 'gpt-4'
 });
 
-console.log(response); // "The capital of France is Paris."
+console.log(response);
 ```
 
-### Agent with Tools
+---
+
+## Usage Guide
+
+### Text Generation
 
 ```typescript
 import { OneRingAI } from '@oneringai/agents';
@@ -68,47 +95,93 @@ const client = new OneRingAI({
   }
 });
 
-// Define a tool
-const weatherTool = {
+// Simple text
+const text = await client.text.generate('Explain quantum computing', {
+  provider: 'openai',
+  model: 'gpt-4',
+  temperature: 0.7,
+  max_output_tokens: 200
+});
+
+// Structured JSON
+const recipe = await client.text.generateJSON(
+  'Give me a pasta recipe',
+  {
+    provider: 'openai',
+    model: 'gpt-4',
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        ingredients: { type: 'array', items: { type: 'string' } },
+        steps: { type: 'array', items: { type: 'string' } }
+      }
+    }
+  }
+);
+```
+
+### Agents with Tools
+
+```typescript
+import { OneRingAI, ToolFunction } from '@oneringai/agents';
+
+const weatherTool: ToolFunction = {
   definition: {
-    type: 'function' as const,
+    type: 'function',
     function: {
       name: 'get_weather',
       description: 'Get current weather for a location',
       parameters: {
         type: 'object',
         properties: {
-          location: {
-            type: 'string',
-            description: 'City name'
-          }
+          location: { type: 'string' }
         },
         required: ['location']
       }
     },
-    blocking: true  // Wait for result before continuing (default)
+    blocking: true  // Wait for result (default)
   },
   execute: async (args: { location: string }) => {
     // Your implementation
-    return {
-      temperature: 72,
-      conditions: 'sunny',
-      location: args.location
-    };
+    return { temperature: 72, conditions: 'sunny' };
   }
 };
 
-// Create an agent with tools
 const agent = client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4',
+  provider: 'anthropic',
+  model: 'claude-3-5-sonnet-20241022',
   tools: [weatherTool],
-  instructions: 'You are a helpful assistant that can check the weather.'
+  instructions: 'You are a helpful assistant.'
 });
 
-// Run the agent
 const result = await agent.run('What is the weather in Paris?');
 console.log(result.output_text);
+```
+
+### Vision / Image Analysis
+
+```typescript
+import { OneRingAI, createMessageWithImages } from '@oneringai/agents';
+
+const client = new OneRingAI({
+  providers: {
+    google: { apiKey: process.env.GOOGLE_API_KEY }
+  }
+});
+
+// Analyze an image
+const input = createMessageWithImages(
+  'What do you see in this image?',
+  ['https://example.com/photo.jpg']
+);
+
+const response = await client.text.generateRaw([input], {
+  provider: 'google',
+  model: 'gemini-1.5-pro'
+});
+
+console.log(response.output_text);
 ```
 
 ### Multi-Provider Setup
@@ -121,8 +194,147 @@ const client = new OneRingAI({
     google: { apiKey: process.env.GOOGLE_API_KEY },
     groq: {
       apiKey: process.env.GROQ_API_KEY,
+      baseURL: 'https://api.groq.com/openai/v1'
+    }
+  }
+});
+
+// Same code, different providers!
+const providers = ['openai', 'anthropic', 'google', 'groq'];
+
+for (const provider of providers) {
+  const response = await client.text.generate('What is AI?', {
+    provider,
+    model: getModelFor(provider)
+  });
+  console.log(`${provider}: ${response}`);
+}
+```
+
+---
+
+## Interactive Chat with Vision
+
+### Try It Now!
+
+```bash
+npm run example:chat
+```
+
+### Features
+
+- 💬 **Real-time chat** with any AI provider
+- 📸 **Screenshot paste** - Press Ctrl+V (Cmd+V on Mac) to paste images!
+- 🖼️ **Vision support** - AI can see and analyze your images
+- 📋 **Multiple image methods** - Clipboard, URLs, file paths
+- 💾 **Full conversation history** - Context preserved across turns
+- 📊 **Token tracking** - See usage after each message
+
+### Screenshot Workflow
+
+1. **Take a screenshot**: Cmd+Ctrl+Shift+4 (Mac) or Win+Shift+S (Windows)
+2. **Press Cmd+V** in the chat (or Ctrl+V)
+3. **See**: `📎 [image #1] Pasted from clipboard (128KB PNG)`
+4. **Type your question**: "What do you see in this screenshot?"
+5. **Get AI analysis** with vision!
+
+### Setup (Mac - Optional)
+
+For best experience on Mac:
+```bash
+brew install pngpaste
+```
+
+Without it, works with AppleScript (slightly slower).
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| **Cmd+V / Ctrl+V** | Paste screenshot from clipboard |
+| `/paste` | Paste image URL from clipboard |
+| `[img:URL]` | Attach image inline |
+| `/images` | Show pending images |
+| `/history` | View conversation |
+| `/clear` | Clear history |
+| `/exit` | Exit chat |
+| `/help` | Show help |
+
+---
+
+## Provider Configuration
+
+### OpenAI
+
+```typescript
+const client = new OneRingAI({
+  providers: {
+    openai: {
+      apiKey: process.env.OPENAI_API_KEY,
+      organization: 'org-...', // Optional
+    }
+  }
+});
+
+// Models: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo
+```
+
+Get API key: https://platform.openai.com/api-keys
+
+### Anthropic (Claude)
+
+```typescript
+const client = new OneRingAI({
+  providers: {
+    anthropic: {
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    }
+  }
+});
+
+// Models: claude-3-5-sonnet-20241022, claude-3-opus, claude-3-haiku
+```
+
+Get API key: https://console.anthropic.com/
+
+### Google (Gemini)
+
+```typescript
+const client = new OneRingAI({
+  providers: {
+    google: {
+      apiKey: process.env.GOOGLE_API_KEY,
+    }
+  }
+});
+
+// Models: gemini-2.0-flash-exp, gemini-1.5-pro, gemini-1.5-flash
+```
+
+Get API key: https://makersuite.google.com/app/apikey
+
+### Groq (Fast Llama)
+
+```typescript
+const client = new OneRingAI({
+  providers: {
+    groq: {
+      apiKey: process.env.GROQ_API_KEY,
       baseURL: 'https://api.groq.com/openai/v1' // Auto-configured
-    },
+    }
+  }
+});
+
+// Models: llama-3.1-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768
+```
+
+Get API key: https://console.groq.com/
+
+### Together AI (Llama & More)
+
+```typescript
+const client = new OneRingAI({
+  providers: {
     'together-ai': {
       apiKey: process.env.TOGETHER_API_KEY,
       baseURL: 'https://api.together.xyz/v1' // Auto-configured
@@ -130,48 +342,129 @@ const client = new OneRingAI({
   }
 });
 
-// Use different providers for different tasks
-const gptAgent = client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4'
+// Models: meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo, Llama-3.2-90B-Vision-Instruct
+```
+
+Get API key: https://api.together.xyz/settings/api-keys
+
+### Custom OpenAI-Compatible
+
+```typescript
+const client = new OneRingAI({
+  providers: {
+    'my-provider': {
+      apiKey: 'your-key',
+      baseURL: 'https://api.custom-provider.com/v1'
+    }
+  }
 });
 
-const claudeAgent = client.agents.create({
+// Works with: Perplexity, Fireworks, OpenRouter, local models, etc.
+```
+
+---
+
+## Examples
+
+### Run the Examples
+
+```bash
+# Interactive chat with vision support
+npm run example:chat
+
+# Agent with tool calling
+npm run example:agent
+
+# Simple text generation
+npm run example:text
+
+# Vision/image analysis
+npm run example:vision
+
+# Multi-provider comparison
+npm run example:providers
+
+# Multi-turn conversation
+npm run example:conversation
+```
+
+### Example 1: Simple Agent
+
+```typescript
+import { OneRingAI, ToolFunction } from '@oneringai/agents';
+
+const searchTool: ToolFunction = {
+  definition: {
+    type: 'function',
+    function: {
+      name: 'web_search',
+      description: 'Search the web',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  execute: async (args: { query: string }) => {
+    // Your implementation
+    return { results: ['...'] };
+  }
+};
+
+const agent = client.agents.create({
   provider: 'anthropic',
-  model: 'claude-3-5-sonnet-20241022'
+  model: 'claude-3-5-sonnet-20241022',
+  tools: [searchTool]
 });
 
-const geminiAgent = client.agents.create({
+const result = await agent.run('Search for the latest AI news');
+console.log(result.output_text);
+```
+
+### Example 2: Vision with MessageBuilder
+
+```typescript
+import { MessageBuilder } from '@oneringai/agents';
+
+const builder = new MessageBuilder();
+
+// Add message with images
+builder.addUserMessageWithImages(
+  'Compare these two images',
+  ['https://example.com/img1.jpg', 'https://example.com/img2.jpg']
+);
+
+const response = await client.text.generateRaw(builder.build(), {
   provider: 'google',
   model: 'gemini-1.5-pro'
 });
-
-// Fast Llama inference with Groq
-const llamaAgent = client.agents.create({
-  provider: 'groq',
-  model: 'llama-3.1-70b-versatile'
-});
 ```
 
-### Image Generation
+### Example 3: Multi-Provider Comparison
 
 ```typescript
-const image = await client.images.generate({
-  provider: 'openai',
-  model: 'dall-e-3',
-  prompt: 'A serene mountain landscape at sunset',
-  size: '1024x1024',
-  quality: 'hd'
-});
+const question = 'What is the capital of France?';
 
-console.log(image.data[0].url);
+// Ask all providers the same question
+const providers = ['openai', 'anthropic', 'google', 'groq'];
+
+for (const provider of providers) {
+  const response = await client.text.generate(question, {
+    provider,
+    model: getModelFor(provider)
+  });
+  console.log(`${provider}: ${response}`);
+}
 ```
+
+---
 
 ## API Reference
 
 ### OneRingAI Client
-
-The main entry point for the library.
 
 ```typescript
 const client = new OneRingAI({
@@ -179,7 +472,9 @@ const client = new OneRingAI({
     openai?: { apiKey: string, organization?: string },
     anthropic?: { apiKey: string },
     google?: { apiKey: string },
-    // ... more providers
+    groq?: { apiKey: string, baseURL?: string },
+    'together-ai'?: { apiKey: string, baseURL?: string },
+    [key: string]: ProviderConfig // Custom providers
   },
   defaultProvider?: string,
   logLevel?: 'debug' | 'info' | 'warn' | 'error'
@@ -189,8 +484,6 @@ const client = new OneRingAI({
 ### Capabilities
 
 #### `client.agents` - Agentic Text Generation
-
-Create agents with tool calling capabilities.
 
 ```typescript
 const agent = client.agents.create({
@@ -207,9 +500,8 @@ const response = await agent.run(input: string | InputItem[]);
 
 #### `client.text` - Simple Text Generation
 
-Generate text without tools.
-
 ```typescript
+// Text generation
 const text = await client.text.generate(input, {
   provider: string,
   model: string,
@@ -217,25 +509,262 @@ const text = await client.text.generate(input, {
   temperature?: number,
   max_output_tokens?: number
 });
+
+// JSON generation
+const json = await client.text.generateJSON(input, {
+  provider: string,
+  model: string,
+  schema: JSONSchema
+});
+
+// Raw response (full LLMResponse object)
+const response = await client.text.generateRaw(input, options);
 ```
 
-#### `client.images` - Image Generation
-
-Generate images from text prompts.
+#### `client.images` - Image Generation (Future)
 
 ```typescript
 const image = await client.images.generate({
   provider: string,
   model: string,
-  prompt: string,
-  size?: string,
-  quality?: 'standard' | 'hd'
+  prompt: string
 });
 ```
 
+### Utilities
+
+```typescript
+// Message building
+import { MessageBuilder, createMessageWithImages } from '@oneringai/agents';
+
+const builder = new MessageBuilder();
+builder.addUserMessage('Hello');
+builder.addUserMessageWithImages('Analyze these', ['img1.jpg', 'img2.jpg']);
+builder.addAssistantMessage('Here is my analysis');
+
+// Or use helper
+const input = createMessageWithImages('Describe this', ['image.jpg']);
+
+// Clipboard
+import { readClipboardImage } from '@oneringai/agents';
+const result = await readClipboardImage();
+if (result.success) {
+  console.log(result.dataUri); // base64 data URI
+}
+```
+
+---
+
+## Vision & Images
+
+### Image Input Methods
+
+#### 1. Ctrl+V / Cmd+V (Interactive Chat)
+
+Take a screenshot and paste it directly:
+
+```bash
+npm run example:chat
+
+# In the chat:
+# 1. Press Cmd+Ctrl+Shift+4 (Mac) or Win+Shift+S (Windows)
+# 2. Press Cmd+V in the chat
+# 3. Type your question
+```
+
+#### 2. Image URLs
+
+```typescript
+import { createMessageWithImages } from '@oneringai/agents';
+
+const input = createMessageWithImages(
+  'What is in this image?',
+  ['https://example.com/photo.jpg']
+);
+
+const response = await client.text.generateRaw([input], {
+  provider: 'openai',
+  model: 'gpt-4o'
+});
+```
+
+#### 3. Local Files
+
+```typescript
+// Files are auto-converted to base64
+const input = createMessageWithImages(
+  'Analyze this',
+  ['./photos/vacation.jpg']
+);
+```
+
+#### 4. MessageBuilder
+
+```typescript
+import { MessageBuilder } from '@oneringai/agents';
+
+const builder = new MessageBuilder();
+builder.addUserMessageWithImages(
+  'Compare these screenshots',
+  ['screenshot1.png', 'screenshot2.png']
+);
+
+const messages = builder.build();
+```
+
+### Vision-Capable Models
+
+| Provider | Models |
+|----------|--------|
+| OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo |
+| Anthropic | claude-3-5-sonnet, claude-3-opus, claude-3-sonnet, claude-3-haiku |
+| Google | gemini-1.5-pro, gemini-1.5-flash, gemini-2.0-flash |
+| Grok | grok-2-vision |
+| Together AI | meta-llama/Llama-3.2-90B-Vision-Instruct |
+
+### Image Formats
+
+- ✅ URLs: `https://example.com/image.jpg`
+- ✅ Data URIs: `data:image/png;base64,...`
+- ✅ Local files: `./path/to/image.jpg` (auto-converted)
+- ✅ Formats: JPG, PNG, GIF, WebP
+
+---
+
+## Provider Comparison
+
+### Speed
+
+| Provider | Typical Latency | Best For |
+|----------|----------------|----------|
+| **Groq** | ⚡⚡⚡⚡⚡ 100-300ms | Speed-critical apps |
+| **Together AI** | ⚡⚡⚡⚡ 500-1000ms | Fast + cost-effective |
+| **OpenAI** | ⚡⚡⚡ 1-3s | General purpose |
+| **Anthropic** | ⚡⚡⚡ 1-3s | Coding, analysis |
+| **Google** | ⚡⚡ 2-5s | Long context |
+
+### Cost (Approximate per 1M tokens)
+
+| Provider | Model | Input | Output |
+|----------|-------|-------|--------|
+| OpenAI | gpt-4o-mini | $0.15 | $0.60 |
+| Google | gemini-1.5-flash | $0.075 | $0.30 |
+| Anthropic | claude-3-haiku | $0.25 | $1.25 |
+| Groq | llama-3.1-70b | Free tier | Free tier |
+
+### Best Use Cases
+
+- **Coding**: Anthropic Claude 3.5 Sonnet
+- **Speed**: Groq Llama 3.1
+- **Cost**: Google Gemini Flash
+- **Long context**: Google Gemini (1M) or Anthropic Claude (200K)
+- **Vision**: OpenAI GPT-4o or Anthropic Claude 3.5
+- **General**: OpenAI GPT-4o (best balance)
+
+---
+
+## Development
+
+### Build the Library
+
+```bash
+# Install dependencies
+npm install
+
+# Build
+npm run build
+
+# Watch mode
+npm run dev
+
+# Type check
+npm run typecheck
+
+# Lint
+npm run lint
+```
+
+### Project Structure
+
+```
+src/
+├── index.ts                    # Main entry point
+├── client/                     # Client infrastructure
+│   ├── OneRingAI.ts
+│   └── ProviderRegistry.ts
+├── domain/                     # Core business logic
+│   ├── entities/              # Message, Content, Tool, Response
+│   ├── interfaces/            # IProvider, ITextProvider, etc.
+│   ├── types/                 # Configuration types
+│   └── errors/                # Error classes
+├── capabilities/              # Feature modules
+│   ├── agents/               # Agentic workflows
+│   ├── text/                 # Simple text generation
+│   └── images/               # Image generation (future)
+├── infrastructure/           # Provider implementations
+│   └── providers/
+│       ├── openai/          # OpenAI implementation
+│       ├── anthropic/       # Anthropic + converter
+│       ├── google/          # Google + converter
+│       └── generic/         # Generic OpenAI-compatible
+└── utils/                   # Utilities
+    ├── messageBuilder.ts
+    ├── clipboardImage.ts
+    └── imageUtils.ts
+```
+
+### Architecture
+
+The library follows **Clean Architecture** principles:
+
+- **Domain Layer**: Core entities, interfaces, business rules
+- **Application Layer**: Use cases, services (AgentManager, TextManager)
+- **Infrastructure Layer**: Provider implementations, external dependencies
+
+### Adding a New Provider
+
+See `CLAUDE.md` for detailed instructions on adding providers with converters.
+
+---
+
+## Troubleshooting
+
+### "Provider not found"
+Make sure you configured the provider in the OneRingAI constructor.
+
+### "Invalid API key"
+- Check your `.env` file exists
+- Ensure the key is correct for that provider
+- Check for typos in environment variable names
+
+### "Model not found"
+Each provider has different model names. Check provider documentation:
+- OpenAI: https://platform.openai.com/docs/models
+- Anthropic: https://docs.anthropic.com/en/docs/models-overview
+- Google: https://ai.google.dev/models/gemini
+
+### Vision not working
+Make sure you're using a vision-capable model:
+- OpenAI: `gpt-4o`, `gpt-4-turbo`
+- Anthropic: Claude 3+ models
+- Google: `gemini-1.5-pro`, `gemini-1.5-flash`
+
+### Tool calling not working
+Most modern models support tools. Legacy models (GPT-3.5, Claude 2) may not.
+
+### Clipboard paste not working (Mac)
+Install pngpaste for best experience:
+```bash
+brew install pngpaste
+```
+
+---
+
+## Advanced Topics
+
 ### Tool System
 
-Tools are functions that agents can call during execution.
+Define tools that agents can call:
 
 ```typescript
 interface ToolFunction {
@@ -253,66 +782,172 @@ interface ToolFunction {
 }
 ```
 
-## Architecture
+### Multi-Turn Conversations
 
-The library follows clean architecture principles:
+```typescript
+import { MessageBuilder, MessageRole, ContentType } from '@oneringai/agents';
 
-- **Domain Layer**: Core entities, interfaces, and business logic
-- **Application Layer**: Use cases and services (AgentManager, TextManager, etc.)
-- **Infrastructure Layer**: Provider implementations (OpenAI, Anthropic, etc.)
+const builder = new MessageBuilder();
 
-## Supported Providers
+// Turn 1
+builder.addUserMessage('What is the Eiffel Tower?');
+let response = await client.text.generateRaw(builder.build(), options);
+builder.addAssistantMessage(response.output_text);
 
-### Text Generation
-- ✅ OpenAI (GPT-4, GPT-3.5, o1)
-- 🚧 Anthropic (Claude) - Coming soon
-- 🚧 Google (Gemini) - Coming soon
+// Turn 2
+builder.addUserMessage('When was it built?');
+response = await client.text.generateRaw(builder.build(), options);
+```
 
-### Image Generation
-- 🚧 OpenAI (DALL-E) - Coming soon
-- 🚧 Google (Imagen) - Coming soon
+### Error Handling
 
-## Development
+```typescript
+import { ProviderAuthError, ProviderRateLimitError } from '@oneringai/agents';
+
+try {
+  const response = await client.text.generate('Hello', options);
+} catch (error) {
+  if (error instanceof ProviderAuthError) {
+    console.error('Invalid API key');
+  } else if (error instanceof ProviderRateLimitError) {
+    console.error('Rate limited, retry after:', error.retryAfter);
+  }
+}
+```
+
+### Image Detail Control
+
+```typescript
+import { InputItem, MessageRole, ContentType } from '@oneringai/agents';
+
+const input: InputItem[] = [{
+  type: 'message',
+  role: MessageRole.USER,
+  content: [
+    { type: ContentType.INPUT_TEXT, text: 'Describe this' },
+    {
+      type: ContentType.INPUT_IMAGE_URL,
+      image_url: {
+        url: 'https://example.com/image.jpg',
+        detail: 'low'  // 'low' (~85 tokens), 'high' (~170-340), 'auto'
+      }
+    }
+  ]
+}];
+```
+
+---
+
+## Installation Methods
+
+### From npm (When Published)
 
 ```bash
-# Install dependencies
-npm install
-
-# Build the library
-npm run build
-
-# Watch mode for development
-npm run dev
-
-# Run tests
-npm test
-
-# Type check
-npm run typecheck
-
-# Lint
-npm run lint
+npm install @oneringai/agents
 ```
+
+### From GitHub
+
+```bash
+# Latest from main branch
+npm install github:your-username/oneringai
+
+# Specific branch/tag
+npm install github:your-username/oneringai#develop
+npm install github:your-username/oneringai#v0.1.0
+```
+
+### Local Development (npm link)
+
+```bash
+# In oneringai directory
+npm link
+
+# In your project
+npm link @oneringai/agents
+
+# Unlink when done
+npm unlink @oneringai/agents
+```
+
+### Local File Path
+
+```bash
+# Absolute path
+npm install /Users/aantich/dev/oneringai
+
+# Relative path
+npm install ../oneringai
+```
+
+---
+
+## Documentation Files
+
+- **`README.md`** (this file) - Complete guide
+- **`CLAUDE.md`** - For AI assistants (architecture, development guide)
+- **`PROVIDERS.md`** - Detailed provider comparison and configuration
+- **`.env.example`** - Environment variable template
+
+---
 
 ## Contributing
 
-Contributions are welcome! Please read our contributing guidelines before submitting a PR.
+This is currently a private project. For questions or contributions, contact the maintainer.
 
 ## License
 
-MIT
-
-## Examples
-
-Check out the `/examples` directory for more usage examples:
-
-- `basic-agent.ts` - Simple agent with tool calling
-- `simple-text.ts` - Text generation and JSON output
-- `multi-turn-conversation.ts` - Complex multi-turn dialogues
-- `interactive-chat.ts` - **Interactive chat session** (try it: `npm run example:chat`)
-- `vision-image-input.ts` - **Vision/image analysis** (try it: `npm run example:vision`)
-- `multi-provider-comparison.ts` - **Compare all providers** (try it: `npm run example:providers`)
+MIT License - See [LICENSE](./LICENSE) file for details.
 
 ## Support
 
-For issues and questions, please use the GitHub issue tracker.
+For detailed documentation:
+- **Provider Guide**: See `PROVIDERS.md`
+- **Architecture**: See `CLAUDE.md`
+- **Examples**: Run `npm run example:*` commands
+
+---
+
+## Quick Reference
+
+### Basic Commands
+
+```bash
+# Build
+npm run build
+
+# Run examples
+npm run example:chat        # Interactive chat
+npm run example:agent       # Agent with tools
+npm run example:vision      # Vision examples
+npm run example:providers   # Compare all providers
+
+# Development
+npm run dev                 # Watch mode
+npm run typecheck          # Type check
+```
+
+### Code Templates
+
+**Simple text:**
+```typescript
+const text = await client.text.generate('Question?', { provider: 'openai', model: 'gpt-4' });
+```
+
+**Agent with tools:**
+```typescript
+const agent = client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022', tools: [...] });
+const result = await agent.run('Do something');
+```
+
+**Vision:**
+```typescript
+const input = createMessageWithImages('Describe this', ['image.jpg']);
+const response = await client.text.generateRaw([input], { provider: 'google', model: 'gemini-1.5-pro' });
+```
+
+---
+
+**Version**: 0.1.0
+**Last Updated**: 2026-01-06
+**Supported Providers**: 6+ (OpenAI, Anthropic, Google, Grok, Groq, Together AI, Custom)

@@ -184,52 +184,69 @@ src/
 
 **Core Infrastructure**:
 - OneRingAI client with lazy-loaded capabilities
-- ProviderRegistry with caching
+- ProviderRegistry with caching and lazy loading
 - Complete domain entities and interfaces
 - Comprehensive error handling
+- Clean architecture (domain/application/infrastructure)
 
-**OpenAI Provider**:
-- Text generation using Chat Completions API
-- Tool calling support
-- Vision support (via image URLs in content)
-- JSON output with schema validation
-- Error mapping (auth, rate limit, context length)
-
-**Agent System**:
-- Agent creation and management
-- Tool registry and execution
-- Agentic loop with blocking tools
-- Multi-turn conversations
-- Tool call state tracking
+**Providers (ALL IMPLEMENTED)**:
+- ✅ **OpenAI** - Native Responses API format, no conversion needed
+- ✅ **Anthropic (Claude)** - Full converter, Messages API → Responses API
+- ✅ **Google (Gemini)** - Full converter, Gemini API → Responses API
+- ✅ **Generic OpenAI-Compatible** - Enables Grok, Groq, Together AI, Perplexity, etc.
+- ✅ **6+ providers** total with single unified API
 
 **Text Generation**:
-- Simple text generation
-- Structured JSON output
-- System instructions
-- Multi-turn conversations
+- Simple text generation (all providers)
+- Structured JSON output (all providers)
+- System instructions (all providers)
+- Multi-turn conversations (all providers)
+- Temperature and token control
+
+**Tool Calling**:
+- Tool registry and execution
+- Agentic loop with blocking tools
+- Tool call state tracking (pending, executing, completed, failed)
+- Works with all providers (OpenAI, Anthropic, Google, Groq, etc.)
+- Multi-turn conversations with tools
 
 **Vision/Image Input**:
-- Image analysis with vision-capable models (GPT-4o, GPT-4V)
+- Image analysis with all vision-capable models
+- Works with: GPT-4o, Claude 3.5, Gemini 1.5, Grok-2-Vision, Llama 3.2 Vision
 - MessageBuilder utility for complex inputs
 - Helper functions (createMessageWithImages, etc.)
 - **Clipboard image paste** (Ctrl+V/Cmd+V) - just like Claude Code!
 - Cross-platform clipboard support (Mac, Windows, Linux)
 - Automatic base64 conversion for screenshots
+- Image URL to base64 conversion (for Google)
 - Multi-image support
+- Image detail control (low/high/auto)
 
 **Interactive Chat**:
 - Full-featured CLI chat with readline
 - Ctrl+V clipboard image paste support
 - Conversation history and context preservation
-- Multiple image attachment methods
+- Multiple image attachment methods (Ctrl+V, /paste, [img:URL])
 - Token usage tracking
+- Command system (/exit, /clear, /history, /images, /help)
+- Thinking animation
+- Cross-platform (Mac, Windows, Linux)
+
+**Utilities**:
+- MessageBuilder for complex message construction
+- Clipboard image reading (cross-platform)
+- Image utilities (URL to base64, format detection, size calculation)
+- Helper functions for common tasks
+
+**Examples**:
+- basic-agent.ts - Agent with tools
+- simple-text.ts - Text generation
+- multi-turn-conversation.ts - Context preservation
+- interactive-chat.ts - Full-featured chat with vision
+- vision-image-input.ts - Vision examples
+- multi-provider-comparison.ts - Compare all providers
 
 ### 🚧 Not Yet Implemented
-
-**Providers**:
-- Anthropic (Claude) - needs converter (supports vision!)
-- Google (Gemini) - needs converter (supports vision!)
-- Groq - similar to OpenAI
 
 **Image Generation** (creating images, not analyzing):
 - OpenAI DALL-E integration
@@ -241,11 +258,11 @@ src/
 - Streaming responses
 - Tool result caching
 - Conversation persistence
-- Rate limiting/retry logic (beyond SDK defaults)
+- Advanced rate limiting/retry logic
 
 **Platform Support**:
 - Browser runtime (currently Node.js only)
-- React Native clipboard support
+- React Native
 
 ## Adding New Providers
 
