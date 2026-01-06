@@ -4,9 +4,19 @@
 
 import { ITextProvider } from '../domain/interfaces/ITextProvider.js';
 import { IImageProvider } from '../domain/interfaces/IImageProvider.js';
-import { ProviderConfig, ProvidersConfig, OpenAIConfig } from '../domain/types/ProviderConfig.js';
+import {
+  ProviderConfig,
+  ProvidersConfig,
+  OpenAIConfig,
+  AnthropicConfig,
+  GoogleConfig,
+  GenericOpenAIConfig,
+} from '../domain/types/ProviderConfig.js';
 import { ProviderNotFoundError, InvalidConfigError } from '../domain/errors/AIErrors.js';
 import { OpenAITextProvider } from '../infrastructure/providers/openai/OpenAITextProvider.js';
+import { GenericOpenAIProvider } from '../infrastructure/providers/generic/GenericOpenAIProvider.js';
+import { AnthropicTextProvider } from '../infrastructure/providers/anthropic/AnthropicTextProvider.js';
+import { GoogleTextProvider } from '../infrastructure/providers/google/GoogleTextProvider.js';
 
 export class ProviderRegistry {
   private configs: Map<string, ProviderConfig> = new Map();
@@ -81,11 +91,64 @@ export class ProviderRegistry {
     switch (name) {
       case 'openai':
         return new OpenAITextProvider(config as OpenAIConfig);
+
       case 'anthropic':
-        throw new Error('Anthropic provider not yet implemented');
+        return new AnthropicTextProvider(config as AnthropicConfig);
+
       case 'google':
-        throw new Error('Google provider not yet implemented');
+      case 'gemini':
+        return new GoogleTextProvider(config as GoogleConfig);
+
+      case 'grok':
+        // xAI Grok - OpenAI-compatible
+        return new GenericOpenAIProvider(
+          'grok',
+          {
+            ...config,
+            baseURL: (config as any).baseURL || 'https://api.x.ai/v1',
+          } as GenericOpenAIConfig,
+          { text: true, images: true, videos: false, audio: false }
+        );
+
+      case 'groq':
+        // Groq - OpenAI-compatible (for Llama, Mixtral, etc.)
+        return new GenericOpenAIProvider(
+          'groq',
+          {
+            ...config,
+            baseURL: (config as any).baseURL || 'https://api.groq.com/openai/v1',
+          } as GenericOpenAIConfig,
+          { text: true, images: false, videos: false, audio: false }
+        );
+
+      case 'together-ai':
+      case 'together':
+        // Together AI - OpenAI-compatible (for Llama, etc.)
+        return new GenericOpenAIProvider(
+          'together-ai',
+          {
+            ...config,
+            baseURL: (config as any).baseURL || 'https://api.together.xyz/v1',
+          } as GenericOpenAIConfig,
+          { text: true, images: true, videos: false, audio: false }
+        );
+
+      case 'perplexity':
+        // Perplexity - OpenAI-compatible
+        return new GenericOpenAIProvider(
+          'perplexity',
+          {
+            ...config,
+            baseURL: (config as any).baseURL || 'https://api.perplexity.ai',
+          } as GenericOpenAIConfig,
+          { text: true, images: false, videos: false, audio: false }
+        );
+
       default:
+        // Try as generic OpenAI-compatible provider if baseURL is provided
+        if ('baseURL' in config && config.baseURL) {
+          return new GenericOpenAIProvider(name, config as GenericOpenAIConfig);
+        }
         throw new ProviderNotFoundError(name);
     }
   }

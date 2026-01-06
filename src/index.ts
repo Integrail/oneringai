@@ -76,6 +76,10 @@ export type {
   OpenAIConfig,
   AnthropicConfig,
   GoogleConfig,
+  GroqConfig,
+  GrokConfig,
+  TogetherAIConfig,
+  GenericOpenAIConfig,
 } from './domain/types/ProviderConfig.js';
 
 export type {

@@ -1,0 +1,131 @@
+/**
+ * Google Gemini text provider
+ */
+
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { BaseTextProvider } from '../base/BaseTextProvider.js';
+import { TextGenerateOptions, ModelCapabilities } from '../../../domain/interfaces/ITextProvider.js';
+import { LLMResponse } from '../../../domain/entities/Response.js';
+import { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
+import { GoogleConfig } from '../../../domain/types/ProviderConfig.js';
+import {
+  ProviderAuthError,
+  ProviderRateLimitError,
+  ProviderContextLengthError,
+} from '../../../domain/errors/AIErrors.js';
+import { GoogleConverter } from './GoogleConverter.js';
+
+export class GoogleTextProvider extends BaseTextProvider {
+  readonly name = 'google';
+  readonly capabilities: ProviderCapabilities = {
+    text: true,
+    images: true, // Gemini supports vision
+    videos: false,
+    audio: false,
+  };
+
+  private client: GoogleGenerativeAI;
+  private converter: GoogleConverter;
+
+  constructor(config: GoogleConfig) {
+    super(config);
+    this.client = new GoogleGenerativeAI(this.getApiKey());
+    this.converter = new GoogleConverter();
+  }
+
+  /**
+   * Generate response using Google Gemini API
+   */
+  async generate(options: TextGenerateOptions): Promise<LLMResponse> {
+    try {
+      const model = this.client.getGenerativeModel({
+        model: options.model,
+      });
+
+      // Convert our format → Google format
+      const googleRequest = await this.converter.convertRequest(options);
+
+      // Call Google API
+      const result = await model.generateContent(googleRequest);
+
+      // Convert Google response → our format
+      return this.converter.convertResponse(result.response);
+    } catch (error: any) {
+      this.handleError(error);
+      throw error; // TypeScript needs this
+    }
+  }
+
+  /**
+   * Get model capabilities
+   */
+  getModelCapabilities(model: string): ModelCapabilities {
+    // Gemini 2.0 Flash
+    if (model.includes('gemini-2.0-flash')) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 1048576, // 1M tokens
+        maxOutputTokens: 8192,
+      };
+    }
+
+    // Gemini 1.5 Pro
+    if (model.includes('gemini-1.5-pro') || model.includes('gemini-pro')) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 1048576, // 1M tokens
+        maxOutputTokens: 8192,
+      };
+    }
+
+    // Gemini 1.5 Flash
+    if (model.includes('gemini-1.5-flash') || model.includes('gemini-flash')) {
+      return {
+        supportsTools: true,
+        supportsVision: true,
+        supportsJSON: true,
+        supportsJSONSchema: false,
+        maxTokens: 1048576, // 1M tokens
+        maxOutputTokens: 8192,
+      };
+    }
+
+    // Default for unknown models
+    return {
+      supportsTools: true,
+      supportsVision: true,
+      supportsJSON: true,
+      supportsJSONSchema: false,
+      maxTokens: 1048576,
+      maxOutputTokens: 8192,
+    };
+  }
+
+  /**
+   * Handle Google-specific errors
+   */
+  private handleError(error: any): never {
+    const errorMessage = error.message || '';
+
+    if (error.status === 401 || errorMessage.includes('API key not valid')) {
+      throw new ProviderAuthError('google', 'Invalid API key');
+    }
+
+    if (error.status === 429 || errorMessage.includes('Resource exhausted')) {
+      throw new ProviderRateLimitError('google');
+    }
+
+    if (errorMessage.includes('context length') || errorMessage.includes('too long')) {
+      throw new ProviderContextLengthError('google', 1048576);
+    }
+
+    // Re-throw other errors
+    throw error;
+  }
+}

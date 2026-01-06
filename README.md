@@ -6,12 +6,27 @@ A unified AI agent library with multi-vendor support for text generation, image 
 
 ## Features
 
-- **🎯 Unified API**: Single client for multiple AI providers (OpenAI, Anthropic, Google, etc.)
+- **🎯 Unified API**: Single client for 6+ AI providers (OpenAI, Anthropic, Google, Grok, Groq, Together AI, and more)
 - **🤖 Agentic Workflows**: Built-in support for tool calling and multi-turn conversations
-- **🖼️ Multi-Modal**: Text generation, image generation, and more
+- **🖼️ Multi-Modal**: Text generation with vision, image analysis, and more
 - **🔧 Extensible**: Easy to add new providers and capabilities
 - **📦 Type-Safe**: Full TypeScript support with comprehensive types
 - **🏗️ Clean Architecture**: Domain-driven design with separation of concerns
+- **⚡ Provider Agnostic**: Same code works with any provider - just change the name!
+
+## Supported Providers
+
+| Provider | Text | Vision | Tools | JSON Schema | Context |
+|----------|------|--------|-------|-------------|---------|
+| **OpenAI** | ✅ | ✅ | ✅ | ✅ Native | 128K |
+| **Anthropic (Claude)** | ✅ | ✅ | ✅ | ⚠️ Prompt | 200K |
+| **Google (Gemini)** | ✅ | ✅ | ✅ | ⚠️ Prompt | 1M |
+| **Grok (xAI)** | ✅ | ✅ | ✅ | ❌ | 128K |
+| **Groq** | ✅ | ❌ | ✅ | ❌ | 128K |
+| **Together AI** | ✅ | ⚠️ Some | ✅ | ❌ | 128K |
+| **Custom** | ✅ | Varies | ✅ | Varies | Varies |
+
+> See [PROVIDERS.md](./PROVIDERS.md) for detailed provider comparison, pricing, and configuration.
 
 ## Installation
 
@@ -103,7 +118,15 @@ const client = new OneRingAI({
   providers: {
     openai: { apiKey: process.env.OPENAI_API_KEY },
     anthropic: { apiKey: process.env.ANTHROPIC_API_KEY },
-    google: { apiKey: process.env.GOOGLE_API_KEY }
+    google: { apiKey: process.env.GOOGLE_API_KEY },
+    groq: {
+      apiKey: process.env.GROQ_API_KEY,
+      baseURL: 'https://api.groq.com/openai/v1' // Auto-configured
+    },
+    'together-ai': {
+      apiKey: process.env.TOGETHER_API_KEY,
+      baseURL: 'https://api.together.xyz/v1' // Auto-configured
+    }
   }
 });
 
@@ -116,6 +139,17 @@ const gptAgent = client.agents.create({
 const claudeAgent = client.agents.create({
   provider: 'anthropic',
   model: 'claude-3-5-sonnet-20241022'
+});
+
+const geminiAgent = client.agents.create({
+  provider: 'google',
+  model: 'gemini-1.5-pro'
+});
+
+// Fast Llama inference with Groq
+const llamaAgent = client.agents.create({
+  provider: 'groq',
+  model: 'llama-3.1-70b-versatile'
 });
 ```
 
@@ -277,6 +311,7 @@ Check out the `/examples` directory for more usage examples:
 - `multi-turn-conversation.ts` - Complex multi-turn dialogues
 - `interactive-chat.ts` - **Interactive chat session** (try it: `npm run example:chat`)
 - `vision-image-input.ts` - **Vision/image analysis** (try it: `npm run example:vision`)
+- `multi-provider-comparison.ts` - **Compare all providers** (try it: `npm run example:providers`)
 
 ## Support
 

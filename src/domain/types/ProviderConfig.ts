@@ -24,7 +24,20 @@ export interface GoogleConfig extends BaseProviderConfig {
 }
 
 export interface GroqConfig extends BaseProviderConfig {
-  // Groq-specific config
+  baseURL?: string; // Usually https://api.groq.com/openai/v1
+}
+
+export interface GrokConfig extends BaseProviderConfig {
+  baseURL?: string; // xAI Grok API endpoint
+}
+
+export interface TogetherAIConfig extends BaseProviderConfig {
+  baseURL?: string; // Usually https://api.together.xyz/v1
+}
+
+export interface GenericOpenAIConfig extends BaseProviderConfig {
+  baseURL: string; // Required for generic providers
+  providerName?: string; // Display name
 }
 
 export type ProviderConfig =
@@ -32,12 +45,18 @@ export type ProviderConfig =
   | AnthropicConfig
   | GoogleConfig
   | GroqConfig
+  | GrokConfig
+  | TogetherAIConfig
+  | GenericOpenAIConfig
   | BaseProviderConfig;
 
 export interface ProvidersConfig {
   openai?: OpenAIConfig;
   anthropic?: AnthropicConfig;
   google?: GoogleConfig;
-  groq?: GroqConfig;
+  groq?: GroqConfig; // Groq (different from Grok)
+  grok?: GrokConfig; // xAI Grok
+  'together-ai'?: TogetherAIConfig;
+  perplexity?: GenericOpenAIConfig;
   [key: string]: ProviderConfig | undefined;
 }
