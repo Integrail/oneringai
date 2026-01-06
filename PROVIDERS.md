@@ -132,6 +132,92 @@ https://makersuite.google.com/app/apikey
 
 ---
 
+## Google Vertex AI (Enterprise)
+
+### Configuration
+
+```typescript
+const client = new OneRingAI({
+  providers: {
+    'vertex-ai': {
+      projectId: 'your-gcp-project-id',
+      location: 'us-central1', // or 'europe-west1', 'asia-northeast1', etc.
+      // credentials: optional service account JSON
+    }
+  }
+});
+```
+
+### Setup Steps
+
+1. **Create GCP Project**: https://console.cloud.google.com
+2. **Enable Vertex AI API**: In GCP Console → APIs & Services
+3. **Set up authentication**:
+   ```bash
+   # Option 1: Application Default Credentials (recommended)
+   gcloud auth application-default login
+
+   # Option 2: Service Account
+   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+   ```
+4. **Set environment variables**:
+   ```bash
+   GOOGLE_CLOUD_PROJECT=your-project-id
+   GOOGLE_CLOUD_LOCATION=us-central1
+   ```
+
+### Models
+
+Same Gemini models as the regular API:
+
+| Model | Context | Output | Best For |
+|-------|---------|--------|----------|
+| `gemini-3-flash-preview` | 1M | 8K | Latest, fastest |
+| `gemini-3-pro-preview` | 1M | 8K | Complex reasoning |
+| `gemini-2.5-flash` | 1M | 8K | Stable, fast |
+| `gemini-2.5-pro` | 1M | 8K | Stable, powerful |
+
+### Enterprise Features
+
+- ✅ **SLA Guarantees**: 99.9% uptime
+- ✅ **IAM Controls**: Fine-grained permissions
+- ✅ **Audit Logging**: Track all API usage
+- ✅ **Model Tuning**: Custom fine-tuning
+- ✅ **Context Caching**: Reduce costs
+- ✅ **RAG Engine**: Built-in retrieval
+- ✅ **Grounding**: Google Search integration
+- ✅ **Batch Inference**: Process large datasets
+- ✅ **Provisioned Throughput**: Reserved capacity
+
+### When to Use Vertex AI vs Regular Gemini API
+
+**Use Vertex AI if you need**:
+- Enterprise SLA and support
+- IAM/audit logging for compliance
+- Model customization and tuning
+- Integration with GCP services (BigQuery, Cloud Storage)
+- Dedicated capacity/throughput
+- Advanced features (caching, grounding, RAG)
+
+**Use regular Gemini API if you want**:
+- Quick prototyping
+- Simple API key authentication
+- Free tier for testing
+- No GCP account required
+
+### Pricing
+
+Vertex AI uses GCP billing (no free tier):
+- Input: ~$1.25-3.00 per 1M tokens (model-dependent)
+- Output: ~$5.00-15.00 per 1M tokens
+- Additional costs for tuning, caching, etc.
+
+### Get Started
+
+https://console.cloud.google.com/vertex-ai
+
+---
+
 ## Grok (xAI)
 
 ### Configuration

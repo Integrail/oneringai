@@ -136,6 +136,19 @@ function detectAvailableProviders(): ProviderInfo[] {
     });
   }
 
+  // Check Vertex AI (requires GCP project)
+  if (process.env.GOOGLE_CLOUD_PROJECT && process.env.GOOGLE_CLOUD_LOCATION) {
+    providers.push({
+      name: 'vertex-ai',
+      displayName: 'Google Vertex AI',
+      model: 'gemini-3-flash-preview',
+      projectId: process.env.GOOGLE_CLOUD_PROJECT,
+      location: process.env.GOOGLE_CLOUD_LOCATION,
+      description: 'Enterprise Gemini with SLA & advanced features',
+      hasVision: true,
+    } as any);
+  }
+
   return providers;
 }
 
@@ -207,10 +220,18 @@ async function main() {
   // Build provider config
   const providerConfig: any = {};
   for (const p of availableProviders) {
-    providerConfig[p.name] = {
-      apiKey: p.apiKey,
-      ...(p.baseURL && { baseURL: p.baseURL }),
-    };
+    if (p.name === 'vertex-ai') {
+      // Vertex AI uses different config
+      providerConfig[p.name] = {
+        projectId: (p as any).projectId,
+        location: (p as any).location,
+      };
+    } else {
+      providerConfig[p.name] = {
+        apiKey: p.apiKey,
+        ...(p.baseURL && { baseURL: p.baseURL }),
+      };
+    }
   }
 
   // Create client with all available providers

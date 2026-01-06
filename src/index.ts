@@ -76,6 +76,7 @@ export type {
   OpenAIConfig,
   AnthropicConfig,
   GoogleConfig,
+  VertexAIConfig,
   GroqConfig,
   GrokConfig,
   TogetherAIConfig,

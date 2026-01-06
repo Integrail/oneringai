@@ -10,6 +10,7 @@ import {
   OpenAIConfig,
   AnthropicConfig,
   GoogleConfig,
+  VertexAIConfig,
   GenericOpenAIConfig,
 } from '../domain/types/ProviderConfig.js';
 import { ProviderNotFoundError, InvalidConfigError } from '../domain/errors/AIErrors.js';
@@ -17,6 +18,7 @@ import { OpenAITextProvider } from '../infrastructure/providers/openai/OpenAITex
 import { GenericOpenAIProvider } from '../infrastructure/providers/generic/GenericOpenAIProvider.js';
 import { AnthropicTextProvider } from '../infrastructure/providers/anthropic/AnthropicTextProvider.js';
 import { GoogleTextProvider } from '../infrastructure/providers/google/GoogleTextProvider.js';
+import { VertexAITextProvider } from '../infrastructure/providers/vertex/VertexAITextProvider.js';
 
 export class ProviderRegistry {
   private configs: Map<string, ProviderConfig> = new Map();
@@ -98,6 +100,10 @@ export class ProviderRegistry {
       case 'google':
       case 'gemini':
         return new GoogleTextProvider(config as GoogleConfig);
+
+      case 'vertex-ai':
+      case 'google-vertex':
+        return new VertexAITextProvider(config as VertexAIConfig);
 
       case 'grok':
         // xAI Grok - OpenAI-compatible

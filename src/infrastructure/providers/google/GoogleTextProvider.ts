@@ -1,8 +1,8 @@
 /**
- * Google Gemini text provider
+ * Google Gemini text provider (using new unified SDK)
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { BaseTextProvider } from '../base/BaseTextProvider.js';
 import { TextGenerateOptions, ModelCapabilities } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
@@ -24,12 +24,15 @@ export class GoogleTextProvider extends BaseTextProvider {
     audio: false,
   };
 
-  private client: GoogleGenerativeAI;
+  private client: GoogleGenAI;
   private converter: GoogleConverter;
 
   constructor(config: GoogleConfig) {
     super(config);
-    this.client = new GoogleGenerativeAI(this.getApiKey());
+    // New SDK uses object config
+    this.client = new GoogleGenAI({
+      apiKey: this.getApiKey(),
+    });
     this.converter = new GoogleConverter();
   }
 
@@ -38,18 +41,17 @@ export class GoogleTextProvider extends BaseTextProvider {
    */
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
     try {
-      const model = this.client.getGenerativeModel({
-        model: options.model,
-      });
-
       // Convert our format → Google format
       const googleRequest = await this.converter.convertRequest(options);
 
-      // Call Google API
-      const result = await model.generateContent(googleRequest);
+      // Call Google API using new SDK structure
+      const result = await this.client.models.generateContent({
+        model: options.model,
+        ...googleRequest,
+      });
 
       // Convert Google response → our format
-      return this.converter.convertResponse(result.response);
+      return this.converter.convertResponse(result);
     } catch (error: any) {
       this.handleError(error);
       throw error; // TypeScript needs this

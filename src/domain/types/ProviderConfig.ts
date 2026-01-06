@@ -20,7 +20,16 @@ export interface AnthropicConfig extends BaseProviderConfig {
 }
 
 export interface GoogleConfig extends BaseProviderConfig {
-  // Google-specific config
+  // For Gemini API (ai.google.dev) - requires API key
+  apiKey: string;
+}
+
+export interface VertexAIConfig extends BaseProviderConfig {
+  // For Vertex AI (Google Cloud Platform)
+  projectId: string;
+  location: string; // e.g., 'us-central1', 'europe-west1'
+  credentials?: any; // Optional: Service account JSON
+  // apiKey not used - uses Application Default Credentials or credentials
 }
 
 export interface GroqConfig extends BaseProviderConfig {
@@ -44,6 +53,7 @@ export type ProviderConfig =
   | OpenAIConfig
   | AnthropicConfig
   | GoogleConfig
+  | VertexAIConfig
   | GroqConfig
   | GrokConfig
   | TogetherAIConfig
@@ -54,6 +64,8 @@ export interface ProvidersConfig {
   openai?: OpenAIConfig;
   anthropic?: AnthropicConfig;
   google?: GoogleConfig;
+  'vertex-ai'?: VertexAIConfig;
+  'google-vertex'?: VertexAIConfig; // Alias
   groq?: GroqConfig; // Groq (different from Grok)
   grok?: GrokConfig; // xAI Grok
   'together-ai'?: TogetherAIConfig;

@@ -192,9 +192,10 @@ src/
 **Providers (ALL IMPLEMENTED)**:
 - ✅ **OpenAI** - Native Responses API format, no conversion needed
 - ✅ **Anthropic (Claude)** - Full converter, Messages API → Responses API
-- ✅ **Google (Gemini)** - Full converter, Gemini API → Responses API
+- ✅ **Google (Gemini)** - Full converter, Gemini API → Responses API (new @google/genai SDK)
+- ✅ **Google Vertex AI** - Enterprise Gemini with SLA, IAM, tuning (same SDK as Gemini)
 - ✅ **Generic OpenAI-Compatible** - Enables Grok, Groq, Together AI, Perplexity, etc.
-- ✅ **6+ providers** total with single unified API
+- ✅ **7+ providers** total with single unified API
 
 **Text Generation**:
 - Simple text generation (all providers)

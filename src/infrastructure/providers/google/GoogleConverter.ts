@@ -1,14 +1,14 @@
 /**
  * Google Gemini converter - Converts between our Responses API format and Google Gemini API
+ * Works with both @google/genai SDK (for Gemini API and Vertex AI)
  */
 
-import {
-  GenerateContentRequest,
+// Import types - the new SDK may have different type names
+import type {
   Content as GeminiContent,
   Part,
-  Tool as GeminiTool,
   FunctionDeclaration,
-} from '@google/generative-ai';
+} from '@google/genai';
 import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { InputItem, MessageRole, OutputItem } from '../../../domain/entities/Message.js';

@@ -23,10 +23,13 @@
 | **OpenAI** | ✅ | ✅ | ✅ | ✅ Native | 128K |
 | **Anthropic (Claude)** | ✅ | ✅ | ✅ | ⚠️ Prompt | 200K |
 | **Google (Gemini)** | ✅ | ✅ | ✅ | ⚠️ Prompt | 1M |
+| **Google Vertex AI** | ✅ | ✅ | ✅ | ⚠️ Prompt | 1M |
 | **Grok (xAI)** | ✅ | ✅ | ✅ | ❌ | 128K |
 | **Groq** | ✅ | ❌ | ✅ | ❌ | 128K |
 | **Together AI** | ✅ | ⚠️ Some | ✅ | ❌ | 128K |
 | **Custom** | ✅ | Varies | ✅ | Varies | Varies |
+
+> **Note**: Google Vertex AI provides enterprise features (SLA, IAM, tuning, caching) not available in the regular Gemini API.
 
 ---
 
@@ -312,6 +315,47 @@ const client = new OneRingAI({
 ```
 
 Get API key: https://makersuite.google.com/app/apikey
+
+### Google Vertex AI (Enterprise)
+
+```typescript
+const client = new OneRingAI({
+  providers: {
+    'vertex-ai': {
+      projectId: process.env.GOOGLE_CLOUD_PROJECT,
+      location: process.env.GOOGLE_CLOUD_LOCATION, // e.g., 'us-central1'
+      // credentials: optional service account JSON
+    }
+  }
+});
+
+// Models: gemini-3-flash-preview, gemini-3-pro-preview, gemini-2.5-flash, gemini-2.5-pro
+```
+
+**Setup Required**:
+1. Create GCP project at https://console.cloud.google.com
+2. Enable Vertex AI API
+3. Set up authentication:
+   ```bash
+   gcloud auth application-default login
+   ```
+   OR set service account:
+   ```bash
+   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+   ```
+4. Set environment variables:
+   ```bash
+   GOOGLE_CLOUD_PROJECT=your-project-id
+   GOOGLE_CLOUD_LOCATION=us-central1
+   ```
+
+**Enterprise Features**:
+- SLA guarantees
+- IAM controls & audit logging
+- Model tuning & customization
+- Context caching
+- RAG Engine
+- Grounding with Google Search
 
 ### Groq (Fast Llama)
 
