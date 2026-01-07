@@ -6,7 +6,7 @@ export default defineConfig({
     'capabilities/agents/index': 'src/capabilities/agents/index.ts',
     'capabilities/images/index': 'src/capabilities/images/index.ts',
   },
-  format: ['esm'],
+  format: ['esm', 'cjs'],
   dts: true,
   splitting: false,
   sourcemap: true,

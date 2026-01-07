@@ -9,15 +9,18 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     },
     "./agents": {
       "types": "./dist/capabilities/agents/index.d.ts",
-      "import": "./dist/capabilities/agents/index.js"
+      "import": "./dist/capabilities/agents/index.js",
+      "require": "./dist/capabilities/agents/index.cjs"
     },
     "./images": {
       "types": "./dist/capabilities/images/index.d.ts",
-      "import": "./dist/capabilities/images/index.js"
+      "import": "./dist/capabilities/images/index.js",
+      "require": "./dist/capabilities/images/index.cjs"
     }
   },
   "files": [
