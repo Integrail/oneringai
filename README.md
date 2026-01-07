@@ -430,6 +430,12 @@ npm run example:providers
 
 # Multi-turn conversation
 npm run example:conversation
+
+# JSON manipulation tool
+npm run example:json-tool
+
+# Hooks & events (NEW!)
+npm run example:hooks
 ```
 
 ### Example 1: Simple Agent
@@ -707,6 +713,188 @@ const messages = builder.build();
 
 ---
 
+## Advanced Features
+
+### Hooks & Events (Enterprise Control)
+
+Control agent execution with hooks (modify behavior) and events (monitoring).
+
+#### Events (Async Notifications)
+
+Listen to execution events for logging, UI updates, monitoring:
+
+```typescript
+const agent = client.agents.create({ ... });
+
+// Listen to tool execution
+agent.on('tool:start', ({ toolCall }) => {
+  console.log(`Tool starting: ${toolCall.function.name}`);
+  websocket.send({ type: 'tool-progress', status: 'executing' });
+});
+
+agent.on('tool:complete', ({ result }) => {
+  console.log(`Tool completed in ${result.executionTime}ms`);
+  websocket.send({ type: 'tool-progress', status: 'completed' });
+});
+
+// Listen to LLM calls
+agent.on('llm:request', ({ options }) => {
+  console.log(`Calling ${options.model}...`);
+});
+
+// Listen to errors
+agent.on('tool:error', ({ error }) => {
+  logger.error('Tool failed:', error);
+});
+
+const response = await agent.run('Do something');
+```
+
+**Available Events**:
+- `execution:start`, `execution:complete`, `execution:error`
+- `execution:paused`, `execution:resumed`, `execution:cancelled`
+- `iteration:start`, `iteration:complete`
+- `llm:request`, `llm:response`, `llm:error`
+- `tool:detected`, `tool:start`, `tool:complete`, `tool:error`, `tool:timeout`
+- `hook:error`
+
+#### Hooks (Sync/Async Control)
+
+Modify execution flow with hooks - approve tools, cache results, add retry logic:
+
+```typescript
+const agent = client.agents.create({
+  provider: 'openai',
+  model: 'gpt-4',
+  tools: [dangerousTool],
+
+  hooks: {
+    // Approve tools before execution (human-in-the-loop)
+    'approve:tool': async ({ toolCall }) => {
+      if (toolCall.function.name === 'delete_database') {
+        const approved = await askUser('Execute delete_database?');
+        return { approved };
+      }
+      return { approved: true };
+    },
+
+    // Cache tool results
+    'before:tool': async ({ toolCall }) => {
+      const cached = await cache.get(toolCall.id);
+      if (cached) {
+        return { skip: true, mockResult: cached };
+      }
+      return {};
+    },
+
+    'after:tool': async ({ toolCall, result }) => {
+      await cache.set(toolCall.id, result);
+      return {};
+    }
+  }
+});
+```
+
+**Available Hooks**:
+- `before:execution`, `after:execution` - Lifecycle
+- `before:llm`, `after:llm` - Modify LLM calls
+- `before:tool`, `after:tool` - Intercept tool execution
+- `approve:tool` - Approve/reject tools
+- `pause:check` - Custom pause logic
+
+#### Pause/Resume/Cancel
+
+Control execution flow:
+
+```typescript
+const agent = client.agents.create({ ... });
+
+// Start execution (async)
+const responsePromise = agent.run('Long task');
+
+// Pause from another thread/callback
+setTimeout(() => {
+  agent.pause('User requested pause');
+}, 1000);
+
+// Resume later
+setTimeout(() => {
+  agent.resume();
+}, 5000);
+
+// Or cancel
+agent.cancel('User cancelled');
+
+const response = await responsePromise;
+```
+
+#### Metrics & Introspection
+
+Get detailed execution metrics:
+
+```typescript
+const agent = client.agents.create({ ... });
+const response = await agent.run('Process data');
+
+// Get metrics
+const metrics = agent.getMetrics();
+console.log('Tool success rate:', metrics.toolSuccessCount / metrics.toolCallCount);
+console.log('Total duration:', metrics.totalDuration);
+console.log('Tokens used:', metrics.totalTokens);
+
+// Get audit trail
+const audit = agent.getAuditTrail();
+console.log('Last 10 actions:', audit.slice(-10));
+
+// Check state
+console.log('Is running:', agent.isRunning());
+console.log('Is paused:', agent.isPaused());
+
+// Cleanup
+agent.destroy();
+```
+
+#### Enterprise Configuration
+
+```typescript
+const agent = client.agents.create({
+  provider: 'openai',
+  model: 'gpt-4',
+  tools: [myTool],
+
+  // Resource limits (prevent runaway execution)
+  limits: {
+    maxExecutionTime: 300000,  // 5 minutes
+    maxToolCalls: 100,
+    maxContextSize: 10485760,  // 10MB
+  },
+
+  // History mode (memory management)
+  historyMode: 'summary',  // 'none' | 'summary' | 'full'
+
+  // Error handling
+  errorHandling: {
+    hookFailureMode: 'warn',      // Continue on hook errors
+    toolFailureMode: 'fail',      // Stop on tool errors
+    maxConsecutiveErrors: 3
+  },
+
+  // Hooks for control
+  hooks: { ... }
+});
+```
+
+**Full Documentation**: See [HOOKS.md](./HOOKS.md) for:
+- Complete event reference
+- All hook examples
+- Pause/resume patterns
+- Metrics and audit trails
+- Production best practices
+
+**Try it**: `npm run example:hooks`
+
+---
+
 ## Development
 
 ### Build the Library
@@ -929,8 +1117,9 @@ npm install ../oneringai
 ## Documentation Files
 
 - **`README.md`** (this file) - Complete guide
-- **`CLAUDE.md`** - For AI assistants (architecture, development guide)
+- **`HOOKS.md`** - Comprehensive hooks & events guide
 - **`PROVIDERS.md`** - Detailed provider comparison and configuration
+- **`CLAUDE.md`** - For AI assistants (architecture, development guide)
 - **`.env.example`** - Environment variable template
 
 ---

@@ -1,13 +1,18 @@
 /**
  * Agent class - represents an agent with tool calling capabilities
+ * Now with events, hooks, pause/resume, and enterprise features
  */
 
+import { EventEmitter } from 'eventemitter3';
 import { ITextProvider } from '../../domain/interfaces/ITextProvider.js';
 import { ToolRegistry } from './ToolRegistry.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import { InputItem } from '../../domain/entities/Message.js';
 import { AgentResponse } from '../../domain/entities/Response.js';
-import { AgenticLoop } from './AgenticLoop.js';
+import { AgenticLoop, AgenticLoopConfig } from './AgenticLoop.js';
+import { ExecutionContext, HistoryMode } from './ExecutionContext.js';
+import { HookConfig } from './types/HookTypes.js';
+import { AgenticLoopEvents } from './types/EventTypes.js';
 
 export interface AgentConfig {
   provider: string;
@@ -16,16 +21,33 @@ export interface AgentConfig {
   tools?: ToolFunction[];
   temperature?: number;
   maxIterations?: number;
+
+  // NEW: Enterprise configuration
+  hooks?: HookConfig;
+  historyMode?: HistoryMode;
+  limits?: {
+    maxExecutionTime?: number;
+    maxToolCalls?: number;
+    maxContextSize?: number;
+  };
+  errorHandling?: {
+    hookFailureMode?: 'fail' | 'warn' | 'ignore';
+    toolFailureMode?: 'fail' | 'warn' | 'continue';
+    maxConsecutiveErrors?: number;
+  };
 }
 
-export class Agent {
+export class Agent extends EventEmitter<AgenticLoopEvents> {
   private agenticLoop: AgenticLoop;
+  private cleanupCallbacks: Array<() => void> = [];
 
   constructor(
     private config: AgentConfig,
     textProvider: ITextProvider,
     private toolRegistry: ToolRegistry
   ) {
+    super();
+
     // Register tools if provided
     if (config.tools) {
       for (const tool of config.tools) {
@@ -33,8 +55,40 @@ export class Agent {
       }
     }
 
-    // Create agentic loop
-    this.agenticLoop = new AgenticLoop(textProvider, toolRegistry);
+    // Create agentic loop with hooks
+    this.agenticLoop = new AgenticLoop(
+      textProvider,
+      toolRegistry,
+      config.hooks,
+      config.errorHandling
+    );
+
+    // Forward all events from AgenticLoop
+    const eventNames: Array<keyof AgenticLoopEvents> = [
+      'execution:start',
+      'execution:complete',
+      'execution:error',
+      'execution:paused',
+      'execution:resumed',
+      'execution:cancelled',
+      'iteration:start',
+      'iteration:complete',
+      'llm:request',
+      'llm:response',
+      'llm:error',
+      'tool:detected',
+      'tool:start',
+      'tool:complete',
+      'tool:error',
+      'tool:timeout',
+      'hook:error',
+    ];
+
+    for (const eventName of eventNames) {
+      this.agenticLoop.on(eventName, (data: any) => {
+        this.emit(eventName, data);
+      });
+    }
   }
 
   /**
@@ -42,16 +96,22 @@ export class Agent {
    */
   async run(input: string | InputItem[]): Promise<AgentResponse> {
     // Get tool definitions for the LLM
-    const tools = this.config.tools?.map(t => t.definition) || [];
+    const tools = this.config.tools?.map((t) => t.definition) || [];
 
-    return this.agenticLoop.execute({
+    const loopConfig: AgenticLoopConfig = {
       model: this.config.model,
       input,
       instructions: this.config.instructions,
       tools,
       temperature: this.config.temperature,
       maxIterations: this.config.maxIterations || 10,
-    });
+      hooks: this.config.hooks,
+      historyMode: this.config.historyMode,
+      limits: this.config.limits,
+      errorHandling: this.config.errorHandling,
+    };
+
+    return this.agenticLoop.execute(loopConfig);
   }
 
   /**
@@ -59,7 +119,6 @@ export class Agent {
    */
   addTool(tool: ToolFunction): void {
     this.toolRegistry.registerTool(tool);
-    // Add to config tools array
     if (!this.config.tools) {
       this.config.tools = [];
     }
@@ -71,10 +130,9 @@ export class Agent {
    */
   removeTool(toolName: string): void {
     this.toolRegistry.unregisterTool(toolName);
-    // Remove from config tools array
     if (this.config.tools) {
       this.config.tools = this.config.tools.filter(
-        t => t.definition.function.name !== toolName
+        (t) => t.definition.function.name !== toolName
       );
     }
   }
@@ -84,5 +142,113 @@ export class Agent {
    */
   listTools(): string[] {
     return this.toolRegistry.listTools();
+  }
+
+  // ==================== NEW: Control Methods ====================
+
+  /**
+   * Pause execution
+   */
+  pause(reason?: string): void {
+    this.agenticLoop.pause(reason);
+  }
+
+  /**
+   * Resume execution
+   */
+  resume(): void {
+    this.agenticLoop.resume();
+  }
+
+  /**
+   * Cancel execution
+   */
+  cancel(reason?: string): void {
+    this.agenticLoop.cancel(reason);
+  }
+
+  // ==================== NEW: Introspection Methods ====================
+
+  /**
+   * Get current execution context
+   */
+  getContext(): ExecutionContext | null {
+    return this.agenticLoop.getContext();
+  }
+
+  /**
+   * Get execution metrics
+   */
+  getMetrics() {
+    const context = this.agenticLoop.getContext();
+    return context?.metrics || null;
+  }
+
+  /**
+   * Get execution summary
+   */
+  getSummary() {
+    const context = this.agenticLoop.getContext();
+    return context?.getSummary() || null;
+  }
+
+  /**
+   * Get audit trail
+   */
+  getAuditTrail() {
+    const context = this.agenticLoop.getContext();
+    return context?.getAuditTrail() || [];
+  }
+
+  /**
+   * Check if currently running
+   */
+  isRunning(): boolean {
+    return this.agenticLoop.isRunning();
+  }
+
+  /**
+   * Check if paused
+   */
+  isPaused(): boolean {
+    return this.agenticLoop.isPaused();
+  }
+
+  /**
+   * Check if cancelled
+   */
+  isCancelled(): boolean {
+    return this.agenticLoop.isCancelled();
+  }
+
+  // ==================== NEW: Cleanup ====================
+
+  /**
+   * Register cleanup callback
+   */
+  onCleanup(callback: () => void): void {
+    this.cleanupCallbacks.push(callback);
+  }
+
+  /**
+   * Destroy agent and cleanup resources
+   */
+  destroy(): void {
+    // Remove all event listeners
+    this.removeAllListeners();
+
+    // Remove AgenticLoop listeners
+    this.agenticLoop.removeAllListeners();
+
+    // Run custom cleanup callbacks
+    for (const callback of this.cleanupCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        console.error('Cleanup callback error:', error);
+      }
+    }
+
+    this.cleanupCallbacks = [];
   }
 }

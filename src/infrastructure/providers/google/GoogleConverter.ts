@@ -264,9 +264,10 @@ export class GoogleConverter {
    * Extract tool name from tool_use_id (hacky but needed for Google)
    * In practice, we'd need to track this mapping
    */
-  private extractToolName(toolUseId: string): string {
+  private extractToolName(_toolUseId: string): string {
     // This is a limitation - Google needs the function name for responses
     // In a real implementation, we'd track tool call ID → name mapping
-    return 'unknown_tool';
+    // For now, return a placeholder
+    return 'tool_result';
   }
 }

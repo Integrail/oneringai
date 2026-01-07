@@ -42,7 +42,8 @@
     "example:chat": "tsx examples/interactive-chat.ts",
     "example:vision": "tsx examples/vision-image-input.ts",
     "example:providers": "tsx examples/multi-provider-comparison.ts",
-    "example:json-tool": "tsx examples/json-manipulation-tool.ts"
+    "example:json-tool": "tsx examples/json-manipulation-tool.ts",
+    "example:hooks": "tsx examples/agent-with-hooks.ts"
   },
   "keywords": [
     "ai",
@@ -68,6 +69,7 @@
     "@google/genai": "^1.34.0",
     "clipboardy": "^5.0.2",
     "dotenv": "^17.2.3",
+    "eventemitter3": "^5.0.1",
     "openai": "^5.22.0",
     "readline-async": "^0.1.0"
   },

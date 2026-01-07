@@ -246,6 +246,22 @@ src/
 - interactive-chat.ts - Full-featured chat with vision
 - vision-image-input.ts - Vision examples
 - multi-provider-comparison.ts - Compare all providers
+- json-manipulation-tool.ts - Pre-built JSON tool
+- agent-with-hooks.ts - Hooks, events, metrics, audit trail
+
+**Tool Library**:
+- Pre-built tools in `src/tools/`
+- JSON manipulator (delete/add/replace fields)
+- Extensible architecture for new tools
+
+**Hooks & Events System** (NEW):
+- EventEmitter3 for async notifications
+- Hook system for sync/async control
+- Pause/resume/cancel execution
+- ExecutionContext with metrics and audit trail
+- Memory-safe (circular buffers, cleanup)
+- Enterprise features (limits, degradation)
+- 100% backward compatible
 
 ### 🚧 Not Yet Implemented
 

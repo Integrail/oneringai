@@ -104,8 +104,31 @@ export {
 } from './domain/errors/AIErrors.js';
 
 // Capability managers (re-exported from their modules)
-export { AgentManager, Agent, ToolRegistry } from './capabilities/agents/index.js';
-export type { AgentConfig } from './capabilities/agents/index.js';
+export {
+  AgentManager,
+  Agent,
+  ToolRegistry,
+  ExecutionContext,
+  HookManager,
+} from './capabilities/agents/index.js';
+
+export type {
+  AgentConfig,
+  AgenticLoopEvents,
+  AgenticLoopEventName,
+  HookConfig,
+  HookName,
+  Hook,
+  ModifyingHook,
+  BeforeToolContext,
+  AfterToolContext,
+  ApproveToolContext,
+  ToolModification,
+  ApprovalResult,
+  HistoryMode,
+  ExecutionMetrics,
+  AuditEntry,
+} from './capabilities/agents/index.js';
 
 export { TextManager } from './capabilities/text/index.js';
 export type { SimpleTextOptions } from './capabilities/text/index.js';
