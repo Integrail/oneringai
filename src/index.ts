@@ -116,3 +116,6 @@ export { ImageManager } from './capabilities/images/index.js';
 export { MessageBuilder, createTextMessage, createMessageWithImages } from './utils/messageBuilder.js';
 export { readClipboardImage, hasClipboardImage } from './utils/clipboardImage.js';
 export type { ClipboardImageResult } from './utils/clipboardImage.js';
+
+// Pre-built tools
+export * as tools from './tools/index.js';

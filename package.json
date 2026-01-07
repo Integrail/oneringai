@@ -41,7 +41,8 @@
     "example:conversation": "tsx examples/multi-turn-conversation.ts",
     "example:chat": "tsx examples/interactive-chat.ts",
     "example:vision": "tsx examples/vision-image-input.ts",
-    "example:providers": "tsx examples/multi-provider-comparison.ts"
+    "example:providers": "tsx examples/multi-provider-comparison.ts",
+    "example:json-tool": "tsx examples/json-manipulation-tool.ts"
   },
   "keywords": [
     "ai",
