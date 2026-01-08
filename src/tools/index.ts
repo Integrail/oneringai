@@ -9,14 +9,17 @@
  * const agent = client.agents.create({
  *   provider: 'openai',
  *   model: 'gpt-4',
- *   tools: [tools.jsonManipulator]
+ *   tools: [tools.jsonManipulator, tools.webSearch, tools.webFetch]
  * });
  * ```
  */
 
+// JSON tools
 export { jsonManipulator } from './json/jsonManipulator.js';
 
+// Web tools
+export { webFetch, webFetchJS, webSearch } from './web/index.js';
+
 // Future tool exports
-// export { webScraper } from './web/webScraper.js';
 // export { fileReader } from './file/fileReader.js';
 // export { codeExecutor } from './code/codeExecutor.js';

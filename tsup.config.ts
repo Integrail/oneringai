@@ -14,4 +14,7 @@ export default defineConfig({
   treeshake: true,
   target: 'node18',
   outDir: 'dist',
+  external: [
+    'puppeteer', // Optional dependency - don't bundle
+  ],
 });
