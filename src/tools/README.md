@@ -1,44 +1,23 @@
 # Tool Library
 
-Pre-built tools for use with AI agents in `@oneringai/agents`.
+Pre-built tools for AI agents in `@oneringai/agents`.
 
 ## Overview
 
-This library provides production-ready tools that agents can use to perform common tasks. Tools are designed with clear, LLM-friendly descriptions to help agents understand how to use them effectively.
-
-## Usage
-
-```typescript
-import { OneRingAI, tools } from '@oneringai/agents';
-
-const client = new OneRingAI({
-  providers: {
-    openai: { apiKey: process.env.OPENAI_API_KEY }
-  }
-});
-
-const agent = client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4',
-  tools: [tools.jsonManipulator],  // Use pre-built tools
-  instructions: 'You are a helpful assistant with JSON manipulation capabilities.'
-});
-
-const response = await agent.run('Delete the email field from this object: {"name": "John", "email": "j@ex.com"}');
-```
+This library provides production-ready tools that agents can use. All tools are designed with clear, LLM-friendly descriptions.
 
 ## Available Tools
 
-### JSON Manipulator
+### 1. JSON Manipulator
 
-**Name**: `tools.jsonManipulator`
+**Tool**: `tools.jsonManipulator`
 
 **Purpose**: Manipulate JSON objects using dot notation paths
 
 **Operations**:
-1. **delete** - Remove a field
-2. **add** - Add a new field (creates intermediate objects if needed)
-3. **replace** - Change value of existing field
+- `delete` - Remove fields
+- `add` - Add new fields (creates intermediate objects)
+- `replace` - Change existing field values
 
 **Path Format** (Dot Notation):
 - `name` - Top-level field
@@ -46,149 +25,372 @@ const response = await agent.run('Delete the email field from this object: {"nam
 - `users.0.name` - Array element (0 is index)
 - `settings.theme.colors.primary` - Deep nesting
 
-**Examples**:
-
+**Example**:
 ```typescript
-// Delete a field
+import { tools } from '@oneringai/agents';
+
 const agent = client.agents.create({
   tools: [tools.jsonManipulator]
 });
 
-await agent.run(`
-Remove the email from this user:
-${JSON.stringify({ name: 'John', email: 'john@example.com', age: 30 })}
-`);
-// Agent calls: json_manipulate({ operation: 'delete', path: 'email', object: {...} })
-// Result: { name: 'John', age: 30 }
-
-
-// Add nested field
-await agent.run(`
-Add a city field to user.address with value "Paris":
-${JSON.stringify({ user: { name: 'John' } })}
-`);
-// Agent calls: json_manipulate({ operation: 'add', path: 'user.address.city', value: 'Paris', object: {...} })
-// Result: { user: { name: 'John', address: { city: 'Paris' } } }
-
-
-// Replace array element
-await agent.run(`
-Change the first user's name to "Alice":
-${JSON.stringify({ users: [{ name: 'Bob' }, { name: 'Charlie' }] })}
-`);
-// Agent calls: json_manipulate({ operation: 'replace', path: 'users.0.name', value: 'Alice', object: {...} })
-// Result: { users: [{ name: 'Alice' }, { name: 'Charlie' }] }
+await agent.run('Delete the email field from {"name": "John", "email": "j@ex.com"}');
 ```
 
-**Result Format**:
+**See**: `examples/json-manipulation-tool.ts`
+
+---
+
+### 2. Web Fetch
+
+**Tool**: `tools.webFetch`
+
+**Purpose**: Fetch and extract content from web pages
+
+**Features**:
+- Simple HTTP fetch with cheerio parsing
+- Smart content quality detection (0-100 score)
+- Detects JavaScript-rendered sites
+- Detects error pages, paywalls, bot blocks
+- Suggests fallback to `webFetchJS` if needed
+
+**Use For**:
+- Static websites (blogs, documentation)
+- Server-rendered HTML
+- Simple content extraction
+
+**Speed**: ~1 second
+
+**Example**:
 ```typescript
-{
-  success: boolean,
-  result: any | null,        // Modified object if success=true
-  message?: string,          // Success message
-  error?: string             // Error description if success=false
-}
+const agent = client.agents.create({
+  tools: [tools.webFetch]
+});
+
+await agent.run('Fetch content from https://example.com/article');
 ```
 
-## Adding New Tools
+---
 
-### Step 1: Create the Tool
+### 3. Web Fetch JS
 
-Create a new file in an appropriate directory:
+**Tool**: `tools.webFetchJS`
+
+**Purpose**: Fetch content from JavaScript-rendered websites
+
+**Features**:
+- Uses Puppeteer (headless Chrome)
+- Executes JavaScript and waits for content
+- Handles React, Vue, Angular, Next.js sites
+- Optional screenshot capture
+
+**Use For**:
+- Single Page Applications (SPAs)
+- JavaScript-heavy sites
+- When `webFetch` returns low quality score
+
+**Speed**: ~3-10 seconds
+
+**Requires**: `npm install puppeteer` (optional)
+
+**Example**:
+```typescript
+const agent = client.agents.create({
+  tools: [tools.webFetch, tools.webFetchJS]
+});
+
+await agent.run('Get content from https://react-app.com (use JS rendering if needed)');
+```
+
+---
+
+### 4. Web Search
+
+**Tool**: `tools.webSearch`
+
+**Purpose**: Search the web using multiple providers
+
+**Providers**:
+- **Serper.dev** (default) - Google results, 2,500 free queries
+- **Brave** - Independent index, privacy-focused
+- **Tavily** - AI-optimized results
+
+**Returns**: URLs, titles, snippets
+
+**Requires**: API key for chosen provider (set in `.env`)
+
+**Example**:
+```typescript
+const agent = client.agents.create({
+  tools: [tools.webSearch, tools.webFetch]
+});
+
+await agent.run('Search for TypeScript documentation and summarize it');
+// Agent will search, get URLs, fetch content, then summarize
+```
+
+**Setup**:
+```bash
+# Add to .env (choose one or more)
+SERPER_API_KEY=your-key-here
+BRAVE_API_KEY=your-key-here
+TAVILY_API_KEY=your-key-here
+```
+
+---
+
+### 5. Execute JavaScript
+
+**Tool**: `tools.executeJavaScript`
+
+**Purpose**: Execute arbitrary JavaScript code in a secure sandbox
+
+**Features**:
+- Sandboxed VM execution (Node.js vm module)
+- Access to `authenticatedFetch` (OAuth integration!)
+- Access to OAuth registry info
+- Console output captured
+- 10-second timeout (configurable)
+- No file system / process access
+
+**Use For**:
+- Complex data processing
+- Multi-API integration
+- Custom logic beyond pre-built tools
+
+**Context Provided**:
+- `input` - Input data
+- `output` - Result variable (set this!)
+- `authenticatedFetch(url, options, provider)` - OAuth-authenticated HTTP
+- `fetch(url, options)` - Standard HTTP
+- `oauth.listProviders()` - List registered providers
+- `console.log/error/warn` - Logging
+- Standard globals: Buffer, JSON, Math, Date, etc.
+
+**Example**:
+```typescript
+import { tools, oauthRegistry } from '@oneringai/agents';
+
+// Register OAuth providers first
+oauthRegistry.register('microsoft', { ... });
+oauthRegistry.register('github', { ... });
+
+const agent = client.agents.create({
+  tools: [tools.executeJavaScript]
+});
+
+await agent.run(`
+Get users from Microsoft Graph and repos from GitHub.
+Combine into a summary JSON.
+`);
+
+// Agent generates and executes JavaScript:
+/*
+(async () => {
+  const users = await authenticatedFetch(
+    'https://graph.microsoft.com/v1.0/users?$top=5',
+    { method: 'GET' },
+    'microsoft'
+  );
+  const repos = await authenticatedFetch(
+    'https://api.github.com/user/repos',
+    { method: 'GET' },
+    'github'
+  );
+
+  output = {
+    users: (await users.json()).value.length,
+    repos: (await repos.json()).length
+  };
+})();
+*/
+```
+
+**Security**: Uses Node.js vm module (sandboxed but not fully isolated)
+
+---
+
+## Tool Combinations
+
+Tools work great together:
+
+### Research Workflow
+```typescript
+const agent = client.agents.create({
+  tools: [
+    tools.webSearch,      // Find URLs
+    tools.webFetch,       // Get content
+    tools.jsonManipulator // Structure findings
+  ]
+});
+```
+
+### Multi-API Integration
+```typescript
+const agent = client.agents.create({
+  tools: [
+    tools.executeJavaScript,  // Execute custom logic with OAuth
+    tools.jsonManipulator     // Process results
+  ]
+});
+```
+
+### Complete Web Agent
+```typescript
+const agent = client.agents.create({
+  tools: [
+    tools.webSearch,
+    tools.webFetch,
+    tools.webFetchJS,
+    tools.executeJavaScript,
+    tools.jsonManipulator
+  ]
+});
+```
+
+---
+
+## Tool Reference
+
+| Tool | Purpose | Speed | OAuth | Dependencies |
+|------|---------|-------|-------|--------------|
+| `jsonManipulator` | Manipulate JSON | Instant | No | None |
+| `webFetch` | Fetch static sites | ~1s | No | cheerio |
+| `webFetchJS` | Fetch JS sites | ~3-10s | No | puppeteer (optional) |
+| `webSearch` | Search the web | ~1-3s | No | API key required |
+| `executeJavaScript` | Run JS code | Variable | **Yes** | vm (built-in) |
+
+---
+
+## Security Notes
+
+### webFetch / webFetchJS
+- Fetches external content
+- May be blocked by bot protection
+- Rate limits apply
+
+### executeJavaScript
+- ⚠️ **Use with caution** - Executes code
+- Sandboxed (no file/process access)
+- 10-second timeout
+- Safe for LLM-generated code in controlled environments
+- For untrusted environments, consider `isolated-vm`
+
+---
+
+## Adding Custom Tools
+
+### Step 1: Create Tool
 
 ```typescript
-// src/tools/web/webScraper.ts
+// src/tools/myCategory/myTool.ts
 
 import { ToolFunction } from '../../domain/entities/Tool.js';
 
-export const webScraper: ToolFunction = {
+export const myTool: ToolFunction = {
   definition: {
     type: 'function',
     function: {
-      name: 'web_scrape',
-      description: 'Scrape content from a web page...',
+      name: 'my_tool',
+      description: 'Clear description for the AI',
       parameters: {
         type: 'object',
         properties: {
-          url: { type: 'string', description: 'URL to scrape' }
+          param1: { type: 'string', description: '...' }
         },
-        required: ['url']
+        required: ['param1']
       }
     }
   },
   execute: async (args) => {
-    // Implementation
-    return { content: '...' };
+    // Your implementation
+    return { success: true, result: '...' };
   }
 };
 ```
 
-### Step 2: Export from `src/tools/index.ts`
+### Step 2: Export
 
 ```typescript
-export { jsonManipulator } from './json/jsonManipulator.js';
-export { webScraper } from './web/webScraper.js';  // Add your tool
+// src/tools/index.ts
+
+export { myTool } from './myCategory/myTool.js';
 ```
 
-### Step 3: Document and Test
+### Step 3: Use
 
-- Add usage examples
-- Write unit tests
-- Update this README
+```typescript
+import { tools } from '@oneringai/agents';
 
-## Best Practices for Tool Design
+const agent = client.agents.create({
+  tools: [tools.myTool]
+});
+```
+
+---
+
+## Best Practices
 
 ### 1. Clear Descriptions
 
 Write descriptions that explain:
 - What the tool does
 - How to use it (with examples)
-- Parameter formats and requirements
-- Return value format
+- What it returns
+- Any limitations
 
-### 2. Error Handling
+### 2. Structured Results
 
-Always return structured results:
+Return consistent result format:
 ```typescript
 {
   success: boolean,
   result: any,
-  message?: string,
   error?: string
 }
 ```
 
-### 3. Validation
+### 3. Error Handling
 
-Validate inputs and provide helpful error messages:
+Always handle errors gracefully:
 ```typescript
-if (!args.url) {
-  return { success: false, error: 'URL is required' };
-}
-
-if (!args.url.startsWith('http')) {
-  return { success: false, error: 'URL must start with http:// or https://' };
+try {
+  const result = await doSomething();
+  return { success: true, result };
+} catch (error) {
+  return { success: false, error: (error as Error).message };
 }
 ```
 
-### 4. Examples in Description
+### 4. Include Examples
 
-Include concrete examples in the tool description to help the LLM understand usage.
+Add concrete examples in tool descriptions to help LLMs understand usage patterns.
+
+---
+
+## Examples
+
+**Run tool examples**:
+```bash
+npm run example:json-tool     # JSON manipulation
+npm run example:web           # Web research
+npm run example:oauth-static  # OAuth + code execution
+```
+
+---
 
 ## Tool Categories
 
-Potential tool categories to organize:
+Organize tools by category:
 
 - **json/** - JSON manipulation
-- **web/** - Web scraping, HTTP requests
-- **file/** - File operations
-- **code/** - Code execution, analysis
-- **data/** - Data transformation, validation
-- **text/** - Text processing, parsing
-- **image/** - Image processing (resize, convert)
+- **web/** - Web scraping, HTTP, search
+- **code/** - Code execution
+- **file/** - File operations (future)
+- **data/** - Data transformation (future)
+- **image/** - Image processing (future)
 
-## See Also
+---
 
-- **Main README**: Usage guide for the library
-- **Examples**: `examples/json-manipulation-tool.ts`
-- **API Reference**: Tool types in `src/domain/entities/Tool.ts`
+**Version**: 0.2.0
+**Total Tools**: 5 (JSON, Web Fetch, Web Fetch JS, Web Search, Execute JavaScript)
+**All tools**: Type-safe, well-documented, production-ready

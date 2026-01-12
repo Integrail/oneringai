@@ -20,6 +20,8 @@ export { jsonManipulator } from './json/jsonManipulator.js';
 // Web tools
 export { webFetch, webFetchJS, webSearch } from './web/index.js';
 
+// Code execution tools
+export { executeJavaScript } from './code/index.js';
+
 // Future tool exports
 // export { fileReader } from './file/fileReader.js';
-// export { codeExecutor } from './code/codeExecutor.js';

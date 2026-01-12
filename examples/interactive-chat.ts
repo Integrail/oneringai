@@ -35,6 +35,7 @@ import {
   oauthRegistry,
   authenticatedFetch,
   ToolFunction,
+  tools,
 } from '../src/index.js';
 import { readClipboardImage } from '../src/utils/clipboardImage.js';
 
@@ -274,6 +275,15 @@ async function main() {
             name: 'microsoft_graph',
             description: `Access Microsoft Graph API to read organization data.
 
+WHEN TO USE:
+- Simple, single Microsoft Graph API calls
+- User asks about Microsoft data directly (not code execution)
+
+WHEN NOT TO USE:
+- User explicitly says "run code" or "execute code" → Use execute_javascript instead!
+- Need to process/transform data → Use execute_javascript instead!
+- Need to call multiple APIs → Use execute_javascript instead!
+
 Can access:
 - Users (/v1.0/users) - List all users
 - Mail (/v1.0/users/{id}/messages) - Read mailboxes
@@ -339,9 +349,13 @@ Example endpoints:
   console.log(`Model: ${selectedProvider.model}`);
   console.log(`Vision: ${selectedProvider.hasVision ? '✅ Enabled' : '❌ Not available'}`);
 
-  // Show Microsoft Graph status
+  // Show capabilities
   if (microsoftTool) {
     console.log(`Microsoft Graph: ✅ Available (access M365 data)`);
+  }
+  console.log(`Code Execution: ✅ Available (run JavaScript)`);
+  if (oauthRegistry.listProviderNames().length > 0) {
+    console.log(`OAuth Providers: ${oauthRegistry.listProviderNames().join(', ')}`);
   }
 
   console.log('');
@@ -353,8 +367,9 @@ Example endpoints:
   console.log('  /provider - Show current provider info');
   console.log('  /images   - Show attached images');
   if (microsoftTool) {
-    console.log('  /msgraph  - Show Microsoft Graph info');
+    console.log('  /msgraph  - Microsoft Graph info');
   }
+  console.log('  /tools    - Show available tools');
   console.log('  Ctrl+V    - Paste image directly');
   console.log('  Ctrl+C    - Exit');
   console.log('');
@@ -369,6 +384,49 @@ Example endpoints:
 
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('');
+
+  // ========== Create agent once (not per message!) ==========
+  const agentTools: ToolFunction[] = [];
+
+  if (microsoftTool) {
+    agentTools.push(microsoftTool);
+  }
+
+  agentTools.push(tools.executeJavaScript);
+
+  let instructions = 'You are a helpful, friendly, and knowledgeable AI assistant';
+
+  if (microsoftTool) {
+    instructions += ' with access to Microsoft Graph API';
+  }
+
+  instructions += ' and JavaScript code execution capabilities';
+  instructions += '. Be conversational, concise, and engaging. Use a warm tone. When analyzing images, be detailed and helpful.';
+
+  if (microsoftTool) {
+    instructions += '\n\nYou can access Microsoft 365 data using the microsoft_graph tool.';
+  }
+
+  instructions += '\n\nYou can execute JavaScript code using the execute_javascript tool when:';
+  instructions += '\n- User explicitly asks to "run code" or "execute JavaScript"';
+  instructions += '\n- Need to process data from multiple API calls';
+  instructions += '\n- Need complex data transformations';
+  instructions += '\n\nIn execute_javascript, you have:';
+  instructions += '\n- authenticatedFetch(url, options, provider) for OAuth-authenticated API calls';
+  instructions += `\n- Available OAuth providers: ${oauthRegistry.listProviderNames().join(', ') || 'none (register providers first)'}`;
+  instructions += '\n- Standard JavaScript globals (JSON, Math, Date, etc.)';
+  instructions += '\n- Console output (console.log)';
+  instructions += '\n\nIMPORTANT: When user says "run code" or "execute code", you MUST use the execute_javascript tool, not describe what code would do.';
+
+  // Create agent ONCE
+  const agent = client.agents.create({
+    provider: selectedProvider.name,
+    model: selectedProvider.model,
+    tools: agentTools,
+    instructions,
+    temperature: 0.7,
+    maxIterations: 10,
+  });
 
   // Enable raw mode for keypress detection
   if (process.stdin.isTTY) {
@@ -449,30 +507,8 @@ Example endpoints:
       process.stdout.write('🤖 Assistant: ');
       const thinkingInterval = startThinkingAnimation();
 
-      // Prepare tools array
-      const agentTools = microsoftTool ? [microsoftTool] : [];
-
-      // Create agent with tools (if we have Microsoft Graph)
-      const agent = client.agents.create({
-        provider: selectedProvider.name,
-        model: selectedProvider.model,
-        tools: agentTools,
-        instructions: `You are a helpful, friendly, and knowledgeable AI assistant${microsoftTool ? ' with access to Microsoft Graph API' : ''}. Be conversational, concise, and engaging. Use a warm tone. When analyzing images, be detailed and helpful.${microsoftTool ? '\n\nYou can access Microsoft 365 data using the microsoft_graph tool. Use it when users ask about their emails, calendar, files, or organization users.' : ''}`,
-        temperature: 0.7,
-        maxIterations: 10,
-      });
-
-      // Generate response with tools
-      const response = agentTools.length > 0
-        ? await agent.run(messages)
-        : await client.text.generateRaw(messages, {
-            provider: selectedProvider.name,
-            model: selectedProvider.model,
-            instructions:
-              'You are a helpful, friendly, and knowledgeable AI assistant. Be conversational, concise, and engaging. Use a warm tone. When analyzing images, be detailed and helpful.',
-            temperature: 0.7,
-            max_output_tokens: 500,
-          });
+      // Use the pre-created agent (with tools)
+      const response = await agent.run(messages);
 
       stopThinkingAnimation(thinkingInterval);
 
@@ -648,6 +684,10 @@ async function handleCommand(command: string) {
       showMicrosoftGraphInfo();
       break;
 
+    case '/tools':
+      showAvailableTools();
+      break;
+
     case '/paste':
       await handleTextPaste();
       break;
@@ -735,6 +775,37 @@ function showMicrosoftGraphInfo() {
   console.log('    "How many users are in my organization?"');
   console.log('    "List the first 5 users"');
   console.log('    "Show me user details"');
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+}
+
+/**
+ * Show available tools
+ */
+function showAvailableTools() {
+  console.log('\n🛠️  Available Tools\n');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+  console.log('1. execute_javascript');
+  console.log('   • Execute JavaScript code in sandbox');
+  console.log('   • Access to authenticatedFetch');
+  console.log(`   • OAuth providers: ${oauthRegistry.listProviderNames().join(', ') || 'none'}`);
+  console.log('   • Use for: Complex logic, multi-API calls, data processing');
+  console.log('');
+
+  if (oauthRegistry.has('microsoft')) {
+    console.log('2. microsoft_graph');
+    console.log('   • Access Microsoft 365 APIs');
+    console.log('   • Endpoints: /v1.0/users, /v1.0/me/messages, etc.');
+    console.log('   • Use for: M365 data (users, mail, files, calendar)');
+    console.log('');
+  }
+
+  console.log('Example queries:');
+  console.log('  "Execute JavaScript to calculate the Fibonacci sequence"');
+  console.log('  "Run code to fetch and process API data"');
+  if (oauthRegistry.has('microsoft')) {
+    console.log('  "How many users are in my org?" (uses microsoft_graph)');
+  }
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 }
 
@@ -872,6 +943,7 @@ function showHelp() {
   if (oauthRegistry.has('microsoft')) {
     console.log('  /msgraph          - Microsoft Graph info');
   }
+  console.log('  /tools            - Show available tools');
   console.log('  Ctrl+V            - Paste image from clipboard');
   console.log('  Ctrl+C            - Exit\n');
 
