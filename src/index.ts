@@ -45,6 +45,37 @@ export type {
   AgentResponse,
 } from './domain/entities/Response.js';
 
+// Streaming
+export { StreamEventType } from './domain/entities/StreamEvent.js';
+export type {
+  StreamEvent,
+  ResponseCreatedEvent,
+  ResponseInProgressEvent,
+  OutputTextDeltaEvent,
+  OutputTextDoneEvent,
+  ToolCallStartEvent,
+  ToolCallArgumentsDeltaEvent,
+  ToolCallArgumentsDoneEvent,
+  ToolExecutionStartEvent,
+  ToolExecutionDoneEvent,
+  IterationCompleteEvent,
+  ResponseCompleteEvent,
+  ErrorEvent,
+} from './domain/entities/StreamEvent.js';
+export {
+  isStreamEvent,
+  isOutputTextDelta,
+  isToolCallArgumentsDelta,
+  isToolCallArgumentsDone,
+  isResponseComplete,
+  isErrorEvent,
+} from './domain/entities/StreamEvent.js';
+
+export { StreamState } from './domain/entities/StreamState.js';
+export type { ToolCallBuffer } from './domain/entities/StreamState.js';
+
+export { StreamHelpers } from './capabilities/agents/StreamHelpers.js';
+
 // Domain interfaces
 export type {
   IProvider,

@@ -13,6 +13,7 @@ import { AgenticLoop, AgenticLoopConfig } from './AgenticLoop.js';
 import { ExecutionContext, HistoryMode } from './ExecutionContext.js';
 import { HookConfig } from './types/HookTypes.js';
 import { AgenticLoopEvents } from './types/EventTypes.js';
+import { StreamEvent } from '../../domain/entities/StreamEvent.js';
 
 export interface AgentConfig {
   provider: string;
@@ -112,6 +113,32 @@ export class Agent extends EventEmitter<AgenticLoopEvents> {
     };
 
     return this.agenticLoop.execute(loopConfig);
+  }
+
+  /**
+   * Stream response from the agent with real-time events
+   * Returns an async iterator of streaming events
+   * Supports full agentic loop with tool calling
+   */
+  async *stream(input: string | InputItem[]): AsyncIterableIterator<StreamEvent> {
+    // Get tool definitions for the LLM
+    const tools = this.config.tools?.map((t) => t.definition) || [];
+
+    const loopConfig: AgenticLoopConfig = {
+      model: this.config.model,
+      input,
+      instructions: this.config.instructions,
+      tools,
+      temperature: this.config.temperature,
+      maxIterations: this.config.maxIterations || 10,
+      hooks: this.config.hooks,
+      historyMode: this.config.historyMode,
+      limits: this.config.limits,
+      errorHandling: this.config.errorHandling,
+    };
+
+    // Stream from agentic loop with full tool support
+    yield* this.agenticLoop.executeStreaming(loopConfig);
   }
 
   /**

@@ -15,6 +15,8 @@ import { ExecutionContext, HistoryMode } from './ExecutionContext.js';
 import { HookManager } from './HookManager.js';
 import { HookConfig } from './types/HookTypes.js';
 import { AgenticLoopEvents } from './types/EventTypes.js';
+import { StreamEvent, StreamEventType, isToolCallArgumentsDone } from '../../domain/entities/StreamEvent.js';
+import { StreamState } from '../../domain/entities/StreamState.js';
 
 export interface AgenticLoopConfig {
   model: string;
@@ -257,6 +259,532 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     } finally {
       // Always cleanup resources
       this.context?.cleanup();
+    }
+  }
+
+  /**
+   * Execute agentic loop with streaming and tool calling
+   */
+  async *executeStreaming(config: AgenticLoopConfig): AsyncIterableIterator<StreamEvent> {
+    // Generate execution ID
+    const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Create execution context
+    this.context = new ExecutionContext(executionId, {
+      maxHistorySize: 10,
+      historyMode: config.historyMode || 'summary',
+      maxAuditTrailSize: 1000,
+    });
+
+    // Reset state
+    this.paused = false;
+    this.cancelled = false;
+    this.pausePromise = null;
+    this.resumeCallback = null;
+
+    const startTime = Date.now();
+    let iteration = 0;
+    let currentInput: string | InputItem[] = config.input;
+
+    // Create a single StreamState for the entire execution (tracks usage across iterations)
+    const globalStreamState = new StreamState(executionId, config.model);
+
+    try {
+      // Emit execution start event
+      this.emit('execution:start', {
+        executionId,
+        model: config.model,
+        timestamp: new Date(),
+      });
+
+      // Execute before:execution hook
+      await this.hookManager.executeHooks('before:execution', {
+        executionId,
+        config,
+        timestamp: new Date(),
+      }, undefined as any);
+
+      // Main agentic loop
+      while (iteration < config.maxIterations) {
+        iteration++;
+
+        // Check pause state
+        await this.checkPause();
+
+        // Check if cancelled
+        if (this.cancelled) {
+          this.emit('execution:cancelled', { executionId, iteration, timestamp: new Date() });
+          break;
+        }
+
+        // Check resource limits
+        if (this.context) {
+          this.context.checkLimits(config.limits);
+        }
+
+        // Execute pause:check hook (allows dynamic pause decisions)
+        const pauseCheck = await this.hookManager.executeHooks('pause:check', {
+          executionId,
+          iteration,
+          context: this.context!,
+          timestamp: new Date(),
+        }, { shouldPause: false });
+
+        if (pauseCheck.shouldPause) {
+          this.pause();
+        }
+
+        // Emit iteration start
+        this.emit('iteration:start', {
+          executionId,
+          iteration,
+          timestamp: new Date(),
+        });
+
+        // Stream LLM response and accumulate state (per-iteration state)
+        const iterationStreamState = new StreamState(executionId, config.model);
+        const toolCallsMap = new Map<string, { name: string; args: string }>();
+
+        // Stream from provider with hooks
+        yield* this.streamGenerateWithHooks(config, currentInput, iteration, executionId, iterationStreamState, toolCallsMap);
+
+        // Accumulate usage from this iteration into global state
+        globalStreamState.accumulateUsage(iterationStreamState.usage);
+
+        // Check if any tool calls were detected
+        const toolCalls: ToolCall[] = [];
+        for (const [toolCallId, buffer] of toolCallsMap) {
+          toolCalls.push({
+            id: toolCallId,
+            type: 'function',
+            function: {
+              name: buffer.name,
+              arguments: buffer.args,
+            },
+            blocking: true,
+            state: ToolCallState.PENDING,
+          });
+        }
+
+        // No tool calls? We're done
+        if (toolCalls.length === 0) {
+          // Yield iteration complete
+          yield {
+            type: StreamEventType.ITERATION_COMPLETE,
+            response_id: executionId,
+            iteration,
+            tool_calls_count: 0,
+            has_more_iterations: false,
+          };
+
+          // Final response complete with accumulated usage from all iterations
+          yield {
+            type: StreamEventType.RESPONSE_COMPLETE,
+            response_id: executionId,
+            status: 'completed',
+            usage: globalStreamState.usage,
+            iterations: iteration,
+            duration_ms: Date.now() - startTime,
+          };
+
+          break;
+        }
+
+        // Execute tools and yield execution events
+        const toolResults: ToolResult[] = [];
+
+        for (const toolCall of toolCalls) {
+          // Parse and validate arguments
+          let parsedArgs: any;
+          try {
+            parsedArgs = JSON.parse(toolCall.function.arguments);
+          } catch (error) {
+            // Invalid JSON - skip this tool
+            yield {
+              type: StreamEventType.TOOL_EXECUTION_DONE,
+              response_id: executionId,
+              tool_call_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              result: null,
+              execution_time_ms: 0,
+              error: `Invalid tool arguments JSON: ${(error as Error).message}`,
+            };
+            continue;
+          }
+
+          // Emit tool execution start
+          yield {
+            type: StreamEventType.TOOL_EXECUTION_START,
+            response_id: executionId,
+            tool_call_id: toolCall.id,
+            tool_name: toolCall.function.name,
+            arguments: parsedArgs,
+          };
+
+          const toolStartTime = Date.now();
+
+          try {
+            // Execute tool with hooks
+            const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
+            toolResults.push(result);
+
+            // Emit tool execution done
+            yield {
+              type: StreamEventType.TOOL_EXECUTION_DONE,
+              response_id: executionId,
+              tool_call_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              result: result.content,
+              execution_time_ms: Date.now() - toolStartTime,
+            };
+          } catch (error) {
+            // Emit tool execution error
+            yield {
+              type: StreamEventType.TOOL_EXECUTION_DONE,
+              response_id: executionId,
+              tool_call_id: toolCall.id,
+              tool_name: toolCall.function.name,
+              result: null,
+              execution_time_ms: Date.now() - toolStartTime,
+              error: (error as Error).message,
+            };
+
+            throw error; // Re-throw to stop execution
+          }
+        }
+
+        // Build next input with tool results
+        const assistantMessage: InputItem = {
+          type: 'message',
+          role: MessageRole.ASSISTANT,
+          content: [
+            {
+              type: ContentType.OUTPUT_TEXT,
+              text: iterationStreamState.getAllText(),
+            },
+            ...toolCalls.map((tc) => ({
+              type: ContentType.TOOL_USE as const,
+              id: tc.id,
+              name: tc.function.name,
+              arguments: tc.function.arguments,
+            })),
+          ],
+        };
+
+        const toolResultsMessage: InputItem = {
+          type: 'message',
+          role: MessageRole.USER,
+          content: toolResults.map((tr) => ({
+            type: ContentType.TOOL_RESULT as const,
+            tool_use_id: tr.tool_use_id,
+            content: tr.content,
+            error: tr.error,
+          })),
+        };
+
+        // Update current input for next iteration
+        if (Array.isArray(currentInput)) {
+          currentInput = [...currentInput, assistantMessage, toolResultsMessage];
+        } else {
+          currentInput = [
+            {
+              type: 'message' as const,
+              role: MessageRole.USER,
+              content: [{ type: ContentType.INPUT_TEXT, text: currentInput }],
+            },
+            assistantMessage,
+            toolResultsMessage,
+          ];
+        }
+
+        // Yield iteration complete
+        yield {
+          type: StreamEventType.ITERATION_COMPLETE,
+          response_id: executionId,
+          iteration,
+          tool_calls_count: toolCalls.length,
+          has_more_iterations: true,
+        };
+
+        // Store iteration in context
+        if (this.context) {
+          globalStreamState.incrementIteration();
+        }
+      }
+
+      // If loop ended due to max iterations (not early break), emit final completion
+      if (iteration >= config.maxIterations) {
+        yield {
+          type: StreamEventType.RESPONSE_COMPLETE,
+          response_id: executionId,
+          status: 'incomplete', // Incomplete because we hit max iterations
+          usage: globalStreamState.usage,
+          iterations: iteration,
+          duration_ms: Date.now() - startTime,
+        };
+      }
+
+      // Execute after:execution hook
+      await this.hookManager.executeHooks('after:execution', {
+        executionId,
+        response: null as any, // We don't have a complete response in streaming
+        context: this.context,
+        timestamp: new Date(),
+        duration: Date.now() - startTime,
+      }, undefined as any);
+
+      // Emit execution complete
+      this.emit('execution:complete', {
+        executionId,
+        iterations: iteration,
+        duration: Date.now() - startTime,
+        timestamp: new Date(),
+      });
+    } catch (error) {
+      // Emit execution error
+      this.emit('execution:error', {
+        executionId,
+        error: error as Error,
+        timestamp: new Date(),
+      });
+
+      // Yield error event
+      yield {
+        type: StreamEventType.ERROR,
+        response_id: executionId,
+        error: {
+          type: 'execution_error',
+          message: (error as Error).message,
+        },
+        recoverable: false,
+      };
+
+      throw error;
+    } finally {
+      // Always cleanup resources
+      this.context?.cleanup();
+    }
+  }
+
+  /**
+   * Stream LLM response with hooks
+   * @private
+   */
+  private async *streamGenerateWithHooks(
+    config: AgenticLoopConfig,
+    input: string | InputItem[],
+    iteration: number,
+    executionId: string,
+    streamState: StreamState,
+    toolCallsMap: Map<string, { name: string; args: string }>
+  ): AsyncIterableIterator<StreamEvent> {
+    const llmStartTime = Date.now();
+
+    // Prepare options
+    let generateOptions: TextGenerateOptions = {
+      model: config.model,
+      input,
+      instructions: config.instructions,
+      tools: config.tools,
+      tool_choice: 'auto',
+      temperature: config.temperature,
+    };
+
+    // Execute before:llm hook
+    await this.hookManager.executeHooks('before:llm', {
+      executionId,
+      iteration,
+      options: generateOptions,
+      context: this.context!,
+      timestamp: new Date(),
+    }, {});
+
+    // Emit LLM request event
+    this.emit('llm:request', {
+      executionId,
+      iteration,
+      model: config.model,
+      timestamp: new Date(),
+    });
+
+    try {
+      // Stream from provider
+      for await (const event of this.provider.streamGenerate(generateOptions)) {
+        // Update stream state based on event
+        if (event.type === StreamEventType.OUTPUT_TEXT_DELTA) {
+          streamState.accumulateTextDelta(event.item_id, event.delta);
+        } else if (event.type === StreamEventType.TOOL_CALL_START) {
+          streamState.startToolCall(event.tool_call_id, event.tool_name);
+          toolCallsMap.set(event.tool_call_id, { name: event.tool_name, args: '' });
+        } else if (event.type === StreamEventType.TOOL_CALL_ARGUMENTS_DELTA) {
+          streamState.accumulateToolArguments(event.tool_call_id, event.delta);
+          const buffer = toolCallsMap.get(event.tool_call_id);
+          if (buffer) {
+            buffer.args += event.delta;
+          }
+        } else if (isToolCallArgumentsDone(event)) {
+          streamState.completeToolCall(event.tool_call_id);
+          const buffer = toolCallsMap.get(event.tool_call_id);
+          if (buffer) {
+            buffer.args = event.arguments;
+          }
+        } else if (event.type === StreamEventType.RESPONSE_COMPLETE) {
+          streamState.updateUsage(event.usage);
+          // Don't yield provider's RESPONSE_COMPLETE - we'll emit our own at the end
+          continue;
+        }
+
+        // Yield event to caller (except RESPONSE_COMPLETE which we handle ourselves)
+        yield event;
+      }
+
+      // Update metrics
+      if (this.context) {
+        this.context.metrics.llmDuration += Date.now() - llmStartTime;
+        this.context.metrics.inputTokens += streamState.usage.input_tokens;
+        this.context.metrics.outputTokens += streamState.usage.output_tokens;
+        this.context.metrics.totalTokens += streamState.usage.total_tokens;
+      }
+
+      // Execute after:llm hook
+      await this.hookManager.executeHooks('after:llm', {
+        executionId,
+        iteration,
+        response: null as any, // Streaming doesn't have complete response yet
+        context: this.context!,
+        timestamp: new Date(),
+        duration: Date.now() - llmStartTime,
+      }, {});
+
+      // Emit LLM response event
+      this.emit('llm:response', {
+        executionId,
+        iteration,
+        timestamp: new Date(),
+      });
+    } catch (error) {
+      this.emit('llm:error', {
+        executionId,
+        iteration,
+        error: error as Error,
+        timestamp: new Date(),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Execute single tool with hooks
+   * @private
+   */
+  private async executeToolWithHooks(
+    toolCall: ToolCall,
+    iteration: number,
+    executionId: string
+  ): Promise<ToolResult> {
+    const toolStartTime = Date.now();
+
+    toolCall.state = ToolCallState.EXECUTING;
+    toolCall.startTime = new Date();
+
+    // Execute before:tool hook
+    await this.hookManager.executeHooks('before:tool', {
+      executionId,
+      iteration,
+      toolCall,
+      context: this.context!,
+      timestamp: new Date(),
+    }, {});
+
+    // Execute approve:tool hook if registered
+    if (this.hookManager.hasHooks('approve:tool')) {
+      const approval = await this.hookManager.executeHooks('approve:tool', {
+        executionId,
+        iteration,
+        toolCall,
+        context: this.context!,
+        timestamp: new Date(),
+      }, { approved: true });
+
+      if (!approval.approved) {
+        throw new Error(`Tool execution rejected: ${approval.reason || 'No reason provided'}`);
+      }
+    }
+
+    // Emit tool start
+    this.emit('tool:start', {
+      executionId,
+      iteration,
+      toolCall,
+      timestamp: new Date(),
+    });
+
+    try {
+      // Execute tool with timeout
+      const args = JSON.parse(toolCall.function.arguments);
+      const result = await this.executeWithTimeout(
+        () => this.toolExecutor.execute(toolCall.function.name, args),
+        30000 // 30 seconds timeout
+      );
+
+      // Create tool result
+      const toolResult: ToolResult = {
+        tool_use_id: toolCall.id,
+        content: result,
+        executionTime: Date.now() - toolStartTime,
+        state: ToolCallState.COMPLETED,
+      };
+
+      toolCall.state = ToolCallState.COMPLETED;
+      toolCall.endTime = new Date();
+
+      // Execute after:tool hook
+      await this.hookManager.executeHooks('after:tool', {
+        executionId,
+        iteration,
+        toolCall,
+        result: toolResult,
+        context: this.context!,
+        timestamp: new Date(),
+      }, {});
+
+      // Update metrics
+      if (this.context) {
+        this.context.metrics.toolCallCount++;
+        this.context.metrics.toolSuccessCount++;
+        this.context.metrics.toolDuration += toolResult.executionTime || 0;
+      }
+
+      // Emit tool complete
+      this.emit('tool:complete', {
+        executionId,
+        iteration,
+        toolCall,
+        result: toolResult,
+        timestamp: new Date(),
+      });
+
+      return toolResult;
+    } catch (error) {
+      toolCall.state = ToolCallState.FAILED;
+      toolCall.endTime = new Date();
+      toolCall.error = (error as Error).message;
+
+      // Update metrics
+      if (this.context) {
+        this.context.metrics.toolFailureCount++;
+      }
+
+      // Emit tool error
+      this.emit('tool:error', {
+        executionId,
+        iteration,
+        toolCall,
+        error: error as Error,
+        timestamp: new Date(),
+      });
+
+      throw error;
     }
   }
 

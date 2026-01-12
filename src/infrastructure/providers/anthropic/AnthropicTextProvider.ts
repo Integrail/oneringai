@@ -14,6 +14,8 @@ import {
   ProviderContextLengthError,
 } from '../../../domain/errors/AIErrors.js';
 import { AnthropicConverter } from './AnthropicConverter.js';
+import { AnthropicStreamConverter } from './AnthropicStreamConverter.js';
+import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
 
 export class AnthropicTextProvider extends BaseTextProvider {
   readonly name = 'anthropic';
@@ -56,6 +58,29 @@ export class AnthropicTextProvider extends BaseTextProvider {
     } catch (error: any) {
       this.handleError(error);
       throw error; // TypeScript needs this
+    }
+  }
+
+  /**
+   * Stream response using Anthropic Messages API
+   */
+  async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
+    try {
+      // Convert our format → Anthropic Messages API format
+      const anthropicRequest = this.converter.convertRequest(options);
+
+      // Create stream
+      const stream = await this.client.messages.create({
+        ...anthropicRequest,
+        stream: true,
+      });
+
+      // Convert Anthropic events → our StreamEvent format
+      const streamConverter = new AnthropicStreamConverter();
+      yield* streamConverter.convertStream(stream, options.model);
+    } catch (error: any) {
+      this.handleError(error);
+      throw error;
     }
   }
 

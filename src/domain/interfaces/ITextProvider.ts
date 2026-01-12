@@ -6,6 +6,7 @@ import { IProvider } from './IProvider.js';
 import { LLMResponse } from '../entities/Response.js';
 import { InputItem } from '../entities/Message.js';
 import { Tool } from '../entities/Tool.js';
+import { StreamEvent } from '../entities/StreamEvent.js';
 
 export interface TextGenerateOptions {
   model: string;
@@ -39,6 +40,12 @@ export interface ITextProvider extends IProvider {
    * Generate text response
    */
   generate(options: TextGenerateOptions): Promise<LLMResponse>;
+
+  /**
+   * Stream text response with real-time events
+   * Returns an async iterator of streaming events
+   */
+  streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent>;
 
   /**
    * Get model capabilities

@@ -16,6 +16,8 @@ import {
   InvalidConfigError,
 } from '../../../domain/errors/AIErrors.js';
 import { GoogleConverter } from '../google/GoogleConverter.js';
+import { GoogleStreamConverter } from '../google/GoogleStreamConverter.js';
+import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
 
 export class VertexAITextProvider extends BaseTextProvider {
   readonly name = 'vertex-ai';
@@ -81,6 +83,29 @@ export class VertexAITextProvider extends BaseTextProvider {
     } catch (error: any) {
       this.handleError(error);
       throw error; // TypeScript needs this
+    }
+  }
+
+  /**
+   * Stream response using Vertex AI
+   */
+  async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
+    try {
+      // Convert our format → Google format
+      const googleRequest = await this.converter.convertRequest(options);
+
+      // Create stream using new SDK
+      const stream = await this.client.models.generateContentStream({
+        model: options.model,
+        ...googleRequest,
+      });
+
+      // Convert Google stream → our StreamEvent format
+      const streamConverter = new GoogleStreamConverter();
+      yield* streamConverter.convertStream(stream, options.model);
+    } catch (error: any) {
+      this.handleError(error);
+      throw error;
     }
   }
 

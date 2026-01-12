@@ -4,6 +4,21 @@
 
 import { OutputItem } from './Message.js';
 
+// Re-export OutputItem for convenience
+export type { OutputItem } from './Message.js';
+
+/**
+ * Token usage statistics
+ */
+export interface TokenUsage {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  output_tokens_details?: {
+    reasoning_tokens: number;
+  };
+}
+
 export interface LLMResponse {
   id: string;
   object: 'response';
@@ -12,14 +27,7 @@ export interface LLMResponse {
   model: string;
   output: OutputItem[];
   output_text?: string; // Aggregated text output (SDK convenience)
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-    total_tokens: number;
-    output_tokens_details?: {
-      reasoning_tokens: number;
-    };
-  };
+  usage: TokenUsage;
   error?: {
     type: string;
     message: string;

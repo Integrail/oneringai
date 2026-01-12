@@ -36,6 +36,8 @@ import {
   authenticatedFetch,
   ToolFunction,
   tools,
+  isOutputTextDelta,
+  StreamHelpers,
 } from '../src/index.js';
 import { readClipboardImage } from '../src/utils/clipboardImage.js';
 
@@ -64,6 +66,7 @@ let pendingImages: string[] = [];
 let selectedProvider: ProviderInfo;
 let availableProviders: ProviderInfo[];
 let client: OneRingAI;
+let streamingEnabled = true; // Default to streaming for better UX
 
 /**
  * Detect available providers from environment variables
@@ -360,18 +363,19 @@ Example endpoints:
 
   console.log('');
   console.log('Commands:');
-  console.log('  /exit     - Exit the chat');
-  console.log('  /clear    - Clear conversation history');
-  console.log('  /history  - Show conversation history');
-  console.log('  /switch   - Change AI provider');
-  console.log('  /provider - Show current provider info');
-  console.log('  /images   - Show attached images');
+  console.log('  /exit      - Exit the chat');
+  console.log('  /clear     - Clear conversation history');
+  console.log('  /history   - Show conversation history');
+  console.log('  /switch    - Change AI provider');
+  console.log('  /provider  - Show current provider info');
+  console.log('  /streaming - Toggle streaming mode (currently: ' + (streamingEnabled ? 'ON' : 'OFF') + ')');
+  console.log('  /images    - Show attached images');
   if (microsoftTool) {
-    console.log('  /msgraph  - Microsoft Graph info');
+    console.log('  /msgraph   - Microsoft Graph info');
   }
-  console.log('  /tools    - Show available tools');
-  console.log('  Ctrl+V    - Paste image directly');
-  console.log('  Ctrl+C    - Exit');
+  console.log('  /tools     - Show available tools');
+  console.log('  Ctrl+V     - Paste image directly');
+  console.log('  Ctrl+C     - Exit');
   console.log('');
 
   if (selectedProvider.hasVision) {
@@ -503,18 +507,33 @@ Example endpoints:
 
       const messages = [...conversationHistory, ...builder.build()];
 
-      // Show thinking indicator
       process.stdout.write('🤖 Assistant: ');
-      const thinkingInterval = startThinkingAnimation();
 
-      // Use the pre-created agent (with tools)
-      const response = await agent.run(messages);
+      let response;
+      let assistantText = '';
 
-      stopThinkingAnimation(thinkingInterval);
+      if (streamingEnabled) {
+        // Streaming mode - stream text in real-time and collect response
+        // Use tap to display while collecting
+        const tappedStream = StreamHelpers.tap(agent.stream(messages), (event) => {
+          if (isOutputTextDelta(event)) {
+            process.stdout.write(event.delta);
+            assistantText += event.delta;
+          }
+        });
 
-      const assistantText = response.output_text || '';
-      console.log(assistantText);
-      console.log('');
+        response = await StreamHelpers.collectResponse(tappedStream);
+        console.log('');
+      } else {
+        // Non-streaming mode - show thinking animation
+        const thinkingInterval = startThinkingAnimation();
+        response = await agent.run(messages);
+        stopThinkingAnimation(thinkingInterval);
+
+        assistantText = response.output_text || '';
+        console.log(assistantText);
+        console.log('');
+      }
 
       // Update history
       conversationHistory.push(...builder.build());
@@ -530,7 +549,7 @@ Example endpoints:
       // Show token usage
       const tokens = response.usage;
       console.log(
-        `\x1b[90m[${selectedProvider.displayName} | Tokens: ${tokens.total_tokens} (${tokens.input_tokens} in, ${tokens.output_tokens} out) | Messages: ${Math.floor(conversationHistory.length / 2)}]\x1b[0m`
+        `\x1b[90m[${selectedProvider.displayName} | ${streamingEnabled ? '🚀 Streamed' : 'Tokens'}: ${tokens.total_tokens} (${tokens.input_tokens} in, ${tokens.output_tokens} out) | Messages: ${Math.floor(conversationHistory.length / 2)}]\x1b[0m`
       );
       console.log('');
     } catch (error: any) {
@@ -698,6 +717,17 @@ async function handleCommand(command: string) {
 
     case '/help':
       showHelp();
+      break;
+
+    case '/streaming':
+    case '/stream':
+      streamingEnabled = !streamingEnabled;
+      console.log(
+        streamingEnabled
+          ? '✅ Streaming enabled - responses will stream in real-time'
+          : '❌ Streaming disabled - responses will appear all at once'
+      );
+      console.log('');
       break;
 
     default:
@@ -938,6 +968,7 @@ function showHelp() {
   console.log('  /history          - Show conversation history');
   console.log('  /switch           - Change AI provider');
   console.log('  /provider         - Show current provider info');
+  console.log('  /streaming        - Toggle streaming mode (currently: ' + (streamingEnabled ? 'ON' : 'OFF') + ')');
   console.log('  /images           - Show pending images');
   console.log('  /help             - Show this help message');
   if (oauthRegistry.has('microsoft')) {

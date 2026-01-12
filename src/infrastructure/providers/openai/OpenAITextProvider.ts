@@ -14,6 +14,7 @@ import {
   ProviderRateLimitError,
   ProviderContextLengthError,
 } from '../../../domain/errors/AIErrors.js';
+import { StreamEvent, StreamEventType } from '../../../domain/entities/StreamEvent.js';
 
 export class OpenAITextProvider extends BaseTextProvider {
   readonly name = 'openai';
@@ -57,6 +58,151 @@ export class OpenAITextProvider extends BaseTextProvider {
     } catch (error: any) {
       this.handleError(error);
       throw error; // TypeScript needs this
+    }
+  }
+
+  /**
+   * Stream response using OpenAI Streaming API
+   */
+  async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
+    try {
+      const stream = await this.client.chat.completions.create({
+        model: options.model,
+        messages: this.convertInput(options.input),
+        tools: options.tools as any,
+        tool_choice: options.tool_choice as any,
+        temperature: options.temperature,
+        max_tokens: options.max_output_tokens,
+        response_format: options.response_format as any,
+        stream: true,
+        stream_options: { include_usage: true },
+      });
+
+      let responseId = '';
+      let sequenceNumber = 0;
+      let hasUsage = false;
+      const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
+
+      for await (const chunk of stream) {
+        // Initialize response ID on first chunk
+        if (!responseId) {
+          responseId = chunk.id;
+          yield {
+            type: StreamEventType.RESPONSE_CREATED,
+            response_id: responseId,
+            model: chunk.model,
+            created_at: chunk.created,
+          };
+        }
+
+        const choice = chunk.choices[0];
+        if (!choice) continue;
+
+        const delta = choice.delta;
+
+        // Handle text content deltas
+        if (delta.content) {
+          yield {
+            type: StreamEventType.OUTPUT_TEXT_DELTA,
+            response_id: responseId,
+            item_id: `msg_${responseId}`,
+            output_index: 0,
+            content_index: 0,
+            delta: delta.content,
+            sequence_number: sequenceNumber++,
+          };
+        }
+
+        // Handle tool calls
+        if (delta.tool_calls) {
+          for (const toolCall of delta.tool_calls) {
+            const index = toolCall.index;
+
+            if (!toolCallBuffers.has(index)) {
+              // Start new tool call
+              const toolCallId = toolCall.id || `call_${responseId}_${index}`;
+              const toolName = toolCall.function?.name || '';
+
+              toolCallBuffers.set(index, {
+                id: toolCallId,
+                name: toolName,
+                args: '',
+              });
+
+              yield {
+                type: StreamEventType.TOOL_CALL_START,
+                response_id: responseId,
+                item_id: `msg_${responseId}`,
+                tool_call_id: toolCallId,
+                tool_name: toolName,
+              };
+            }
+
+            // Accumulate tool arguments
+            if (toolCall.function?.arguments) {
+              const buffer = toolCallBuffers.get(index)!;
+              buffer.args += toolCall.function.arguments;
+
+              yield {
+                type: StreamEventType.TOOL_CALL_ARGUMENTS_DELTA,
+                response_id: responseId,
+                item_id: `msg_${responseId}`,
+                tool_call_id: buffer.id,
+                tool_name: buffer.name,
+                delta: toolCall.function.arguments,
+                sequence_number: sequenceNumber++,
+              };
+            }
+          }
+        }
+
+        // Check if tool calls are complete (finish_reason indicates end)
+        if (choice.finish_reason && toolCallBuffers.size > 0) {
+          for (const buffer of toolCallBuffers.values()) {
+            yield {
+              type: StreamEventType.TOOL_CALL_ARGUMENTS_DONE,
+              response_id: responseId,
+              tool_call_id: buffer.id,
+              tool_name: buffer.name,
+              arguments: buffer.args,
+            };
+          }
+        }
+
+        // Handle usage info (sent at the end when stream_options.include_usage is true)
+        if (chunk.usage) {
+          hasUsage = true;
+          yield {
+            type: StreamEventType.RESPONSE_COMPLETE,
+            response_id: responseId,
+            status: choice.finish_reason === 'stop' ? 'completed' : 'incomplete',
+            usage: {
+              input_tokens: chunk.usage.prompt_tokens || 0,
+              output_tokens: chunk.usage.completion_tokens || 0,
+              total_tokens: chunk.usage.total_tokens || 0,
+            },
+            iterations: 1,
+          };
+        }
+      }
+
+      // If no usage info was sent, emit completion event with zero usage
+      if (responseId && !hasUsage) {
+        yield {
+          type: StreamEventType.RESPONSE_COMPLETE,
+          response_id: responseId,
+          status: 'completed',
+          usage: {
+            input_tokens: 0,
+            output_tokens: 0,
+            total_tokens: 0,
+          },
+          iterations: 1,
+        };
+      }
+    } catch (error: any) {
+      this.handleError(error);
+      throw error;
     }
   }
 

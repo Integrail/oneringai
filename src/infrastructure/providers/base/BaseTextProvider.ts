@@ -5,9 +5,11 @@
 import { BaseProvider } from './BaseProvider.js';
 import { ITextProvider, ModelCapabilities, TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
+import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
 
 export abstract class BaseTextProvider extends BaseProvider implements ITextProvider {
   abstract generate(options: TextGenerateOptions): Promise<LLMResponse>;
+  abstract streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent>;
   abstract getModelCapabilities(model: string): ModelCapabilities;
 
   /**
