@@ -1,15 +1,16 @@
 /**
  * OAuth Manager - Main entry point for OAuth 2.0 authentication
- * Supports multiple flows: Authorization Code (with PKCE), Client Credentials, JWT Bearer
+ * Supports multiple flows: Authorization Code (with PKCE), Client Credentials, JWT Bearer, Static Token
  */
 
 import { AuthCodePKCEFlow } from './flows/AuthCodePKCE.js';
 import { ClientCredentialsFlow } from './flows/ClientCredentials.js';
 import { JWTBearerFlow } from './flows/JWTBearer.js';
+import { StaticTokenFlow } from './flows/StaticToken.js';
 import type { OAuthConfig } from './types.js';
 
 export class OAuthManager {
-  private flow: AuthCodePKCEFlow | ClientCredentialsFlow | JWTBearerFlow;
+  private flow: AuthCodePKCEFlow | ClientCredentialsFlow | JWTBearerFlow | StaticTokenFlow;
 
   constructor(config: OAuthConfig) {
     // Validate configuration
@@ -27,6 +28,10 @@ export class OAuthManager {
 
       case 'jwt_bearer':
         this.flow = new JWTBearerFlow(config);
+        break;
+
+      case 'static_token':
+        this.flow = new StaticTokenFlow(config);
         break;
 
       default:
@@ -110,15 +115,18 @@ export class OAuthManager {
   private validateConfig(config: OAuthConfig): void {
     // Required fields
     if (!config.flow) {
-      throw new Error('OAuth flow is required (authorization_code, client_credentials, or jwt_bearer)');
+      throw new Error('OAuth flow is required (authorization_code, client_credentials, jwt_bearer, or static_token)');
     }
 
-    if (!config.tokenUrl) {
-      throw new Error('tokenUrl is required');
-    }
+    // tokenUrl and clientId not required for static_token
+    if (config.flow !== 'static_token') {
+      if (!config.tokenUrl) {
+        throw new Error('tokenUrl is required');
+      }
 
-    if (!config.clientId) {
-      throw new Error('clientId is required');
+      if (!config.clientId) {
+        throw new Error('clientId is required');
+      }
     }
 
     // Flow-specific validation
@@ -143,6 +151,12 @@ export class OAuthManager {
           throw new Error(
             'privateKey or privateKeyPath is required for jwt_bearer flow'
           );
+        }
+        break;
+
+      case 'static_token':
+        if (!config.staticToken) {
+          throw new Error('staticToken is required for static_token flow');
         }
         break;
     }

@@ -144,12 +144,13 @@ export type { ClipboardImageResult } from './utils/clipboardImage.js';
 export * as tools from './tools/index.js';
 
 // OAuth plugin
-export { OAuthManager } from './plugins/oauth/index.js';
+export { OAuthManager, oauthRegistry } from './plugins/oauth/index.js';
 export { MemoryStorage as OAuthMemoryStorage, FileStorage as OAuthFileStorage } from './plugins/oauth/index.js';
-export { generateEncryptionKey } from './plugins/oauth/index.js';
+export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch, generateWebAPITool } from './plugins/oauth/index.js';
 export type {
   OAuthConfig,
   OAuthFlow,
   ITokenStorage as IOAuthTokenStorage,
   FileStorageConfig as OAuthFileStorageConfig,
+  RegisteredProvider,
 } from './plugins/oauth/index.js';

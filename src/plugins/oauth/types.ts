@@ -4,7 +4,7 @@
 
 import type { ITokenStorage } from './domain/ITokenStorage.js';
 
-export type OAuthFlow = 'authorization_code' | 'client_credentials' | 'jwt_bearer';
+export type OAuthFlow = 'authorization_code' | 'client_credentials' | 'jwt_bearer' | 'static_token';
 
 export interface OAuthConfig {
   // Core config
@@ -26,6 +26,9 @@ export interface OAuthConfig {
   privateKeyPath?: string; // Or path to file
   tokenSigningAlg?: string; // Default: RS256
   audience?: string;
+
+  // Static Token specific (NEW)
+  staticToken?: string; // Static API key/token (for OpenAI, Anthropic, etc.)
 
   // Token management
   autoRefresh?: boolean; // Default: true

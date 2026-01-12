@@ -45,7 +45,9 @@
     "example:json-tool": "tsx examples/json-manipulation-tool.ts",
     "example:hooks": "tsx examples/agent-with-hooks.ts",
     "example:web": "tsx examples/web-research-agent.ts",
-    "example:oauth": "tsx examples/oauth-demo.ts"
+    "example:oauth": "tsx examples/oauth-demo.ts",
+    "example:oauth-registry": "tsx examples/oauth-registry-demo.ts",
+    "example:oauth-static": "tsx examples/oauth-static-tokens.ts"
   },
   "keywords": [
     "ai",

@@ -5,9 +5,17 @@
  * - Authorization Code with PKCE
  * - Client Credentials
  * - JWT Bearer
+ *
+ * Plus global provider registry and authenticated fetch for easy integration.
  */
 
 export { OAuthManager } from './OAuthManager.js';
+
+// Registry and authenticated fetch
+export { oauthRegistry, OAuthRegistry } from './OAuthRegistry.js';
+export type { RegisteredProvider, ProviderRegistrationConfig } from './OAuthRegistry.js';
+export { authenticatedFetch, createAuthenticatedFetch } from './authenticatedFetch.js';
+export { generateWebAPITool } from './toolGenerator.js';
 
 // Storage implementations
 export { MemoryStorage } from './infrastructure/storage/MemoryStorage.js';
