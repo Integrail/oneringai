@@ -84,6 +84,11 @@ export class OpenAITextProvider extends BaseTextProvider {
       const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
 
       for await (const chunk of stream) {
+        // Debug: Check what's in the chunk
+        if (process.env.DEBUG_OPENAI && chunk.usage) {
+          console.error('[DEBUG] OpenAI chunk has usage:', chunk.usage);
+        }
+
         // Initialize response ID on first chunk
         if (!responseId) {
           responseId = chunk.id;
@@ -92,6 +97,32 @@ export class OpenAITextProvider extends BaseTextProvider {
             response_id: responseId,
             model: chunk.model,
             created_at: chunk.created,
+          };
+        }
+
+        // Handle usage info FIRST (sent at the end when stream_options.include_usage is true)
+        // This chunk might not have a choice, so check usage before validating choice
+        if (chunk.usage) {
+          hasUsage = true;
+
+          if (process.env.DEBUG_OPENAI) {
+            console.error('[DEBUG] Emitting RESPONSE_COMPLETE with usage:', {
+              prompt_tokens: chunk.usage.prompt_tokens,
+              completion_tokens: chunk.usage.completion_tokens,
+              total_tokens: chunk.usage.total_tokens,
+            });
+          }
+
+          yield {
+            type: StreamEventType.RESPONSE_COMPLETE,
+            response_id: responseId,
+            status: 'completed',
+            usage: {
+              input_tokens: chunk.usage.prompt_tokens || 0,
+              output_tokens: chunk.usage.completion_tokens || 0,
+              total_tokens: chunk.usage.total_tokens || 0,
+            },
+            iterations: 1,
           };
         }
 
@@ -167,22 +198,6 @@ export class OpenAITextProvider extends BaseTextProvider {
               arguments: buffer.args,
             };
           }
-        }
-
-        // Handle usage info (sent at the end when stream_options.include_usage is true)
-        if (chunk.usage) {
-          hasUsage = true;
-          yield {
-            type: StreamEventType.RESPONSE_COMPLETE,
-            response_id: responseId,
-            status: choice.finish_reason === 'stop' ? 'completed' : 'incomplete',
-            usage: {
-              input_tokens: chunk.usage.prompt_tokens || 0,
-              output_tokens: chunk.usage.completion_tokens || 0,
-              total_tokens: chunk.usage.total_tokens || 0,
-            },
-            iterations: 1,
-          };
         }
       }
 

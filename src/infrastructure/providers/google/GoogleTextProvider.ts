@@ -46,11 +46,39 @@ export class GoogleTextProvider extends BaseTextProvider {
       // Convert our format → Google format
       const googleRequest = await this.converter.convertRequest(options);
 
+      // Debug logging
+      if (process.env.DEBUG_GOOGLE) {
+        console.error('[DEBUG] Google Request:', JSON.stringify({
+          model: options.model,
+          tools: googleRequest.tools,
+          toolConfig: googleRequest.toolConfig,
+          contents: googleRequest.contents?.slice(0, 1), // First message only
+        }, null, 2));
+      }
+
       // Call Google API using new SDK structure
+      // Note: contents goes at top level, tools/generationConfig go in config
       const result = await this.client.models.generateContent({
         model: options.model,
-        ...googleRequest,
+        contents: googleRequest.contents,
+        config: {
+          systemInstruction: googleRequest.systemInstruction,
+          tools: googleRequest.tools,
+          toolConfig: googleRequest.toolConfig,
+          generationConfig: googleRequest.generationConfig,
+        },
       });
+
+      // Debug logging for response
+      if (process.env.DEBUG_GOOGLE) {
+        console.error('[DEBUG] Google Response:', JSON.stringify({
+          candidates: result.candidates?.map((c: any) => ({
+            finishReason: c.finishReason,
+            content: c.content,
+          })),
+          usageMetadata: result.usageMetadata,
+        }, null, 2));
+      }
 
       // Convert Google response → our format
       return this.converter.convertResponse(result);
@@ -69,9 +97,16 @@ export class GoogleTextProvider extends BaseTextProvider {
       const googleRequest = await this.converter.convertRequest(options);
 
       // Create stream using new SDK
+      // Note: contents goes at top level, tools/generationConfig go in config
       const stream = await this.client.models.generateContentStream({
         model: options.model,
-        ...googleRequest,
+        contents: googleRequest.contents,
+        config: {
+          systemInstruction: googleRequest.systemInstruction,
+          tools: googleRequest.tools,
+          toolConfig: googleRequest.toolConfig,
+          generationConfig: googleRequest.generationConfig,
+        },
       });
 
       // Convert Google stream → our StreamEvent format

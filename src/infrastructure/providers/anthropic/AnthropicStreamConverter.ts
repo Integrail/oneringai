@@ -13,6 +13,7 @@ export class AnthropicStreamConverter {
   private model: string = '';
   private sequenceNumber: number = 0;
   private contentBlockIndex: Map<number, { type: string; id?: string; name?: string; accumulatedArgs?: string }> = new Map();
+  private usage: { input_tokens: number; output_tokens: number } = { input_tokens: 0, output_tokens: 0 };
 
   /**
    * Convert Anthropic stream to our StreamEvent format
@@ -24,6 +25,7 @@ export class AnthropicStreamConverter {
     this.model = model;
     this.sequenceNumber = 0;
     this.contentBlockIndex.clear();
+    this.usage = { input_tokens: 0, output_tokens: 0 };
 
     for await (const event of anthropicStream) {
       const converted = this.convertEvent(event);
@@ -188,9 +190,14 @@ export class AnthropicStreamConverter {
   /**
    * Handle message_delta event (usage info, stop_reason)
    */
-  private handleMessageDelta(_event: Anthropic.MessageDeltaEvent): StreamEvent[] {
-    // This event contains usage info and stop_reason
-    // We'll handle completion in message_stop
+  private handleMessageDelta(event: Anthropic.MessageDeltaEvent): StreamEvent[] {
+    // Extract usage info (Anthropic sends cumulative usage in message_delta)
+    if (event.usage) {
+      this.usage.input_tokens = event.usage.input_tokens || 0;
+      this.usage.output_tokens = event.usage.output_tokens || 0;
+    }
+
+    // No events to emit - we'll include usage in message_stop
     return [];
   }
 
@@ -204,9 +211,9 @@ export class AnthropicStreamConverter {
         response_id: this.responseId,
         status: 'completed',
         usage: {
-          input_tokens: 0,
-          output_tokens: 0,
-          total_tokens: 0,
+          input_tokens: this.usage.input_tokens,
+          output_tokens: this.usage.output_tokens,
+          total_tokens: this.usage.input_tokens + this.usage.output_tokens,
         },
         iterations: 1,
       },

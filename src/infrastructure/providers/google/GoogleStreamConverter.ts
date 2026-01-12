@@ -27,6 +27,12 @@ export class GoogleStreamConverter {
     this.isFirst = true;
     this.toolCallBuffers.clear();
 
+    let lastUsage: { input_tokens: number; output_tokens: number; total_tokens: number } = {
+      input_tokens: 0,
+      output_tokens: 0,
+      total_tokens: 0,
+    };
+
     for await (const chunk of googleStream) {
       if (this.isFirst) {
         this.responseId = this.generateResponseId();
@@ -37,6 +43,12 @@ export class GoogleStreamConverter {
           created_at: Date.now(),
         };
         this.isFirst = false;
+      }
+
+      // Extract usage from chunk (Google includes it in every chunk)
+      const usage = this.extractUsage(chunk);
+      if (usage) {
+        lastUsage = usage;
       }
 
       const events = this.convertChunk(chunk);
@@ -58,17 +70,27 @@ export class GoogleStreamConverter {
       }
     }
 
-    // Final completion event
+    // Final completion event with actual usage
     yield {
       type: StreamEventType.RESPONSE_COMPLETE,
       response_id: this.responseId,
       status: 'completed',
-      usage: {
-        input_tokens: 0,
-        output_tokens: 0,
-        total_tokens: 0,
-      },
+      usage: lastUsage,
       iterations: 1,
+    };
+  }
+
+  /**
+   * Extract usage from Google chunk
+   */
+  private extractUsage(chunk: GenerateContentResponse): { input_tokens: number; output_tokens: number; total_tokens: number } | null {
+    const usage = chunk.usageMetadata;
+    if (!usage) return null;
+
+    return {
+      input_tokens: usage.promptTokenCount || 0,
+      output_tokens: usage.candidatesTokenCount || 0,
+      total_tokens: usage.totalTokenCount || 0,
     };
   }
 

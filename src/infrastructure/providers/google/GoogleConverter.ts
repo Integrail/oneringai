@@ -17,12 +17,31 @@ import { Tool, FunctionToolDefinition } from '../../../domain/entities/Tool.js';
 import { fetchImageAsBase64 } from '../../../utils/imageUtils.js';
 
 export class GoogleConverter {
+  // Track tool call ID → tool name mapping for tool results
+  private toolCallMapping: Map<string, string> = new Map();
+  // Track tool call ID → thought signature for Gemini 3+
+  private thoughtSignatures: Map<string, string> = new Map();
+
   /**
    * Convert our format → Google Gemini format
    */
   async convertRequest(options: TextGenerateOptions): Promise<any> {
+    // Debug input messages
+    if (process.env.DEBUG_GOOGLE && Array.isArray(options.input)) {
+      console.error('[DEBUG] Input messages:', JSON.stringify(options.input.map((msg: any) => ({
+        type: msg.type,
+        role: msg.role,
+        contentTypes: msg.content?.map((c: any) => c.type),
+      })), null, 2));
+    }
+
     const contents = await this.convertMessages(options.input);
     const tools = this.convertTools(options.tools);
+
+    // Debug: Check final contents
+    if (process.env.DEBUG_GOOGLE) {
+      console.error('[DEBUG] Final contents array length:', contents.length);
+    }
 
     const request: any = {
       contents,
@@ -36,6 +55,13 @@ export class GoogleConverter {
     // Add tools if provided
     if (tools && tools.length > 0) {
       request.tools = [{ functionDeclarations: tools }];
+
+      // Add tool config to encourage tool use
+      request.toolConfig = {
+        functionCallingConfig: {
+          mode: options.tool_choice === 'required' ? 'ANY' : 'AUTO',
+        },
+      };
     }
 
     // Add generation config
@@ -43,6 +69,12 @@ export class GoogleConverter {
       temperature: options.temperature,
       maxOutputTokens: options.max_output_tokens,
     };
+
+    // Disable Google's code execution if we have function tools
+    // (prevents model from generating code instead of calling tools)
+    if (tools && tools.length > 0) {
+      request.generationConfig.allowCodeExecution = false;
+    }
 
     // Handle JSON output
     if (options.response_format) {
@@ -79,6 +111,12 @@ export class GoogleConverter {
 
         // Convert content to parts
         const parts = await this.convertContentToParts(item.content);
+
+        // Debug logging
+        if (process.env.DEBUG_GOOGLE) {
+          console.error(`[DEBUG] Converting message - role: ${item.role} → ${role}, parts: ${parts.length}`,
+            parts.map((p: any) => Object.keys(p)));
+        }
 
         if (parts.length > 0) {
           contents.push({
@@ -125,20 +163,40 @@ export class GoogleConverter {
           break;
 
         case ContentType.TOOL_USE:
+          // Store tool call ID → name mapping for later use
+          this.toolCallMapping.set(c.id, c.name);
+
           // Google uses functionCall
-          parts.push({
+          const functionCallPart: any = {
             functionCall: {
               name: c.name,
               args: JSON.parse(c.arguments),
             },
-          });
+          };
+
+          // Add thought signature if we have one (required for Gemini 3+)
+          const signature = this.thoughtSignatures.get(c.id);
+
+          if (process.env.DEBUG_GOOGLE) {
+            console.error(`[DEBUG] Looking up signature for tool ID: ${c.id}`);
+            console.error(`[DEBUG] Found signature:`, signature ? 'YES' : 'NO');
+            console.error(`[DEBUG] Available signatures:`, Array.from(this.thoughtSignatures.keys()));
+          }
+
+          if (signature) {
+            functionCallPart.thoughtSignature = signature;
+          }
+
+          parts.push(functionCallPart);
           break;
 
         case ContentType.TOOL_RESULT:
-          // Google uses functionResponse
+          // Google uses functionResponse - look up the actual function name
+          const functionName = this.toolCallMapping.get(c.tool_use_id) || this.extractToolName(c.tool_use_id);
+
           parts.push({
             functionResponse: {
-              name: this.extractToolName(c.tool_use_id), // Google needs the function name
+              name: functionName, // Use actual function name from mapping
               response: {
                 result: typeof c.content === 'string' ? c.content : c.content,
               },
@@ -164,11 +222,51 @@ export class GoogleConverter {
       .map((tool) => ({
         name: tool.function.name,
         description: tool.function.description || '',
-        parameters: {
-          type: 'OBJECT' as any,
-          ...tool.function.parameters,
-        } as any,
+        parameters: this.convertParametersSchema(tool.function.parameters),
       }));
+  }
+
+  /**
+   * Convert JSON Schema parameters to Google's format
+   */
+  private convertParametersSchema(schema: any): any {
+    if (!schema) return undefined;
+
+    const converted: any = {
+      type: 'OBJECT', // Google uses uppercase 'OBJECT'
+      properties: {},
+    };
+
+    // Convert property types to uppercase
+    if (schema.properties) {
+      for (const [key, value] of Object.entries(schema.properties)) {
+        const prop = value as any;
+        converted.properties[key] = {
+          type: prop.type?.toUpperCase() || 'STRING',
+          description: prop.description,
+        };
+
+        // Handle enums
+        if (prop.enum) {
+          converted.properties[key].enum = prop.enum;
+        }
+
+        // Handle nested objects/arrays
+        if (prop.type === 'object' && prop.properties) {
+          converted.properties[key] = this.convertParametersSchema(prop);
+        }
+        if (prop.type === 'array' && prop.items) {
+          converted.properties[key].items = this.convertParametersSchema(prop.items);
+        }
+      }
+    }
+
+    // Add required fields
+    if (schema.required) {
+      converted.required = schema.required;
+    }
+
+    return converted;
   }
 
   /**
@@ -190,6 +288,15 @@ export class GoogleConverter {
       },
     ];
 
+    const outputText = this.extractOutputText(geminiContent?.parts || []);
+
+    // Debug output text extraction
+    if (process.env.DEBUG_GOOGLE) {
+      console.error('[DEBUG] Extracted output_text:', outputText);
+      console.error('[DEBUG] Content array:', JSON.stringify(content, null, 2));
+      console.error('[DEBUG] Raw parts:', JSON.stringify(geminiContent?.parts, null, 2));
+    }
+
     return {
       id: `resp_google_${Date.now()}`,
       object: 'response',
@@ -197,7 +304,7 @@ export class GoogleConverter {
       status: this.mapFinishReason(candidate?.finishReason),
       model: response.modelVersion || 'gemini',
       output,
-      output_text: this.extractOutputText(geminiContent?.parts || []),
+      output_text: outputText,
       usage: {
         input_tokens: response.usageMetadata?.promptTokenCount || 0,
         output_tokens: response.usageMetadata?.candidatesTokenCount || 0,
@@ -220,10 +327,27 @@ export class GoogleConverter {
           annotations: [],
         });
       } else if ('functionCall' in part && part.functionCall) {
+        const toolId = `google_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const functionName = part.functionCall.name || '';
+
+        // Store thought signature if present (required for Gemini 3+)
+        if ('thoughtSignature' in part && part.thoughtSignature) {
+          const sig = part.thoughtSignature as string;
+          this.thoughtSignatures.set(toolId, sig);
+
+          if (process.env.DEBUG_GOOGLE) {
+            console.error(`[DEBUG] Captured thought signature for tool ID: ${toolId}`);
+            console.error(`[DEBUG] Signature length:`, sig.length);
+          }
+        } else if (process.env.DEBUG_GOOGLE) {
+          console.error(`[DEBUG] NO thought signature in part for ${functionName}`);
+          console.error(`[DEBUG] Part keys:`, Object.keys(part));
+        }
+
         content.push({
           type: ContentType.TOOL_USE,
-          id: `google_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-          name: part.functionCall.name,
+          id: toolId,
+          name: functionName,
           arguments: JSON.stringify(part.functionCall.args || {}),
         });
       }

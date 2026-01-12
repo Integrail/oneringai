@@ -73,9 +73,16 @@ export class VertexAITextProvider extends BaseTextProvider {
       const googleRequest = await this.converter.convertRequest(options);
 
       // Call Vertex AI using new SDK structure
+      // Note: contents goes at top level, tools/generationConfig go in config
       const result = await this.client.models.generateContent({
         model: options.model,
-        ...googleRequest,
+        contents: googleRequest.contents,
+        config: {
+          systemInstruction: googleRequest.systemInstruction,
+          tools: googleRequest.tools,
+          toolConfig: googleRequest.toolConfig,
+          generationConfig: googleRequest.generationConfig,
+        },
       });
 
       // Convert response → our format (same as regular Gemini API)
@@ -95,9 +102,16 @@ export class VertexAITextProvider extends BaseTextProvider {
       const googleRequest = await this.converter.convertRequest(options);
 
       // Create stream using new SDK
+      // Note: contents goes at top level, tools/generationConfig go in config
       const stream = await this.client.models.generateContentStream({
         model: options.model,
-        ...googleRequest,
+        contents: googleRequest.contents,
+        config: {
+          systemInstruction: googleRequest.systemInstruction,
+          tools: googleRequest.tools,
+          toolConfig: googleRequest.toolConfig,
+          generationConfig: googleRequest.generationConfig,
+        },
       });
 
       // Convert Google stream → our StreamEvent format

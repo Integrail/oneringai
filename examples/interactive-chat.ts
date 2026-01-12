@@ -100,9 +100,9 @@ function detectAvailableProviders(): ProviderInfo[] {
     providers.push({
       name: 'google',
       displayName: 'Google (Gemini)',
-      model: 'gemini-3-flash-preview', // Gemini 3 Flash (latest!)
+      model: 'gemini-2.0-flash-exp', // Gemini 2.0 Flash (experimental, best tool support)
       apiKey: process.env.GOOGLE_API_KEY,
-      description: 'Latest Gemini 3, Pro-level at Flash speed',
+      description: 'Gemini 2.0 Flash with excellent tool calling',
       hasVision: true,
     });
   }
@@ -148,7 +148,7 @@ function detectAvailableProviders(): ProviderInfo[] {
     providers.push({
       name: 'vertex-ai',
       displayName: 'Google Vertex AI',
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash-exp', // Gemini 2.0 for better tool support
       projectId: process.env.GOOGLE_CLOUD_PROJECT,
       location: process.env.GOOGLE_CLOUD_LOCATION,
       description: 'Enterprise Gemini with SLA & advanced features',
@@ -513,16 +513,15 @@ Example endpoints:
       let assistantText = '';
 
       if (streamingEnabled) {
-        // Streaming mode - stream text in real-time and collect response
-        // Use tap to display while collecting
-        const tappedStream = StreamHelpers.tap(agent.stream(messages), (event) => {
-          if (isOutputTextDelta(event)) {
-            process.stdout.write(event.delta);
-            assistantText += event.delta;
-          }
-        });
-
-        response = await StreamHelpers.collectResponse(tappedStream);
+        // Streaming mode - stream text in real-time
+        response = await StreamHelpers.collectResponse(
+          StreamHelpers.tap(agent.stream(messages), (event) => {
+            if (isOutputTextDelta(event)) {
+              process.stdout.write(event.delta);
+              assistantText += event.delta;
+            }
+          })
+        );
         console.log('');
       } else {
         // Non-streaming mode - show thinking animation

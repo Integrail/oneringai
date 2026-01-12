@@ -630,6 +630,12 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
           }
         } else if (event.type === StreamEventType.RESPONSE_COMPLETE) {
           streamState.updateUsage(event.usage);
+
+          if (process.env.DEBUG_STREAMING) {
+            console.error('[DEBUG] Captured usage from provider:', event.usage);
+            console.error('[DEBUG] StreamState usage after update:', streamState.usage);
+          }
+
           // Don't yield provider's RESPONSE_COMPLETE - we'll emit our own at the end
           continue;
         }
@@ -644,6 +650,10 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
         this.context.metrics.inputTokens += streamState.usage.input_tokens;
         this.context.metrics.outputTokens += streamState.usage.output_tokens;
         this.context.metrics.totalTokens += streamState.usage.total_tokens;
+      }
+
+      if (process.env.DEBUG_STREAMING) {
+        console.error('[DEBUG] Stream iteration complete, usage:', streamState.usage);
       }
 
       // Execute after:llm hook
