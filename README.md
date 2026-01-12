@@ -893,6 +893,54 @@ const agent = client.agents.create({
 
 **Try it**: `npm run example:hooks`
 
+### OAuth 2.0 Authentication
+
+Authenticate with OAuth-protected APIs using the OAuth plugin.
+
+**3 Flows Supported**:
+- Authorization Code (with PKCE) - User authentication
+- Client Credentials - Service-to-service
+- JWT Bearer - Service accounts
+
+```typescript
+import { OAuthManager, OAuthFileStorage } from '@oneringai/agents';
+
+// Client Credentials (simplest)
+const oauth = new OAuthManager({
+  flow: 'client_credentials',
+  clientId: process.env.CLIENT_ID!,
+  clientSecret: process.env.CLIENT_SECRET!,
+  tokenUrl: 'https://api.example.com/oauth/token',
+
+  // Optional: encrypted file storage
+  storage: new OAuthFileStorage({
+    directory: './tokens',
+    encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
+  })
+});
+
+const token = await oauth.getToken();  // Automatically cached & refreshed
+```
+
+**Security**:
+- ✅ AES-256-GCM encryption (all tokens encrypted at rest)
+- ✅ PBKDF2 key derivation (100,000 iterations)
+- ✅ File permissions: 0o600 (owner only)
+- ✅ Clean Architecture (pluggable storage)
+
+**Storage Backends**:
+- MemoryStorage (default, encrypted in memory)
+- FileStorage (encrypted files)
+- Custom (implement `IOAuthTokenStorage`)
+
+**Full Documentation**: See [OAUTH.md](./OAUTH.md) for:
+- Complete API configurations (Microsoft, Google, GitHub, Salesforce, etc.)
+- User OAuth vs App Token flows
+- Production setup guide
+- Custom storage examples
+
+**Try it**: `npm run example:oauth`
+
 ---
 
 ## Development

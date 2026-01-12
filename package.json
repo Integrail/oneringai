@@ -44,7 +44,8 @@
     "example:providers": "tsx examples/multi-provider-comparison.ts",
     "example:json-tool": "tsx examples/json-manipulation-tool.ts",
     "example:hooks": "tsx examples/agent-with-hooks.ts",
-    "example:web": "tsx examples/web-research-agent.ts"
+    "example:web": "tsx examples/web-research-agent.ts",
+    "example:oauth": "tsx examples/oauth-demo.ts"
   },
   "keywords": [
     "ai",
@@ -72,6 +73,7 @@
     "clipboardy": "^5.0.2",
     "dotenv": "^17.2.3",
     "eventemitter3": "^5.0.1",
+    "jose": "^6.1.3",
     "openai": "^5.22.0",
     "readline-async": "^0.1.0"
   },

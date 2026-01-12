@@ -142,3 +142,14 @@ export type { ClipboardImageResult } from './utils/clipboardImage.js';
 
 // Pre-built tools
 export * as tools from './tools/index.js';
+
+// OAuth plugin
+export { OAuthManager } from './plugins/oauth/index.js';
+export { MemoryStorage as OAuthMemoryStorage, FileStorage as OAuthFileStorage } from './plugins/oauth/index.js';
+export { generateEncryptionKey } from './plugins/oauth/index.js';
+export type {
+  OAuthConfig,
+  OAuthFlow,
+  ITokenStorage as IOAuthTokenStorage,
+  FileStorageConfig as OAuthFileStorageConfig,
+} from './plugins/oauth/index.js';
