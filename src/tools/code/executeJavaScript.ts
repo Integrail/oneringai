@@ -40,11 +40,16 @@ AVAILABLE IN CONTEXT:
 2. AUTHENTICATED FETCH:
    - authenticatedFetch(url, options, provider)
      • url: Full URL or path
-     • options: Standard fetch options
-     • provider: OAuth provider name
+     • options: Standard fetch options { method: 'GET'|'POST'|..., body: ..., headers: ... }
+     • provider: OAuth provider name (see below)
      • Returns: Promise<Response>
 
-   Registered OAuth providers: ${oauthRegistry.listProviderNames().join(', ') || 'none'}
+   REGISTERED OAUTH PROVIDERS:
+${oauthRegistry.listProviders().length > 0
+  ? oauthRegistry.listProviders()
+      .map(p => `   • "${p.name}": ${p.displayName}\n     ${p.description}\n     Base URL: ${p.baseURL}`)
+      .join('\n\n')
+  : '   No OAuth providers registered yet. Register providers with oauthRegistry.register().'}
 
 3. STANDARD FETCH:
    - fetch(url, options) - No authentication
