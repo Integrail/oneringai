@@ -16,7 +16,7 @@ async function main() {
 
   console.log('Testing Google tool calling...\n');
 
-  const agent = client.agents.create({
+  const agent = await client.agents.create({
     provider: 'google',
     model: 'gemini-2.0-flash',
     instructions: 'You are a helpful assistant. When asked to run code or execute JavaScript, you MUST use the execute_javascript tool. Do not write example code - actually execute it using the tool.',

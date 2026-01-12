@@ -2,6 +2,7 @@
  * Google Gemini stream converter - converts Google streaming responses to our unified StreamEvent format
  */
 
+import { randomUUID } from 'crypto';
 import { GenerateContentResponse } from '@google/genai';
 import { StreamEvent, StreamEventType } from '../../../domain/entities/StreamEvent.js';
 
@@ -167,9 +168,29 @@ export class GoogleStreamConverter {
   }
 
   /**
-   * Generate unique response ID
+   * Generate unique response ID using cryptographically secure UUID
    */
   private generateResponseId(): string {
-    return `resp_google_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    return `resp_google_${randomUUID()}`;
+  }
+
+  /**
+   * Clear all internal state
+   * Should be called after each stream completes to prevent memory leaks
+   */
+  clear(): void {
+    this.responseId = '';
+    this.model = '';
+    this.sequenceNumber = 0;
+    this.isFirst = true;
+    this.toolCallBuffers.clear();
+  }
+
+  /**
+   * Reset converter state for a new stream
+   * Alias for clear()
+   */
+  reset(): void {
+    this.clear();
   }
 }

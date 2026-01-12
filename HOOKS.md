@@ -52,7 +52,7 @@ const client = new OneRingAI({
   }
 });
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [myTool]
@@ -73,7 +73,7 @@ const response = await agent.run('Do something');
 ### Basic Hook Usage
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [myTool],
@@ -123,7 +123,7 @@ const agent = client.agents.create({
 #### Example 1: Real-Time UI Updates
 
 ```typescript
-const agent = client.agents.create({ ... });
+const agent = await client.agents.create({ ... });
 
 // Send progress to WebSocket
 agent.on('iteration:start', ({ iteration }) => {
@@ -290,7 +290,7 @@ console.log(`  Avg Tool time: ${performanceTracker.toolTotalTime / performanceTr
 #### Example 1: Tool Approval (Human-in-the-Loop)
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [deleteTool, updateTool],
@@ -325,7 +325,7 @@ const agent = client.agents.create({
 import Redis from 'ioredis';
 const redis = new Redis();
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [expensiveTool],
@@ -368,7 +368,7 @@ const agent = client.agents.create({
 #### Example 3: Retry Logic
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [unreliableTool],
@@ -412,7 +412,7 @@ const rateLimiter = {
   minInterval: 1000  // 1 second between LLM calls
 };
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [myTool],
@@ -438,7 +438,7 @@ const agent = client.agents.create({
 #### Example 5: Custom Validation
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [dataProcessingTool],
@@ -479,7 +479,7 @@ const agent = client.agents.create({
 ### Manual Control
 
 ```typescript
-const agent = client.agents.create({ ... });
+const agent = await client.agents.create({ ... });
 
 // Start execution (non-blocking)
 const responsePromise = agent.run('Long running task');
@@ -502,7 +502,7 @@ const response = await responsePromise;
 ### Pause from Hook
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [myTool],
@@ -523,7 +523,7 @@ const agent = client.agents.create({
 ### Auto-Pause After N Iterations
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [myTool],
@@ -559,7 +559,7 @@ await responsePromise;
 ### Cancel Execution
 
 ```typescript
-const agent = client.agents.create({ ... });
+const agent = await client.agents.create({ ... });
 const responsePromise = agent.run('Long task');
 
 // Cancel from button or timeout
@@ -581,7 +581,7 @@ try {
 ### Get Execution Metrics
 
 ```typescript
-const agent = client.agents.create({ ... });
+const agent = await client.agents.create({ ... });
 const response = await agent.run('Process data');
 
 const metrics = agent.getMetrics();
@@ -651,7 +651,7 @@ console.log('Summary:', {
 ### Full Configuration Example
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [tool1, tool2, tool3],
@@ -725,7 +725,7 @@ const agent = client.agents.create({
 // Example: Different modes for different environments
 const historyMode = process.env.NODE_ENV === 'production' ? 'summary' : 'full';
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [myTool],
@@ -744,7 +744,7 @@ import { OneRingAI, tools } from '@oneringai/agents';
 import { logger } from './logger';
 import { metrics } from './metrics';
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'anthropic',
   model: 'claude-sonnet-4-5-20250929',
   tools: [tools.jsonManipulator],
@@ -838,7 +838,7 @@ async function askUserApproval(toolCall: ToolCall): Promise<boolean> {
   });
 }
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [dangerousTool],
@@ -866,7 +866,7 @@ import { Server as WebSocketServer } from 'ws';
 
 const wss = new WebSocketServer({ port: 8080 });
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [tool1, tool2, tool3]
@@ -923,7 +923,7 @@ await agent.run('Complex task');
 ### 1. Always Cleanup
 
 ```typescript
-const agent = client.agents.create({ ... });
+const agent = await client.agents.create({ ... });
 
 try {
   const response = await agent.run('Task');
@@ -936,7 +936,7 @@ try {
 ### 2. Use Summary Mode in Production
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   historyMode: process.env.NODE_ENV === 'production' ? 'summary' : 'full',
   // ...
 });
@@ -945,7 +945,7 @@ const agent = client.agents.create({
 ### 3. Set Resource Limits
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   limits: {
     maxExecutionTime: 300000,  // Prevent infinite loops
     maxToolCalls: 100,         // Prevent tool spam
@@ -958,7 +958,7 @@ const agent = client.agents.create({
 ### 4. Handle Hook Errors Gracefully
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   errorHandling: {
     hookFailureMode: 'warn',  // Don't crash on hook errors
     maxConsecutiveErrors: 3

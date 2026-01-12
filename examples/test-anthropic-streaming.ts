@@ -14,7 +14,7 @@ async function main() {
     },
   });
 
-  const agent = client.agents.create({
+  const agent = await client.agents.create({
     provider: 'anthropic',
     model: 'claude-sonnet-4-5-20250929',
     instructions: 'Be concise.',

@@ -48,7 +48,7 @@ async function main() {
     console.log('   Install with: npm install puppeteer\n');
   }
 
-  const agent = client.agents.create({
+  const agent = await client.agents.create({
     provider: 'openai',
     model: 'gpt-4',
     tools: webTools,

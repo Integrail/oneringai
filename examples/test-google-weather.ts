@@ -43,7 +43,7 @@ async function main() {
     },
   });
 
-  const agent = client.agents.create({
+  const agent = await client.agents.create({
     provider: 'google',
     model: 'gemini-1.5-pro', // Use 1.5 Pro which has better function calling
     instructions: 'You are a helpful weather assistant. Use the get_weather tool to fetch weather information.',
@@ -63,7 +63,7 @@ async function main() {
   // Now test with specific tool choice
   console.log('\n\n=== Testing with specific tool choice ===\n');
 
-  const agent2 = client.agents.create({
+  const agent2 = await client.agents.create({
     provider: 'google',
     model: 'gemini-2.0-flash',
     instructions: 'You MUST use tools when available. Use the get_weather tool for weather queries.',

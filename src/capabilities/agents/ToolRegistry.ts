@@ -64,4 +64,11 @@ export class ToolRegistry implements IToolExecutor {
   listTools(): string[] {
     return Array.from(this.tools.keys());
   }
+
+  /**
+   * Clear all registered tools
+   */
+  clear(): void {
+    this.tools.clear();
+  }
 }

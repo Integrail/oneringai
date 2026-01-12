@@ -393,7 +393,7 @@ const response = await client.text.generate('What is AI?', {
 ### Agent with Tools
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'google',
   model: 'gemini-1.5-pro-latest',
   tools: [weatherTool, calculatorTool],
@@ -434,9 +434,9 @@ const client = new OneRingAI({
 });
 
 // Use different providers for different tasks
-const gptAgent = client.agents.create({ provider: 'openai', model: 'gpt-4' });
-const claudeAgent = client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' });
-const geminiAgent = client.agents.create({ provider: 'google', model: 'gemini-1.5-pro-latest' });
+const gptAgent = await client.agents.create({ provider: 'openai', model: 'gpt-4' });
+const claudeAgent = await client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' });
+const geminiAgent = await client.agents.create({ provider: 'google', model: 'gemini-1.5-pro-latest' });
 ```
 
 ## Provider Comparison
@@ -552,7 +552,7 @@ const response = await client.text.generate('Hello, world!', {
 | Together AI | ✅ Full | OpenAI-compatible |
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'google', // Works with any provider!
   model: 'gemini-1.5-pro-latest',
   tools: [myTool],
@@ -648,10 +648,10 @@ All examples work with any provider by just changing configuration:
 ```typescript
 // Same code, different provider
 const agents = [
-  client.agents.create({ provider: 'openai', model: 'gpt-4' }),
-  client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' }),
-  client.agents.create({ provider: 'google', model: 'gemini-1.5-pro-latest' }),
-  client.agents.create({ provider: 'groq', model: 'llama-3.1-70b-versatile' }),
+  await client.agents.create({ provider: 'openai', model: 'gpt-4' }),
+  await client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' }),
+  await client.agents.create({ provider: 'google', model: 'gemini-1.5-pro-latest' }),
+  await client.agents.create({ provider: 'groq', model: 'llama-3.1-70b-versatile' }),
 ];
 
 // All work exactly the same

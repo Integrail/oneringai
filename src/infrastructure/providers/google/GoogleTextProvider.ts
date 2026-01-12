@@ -28,6 +28,7 @@ export class GoogleTextProvider extends BaseTextProvider {
 
   private client: GoogleGenAI;
   private converter: GoogleConverter;
+  private streamConverter: GoogleStreamConverter;
 
   constructor(config: GoogleConfig) {
     super(config);
@@ -36,6 +37,7 @@ export class GoogleTextProvider extends BaseTextProvider {
       apiKey: this.getApiKey(),
     });
     this.converter = new GoogleConverter();
+    this.streamConverter = new GoogleStreamConverter();
   }
 
   /**
@@ -81,8 +83,15 @@ export class GoogleTextProvider extends BaseTextProvider {
       }
 
       // Convert Google response → our format
-      return this.converter.convertResponse(result);
+      const response = this.converter.convertResponse(result);
+
+      // Clear converter mappings to prevent memory leaks
+      this.converter.clearMappings();
+
+      return response;
     } catch (error: any) {
+      // Clear mappings even on error
+      this.converter.clearMappings();
       this.handleError(error);
       throw error; // TypeScript needs this
     }
@@ -109,10 +118,19 @@ export class GoogleTextProvider extends BaseTextProvider {
         },
       });
 
+      // Reset stream converter for reuse
+      this.streamConverter.reset();
+
       // Convert Google stream → our StreamEvent format
-      const streamConverter = new GoogleStreamConverter();
-      yield* streamConverter.convertStream(stream, options.model);
+      yield* this.streamConverter.convertStream(stream, options.model);
+
+      // Clear converters after stream completes
+      this.converter.clearMappings();
+      this.streamConverter.clear();
     } catch (error: any) {
+      // Clear converters even on error
+      this.converter.clearMappings();
+      this.streamConverter.clear();
       this.handleError(error);
       throw error;
     }

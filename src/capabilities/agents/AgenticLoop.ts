@@ -3,6 +3,7 @@
  * Now with events, hooks, pause/resume, and enterprise features
  */
 
+import { randomUUID } from 'crypto';
 import { EventEmitter } from 'eventemitter3';
 import { ITextProvider, TextGenerateOptions } from '../../domain/interfaces/ITextProvider.js';
 import { IToolExecutor } from '../../domain/interfaces/IToolExecutor.js';
@@ -33,6 +34,8 @@ export interface AgenticLoopConfig {
     maxExecutionTime?: number;
     maxToolCalls?: number;
     maxContextSize?: number;
+    /** Maximum input messages to keep (prevents unbounded growth). Default: 50 */
+    maxInputMessages?: number;
   };
   errorHandling?: {
     hookFailureMode?: 'fail' | 'warn' | 'ignore';
@@ -50,6 +53,8 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
   private pausePromise: Promise<void> | null = null;
   private resumeCallback: (() => void) | null = null;
   private cancelled: boolean = false;
+  // Mutex to prevent race conditions in pause/resume
+  private pauseResumeMutex: Promise<void> = Promise.resolve();
 
   constructor(
     private provider: ITextProvider,
@@ -70,7 +75,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
    */
   async execute(config: AgenticLoopConfig): Promise<AgentResponse> {
     // Generate execution ID
-    const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const executionId = `exec_${randomUUID()}`;
 
     // Create execution context
     this.context = new ExecutionContext(executionId, {
@@ -259,6 +264,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     } finally {
       // Always cleanup resources
       this.context?.cleanup();
+      this.hookManager.clear();
     }
   }
 
@@ -267,7 +273,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
    */
   async *executeStreaming(config: AgenticLoopConfig): AsyncIterableIterator<StreamEvent> {
     // Generate execution ID
-    const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const executionId = `exec_${randomUUID()}`;
 
     // Create execution context
     this.context = new ExecutionContext(executionId, {
@@ -497,6 +503,25 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
           ];
         }
 
+        // Apply sliding window to prevent unbounded input growth
+        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+        if (Array.isArray(currentInput) && currentInput.length > maxInputMessages) {
+          // Keep the first message (usually system/developer message) and last N-1 messages
+          const firstMessage = currentInput[0];
+          const recentMessages = currentInput.slice(-(maxInputMessages - 1));
+
+          // Check if first message is a developer/system message
+          const isSystemMessage = firstMessage?.type === 'message' &&
+            firstMessage.role === MessageRole.DEVELOPER;
+
+          if (isSystemMessage) {
+            currentInput = [firstMessage, ...recentMessages];
+          } else {
+            // No system message, just keep the most recent messages
+            currentInput = currentInput.slice(-maxInputMessages);
+          }
+        }
+
         // Yield iteration complete
         yield {
           type: StreamEventType.ITERATION_COMPLETE,
@@ -510,6 +535,10 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
         if (this.context) {
           globalStreamState.incrementIteration();
         }
+
+        // Clear per-iteration resources to prevent memory accumulation
+        iterationStreamState.clear();
+        toolCallsMap.clear();
       }
 
       // If loop ended due to max iterations (not early break), emit final completion
@@ -562,7 +591,9 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
       throw error;
     } finally {
       // Always cleanup resources
+      globalStreamState.clear();
       this.context?.cleanup();
+      this.hookManager.clear();
     }
   }
 
@@ -1177,9 +1208,19 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
   }
 
   /**
-   * Pause execution
+   * Pause execution (thread-safe with mutex)
    */
   pause(reason?: string): void {
+    // Chain onto the mutex to ensure serialized access
+    this.pauseResumeMutex = this.pauseResumeMutex.then(() => {
+      this._doPause(reason);
+    });
+  }
+
+  /**
+   * Internal pause implementation
+   */
+  private _doPause(reason?: string): void {
     if (this.paused) return;
 
     this.paused = true;
@@ -1201,9 +1242,19 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
   }
 
   /**
-   * Resume execution
+   * Resume execution (thread-safe with mutex)
    */
   resume(): void {
+    // Chain onto the mutex to ensure serialized access
+    this.pauseResumeMutex = this.pauseResumeMutex.then(() => {
+      this._doResume();
+    });
+  }
+
+  /**
+   * Internal resume implementation
+   */
+  private _doResume(): void {
     if (!this.paused) return;
 
     this.paused = false;
@@ -1239,8 +1290,9 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     }
 
     // Resume if paused (to allow cancellation to proceed)
+    // Use internal method directly to bypass mutex for immediate cancellation
     if (this.paused) {
-      this.resume();
+      this._doResume();
     }
 
     this.emit('execution:cancelled', {

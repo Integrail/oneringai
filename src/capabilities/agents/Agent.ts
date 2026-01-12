@@ -1,10 +1,13 @@
 /**
  * Agent class - represents an agent with tool calling capabilities
  * Now with events, hooks, pause/resume, and enterprise features
+ *
+ * Implements IDisposable for proper resource cleanup
  */
 
 import { EventEmitter } from 'eventemitter3';
 import { ITextProvider } from '../../domain/interfaces/ITextProvider.js';
+import { IDisposable, assertNotDestroyed } from '../../domain/interfaces/IDisposable.js';
 import { ToolRegistry } from './ToolRegistry.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import { InputItem } from '../../domain/entities/Message.js';
@@ -30,6 +33,8 @@ export interface AgentConfig {
     maxExecutionTime?: number;
     maxToolCalls?: number;
     maxContextSize?: number;
+    /** Maximum number of input messages to keep (prevents unbounded context growth) */
+    maxInputMessages?: number;
   };
   errorHandling?: {
     hookFailureMode?: 'fail' | 'warn' | 'ignore';
@@ -38,9 +43,15 @@ export interface AgentConfig {
   };
 }
 
-export class Agent extends EventEmitter<AgenticLoopEvents> {
+export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposable {
   private agenticLoop: AgenticLoop;
   private cleanupCallbacks: Array<() => void> = [];
+  private boundListeners: Map<keyof AgenticLoopEvents, (...args: any[]) => void> = new Map();
+  private _isDestroyed = false;
+
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
 
   constructor(
     private config: AgentConfig,
@@ -64,7 +75,7 @@ export class Agent extends EventEmitter<AgenticLoopEvents> {
       config.errorHandling
     );
 
-    // Forward all events from AgenticLoop
+    // Forward all events from AgenticLoop with tracked listeners for cleanup
     const eventNames: Array<keyof AgenticLoopEvents> = [
       'execution:start',
       'execution:complete',
@@ -86,16 +97,24 @@ export class Agent extends EventEmitter<AgenticLoopEvents> {
     ];
 
     for (const eventName of eventNames) {
-      this.agenticLoop.on(eventName, (data: any) => {
-        this.emit(eventName, data);
-      });
+      // Create a bound handler that can be removed later
+      const handler = (data: any) => {
+        if (!this._isDestroyed) {
+          this.emit(eventName, data);
+        }
+      };
+      this.boundListeners.set(eventName, handler);
+      this.agenticLoop.on(eventName, handler);
     }
   }
 
   /**
    * Run the agent with input
+   * @throws Error if agent has been destroyed
    */
   async run(input: string | InputItem[]): Promise<AgentResponse> {
+    assertNotDestroyed(this, 'run agent');
+
     // Get tool definitions for the LLM
     const tools = this.config.tools?.map((t) => t.definition) || [];
 
@@ -119,8 +138,11 @@ export class Agent extends EventEmitter<AgenticLoopEvents> {
    * Stream response from the agent with real-time events
    * Returns an async iterator of streaming events
    * Supports full agentic loop with tool calling
+   * @throws Error if agent has been destroyed
    */
   async *stream(input: string | InputItem[]): AsyncIterableIterator<StreamEvent> {
+    assertNotDestroyed(this, 'stream from agent');
+
     // Get tool definitions for the LLM
     const tools = this.config.tools?.map((t) => t.definition) || [];
 
@@ -259,13 +281,29 @@ export class Agent extends EventEmitter<AgenticLoopEvents> {
 
   /**
    * Destroy agent and cleanup resources
+   * Safe to call multiple times (idempotent)
    */
   destroy(): void {
-    // Remove all event listeners
-    this.removeAllListeners();
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
 
-    // Remove AgenticLoop listeners
-    this.agenticLoop.removeAllListeners();
+    // Cancel any ongoing execution
+    try {
+      this.agenticLoop.cancel('Agent destroyed');
+    } catch {
+      // Ignore errors during cancel
+    }
+
+    // Remove specifically tracked event forwarding listeners from AgenticLoop
+    for (const [eventName, handler] of this.boundListeners) {
+      this.agenticLoop.off(eventName, handler);
+    }
+    this.boundListeners.clear();
+
+    // Remove all event listeners from this Agent
+    this.removeAllListeners();
 
     // Run custom cleanup callbacks
     for (const callback of this.cleanupCallbacks) {
@@ -275,7 +313,6 @@ export class Agent extends EventEmitter<AgenticLoopEvents> {
         console.error('Cleanup callback error:', error);
       }
     }
-
     this.cleanupCallbacks = [];
   }
 }

@@ -786,7 +786,7 @@ const client = new OneRingAI({
   }
 });
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'custom-llm',
   model: 'their-model',
 

@@ -284,13 +284,10 @@ export class ExecutionContext {
   }
 
   /**
-   * Cleanup resources
+   * Cleanup resources and release memory
+   * Clears all internal arrays and maps to allow garbage collection
    */
   cleanup(): void {
-    this.toolCalls.clear();
-    this.toolResults.clear();
-    this.metadata.clear();
-
     // Store execution summary before clearing
     const summary = {
       executionId: this.executionId,
@@ -300,6 +297,18 @@ export class ExecutionContext {
       success: !this.cancelled && this.metrics.errors.length === 0,
     };
 
+    // Clear all maps
+    this.toolCalls.clear();
+    this.toolResults.clear();
+    this.metadata.clear();
+
+    // Clear all arrays (modify length to allow GC of items)
+    this.iterations.length = 0;
+    this.iterationSummaries.length = 0;
+    this.auditTrail.length = 0;
+    this.metrics.errors.length = 0;
+
+    // Store summary after clearing (for final access if needed)
     this.metadata.set('execution_summary', summary);
   }
 

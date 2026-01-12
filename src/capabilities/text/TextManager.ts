@@ -1,8 +1,11 @@
 /**
  * Text generation manager - simple text generation without tools
+ *
+ * Implements IDisposable for proper resource cleanup
  */
 
 import { ProviderRegistry } from '../../client/ProviderRegistry.js';
+import { IDisposable, assertNotDestroyed } from '../../domain/interfaces/IDisposable.js';
 import { InputItem } from '../../domain/entities/Message.js';
 import { LLMResponse } from '../../domain/entities/Response.js';
 import { TextGenerateOptions } from '../../domain/interfaces/ITextProvider.js';
@@ -19,17 +22,22 @@ export interface SimpleTextOptions {
   };
 }
 
-export class TextManager {
+export class TextManager implements IDisposable {
+  private _isDestroyed = false;
+
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
+
   constructor(private registry: ProviderRegistry) {}
 
   /**
    * Generate text response
    */
-  async generate(
-    input: string | InputItem[],
-    options: SimpleTextOptions
-  ): Promise<string> {
-    const provider = this.registry.getTextProvider(options.provider);
+  async generate(input: string | InputItem[], options: SimpleTextOptions): Promise<string> {
+    assertNotDestroyed(this, 'generate text');
+
+    const provider = await this.registry.getTextProvider(options.provider);
 
     const generateOptions: TextGenerateOptions = {
       model: options.model,
@@ -51,7 +59,9 @@ export class TextManager {
     input: string | InputItem[],
     options: SimpleTextOptions & { schema: any }
   ): Promise<T> {
-    const provider = this.registry.getTextProvider(options.provider);
+    assertNotDestroyed(this, 'generate JSON');
+
+    const provider = await this.registry.getTextProvider(options.provider);
 
     const generateOptions: TextGenerateOptions = {
       model: options.model,
@@ -72,11 +82,10 @@ export class TextManager {
   /**
    * Get full response object (not just text)
    */
-  async generateRaw(
-    input: string | InputItem[],
-    options: SimpleTextOptions
-  ): Promise<LLMResponse> {
-    const provider = this.registry.getTextProvider(options.provider);
+  async generateRaw(input: string | InputItem[], options: SimpleTextOptions): Promise<LLMResponse> {
+    assertNotDestroyed(this, 'generate raw response');
+
+    const provider = await this.registry.getTextProvider(options.provider);
 
     const generateOptions: TextGenerateOptions = {
       model: options.model,
@@ -110,5 +119,18 @@ export class TextManager {
     }
 
     return '';
+  }
+
+  /**
+   * Destroy the manager and release resources
+   * Safe to call multiple times (idempotent)
+   */
+  destroy(): void {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
+    // TextManager has no internal resources to clean up
+    // but follows the IDisposable pattern for consistency
   }
 }

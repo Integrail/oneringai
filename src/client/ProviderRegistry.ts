@@ -1,9 +1,13 @@
 /**
  * Provider registry - manages provider configurations and instances
+ *
+ * Implements IDisposable for proper resource cleanup and uses
+ * promise-based locking to prevent race conditions during lazy loading.
  */
 
 import { ITextProvider } from '../domain/interfaces/ITextProvider.js';
 import { IImageProvider } from '../domain/interfaces/IImageProvider.js';
+import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import {
   ProviderConfig,
   ProvidersConfig,
@@ -20,10 +24,20 @@ import { AnthropicTextProvider } from '../infrastructure/providers/anthropic/Ant
 import { GoogleTextProvider } from '../infrastructure/providers/google/GoogleTextProvider.js';
 import { VertexAITextProvider } from '../infrastructure/providers/vertex/VertexAITextProvider.js';
 
-export class ProviderRegistry {
+export class ProviderRegistry implements IDisposable {
   private configs: Map<string, ProviderConfig> = new Map();
   private textProviders: Map<string, ITextProvider> = new Map();
   private imageProviders: Map<string, IImageProvider> = new Map();
+
+  // Promise locks for preventing race conditions during lazy loading
+  private textProviderPromises: Map<string, Promise<ITextProvider>> = new Map();
+  private imageProviderPromises: Map<string, Promise<IImageProvider>> = new Map();
+
+  private _isDestroyed = false;
+
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
 
   constructor(providersConfig: ProvidersConfig) {
     // Store configurations
@@ -38,16 +52,69 @@ export class ProviderRegistry {
    * Register a provider configuration
    */
   private registerConfig(name: string, config: ProviderConfig): void {
-    if (!config.apiKey) {
-      throw new InvalidConfigError(`Provider '${name}' requires an apiKey`);
+    // Enhanced API key validation
+    if (!config.apiKey || config.apiKey.trim().length === 0) {
+      throw new InvalidConfigError(`Provider '${name}' requires a non-empty apiKey`);
     }
+
+    // Provider-specific format hints (warnings only, don't block)
+    if (name === 'openai' && !config.apiKey.startsWith('sk-')) {
+      console.warn(`[ProviderRegistry] OpenAI API key should typically start with 'sk-'`);
+    }
+    if (name === 'anthropic' && !config.apiKey.startsWith('sk-ant-')) {
+      console.warn(`[ProviderRegistry] Anthropic API key should typically start with 'sk-ant-'`);
+    }
+
     this.configs.set(name, config);
   }
 
   /**
    * Get a text provider instance (lazy loaded and cached)
+   * Uses promise-based locking to prevent race conditions
    */
-  getTextProvider(name: string): ITextProvider {
+  async getTextProvider(name: string): Promise<ITextProvider> {
+    assertNotDestroyed(this, 'get text provider');
+
+    // Check if already instantiated
+    if (this.textProviders.has(name)) {
+      return this.textProviders.get(name)!;
+    }
+
+    // Check if creation is already in progress (race condition prevention)
+    const existingPromise = this.textProviderPromises.get(name);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    // Check if config exists
+    const config = this.configs.get(name);
+    if (!config) {
+      throw new ProviderNotFoundError(name);
+    }
+
+    // Create with promise locking
+    const createPromise = this.createTextProviderAsync(name, config);
+    this.textProviderPromises.set(name, createPromise);
+
+    try {
+      const provider = await createPromise;
+      this.textProviders.set(name, provider);
+      return provider;
+    } finally {
+      // Always clean up the promise lock
+      this.textProviderPromises.delete(name);
+    }
+  }
+
+  /**
+   * Get a text provider instance synchronously (for backward compatibility)
+   * WARNING: This method may create duplicate providers under concurrent access.
+   * Prefer getTextProvider() (async) for new code.
+   * @deprecated Use async getTextProvider() instead to prevent race conditions
+   */
+  getTextProviderSync(name: string): ITextProvider {
+    assertNotDestroyed(this, 'get text provider');
+
     // Check if already instantiated
     if (this.textProviders.has(name)) {
       return this.textProviders.get(name)!;
@@ -59,7 +126,7 @@ export class ProviderRegistry {
       throw new ProviderNotFoundError(name);
     }
 
-    // Lazy load provider
+    // Lazy load provider (may race with concurrent calls)
     const provider = this.createTextProvider(name, config);
     this.textProviders.set(name, provider);
     return provider;
@@ -67,11 +134,20 @@ export class ProviderRegistry {
 
   /**
    * Get an image provider instance (lazy loaded and cached)
+   * Uses promise-based locking to prevent race conditions
    */
-  getImageProvider(name: string): IImageProvider {
+  async getImageProvider(name: string): Promise<IImageProvider> {
+    assertNotDestroyed(this, 'get image provider');
+
     // Check if already instantiated
     if (this.imageProviders.has(name)) {
       return this.imageProviders.get(name)!;
+    }
+
+    // Check if creation is already in progress (race condition prevention)
+    const existingPromise = this.imageProviderPromises.get(name);
+    if (existingPromise) {
+      return existingPromise;
     }
 
     // Check if config exists
@@ -80,10 +156,40 @@ export class ProviderRegistry {
       throw new ProviderNotFoundError(name);
     }
 
-    // Lazy load provider
-    const provider = this.createImageProvider(name, config);
-    this.imageProviders.set(name, provider);
-    return provider;
+    // Create with promise locking
+    const createPromise = this.createImageProviderAsync(name, config);
+    this.imageProviderPromises.set(name, createPromise);
+
+    try {
+      const provider = await createPromise;
+      this.imageProviders.set(name, provider);
+      return provider;
+    } finally {
+      // Always clean up the promise lock
+      this.imageProviderPromises.delete(name);
+    }
+  }
+
+  /**
+   * Async wrapper for text provider creation
+   */
+  private async createTextProviderAsync(
+    name: string,
+    config: ProviderConfig
+  ): Promise<ITextProvider> {
+    // Provider creation is synchronous, but wrapped in async for future extensibility
+    // and to support the promise-based locking pattern
+    return this.createTextProvider(name, config);
+  }
+
+  /**
+   * Async wrapper for image provider creation
+   */
+  private async createImageProviderAsync(
+    name: string,
+    config: ProviderConfig
+  ): Promise<IImageProvider> {
+    return this.createImageProvider(name, config);
   }
 
   /**
@@ -192,5 +298,27 @@ export class ProviderRegistry {
    */
   getConfig(name: string): ProviderConfig | undefined {
     return this.configs.get(name);
+  }
+
+  /**
+   * Destroy the registry and release all resources
+   * Safe to call multiple times (idempotent)
+   */
+  destroy(): void {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
+
+    // Clear all cached providers
+    this.textProviders.clear();
+    this.imageProviders.clear();
+
+    // Clear pending promises (they will resolve but result won't be cached)
+    this.textProviderPromises.clear();
+    this.imageProviderPromises.clear();
+
+    // Clear configs
+    this.configs.clear();
   }
 }

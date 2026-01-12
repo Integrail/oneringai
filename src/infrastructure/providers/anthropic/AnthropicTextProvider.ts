@@ -28,6 +28,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
 
   private client: Anthropic;
   private converter: AnthropicConverter;
+  private streamConverter: AnthropicStreamConverter;
 
   constructor(config: AnthropicConfig) {
     super(config);
@@ -37,6 +38,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
       maxRetries: this.getMaxRetries(),
     });
     this.converter = new AnthropicConverter();
+    this.streamConverter = new AnthropicStreamConverter();
   }
 
   /**
@@ -75,10 +77,17 @@ export class AnthropicTextProvider extends BaseTextProvider {
         stream: true,
       });
 
+      // Reset stream converter for reuse
+      this.streamConverter.reset();
+
       // Convert Anthropic events → our StreamEvent format
-      const streamConverter = new AnthropicStreamConverter();
-      yield* streamConverter.convertStream(stream, options.model);
+      yield* this.streamConverter.convertStream(stream, options.model);
+
+      // Clear stream converter to prevent memory leaks
+      this.streamConverter.clear();
     } catch (error: any) {
+      // Clear stream converter even on error
+      this.streamConverter.clear();
       this.handleError(error);
       throw error;
     }

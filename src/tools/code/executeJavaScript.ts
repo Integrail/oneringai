@@ -5,7 +5,7 @@
 
 import * as vm from 'vm';
 import { ToolFunction } from '../../domain/entities/Tool.js';
-import { oauthRegistry } from '../../plugins/oauth/OAuthRegistry.js';
+import { oauthRegistry, OAuthRegistry } from '../../plugins/oauth/OAuthRegistry.js';
 import { authenticatedFetch } from '../../plugins/oauth/authenticatedFetch.js';
 
 interface ExecuteJSArgs {
@@ -22,12 +22,18 @@ interface ExecuteJSResult {
   executionTime: number;
 }
 
-export const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult> = {
-  definition: {
-    type: 'function',
-    function: {
-      name: 'execute_javascript',
-      description: `Execute JavaScript code in a secure sandbox with OAuth authentication.
+/**
+ * Generate the tool description with current OAuth providers
+ */
+function generateDescription(registry: OAuthRegistry): string {
+  const providers = registry.listProviders();
+  const providerList = providers.length > 0
+    ? providers
+        .map(p => `   • "${p.name}": ${p.displayName}\n     ${p.description}\n     Base URL: ${p.baseURL}`)
+        .join('\n\n')
+    : '   No OAuth providers registered yet. Register providers with oauthRegistry.register().';
+
+  return `Execute JavaScript code in a secure sandbox with OAuth authentication.
 
 IMPORTANT: This tool runs JavaScript code in a sandboxed environment with access to authenticated APIs.
 
@@ -45,11 +51,7 @@ AVAILABLE IN CONTEXT:
      • Returns: Promise<Response>
 
    REGISTERED OAUTH PROVIDERS:
-${oauthRegistry.listProviders().length > 0
-  ? oauthRegistry.listProviders()
-      .map(p => `   • "${p.name}": ${p.displayName}\n     ${p.description}\n     Base URL: ${p.baseURL}`)
-      .join('\n\n')
-  : '   No OAuth providers registered yet. Register providers with oauthRegistry.register().'}
+${providerList}
 
 3. STANDARD FETCH:
    - fetch(url, options) - No authentication
@@ -87,59 +89,79 @@ RETURNS:
   logs: string[],
   error?: string,
   executionTime: number
-}`,
+}`;
+}
 
-      parameters: {
-        type: 'object',
-        properties: {
-          code: {
-            type: 'string',
-            description:
-              'JavaScript code to execute. MUST set the "output" variable. Wrap in async IIFE for async operations.',
+/**
+ * Create an execute_javascript tool with the current OAuth registry state
+ * Use this factory when you need the tool to reflect currently registered providers
+ */
+export function createExecuteJavaScriptTool(registry: OAuthRegistry = oauthRegistry): ToolFunction<ExecuteJSArgs, ExecuteJSResult> {
+  return {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'execute_javascript',
+        description: generateDescription(registry),
+        parameters: {
+          type: 'object',
+          properties: {
+            code: {
+              type: 'string',
+              description:
+                'JavaScript code to execute. MUST set the "output" variable. Wrap in async IIFE for async operations.',
+            },
+            input: {
+              description: 'Optional input data available as "input" variable in your code',
+            },
+            timeout: {
+              type: 'number',
+              description: 'Execution timeout in milliseconds (default: 10000, max: 30000)',
+            },
           },
-          input: {
-            description: 'Optional input data available as "input" variable in your code',
-          },
-          timeout: {
-            type: 'number',
-            description: 'Execution timeout in milliseconds (default: 10000, max: 30000)',
-          },
+          required: ['code'],
         },
-        required: ['code'],
       },
+      blocking: true,
+      timeout: 35000, // Tool timeout (slightly more than max code timeout)
     },
-    blocking: true,
-    timeout: 35000, // Tool timeout (slightly more than max code timeout)
-  },
 
-  execute: async (args: ExecuteJSArgs): Promise<ExecuteJSResult> => {
-    const logs: string[] = [];
-    const startTime = Date.now();
+    execute: async (args: ExecuteJSArgs): Promise<ExecuteJSResult> => {
+      const logs: string[] = [];
+      const startTime = Date.now();
 
-    try {
-      // Validate timeout
-      const timeout = Math.min(args.timeout || 10000, 30000);
+      try {
+        // Validate timeout
+        const timeout = Math.min(args.timeout || 10000, 30000);
 
-      // Execute in VM
-      const result = await executeInVM(args.code, args.input, timeout, logs);
+        // Execute in VM with the specified registry
+        const result = await executeInVM(args.code, args.input, timeout, logs, registry);
 
-      return {
-        success: true,
-        result,
-        logs,
-        executionTime: Date.now() - startTime,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        result: null,
-        logs,
-        error: (error as Error).message,
-        executionTime: Date.now() - startTime,
-      };
-    }
-  },
-};
+        return {
+          success: true,
+          result,
+          logs,
+          executionTime: Date.now() - startTime,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          result: null,
+          logs,
+          error: (error as Error).message,
+          executionTime: Date.now() - startTime,
+        };
+      }
+    },
+  };
+}
+
+/**
+ * Default executeJavaScript tool (uses global oauthRegistry)
+ * NOTE: The description is generated at module load time. If you register
+ * providers after importing this, use createExecuteJavaScriptTool() instead.
+ */
+export const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult> = createExecuteJavaScriptTool(oauthRegistry);
 
 /**
  * Execute code in Node.js vm module
@@ -148,7 +170,8 @@ async function executeInVM(
   code: string,
   input: any,
   timeout: number,
-  logs: string[]
+  logs: string[],
+  registry: OAuthRegistry = oauthRegistry
 ): Promise<any> {
   // Create sandbox context
   const sandbox: any = {
@@ -169,12 +192,12 @@ async function executeInVM(
     // Standard fetch
     fetch: globalThis.fetch,
 
-    // OAuth registry info
+    // OAuth registry info (uses the provided registry)
     oauth: {
-      listProviders: () => oauthRegistry.listProviderNames(),
+      listProviders: () => registry.listProviderNames(),
       getProviderInfo: (name: string) => {
         try {
-          const provider = oauthRegistry.get(name);
+          const provider = registry.get(name);
           return {
             displayName: provider.displayName,
             description: provider.description,

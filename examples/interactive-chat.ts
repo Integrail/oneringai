@@ -38,6 +38,7 @@ import {
   tools,
   isOutputTextDelta,
   StreamHelpers,
+  createExecuteJavaScriptTool,
 } from '../src/index.js';
 import { readClipboardImage } from '../src/utils/clipboardImage.js';
 
@@ -396,7 +397,9 @@ Example endpoints:
     agentTools.push(microsoftTool);
   }
 
-  agentTools.push(tools.executeJavaScript);
+  // Use factory function to create tool with CURRENT OAuth providers
+  // (tools.executeJavaScript has a static description from module load time)
+  agentTools.push(createExecuteJavaScriptTool(oauthRegistry));
 
   let instructions = 'You are a helpful, friendly, and knowledgeable AI assistant';
 
@@ -423,7 +426,7 @@ Example endpoints:
   instructions += '\n\nIMPORTANT: When user says "run code" or "execute code", you MUST use the execute_javascript tool, not describe what code would do.';
 
   // Create agent ONCE
-  const agent = client.agents.create({
+  const agent = await client.agents.create({
     provider: selectedProvider.name,
     model: selectedProvider.model,
     tools: agentTools,

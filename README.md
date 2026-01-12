@@ -151,7 +151,7 @@ const weatherTool: ToolFunction = {
   }
 };
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'anthropic',
   model: 'claude-sonnet-4-20250514',
   tools: [weatherTool],
@@ -464,7 +464,7 @@ const searchTool: ToolFunction = {
   }
 };
 
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'anthropic',
   model: 'claude-sonnet-4-20250514',
   tools: [searchTool]
@@ -536,7 +536,8 @@ const client = new OneRingAI({
 #### `client.agents` - Agentic Text Generation
 
 ```typescript
-const agent = client.agents.create({
+// Agent.create() is async and returns Promise<Agent>
+const agent = await client.agents.create({
   provider: string,
   model: string,
   instructions?: string,
@@ -724,7 +725,7 @@ Control agent execution with hooks (modify behavior) and events (monitoring).
 Listen to execution events for logging, UI updates, monitoring:
 
 ```typescript
-const agent = client.agents.create({ ... });
+const agent = await client.agents.create({ ... });
 
 // Listen to tool execution
 agent.on('tool:start', ({ toolCall }) => {
@@ -763,7 +764,7 @@ const response = await agent.run('Do something');
 Modify execution flow with hooks - approve tools, cache results, add retry logic:
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [dangerousTool],
@@ -807,7 +808,7 @@ const agent = client.agents.create({
 Control execution flow:
 
 ```typescript
-const agent = client.agents.create({ ... });
+const agent = await client.agents.create({ ... });
 
 // Start execution (async)
 const responsePromise = agent.run('Long task');
@@ -833,7 +834,7 @@ const response = await responsePromise;
 Get detailed execution metrics:
 
 ```typescript
-const agent = client.agents.create({ ... });
+const agent = await client.agents.create({ ... });
 const response = await agent.run('Process data');
 
 // Get metrics
@@ -857,7 +858,7 @@ agent.destroy();
 #### Enterprise Configuration
 
 ```typescript
-const agent = client.agents.create({
+const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
   tools: [myTool],
@@ -936,7 +937,7 @@ const token = await oauth.getToken();  // Automatically cached & refreshed
 
 **Unified Registry** - Register ALL your APIs in one place:
 ```typescript
-import { oauthRegistry, authenticatedFetch, generateWebAPITool } from '@oneringai/agents';
+import { oauthRegistry, authenticatedFetch, generateWebAPITool, createExecuteJavaScriptTool } from '@oneringai/agents';
 
 // Register OAuth providers
 oauthRegistry.register('microsoft', { flow: 'authorization_code', ... });
@@ -954,6 +955,16 @@ await authenticatedFetch(url, options, 'openai-api');
 
 // Or generate universal API tool
 const apiTool = generateWebAPITool();  // Works with all providers!
+
+// Create JavaScript execution tool with current OAuth providers
+// IMPORTANT: Use createExecuteJavaScriptTool() AFTER registering providers
+// to ensure the tool description includes all available OAuth providers
+const jsTool = createExecuteJavaScriptTool(oauthRegistry);
+const agent = await client.agents.create({
+  provider: 'openai',
+  model: 'gpt-4',
+  tools: [jsTool]  // Tool will show all registered OAuth providers to the AI
+});
 ```
 
 **Full Documentation**: See [OAUTH.md](./OAUTH.md) for:
@@ -1241,7 +1252,7 @@ const text = await client.text.generate('Question?', { provider: 'openai', model
 
 **Agent with tools:**
 ```typescript
-const agent = client.agents.create({ provider: 'anthropic', model: 'claude-sonnet-4-20250514', tools: [...] });
+const agent = await client.agents.create({ provider: 'anthropic', model: 'claude-sonnet-4-20250514', tools: [...] });
 const result = await agent.run('Do something');
 ```
 
@@ -1254,5 +1265,9 @@ const response = await client.text.generateRaw([input], { provider: 'google', mo
 ---
 
 **Version**: 0.1.0
-**Last Updated**: 2026-01-06
+**Last Updated**: 2026-01-12
 **Supported Providers**: 6+ (OpenAI, Anthropic, Google, Grok, Groq, Together AI, Custom)
+
+**Recent Changes**:
+- **BREAKING**: `client.agents.create()` is now async and returns `Promise<Agent>` (add `await`)
+- Added `createExecuteJavaScriptTool(oauthRegistry)` for dynamic OAuth provider support in JavaScript execution tool

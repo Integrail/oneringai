@@ -100,6 +100,13 @@ export type {
   IToolExecutor,
 } from './domain/interfaces/IToolExecutor.js';
 
+export type {
+  IDisposable,
+  IAsyncDisposable,
+} from './domain/interfaces/IDisposable.js';
+
+export { assertNotDestroyed } from './domain/interfaces/IDisposable.js';
+
 // Configuration types
 export type {
   ProviderConfig,
@@ -132,6 +139,8 @@ export {
   ToolNotFoundError,
   ModelNotSupportedError,
   InvalidConfigError,
+  InvalidToolArgumentsError,
+  ProviderError,
 } from './domain/errors/AIErrors.js';
 
 // Capability managers (re-exported from their modules)
@@ -173,6 +182,8 @@ export type { ClipboardImageResult } from './utils/clipboardImage.js';
 
 // Pre-built tools
 export * as tools from './tools/index.js';
+// Factory function for dynamic OAuth provider support
+export { createExecuteJavaScriptTool } from './tools/code/executeJavaScript.js';
 
 // OAuth plugin
 export { OAuthManager, oauthRegistry } from './plugins/oauth/index.js';

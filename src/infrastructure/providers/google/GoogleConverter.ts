@@ -4,6 +4,7 @@
  */
 
 // Import types - the new SDK may have different type names
+import { randomUUID } from 'crypto';
 import type {
   Content as GeminiContent,
   Part,
@@ -15,6 +16,7 @@ import { InputItem, MessageRole, OutputItem } from '../../../domain/entities/Mes
 import { Content, ContentType } from '../../../domain/entities/Content.js';
 import { Tool, FunctionToolDefinition } from '../../../domain/entities/Tool.js';
 import { fetchImageAsBase64 } from '../../../utils/imageUtils.js';
+import { InvalidToolArgumentsError } from '../../../domain/errors/AIErrors.js';
 
 export class GoogleConverter {
   // Track tool call ID → tool name mapping for tool results
@@ -166,11 +168,23 @@ export class GoogleConverter {
           // Store tool call ID → name mapping for later use
           this.toolCallMapping.set(c.id, c.name);
 
+          // Safe JSON parse with error handling
+          let parsedArgs: unknown;
+          try {
+            parsedArgs = JSON.parse(c.arguments);
+          } catch (parseError) {
+            throw new InvalidToolArgumentsError(
+              c.name,
+              c.arguments,
+              parseError instanceof Error ? parseError : new Error(String(parseError))
+            );
+          }
+
           // Google uses functionCall
           const functionCallPart: any = {
             functionCall: {
               name: c.name,
-              args: JSON.parse(c.arguments),
+              args: parsedArgs,
             },
           };
 
@@ -282,7 +296,7 @@ export class GoogleConverter {
     const output: OutputItem[] = [
       {
         type: 'message',
-        id: response.id || `google_${Date.now()}`,
+        id: response.id || `google_msg_${randomUUID()}`,
         role: MessageRole.ASSISTANT,
         content,
       },
@@ -298,7 +312,7 @@ export class GoogleConverter {
     }
 
     return {
-      id: `resp_google_${Date.now()}`,
+      id: `resp_google_${randomUUID()}`,
       object: 'response',
       created_at: Math.floor(Date.now() / 1000),
       status: this.mapFinishReason(candidate?.finishReason),
@@ -327,7 +341,7 @@ export class GoogleConverter {
           annotations: [],
         });
       } else if ('functionCall' in part && part.functionCall) {
-        const toolId = `google_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const toolId = `google_${randomUUID()}`;
         const functionName = part.functionCall.name || '';
 
         // Store thought signature if present (required for Gemini 3+)
@@ -385,13 +399,32 @@ export class GoogleConverter {
   }
 
   /**
-   * Extract tool name from tool_use_id (hacky but needed for Google)
-   * In practice, we'd need to track this mapping
+   * Extract tool name from tool_use_id using tracked mapping
    */
-  private extractToolName(_toolUseId: string): string {
-    // This is a limitation - Google needs the function name for responses
-    // In a real implementation, we'd track tool call ID → name mapping
-    // For now, return a placeholder
-    return 'tool_result';
+  private extractToolName(toolUseId: string): string {
+    const name = this.toolCallMapping.get(toolUseId);
+    if (name) {
+      return name;
+    }
+    // Fallback - log warning and return placeholder
+    console.warn(`[GoogleConverter] Tool name not found for ID: ${toolUseId}`);
+    return 'unknown_tool';
+  }
+
+  /**
+   * Clear all internal mappings
+   * Should be called after each request/response cycle to prevent memory leaks
+   */
+  clearMappings(): void {
+    this.toolCallMapping.clear();
+    this.thoughtSignatures.clear();
+  }
+
+  /**
+   * Reset converter state for a new request
+   * Alias for clearMappings()
+   */
+  reset(): void {
+    this.clearMappings();
   }
 }

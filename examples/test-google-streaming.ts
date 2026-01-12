@@ -16,7 +16,7 @@ async function main() {
 
   console.log('=== Testing Google Streaming with Tools ===\n');
 
-  const agent = client.agents.create({
+  const agent = await client.agents.create({
     provider: 'google',
     model: 'gemini-2.0-flash-exp',
     instructions: 'Use the execute_javascript tool when asked to run code.',

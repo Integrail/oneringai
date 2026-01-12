@@ -133,3 +133,38 @@ export class InvalidConfigError extends AIError {
     Object.setPrototypeOf(this, InvalidConfigError.prototype);
   }
 }
+
+export class InvalidToolArgumentsError extends AIError {
+  constructor(
+    toolName: string,
+    public readonly rawArguments: string,
+    public readonly parseError?: Error
+  ) {
+    super(
+      `Invalid arguments for tool '${toolName}': ${parseError?.message || 'Failed to parse JSON'}`,
+      'INVALID_TOOL_ARGUMENTS',
+      400,
+      parseError
+    );
+    this.name = 'InvalidToolArgumentsError';
+    Object.setPrototypeOf(this, InvalidToolArgumentsError.prototype);
+  }
+}
+
+export class ProviderError extends AIError {
+  constructor(
+    public readonly providerName: string,
+    message: string,
+    statusCode?: number,
+    originalError?: Error
+  ) {
+    super(
+      `${providerName}: ${message}`,
+      'PROVIDER_ERROR',
+      statusCode,
+      originalError
+    );
+    this.name = 'ProviderError';
+    Object.setPrototypeOf(this, ProviderError.prototype);
+  }
+}

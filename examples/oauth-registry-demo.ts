@@ -134,7 +134,7 @@ async function main() {
       },
     });
 
-    const agent = client.agents.create({
+    const agent = await client.agents.create({
       provider: 'openai',
       model: 'gpt-4',
       tools: [apiTool],

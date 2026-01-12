@@ -2,4 +2,4 @@
  * Code execution tools
  */
 
-export { executeJavaScript } from './executeJavaScript.js';
+export { executeJavaScript, createExecuteJavaScriptTool } from './executeJavaScript.js';

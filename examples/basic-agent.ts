@@ -99,7 +99,7 @@ async function main() {
   console.log('🤖 Creating agent with tools...\n');
 
   // Create agent with tools
-  const agent = client.agents.create({
+  const agent = await client.agents.create({
     provider: 'openai',
     model: 'gpt-4',
     tools: [weatherTool, calculatorTool],

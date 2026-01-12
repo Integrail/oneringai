@@ -11,6 +11,19 @@ import * as path from 'path';
 
 const execAsync = promisify(exec);
 
+/**
+ * Safely clean up a temp file, ignoring errors
+ */
+function cleanupTempFile(filePath: string): void {
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+  } catch {
+    // Ignore cleanup errors - temp directory will eventually clean up
+  }
+}
+
 export interface ClipboardImageResult {
   success: boolean;
   dataUri?: string;
@@ -86,16 +99,9 @@ async function readClipboardImageMac(): Promise<ClipboardImageResult> {
         error: 'No image found in clipboard. Try copying an image first (Cmd+C or screenshot with Cmd+Ctrl+Shift+4)',
       };
     }
-  } catch (error: any) {
-    // Clean up temp file
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
-    }
-
-    return {
-      success: false,
-      error: error.message || 'Failed to read clipboard image',
-    };
+  } finally {
+    // Always clean up temp file
+    cleanupTempFile(tempFile);
   }
 }
 
@@ -130,15 +136,9 @@ async function readClipboardImageLinux(): Promise<ClipboardImageResult> {
       success: false,
       error: 'No image in clipboard. Install xclip (X11) or wl-clipboard (Wayland)',
     };
-  } catch (error: any) {
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
-    }
-
-    return {
-      success: false,
-      error: error.message,
-    };
+  } finally {
+    // Always clean up temp file
+    cleanupTempFile(tempFile);
   }
 }
 
@@ -171,20 +171,15 @@ async function readClipboardImageWindows(): Promise<ClipboardImageResult> {
       success: false,
       error: 'No image found in clipboard',
     };
-  } catch (error: any) {
-    if (fs.existsSync(tempFile)) {
-      fs.unlinkSync(tempFile);
-    }
-
-    return {
-      success: false,
-      error: error.message,
-    };
+  } finally {
+    // Always clean up temp file
+    cleanupTempFile(tempFile);
   }
 }
 
 /**
  * Convert image file to data URI
+ * Note: Caller is responsible for temp file cleanup via finally block
  */
 async function convertFileToDataUri(filePath: string): Promise<ClipboardImageResult> {
   try {
@@ -207,20 +202,12 @@ async function convertFileToDataUri(filePath: string): Promise<ClipboardImageRes
 
     const dataUri = `data:${mimeType};base64,${base64Image}`;
 
-    // Clean up temp file
-    fs.unlinkSync(filePath);
-
     return {
       success: true,
       dataUri,
       format: mimeType,
     };
   } catch (error: any) {
-    // Clean up on error
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-
     return {
       success: false,
       error: error.message,

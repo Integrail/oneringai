@@ -49,8 +49,8 @@ const client = new OneRingAI({
 });
 
 // Different capabilities use the same credentials
-client.agents.create({ provider: 'openai', ... });
-client.images.generate({ provider: 'openai', ... });
+await client.agents.create({ provider: 'openai', ... });  // async (returns Promise<Agent>)
+await client.images.generate({ provider: 'openai', ... });
 ```
 
 **How it works**:
@@ -130,6 +130,47 @@ response.output.filter((item): item is InputItem =>
 ```
 
 **Why**: `OutputItem` includes `ReasoningItem` which is not valid in `InputItem`
+
+### 5. OAuth Integration with Dynamic Tool Descriptions
+
+**Problem Solved**: How to show currently registered OAuth providers in tool descriptions when providers are registered after module load?
+
+**Solution**: Factory pattern for tools that need dynamic descriptions
+
+**Static export (frozen at module load)**:
+```typescript
+// src/tools/code/executeJavaScript.ts
+export const executeJavaScript: ToolFunction = createExecuteJavaScriptTool(oauthRegistry);
+// Description generated ONCE when module loads - doesn't reflect later provider registrations
+```
+
+**Factory function (generates fresh tool with current state)**:
+```typescript
+// After registering OAuth providers
+oauthRegistry.register('microsoft', { ... });
+oauthRegistry.register('google', { ... });
+
+// Create tool with CURRENT providers (description includes microsoft and google)
+const jsTool = createExecuteJavaScriptTool(oauthRegistry);
+
+const agent = await client.agents.create({
+  provider: 'openai',
+  model: 'gpt-4',
+  tools: [jsTool]  // Tool description will show all registered providers to the AI
+});
+```
+
+**Why this matters**:
+- Tool descriptions are shown to the LLM to help it decide when to use the tool
+- If OAuth providers aren't listed, the LLM won't know they're available
+- User reported: "what OAuth providers are available?" → AI responded "None registered" even though Microsoft was configured
+- Root cause: Tool was created at import time, before provider registration
+
+**Location**: `src/tools/code/executeJavaScript.ts`
+
+**Exports**:
+- `executeJavaScript` - Static tool (for backward compatibility, description frozen at load)
+- `createExecuteJavaScriptTool(registry)` - Factory function (generates tool with current providers)
 
 ## Directory Structure
 
@@ -638,6 +679,11 @@ This is a private project. For questions or contributions, contact the project m
 
 ---
 
-**Last Updated**: 2025-01-05
+**Last Updated**: 2026-01-12
 **Version**: 0.1.0
 **Status**: MVP Complete, Production-Ready Architecture
+
+**Recent Changes (2026-01-12)**:
+- **BREAKING**: `AgentManager.create()` is now async and returns `Promise<Agent>`
+- Added `createExecuteJavaScriptTool(registry)` factory for dynamic OAuth provider descriptions
+- Completed Phase 1-6 of codebase improvement plan (memory safety, error handling, concurrency)

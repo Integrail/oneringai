@@ -219,4 +219,24 @@ export class AnthropicStreamConverter {
       },
     ];
   }
+
+  /**
+   * Clear all internal state
+   * Should be called after each stream completes to prevent memory leaks
+   */
+  clear(): void {
+    this.responseId = '';
+    this.model = '';
+    this.sequenceNumber = 0;
+    this.contentBlockIndex.clear();
+    this.usage = { input_tokens: 0, output_tokens: 0 };
+  }
+
+  /**
+   * Reset converter state for a new stream
+   * Alias for clear()
+   */
+  reset(): void {
+    this.clear();
+  }
 }

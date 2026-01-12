@@ -232,7 +232,7 @@ const readEmailTool = {
 };
 
 // 4. Create agent with both AI (via OneRingAI) and OAuth (via custom tool)
-const agent = aiClient.agents.create({
+const agent = await aiClient.agents.create({
   provider: 'openai',  // AI provider (API key auth)
   model: 'gpt-4',
   tools: [readEmailTool],  // Tool uses OAuth internally
@@ -427,7 +427,7 @@ const salesforceTool = {
 };
 
 // Agent combines both
-const agent = aiClient.agents.create({
+const agent = await aiClient.agents.create({
   provider: 'openai',  // AI provider (simple auth)
   model: 'gpt-4',
   tools: [salesforceTool]  // Tool uses OAuth internally

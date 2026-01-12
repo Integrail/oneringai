@@ -15,7 +15,10 @@ export class HookManager {
   private hooks: Map<HookName, Hook<any, any>[]> = new Map();
   private timeout: number;
   private parallel: boolean;
-  private consecutiveErrors: number = 0;
+  // Per-hook error tracking: hookKey -> consecutive error count
+  private hookErrorCounts: Map<string, number> = new Map();
+  // Disabled hooks that exceeded error threshold
+  private disabledHooks: Set<string> = new Set();
   private maxConsecutiveErrors: number = 3;
   private emitter: EventEmitter;
 
@@ -113,8 +116,10 @@ export class HookManager {
   ): Promise<T> {
     let result = defaultResult;
 
-    for (const hook of hooks) {
-      const hookResult = await this.executeHookSafely(hook, context);
+    for (let i = 0; i < hooks.length; i++) {
+      const hook = hooks[i]!;
+      const hookKey = this.getHookKey(hook, i);
+      const hookResult = await this.executeHookSafely(hook, context, hookKey);
 
       // Skip failed hooks
       if (hookResult === null) {
@@ -141,9 +146,12 @@ export class HookManager {
     context: any,
     defaultResult: T
   ): Promise<T> {
-    // Execute all hooks concurrently
+    // Execute all hooks concurrently with unique keys
     const results = await Promise.all(
-      hooks.map((hook) => this.executeHookSafely(hook, context))
+      hooks.map((hook, i) => {
+        const hookKey = this.getHookKey(hook, i);
+        return this.executeHookSafely(hook, context, hookKey);
+      })
     );
 
     // Filter out failures and merge results
@@ -156,9 +164,27 @@ export class HookManager {
   }
 
   /**
-   * Execute single hook with error isolation and timeout
+   * Generate unique key for a hook
    */
-  private async executeHookSafely<T>(hook: Hook<any, any>, context: any): Promise<T | null> {
+  private getHookKey(hook: Hook<any, any>, index: number): string {
+    return `${hook.name || 'anonymous'}_${index}`;
+  }
+
+  /**
+   * Execute single hook with error isolation and timeout (with per-hook error tracking)
+   */
+  private async executeHookSafely<T>(
+    hook: Hook<any, any>,
+    context: any,
+    hookKey?: string
+  ): Promise<T | null> {
+    const key = hookKey || hook.name || 'anonymous';
+
+    // Skip disabled hooks
+    if (this.disabledHooks.has(key)) {
+      return null;
+    }
+
     const startTime = Date.now();
 
     try {
@@ -170,8 +196,8 @@ export class HookManager {
         ),
       ]);
 
-      // Reset error counter on success
-      this.consecutiveErrors = 0;
+      // Reset error counter for this hook on success
+      this.hookErrorCounts.delete(key);
 
       // Track timing
       const duration = Date.now() - startTime;
@@ -183,29 +209,32 @@ export class HookManager {
 
       return result as T;
     } catch (error) {
-      // Increment error counter
-      this.consecutiveErrors++;
+      // Increment error counter for this specific hook
+      const errorCount = (this.hookErrorCounts.get(key) || 0) + 1;
+      this.hookErrorCounts.set(key, errorCount);
 
       // Emit error event
       this.emitter.emit('hook:error', {
         executionId: context.executionId,
         hookName: hook.name || 'anonymous',
         error: error as Error,
+        consecutiveErrors: errorCount,
         timestamp: new Date(),
       });
 
-      // Check consecutive error threshold
-      if (this.consecutiveErrors > this.maxConsecutiveErrors) {
-        // Too many failures - this is critical
-        throw new Error(
-          `Too many consecutive hook failures (${this.consecutiveErrors}). Last error: ${(error as Error).message}`
+      // Check consecutive error threshold for this hook
+      if (errorCount >= this.maxConsecutiveErrors) {
+        // Disable this specific hook, not all hooks
+        this.disabledHooks.add(key);
+        console.warn(
+          `Hook "${key}" disabled after ${errorCount} consecutive failures. Last error: ${(error as Error).message}`
+        );
+      } else {
+        // Log warning but continue (degraded mode)
+        console.warn(
+          `Hook execution failed (${key}): ${(error as Error).message} (${errorCount}/${this.maxConsecutiveErrors} errors)`
         );
       }
-
-      // Log warning but continue (degraded mode)
-      console.warn(
-        `Hook execution failed (${hook.name || 'anonymous'}): ${(error as Error).message}`
-      );
 
       return null; // Hook failed, skip its result
     }
@@ -231,10 +260,26 @@ export class HookManager {
   }
 
   /**
-   * Clear all hooks
+   * Clear all hooks and reset error tracking
    */
   clear(): void {
     this.hooks.clear();
-    this.consecutiveErrors = 0;
+    this.hookErrorCounts.clear();
+    this.disabledHooks.clear();
+  }
+
+  /**
+   * Re-enable a disabled hook
+   */
+  enableHook(hookKey: string): void {
+    this.disabledHooks.delete(hookKey);
+    this.hookErrorCounts.delete(hookKey);
+  }
+
+  /**
+   * Get list of disabled hooks
+   */
+  getDisabledHooks(): string[] {
+    return Array.from(this.disabledHooks);
   }
 }

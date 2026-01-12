@@ -8,6 +8,7 @@ import { LLMResponse } from '../../../domain/entities/Response.js';
 import { InputItem, MessageRole, OutputItem } from '../../../domain/entities/Message.js';
 import { Content, ContentType } from '../../../domain/entities/Content.js';
 import { Tool, FunctionToolDefinition } from '../../../domain/entities/Tool.js';
+import { InvalidToolArgumentsError } from '../../../domain/errors/AIErrors.js';
 
 export class AnthropicConverter {
   /**
@@ -126,11 +127,22 @@ export class AnthropicConverter {
 
         case ContentType.TOOL_USE:
           // This appears in assistant messages
+          // Safe JSON parse with error handling
+          let parsedInput: unknown;
+          try {
+            parsedInput = JSON.parse(c.arguments);
+          } catch (parseError) {
+            throw new InvalidToolArgumentsError(
+              c.name,
+              c.arguments,
+              parseError instanceof Error ? parseError : new Error(String(parseError))
+            );
+          }
           blocks.push({
             type: 'tool_use',
             id: c.id,
             name: c.name,
-            input: JSON.parse(c.arguments), // Anthropic uses object, we use JSON string
+            input: parsedInput,
           });
           break;
       }
