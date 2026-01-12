@@ -32,6 +32,9 @@ import {
   MessageRole,
   ContentType,
   MessageBuilder,
+  oauthRegistry,
+  authenticatedFetch,
+  ToolFunction,
 } from '../src/index.js';
 import { readClipboardImage } from '../src/utils/clipboardImage.js';
 
@@ -242,6 +245,90 @@ async function main() {
   // Let user select provider
   selectedProvider = await selectProvider(availableProviders);
 
+  // ========== Register Microsoft Graph OAuth (if configured) ==========
+  if (
+    process.env.MICROSOFT_CLIENT_ID &&
+    process.env.MICROSOFT_CLIENT_SECRET &&
+    process.env.MICROSOFT_TENANT_ID
+  ) {
+    oauthRegistry.register('microsoft', {
+      displayName: 'Microsoft Graph API',
+      description: 'Access Microsoft 365: users, mail, calendar, files, teams',
+      baseURL: 'https://graph.microsoft.com',
+      oauth: {
+        flow: 'client_credentials',
+        clientId: process.env.MICROSOFT_CLIENT_ID,
+        clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
+        tokenUrl: `https://login.microsoftonline.com/${process.env.MICROSOFT_TENANT_ID}/oauth2/v2.0/token`,
+        scope: 'https://graph.microsoft.com/.default',
+      },
+    });
+  }
+
+  // ========== Create Microsoft Graph tool (if registered) ==========
+  const microsoftTool: ToolFunction | null = oauthRegistry.has('microsoft')
+    ? {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'microsoft_graph',
+            description: `Access Microsoft Graph API to read organization data.
+
+Can access:
+- Users (/v1.0/users) - List all users
+- Mail (/v1.0/users/{id}/messages) - Read mailboxes
+- Calendar (/v1.0/users/{id}/calendar/events) - Calendar events
+- Files (/v1.0/drives/{id}/root/children) - OneDrive files
+- Teams (/v1.0/teams) - Teams and channels
+
+IMPORTANT: Use application permissions (no specific user context).
+Example endpoints:
+- "/v1.0/users" - List all users
+- "/v1.0/users?$top=5" - List 5 users
+- "/v1.0/users?$filter=startswith(displayName,'A')" - Filter users`,
+
+            parameters: {
+              type: 'object',
+              properties: {
+                endpoint: {
+                  type: 'string',
+                  description:
+                    'Microsoft Graph endpoint path starting with /v1.0/ (e.g., "/v1.0/users", "/v1.0/users/{user-id}/messages")',
+                },
+                method: {
+                  type: 'string',
+                  enum: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+                  description: 'HTTP method (default: GET)',
+                },
+              },
+              required: ['endpoint'],
+            },
+          },
+        },
+        execute: async (args: { endpoint: string; method?: string }) => {
+          try {
+            const url = args.endpoint.startsWith('http')
+              ? args.endpoint
+              : `https://graph.microsoft.com${args.endpoint}`;
+
+            const response = await authenticatedFetch(url, { method: args.method || 'GET' }, 'microsoft');
+
+            if (!response.ok) {
+              return {
+                error: `Microsoft Graph API error: ${response.status} ${response.statusText}`,
+                status: response.status,
+              };
+            }
+
+            const data: any = await response.json();
+            return data;
+          } catch (error) {
+            return { error: (error as Error).message };
+          }
+        },
+      }
+    : null;
+
   // Display welcome message
   console.clear();
   console.log('╔════════════════════════════════════════════════════════════╗');
@@ -251,6 +338,12 @@ async function main() {
   console.log(`Provider: ${selectedProvider.displayName}`);
   console.log(`Model: ${selectedProvider.model}`);
   console.log(`Vision: ${selectedProvider.hasVision ? '✅ Enabled' : '❌ Not available'}`);
+
+  // Show Microsoft Graph status
+  if (microsoftTool) {
+    console.log(`Microsoft Graph: ✅ Available (access M365 data)`);
+  }
+
   console.log('');
   console.log('Commands:');
   console.log('  /exit     - Exit the chat');
@@ -259,6 +352,9 @@ async function main() {
   console.log('  /switch   - Change AI provider');
   console.log('  /provider - Show current provider info');
   console.log('  /images   - Show attached images');
+  if (microsoftTool) {
+    console.log('  /msgraph  - Show Microsoft Graph info');
+  }
   console.log('  Ctrl+V    - Paste image directly');
   console.log('  Ctrl+C    - Exit');
   console.log('');
@@ -353,15 +449,30 @@ async function main() {
       process.stdout.write('🤖 Assistant: ');
       const thinkingInterval = startThinkingAnimation();
 
-      // Generate response
-      const response = await client.text.generateRaw(messages, {
+      // Prepare tools array
+      const agentTools = microsoftTool ? [microsoftTool] : [];
+
+      // Create agent with tools (if we have Microsoft Graph)
+      const agent = client.agents.create({
         provider: selectedProvider.name,
         model: selectedProvider.model,
-        instructions:
-          'You are a helpful, friendly, and knowledgeable AI assistant. Be conversational, concise, and engaging. Use a warm tone. When analyzing images, be detailed and helpful.',
+        tools: agentTools,
+        instructions: `You are a helpful, friendly, and knowledgeable AI assistant${microsoftTool ? ' with access to Microsoft Graph API' : ''}. Be conversational, concise, and engaging. Use a warm tone. When analyzing images, be detailed and helpful.${microsoftTool ? '\n\nYou can access Microsoft 365 data using the microsoft_graph tool. Use it when users ask about their emails, calendar, files, or organization users.' : ''}`,
         temperature: 0.7,
-        max_output_tokens: 500,
+        maxIterations: 10,
       });
+
+      // Generate response with tools
+      const response = agentTools.length > 0
+        ? await agent.run(messages)
+        : await client.text.generateRaw(messages, {
+            provider: selectedProvider.name,
+            model: selectedProvider.model,
+            instructions:
+              'You are a helpful, friendly, and knowledgeable AI assistant. Be conversational, concise, and engaging. Use a warm tone. When analyzing images, be detailed and helpful.',
+            temperature: 0.7,
+            max_output_tokens: 500,
+          });
 
       stopThinkingAnimation(thinkingInterval);
 
@@ -533,6 +644,10 @@ async function handleCommand(command: string) {
       showProviderInfo();
       break;
 
+    case '/msgraph':
+      showMicrosoftGraphInfo();
+      break;
+
     case '/paste':
       await handleTextPaste();
       break;
@@ -584,6 +699,42 @@ function showProviderInfo() {
   console.log(`  Model: ${selectedProvider.model}`);
   console.log(`  Vision: ${selectedProvider.hasVision ? '✅ Enabled' : '❌ Not available'}`);
   console.log(`  ${selectedProvider.description}`);
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+}
+
+/**
+ * Show Microsoft Graph info
+ */
+function showMicrosoftGraphInfo() {
+  if (!oauthRegistry.has('microsoft')) {
+    console.log('\n❌ Microsoft Graph not configured\n');
+    console.log('To enable Microsoft Graph:');
+    console.log('  1. Set up app at https://portal.azure.com');
+    console.log('  2. Add to .env:');
+    console.log('     MICROSOFT_CLIENT_ID=...');
+    console.log('     MICROSOFT_CLIENT_SECRET=...');
+    console.log('     MICROSOFT_TENANT_ID=...');
+    console.log('  3. Restart chat\n');
+    return;
+  }
+
+  console.log('\n🔷 Microsoft Graph API\n');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+  console.log('  Status: ✅ Available');
+  console.log('  Base URL: https://graph.microsoft.com');
+  console.log('  Auth: Client Credentials (app token)');
+  console.log('');
+  console.log('  Available data:');
+  console.log('    • Organization users');
+  console.log('    • User mailboxes');
+  console.log('    • Calendars & events');
+  console.log('    • OneDrive files');
+  console.log('    • Teams & channels');
+  console.log('');
+  console.log('  Example queries:');
+  console.log('    "How many users are in my organization?"');
+  console.log('    "List the first 5 users"');
+  console.log('    "Show me user details"');
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 }
 
@@ -718,6 +869,9 @@ function showHelp() {
   console.log('  /provider         - Show current provider info');
   console.log('  /images           - Show pending images');
   console.log('  /help             - Show this help message');
+  if (oauthRegistry.has('microsoft')) {
+    console.log('  /msgraph          - Microsoft Graph info');
+  }
   console.log('  Ctrl+V            - Paste image from clipboard');
   console.log('  Ctrl+C            - Exit\n');
 

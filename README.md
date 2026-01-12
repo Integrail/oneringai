@@ -893,14 +893,15 @@ const agent = client.agents.create({
 
 **Try it**: `npm run example:hooks`
 
-### OAuth 2.0 Authentication
+### OAuth 2.0 Authentication & API Registry
 
-Authenticate with OAuth-protected APIs using the OAuth plugin.
+Authenticate with OAuth-protected APIs AND static API key services using the unified OAuth plugin.
 
-**3 Flows Supported**:
+**4 Flows Supported**:
 - Authorization Code (with PKCE) - User authentication
 - Client Credentials - Service-to-service
 - JWT Bearer - Service accounts
+- **Static Token** - API keys (OpenAI, Anthropic, any API) ⭐ NEW
 
 ```typescript
 import { OAuthManager, OAuthFileStorage } from '@oneringai/agents';
@@ -933,13 +934,36 @@ const token = await oauth.getToken();  // Automatically cached & refreshed
 - FileStorage (encrypted files)
 - Custom (implement `IOAuthTokenStorage`)
 
+**Unified Registry** - Register ALL your APIs in one place:
+```typescript
+import { oauthRegistry, authenticatedFetch, generateWebAPITool } from '@oneringai/agents';
+
+// Register OAuth providers
+oauthRegistry.register('microsoft', { flow: 'authorization_code', ... });
+
+// Register static token providers
+oauthRegistry.register('openai-api', {
+  flow: 'static_token',
+  staticToken: process.env.OPENAI_API_KEY!,
+  // ...
+});
+
+// Use unified fetch for ANY provider
+await authenticatedFetch(url, options, 'microsoft');
+await authenticatedFetch(url, options, 'openai-api');
+
+// Or generate universal API tool
+const apiTool = generateWebAPITool();  // Works with all providers!
+```
+
 **Full Documentation**: See [OAUTH.md](./OAUTH.md) for:
-- Complete API configurations (Microsoft, Google, GitHub, Salesforce, etc.)
-- User OAuth vs App Token flows
+- Complete API configurations (Microsoft, Google, GitHub, Salesforce, OpenAI, etc.)
+- User OAuth vs App Token vs Static Token flows
 - Production setup guide
 - Custom storage examples
+- Unified registry examples
 
-**Try it**: `npm run example:oauth`
+**Try it**: `npm run example:oauth-static`
 
 ---
 

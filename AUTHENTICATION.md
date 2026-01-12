@@ -2,34 +2,39 @@
 
 This document clarifies how authentication works across different parts of the library.
 
-## Two Separate Systems
+## Two Systems (Now Unified!)
 
-### 1. AI Provider Authentication (Built-in)
+### 1. AI Provider Authentication (Built-in - For AI Usage)
 
-**Purpose**: Authenticate with AI providers (OpenAI, Anthropic, Google, etc.)
+**Purpose**: Use AI providers in OneRingAI client
 
-**Method**: Simple API keys (static credentials)
+**Method**: Simple API keys passed to OneRingAI constructor
 
-**Why**: AI providers use simple API key authentication - no OAuth needed
+**Why**: Optimized for AI provider integrations with our clean architecture
 
 **Examples**:
 ```typescript
 const client = new OneRingAI({
   providers: {
-    openai: { apiKey: 'sk-...' },              // OpenAI API key
-    anthropic: { apiKey: 'sk-ant-...' },       // Anthropic API key
-    google: { apiKey: 'AIza...' }              // Google API key
+    openai: { apiKey: 'sk-...' },              // For OneRingAI agents
+    anthropic: { apiKey: 'sk-ant-...' },       // For OneRingAI agents
+    google: { apiKey: 'AIza...' }              // For OneRingAI agents
   }
 });
 ```
 
-### 2. OAuth Plugin (New)
+### 2. OAuth Plugin with Registry (New - For API Access)
 
-**Purpose**: Authenticate with OAuth-protected APIs (Microsoft, Salesforce, GitHub, etc.)
+**Purpose**: Call external APIs (OAuth + static tokens) via tools
 
-**Method**: OAuth 2.0 flows (Authorization Code, Client Credentials, JWT Bearer)
+**Method**:
+- OAuth 2.0 flows (Authorization Code, Client Credentials, JWT Bearer)
+- **Static Token flow** (NEW) - For API keys
 
-**Why**: Many business APIs require OAuth for security and user authorization
+**Why**:
+- OAuth for business APIs that require it
+- Static tokens for simpler APIs
+- **Unified interface for ALL external API access**
 
 **Examples**:
 ```typescript
@@ -136,24 +141,37 @@ process.env.GOOGLE_APPLICATION_CREDENTIALS = './service-account-key.json';
 
 ## OAuth Plugin Use Cases
 
-### Use OAuth Plugin For:
+### Use OAuth Plugin (with Registry) For:
 
+**OAuth Flows**:
 ✅ **Microsoft Graph API** - Access user's Office 365 data
 ✅ **GitHub API** - Access repositories, issues, PRs
 ✅ **Salesforce** - CRM data access
 ✅ **HubSpot** - Marketing/CRM data
 ✅ **ClickUp** - Project management data
 ✅ **Dropbox** - File storage access
-✅ **Custom OAuth APIs** - Any API requiring OAuth
 
-### Don't Use OAuth Plugin For:
+**Static Token Flow** ⭐ NEW:
+✅ **OpenAI API** - Via tools and authenticatedFetch
+✅ **Anthropic API** - Via tools and authenticatedFetch
+✅ **Any API with static keys** - Unified interface
 
-❌ **OpenAI** - Use API key directly
-❌ **Anthropic** - Use API key directly
-❌ **Google Gemini** - Use API key directly
-❌ **Groq, Together AI, etc.** - Use API key directly
+**When to use OAuth Plugin**:
+- Calling external APIs via **tools**
+- Need unified `authenticatedFetch()` interface
+- Want dynamic provider selection in tools
+- Building multi-API integrations
 
-**Why?** AI providers use simple API keys, not OAuth. The OAuth plugin is for business APIs.
+### Use Built-in Provider System For:
+
+✅ **OpenAI** - When using as **AI provider** in OneRingAI
+✅ **Anthropic** - When using as **AI provider** in OneRingAI
+✅ **Google Gemini** - When using as **AI provider** in OneRingAI
+
+**When to use built-in**:
+- Using AI for agent reasoning/generation
+- Leveraging OneRingAI's provider abstraction
+- Don't need external API access
 
 ---
 
@@ -418,11 +436,40 @@ const agent = aiClient.agents.create({
 
 ---
 
+## Unified Approach (Best of Both Worlds)
+
+You can now use OAuth Registry for **both** OAuth and static tokens:
+
+```typescript
+import { oauthRegistry, authenticatedFetch, generateWebAPITool } from '@oneringai/agents';
+
+// Register ALL external APIs in one place
+oauthRegistry.register('openai-api', {
+  flow: 'static_token',
+  staticToken: process.env.OPENAI_API_KEY!,
+  // ...
+});
+
+oauthRegistry.register('microsoft', {
+  flow: 'authorization_code',
+  clientId: '...',
+  // ...
+});
+
+// One tool for ALL APIs
+const apiTool = generateWebAPITool();
+
+// AI picks correct provider
+agent.run('Call OpenAI API to list models');  // Uses openai-api
+agent.run('Read my Outlook emails');  // Uses microsoft
+```
+
 ## Conclusion
 
 ✅ **No conflicts** - Systems serve different purposes
 ✅ **Vertex AI** - ADC approach is correct (Google's recommendation)
-✅ **OAuth Plugin** - For business APIs, not AI providers
-✅ **Integration** - Use tools to combine AI + OAuth-protected APIs
+✅ **OAuth Plugin** - Now supports OAuth AND static tokens
+✅ **Integration** - Use tools to combine AI + any external API
+✅ **Unified** - One registry, one fetch, one tool for all APIs
 
-**No changes needed** - Architecture is sound!
+**Architecture is sound and now more flexible!** 🎯

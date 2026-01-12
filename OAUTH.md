@@ -119,6 +119,40 @@ OAUTH_ENCRYPTION_KEY=997db3aa6f28973c4e5d8b2a1f3c6e9d8a7b4c3e2d1f0a9b8c7d6e5f4a3
 
 **Security**: Private key must be kept secure!
 
+### Flow 4: Static Token (API Keys) ⭐ NEW
+
+**Use for**: APIs with static API keys (OpenAI, Anthropic, many SaaS APIs)
+
+**How it works**:
+1. Provider gives you a static API key
+2. You register it in the OAuth registry
+3. Use `authenticatedFetch()` with provider name
+4. Token automatically injected
+
+**Benefits**: Unified interface for all APIs (OAuth + static tokens)
+
+**Example**:
+```typescript
+oauthRegistry.register('openai-api', {
+  displayName: 'OpenAI API',
+  description: 'Access OpenAI models and completions',
+  baseURL: 'https://api.openai.com/v1',
+  oauth: {
+    flow: 'static_token',
+    staticToken: process.env.OPENAI_API_KEY!,
+    clientId: 'openai',  // For identification
+    tokenUrl: ''  // Not used
+  }
+});
+
+// Use unified fetch
+const models = await authenticatedFetch(
+  'https://api.openai.com/v1/models',
+  { method: 'GET' },
+  'openai-api'
+);
+```
+
 ---
 
 ## Storage Backends
@@ -173,6 +207,85 @@ const oauth = new OAuthManager({
   // ... other config
   storage: new RedisStorage()
 });
+```
+
+---
+
+## Static Token Examples (NEW)
+
+### OpenAI
+
+```typescript
+oauthRegistry.register('openai-api', {
+  displayName: 'OpenAI API',
+  description: 'Access OpenAI: models, completions, embeddings, fine-tuning',
+  baseURL: 'https://api.openai.com/v1',
+  oauth: {
+    flow: 'static_token',
+    staticToken: process.env.OPENAI_API_KEY!,
+    clientId: 'openai',
+    tokenUrl: ''
+  }
+});
+
+// Use it
+const models = await authenticatedFetch(
+  'https://api.openai.com/v1/models',
+  { method: 'GET' },
+  'openai-api'
+);
+```
+
+### Anthropic
+
+```typescript
+oauthRegistry.register('anthropic-api', {
+  displayName: 'Anthropic API',
+  description: 'Access Anthropic Claude models',
+  baseURL: 'https://api.anthropic.com/v1',
+  oauth: {
+    flow: 'static_token',
+    staticToken: process.env.ANTHROPIC_API_KEY!,
+    clientId: 'anthropic',
+    tokenUrl: ''
+  }
+});
+
+const response = await authenticatedFetch(
+  'https://api.anthropic.com/v1/messages',
+  {
+    method: 'POST',
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250929',
+      messages: [{ role: 'user', content: 'Hello!' }],
+      max_tokens: 1024
+    })
+  },
+  'anthropic-api'
+);
+```
+
+### Any API with Static Keys
+
+```typescript
+// Works with any API that uses Bearer tokens or API keys
+oauthRegistry.register('custom-api', {
+  displayName: 'Custom SaaS API',
+  description: 'Your custom API endpoints',
+  baseURL: 'https://api.custom.com/v1',
+  oauth: {
+    flow: 'static_token',
+    staticToken: process.env.CUSTOM_API_KEY!,
+    clientId: 'custom',
+    tokenUrl: ''
+  }
+});
+
+const data = await authenticatedFetch(
+  'https://api.custom.com/v1/users',
+  { method: 'GET' },
+  'custom-api'
+);
 ```
 
 ---
@@ -926,16 +1039,18 @@ setInterval(async () => {
 
 ## API Support Matrix
 
-| Provider | User OAuth | App Token | JWT Bearer | PKCE Support |
-|----------|-----------|-----------|------------|--------------|
-| **Microsoft Graph** | ✅ Auth Code | ✅ Client Creds | ❌ | ✅ |
-| **Google APIs** | ✅ Auth Code | ❌ | ✅ Service Account | ✅ |
-| **Google Vertex AI** | ❌ | ❌ | ✅ Service Account | N/A |
-| **GitHub** | ✅ Auth Code | ❌ | ✅ GitHub App | ❌ |
-| **ClickUp** | ✅ Auth Code | ❌ | ❌ | ❌ |
-| **HubSpot** | ✅ Auth Code | ❌ (uses private app) | ❌ | ✅ |
-| **Salesforce** | ✅ Auth Code | ✅ Client Creds | ✅ JWT Bearer | ✅ |
-| **Dropbox** | ✅ Auth Code | ❌ | ❌ | ✅ |
+| Provider | User OAuth | App Token | JWT Bearer | Static Token | PKCE Support |
+|----------|-----------|-----------|------------|--------------|--------------|
+| **Microsoft Graph** | ✅ Auth Code | ✅ Client Creds | ❌ | ❌ | ✅ |
+| **Google APIs** | ✅ Auth Code | ❌ | ✅ Service Account | ✅ API Key | ✅ |
+| **Google Vertex AI** | ❌ | ❌ | ✅ Service Account | ❌ | N/A |
+| **GitHub** | ✅ Auth Code | ❌ | ✅ GitHub App | ✅ Personal Token | ❌ |
+| **ClickUp** | ✅ Auth Code | ❌ | ❌ | ✅ API Key | ❌ |
+| **HubSpot** | ✅ Auth Code | ❌ | ❌ | ✅ Private App | ✅ |
+| **Salesforce** | ✅ Auth Code | ✅ Client Creds | ✅ JWT Bearer | ❌ | ✅ |
+| **Dropbox** | ✅ Auth Code | ❌ | ❌ | ✅ App Token | ✅ |
+| **OpenAI** | ❌ | ❌ | ❌ | ✅ API Key | N/A |
+| **Anthropic** | ❌ | ❌ | ❌ | ✅ API Key | N/A |
 
 ---
 
