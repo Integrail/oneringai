@@ -491,6 +491,79 @@ declare class ProviderErrorMapper {
 }
 
 /**
+ * Provider Config Agent
+ *
+ * AI-powered agent that helps users configure OAuth providers
+ * Asks questions, guides setup, and generates JSON configuration
+ */
+
+interface ProviderConfigResult {
+    providerName: string;
+    config: {
+        displayName: string;
+        description: string;
+        baseURL: string;
+        oauth: {
+            flow: 'authorization_code' | 'client_credentials' | 'jwt_bearer' | 'static_token';
+            clientId?: string;
+            clientSecret?: string;
+            authorizationUrl?: string;
+            tokenUrl?: string;
+            redirectUri?: string;
+            scope?: string;
+            staticToken?: string;
+            [key: string]: any;
+        };
+    };
+    setupInstructions: string;
+    envVariables: string[];
+}
+/**
+ * Built-in agent for generating OAuth provider configurations
+ */
+declare class ProviderConfigAgent {
+    private client;
+    private agent;
+    private conversationHistory;
+    constructor(client: OneRingAI);
+    /**
+     * Start interactive configuration session
+     * AI will ask questions and generate the provider config
+     *
+     * @param initialInput - Optional initial message (e.g., "I want to connect to GitHub")
+     * @returns Promise<string | ProviderConfigResult> - Either next question or final config
+     */
+    run(initialInput?: string): Promise<string | ProviderConfigResult>;
+    /**
+     * Continue conversation (for multi-turn interaction)
+     *
+     * @param userMessage - User's response
+     * @returns Promise<string | ProviderConfigResult> - Either next question or final config
+     */
+    continue(userMessage: string): Promise<string | ProviderConfigResult>;
+    /**
+     * Get system instructions for the agent
+     */
+    private getSystemInstructions;
+    /**
+     * Extract configuration from AI response
+     */
+    private extractConfig;
+    /**
+     * Get default provider for the agent
+     */
+    private getDefaultProvider;
+    /**
+     * Get default model
+     */
+    private getDefaultModel;
+    /**
+     * Reset conversation
+     */
+    reset(): void;
+}
+
+/**
  * Message builder utilities for constructing complex inputs
  */
 
@@ -1084,4 +1157,4 @@ declare class FileStorage implements ITokenStorage {
  */
 declare function generateEncryptionKey(): string;
 
-export { AIError, AgentManager, BaseProvider, BaseTextProvider, type ClipboardImageResult, IDisposable, type ITokenStorage as IOAuthTokenStorage, IProvider, ITextProvider, ImageManager, InputItem, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, type LogLevel, type Logger, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, FileStorage as OAuthFileStorage, type FileStorageConfig as OAuthFileStorageConfig, type OAuthFlow, OAuthManager, MemoryStorage as OAuthMemoryStorage, OneRingAI, type OneRingAIConfig, ProviderAuthError, ProviderCapabilities, ProviderConfig, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ProvidersConfig, type RegisteredProvider, type RequestMetadata, type SimpleTextOptions, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, TextManager, ToolCall, type ToolCallBuffer, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, oauthRegistry, readClipboardImage, index as tools };
+export { AIError, AgentManager, BaseProvider, BaseTextProvider, type ClipboardImageResult, IDisposable, type ITokenStorage as IOAuthTokenStorage, IProvider, ITextProvider, ImageManager, InputItem, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, type LogLevel, type Logger, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, FileStorage as OAuthFileStorage, type FileStorageConfig as OAuthFileStorageConfig, type OAuthFlow, OAuthManager, MemoryStorage as OAuthMemoryStorage, OneRingAI, type OneRingAIConfig, ProviderAuthError, ProviderCapabilities, ProviderConfig, ProviderConfigAgent, type ProviderConfigResult, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ProvidersConfig, type RegisteredProvider, type RequestMetadata, type SimpleTextOptions, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, TextManager, ToolCall, type ToolCallBuffer, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, oauthRegistry, readClipboardImage, index as tools };

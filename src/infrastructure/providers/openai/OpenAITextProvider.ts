@@ -46,7 +46,7 @@ export class OpenAITextProvider extends BaseTextProvider {
       // OpenAI Responses API format matches our internal format!
       const response = await this.client.chat.completions.create({
         model: options.model,
-        messages: this.convertInput(options.input),
+        messages: this.convertInput(options.input, options.instructions),
         tools: options.tools as any,
         tool_choice: options.tool_choice as any,
         temperature: options.temperature,
@@ -68,7 +68,7 @@ export class OpenAITextProvider extends BaseTextProvider {
     try {
       const stream = await this.client.chat.completions.create({
         model: options.model,
-        messages: this.convertInput(options.input),
+        messages: this.convertInput(options.input, options.instructions),
         tools: options.tools as any,
         tool_choice: options.tool_choice as any,
         temperature: options.temperature,
@@ -274,19 +274,39 @@ export class OpenAITextProvider extends BaseTextProvider {
 
   /**
    * Convert our input format to OpenAI messages format
+   * @param input - Input messages
+   * @param instructions - Optional system instructions (prepended as DEVELOPER message for OpenAI)
    */
-  private convertInput(input: string | any[]): any[] {
+  private convertInput(input: string | any[], instructions?: string): any[] {
+    const messages: any[] = [];
+
     if (typeof input === 'string') {
-      return [{ role: 'user', content: input }];
+      // Add instructions first as DEVELOPER role (OpenAI's system message)
+      if (instructions) {
+        messages.push({ role: 'developer', content: instructions });
+      }
+      messages.push({ role: 'user', content: input });
+      return messages;
+    }
+
+    // For InputItem[], check if there's already a developer message
+    const hasDeveloperMessage = Array.isArray(input) && input.some(
+      item => item.type === 'message' && item.role === 'developer'
+    );
+
+    // Add instructions as DEVELOPER message if provided and no existing developer message
+    if (instructions && !hasDeveloperMessage) {
+      messages.push({
+        role: 'developer',
+        content: instructions,
+      });
     }
 
     // Convert InputItem[] to OpenAI messages format
-    const messages: any[] = [];
-
     for (const item of input) {
       if (item.type === 'message') {
         const message: any = {
-          role: item.role === 'developer' ? 'system' : item.role,
+          role: item.role, // Keep role as-is (developer, user, assistant)
           content: [],
         };
 

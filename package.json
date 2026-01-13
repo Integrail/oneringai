@@ -49,7 +49,8 @@
     "example:oauth-static": "tsx examples/oauth-static-tokens.ts",
     "example:oauth-multi-user": "tsx examples/oauth-multi-user.ts",
     "example:oauth-multi-user-fetch": "tsx examples/oauth-multi-user-fetch.ts",
-    "example:custom-infrastructure": "tsx examples/custom-infrastructure.ts"
+    "example:custom-infrastructure": "tsx examples/custom-infrastructure.ts",
+    "example:provider-config": "tsx examples/provider-config-generator.ts"
   },
   "keywords": [
     "ai",

@@ -343,7 +343,7 @@ var OpenAITextProvider = class extends BaseTextProvider {
     try {
       const response = await this.client.chat.completions.create({
         model: options.model,
-        messages: this.convertInput(options.input),
+        messages: this.convertInput(options.input, options.instructions),
         tools: options.tools,
         tool_choice: options.tool_choice,
         temperature: options.temperature,
@@ -363,7 +363,7 @@ var OpenAITextProvider = class extends BaseTextProvider {
     try {
       const stream = await this.client.chat.completions.create({
         model: options.model,
-        messages: this.convertInput(options.input),
+        messages: this.convertInput(options.input, options.instructions),
         tools: options.tools,
         tool_choice: options.tool_choice,
         temperature: options.temperature,
@@ -533,16 +533,32 @@ var OpenAITextProvider = class extends BaseTextProvider {
   }
   /**
    * Convert our input format to OpenAI messages format
+   * @param input - Input messages
+   * @param instructions - Optional system instructions (prepended as DEVELOPER message for OpenAI)
    */
-  convertInput(input) {
-    if (typeof input === "string") {
-      return [{ role: "user", content: input }];
-    }
+  convertInput(input, instructions) {
     const messages = [];
+    if (typeof input === "string") {
+      if (instructions) {
+        messages.push({ role: "developer", content: instructions });
+      }
+      messages.push({ role: "user", content: input });
+      return messages;
+    }
+    const hasDeveloperMessage = Array.isArray(input) && input.some(
+      (item) => item.type === "message" && item.role === "developer"
+    );
+    if (instructions && !hasDeveloperMessage) {
+      messages.push({
+        role: "developer",
+        content: instructions
+      });
+    }
     for (const item of input) {
       if (item.type === "message") {
         const message = {
-          role: item.role === "developer" ? "system" : item.role,
+          role: item.role,
+          // Keep role as-is (developer, user, assistant)
           content: []
         };
         for (const content of item.content) {
@@ -4965,6 +4981,184 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
     content
   };
 }
+
+// src/agents/ProviderConfigAgent.ts
+var ProviderConfigAgent = class {
+  constructor(client) {
+    this.client = client;
+  }
+  agent = null;
+  conversationHistory = [];
+  /**
+   * Start interactive configuration session
+   * AI will ask questions and generate the provider config
+   *
+   * @param initialInput - Optional initial message (e.g., "I want to connect to GitHub")
+   * @returns Promise<string | ProviderConfigResult> - Either next question or final config
+   */
+  async run(initialInput) {
+    this.agent = await this.client.agents.create({
+      provider: this.getDefaultProvider(),
+      model: this.getDefaultModel(),
+      instructions: this.getSystemInstructions(),
+      temperature: 0.1,
+      // Very low temperature for consistent, focused behavior
+      maxIterations: 10
+    });
+    const builder = new MessageBuilder();
+    const startMessage = initialInput || "I want to configure an OAuth provider";
+    builder.addUserMessage(startMessage);
+    this.conversationHistory.push(...builder.build());
+    const response = await this.agent.run(this.conversationHistory);
+    this.conversationHistory.push(...response.output.filter(
+      (item) => item.type === "message" || item.type === "compaction"
+    ));
+    const responseText = response.output_text || "";
+    if (responseText.includes("===CONFIG_START===")) {
+      return this.extractConfig(responseText);
+    }
+    return responseText;
+  }
+  /**
+   * Continue conversation (for multi-turn interaction)
+   *
+   * @param userMessage - User's response
+   * @returns Promise<string | ProviderConfigResult> - Either next question or final config
+   */
+  async continue(userMessage) {
+    if (!this.agent) {
+      throw new Error("Agent not initialized. Call run() first.");
+    }
+    const builder = new MessageBuilder();
+    builder.addUserMessage(userMessage);
+    this.conversationHistory.push(...builder.build());
+    const response = await this.agent.run(this.conversationHistory);
+    this.conversationHistory.push(...response.output.filter(
+      (item) => item.type === "message" || item.type === "compaction"
+    ));
+    const responseText = response.output_text || "";
+    if (responseText.includes("===CONFIG_START===")) {
+      return this.extractConfig(responseText);
+    }
+    return responseText;
+  }
+  /**
+   * Get system instructions for the agent
+   */
+  getSystemInstructions() {
+    return `You are a friendly OAuth Setup Assistant. Your ONLY job is to help users connect their apps to third-party services like Microsoft, Google, GitHub, etc.
+
+YOU MUST NOT answer general questions. ONLY focus on helping set up API connections.
+
+YOUR PROCESS (use NON-TECHNICAL, FRIENDLY language):
+
+1. Ask which system they want to connect to (e.g., Microsoft, Google, GitHub, Salesforce, Slack)
+
+2. Ask about HOW they want to use it (use SIMPLE language):
+   - "Will your users log in with their [Provider] accounts?" \u2192 authorization_code
+   - "Does your app need to access [Provider] without users logging in?" \u2192 client_credentials
+   - "Is this just an API key from [Provider]?" \u2192 static_token
+
+3. Ask BUSINESS questions about what they want to do (then YOU figure out the technical scopes):
+
+   For Microsoft:
+   - "Do you need to read user profiles?" \u2192 User.Read
+   - "Do you need to read emails?" \u2192 Mail.Read
+   - "Do you need to access calendar?" \u2192 Calendars.Read
+   - "Do you need to read/write SharePoint files?" \u2192 Sites.Read.All or Sites.ReadWrite.All
+   - "Do you need to access Teams?" \u2192 Team.ReadBasic.All
+   - Combine multiple scopes if needed
+
+   For Google:
+   - "Do you need to read emails?" \u2192 https://www.googleapis.com/auth/gmail.readonly
+   - "Do you need to access Google Drive?" \u2192 https://www.googleapis.com/auth/drive
+   - "Do you need calendar access?" \u2192 https://www.googleapis.com/auth/calendar
+
+   For GitHub:
+   - "Do you need to read user info?" \u2192 user:email
+   - "Do you need to access repositories?" \u2192 repo
+   - "Do you need to read organization data?" \u2192 read:org
+
+   For Salesforce:
+   - "Do you need full access?" \u2192 full
+   - "Do you need to access/manage data?" \u2192 api
+   - "Do you need refresh tokens?" \u2192 refresh_token offline_access
+
+4. DO NOT ask about redirect URI - it will be configured in code (use "http://localhost:3000/callback" as default)
+
+5. Generate complete JSON configuration
+
+CRITICAL RULES:
+- Ask ONE simple question at a time
+- Use BUSINESS language, NOT technical OAuth terms
+- Ask "What do you want to do?" NOT "What scopes do you need?"
+- YOU translate business needs into technical scopes
+- Be friendly and conversational
+- Provide specific setup URLs (e.g., https://portal.azure.com for Microsoft, https://github.com/settings/developers for GitHub)
+- When you have all info, IMMEDIATELY output the config in this EXACT format:
+
+===CONFIG_START===
+{
+  "providerName": "github",
+  "config": {
+    "displayName": "GitHub API",
+    "description": "Access GitHub repositories and user data",
+    "baseURL": "https://api.github.com",
+    "oauth": {
+      "flow": "authorization_code",
+      "clientId": "ENV:GITHUB_CLIENT_ID",
+      "clientSecret": "ENV:GITHUB_CLIENT_SECRET",
+      "authorizationUrl": "https://github.com/login/oauth/authorize",
+      "tokenUrl": "https://github.com/login/oauth/access_token",
+      "redirectUri": "http://localhost:3000/callback",
+      "scope": "user:email repo"
+    }
+  },
+  "setupInstructions": "1. Go to https://github.com/settings/developers\\n2. Create New OAuth App\\n3. Set Authorization callback URL to your redirectUri\\n4. Copy Client ID and Client Secret",
+  "envVariables": ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"]
+}
+===CONFIG_END===
+
+Use "ENV:VARIABLE_NAME" for values that should come from environment variables.
+
+REMEMBER: Keep it conversational, ask one question at a time, and only output the config when you have all necessary information.`;
+  }
+  /**
+   * Extract configuration from AI response
+   */
+  extractConfig(responseText) {
+    const configMatch = responseText.match(/===CONFIG_START===\s*([\s\S]*?)\s*===CONFIG_END===/);
+    if (!configMatch) {
+      throw new Error("No configuration found in response. The AI may need more information.");
+    }
+    try {
+      const configJson = configMatch[1].trim();
+      const config = JSON.parse(configJson);
+      return config;
+    } catch (error) {
+      throw new Error(`Failed to parse configuration JSON: ${error.message}`);
+    }
+  }
+  /**
+   * Get default provider for the agent
+   */
+  getDefaultProvider() {
+    return "openai";
+  }
+  /**
+   * Get default model
+   */
+  getDefaultModel() {
+    return "gpt-4.1";
+  }
+  /**
+   * Reset conversation
+   */
+  reset() {
+    this.conversationHistory = [];
+    this.agent = null;
+  }
+};
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
@@ -7431,6 +7625,6 @@ var FileStorage = class {
   }
 };
 
-export { AIError, Agent, AgentManager, BaseProvider, BaseTextProvider, ContentType, ExecutionContext, HookManager, ImageManager, InvalidConfigError, InvalidToolArgumentsError, MessageBuilder, MessageRole, ModelNotSupportedError, FileStorage as OAuthFileStorage, OAuthManager, MemoryStorage as OAuthMemoryStorage, OneRingAI, ProviderAuthError, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, TextManager, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, assertNotDestroyed, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, oauthRegistry, readClipboardImage, tools_exports as tools };
+export { AIError, Agent, AgentManager, BaseProvider, BaseTextProvider, ContentType, ExecutionContext, HookManager, ImageManager, InvalidConfigError, InvalidToolArgumentsError, MessageBuilder, MessageRole, ModelNotSupportedError, FileStorage as OAuthFileStorage, OAuthManager, MemoryStorage as OAuthMemoryStorage, OneRingAI, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, TextManager, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, assertNotDestroyed, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, oauthRegistry, readClipboardImage, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

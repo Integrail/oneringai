@@ -319,6 +319,73 @@ Application → Domain (interfaces) ← Infrastructure (implementations)
 
 **Documentation**: See `EXTENSIBILITY.md` for complete guide
 
+### 8. Built-in AI Agents 🆕
+
+**Problem Solved**: How to provide pre-built agents for common tasks without hardcoding templates?
+
+**Solution**: AI-powered agents that generate configurations on the fly
+
+**Philosophy**:
+- Keep agents simple
+- Leverage AI's knowledge (no templates!)
+- Focus on conversational UX
+- Generate structured output
+
+**ProviderConfigAgent**:
+```typescript
+// src/agents/ProviderConfigAgent.ts
+export class ProviderConfigAgent {
+  constructor(private client: OneRingAI) {}
+
+  async run(initialInput?: string): Promise<ProviderConfigResult> {
+    // Creates an agent with specialized instructions
+    // AI asks questions conversationally
+    // Generates JSON config when it has enough info
+  }
+}
+```
+
+**Key Design Decisions**:
+
+1. **No Templates**: AI generates configs from its knowledge
+   - Knows about GitHub, Google, Microsoft, Salesforce, etc.
+   - Adapts to user's specific needs
+   - Can handle new providers without code changes
+
+2. **Structured Output**: Uses delimiter markers
+   ```
+   ===CONFIG_START===
+   { "providerName": "github", ... }
+   ===CONFIG_END===
+   ```
+   - Easy to extract from AI response
+   - Validates JSON before returning
+   - Fails gracefully if incomplete
+
+3. **Conversational UX**: One question at a time
+   - "Which system to connect to?"
+   - "User auth or service-to-service?"
+   - "What's your redirect URI?"
+   - Natural, friendly tone
+
+4. **Dependency Injection**: Takes `OneRingAI` client
+   - User chooses which AI provider to use
+   - Agent works with any LLM (OpenAI, Anthropic, etc.)
+   - No hardcoded provider dependency
+
+**Location**: `src/agents/ProviderConfigAgent.ts`
+
+**Examples**:
+- `examples/provider-config-generator.ts` - Interactive CLI
+- `examples/provider-config-programmatic.ts` - Programmatic usage
+
+**Future Agents** (keep simple, leverage AI):
+- `SchemaGeneratorAgent` - Generate TypeScript types from API responses
+- `MigrationAgent` - Help migrate OAuth flows
+- `DocumentationAgent` - Generate API docs from code
+
+**Documentation**: See `src/agents/README.md` for complete guide
+
 ## Directory Structure
 
 ```
@@ -343,6 +410,10 @@ src/
 │   │   └── CommonTypes.ts            # Logger, metadata, etc.
 │   └── errors/                       # Domain errors
 │       └── AIErrors.ts               # Custom error classes
+├── agents/                           # Built-in AI agents (NEW!)
+│   ├── index.ts                      # Public exports
+│   ├── ProviderConfigAgent.ts        # OAuth config generator
+│   └── README.md                     # Agent documentation
 ├── capabilities/                     # Feature modules
 │   ├── agents/                       # Agentic workflows with tools
 │   │   ├── index.ts                  # Public exports
@@ -832,6 +903,7 @@ This is a private project. For questions or contributions, contact the project m
 
 **Recent Changes (2026-01-12)**:
 - **BREAKING**: `AgentManager.create()` is now async and returns `Promise<Agent>`
+- 🆕 **Built-in AI Agents** - Created `ProviderConfigAgent` for OAuth provider configuration (no templates, AI-generated)
 - 🆕 **Multi-user OAuth support** - `userId` parameter in all OAuth methods (TokenStore, OAuthManager, authenticatedFetch)
 - 🆕 **Extensibility exports** - Exported `BaseProvider`, `BaseTextProvider`, `ProviderErrorMapper` for custom implementations
 - 🆕 User-scoped storage keys - Clean Architecture approach (`provider:clientId:userId`)

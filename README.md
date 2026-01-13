@@ -10,6 +10,7 @@
 
 - 🎯 **Unified API** - One interface for 6+ AI providers
 - 🤖 **Agentic Workflows** - Built-in tool calling and multi-turn conversations
+- 🤖 **Built-in AI Agents** - Pre-built agents for common tasks (OAuth config generation)
 - 🖼️ **Vision Support** - Analyze images with AI across all providers
 - 📸 **Clipboard Paste** - Ctrl+V screenshots directly (just like Claude Code!)
 - 🔧 **Extensible** - Easy to add new providers and capabilities
@@ -1320,6 +1321,74 @@ await oauth.getToken('user123');
 
 ---
 
+## Built-in AI Agents
+
+Pre-built AI agents for common tasks - just provide a client and the agent handles the complexity!
+
+### Provider Config Generator Agent
+
+AI-powered assistant that helps you configure OAuth providers through interactive conversation.
+
+```typescript
+import { OneRingAI, ProviderConfigAgent } from '@oneringai/agents';
+
+const client = new OneRingAI({
+  providers: {
+    openai: { apiKey: process.env.OPENAI_API_KEY }
+  }
+});
+
+// Create the agent
+const configAgent = new ProviderConfigAgent(client);
+
+// Start interactive session
+const result = await configAgent.run('I want to connect to Slack');
+
+// Get generated configuration
+console.log(result.providerName);        // "slack"
+console.log(result.config);              // Full OAuth config object
+console.log(result.setupInstructions);   // Step-by-step setup guide
+console.log(result.envVariables);        // ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"]
+
+// Use it immediately!
+import { oauthRegistry } from '@oneringai/agents';
+oauthRegistry.register(result.providerName, result.config);
+```
+
+**What it does**:
+- ✅ Asks which system to connect to (GitHub, Google, Microsoft, Salesforce, etc.)
+- ✅ Determines the right OAuth flow (user auth, app token, static key)
+- ✅ Guides you through credential setup in the provider's portal
+- ✅ Generates complete JSON configuration
+- ✅ Provides environment variable names and setup instructions
+
+**Interactive CLI**:
+
+```bash
+npm run example:provider-config
+```
+
+```
+🤖 Assistant: Which system would you like to connect to?
+👤 You: GitHub
+🤖 Assistant: Great! Are you building:
+             1. User authentication (users log in with GitHub)
+             2. Service-to-service (your app accesses GitHub on its own)
+👤 You: User authentication
+🤖 Assistant: Perfect! Go to https://github.com/settings/developers
+             to create a new OAuth App...
+```
+
+**Why it's useful**:
+- No need to look up OAuth documentation for each provider
+- AI knows the correct URLs, scopes, and flow types
+- Generates production-ready configuration
+- Saves to file for easy integration
+
+**Try it**: `npm run example:provider-config`
+
+---
+
 ## Documentation Files
 
 - **`README.md`** (this file) - Complete guide
@@ -1395,6 +1464,7 @@ const response = await client.text.generateRaw([input], { provider: 'google', mo
 
 **Recent Changes**:
 - **BREAKING**: `client.agents.create()` is now async and returns `Promise<Agent>` (add `await`)
+- 🆕 **Built-in AI Agents** - `ProviderConfigAgent` for interactive OAuth provider configuration
 - 🆕 **Multi-user OAuth support** - All OAuth methods accept optional `userId` parameter
 - 🆕 **Extensibility** - Exported `BaseProvider`, `BaseTextProvider`, `ProviderErrorMapper` for custom implementations
 - 🆕 `createExecuteJavaScriptTool(oauthRegistry)` for dynamic OAuth provider support

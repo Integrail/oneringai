@@ -180,6 +180,10 @@ export { BaseProvider } from './infrastructure/providers/base/BaseProvider.js';
 export { BaseTextProvider } from './infrastructure/providers/base/BaseTextProvider.js';
 export { ProviderErrorMapper } from './infrastructure/providers/base/ProviderErrorMapper.js';
 
+// Built-in AI agents
+export { ProviderConfigAgent } from './agents/index.js';
+export type { ProviderConfigResult } from './agents/index.js';
+
 // Utilities
 export { MessageBuilder, createTextMessage, createMessageWithImages } from './utils/messageBuilder.js';
 export { readClipboardImage, hasClipboardImage } from './utils/clipboardImage.js';
