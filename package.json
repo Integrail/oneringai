@@ -34,7 +34,7 @@
     "test": "vitest",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build",
+    "prepare": "",
     "example:agent": "tsx examples/basic-agent.ts",
     "example:text": "tsx examples/simple-text.ts",
     "example:conversation": "tsx examples/multi-turn-conversation.ts",
