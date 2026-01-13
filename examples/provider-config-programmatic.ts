@@ -47,7 +47,7 @@ async function main() {
     console.log('📝 Registering provider...');
     connectorRegistry.register(result.name, result.config);
     console.log(`✅ Provider '${result.name}' registered!`);
-    console.log(`   Available providers: ${connectorRegistry.listProviderNames().join(', ')}`);
+    console.log(`   Available providers: ${connectorRegistry.listConnectorNames().join(', ')}`);
   } catch (error) {
     console.error('❌ Error:', (error as Error).message);
   }

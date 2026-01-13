@@ -29,7 +29,8 @@ async function main() {
     displayName: 'Microsoft Graph API',
     description: 'Access Microsoft 365: Outlook, OneDrive, Teams, Calendar',
     baseURL: 'https://graph.microsoft.com',
-    oauth: {
+    auth: {
+      type: 'oauth',
       flow: 'authorization_code',
       clientId: process.env.MICROSOFT_CLIENT_ID || 'demo-client-id',
       clientSecret: process.env.MICROSOFT_CLIENT_SECRET || 'demo-secret',
@@ -47,7 +48,8 @@ async function main() {
     displayName: 'Google APIs',
     description: 'Access Google Drive, Gmail, Calendar, Contacts',
     baseURL: 'https://www.googleapis.com',
-    oauth: {
+    auth: {
+      type: 'oauth',
       flow: 'authorization_code',
       clientId: process.env.GOOGLE_CLIENT_ID || 'demo-client-id',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'demo-secret',
@@ -65,7 +67,8 @@ async function main() {
     displayName: 'GitHub API',
     description: 'Access GitHub repositories, issues, pull requests, gists',
     baseURL: 'https://api.github.com',
-    oauth: {
+    auth: {
+      type: 'oauth',
       flow: 'authorization_code',
       clientId: process.env.GITHUB_CLIENT_ID || 'demo-client-id',
       clientSecret: process.env.GITHUB_CLIENT_SECRET || 'demo-secret',
@@ -83,7 +86,8 @@ async function main() {
     displayName: 'Salesforce API',
     description: 'Access Salesforce CRM: accounts, contacts, opportunities, leads',
     baseURL: 'https://yourinstance.salesforce.com',
-    oauth: {
+    auth: {
+      type: 'oauth',
       flow: 'client_credentials',
       clientId: process.env.SALESFORCE_CONSUMER_KEY || 'demo-key',
       clientSecret: process.env.SALESFORCE_CONSUMER_SECRET || 'demo-secret',
@@ -97,7 +101,7 @@ async function main() {
   console.log('Step 2: Listing Registered Providers');
   console.log('─────────────────────────────────\n');
 
-  console.log('Provider Names:', connectorRegistry.listProviderNames());
+  console.log('Provider Names:', connectorRegistry.listConnectorNames());
   console.log('\nProvider Info:');
   console.log(JSON.stringify(connectorRegistry.getProviderInfo(), null, 2));
   console.log('');
@@ -143,7 +147,7 @@ async function main() {
     });
 
     console.log('Agent created with api_request tool');
-    console.log('Available providers:', connectorRegistry.listProviderNames());
+    console.log('Available providers:', connectorRegistry.listConnectorNames());
     console.log('\nThe agent can intelligently choose which OAuth provider to use based on the user request!');
     console.log('');
     console.log('Examples:');

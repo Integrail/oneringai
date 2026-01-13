@@ -26,7 +26,8 @@ async function main() {
     displayName: 'OpenAI API',
     description: 'Access OpenAI: models, completions, embeddings, fine-tuning',
     baseURL: 'https://api.openai.com/v1',
-    oauth: {
+    auth: {
+      type: 'oauth',
       flow: 'static_token',
       staticToken: process.env.OPENAI_API_KEY || 'sk-demo-key',
       clientId: 'openai',  // Just for identification
@@ -41,7 +42,8 @@ async function main() {
     displayName: 'Anthropic API',
     description: 'Access Anthropic Claude: messages, completions',
     baseURL: 'https://api.anthropic.com/v1',
-    oauth: {
+    auth: {
+      type: 'oauth',
       flow: 'static_token',
       staticToken: process.env.ANTHROPIC_API_KEY || 'sk-ant-demo-key',
       clientId: 'anthropic',
@@ -56,7 +58,8 @@ async function main() {
     displayName: 'Custom API',
     description: 'Your custom API with static token',
     baseURL: 'https://api.custom.com/v1',
-    oauth: {
+    auth: {
+      type: 'oauth',
       flow: 'static_token',
       staticToken: process.env.CUSTOM_API_KEY || 'custom-api-key',
       clientId: 'custom',
@@ -75,7 +78,8 @@ async function main() {
     displayName: 'Microsoft Graph',
     description: 'Access Microsoft 365: mail, calendar, files',
     baseURL: 'https://graph.microsoft.com',
-    oauth: {
+    auth: {
+      type: 'oauth',
       flow: 'authorization_code',
       clientId: process.env.MICROSOFT_CLIENT_ID || 'demo-id',
       clientSecret: process.env.MICROSOFT_CLIENT_SECRET || 'demo-secret',
@@ -93,7 +97,7 @@ async function main() {
   console.log('All Registered Providers (Mixed):');
   console.log('─────────────────────────────────\n');
 
-  const providers = connectorRegistry.listProviders();
+  const providers = connectorRegistry.listConnectors();
   providers.forEach((p) => {
     console.log(`• ${p.name}`);
     console.log(`  Name: ${p.displayName}`);
@@ -165,7 +169,7 @@ async function main() {
       tools: [apiTool],
       instructions: `You have access to multiple APIs through the api_request tool.
 
-Available providers: ${connectorRegistry.listProviderNames().join(', ')}
+Available providers: ${connectorRegistry.listConnectorNames().join(', ')}
 
 Choose the appropriate provider based on what the user asks for.`,
     });

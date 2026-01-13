@@ -983,9 +983,14 @@ This is a private project. For questions or contributions, contact the project m
   - **Continue Strategy**: Tool failure mode now configurable - 'continue' mode executes all tools even if some fail
   - **Converter Safety**: Google/Anthropic converters use try-finally for guaranteed cleanup
   - **Configurable Timeout**: Tool execution timeout now configurable (default 30s)
+- ✅ **Phase 2.5 Complete - Backward Compatibility Cleanup**:
+  - **~400 lines removed**: Deleted all deprecated aliases, legacy format support, deprecated methods
+  - **Deleted OAuthRegistry.ts**: Removed 170-line legacy class file
+  - **API Cleanup**: Single consistent API - no more `oauthRegistry`, `OAuthMemoryStorage`, etc.
+  - **Examples Updated**: All examples use clean, modern API
+  - **Zero `@deprecated` tags**: Codebase is now clean and maintainable
 - 🐛 **Bug Fix**: Changed `OAuthFileStorage` → `FileStorage` in all examples (was causing import errors)
 - 📦 All connector code now in unified location: `src/connectors/oauth/`
-- 🔄 Backward compatibility maintained with deprecated aliases (`oauthRegistry`, `OAuthRegistry`)
 
 **Previous Changes (2026-01-12)**:
 - **BREAKING**: `AgentManager.create()` is now async and returns `Promise<Agent>`

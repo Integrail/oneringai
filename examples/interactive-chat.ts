@@ -260,7 +260,8 @@ async function main() {
       displayName: 'Microsoft Graph API',
       description: 'Access Microsoft 365: users, mail, calendar, files, teams',
       baseURL: 'https://graph.microsoft.com',
-      oauth: {
+      auth: {
+        type: 'oauth',
         flow: 'client_credentials',
         clientId: process.env.MICROSOFT_CLIENT_ID,
         clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
@@ -358,8 +359,8 @@ Example endpoints:
     console.log(`Microsoft Graph: ✅ Available (access M365 data)`);
   }
   console.log(`Code Execution: ✅ Available (run JavaScript)`);
-  if (connectorRegistry.listProviderNames().length > 0) {
-    console.log(`OAuth Providers: ${connectorRegistry.listProviderNames().join(', ')}`);
+  if (connectorRegistry.listConnectorNames().length > 0) {
+    console.log(`OAuth Providers: ${connectorRegistry.listConnectorNames().join(', ')}`);
   }
 
   console.log('');
@@ -420,7 +421,7 @@ Example endpoints:
   instructions += '\n- Need complex data transformations';
   instructions += '\n\nIn execute_javascript, you have:';
   instructions += '\n- authenticatedFetch(url, options, provider) for OAuth-authenticated API calls';
-  instructions += `\n- Available OAuth providers: ${connectorRegistry.listProviderNames().join(', ') || 'none (register providers first)'}`;
+  instructions += `\n- Available OAuth providers: ${connectorRegistry.listConnectorNames().join(', ') || 'none (register providers first)'}`;
   instructions += '\n- Standard JavaScript globals (JSON, Math, Date, etc.)';
   instructions += '\n- Console output (console.log)';
   instructions += '\n\nIMPORTANT: When user says "run code" or "execute code", you MUST use the execute_javascript tool, not describe what code would do.';
@@ -820,7 +821,7 @@ function showAvailableTools() {
   console.log('1. execute_javascript');
   console.log('   • Execute JavaScript code in sandbox');
   console.log('   • Access to authenticatedFetch');
-  console.log(`   • OAuth providers: ${connectorRegistry.listProviderNames().join(', ') || 'none'}`);
+  console.log(`   • OAuth providers: ${connectorRegistry.listConnectorNames().join(', ') || 'none'}`);
   console.log('   • Use for: Complex logic, multi-API calls, data processing');
   console.log('');
 

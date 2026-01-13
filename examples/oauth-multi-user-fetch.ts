@@ -33,7 +33,8 @@ async function main() {
     displayName: 'GitHub API',
     description: 'Access GitHub repositories, issues, and user data',
     baseURL: 'https://api.github.com',
-    oauth: {
+    auth: {
+      type: 'oauth',
       flow: 'authorization_code',
       clientId: process.env.GITHUB_CLIENT_ID || 'your-client-id',
       clientSecret: process.env.GITHUB_CLIENT_SECRET,
@@ -41,6 +42,7 @@ async function main() {
       tokenUrl: 'https://github.com/login/oauth/access_token',
       redirectUri: 'http://localhost:3000/callback',
       scope: 'user:email repo',
+      storageKey: 'github',
       storage: new FileStorage({
         directory: './tokens',
         encryptionKey: process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey(),
