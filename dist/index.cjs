@@ -238,7 +238,7 @@ var BaseProvider = class {
   /**
    * Override this method in provider implementations for specific key format validation
    */
-  validateProviderSpecificKeyFormat(apiKey) {
+  validateProviderSpecificKeyFormat(_apiKey) {
     return { isValid: true };
   }
   /**
@@ -4809,6 +4809,59 @@ var StreamHelpers = class {
   }
 };
 
+// src/infrastructure/providers/base/ProviderErrorMapper.ts
+var ProviderErrorMapper = class {
+  /**
+   * Map any provider error to our standard error types
+   */
+  static mapError(error, context) {
+    const { providerName, maxContextTokens = 128e3 } = context;
+    if (error instanceof AIError) {
+      return error;
+    }
+    const status = error.status || error.statusCode || error.code;
+    const message = error.message || String(error);
+    const messageLower = message.toLowerCase();
+    if (status === 401 || status === 403 || messageLower.includes("api key") || messageLower.includes("api_key") || messageLower.includes("authentication") || messageLower.includes("unauthorized") || messageLower.includes("invalid key") || messageLower.includes("permission denied")) {
+      return new ProviderAuthError(providerName, message);
+    }
+    if (status === 429 || messageLower.includes("rate limit") || messageLower.includes("rate_limit") || messageLower.includes("too many requests") || messageLower.includes("resource exhausted") || messageLower.includes("quota exceeded")) {
+      const retryAfter = this.extractRetryAfter(error);
+      return new ProviderRateLimitError(providerName, retryAfter);
+    }
+    if (status === 413 || error.code === "context_length_exceeded" || messageLower.includes("context length") || messageLower.includes("context_length") || messageLower.includes("token limit") || messageLower.includes("too long") || messageLower.includes("maximum context") || messageLower.includes("max_tokens") || messageLower.includes("prompt is too long")) {
+      return new ProviderContextLengthError(providerName, maxContextTokens);
+    }
+    return new ProviderError(providerName, message, status, error);
+  }
+  /**
+   * Extract retry-after value from error headers or body
+   */
+  static extractRetryAfter(error) {
+    const retryAfterHeader = error.headers?.["retry-after"] || error.headers?.["Retry-After"] || error.headers?.get?.("retry-after");
+    if (retryAfterHeader) {
+      const seconds = parseInt(retryAfterHeader, 10);
+      if (!isNaN(seconds)) {
+        return seconds * 1e3;
+      }
+    }
+    if (error.retryAfter) {
+      return typeof error.retryAfter === "number" ? error.retryAfter : parseInt(error.retryAfter, 10) * 1e3;
+    }
+    if (error.errorDetails) {
+      for (const detail of error.errorDetails) {
+        if (detail.retryDelay) {
+          const match = detail.retryDelay.match(/(\d+)s/);
+          if (match) {
+            return parseInt(match[1], 10) * 1e3;
+          }
+        }
+      }
+    }
+    return void 0;
+  }
+};
+
 // src/utils/messageBuilder.ts
 var MessageBuilder = class {
   messages = [];
@@ -7411,6 +7464,8 @@ var FileStorage = class {
 exports.AIError = AIError;
 exports.Agent = Agent;
 exports.AgentManager = AgentManager;
+exports.BaseProvider = BaseProvider;
+exports.BaseTextProvider = BaseTextProvider;
 exports.ContentType = ContentType;
 exports.ExecutionContext = ExecutionContext;
 exports.HookManager = HookManager;
@@ -7427,6 +7482,7 @@ exports.OneRingAI = OneRingAI;
 exports.ProviderAuthError = ProviderAuthError;
 exports.ProviderContextLengthError = ProviderContextLengthError;
 exports.ProviderError = ProviderError;
+exports.ProviderErrorMapper = ProviderErrorMapper;
 exports.ProviderNotFoundError = ProviderNotFoundError;
 exports.ProviderRateLimitError = ProviderRateLimitError;
 exports.StreamEventType = StreamEventType;

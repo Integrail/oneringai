@@ -1,4 +1,4 @@
-import { d as ToolCall, q as ToolResult, Z as TextGenerateOptions, A as AgentResponse, p as Tool, f as ToolFunction, a as InputItem, Y as ITextProvider, S as StreamEvent, I as IDisposable, P as ProviderRegistry } from './ProviderRegistry-_Vu3HZs_.js';
+import { d as ToolCall, v as ToolResult, i as TextGenerateOptions, A as AgentResponse, u as Tool, k as ToolFunction, a as InputItem, h as ITextProvider, S as StreamEvent, I as IDisposable, P as ProviderRegistry } from './ProviderRegistry-Cjx3QNsI.js';
 import { EventEmitter } from 'eventemitter3';
 
 /**

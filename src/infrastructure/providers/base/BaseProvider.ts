@@ -57,8 +57,9 @@ export abstract class BaseProvider implements IProvider {
   /**
    * Override this method in provider implementations for specific key format validation
    */
-  protected validateProviderSpecificKeyFormat(apiKey: string): { isValid: boolean; warning?: string } {
+  protected validateProviderSpecificKeyFormat(_apiKey: string): { isValid: boolean; warning?: string } {
     // Default: accept any non-empty key
+    // Override in subclasses for provider-specific validation
     return { isValid: true };
   }
 

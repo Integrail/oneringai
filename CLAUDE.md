@@ -246,6 +246,79 @@ const agent = await client.agents.create({
 - `examples/oauth-multi-user.ts` - Multi-user patterns
 - `examples/oauth-multi-user-fetch.ts` - authenticatedFetch with multiple users
 
+### 7. Extensibility - Custom Infrastructure Providers 🆕
+
+**Problem Solved**: How to allow users to implement custom LLM providers, OAuth storage backends, and tool executors?
+
+**Solution**: Export all domain interfaces and infrastructure base classes
+
+**Clean Architecture Layers**:
+```
+Application → Domain (interfaces) ← Infrastructure (implementations)
+```
+
+**What Users Can Extend**:
+
+1. **Custom LLM Providers**:
+   ```typescript
+   import { BaseTextProvider, ProviderErrorMapper } from '@oneringai/agents';
+
+   class OllamaProvider extends BaseTextProvider {
+     readonly name = 'ollama';
+
+     async generate(options) {
+       // Call local Ollama API
+       const response = await fetch('http://localhost:11434/api/generate', {...});
+       return this.convertToLLMResponse(await response.json());
+     }
+   }
+   ```
+
+2. **Custom OAuth Storage Backends**:
+   ```typescript
+   import { IOAuthTokenStorage, StoredToken } from '@oneringai/agents';
+
+   class MongoOAuthStorage implements IOAuthTokenStorage {
+     async storeToken(key: string, token: StoredToken) {
+       // key is "provider:clientId:userId" (multi-user automatic!)
+       await tokens.updateOne({ _id: key }, { $set: encrypt(token) }, { upsert: true });
+     }
+     // ... implement other methods
+   }
+
+   // Use with OAuth
+   const oauth = new OAuthManager({
+     storage: new MongoOAuthStorage(mongoClient)
+   });
+   ```
+
+3. **Custom Tool Executors**:
+   ```typescript
+   import { IToolExecutor } from '@oneringai/agents';
+
+   class RateLimitedToolExecutor implements IToolExecutor {
+     async executeTool(toolCall, context) {
+       // Add rate limiting, caching, audit logging, etc.
+     }
+   }
+   ```
+
+**Exported for Extension**:
+- **Interfaces**: `IProvider`, `ITextProvider`, `IImageProvider`, `IToolExecutor`, `IOAuthTokenStorage`, `IDisposable`
+- **Base Classes**: `BaseProvider`, `BaseTextProvider`, `ProviderErrorMapper`
+- **Types**: All domain types needed for implementation
+
+**Location**:
+- `src/domain/interfaces/*` - All domain contracts
+- `src/infrastructure/providers/base/*` - Reusable base classes
+- `src/plugins/oauth/domain/ITokenStorage.ts` - OAuth storage contract
+
+**Examples**:
+- `examples/custom-infrastructure.ts` - Complete custom implementations
+- Real-world examples: Cohere, Ollama, MongoDB, Redis, PostgreSQL
+
+**Documentation**: See `EXTENSIBILITY.md` for complete guide
+
 ## Directory Structure
 
 ```
@@ -760,7 +833,9 @@ This is a private project. For questions or contributions, contact the project m
 **Recent Changes (2026-01-12)**:
 - **BREAKING**: `AgentManager.create()` is now async and returns `Promise<Agent>`
 - 🆕 **Multi-user OAuth support** - `userId` parameter in all OAuth methods (TokenStore, OAuthManager, authenticatedFetch)
+- 🆕 **Extensibility exports** - Exported `BaseProvider`, `BaseTextProvider`, `ProviderErrorMapper` for custom implementations
 - 🆕 User-scoped storage keys - Clean Architecture approach (`provider:clientId:userId`)
 - 🆕 State parameter embedding - userId embedded in OAuth state for automatic routing
 - Added `createExecuteJavaScriptTool(registry)` factory for dynamic OAuth provider descriptions
 - Completed Phase 1-6 of codebase improvement plan (memory safety, error handling, concurrency)
+- Created comprehensive extensibility documentation and examples

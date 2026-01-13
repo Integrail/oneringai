@@ -175,6 +175,11 @@ export type { SimpleTextOptions } from './capabilities/text/index.js';
 
 export { ImageManager } from './capabilities/images/index.js';
 
+// Infrastructure base classes (for custom provider implementations)
+export { BaseProvider } from './infrastructure/providers/base/BaseProvider.js';
+export { BaseTextProvider } from './infrastructure/providers/base/BaseTextProvider.js';
+export { ProviderErrorMapper } from './infrastructure/providers/base/ProviderErrorMapper.js';
+
 // Utilities
 export { MessageBuilder, createTextMessage, createMessageWithImages } from './utils/messageBuilder.js';
 export { readClipboardImage, hasClipboardImage } from './utils/clipboardImage.js';

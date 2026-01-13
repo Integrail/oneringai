@@ -1,7 +1,7 @@
-import { I as IDisposable, P as ProviderRegistry, a as InputItem, L as LLMResponse, b as ProvidersConfig, c as ProviderCapabilities, T as TokenUsage, d as ToolCall, S as StreamEvent, e as StreamEventType, M as MessageRole, f as ToolFunction } from './ProviderRegistry-_Vu3HZs_.js';
-export { A as AgentResponse, a8 as AnthropicConfig, B as BuiltInTool, n as CompactionItem, g as Content, C as ContentType, H as ErrorEvent, F as FunctionToolDefinition, ae as GenericOpenAIConfig, a9 as GoogleConfig, ac as GrokConfig, ab as GroqConfig, a4 as IAsyncDisposable, $ as IImageProvider, X as IProvider, Y as ITextProvider, a1 as ImageEditOptions, a0 as ImageGenerateOptions, a3 as ImageResponse, a2 as ImageVariationOptions, i as InputImageContent, h as InputTextContent, E as IterationCompleteEvent, J as JSONSchema, l as Message, _ as ModelCapabilities, a7 as OpenAIConfig, m as OutputItem, O as OutputTextContent, u as OutputTextDeltaEvent, v as OutputTextDoneEvent, a6 as ProviderConfig, R as ReasoningItem, G as ResponseCompleteEvent, s as ResponseCreatedEvent, t as ResponseInProgressEvent, Z as TextGenerateOptions, ad as TogetherAIConfig, p as Tool, x as ToolCallArgumentsDeltaEvent, y as ToolCallArgumentsDoneEvent, w as ToolCallStartEvent, o as ToolCallState, r as ToolExecutionContext, D as ToolExecutionDoneEvent, z as ToolExecutionStartEvent, q as ToolResult, k as ToolResultContent, j as ToolUseContent, aa as VertexAIConfig, a5 as assertNotDestroyed, W as isErrorEvent, N as isOutputTextDelta, V as isResponseComplete, K as isStreamEvent, Q as isToolCallArgumentsDelta, U as isToolCallArgumentsDone } from './ProviderRegistry-_Vu3HZs_.js';
-import { A as AgentManager } from './index-CoFvGwpY.js';
-export { h as AfterToolContext, a as Agent, b as AgentConfig, d as AgenticLoopEventName, c as AgenticLoopEvents, k as ApprovalResult, i as ApproveToolContext, n as AuditEntry, B as BeforeToolContext, E as ExecutionContext, m as ExecutionMetrics, l as HistoryMode, g as Hook, e as HookConfig, H as HookManager, f as HookName, I as IToolExecutor, M as ModifyingHook, j as ToolModification, T as ToolRegistry } from './index-CoFvGwpY.js';
+import { I as IDisposable, P as ProviderRegistry, a as InputItem, L as LLMResponse, b as ProvidersConfig, c as ProviderCapabilities, T as TokenUsage, d as ToolCall, S as StreamEvent, e as StreamEventType, f as IProvider, g as ProviderConfig, h as ITextProvider, i as TextGenerateOptions, M as ModelCapabilities, j as MessageRole, k as ToolFunction } from './ProviderRegistry-Cjx3QNsI.js';
+export { A as AgentResponse, a8 as AnthropicConfig, B as BuiltInTool, s as CompactionItem, l as Content, C as ContentType, V as ErrorEvent, F as FunctionToolDefinition, ae as GenericOpenAIConfig, a9 as GoogleConfig, ac as GrokConfig, ab as GroqConfig, a5 as IAsyncDisposable, a0 as IImageProvider, a2 as ImageEditOptions, a1 as ImageGenerateOptions, a4 as ImageResponse, a3 as ImageVariationOptions, n as InputImageContent, m as InputTextContent, Q as IterationCompleteEvent, J as JSONSchema, q as Message, a7 as OpenAIConfig, r as OutputItem, O as OutputTextContent, z as OutputTextDeltaEvent, D as OutputTextDoneEvent, R as ReasoningItem, U as ResponseCompleteEvent, x as ResponseCreatedEvent, y as ResponseInProgressEvent, ad as TogetherAIConfig, u as Tool, G as ToolCallArgumentsDeltaEvent, H as ToolCallArgumentsDoneEvent, E as ToolCallStartEvent, t as ToolCallState, w as ToolExecutionContext, N as ToolExecutionDoneEvent, K as ToolExecutionStartEvent, v as ToolResult, p as ToolResultContent, o as ToolUseContent, aa as VertexAIConfig, a6 as assertNotDestroyed, $ as isErrorEvent, X as isOutputTextDelta, _ as isResponseComplete, W as isStreamEvent, Y as isToolCallArgumentsDelta, Z as isToolCallArgumentsDone } from './ProviderRegistry-Cjx3QNsI.js';
+import { A as AgentManager } from './index-DX5Ludyq.js';
+export { h as AfterToolContext, a as Agent, b as AgentConfig, d as AgenticLoopEventName, c as AgenticLoopEvents, k as ApprovalResult, i as ApproveToolContext, n as AuditEntry, B as BeforeToolContext, E as ExecutionContext, m as ExecutionMetrics, l as HistoryMode, g as Hook, e as HookConfig, H as HookManager, f as HookName, I as IToolExecutor, M as ModifyingHook, j as ToolModification, T as ToolRegistry } from './index-DX5Ludyq.js';
 import { ImageManager } from './capabilities/images/index.js';
 import 'eventemitter3';
 
@@ -396,6 +396,98 @@ declare class InvalidToolArgumentsError extends AIError {
 declare class ProviderError extends AIError {
     readonly providerName: string;
     constructor(providerName: string, message: string, statusCode?: number, originalError?: Error);
+}
+
+/**
+ * Base provider class with common functionality
+ */
+
+declare abstract class BaseProvider implements IProvider {
+    protected config: ProviderConfig;
+    abstract readonly name: string;
+    abstract readonly capabilities: ProviderCapabilities;
+    constructor(config: ProviderConfig);
+    /**
+     * Validate provider configuration
+     * Returns validation result with details
+     */
+    validateConfig(): Promise<boolean>;
+    /**
+     * Validate API key format and presence
+     * Can be overridden by providers with specific key formats
+     */
+    protected validateApiKey(): {
+        isValid: boolean;
+        warning?: string;
+    };
+    /**
+     * Override this method in provider implementations for specific key format validation
+     */
+    protected validateProviderSpecificKeyFormat(_apiKey: string): {
+        isValid: boolean;
+        warning?: string;
+    };
+    /**
+     * Validate config and throw if invalid
+     */
+    protected assertValidConfig(): void;
+    /**
+     * Get API key from config
+     */
+    protected getApiKey(): string;
+    /**
+     * Get base URL if configured
+     */
+    protected getBaseURL(): string | undefined;
+    /**
+     * Get timeout configuration
+     */
+    protected getTimeout(): number;
+    /**
+     * Get max retries configuration
+     */
+    protected getMaxRetries(): number;
+}
+
+/**
+ * Base text provider with common text generation functionality
+ */
+
+declare abstract class BaseTextProvider extends BaseProvider implements ITextProvider {
+    abstract generate(options: TextGenerateOptions): Promise<LLMResponse>;
+    abstract streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent>;
+    abstract getModelCapabilities(model: string): ModelCapabilities;
+    /**
+     * Normalize input to string (helper for providers that don't support complex input)
+     */
+    protected normalizeInputToString(input: string | any[]): string;
+    /**
+     * List available models (optional)
+     */
+    listModels?(): Promise<string[]>;
+}
+
+/**
+ * Unified error mapper for all providers
+ * Converts provider-specific errors to our standard error types
+ */
+
+interface ProviderErrorContext {
+    providerName: string;
+    maxContextTokens?: number;
+}
+/**
+ * Maps provider-specific errors to our unified error types
+ */
+declare class ProviderErrorMapper {
+    /**
+     * Map any provider error to our standard error types
+     */
+    static mapError(error: any, context: ProviderErrorContext): AIError;
+    /**
+     * Extract retry-after value from error headers or body
+     */
+    private static extractRetryAfter;
 }
 
 /**
@@ -992,4 +1084,4 @@ declare class FileStorage implements ITokenStorage {
  */
 declare function generateEncryptionKey(): string;
 
-export { AIError, AgentManager, type ClipboardImageResult, IDisposable, type ITokenStorage as IOAuthTokenStorage, ImageManager, InputItem, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, type LogLevel, type Logger, MessageBuilder, MessageRole, ModelNotSupportedError, type OAuthConfig, FileStorage as OAuthFileStorage, type FileStorageConfig as OAuthFileStorageConfig, type OAuthFlow, OAuthManager, MemoryStorage as OAuthMemoryStorage, OneRingAI, type OneRingAIConfig, ProviderAuthError, ProviderCapabilities, ProviderContextLengthError, ProviderError, ProviderNotFoundError, ProviderRateLimitError, ProvidersConfig, type RegisteredProvider, type RequestMetadata, type SimpleTextOptions, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextManager, ToolCall, type ToolCallBuffer, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, oauthRegistry, readClipboardImage, index as tools };
+export { AIError, AgentManager, BaseProvider, BaseTextProvider, type ClipboardImageResult, IDisposable, type ITokenStorage as IOAuthTokenStorage, IProvider, ITextProvider, ImageManager, InputItem, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, type LogLevel, type Logger, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, FileStorage as OAuthFileStorage, type FileStorageConfig as OAuthFileStorageConfig, type OAuthFlow, OAuthManager, MemoryStorage as OAuthMemoryStorage, OneRingAI, type OneRingAIConfig, ProviderAuthError, ProviderCapabilities, ProviderConfig, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ProvidersConfig, type RegisteredProvider, type RequestMetadata, type SimpleTextOptions, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, TextManager, ToolCall, type ToolCallBuffer, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, oauthRegistry, readClipboardImage, index as tools };

@@ -1219,11 +1219,114 @@ npm install ../oneringai
 
 ---
 
+## Extensibility & Custom Infrastructure
+
+### Clean Architecture Approach
+
+`@oneringai/agents` follows **Clean Architecture** principles, making it easy to implement custom infrastructure:
+
+```typescript
+import {
+  // Domain interfaces
+  ITextProvider,
+  IOAuthTokenStorage,
+  IToolExecutor,
+
+  // Base classes (reusable logic)
+  BaseProvider,
+  BaseTextProvider,
+  ProviderErrorMapper,
+} from '@oneringai/agents';
+```
+
+### What You Can Extend
+
+✅ **Custom LLM Providers** - Add Cohere, Replicate, Ollama, local models
+✅ **Custom OAuth Storage** - MongoDB, Redis, PostgreSQL, AWS Secrets Manager
+✅ **Custom Tool Executors** - Rate limiting, caching, audit logging
+
+### Example: Custom Provider
+
+```typescript
+import { BaseTextProvider, ProviderErrorMapper } from '@oneringai/agents';
+
+class OllamaProvider extends BaseTextProvider {
+  readonly name = 'ollama';
+  readonly capabilities = { text: true, images: false, videos: false, audio: false };
+
+  async generate(options) {
+    const response = await fetch('http://localhost:11434/api/generate', {
+      method: 'POST',
+      body: JSON.stringify({
+        model: options.model,
+        prompt: this.normalizeInputToString(options.input),
+      }),
+    });
+
+    const data = await response.json();
+    return this.convertToLLMResponse(data);
+  }
+
+  // ... implement other required methods
+}
+
+// Use like any other provider!
+const agent = await client.agents.create({
+  provider: 'ollama',
+  model: 'llama2'
+});
+```
+
+### Example: Custom OAuth Storage
+
+```typescript
+import { IOAuthTokenStorage, StoredToken } from '@oneringai/agents';
+
+class MongoOAuthStorage implements IOAuthTokenStorage {
+  async storeToken(key: string, token: StoredToken) {
+    await tokens.updateOne(
+      { _id: key },  // key is "provider:clientId:userId"
+      { $set: { ...encrypt(token), updatedAt: new Date() } },
+      { upsert: true }
+    );
+  }
+
+  async getToken(key: string) {
+    const doc = await tokens.findOne({ _id: key });
+    return doc ? decrypt(doc) : null;
+  }
+
+  // ... implement other methods
+}
+
+// Use with OAuth
+const oauth = new OAuthManager({
+  flow: 'authorization_code',
+  storage: new MongoOAuthStorage(mongoClient)  // Custom storage!
+});
+
+// Works automatically with multi-user!
+await oauth.getToken('user123');
+```
+
+**Full Guide**: See [EXTENSIBILITY.md](./EXTENSIBILITY.md) for:
+- Complete interface reference
+- Custom provider examples (Cohere, Ollama)
+- Custom storage examples (MongoDB, Redis, PostgreSQL)
+- Custom tool executor patterns
+- Clean Architecture best practices
+
+**Try it**: `npm run example:custom-infrastructure`
+
+---
+
 ## Documentation Files
 
 - **`README.md`** (this file) - Complete guide
 - **`HOOKS.md`** - Comprehensive hooks & events guide
+- **`OAUTH.md`** - OAuth 2.0 plugin guide with multi-user support
 - **`PROVIDERS.md`** - Detailed provider comparison and configuration
+- **`EXTENSIBILITY.md`** - Custom infrastructure implementation guide 🆕
 - **`CLAUDE.md`** - For AI assistants (architecture, development guide)
 - **`.env.example`** - Environment variable template
 
@@ -1293,6 +1396,8 @@ const response = await client.text.generateRaw([input], { provider: 'google', mo
 **Recent Changes**:
 - **BREAKING**: `client.agents.create()` is now async and returns `Promise<Agent>` (add `await`)
 - 🆕 **Multi-user OAuth support** - All OAuth methods accept optional `userId` parameter
+- 🆕 **Extensibility** - Exported `BaseProvider`, `BaseTextProvider`, `ProviderErrorMapper` for custom implementations
 - 🆕 `createExecuteJavaScriptTool(oauthRegistry)` for dynamic OAuth provider support
 - 🆕 `authenticatedFetch(url, options, provider, userId?)` supports multi-user
 - Completed Phases 1-6 of improvement plan (memory safety, error handling, concurrency)
+- New docs: `EXTENSIBILITY.md` with custom provider/storage examples
