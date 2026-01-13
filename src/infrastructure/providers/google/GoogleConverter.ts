@@ -13,6 +13,7 @@ import type {
 import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { InputItem, MessageRole, OutputItem } from '../../../domain/entities/Message.js';
+import { convertToolsToStandardFormat } from '../shared/ToolConversionUtils.js';
 import { Content, ContentType } from '../../../domain/entities/Content.js';
 import { Tool, FunctionToolDefinition } from '../../../domain/entities/Tool.js';
 import { fetchImageAsBase64 } from '../../../utils/imageUtils.js';
@@ -231,13 +232,13 @@ export class GoogleConverter {
       return undefined;
     }
 
-    return tools
-      .filter((t): t is FunctionToolDefinition => t.type === 'function')
-      .map((tool) => ({
-        name: tool.function.name,
-        description: tool.function.description || '',
-        parameters: this.convertParametersSchema(tool.function.parameters),
-      }));
+    // Use shared conversion utilities (DRY)
+    const standardTools = convertToolsToStandardFormat(tools);
+    return standardTools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: this.convertParametersSchema(tool.parameters),
+    }));
   }
 
   /**

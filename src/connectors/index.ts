@@ -22,17 +22,12 @@ export const connectorRegistry = ConnectorRegistry.getInstance();
 
 export type {
   ConnectorRegistrationConfig,
-  LegacyProviderRegistrationConfig,
-  RegisteredProvider, // @deprecated - use IConnector
-  RegisteredConnector, // @deprecated - use IConnector
 } from './ConnectorRegistry.js';
 
 // OAuth connectors
 export {
   OAuthManager,
   OAuthConnector,
-  oauthRegistry, // @deprecated - use connectorRegistry
-  OAuthRegistry, // @deprecated - use ConnectorRegistry
 } from './oauth/index.js';
 
 export type {

@@ -874,6 +874,31 @@ const provider = this.registry.getTextProvider('openai');
 const provider2 = this.registry.getTextProvider('openai'); // Returns cached instance
 ```
 
+### 5. OAuth Token Refresh Concurrency (FIXED in Phase 1)
+**Problem (before fix)**: Concurrent `getToken()` calls could trigger multiple refresh requests:
+
+```typescript
+// ❌ Before fix: Both calls would trigger refreshToken()
+await Promise.all([
+  oauth.getToken('user123'),
+  oauth.getToken('user123')
+]);
+// Result: 2 API requests to OAuth provider (wasteful, could hit rate limits)
+```
+
+**Solution (implemented)**: Refresh locks prevent concurrent refresh:
+
+```typescript
+// ✅ After fix: Only ONE refresh happens
+await Promise.all([
+  oauth.getToken('user123'),  // Starts refresh, locks it
+  oauth.getToken('user123')   // Waits for existing refresh
+]);
+// Result: 1 API request, second call waits for first to complete
+```
+
+**Implementation**: `AuthCodePKCE.ts` uses `refreshLocks: Map<string, Promise<string>>` to track in-progress refreshes per user.
+
 ## Future Roadmap
 
 ### Phase 1 (MVP) - ✅ Complete
@@ -922,6 +947,9 @@ const provider2 = this.registry.getTextProvider('openai'); // Returns cached ins
 3. `src/capabilities/agents/Agent.ts` - Agent implementation
 4. `src/capabilities/agents/AgenticLoop.ts` - Tool calling logic
 5. `src/infrastructure/providers/openai/OpenAITextProvider.ts` - Provider example
+6. `src/connectors/ConnectorRegistry.ts` - External system connector management
+7. `src/connectors/oauth/flows/AuthCodePKCE.ts` - OAuth user authentication with race condition protection
+8. `src/connectors/oauth/domain/TokenStore.ts` - Token management with validation and user scoping
 
 ### Original Design Document
 The full architectural design is in: `/Users/aantich/.claude/plans/silly-weaving-raven.md`
@@ -949,6 +977,12 @@ This is a private project. For questions or contributions, contact the project m
 - ⚠️ **Phase 1 Complete - Critical Fixes**:
   - **Race Condition Fix**: OAuth token refresh now uses per-user locks to prevent concurrent refresh requests
   - **Token Validation**: Added validation for OAuth token responses (access_token presence, type checking, expires_in validation)
+- ✅ **Phase 2 Complete - High-Priority Improvements**:
+  - **Memory Leak Fix**: PKCE data (codeVerifiers, states) now auto-cleaned after 15min TTL
+  - **DRY Refactor**: Tool conversion logic extracted to shared utilities (3 providers use same code)
+  - **Continue Strategy**: Tool failure mode now configurable - 'continue' mode executes all tools even if some fail
+  - **Converter Safety**: Google/Anthropic converters use try-finally for guaranteed cleanup
+  - **Configurable Timeout**: Tool execution timeout now configurable (default 30s)
 - 🐛 **Bug Fix**: Changed `OAuthFileStorage` → `FileStorage` in all examples (was causing import errors)
 - 📦 All connector code now in unified location: `src/connectors/oauth/`
 - 🔄 Backward compatibility maintained with deprecated aliases (`oauthRegistry`, `OAuthRegistry`)

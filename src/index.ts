@@ -197,12 +197,10 @@ export { createExecuteJavaScriptTool } from './tools/code/executeJavaScript.js';
 export {
   connectorRegistry,
   ConnectorRegistry,
-  oauthRegistry, // @deprecated - use connectorRegistry
-  OAuthRegistry, // @deprecated - use ConnectorRegistry
   OAuthManager,
+  MemoryStorage,
+  FileStorage,
 } from './connectors/index.js';
-
-export { MemoryStorage as OAuthMemoryStorage, FileStorage as OAuthFileStorage } from './connectors/index.js';
 export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch, generateWebAPITool } from './connectors/index.js';
 
 // Connector types (NEW recommended way)
@@ -219,16 +217,14 @@ export type { IConnector } from './domain/interfaces/IConnector.js';
 
 export type {
   ConnectorRegistrationConfig,
-  RegisteredProvider, // @deprecated - use IConnector
-  RegisteredConnector, // @deprecated - use IConnector
 } from './connectors/index.js';
 
 export { OAuthConnector } from './connectors/index.js';
 
-// OAuth types (legacy, still needed internally)
+// OAuth types
 export type {
   OAuthConfig,
   OAuthFlow,
-  ITokenStorage as IOAuthTokenStorage,
-  FileStorageConfig as OAuthFileStorageConfig,
+  ITokenStorage,
+  FileStorageConfig,
 } from './connectors/index.js';

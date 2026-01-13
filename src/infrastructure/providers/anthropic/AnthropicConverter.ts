@@ -9,6 +9,7 @@ import { InputItem, MessageRole, OutputItem } from '../../../domain/entities/Mes
 import { Content, ContentType } from '../../../domain/entities/Content.js';
 import { Tool, FunctionToolDefinition } from '../../../domain/entities/Tool.js';
 import { InvalidToolArgumentsError } from '../../../domain/errors/AIErrors.js';
+import { convertToolsToStandardFormat, transformForAnthropic } from '../shared/ToolConversionUtils.js';
 
 export class AnthropicConverter {
   /**
@@ -164,16 +165,15 @@ export class AnthropicConverter {
       return undefined;
     }
 
-    return tools
-      .filter((t): t is FunctionToolDefinition => t.type === 'function')
-      .map((tool) => ({
-        name: tool.function.name,
-        description: tool.function.description || '',
-        input_schema: {
-          type: 'object',
-          ...tool.function.parameters,
-        } as any,
-      }));
+    // Use shared conversion utilities (DRY)
+    const standardTools = convertToolsToStandardFormat(tools);
+    return standardTools.map(tool => ({
+      ...transformForAnthropic(tool),
+      input_schema: {
+        type: 'object',
+        ...tool.parameters,
+      } as any,
+    }));
   }
 
   /**

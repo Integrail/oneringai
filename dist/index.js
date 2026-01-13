@@ -735,6 +735,25 @@ var ContentType = /* @__PURE__ */ ((ContentType2) => {
   return ContentType2;
 })(ContentType || {});
 
+// src/infrastructure/providers/shared/ToolConversionUtils.ts
+function extractFunctionTools(tools) {
+  return tools.filter((t) => t.type === "function");
+}
+function convertToolsToStandardFormat(tools) {
+  return extractFunctionTools(tools).map((tool) => ({
+    name: tool.function.name,
+    description: tool.function.description || "",
+    parameters: tool.function.parameters || { type: "object", properties: {} }
+  }));
+}
+function transformForAnthropic(tool) {
+  return {
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.parameters
+  };
+}
+
 // src/infrastructure/providers/anthropic/AnthropicConverter.ts
 var AnthropicConverter = class {
   /**
@@ -858,12 +877,12 @@ var AnthropicConverter = class {
     if (!tools || tools.length === 0) {
       return void 0;
     }
-    return tools.filter((t) => t.type === "function").map((tool) => ({
-      name: tool.function.name,
-      description: tool.function.description || "",
+    const standardTools = convertToolsToStandardFormat(tools);
+    return standardTools.map((tool) => ({
+      ...transformForAnthropic(tool),
       input_schema: {
         type: "object",
-        ...tool.function.parameters
+        ...tool.parameters
       }
     }));
   }
@@ -1194,11 +1213,11 @@ var AnthropicTextProvider = class extends BaseTextProvider {
       });
       this.streamConverter.reset();
       yield* this.streamConverter.convertStream(stream, options.model);
-      this.streamConverter.clear();
     } catch (error) {
-      this.streamConverter.clear();
       this.handleError(error);
       throw error;
+    } finally {
+      this.streamConverter.clear();
     }
   }
   /**
@@ -1253,16 +1272,6 @@ var AnthropicTextProvider = class extends BaseTextProvider {
         supportsJSON: true,
         supportsJSONSchema: false,
         maxTokens: 2e5,
-        maxOutputTokens: 4096
-      };
-    }
-    if (model.includes("claude-2")) {
-      return {
-        supportsTools: false,
-        supportsVision: false,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 1e5,
         maxOutputTokens: 4096
       };
     }
@@ -1558,10 +1567,11 @@ var GoogleConverter = class {
     if (!tools || tools.length === 0) {
       return void 0;
     }
-    return tools.filter((t) => t.type === "function").map((tool) => ({
-      name: tool.function.name,
-      description: tool.function.description || "",
-      parameters: this.convertParametersSchema(tool.function.parameters)
+    const standardTools = convertToolsToStandardFormat(tools);
+    return standardTools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: this.convertParametersSchema(tool.parameters)
     }));
   }
   /**
@@ -1929,12 +1939,12 @@ var GoogleTextProvider = class extends BaseTextProvider {
         }, null, 2));
       }
       const response = this.converter.convertResponse(result);
-      this.converter.clearMappings();
       return response;
     } catch (error) {
-      this.converter.clearMappings();
       this.handleError(error);
       throw error;
+    } finally {
+      this.converter.clearMappings();
     }
   }
   /**
@@ -1955,13 +1965,12 @@ var GoogleTextProvider = class extends BaseTextProvider {
       });
       this.streamConverter.reset();
       yield* this.streamConverter.convertStream(stream, options.model);
-      this.converter.clearMappings();
-      this.streamConverter.clear();
     } catch (error) {
-      this.converter.clearMappings();
-      this.streamConverter.clear();
       this.handleError(error);
       throw error;
+    } finally {
+      this.converter.clearMappings();
+      this.streamConverter.clear();
     }
   }
   /**
@@ -2353,11 +2362,13 @@ var AuthCodePKCEFlow = class {
     this.tokenStore = new TokenStore(storageKey, config.storage);
   }
   tokenStore;
-  // Store PKCE data per user
+  // Store PKCE data per user with timestamps for cleanup
   codeVerifiers = /* @__PURE__ */ new Map();
   states = /* @__PURE__ */ new Map();
   // Store refresh locks per user to prevent concurrent refresh
   refreshLocks = /* @__PURE__ */ new Map();
+  // PKCE data TTL: 15 minutes (auth flows should complete within this time)
+  PKCE_TTL = 15 * 60 * 1e3;
   /**
    * Generate authorization URL for user to visit
    * Opens browser or redirects user to this URL
@@ -2371,11 +2382,12 @@ var AuthCodePKCEFlow = class {
     if (!this.config.redirectUri) {
       throw new Error("redirectUri is required for authorization_code flow");
     }
+    this.cleanupExpiredPKCE();
     const userKey = userId || "default";
     const { codeVerifier, codeChallenge } = generatePKCE();
-    this.codeVerifiers.set(userKey, codeVerifier);
+    this.codeVerifiers.set(userKey, { verifier: codeVerifier, timestamp: Date.now() });
     const state = generateState();
-    this.states.set(userKey, state);
+    this.states.set(userKey, { state, timestamp: Date.now() });
     const params = new URLSearchParams({
       response_type: "code",
       client_id: this.config.clientId,
@@ -2409,7 +2421,11 @@ var AuthCodePKCEFlow = class {
       actualUserId = parts[1];
     }
     const userKey = actualUserId || "default";
-    const expectedState = this.states.get(userKey);
+    const stateData = this.states.get(userKey);
+    if (!stateData) {
+      throw new Error(`No PKCE state found for user ${actualUserId}. Authorization flow may have expired (15 min TTL).`);
+    }
+    const expectedState = stateData.state;
     if (actualState !== expectedState) {
       throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
     }
@@ -2425,9 +2441,9 @@ var AuthCodePKCEFlow = class {
     if (this.config.clientSecret) {
       params.append("client_secret", this.config.clientSecret);
     }
-    const codeVerifier = this.codeVerifiers.get(userKey);
-    if (this.config.usePKCE !== false && codeVerifier) {
-      params.append("code_verifier", codeVerifier);
+    const verifierData = this.codeVerifiers.get(userKey);
+    if (this.config.usePKCE !== false && verifierData) {
+      params.append("code_verifier", verifierData.verifier);
     }
     const response = await fetch(this.config.tokenUrl, {
       method: "POST",
@@ -2528,6 +2544,19 @@ var AuthCodePKCEFlow = class {
       });
     } finally {
       await this.tokenStore.clear(userId);
+    }
+  }
+  /**
+   * Clean up expired PKCE data to prevent memory leaks
+   * Removes verifiers and states older than PKCE_TTL (15 minutes)
+   */
+  cleanupExpiredPKCE() {
+    const now = Date.now();
+    for (const [key, data] of this.codeVerifiers) {
+      if (now - data.timestamp > this.PKCE_TTL) {
+        this.codeVerifiers.delete(key);
+        this.states.delete(key);
+      }
     }
   }
 };
@@ -2938,22 +2967,8 @@ var ConnectorRegistry = class _ConnectorRegistry {
     if (this.connectors.has(name)) {
       console.warn(`Connector '${name}' is already registered. Overwriting...`);
     }
-    let connectorConfig;
-    let oauthManager;
-    if ("oauth" in config) {
-      const legacyConfig = config;
-      connectorConfig = {
-        displayName: legacyConfig.displayName,
-        description: legacyConfig.description,
-        baseURL: legacyConfig.baseURL,
-        auth: this.convertLegacyOAuthToConnectorAuth(legacyConfig.oauth)
-      };
-      oauthManager = legacyConfig.oauth instanceof OAuthManager ? legacyConfig.oauth : new OAuthManager(legacyConfig.oauth);
-    } else {
-      connectorConfig = config;
-      oauthManager = this.createOAuthManagerFromConnectorAuth(name, connectorConfig.auth);
-    }
-    const connector = new OAuthConnector(name, connectorConfig, oauthManager);
+    const oauthManager = this.createOAuthManagerFromConnectorAuth(name, config.auth);
+    const connector = new OAuthConnector(name, config, oauthManager);
     this.connectors.set(name, connector);
   }
   /**
@@ -3043,51 +3058,9 @@ var ConnectorRegistry = class _ConnectorRegistry {
   size() {
     return this.connectors.size;
   }
-  // ==================== Legacy Compatibility ====================
-  /**
-   * @deprecated Use listConnectors() instead
-   */
-  listProviders() {
-    return this.listConnectors();
-  }
-  /**
-   * @deprecated Use listConnectorNames() instead
-   */
-  listProviderNames() {
-    return this.listConnectorNames();
-  }
   // ==================== Internal Helpers ====================
   /**
-   * Convert legacy OAuth config to new ConnectorAuth format
-   */
-  convertLegacyOAuthToConnectorAuth(oauth) {
-    if (oauth instanceof OAuthManager) {
-      return {
-        type: "oauth",
-        flow: "client_credentials",
-        clientId: "legacy",
-        tokenUrl: "legacy"
-      };
-    }
-    return {
-      type: "oauth",
-      flow: oauth.flow,
-      clientId: oauth.clientId,
-      clientSecret: oauth.clientSecret,
-      tokenUrl: oauth.tokenUrl,
-      authorizationUrl: oauth.authorizationUrl,
-      redirectUri: oauth.redirectUri,
-      scope: oauth.scope,
-      usePKCE: oauth.usePKCE,
-      privateKey: oauth.privateKey,
-      privateKeyPath: oauth.privateKeyPath,
-      audience: oauth.audience,
-      refreshBeforeExpiry: oauth.refreshBeforeExpiry,
-      storageKey: oauth.storageKey
-    };
-  }
-  /**
-   * Create OAuthManager from new ConnectorAuth format
+   * Create OAuthManager from ConnectorAuth format
    */
   createOAuthManagerFromConnectorAuth(name, auth) {
     if (auth.type === "api_key") {
@@ -3272,25 +3245,6 @@ var ProviderRegistry = class {
     } finally {
       this.textProviderPromises.delete(name);
     }
-  }
-  /**
-   * Get a text provider instance synchronously (for backward compatibility)
-   * WARNING: This method may create duplicate providers under concurrent access.
-   * Prefer getTextProvider() (async) for new code.
-   * @deprecated Use async getTextProvider() instead to prevent race conditions
-   */
-  getTextProviderSync(name) {
-    assertNotDestroyed(this, "get text provider");
-    if (this.textProviders.has(name)) {
-      return this.textProviders.get(name);
-    }
-    const config = this.configs.get(name);
-    if (!config) {
-      throw new ProviderNotFoundError(name);
-    }
-    const provider = this.createTextProvider(name, config);
-    this.textProviders.set(name, provider);
-    return provider;
   }
   /**
    * Get an image provider instance (lazy loaded and cached)
@@ -4206,7 +4160,7 @@ var AgenticLoop = class extends EventEmitter {
           finalResponse = response;
           break;
         }
-        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId);
+        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId, config);
         this.context.addIteration({
           iteration,
           request: {
@@ -4388,7 +4342,7 @@ var AgenticLoop = class extends EventEmitter {
           };
           const toolStartTime = Date.now();
           try {
-            const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
+            const result = await this.executeToolWithHooks(toolCall, iteration, executionId, config);
             toolResults.push(result);
             yield {
               type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
@@ -4614,7 +4568,7 @@ var AgenticLoop = class extends EventEmitter {
    * Execute single tool with hooks
    * @private
    */
-  async executeToolWithHooks(toolCall, iteration, executionId) {
+  async executeToolWithHooks(toolCall, iteration, executionId, config) {
     const toolStartTime = Date.now();
     toolCall.state = "executing" /* EXECUTING */;
     toolCall.startTime = /* @__PURE__ */ new Date();
@@ -4647,8 +4601,7 @@ var AgenticLoop = class extends EventEmitter {
       const args = JSON.parse(toolCall.function.arguments);
       const result = await this.executeWithTimeout(
         () => this.toolExecutor.execute(toolCall.function.name, args),
-        3e4
-        // 30 seconds timeout
+        config.toolTimeout ?? 3e4
       );
       const toolResult = {
         tool_use_id: toolCall.id,
@@ -4763,7 +4716,7 @@ var AgenticLoop = class extends EventEmitter {
   /**
    * Execute tools with hooks
    */
-  async executeToolsWithHooks(toolCalls, iteration, executionId) {
+  async executeToolsWithHooks(toolCalls, iteration, executionId, config) {
     const results = [];
     for (const toolCall of toolCalls) {
       this.context?.addToolCall(toolCall);
@@ -4823,7 +4776,7 @@ var AgenticLoop = class extends EventEmitter {
       });
       const toolStartTime = Date.now();
       try {
-        const timeout = 3e4;
+        const timeout = config.toolTimeout ?? 3e4;
         const result = await this.executeWithTimeout(
           () => this.toolExecutor.execute(
             toolCall.function.name,
@@ -4884,7 +4837,7 @@ var AgenticLoop = class extends EventEmitter {
             executionId,
             iteration,
             toolCall,
-            timeout: 3e4,
+            timeout: config.toolTimeout ?? 3e4,
             timestamp: /* @__PURE__ */ new Date()
           });
         } else {
@@ -4895,6 +4848,10 @@ var AgenticLoop = class extends EventEmitter {
             error,
             timestamp: /* @__PURE__ */ new Date()
           });
+        }
+        const failureMode = config.errorHandling?.toolFailureMode || "continue";
+        if (failureMode === "fail") {
+          throw error;
         }
       }
     }
@@ -7894,6 +7851,6 @@ Create Salesforce account:
 // src/connectors/index.ts
 var connectorRegistry2 = ConnectorRegistry.getInstance();
 
-export { AIError, Agent, AgentManager, BaseProvider, BaseTextProvider, ConnectorRegistry, ContentType, ExecutionContext, HookManager, ImageManager, InvalidConfigError, InvalidToolArgumentsError, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthConnector, FileStorage as OAuthFileStorage, OAuthManager, MemoryStorage as OAuthMemoryStorage, ConnectorRegistry as OAuthRegistry, OneRingAI, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, TextManager, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, assertNotDestroyed, authenticatedFetch, connectorRegistry2 as connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, connectorRegistry as oauthRegistry, readClipboardImage, tools_exports as tools };
+export { AIError, Agent, AgentManager, BaseProvider, BaseTextProvider, ConnectorRegistry, ContentType, ExecutionContext, FileStorage, HookManager, ImageManager, InvalidConfigError, InvalidToolArgumentsError, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthConnector, OAuthManager, OneRingAI, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, TextManager, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, assertNotDestroyed, authenticatedFetch, connectorRegistry2 as connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, readClipboardImage, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

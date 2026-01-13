@@ -10,11 +10,13 @@ import type { OAuthConfig } from '../types.js';
 
 export class AuthCodePKCEFlow {
   private tokenStore: TokenStore;
-  // Store PKCE data per user
-  private codeVerifiers: Map<string, string> = new Map();
-  private states: Map<string, string> = new Map();
+  // Store PKCE data per user with timestamps for cleanup
+  private codeVerifiers: Map<string, { verifier: string; timestamp: number }> = new Map();
+  private states: Map<string, { state: string; timestamp: number }> = new Map();
   // Store refresh locks per user to prevent concurrent refresh
   private refreshLocks: Map<string, Promise<string>> = new Map();
+  // PKCE data TTL: 15 minutes (auth flows should complete within this time)
+  private readonly PKCE_TTL = 15 * 60 * 1000;
 
   constructor(private config: OAuthConfig) {
     const storageKey = config.storageKey || `auth_code:${config.clientId}`;
@@ -36,15 +38,18 @@ export class AuthCodePKCEFlow {
       throw new Error('redirectUri is required for authorization_code flow');
     }
 
+    // Clean up expired PKCE data before creating new flow
+    this.cleanupExpiredPKCE();
+
     const userKey = userId || 'default';
 
     // Generate PKCE pair
     const { codeVerifier, codeChallenge } = generatePKCE();
-    this.codeVerifiers.set(userKey, codeVerifier);
+    this.codeVerifiers.set(userKey, { verifier: codeVerifier, timestamp: Date.now() });
 
     // Generate state for CSRF protection
     const state = generateState();
-    this.states.set(userKey, state);
+    this.states.set(userKey, { state, timestamp: Date.now() });
 
     // Build authorization URL
     const params = new URLSearchParams({
@@ -94,7 +99,12 @@ export class AuthCodePKCEFlow {
     const userKey = actualUserId || 'default';
 
     // Verify state to prevent CSRF attacks
-    const expectedState = this.states.get(userKey);
+    const stateData = this.states.get(userKey);
+    if (!stateData) {
+      throw new Error(`No PKCE state found for user ${actualUserId}. Authorization flow may have expired (15 min TTL).`);
+    }
+
+    const expectedState = stateData.state;
     if (actualState !== expectedState) {
       throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
     }
@@ -117,9 +127,9 @@ export class AuthCodePKCEFlow {
     }
 
     // Add code_verifier if PKCE was used
-    const codeVerifier = this.codeVerifiers.get(userKey);
-    if (this.config.usePKCE !== false && codeVerifier) {
-      params.append('code_verifier', codeVerifier);
+    const verifierData = this.codeVerifiers.get(userKey);
+    if (this.config.usePKCE !== false && verifierData) {
+      params.append('code_verifier', verifierData.verifier);
     }
 
     const response = await fetch(this.config.tokenUrl, {
@@ -255,6 +265,22 @@ export class AuthCodePKCEFlow {
     } finally {
       // Always clear from storage
       await this.tokenStore.clear(userId);
+    }
+  }
+
+  /**
+   * Clean up expired PKCE data to prevent memory leaks
+   * Removes verifiers and states older than PKCE_TTL (15 minutes)
+   */
+  private cleanupExpiredPKCE(): void {
+    const now = Date.now();
+
+    // Clean up expired code verifiers
+    for (const [key, data] of this.codeVerifiers) {
+      if (now - data.timestamp > this.PKCE_TTL) {
+        this.codeVerifiers.delete(key);
+        this.states.delete(key);
+      }
     }
   }
 }

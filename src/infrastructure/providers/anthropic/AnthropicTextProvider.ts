@@ -82,14 +82,13 @@ export class AnthropicTextProvider extends BaseTextProvider {
 
       // Convert Anthropic events → our StreamEvent format
       yield* this.streamConverter.convertStream(stream, options.model);
-
-      // Clear stream converter to prevent memory leaks
-      this.streamConverter.clear();
     } catch (error: any) {
-      // Clear stream converter even on error
-      this.streamConverter.clear();
       this.handleError(error);
       throw error;
+    } finally {
+      // ALWAYS clear stream converter to prevent memory leaks
+      // Use finally block to ensure cleanup even on exception
+      this.streamConverter.clear();
     }
   }
 
@@ -157,17 +156,6 @@ export class AnthropicTextProvider extends BaseTextProvider {
       };
     }
 
-    // Claude 2.x (legacy)
-    if (model.includes('claude-2')) {
-      return {
-        supportsTools: false,
-        supportsVision: false,
-        supportsJSON: true,
-        supportsJSONSchema: false,
-        maxTokens: 100000,
-        maxOutputTokens: 4096,
-      };
-    }
 
     // Default for unknown models
     return {

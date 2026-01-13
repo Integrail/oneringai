@@ -39,9 +39,21 @@ export interface AgenticLoopConfig {
   };
   errorHandling?: {
     hookFailureMode?: 'fail' | 'warn' | 'ignore';
-    toolFailureMode?: 'fail' | 'warn' | 'continue';
+    /**
+     * Tool failure handling mode:
+     * - 'fail': Stop execution on first tool failure (throw error)
+     * - 'continue': Execute all tools even if some fail, return all results including errors
+     * @default 'continue'
+     */
+    toolFailureMode?: 'fail' | 'continue';
     maxConsecutiveErrors?: number;
   };
+
+  /**
+   * Tool execution timeout in milliseconds
+   * @default 30000 (30 seconds)
+   */
+  toolTimeout?: number;
 }
 
 export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
@@ -176,7 +188,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
         }
 
         // Execute tools with hooks
-        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId);
+        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId, config);
 
         // Store iteration record
         this.context.addIteration({
@@ -431,7 +443,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
 
           try {
             // Execute tool with hooks
-            const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
+            const result = await this.executeToolWithHooks(toolCall, iteration, executionId, config);
             toolResults.push(result);
 
             // Emit tool execution done
@@ -721,7 +733,8 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
   private async executeToolWithHooks(
     toolCall: ToolCall,
     iteration: number,
-    executionId: string
+    executionId: string,
+    config: AgenticLoopConfig
   ): Promise<ToolResult> {
     const toolStartTime = Date.now();
 
@@ -761,11 +774,11 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     });
 
     try {
-      // Execute tool with timeout
+      // Execute tool with timeout (configurable)
       const args = JSON.parse(toolCall.function.arguments);
       const result = await this.executeWithTimeout(
         () => this.toolExecutor.execute(toolCall.function.name, args),
-        30000 // 30 seconds timeout
+        config.toolTimeout ?? 30000
       );
 
       // Create tool result
@@ -927,7 +940,8 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
   private async executeToolsWithHooks(
     toolCalls: ToolCall[],
     iteration: number,
-    executionId: string
+    executionId: string,
+    config: AgenticLoopConfig
   ): Promise<ToolResult[]> {
     const results: ToolResult[] = [];
 
@@ -1012,8 +1026,8 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
       const toolStartTime = Date.now();
 
       try {
-        // Execute with timeout
-        const timeout = 30000;
+        // Execute with timeout (configurable)
+        const timeout = config.toolTimeout ?? 30000;
         const result = await this.executeWithTimeout(
           () => this.toolExecutor.execute(
             toolCall.function.name,
@@ -1091,7 +1105,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
             executionId,
             iteration,
             toolCall,
-            timeout: 30000,
+            timeout: config.toolTimeout ?? 30000,
             timestamp: new Date(),
           });
         } else {
@@ -1103,6 +1117,16 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
             timestamp: new Date(),
           });
         }
+
+        // Check tool failure mode
+        const failureMode = config.errorHandling?.toolFailureMode || 'continue';
+        if (failureMode === 'fail') {
+          // Fail-fast mode: stop execution on first tool failure
+          throw error;
+        }
+
+        // Continue mode (default): Continue executing remaining tools
+        // Error already added to results above
       }
     }
 

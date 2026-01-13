@@ -14,20 +14,9 @@ import { IConnector } from '../domain/interfaces/IConnector.js';
 import { OAuthConnector } from './oauth/OAuthConnector.js';
 
 /**
- * Legacy registration config (for backward compatibility during migration)
+ * Connector registration config
  */
-export interface LegacyProviderRegistrationConfig {
-  displayName: string;
-  description: string;
-  baseURL: string;
-  oauth: OAuthConfig | OAuthManager;
-}
-
-/**
- * Connector registration - simplified interface
- * Just pass ConnectorConfig!
- */
-export type ConnectorRegistrationConfig = ConnectorConfig | LegacyProviderRegistrationConfig;
+export type ConnectorRegistrationConfig = ConnectorConfig;
 
 /**
  * Connector Registry - manages all external system connectors
@@ -84,36 +73,11 @@ export class ConnectorRegistry {
       console.warn(`Connector '${name}' is already registered. Overwriting...`);
     }
 
-    // Handle both new ConnectorConfig and legacy format
-    let connectorConfig: ConnectorConfig;
-    let oauthManager: OAuthManager;
-
-    if ('oauth' in config) {
-      // Legacy format
-      const legacyConfig = config as LegacyProviderRegistrationConfig;
-
-      // Convert to ConnectorConfig
-      connectorConfig = {
-        displayName: legacyConfig.displayName,
-        description: legacyConfig.description,
-        baseURL: legacyConfig.baseURL,
-        auth: this.convertLegacyOAuthToConnectorAuth(legacyConfig.oauth),
-      };
-
-      // Create OAuthManager
-      oauthManager = legacyConfig.oauth instanceof OAuthManager
-        ? legacyConfig.oauth
-        : new OAuthManager(legacyConfig.oauth);
-    } else {
-      // New ConnectorConfig format
-      connectorConfig = config as ConnectorConfig;
-
-      // Create OAuthManager from ConnectorAuth
-      oauthManager = this.createOAuthManagerFromConnectorAuth(name, connectorConfig.auth);
-    }
+    // Create OAuthManager from ConnectorAuth
+    const oauthManager = this.createOAuthManagerFromConnectorAuth(name, config.auth);
 
     // Create connector implementing IConnector interface
-    const connector = new OAuthConnector(name, connectorConfig, oauthManager);
+    const connector = new OAuthConnector(name, config, oauthManager);
 
     this.connectors.set(name, connector);
   }
@@ -224,59 +188,10 @@ export class ConnectorRegistry {
     return this.connectors.size;
   }
 
-  // ==================== Legacy Compatibility ====================
-
-  /**
-   * @deprecated Use listConnectors() instead
-   */
-  listProviders(): IConnector[] {
-    return this.listConnectors();
-  }
-
-  /**
-   * @deprecated Use listConnectorNames() instead
-   */
-  listProviderNames(): string[] {
-    return this.listConnectorNames();
-  }
-
   // ==================== Internal Helpers ====================
 
   /**
-   * Convert legacy OAuth config to new ConnectorAuth format
-   */
-  private convertLegacyOAuthToConnectorAuth(oauth: OAuthConfig | OAuthManager): ConnectorAuth {
-    if (oauth instanceof OAuthManager) {
-      // Can't extract config from manager, use placeholder
-      return {
-        type: 'oauth',
-        flow: 'client_credentials',
-        clientId: 'legacy',
-        tokenUrl: 'legacy',
-      };
-    }
-
-    // Convert OAuthConfig to ConnectorAuth
-    return {
-      type: 'oauth',
-      flow: oauth.flow as any,
-      clientId: oauth.clientId,
-      clientSecret: oauth.clientSecret,
-      tokenUrl: oauth.tokenUrl,
-      authorizationUrl: oauth.authorizationUrl,
-      redirectUri: oauth.redirectUri,
-      scope: oauth.scope,
-      usePKCE: oauth.usePKCE,
-      privateKey: oauth.privateKey,
-      privateKeyPath: oauth.privateKeyPath,
-      audience: oauth.audience,
-      refreshBeforeExpiry: oauth.refreshBeforeExpiry,
-      storageKey: oauth.storageKey,
-    };
-  }
-
-  /**
-   * Create OAuthManager from new ConnectorAuth format
+   * Create OAuthManager from ConnectorAuth format
    */
   private createOAuthManagerFromConnectorAuth(name: string, auth: ConnectorAuth): OAuthManager {
     if (auth.type === 'api_key') {
@@ -343,27 +258,3 @@ export class ConnectorRegistry {
  * ```
  */
 export const connectorRegistry = ConnectorRegistry.getInstance();
-
-/**
- * @deprecated Use connectorRegistry instead
- * Kept for backward compatibility - will be removed in v0.3.0
- */
-export const oauthRegistry = connectorRegistry;
-
-/**
- * Legacy type alias for backward compatibility
- * @deprecated Use IConnector instead
- */
-export type RegisteredProvider = IConnector;
-
-/**
- * Legacy type alias for backward compatibility
- * @deprecated Use IConnector instead
- */
-export type RegisteredConnector = IConnector;
-
-/**
- * Legacy class alias for backward compatibility
- * @deprecated Use ConnectorRegistry instead
- */
-export const OAuthRegistry = ConnectorRegistry;

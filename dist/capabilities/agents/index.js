@@ -819,7 +819,7 @@ var AgenticLoop = class extends EventEmitter {
           finalResponse = response;
           break;
         }
-        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId);
+        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId, config);
         this.context.addIteration({
           iteration,
           request: {
@@ -1001,7 +1001,7 @@ var AgenticLoop = class extends EventEmitter {
           };
           const toolStartTime = Date.now();
           try {
-            const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
+            const result = await this.executeToolWithHooks(toolCall, iteration, executionId, config);
             toolResults.push(result);
             yield {
               type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
@@ -1227,7 +1227,7 @@ var AgenticLoop = class extends EventEmitter {
    * Execute single tool with hooks
    * @private
    */
-  async executeToolWithHooks(toolCall, iteration, executionId) {
+  async executeToolWithHooks(toolCall, iteration, executionId, config) {
     const toolStartTime = Date.now();
     toolCall.state = "executing" /* EXECUTING */;
     toolCall.startTime = /* @__PURE__ */ new Date();
@@ -1260,8 +1260,7 @@ var AgenticLoop = class extends EventEmitter {
       const args = JSON.parse(toolCall.function.arguments);
       const result = await this.executeWithTimeout(
         () => this.toolExecutor.execute(toolCall.function.name, args),
-        3e4
-        // 30 seconds timeout
+        config.toolTimeout ?? 3e4
       );
       const toolResult = {
         tool_use_id: toolCall.id,
@@ -1376,7 +1375,7 @@ var AgenticLoop = class extends EventEmitter {
   /**
    * Execute tools with hooks
    */
-  async executeToolsWithHooks(toolCalls, iteration, executionId) {
+  async executeToolsWithHooks(toolCalls, iteration, executionId, config) {
     const results = [];
     for (const toolCall of toolCalls) {
       this.context?.addToolCall(toolCall);
@@ -1436,7 +1435,7 @@ var AgenticLoop = class extends EventEmitter {
       });
       const toolStartTime = Date.now();
       try {
-        const timeout = 3e4;
+        const timeout = config.toolTimeout ?? 3e4;
         const result = await this.executeWithTimeout(
           () => this.toolExecutor.execute(
             toolCall.function.name,
@@ -1497,7 +1496,7 @@ var AgenticLoop = class extends EventEmitter {
             executionId,
             iteration,
             toolCall,
-            timeout: 3e4,
+            timeout: config.toolTimeout ?? 3e4,
             timestamp: /* @__PURE__ */ new Date()
           });
         } else {
@@ -1508,6 +1507,10 @@ var AgenticLoop = class extends EventEmitter {
             error,
             timestamp: /* @__PURE__ */ new Date()
           });
+        }
+        const failureMode = config.errorHandling?.toolFailureMode || "continue";
+        if (failureMode === "fail") {
+          throw error;
         }
       }
     }

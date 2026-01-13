@@ -85,15 +85,14 @@ export class GoogleTextProvider extends BaseTextProvider {
       // Convert Google response → our format
       const response = this.converter.convertResponse(result);
 
-      // Clear converter mappings to prevent memory leaks
-      this.converter.clearMappings();
-
       return response;
     } catch (error: any) {
-      // Clear mappings even on error
-      this.converter.clearMappings();
       this.handleError(error);
       throw error; // TypeScript needs this
+    } finally {
+      // ALWAYS clear converter mappings to prevent memory leaks
+      // Use finally block to ensure cleanup even on exception
+      this.converter.clearMappings();
     }
   }
 
@@ -123,16 +122,14 @@ export class GoogleTextProvider extends BaseTextProvider {
 
       // Convert Google stream → our StreamEvent format
       yield* this.streamConverter.convertStream(stream, options.model);
-
-      // Clear converters after stream completes
-      this.converter.clearMappings();
-      this.streamConverter.clear();
     } catch (error: any) {
-      // Clear converters even on error
-      this.converter.clearMappings();
-      this.streamConverter.clear();
       this.handleError(error);
       throw error;
+    } finally {
+      // ALWAYS clear converters to prevent memory leaks
+      // Use finally block to ensure cleanup even on exception
+      this.converter.clearMappings();
+      this.streamConverter.clear();
     }
   }
 

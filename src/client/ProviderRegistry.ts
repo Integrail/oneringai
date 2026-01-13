@@ -202,31 +202,6 @@ export class ProviderRegistry implements IDisposable {
     }
   }
 
-  /**
-   * Get a text provider instance synchronously (for backward compatibility)
-   * WARNING: This method may create duplicate providers under concurrent access.
-   * Prefer getTextProvider() (async) for new code.
-   * @deprecated Use async getTextProvider() instead to prevent race conditions
-   */
-  getTextProviderSync(name: string): ITextProvider {
-    assertNotDestroyed(this, 'get text provider');
-
-    // Check if already instantiated
-    if (this.textProviders.has(name)) {
-      return this.textProviders.get(name)!;
-    }
-
-    // Check if config exists
-    const config = this.configs.get(name);
-    if (!config) {
-      throw new ProviderNotFoundError(name);
-    }
-
-    // Lazy load provider (may race with concurrent calls)
-    const provider = this.createTextProvider(name, config);
-    this.textProviders.set(name, provider);
-    return provider;
-  }
 
   /**
    * Get an image provider instance (lazy loaded and cached)
