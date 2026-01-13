@@ -9,28 +9,7 @@ import { OneRingAI } from '../client/OneRingAI.js';
 import { Agent } from '../capabilities/agents/Agent.js';
 import { MessageBuilder } from '../utils/messageBuilder.js';
 import { InputItem } from '../domain/entities/Message.js';
-
-export interface ProviderConfigResult {
-  providerName: string;
-  config: {
-    displayName: string;
-    description: string;
-    baseURL: string;
-    oauth: {
-      flow: 'authorization_code' | 'client_credentials' | 'jwt_bearer' | 'static_token';
-      clientId?: string;
-      clientSecret?: string;
-      authorizationUrl?: string;
-      tokenUrl?: string;
-      redirectUri?: string;
-      scope?: string;
-      staticToken?: string;
-      [key: string]: any;
-    };
-  };
-  setupInstructions: string;
-  envVariables: string[];
-}
+import { ConnectorConfigResult } from '../domain/entities/Connector.js';
 
 /**
  * Built-in agent for generating OAuth provider configurations
@@ -43,12 +22,12 @@ export class ProviderConfigAgent {
 
   /**
    * Start interactive configuration session
-   * AI will ask questions and generate the provider config
+   * AI will ask questions and generate the connector config
    *
    * @param initialInput - Optional initial message (e.g., "I want to connect to GitHub")
-   * @returns Promise<string | ProviderConfigResult> - Either next question or final config
+   * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
    */
-  async run(initialInput?: string): Promise<string | ProviderConfigResult> {
+  async run(initialInput?: string): Promise<string | ConnectorConfigResult> {
     // Create agent with specialized instructions
     this.agent = await this.client.agents.create({
       provider: this.getDefaultProvider(),
@@ -91,9 +70,9 @@ export class ProviderConfigAgent {
    * Continue conversation (for multi-turn interaction)
    *
    * @param userMessage - User's response
-   * @returns Promise<string | ProviderConfigResult> - Either next question or final config
+   * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
    */
-  async continue(userMessage: string): Promise<string | ProviderConfigResult> {
+  async continue(userMessage: string): Promise<string | ConnectorConfigResult> {
     if (!this.agent) {
       throw new Error('Agent not initialized. Call run() first.');
     }
@@ -181,12 +160,13 @@ CRITICAL RULES:
 
 ===CONFIG_START===
 {
-  "providerName": "github",
+  "name": "github",
   "config": {
     "displayName": "GitHub API",
     "description": "Access GitHub repositories and user data",
     "baseURL": "https://api.github.com",
-    "oauth": {
+    "auth": {
+      "type": "oauth",
       "flow": "authorization_code",
       "clientId": "ENV:GITHUB_CLIENT_ID",
       "clientSecret": "ENV:GITHUB_CLIENT_SECRET",
@@ -196,8 +176,9 @@ CRITICAL RULES:
       "scope": "user:email repo"
     }
   },
-  "setupInstructions": "1. Go to https://github.com/settings/developers\\n2. Create New OAuth App\\n3. Set Authorization callback URL to your redirectUri\\n4. Copy Client ID and Client Secret",
-  "envVariables": ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"]
+  "setupInstructions": "1. Go to https://github.com/settings/developers\\n2. Create New OAuth App\\n3. Set Authorization callback URL\\n4. Copy Client ID and Client Secret",
+  "envVariables": ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"],
+  "setupUrl": "https://github.com/settings/developers"
 }
 ===CONFIG_END===
 
@@ -209,7 +190,7 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   /**
    * Extract configuration from AI response
    */
-  private extractConfig(responseText: string): ProviderConfigResult {
+  private extractConfig(responseText: string): ConnectorConfigResult {
     // Find config between markers
     const configMatch = responseText.match(/===CONFIG_START===\s*([\s\S]*?)\s*===CONFIG_END===/);
 
@@ -221,7 +202,7 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
       const configJson = configMatch[1]!.trim();
       const config = JSON.parse(configJson);
 
-      return config as ProviderConfigResult;
+      return config as ConnectorConfigResult;
     } catch (error) {
       throw new Error(`Failed to parse configuration JSON: ${(error as Error).message}`);
     }

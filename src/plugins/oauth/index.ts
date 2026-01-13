@@ -1,19 +1,39 @@
 /**
- * OAuth 2.0 Plugin for @oneringai/agents
+ * Connector Plugin for @oneringai/agents
  *
- * Supports multiple OAuth flows with encrypted token storage:
- * - Authorization Code with PKCE
- * - Client Credentials
- * - JWT Bearer
+ * Connectors provide authenticated access to external system APIs
+ * (GitHub, Microsoft, Salesforce, etc.)
  *
- * Plus global provider registry and authenticated fetch for easy integration.
+ * Supports multiple authentication methods:
+ * - OAuth 2.0 (Authorization Code with PKCE, Client Credentials, JWT Bearer)
+ * - API Keys
+ * - JWT Bearer Tokens
+ *
+ * IMPORTANT: Connectors are DIFFERENT from Providers
+ * - Connectors: External system authentication (GitHub, Microsoft)
+ * - Providers: AI capabilities (OpenAI, Anthropic)
  */
 
 export { OAuthManager } from './OAuthManager.js';
 
-// Registry and authenticated fetch
-export { oauthRegistry, OAuthRegistry } from './OAuthRegistry.js';
-export type { RegisteredProvider, ProviderRegistrationConfig } from './OAuthRegistry.js';
+// NEW: Connector Registry (recommended)
+export {
+  connectorRegistry,
+  ConnectorRegistry,
+  oauthRegistry, // @deprecated - use connectorRegistry
+  OAuthRegistry, // @deprecated - use ConnectorRegistry
+} from './ConnectorRegistry.js';
+
+export type {
+  ConnectorRegistrationConfig,
+  RegisteredProvider, // @deprecated - use IConnector
+  RegisteredConnector, // @deprecated - use IConnector
+  LegacyProviderRegistrationConfig,
+} from './ConnectorRegistry.js';
+
+export { OAuthConnector } from './OAuthConnector.js';
+
+// Authenticated fetch (works with connectors)
 export { authenticatedFetch, createAuthenticatedFetch } from './authenticatedFetch.js';
 export { generateWebAPITool } from './toolGenerator.js';
 

@@ -1,11 +1,12 @@
 /**
  * JavaScript Execution Tool
- * Executes JavaScript in a sandboxed VM with OAuth integration
+ * Executes JavaScript in a sandboxed VM with connector integration
+ * Connectors provide authenticated access to external APIs (GitHub, Microsoft, etc.)
  */
 
 import * as vm from 'vm';
 import { ToolFunction } from '../../domain/entities/Tool.js';
-import { oauthRegistry, OAuthRegistry } from '../../plugins/oauth/OAuthRegistry.js';
+import { connectorRegistry, ConnectorRegistry } from '../../plugins/oauth/ConnectorRegistry.js';
 import { authenticatedFetch } from '../../plugins/oauth/authenticatedFetch.js';
 
 interface ExecuteJSArgs {
@@ -23,19 +24,19 @@ interface ExecuteJSResult {
 }
 
 /**
- * Generate the tool description with current OAuth providers
+ * Generate the tool description with current connectors
  */
-function generateDescription(registry: OAuthRegistry): string {
-  const providers = registry.listProviders();
-  const providerList = providers.length > 0
-    ? providers
-        .map(p => `   • "${p.name}": ${p.displayName}\n     ${p.description}\n     Base URL: ${p.baseURL}`)
+function generateDescription(registry: ConnectorRegistry): string {
+  const connectors = registry.listConnectors();
+  const connectorList = connectors.length > 0
+    ? connectors
+        .map(c => `   • "${c.name}": ${c.displayName}\n     ${c.config.description}\n     Base URL: ${c.baseURL}`)
         .join('\n\n')
-    : '   No OAuth providers registered yet. Register providers with oauthRegistry.register().';
+    : '   No connectors registered yet. Register connectors with connectorRegistry.register().';
 
-  return `Execute JavaScript code in a secure sandbox with OAuth authentication.
+  return `Execute JavaScript code in a secure sandbox with connector integration.
 
-IMPORTANT: This tool runs JavaScript code in a sandboxed environment with access to authenticated APIs.
+IMPORTANT: This tool runs JavaScript code in a sandboxed environment with authenticated access to external APIs via connectors.
 
 AVAILABLE IN CONTEXT:
 
@@ -44,22 +45,22 @@ AVAILABLE IN CONTEXT:
    - output: SET THIS variable to return your result
 
 2. AUTHENTICATED FETCH:
-   - authenticatedFetch(url, options, provider, userId?)
+   - authenticatedFetch(url, options, connector, userId?)
      • url: Full URL or path
      • options: Standard fetch options { method: 'GET'|'POST'|..., body: ..., headers: ... }
-     • provider: OAuth provider name (see below)
+     • connector: Connector name (see below)
      • userId: (optional) User identifier for multi-user apps
      • Returns: Promise<Response>
 
-   REGISTERED OAUTH PROVIDERS:
-${providerList}
+   REGISTERED CONNECTORS:
+${connectorList}
 
 3. STANDARD FETCH:
    - fetch(url, options) - No authentication
 
-4. OAUTH REGISTRY:
-   - oauth.listProviders() - List available providers
-   - oauth.getProviderInfo(name) - Get provider details
+4. CONNECTOR REGISTRY:
+   - connectors.list() - List available connectors
+   - connectors.get(name) - Get connector details
 
 5. UTILITIES:
    - console.log/error/warn
@@ -73,10 +74,10 @@ Always wrap your code in an async IIFE:
   // Your code here
 
   // Single-user mode (default)
-  const response = await authenticatedFetch(url, options, provider);
+  const response = await authenticatedFetch(url, options, 'github');
 
   // OR Multi-user mode (if your app has multiple users)
-  const response = await authenticatedFetch(url, options, provider, userId);
+  const response = await authenticatedFetch(url, options, 'github', userId);
 
   const data = await response.json();
   output = data;
@@ -100,10 +101,12 @@ RETURNS:
 }
 
 /**
- * Create an execute_javascript tool with the current OAuth registry state
- * Use this factory when you need the tool to reflect currently registered providers
+ * Create an execute_javascript tool with the current connector registry state
+ * Use this factory when you need the tool to reflect currently registered connectors
+ *
+ * @param registry - ConnectorRegistry instance (defaults to global connectorRegistry)
  */
-export function createExecuteJavaScriptTool(registry: OAuthRegistry = oauthRegistry): ToolFunction<ExecuteJSArgs, ExecuteJSResult> {
+export function createExecuteJavaScriptTool(registry: ConnectorRegistry = connectorRegistry): ToolFunction<ExecuteJSArgs, ExecuteJSResult> {
   return {
     definition: {
       type: 'function',
@@ -164,11 +167,11 @@ export function createExecuteJavaScriptTool(registry: OAuthRegistry = oauthRegis
 }
 
 /**
- * Default executeJavaScript tool (uses global oauthRegistry)
+ * Default executeJavaScript tool (uses global connectorRegistry)
  * NOTE: The description is generated at module load time. If you register
- * providers after importing this, use createExecuteJavaScriptTool() instead.
+ * connectors after importing this, use createExecuteJavaScriptTool() instead.
  */
-export const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult> = createExecuteJavaScriptTool(oauthRegistry);
+export const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult> = createExecuteJavaScriptTool(connectorRegistry);
 
 /**
  * Execute code in Node.js vm module
@@ -178,7 +181,7 @@ async function executeInVM(
   input: any,
   timeout: number,
   logs: string[],
-  registry: OAuthRegistry = oauthRegistry
+  registry: ConnectorRegistry = connectorRegistry
 ): Promise<any> {
   // Create sandbox context
   const sandbox: any = {
@@ -199,16 +202,16 @@ async function executeInVM(
     // Standard fetch
     fetch: globalThis.fetch,
 
-    // OAuth registry info (uses the provided registry)
-    oauth: {
-      listProviders: () => registry.listProviderNames(),
-      getProviderInfo: (name: string) => {
+    // Connector registry info (uses the provided registry)
+    connectors: {
+      list: () => registry.listConnectorNames(),
+      get: (name: string) => {
         try {
-          const provider = registry.get(name);
+          const connector = registry.get(name);
           return {
-            displayName: provider.displayName,
-            description: provider.description,
-            baseURL: provider.baseURL,
+            displayName: connector.displayName,
+            description: connector.config.description,
+            baseURL: connector.baseURL,
           };
         } catch {
           return null;

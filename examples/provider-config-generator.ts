@@ -100,7 +100,7 @@ async function main() {
               saveConfig(response);
             }
 
-            console.log('\n✨ Done! You can now use this config with oauthRegistry.register()');
+            console.log('\n✨ Done! You can now use this config with connectorRegistry.register()');
             console.log('\n👋 Goodbye!');
             rl.close();
             process.exit(0);
@@ -132,7 +132,7 @@ function displayConfig(result: any) {
   console.log('📋 Provider Configuration');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-  console.log(`Provider Name: ${result.providerName}`);
+  console.log(`Provider Name: ${result.name}`);
   console.log(`Display Name: ${result.config.displayName}`);
   console.log(`OAuth Flow: ${result.config.oauth.flow}`);
   console.log('');
@@ -149,9 +149,9 @@ function displayConfig(result: any) {
 
   console.log('💻 Code to Register:');
   console.log('```typescript');
-  console.log(`import { oauthRegistry } from '@oneringai/agents';`);
+  console.log(`import { connectorRegistry } from '@oneringai/agents';`);
   console.log('');
-  console.log(`oauthRegistry.register('${result.providerName}', ${JSON.stringify(result.config, null, 2)});`);
+  console.log(`connectorRegistry.register('${result.name}', ${JSON.stringify(result.config, null, 2)});`);
   console.log('```');
   console.log('');
 
@@ -163,7 +163,7 @@ function displayConfig(result: any) {
  * Save configuration to file
  */
 function saveConfig(result: any) {
-  const filename = `oauth-${result.providerName}-config.json`;
+  const filename = `oauth-${result.name}-config.json`;
   fs.writeFileSync(filename, JSON.stringify(result, null, 2));
   console.log(`\n✅ Saved to: ${filename}`);
 }

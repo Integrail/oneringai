@@ -5,7 +5,7 @@
  */
 
 import 'dotenv/config';
-import { OneRingAI, ProviderConfigAgent, oauthRegistry } from '../src/index.js';
+import { OneRingAI, ProviderConfigAgent, connectorRegistry } from '../src/index.js';
 
 async function main() {
   console.log('🔌 Programmatic OAuth Provider Configuration\n');
@@ -30,7 +30,7 @@ async function main() {
     );
 
     console.log('✅ Generated configuration:\n');
-    console.log('Provider Name:', result.providerName);
+    console.log('Provider Name:', result.name);
     console.log('Flow Type:', result.config.oauth.flow);
     console.log('');
     console.log('Setup Instructions:');
@@ -45,9 +45,9 @@ async function main() {
 
     // Register it immediately!
     console.log('📝 Registering provider...');
-    oauthRegistry.register(result.providerName, result.config);
-    console.log(`✅ Provider '${result.providerName}' registered!`);
-    console.log(`   Available providers: ${oauthRegistry.listProviderNames().join(', ')}`);
+    connectorRegistry.register(result.name, result.config);
+    console.log(`✅ Provider '${result.name}' registered!`);
+    console.log(`   Available providers: ${connectorRegistry.listProviderNames().join(', ')}`);
   } catch (error) {
     console.error('❌ Error:', (error as Error).message);
   }

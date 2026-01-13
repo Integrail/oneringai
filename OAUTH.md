@@ -133,7 +133,7 @@ OAUTH_ENCRYPTION_KEY=997db3aa6f28973c4e5d8b2a1f3c6e9d8a7b4c3e2d1f0a9b8c7d6e5f4a3
 
 **Example**:
 ```typescript
-oauthRegistry.register('openai-api', {
+connectorRegistry.register('openai-api', {
   displayName: 'OpenAI API',
   description: 'Access OpenAI models and completions',
   baseURL: 'https://api.openai.com/v1',
@@ -216,7 +216,7 @@ const oauth = new OAuthManager({
 ### OpenAI
 
 ```typescript
-oauthRegistry.register('openai-api', {
+connectorRegistry.register('openai-api', {
   displayName: 'OpenAI API',
   description: 'Access OpenAI: models, completions, embeddings, fine-tuning',
   baseURL: 'https://api.openai.com/v1',
@@ -239,7 +239,7 @@ const models = await authenticatedFetch(
 ### Anthropic
 
 ```typescript
-oauthRegistry.register('anthropic-api', {
+connectorRegistry.register('anthropic-api', {
   displayName: 'Anthropic API',
   description: 'Access Anthropic Claude models',
   baseURL: 'https://api.anthropic.com/v1',
@@ -269,7 +269,7 @@ const response = await authenticatedFetch(
 
 ```typescript
 // Works with any API that uses Bearer tokens or API keys
-oauthRegistry.register('custom-api', {
+connectorRegistry.register('custom-api', {
   displayName: 'Custom SaaS API',
   description: 'Your custom API endpoints',
   baseURL: 'https://api.custom.com/v1',
@@ -506,15 +506,15 @@ const bobIssues = await bobFetch('https://api.github.com/user/issues');
 ```typescript
 import {
   OneRingAI,
-  oauthRegistry,
+  connectorRegistry,
   createExecuteJavaScriptTool
 } from '@oneringai/agents';
 
 // Register OAuth provider
-oauthRegistry.register('github', { /* ... */ });
+connectorRegistry.register('github', { /* ... */ });
 
 // Create agent with JavaScript execution tool
-const jsTool = createExecuteJavaScriptTool(oauthRegistry);
+const jsTool = createExecuteJavaScriptTool(connectorRegistry);
 
 const agent = await client.agents.create({
   provider: 'openai',

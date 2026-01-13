@@ -7,7 +7,7 @@
 
 import 'dotenv/config';
 import {
-  oauthRegistry,
+  connectorRegistry,
   authenticatedFetch,
   createAuthenticatedFetch,
   OAuthFileStorage,
@@ -29,7 +29,7 @@ async function main() {
   console.log('Step 1: Register GitHub OAuth Provider');
   console.log('────────────────────────────────────────────────────────────\n');
 
-  oauthRegistry.register('github', {
+  connectorRegistry.register('github', {
     displayName: 'GitHub API',
     description: 'Access GitHub repositories, issues, and user data',
     baseURL: 'https://api.github.com',
@@ -192,7 +192,7 @@ async function main() {
   console.log('```typescript');
   console.log('import { createExecuteJavaScriptTool } from "@oneringai/agents";\n');
   console.log('// Create agent with JavaScript execution tool');
-  console.log('const jsTool = createExecuteJavaScriptTool(oauthRegistry);\n');
+  console.log('const jsTool = createExecuteJavaScriptTool(connectorRegistry);\n');
   console.log('const agent = await client.agents.create({');
   console.log('  provider: "openai",');
   console.log('  model: "gpt-4",');

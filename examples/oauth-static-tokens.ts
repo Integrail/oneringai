@@ -7,7 +7,7 @@
 
 import 'dotenv/config';
 import {
-  oauthRegistry,
+  connectorRegistry,
   authenticatedFetch,
   generateWebAPITool,
   OneRingAI,
@@ -22,7 +22,7 @@ async function main() {
   console.log('─────────────────────────────────\n');
 
   // Register OpenAI
-  oauthRegistry.register('openai-api', {
+  connectorRegistry.register('openai-api', {
     displayName: 'OpenAI API',
     description: 'Access OpenAI: models, completions, embeddings, fine-tuning',
     baseURL: 'https://api.openai.com/v1',
@@ -37,7 +37,7 @@ async function main() {
   console.log('✅ Registered: OpenAI API (static token)');
 
   // Register Anthropic
-  oauthRegistry.register('anthropic-api', {
+  connectorRegistry.register('anthropic-api', {
     displayName: 'Anthropic API',
     description: 'Access Anthropic Claude: messages, completions',
     baseURL: 'https://api.anthropic.com/v1',
@@ -52,7 +52,7 @@ async function main() {
   console.log('✅ Registered: Anthropic API (static token)');
 
   // Register a custom API with static token
-  oauthRegistry.register('custom-api', {
+  connectorRegistry.register('custom-api', {
     displayName: 'Custom API',
     description: 'Your custom API with static token',
     baseURL: 'https://api.custom.com/v1',
@@ -71,7 +71,7 @@ async function main() {
   console.log('─────────────────────────────────\n');
 
   // Register Microsoft (OAuth)
-  oauthRegistry.register('microsoft', {
+  connectorRegistry.register('microsoft', {
     displayName: 'Microsoft Graph',
     description: 'Access Microsoft 365: mail, calendar, files',
     baseURL: 'https://graph.microsoft.com',
@@ -93,7 +93,7 @@ async function main() {
   console.log('All Registered Providers (Mixed):');
   console.log('─────────────────────────────────\n');
 
-  const providers = oauthRegistry.listProviders();
+  const providers = connectorRegistry.listProviders();
   providers.forEach((p) => {
     console.log(`• ${p.name}`);
     console.log(`  Name: ${p.displayName}`);
@@ -144,7 +144,7 @@ async function main() {
   console.log('Generated tool:', apiTool.definition.function.name);
   console.log('Supports providers:', apiTool.definition.function.parameters.properties.authProvider.enum);
   console.log('\nTool description includes:\n');
-  console.log(oauthRegistry.getProviderDescriptionsForTools());
+  console.log(connectorRegistry.getProviderDescriptionsForTools());
   console.log('');
 
   // ==================== Use with AI Agent ====================
@@ -165,7 +165,7 @@ async function main() {
       tools: [apiTool],
       instructions: `You have access to multiple APIs through the api_request tool.
 
-Available providers: ${oauthRegistry.listProviderNames().join(', ')}
+Available providers: ${connectorRegistry.listProviderNames().join(', ')}
 
 Choose the appropriate provider based on what the user asks for.`,
     });
@@ -193,7 +193,7 @@ Choose the appropriate provider based on what the user asks for.`,
 
   console.log('Usage:');
   console.log('  // Register any API (OAuth or static)');
-  console.log('  oauthRegistry.register(name, config)');
+  console.log('  connectorRegistry.register(name, config)');
   console.log('');
   console.log('  // Use unified fetch');
   console.log('  authenticatedFetch(url, options, providerName)');
@@ -203,7 +203,7 @@ Choose the appropriate provider based on what the user asks for.`,
   console.log('');
 
   // Cleanup
-  oauthRegistry.clear();
+  connectorRegistry.clear();
 }
 
 main().catch(console.error);

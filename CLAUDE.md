@@ -140,18 +140,18 @@ response.output.filter((item): item is InputItem =>
 **Static export (frozen at module load)**:
 ```typescript
 // src/tools/code/executeJavaScript.ts
-export const executeJavaScript: ToolFunction = createExecuteJavaScriptTool(oauthRegistry);
+export const executeJavaScript: ToolFunction = createExecuteJavaScriptTool(connectorRegistry);
 // Description generated ONCE when module loads - doesn't reflect later provider registrations
 ```
 
 **Factory function (generates fresh tool with current state)**:
 ```typescript
 // After registering OAuth providers
-oauthRegistry.register('microsoft', { ... });
-oauthRegistry.register('google', { ... });
+connectorRegistry.register('microsoft', { ... });
+connectorRegistry.register('google', { ... });
 
 // Create tool with CURRENT providers (description includes microsoft and google)
-const jsTool = createExecuteJavaScriptTool(oauthRegistry);
+const jsTool = createExecuteJavaScriptTool(connectorRegistry);
 
 const agent = await client.agents.create({
   provider: 'openai',

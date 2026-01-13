@@ -938,13 +938,13 @@ const token = await oauth.getToken();  // Automatically cached & refreshed
 
 **Unified Registry** - Register ALL your APIs in one place:
 ```typescript
-import { oauthRegistry, authenticatedFetch, generateWebAPITool, createExecuteJavaScriptTool } from '@oneringai/agents';
+import { connectorRegistry, authenticatedFetch, generateWebAPITool, createExecuteJavaScriptTool } from '@oneringai/agents';
 
-// Register OAuth providers
-oauthRegistry.register('microsoft', { flow: 'authorization_code', ... });
+// Register Connectors
+connectorRegistry.register('microsoft', { flow: 'authorization_code', ... });
 
 // Register static token providers
-oauthRegistry.register('openai-api', {
+connectorRegistry.register('openai-api', {
   flow: 'static_token',
   staticToken: process.env.OPENAI_API_KEY!,
   // ...
@@ -961,14 +961,14 @@ await authenticatedFetch(url, options, 'github', 'user456');  // Bob's token
 // Or generate universal API tool
 const apiTool = generateWebAPITool();  // Works with all providers!
 
-// Create JavaScript execution tool with current OAuth providers
+// Create JavaScript execution tool with current Connectors
 // IMPORTANT: Use createExecuteJavaScriptTool() AFTER registering providers
-// to ensure the tool description includes all available OAuth providers
-const jsTool = createExecuteJavaScriptTool(oauthRegistry);
+// to ensure the tool description includes all available Connectors
+const jsTool = createExecuteJavaScriptTool(connectorRegistry);
 const agent = await client.agents.create({
   provider: 'openai',
   model: 'gpt-4',
-  tools: [jsTool]  // Tool will show all registered OAuth providers to the AI
+  tools: [jsTool]  // Tool will show all registered Connectors to the AI
 });
 ```
 
@@ -1327,7 +1327,7 @@ Pre-built AI agents for common tasks - just provide a client and the agent handl
 
 ### Provider Config Generator Agent
 
-AI-powered assistant that helps you configure OAuth providers through interactive conversation.
+AI-powered assistant that helps you configure Connectors through interactive conversation.
 
 ```typescript
 import { OneRingAI, ProviderConfigAgent } from '@oneringai/agents';
@@ -1345,14 +1345,14 @@ const configAgent = new ProviderConfigAgent(client);
 const result = await configAgent.run('I want to connect to Slack');
 
 // Get generated configuration
-console.log(result.providerName);        // "slack"
+console.log(result.name);        // "slack"
 console.log(result.config);              // Full OAuth config object
 console.log(result.setupInstructions);   // Step-by-step setup guide
 console.log(result.envVariables);        // ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"]
 
 // Use it immediately!
-import { oauthRegistry } from '@oneringai/agents';
-oauthRegistry.register(result.providerName, result.config);
+import { connectorRegistry } from '@oneringai/agents';
+connectorRegistry.register(result.name, result.config);
 ```
 
 **What it does**:
@@ -1464,10 +1464,10 @@ const response = await client.text.generateRaw([input], { provider: 'google', mo
 
 **Recent Changes**:
 - **BREAKING**: `client.agents.create()` is now async and returns `Promise<Agent>` (add `await`)
-- 🆕 **Built-in AI Agents** - `ProviderConfigAgent` for interactive OAuth provider configuration
+- 🆕 **Built-in AI Agents** - `ProviderConfigAgent` for interactive Connector configuration
 - 🆕 **Multi-user OAuth support** - All OAuth methods accept optional `userId` parameter
 - 🆕 **Extensibility** - Exported `BaseProvider`, `BaseTextProvider`, `ProviderErrorMapper` for custom implementations
-- 🆕 `createExecuteJavaScriptTool(oauthRegistry)` for dynamic OAuth provider support
+- 🆕 `createExecuteJavaScriptTool(connectorRegistry)` for dynamic Connector support
 - 🆕 `authenticatedFetch(url, options, provider, userId?)` supports multi-user
 - Completed Phases 1-6 of improvement plan (memory safety, error handling, concurrency)
 - New docs: `EXTENSIBILITY.md` with custom provider/storage examples

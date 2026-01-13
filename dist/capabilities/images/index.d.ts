@@ -1,4 +1,4 @@
-import { I as IDisposable, P as ProviderRegistry, a1 as ImageGenerateOptions, a4 as ImageResponse, a2 as ImageEditOptions, a3 as ImageVariationOptions } from '../../ProviderRegistry-Cjx3QNsI.js';
+import { I as IDisposable, P as ProviderRegistry, a1 as ImageGenerateOptions, a4 as ImageResponse, a2 as ImageEditOptions, a3 as ImageVariationOptions } from '../../ProviderRegistry-jHg6hNhD.js';
 
 /**
  * Image generation manager

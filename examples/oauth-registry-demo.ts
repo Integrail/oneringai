@@ -11,7 +11,7 @@
 import 'dotenv/config';
 import {
   OneRingAI,
-  oauthRegistry,
+  connectorRegistry,
   authenticatedFetch,
   generateWebAPITool,
 } from '../src/index.js';
@@ -25,7 +25,7 @@ async function main() {
   console.log('─────────────────────────────────\n');
 
   // Register Microsoft Graph
-  oauthRegistry.register('microsoft', {
+  connectorRegistry.register('microsoft', {
     displayName: 'Microsoft Graph API',
     description: 'Access Microsoft 365: Outlook, OneDrive, Teams, Calendar',
     baseURL: 'https://graph.microsoft.com',
@@ -43,7 +43,7 @@ async function main() {
   console.log('✅ Registered: Microsoft Graph API');
 
   // Register Google
-  oauthRegistry.register('google', {
+  connectorRegistry.register('google', {
     displayName: 'Google APIs',
     description: 'Access Google Drive, Gmail, Calendar, Contacts',
     baseURL: 'https://www.googleapis.com',
@@ -61,7 +61,7 @@ async function main() {
   console.log('✅ Registered: Google APIs');
 
   // Register GitHub
-  oauthRegistry.register('github', {
+  connectorRegistry.register('github', {
     displayName: 'GitHub API',
     description: 'Access GitHub repositories, issues, pull requests, gists',
     baseURL: 'https://api.github.com',
@@ -79,7 +79,7 @@ async function main() {
   console.log('✅ Registered: GitHub API');
 
   // Register Salesforce (Client Credentials example)
-  oauthRegistry.register('salesforce', {
+  connectorRegistry.register('salesforce', {
     displayName: 'Salesforce API',
     description: 'Access Salesforce CRM: accounts, contacts, opportunities, leads',
     baseURL: 'https://yourinstance.salesforce.com',
@@ -97,9 +97,9 @@ async function main() {
   console.log('Step 2: Listing Registered Providers');
   console.log('─────────────────────────────────\n');
 
-  console.log('Provider Names:', oauthRegistry.listProviderNames());
+  console.log('Provider Names:', connectorRegistry.listProviderNames());
   console.log('\nProvider Info:');
-  console.log(JSON.stringify(oauthRegistry.getProviderInfo(), null, 2));
+  console.log(JSON.stringify(connectorRegistry.getProviderInfo(), null, 2));
   console.log('');
 
   // ==================== Step 3: Show Tool Description ====================
@@ -108,7 +108,7 @@ async function main() {
   console.log('─────────────────────────────────\n');
 
   console.log('Provider descriptions for tools:\n');
-  console.log(oauthRegistry.getProviderDescriptionsForTools());
+  console.log(connectorRegistry.getProviderDescriptionsForTools());
   console.log('');
 
   // ==================== Step 4: Generate API Tool ====================
@@ -143,7 +143,7 @@ async function main() {
     });
 
     console.log('Agent created with api_request tool');
-    console.log('Available providers:', oauthRegistry.listProviderNames());
+    console.log('Available providers:', connectorRegistry.listProviderNames());
     console.log('\nThe agent can intelligently choose which OAuth provider to use based on the user request!');
     console.log('');
     console.log('Examples:');
@@ -200,7 +200,7 @@ const emails = await msftFetch('https://graph.microsoft.com/v1.0/me/messages');
   console.log('');
 
   // Cleanup
-  oauthRegistry.clear();
+  connectorRegistry.clear();
 }
 
 main().catch(console.error);

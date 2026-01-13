@@ -586,6 +586,13 @@ declare class ProviderRegistry implements IDisposable {
      */
     private registerConfig;
     /**
+     * Auto-create connector from LLM provider credentials
+     * This allows using LLM provider credentials for API access too!
+     *
+     * Example: Google Vertex AI credentials → Google APIs connector
+     */
+    private autoCreateConnector;
+    /**
      * Get a text provider instance (lazy loaded and cached)
      * Uses promise-based locking to prevent race conditions
      */

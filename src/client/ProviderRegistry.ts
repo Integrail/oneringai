@@ -23,6 +23,7 @@ import { GenericOpenAIProvider } from '../infrastructure/providers/generic/Gener
 import { AnthropicTextProvider } from '../infrastructure/providers/anthropic/AnthropicTextProvider.js';
 import { GoogleTextProvider } from '../infrastructure/providers/google/GoogleTextProvider.js';
 import { VertexAITextProvider } from '../infrastructure/providers/vertex/VertexAITextProvider.js';
+import { connectorRegistry } from '../plugins/oauth/ConnectorRegistry.js';
 
 export class ProviderRegistry implements IDisposable {
   private configs: Map<string, ProviderConfig> = new Map();
@@ -44,6 +45,8 @@ export class ProviderRegistry implements IDisposable {
     for (const [name, config] of Object.entries(providersConfig)) {
       if (config) {
         this.registerConfig(name, config);
+        // Auto-create connector for API access (if applicable)
+        this.autoCreateConnector(name, config);
       }
     }
   }
@@ -66,6 +69,99 @@ export class ProviderRegistry implements IDisposable {
     }
 
     this.configs.set(name, config);
+  }
+
+  /**
+   * Auto-create connector from LLM provider credentials
+   * This allows using LLM provider credentials for API access too!
+   *
+   * Example: Google Vertex AI credentials → Google APIs connector
+   */
+  private autoCreateConnector(providerName: string, config: ProviderConfig): void {
+    try {
+      // OpenAI → Create connector for OpenAI API access
+      if (providerName === 'openai' && config.apiKey) {
+        if (!connectorRegistry.has('openai-api')) {
+          connectorRegistry.register('openai-api', {
+            displayName: 'OpenAI API',
+            description: 'Access OpenAI models, completions, embeddings, and other APIs',
+            baseURL: 'https://api.openai.com/v1',
+            auth: {
+              type: 'api_key',
+              apiKey: config.apiKey,
+              headerName: 'Authorization',
+              headerPrefix: 'Bearer',
+            },
+          });
+          console.log('[AutoConnector] Created connector: openai-api');
+        }
+      }
+
+      // Anthropic → Create connector for Anthropic API
+      if (providerName === 'anthropic' && config.apiKey) {
+        if (!connectorRegistry.has('anthropic-api')) {
+          connectorRegistry.register('anthropic-api', {
+            displayName: 'Anthropic API',
+            description: 'Access Claude models and Anthropic APIs',
+            baseURL: 'https://api.anthropic.com/v1',
+            auth: {
+              type: 'api_key',
+              apiKey: config.apiKey,
+              headerName: 'x-api-key',
+              headerPrefix: '',
+            },
+          });
+          console.log('[AutoConnector] Created connector: anthropic-api');
+        }
+      }
+
+      // Google → Create connector for Google AI API
+      if (providerName === 'google' && config.apiKey) {
+        if (!connectorRegistry.has('google-ai-api')) {
+          connectorRegistry.register('google-ai-api', {
+            displayName: 'Google AI API',
+            description: 'Access Google Gemini and other AI APIs',
+            baseURL: 'https://generativelanguage.googleapis.com/v1',
+            auth: {
+              type: 'api_key',
+              apiKey: config.apiKey,
+            },
+          });
+          console.log('[AutoConnector] Created connector: google-ai-api');
+        }
+      }
+
+      // Vertex AI → Create connector for Google Cloud APIs
+      if (providerName === 'vertex-ai') {
+        const vertexConfig = config as VertexAIConfig;
+        if (vertexConfig.projectId && !connectorRegistry.has('google-cloud-api')) {
+          // Note: Vertex AI uses Application Default Credentials
+          // We can create a connector but it needs more complex auth
+          // For now, just log that it's available
+          console.log('[AutoConnector] Vertex AI detected - use Google Cloud SDK for API access');
+        }
+      }
+
+      // Generic OpenAI-compatible providers (Groq, Grok, Together, etc.)
+      if (config.apiKey && config.baseURL && providerName !== 'openai' && providerName !== 'anthropic') {
+        const connectorName = `${providerName}-api`;
+        if (!connectorRegistry.has(connectorName)) {
+          connectorRegistry.register(connectorName, {
+            displayName: `${providerName.charAt(0).toUpperCase() + providerName.slice(1)} API`,
+            description: `Access ${providerName} APIs`,
+            baseURL: config.baseURL,
+            auth: {
+              type: 'api_key',
+              apiKey: config.apiKey,
+            },
+          });
+          console.log(`[AutoConnector] Created connector: ${connectorName}`);
+        }
+      }
+    } catch (error) {
+      // Don't fail provider registration if connector creation fails
+      console.warn(`[AutoConnector] Failed to create connector for ${providerName}:`, (error as Error).message);
+    }
   }
 
   /**

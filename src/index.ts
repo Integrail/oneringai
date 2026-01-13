@@ -182,7 +182,6 @@ export { ProviderErrorMapper } from './infrastructure/providers/base/ProviderErr
 
 // Built-in AI agents
 export { ProviderConfigAgent } from './agents/index.js';
-export type { ProviderConfigResult } from './agents/index.js';
 
 // Utilities
 export { MessageBuilder, createTextMessage, createMessageWithImages } from './utils/messageBuilder.js';
@@ -194,14 +193,42 @@ export * as tools from './tools/index.js';
 // Factory function for dynamic OAuth provider support
 export { createExecuteJavaScriptTool } from './tools/code/executeJavaScript.js';
 
-// OAuth plugin
-export { OAuthManager, oauthRegistry } from './plugins/oauth/index.js';
+// Connectors plugin (external system authentication)
+export {
+  connectorRegistry,
+  ConnectorRegistry,
+  oauthRegistry, // @deprecated - use connectorRegistry
+  OAuthRegistry, // @deprecated - use ConnectorRegistry
+  OAuthManager,
+} from './plugins/oauth/index.js';
+
 export { MemoryStorage as OAuthMemoryStorage, FileStorage as OAuthFileStorage } from './plugins/oauth/index.js';
 export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch, generateWebAPITool } from './plugins/oauth/index.js';
+
+// Connector types (NEW recommended way)
+export type {
+  ConnectorConfig,
+  ConnectorAuth,
+  OAuthConnectorAuth,
+  APIKeyConnectorAuth,
+  JWTConnectorAuth,
+  ConnectorConfigResult,
+} from './domain/entities/Connector.js';
+
+export type { IConnector } from './domain/interfaces/IConnector.js';
+
+export type {
+  ConnectorRegistrationConfig,
+  RegisteredProvider, // @deprecated - use IConnector
+  RegisteredConnector, // @deprecated - use IConnector
+} from './plugins/oauth/index.js';
+
+export { OAuthConnector } from './plugins/oauth/index.js';
+
+// OAuth types (legacy, still needed internally)
 export type {
   OAuthConfig,
   OAuthFlow,
   ITokenStorage as IOAuthTokenStorage,
   FileStorageConfig as OAuthFileStorageConfig,
-  RegisteredProvider,
 } from './plugins/oauth/index.js';

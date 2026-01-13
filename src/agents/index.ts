@@ -3,4 +3,6 @@
  */
 
 export { ProviderConfigAgent } from './ProviderConfigAgent.js';
-export type { ProviderConfigResult } from './ProviderConfigAgent.js';
+
+// Re-export from domain for convenience
+export type { ConnectorConfigResult } from '../domain/entities/Connector.js';
