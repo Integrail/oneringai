@@ -46,7 +46,9 @@
     "example:web": "tsx examples/web-research-agent.ts",
     "example:oauth": "tsx examples/oauth-demo.ts",
     "example:oauth-registry": "tsx examples/oauth-registry-demo.ts",
-    "example:oauth-static": "tsx examples/oauth-static-tokens.ts"
+    "example:oauth-static": "tsx examples/oauth-static-tokens.ts",
+    "example:oauth-multi-user": "tsx examples/oauth-multi-user.ts",
+    "example:oauth-multi-user-fetch": "tsx examples/oauth-multi-user-fetch.ts"
   },
   "keywords": [
     "ai",

@@ -44,10 +44,11 @@ AVAILABLE IN CONTEXT:
    - output: SET THIS variable to return your result
 
 2. AUTHENTICATED FETCH:
-   - authenticatedFetch(url, options, provider)
+   - authenticatedFetch(url, options, provider, userId?)
      • url: Full URL or path
      • options: Standard fetch options { method: 'GET'|'POST'|..., body: ..., headers: ... }
      • provider: OAuth provider name (see below)
+     • userId: (optional) User identifier for multi-user apps
      • Returns: Promise<Response>
 
    REGISTERED OAUTH PROVIDERS:
@@ -70,7 +71,13 @@ Always wrap your code in an async IIFE:
 
 (async () => {
   // Your code here
+
+  // Single-user mode (default)
   const response = await authenticatedFetch(url, options, provider);
+
+  // OR Multi-user mode (if your app has multiple users)
+  const response = await authenticatedFetch(url, options, provider, userId);
+
   const data = await response.json();
   output = data;
 })();

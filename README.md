@@ -899,10 +899,10 @@ const agent = await client.agents.create({
 Authenticate with OAuth-protected APIs AND static API key services using the unified OAuth plugin.
 
 **4 Flows Supported**:
-- Authorization Code (with PKCE) - User authentication
+- Authorization Code (with PKCE) - User authentication ⭐ **Multi-user ready!**
 - Client Credentials - Service-to-service
 - JWT Bearer - Service accounts
-- **Static Token** - API keys (OpenAI, Anthropic, any API) ⭐ NEW
+- **Static Token** - API keys (OpenAI, Anthropic, any API)
 
 ```typescript
 import { OAuthManager, OAuthFileStorage } from '@oneringai/agents';
@@ -953,6 +953,10 @@ oauthRegistry.register('openai-api', {
 await authenticatedFetch(url, options, 'microsoft');
 await authenticatedFetch(url, options, 'openai-api');
 
+// Multi-user support: pass userId for user-specific tokens
+await authenticatedFetch(url, options, 'github', 'user123');  // Alice's token
+await authenticatedFetch(url, options, 'github', 'user456');  // Bob's token
+
 // Or generate universal API tool
 const apiTool = generateWebAPITool();  // Works with all providers!
 
@@ -967,14 +971,32 @@ const agent = await client.agents.create({
 });
 ```
 
+**Multi-User Support** 🆕:
+```typescript
+// ONE OAuthManager handles multiple users automatically!
+const authUrl1 = await oauth.startAuthFlow('alice_123');  // Alice's auth
+const authUrl2 = await oauth.startAuthFlow('bob_456');    // Bob's auth
+
+// Each user gets isolated, encrypted tokens
+const aliceToken = await oauth.getToken('alice_123');
+const bobToken = await oauth.getToken('bob_456');
+
+// Use in API calls
+await authenticatedFetch(url, options, 'github', 'alice_123');  // Alice's token
+await authenticatedFetch(url, options, 'github', 'bob_456');    // Bob's token
+```
+
 **Full Documentation**: See [OAUTH.md](./OAUTH.md) for:
 - Complete API configurations (Microsoft, Google, GitHub, Salesforce, OpenAI, etc.)
 - User OAuth vs App Token vs Static Token flows
+- **Multi-user OAuth architecture** 🆕
 - Production setup guide
-- Custom storage examples
+- Custom storage examples (MongoDB, Redis)
 - Unified registry examples
 
-**Try it**: `npm run example:oauth-static`
+**Try it**:
+- `npm run example:oauth-static` - Static token APIs
+- `npm run example:oauth-multi-user` - Multi-user patterns 🆕
 
 ---
 
@@ -1270,4 +1292,7 @@ const response = await client.text.generateRaw([input], { provider: 'google', mo
 
 **Recent Changes**:
 - **BREAKING**: `client.agents.create()` is now async and returns `Promise<Agent>` (add `await`)
-- Added `createExecuteJavaScriptTool(oauthRegistry)` for dynamic OAuth provider support in JavaScript execution tool
+- 🆕 **Multi-user OAuth support** - All OAuth methods accept optional `userId` parameter
+- 🆕 `createExecuteJavaScriptTool(oauthRegistry)` for dynamic OAuth provider support
+- 🆕 `authenticatedFetch(url, options, provider, userId?)` supports multi-user
+- Completed Phases 1-6 of improvement plan (memory safety, error handling, concurrency)

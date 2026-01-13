@@ -8,18 +8,37 @@ import { MemoryStorage } from '../infrastructure/storage/MemoryStorage.js';
 
 export class TokenStore {
   private storage: ITokenStorage;
-  private storageKey: string;
+  private baseStorageKey: string;
 
   constructor(storageKey: string = 'default', storage?: ITokenStorage) {
-    this.storageKey = storageKey;
+    this.baseStorageKey = storageKey;
     // Default to in-memory storage (encrypted)
     this.storage = storage || new MemoryStorage();
   }
 
   /**
-   * Store token (encrypted by storage layer)
+   * Get user-scoped storage key
+   * For multi-user support, keys are scoped per user: "provider:userId"
+   * For single-user (backward compatible), userId is omitted or "default"
+   *
+   * @param userId - User identifier (optional, defaults to single-user mode)
+   * @returns Storage key scoped to user
    */
-  async storeToken(tokenResponse: any): Promise<void> {
+  private getScopedKey(userId?: string): string {
+    if (!userId || userId === 'default') {
+      // Single-user mode (backward compatible)
+      return this.baseStorageKey;
+    }
+    // Multi-user mode: scope by userId
+    return `${this.baseStorageKey}:${userId}`;
+  }
+
+  /**
+   * Store token (encrypted by storage layer)
+   * @param tokenResponse - Token response from OAuth provider
+   * @param userId - Optional user identifier for multi-user support
+   */
+  async storeToken(tokenResponse: any, userId?: string): Promise<void> {
     const token: StoredToken = {
       access_token: tokenResponse.access_token,
       refresh_token: tokenResponse.refresh_token,
@@ -29,36 +48,43 @@ export class TokenStore {
       obtained_at: Date.now(),
     };
 
-    await this.storage.storeToken(this.storageKey, token);
+    const key = this.getScopedKey(userId);
+    await this.storage.storeToken(key, token);
   }
 
   /**
    * Get access token
+   * @param userId - Optional user identifier for multi-user support
    */
-  async getAccessToken(): Promise<string> {
-    const token = await this.storage.getToken(this.storageKey);
+  async getAccessToken(userId?: string): Promise<string> {
+    const key = this.getScopedKey(userId);
+    const token = await this.storage.getToken(key);
     if (!token) {
-      throw new Error('No token stored');
+      throw new Error(`No token stored for ${userId ? `user: ${userId}` : 'default user'}`);
     }
     return token.access_token;
   }
 
   /**
    * Get refresh token
+   * @param userId - Optional user identifier for multi-user support
    */
-  async getRefreshToken(): Promise<string> {
-    const token = await this.storage.getToken(this.storageKey);
+  async getRefreshToken(userId?: string): Promise<string> {
+    const key = this.getScopedKey(userId);
+    const token = await this.storage.getToken(key);
     if (!token?.refresh_token) {
-      throw new Error('No refresh token available');
+      throw new Error(`No refresh token available for ${userId ? `user: ${userId}` : 'default user'}`);
     }
     return token.refresh_token;
   }
 
   /**
    * Check if has refresh token
+   * @param userId - Optional user identifier for multi-user support
    */
-  async hasRefreshToken(): Promise<boolean> {
-    const token = await this.storage.getToken(this.storageKey);
+  async hasRefreshToken(userId?: string): Promise<boolean> {
+    const key = this.getScopedKey(userId);
+    const token = await this.storage.getToken(key);
     return !!token?.refresh_token;
   }
 
@@ -66,9 +92,11 @@ export class TokenStore {
    * Check if token is valid (not expired)
    *
    * @param bufferSeconds - Refresh this many seconds before expiry (default: 300 = 5 min)
+   * @param userId - Optional user identifier for multi-user support
    */
-  async isValid(bufferSeconds: number = 300): Promise<boolean> {
-    const token = await this.storage.getToken(this.storageKey);
+  async isValid(bufferSeconds: number = 300, userId?: string): Promise<boolean> {
+    const key = this.getScopedKey(userId);
+    const token = await this.storage.getToken(key);
     if (!token) {
       return false;
     }
@@ -81,15 +109,19 @@ export class TokenStore {
 
   /**
    * Clear stored token
+   * @param userId - Optional user identifier for multi-user support
    */
-  async clear(): Promise<void> {
-    await this.storage.deleteToken(this.storageKey);
+  async clear(userId?: string): Promise<void> {
+    const key = this.getScopedKey(userId);
+    await this.storage.deleteToken(key);
   }
 
   /**
    * Get full token info
+   * @param userId - Optional user identifier for multi-user support
    */
-  async getTokenInfo(): Promise<StoredToken | null> {
-    return this.storage.getToken(this.storageKey);
+  async getTokenInfo(userId?: string): Promise<StoredToken | null> {
+    const key = this.getScopedKey(userId);
+    return this.storage.getToken(key);
   }
 }

@@ -290,6 +290,407 @@ const data = await authenticatedFetch(
 
 ---
 
+## Multi-User OAuth Support 🆕
+
+### Overview
+
+**Problem**: Your app has multiple users, each needs their own OAuth tokens.
+
+**Solution**: Pass `userId` parameter to OAuth methods - tokens are automatically isolated per user!
+
+### Key Features
+
+✅ **ONE OAuthManager** handles unlimited users
+✅ **Automatic token isolation** - Each user gets separate, encrypted tokens
+✅ **User-scoped storage keys** - `provider:clientId:userId`
+✅ **Auto-refresh per user** - Tokens refresh independently
+✅ **Backward compatible** - `userId` is optional (defaults to single-user mode)
+✅ **Clean Architecture** - Works with any storage backend (Memory, File, MongoDB, Redis)
+
+### Architecture
+
+```
+Storage Key Pattern:
+┌────────────────────────────────────────────┐
+│ Single-user:  "auth_code:github"           │
+│                                             │
+│ Multi-user:   "auth_code:github:alice_123" │
+│               "auth_code:github:bob_456"   │
+│               "auth_code:github:charlie"   │
+└────────────────────────────────────────────┘
+
+All stored separately, all encrypted!
+```
+
+### Basic Multi-User Pattern
+
+```typescript
+import { OAuthManager, OAuthFileStorage } from '@oneringai/agents';
+
+// Create ONE OAuthManager for the provider
+const oauth = new OAuthManager({
+  flow: 'authorization_code',
+  clientId: process.env.GITHUB_CLIENT_ID!,
+  clientSecret: process.env.GITHUB_CLIENT_SECRET,
+  authorizationUrl: 'https://github.com/login/oauth/authorize',
+  tokenUrl: 'https://github.com/login/oauth/access_token',
+  redirectUri: 'http://localhost:3000/callback',
+  scope: 'user:email repo',
+
+  // Persistent storage (all users share backend, tokens isolated by key)
+  storage: new OAuthFileStorage({
+    directory: './tokens',
+    encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
+  })
+});
+
+// ===== Authenticate User 1: Alice =====
+const authUrlAlice = await oauth.startAuthFlow('alice_123');
+// Send Alice to authUrlAlice...
+await oauth.handleCallback(callbackUrl, 'alice_123');
+const aliceToken = await oauth.getToken('alice_123');
+
+// ===== Authenticate User 2: Bob =====
+const authUrlBob = await oauth.startAuthFlow('bob_456');
+// Send Bob to authUrlBob...
+await oauth.handleCallback(callbackUrl, 'bob_456');
+const bobToken = await oauth.getToken('bob_456');
+
+// Tokens are completely isolated!
+console.log(aliceToken === bobToken); // false
+```
+
+### Web Application Pattern (Express.js)
+
+```typescript
+import express from 'express';
+import session from 'express-session';
+import { OAuthManager, OAuthFileStorage, authenticatedFetch } from '@oneringai/agents';
+
+const app = express();
+
+// Session middleware (or use JWT)
+app.use(session({ secret: 'your-secret', resave: false, saveUninitialized: false }));
+
+// Create OAuth manager
+const oauth = new OAuthManager({
+  flow: 'authorization_code',
+  clientId: process.env.GITHUB_CLIENT_ID!,
+  clientSecret: process.env.GITHUB_CLIENT_SECRET,
+  authorizationUrl: 'https://github.com/login/oauth/authorize',
+  tokenUrl: 'https://github.com/login/oauth/access_token',
+  redirectUri: 'http://localhost:3000/auth/callback',
+  scope: 'user:email repo',
+  storage: new OAuthFileStorage({
+    directory: './tokens',
+    encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
+  })
+});
+
+// ===== Step 1: Login Route =====
+app.get('/auth/github', async (req, res) => {
+  const userId = req.session.userId; // From your user system
+
+  // Start OAuth flow for THIS user
+  const authUrl = await oauth.startAuthFlow(userId);
+  res.redirect(authUrl);
+});
+
+// ===== Step 2: Callback Route =====
+app.get('/auth/callback', async (req, res) => {
+  try {
+    // Handle callback (userId is embedded in state parameter!)
+    await oauth.handleCallback(req.url);
+    res.redirect('/dashboard');
+  } catch (error) {
+    res.status(400).send('Authorization failed: ' + error.message);
+  }
+});
+
+// ===== Step 3: Use Tokens in API Endpoints =====
+app.get('/api/repos', async (req, res) => {
+  const userId = req.session.userId;
+
+  try {
+    // Fetch using user-specific token (auto-refreshes if expired!)
+    const response = await authenticatedFetch(
+      'https://api.github.com/user/repos',
+      { method: 'GET' },
+      'github',
+      userId  // THIS user's token!
+    );
+
+    const repos = await response.json();
+    res.json(repos);
+  } catch (error) {
+    if (error.message.includes('No token')) {
+      // User needs to reconnect GitHub
+      res.status(401).json({ error: 'GitHub not connected', reauth: true });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+app.listen(3000);
+```
+
+### Background Jobs Pattern
+
+```typescript
+// Cron job that processes data for all users
+async function dailyGitHubSync() {
+  // Get all users who connected GitHub
+  const users = await db.users.find({ githubConnected: true });
+
+  console.log(`Syncing ${users.length} users...`);
+
+  for (const user of users) {
+    try {
+      // Get user-specific token
+      const response = await authenticatedFetch(
+        'https://api.github.com/user/repos',
+        { method: 'GET' },
+        'github',
+        user.id  // Each user's token
+      );
+
+      const repos = await response.json();
+
+      // Store in database
+      await db.repos.updateMany(
+        { userId: user.id },
+        { $set: { repos, syncedAt: new Date() } }
+      );
+
+      console.log(`✅ Synced ${repos.length} repos for ${user.name}`);
+    } catch (error) {
+      if (error.message.includes('No token')) {
+        // Token expired/revoked - notify user
+        await sendEmail(user.email, {
+          subject: 'Reconnect your GitHub account',
+          body: 'Your GitHub token expired. Please reconnect.'
+        });
+      } else {
+        console.error(`Failed to sync ${user.name}:`, error);
+      }
+    }
+  }
+}
+
+// Run daily
+cron.schedule('0 0 * * *', dailyGitHubSync);
+```
+
+### Per-User Fetch Functions
+
+```typescript
+import { createAuthenticatedFetch } from '@oneringai/agents';
+
+// Create fetch functions bound to specific users
+const aliceFetch = createAuthenticatedFetch('github', 'alice_123');
+const bobFetch = createAuthenticatedFetch('github', 'bob_456');
+
+// Use like normal fetch (userId implicit!)
+const aliceRepos = await aliceFetch('https://api.github.com/user/repos');
+const aliceIssues = await aliceFetch('https://api.github.com/user/issues');
+
+const bobRepos = await bobFetch('https://api.github.com/user/repos');
+const bobIssues = await bobFetch('https://api.github.com/user/issues');
+
+// Tokens are completely isolated - no mixing!
+```
+
+### AI Agent with Multi-User OAuth
+
+```typescript
+import {
+  OneRingAI,
+  oauthRegistry,
+  createExecuteJavaScriptTool
+} from '@oneringai/agents';
+
+// Register OAuth provider
+oauthRegistry.register('github', { /* ... */ });
+
+// Create agent with JavaScript execution tool
+const jsTool = createExecuteJavaScriptTool(oauthRegistry);
+
+const agent = await client.agents.create({
+  provider: 'openai',
+  model: 'gpt-4',
+  tools: [jsTool],
+  instructions: `You can access GitHub API using authenticatedFetch.
+    For multi-user apps, pass userId as 4th parameter:
+    authenticatedFetch(url, options, "github", userId)`
+});
+
+// Agent can make user-specific API calls!
+const response = await agent.run(`
+  Fetch GitHub repos for user alice_123.
+  Use: authenticatedFetch(url, options, "github", "alice_123")
+`);
+
+// The agent executes JavaScript with Alice's token:
+// const response = await authenticatedFetch(
+//   "https://api.github.com/user/repos",
+//   { method: "GET" },
+//   "github",
+//   "alice_123"  // Uses Alice's token!
+// );
+// output = await response.json();
+```
+
+### Multi-User API Methods
+
+All OAuth methods now accept optional `userId` parameter:
+
+```typescript
+// OAuthManager methods
+await oauth.startAuthFlow(userId?)          // Generate auth URL for user
+await oauth.handleCallback(url, userId?)    // Exchange code for user's token
+await oauth.getToken(userId?)               // Get user's token (auto-refresh)
+await oauth.refreshToken(userId?)           // Force refresh user's token
+await oauth.isTokenValid(userId?)           // Check if user's token valid
+await oauth.revokeToken(url?, userId?)      // Revoke user's token
+
+// authenticatedFetch
+await authenticatedFetch(url, options, provider, userId?)
+
+// createAuthenticatedFetch (bind to user)
+const userFetch = createAuthenticatedFetch(provider, userId?)
+```
+
+### Storage Backend Options for Multi-User
+
+#### Option 1: FileStorage
+```typescript
+new OAuthFileStorage({
+  directory: './tokens',
+  encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
+})
+```
+✅ Simple, persists across restarts
+⚠️ Not suitable for multi-server deployments
+
+#### Option 2: MongoDB (Future)
+```typescript
+class MongoTokenStorage implements IOAuthTokenStorage {
+  async storeToken(key: string, token: StoredToken) {
+    // key is already user-scoped: "provider:clientId:userId"
+    await tokens.updateOne(
+      { _id: key },
+      { $set: { ...encrypt(token), updatedAt: new Date() } },
+      { upsert: true }
+    );
+  }
+
+  async getToken(key: string) {
+    const doc = await tokens.findOne({ _id: key });
+    return doc ? decrypt(doc) : null;
+  }
+
+  async deleteToken(key: string) {
+    await tokens.deleteOne({ _id: key });
+  }
+
+  async hasToken(key: string) {
+    return await tokens.countDocuments({ _id: key }) > 0;
+  }
+}
+
+// Use with OAuth
+const oauth = new OAuthManager({
+  flow: 'authorization_code',
+  // ...
+  storage: new MongoTokenStorage()
+});
+```
+✅ Best for multi-server web apps
+✅ Centralized, scales horizontally
+✅ Built-in querying and indexing
+
+#### Option 3: Redis (Future)
+```typescript
+class RedisTokenStorage implements IOAuthTokenStorage {
+  async storeToken(key: string, token: StoredToken) {
+    const encrypted = encrypt(token);
+    await redis.setex(key, token.expires_in, JSON.stringify(encrypted));
+  }
+
+  async getToken(key: string) {
+    const data = await redis.get(key);
+    return data ? decrypt(JSON.parse(data)) : null;
+  }
+
+  async deleteToken(key: string) {
+    await redis.del(key);
+  }
+
+  async hasToken(key: string) {
+    return await redis.exists(key) > 0;
+  }
+}
+```
+✅ Best for high-performance caching
+✅ Built-in TTL (auto-expires old tokens)
+✅ Fast access
+
+### Multi-User Security Considerations
+
+1. **User ID Validation**: Always validate userId comes from authenticated session
+   ```typescript
+   // ❌ INSECURE - userId from user input
+   const userId = req.query.userId;
+
+   // ✅ SECURE - userId from authenticated session
+   const userId = req.session.userId;
+   ```
+
+2. **State Parameter Embedding**: userId is embedded in OAuth state for automatic routing
+   - State format: `{random_state}::{userId}`
+   - Automatic extraction in `handleCallback()`
+   - CSRF protection maintained
+
+3. **Token Isolation**: Each user's tokens stored with unique keys
+   - No way to access another user's tokens
+   - Encryption applied per-token
+   - Storage backend handles isolation via keys
+
+4. **Error Handling**: Check for user-specific errors
+   ```typescript
+   try {
+     await oauth.getToken(userId);
+   } catch (error) {
+     if (error.message.includes('No token')) {
+       // This specific user needs to reconnect
+       await notifyUserReauth(userId);
+     }
+   }
+   ```
+
+### Migration from Single-User
+
+Existing code continues to work unchanged:
+
+```typescript
+// Old code (single-user) - still works!
+const token = await oauth.getToken();
+const response = await authenticatedFetch(url, options, 'github');
+
+// New code (multi-user) - just add userId!
+const token = await oauth.getToken('user123');
+const response = await authenticatedFetch(url, options, 'github', 'user123');
+```
+
+### Examples
+
+See these examples for complete implementations:
+- `examples/oauth-multi-user.ts` - Multi-user architecture patterns
+- `examples/oauth-multi-user-fetch.ts` - authenticatedFetch with multiple users
+
+---
+
 ## API Configurations
 
 ### Microsoft Graph API

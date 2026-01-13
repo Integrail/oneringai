@@ -172,6 +172,80 @@ const agent = await client.agents.create({
 - `executeJavaScript` - Static tool (for backward compatibility, description frozen at load)
 - `createExecuteJavaScriptTool(registry)` - Factory function (generates tool with current providers)
 
+### 6. Multi-User OAuth Architecture 🆕
+
+**Problem Solved**: How to support multiple users with the same OAuth provider, each with their own tokens?
+
+**Solution**: User-scoped storage keys with optional `userId` parameter
+
+**Architecture**:
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   STORAGE LAYER (Infrastructure)             │
+│  ITokenStorage interface - Storage backends don't know      │
+│  about users. They just store by key.                       │
+│                                                              │
+│  MemoryStorage  │  FileStorage  │  MongoStorage  │  Redis   │
+│  All implement ITokenStorage - no changes needed!           │
+└─────────────────────────────────────────────────────────────┘
+                              ▲
+                              │ Uses scoped keys
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                    DOMAIN LAYER                              │
+│  TokenStore - Generates user-scoped keys:                   │
+│    getScopedKey(userId?) → "provider:clientId:userId"       │
+│                                                              │
+│  Single-user: "auth_code:github"                            │
+│  Multi-user:  "auth_code:github:alice_123"                  │
+│               "auth_code:github:bob_456"                    │
+└─────────────────────────────────────────────────────────────┘
+                              ▲
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│                  APPLICATION LAYER                           │
+│  OAuthManager - Exposes userId parameter in all methods     │
+│    getToken(userId?)                                        │
+│    startAuthFlow(userId?)                                   │
+│    handleCallback(url, userId?)                             │
+│                                                              │
+│  authenticatedFetch(url, options, provider, userId?)        │
+│  createAuthenticatedFetch(provider, userId?)                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Design Decisions**:
+
+1. **Clean Architecture Preserved**: Storage backends don't need modification
+   - Storage just stores/retrieves by key
+   - Domain layer (TokenStore) handles key scoping
+   - Application layer (OAuthManager) exposes userId API
+
+2. **State Parameter Embedding**: userId embedded in OAuth state
+   - Format: `{random_state}::{userId}`
+   - Automatic extraction in `handleCallback()`
+   - CSRF protection maintained
+   - No database lookup needed in callback
+
+3. **PKCE Per-User**: Each user gets their own code verifier
+   - Stored in `Map<string, string>` keyed by userId
+   - Cleared after token exchange (one-time use)
+   - Multiple concurrent auth flows supported
+
+4. **Backward Compatibility**: userId is optional
+   - `oauth.getToken()` → single-user mode (key: `provider:clientId`)
+   - `oauth.getToken('user123')` → multi-user mode (key: `provider:clientId:user123`)
+
+**Location**:
+- `src/plugins/oauth/domain/TokenStore.ts` - User-scoped key generation
+- `src/plugins/oauth/flows/AuthCodePKCE.ts` - Per-user PKCE state management
+- `src/plugins/oauth/OAuthManager.ts` - Multi-user API exposure
+- `src/plugins/oauth/authenticatedFetch.ts` - userId parameter support
+
+**Examples**:
+- `examples/oauth-multi-user.ts` - Multi-user patterns
+- `examples/oauth-multi-user-fetch.ts` - authenticatedFetch with multiple users
+
 ## Directory Structure
 
 ```
@@ -685,5 +759,8 @@ This is a private project. For questions or contributions, contact the project m
 
 **Recent Changes (2026-01-12)**:
 - **BREAKING**: `AgentManager.create()` is now async and returns `Promise<Agent>`
+- 🆕 **Multi-user OAuth support** - `userId` parameter in all OAuth methods (TokenStore, OAuthManager, authenticatedFetch)
+- 🆕 User-scoped storage keys - Clean Architecture approach (`provider:clientId:userId`)
+- 🆕 State parameter embedding - userId embedded in OAuth state for automatic routing
 - Added `createExecuteJavaScriptTool(registry)` factory for dynamic OAuth provider descriptions
 - Completed Phase 1-6 of codebase improvement plan (memory safety, error handling, concurrency)

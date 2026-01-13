@@ -10,8 +10,9 @@ import type { OAuthConfig } from '../types.js';
 
 export class AuthCodePKCEFlow {
   private tokenStore: TokenStore;
-  private codeVerifier?: string;
-  private state?: string;
+  // Store PKCE data per user
+  private codeVerifiers: Map<string, string> = new Map();
+  private states: Map<string, string> = new Map();
 
   constructor(private config: OAuthConfig) {
     const storageKey = config.storageKey || `auth_code:${config.clientId}`;
@@ -21,8 +22,10 @@ export class AuthCodePKCEFlow {
   /**
    * Generate authorization URL for user to visit
    * Opens browser or redirects user to this URL
+   *
+   * @param userId - User identifier for multi-user support (optional)
    */
-  async getAuthorizationUrl(): Promise<string> {
+  async getAuthorizationUrl(userId?: string): Promise<string> {
     if (!this.config.authorizationUrl) {
       throw new Error('authorizationUrl is required for authorization_code flow');
     }
@@ -31,19 +34,22 @@ export class AuthCodePKCEFlow {
       throw new Error('redirectUri is required for authorization_code flow');
     }
 
+    const userKey = userId || 'default';
+
     // Generate PKCE pair
     const { codeVerifier, codeChallenge } = generatePKCE();
-    this.codeVerifier = codeVerifier;
+    this.codeVerifiers.set(userKey, codeVerifier);
 
     // Generate state for CSRF protection
-    this.state = generateState();
+    const state = generateState();
+    this.states.set(userKey, state);
 
     // Build authorization URL
     const params = new URLSearchParams({
       response_type: 'code',
       client_id: this.config.clientId,
       redirect_uri: this.config.redirectUri,
-      state: this.state,
+      state,
     });
 
     // Add scope if provided
@@ -57,6 +63,11 @@ export class AuthCodePKCEFlow {
       params.append('code_challenge_method', 'S256');
     }
 
+    // Add user_id as state metadata (encode in state for retrieval in callback)
+    // The state will be: `{random_state}::{userId}`
+    const stateWithUser = userId ? `${state}::${userId}` : state;
+    params.set('state', stateWithUser);
+
     return `${this.config.authorizationUrl}?${params.toString()}`;
   }
 
@@ -64,12 +75,26 @@ export class AuthCodePKCEFlow {
    * Exchange authorization code for access token
    *
    * @param code - Authorization code from callback
-   * @param state - State parameter from callback (for CSRF verification)
+   * @param state - State parameter from callback (for CSRF verification, may include userId)
+   * @param userId - User identifier (optional, can be extracted from state)
    */
-  async exchangeCode(code: string, state: string): Promise<void> {
+  async exchangeCode(code: string, state: string, userId?: string): Promise<void> {
+    // Extract userId from state if embedded
+    let actualState = state;
+    let actualUserId = userId;
+
+    if (state.includes('::')) {
+      const parts = state.split('::');
+      actualState = parts[0]!;
+      actualUserId = parts[1];
+    }
+
+    const userKey = actualUserId || 'default';
+
     // Verify state to prevent CSRF attacks
-    if (state !== this.state) {
-      throw new Error('State mismatch - possible CSRF attack. Expected: ' + this.state + ', Got: ' + state);
+    const expectedState = this.states.get(userKey);
+    if (actualState !== expectedState) {
+      throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
     }
 
     if (!this.config.redirectUri) {
@@ -90,8 +115,9 @@ export class AuthCodePKCEFlow {
     }
 
     // Add code_verifier if PKCE was used
-    if (this.config.usePKCE !== false && this.codeVerifier) {
-      params.append('code_verifier', this.codeVerifier);
+    const codeVerifier = this.codeVerifiers.get(userKey);
+    if (this.config.usePKCE !== false && codeVerifier) {
+      params.append('code_verifier', codeVerifier);
     }
 
     const response = await fetch(this.config.tokenUrl, {
@@ -109,37 +135,39 @@ export class AuthCodePKCEFlow {
 
     const data: any = await response.json();
 
-    // Store token (encrypted)
-    await this.tokenStore.storeToken(data);
+    // Store token (encrypted) with user scoping
+    await this.tokenStore.storeToken(data, actualUserId);
 
     // Clear PKCE data (one-time use)
-    this.codeVerifier = undefined;
-    this.state = undefined;
+    this.codeVerifiers.delete(userKey);
+    this.states.delete(userKey);
   }
 
   /**
    * Get valid token (auto-refreshes if needed)
+   * @param userId - User identifier for multi-user support
    */
-  async getToken(): Promise<string> {
+  async getToken(userId?: string): Promise<string> {
     // Return cached token if valid
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-      return this.tokenStore.getAccessToken();
+    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
+      return this.tokenStore.getAccessToken(userId);
     }
 
     // Try to refresh if we have a refresh token
-    if (await this.tokenStore.hasRefreshToken()) {
-      return this.refreshToken();
+    if (await this.tokenStore.hasRefreshToken(userId)) {
+      return this.refreshToken(userId);
     }
 
     // No valid token and can't refresh
-    throw new Error('No valid token available. User needs to authorize (call startAuthFlow).');
+    throw new Error(`No valid token available for ${userId ? `user: ${userId}` : 'default user'}. User needs to authorize (call startAuthFlow).`);
   }
 
   /**
    * Refresh access token using refresh token
+   * @param userId - User identifier for multi-user support
    */
-  async refreshToken(): Promise<string> {
-    const refreshToken = await this.tokenStore.getRefreshToken();
+  async refreshToken(userId?: string): Promise<string> {
+    const refreshToken = await this.tokenStore.getRefreshToken(userId);
 
     const params = new URLSearchParams({
       grant_type: 'refresh_token',
@@ -167,31 +195,34 @@ export class AuthCodePKCEFlow {
 
     const data: any = await response.json();
 
-    // Store new token
-    await this.tokenStore.storeToken(data);
+    // Store new token with user scoping
+    await this.tokenStore.storeToken(data, userId);
 
     return data.access_token;
   }
 
   /**
    * Check if token is valid
+   * @param userId - User identifier for multi-user support
    */
-  async isTokenValid(): Promise<boolean> {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+  async isTokenValid(userId?: string): Promise<boolean> {
+    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId);
   }
 
   /**
    * Revoke token (if supported by provider)
+   * @param revocationUrl - Optional revocation endpoint
+   * @param userId - User identifier for multi-user support
    */
-  async revokeToken(revocationUrl?: string): Promise<void> {
+  async revokeToken(revocationUrl?: string, userId?: string): Promise<void> {
     if (!revocationUrl) {
       // Just clear from storage
-      await this.tokenStore.clear();
+      await this.tokenStore.clear(userId);
       return;
     }
 
     try {
-      const token = await this.tokenStore.getAccessToken();
+      const token = await this.tokenStore.getAccessToken(userId);
 
       await fetch(revocationUrl, {
         method: 'POST',
@@ -205,7 +236,7 @@ export class AuthCodePKCEFlow {
       });
     } finally {
       // Always clear from storage
-      await this.tokenStore.clear();
+      await this.tokenStore.clear(userId);
     }
   }
 }

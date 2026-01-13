@@ -42,23 +42,29 @@ export class OAuthManager {
   /**
    * Get valid access token
    * Automatically refreshes if expired
+   *
+   * @param userId - User identifier for multi-user support (optional)
    */
-  async getToken(): Promise<string> {
-    return this.flow.getToken();
+  async getToken(userId?: string): Promise<string> {
+    return this.flow.getToken(userId);
   }
 
   /**
    * Force refresh the token
+   *
+   * @param userId - User identifier for multi-user support (optional)
    */
-  async refreshToken(): Promise<string> {
-    return this.flow.refreshToken();
+  async refreshToken(userId?: string): Promise<string> {
+    return this.flow.refreshToken(userId);
   }
 
   /**
    * Check if current token is valid
+   *
+   * @param userId - User identifier for multi-user support (optional)
    */
-  async isTokenValid(): Promise<boolean> {
-    return this.flow.isTokenValid();
+  async isTokenValid(userId?: string): Promise<boolean> {
+    return this.flow.isTokenValid(userId);
   }
 
   // ==================== Authorization Code Flow Methods ====================
@@ -66,20 +72,26 @@ export class OAuthManager {
   /**
    * Start authorization flow (Authorization Code only)
    * Returns URL for user to visit
+   *
+   * @param userId - User identifier for multi-user support (optional)
+   * @returns Authorization URL for the user to visit
    */
-  async startAuthFlow(): Promise<string> {
+  async startAuthFlow(userId?: string): Promise<string> {
     if (!(this.flow instanceof AuthCodePKCEFlow)) {
       throw new Error('startAuthFlow() is only available for authorization_code flow');
     }
 
-    return this.flow.getAuthorizationUrl();
+    return this.flow.getAuthorizationUrl(userId);
   }
 
   /**
    * Handle OAuth callback (Authorization Code only)
    * Call this with the callback URL after user authorizes
+   *
+   * @param callbackUrl - Full callback URL with code and state parameters
+   * @param userId - Optional user identifier (can be extracted from state if embedded)
    */
-  async handleCallback(callbackUrl: string): Promise<void> {
+  async handleCallback(callbackUrl: string, userId?: string): Promise<void> {
     if (!(this.flow instanceof AuthCodePKCEFlow)) {
       throw new Error('handleCallback() is only available for authorization_code flow');
     }
@@ -96,15 +108,18 @@ export class OAuthManager {
       throw new Error('Missing state parameter in callback URL');
     }
 
-    await this.flow.exchangeCode(code, state);
+    await this.flow.exchangeCode(code, state, userId);
   }
 
   /**
    * Revoke token (if supported by provider)
+   *
+   * @param revocationUrl - Optional revocation endpoint URL
+   * @param userId - User identifier for multi-user support (optional)
    */
-  async revokeToken(revocationUrl?: string): Promise<void> {
+  async revokeToken(revocationUrl?: string, userId?: string): Promise<void> {
     if (this.flow instanceof AuthCodePKCEFlow) {
-      await this.flow.revokeToken(revocationUrl);
+      await this.flow.revokeToken(revocationUrl, userId);
     } else {
       throw new Error('Token revocation not implemented for this flow');
     }
