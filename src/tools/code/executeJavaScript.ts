@@ -6,8 +6,8 @@
 
 import * as vm from 'vm';
 import { ToolFunction } from '../../domain/entities/Tool.js';
-import { connectorRegistry, ConnectorRegistry } from '../../plugins/oauth/ConnectorRegistry.js';
-import { authenticatedFetch } from '../../plugins/oauth/authenticatedFetch.js';
+import { connectorRegistry, ConnectorRegistry } from '../../connectors/ConnectorRegistry.js';
+import { authenticatedFetch } from '../../connectors/authenticatedFetch.js';
 
 interface ExecuteJSArgs {
   code: string;

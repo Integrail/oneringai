@@ -1146,12 +1146,7 @@ declare class ConnectorRegistry {
  * });
  * ```
  */
-declare const connectorRegistry: ConnectorRegistry;
-/**
- * @deprecated Use connectorRegistry instead
- * Kept for backward compatibility - will be removed in v0.3.0
- */
-declare const oauthRegistry: ConnectorRegistry;
+declare const connectorRegistry$1: ConnectorRegistry;
 /**
  * Legacy type alias for backward compatibility
  * @deprecated Use IConnector instead
@@ -1162,11 +1157,6 @@ type RegisteredProvider = IConnector;
  * @deprecated Use IConnector instead
  */
 type RegisteredConnector = IConnector;
-/**
- * Legacy class alias for backward compatibility
- * @deprecated Use ConnectorRegistry instead
- */
-declare const OAuthRegistry: typeof ConnectorRegistry;
 
 /**
  * JavaScript Execution Tool
@@ -1255,6 +1245,59 @@ declare class OAuthConnector implements IConnector {
         } | undefined;
         documentation: string | undefined;
     };
+}
+
+/**
+ * In-memory token storage (default)
+ * Tokens are encrypted in memory using AES-256-GCM
+ */
+
+declare class MemoryStorage implements ITokenStorage {
+    private tokens;
+    storeToken(key: string, token: StoredToken): Promise<void>;
+    getToken(key: string): Promise<StoredToken | null>;
+    deleteToken(key: string): Promise<void>;
+    hasToken(key: string): Promise<boolean>;
+    /**
+     * Clear all tokens (useful for testing)
+     */
+    clearAll(): void;
+    /**
+     * Get number of stored tokens
+     */
+    size(): number;
+}
+
+/**
+ * File-based token storage
+ * Tokens are encrypted and stored in individual files with restrictive permissions
+ */
+
+interface FileStorageConfig {
+    directory: string;
+    encryptionKey: string;
+}
+declare class FileStorage implements ITokenStorage {
+    private directory;
+    private encryptionKey;
+    constructor(config: FileStorageConfig);
+    private ensureDirectory;
+    /**
+     * Get file path for a token key (hashed for security)
+     */
+    private getFilePath;
+    storeToken(key: string, token: StoredToken): Promise<void>;
+    getToken(key: string): Promise<StoredToken | null>;
+    deleteToken(key: string): Promise<void>;
+    hasToken(key: string): Promise<boolean>;
+    /**
+     * List all token keys (for debugging)
+     */
+    listTokens(): Promise<string[]>;
+    /**
+     * Clear all tokens
+     */
+    clearAll(): Promise<void>;
 }
 
 /**
@@ -1369,62 +1412,24 @@ interface APIRequestResult {
 declare function generateWebAPITool(): ToolFunction<APIRequestArgs, APIRequestResult>;
 
 /**
- * In-memory token storage (default)
- * Tokens are encrypted in memory using AES-256-GCM
- */
-
-declare class MemoryStorage implements ITokenStorage {
-    private tokens;
-    storeToken(key: string, token: StoredToken): Promise<void>;
-    getToken(key: string): Promise<StoredToken | null>;
-    deleteToken(key: string): Promise<void>;
-    hasToken(key: string): Promise<boolean>;
-    /**
-     * Clear all tokens (useful for testing)
-     */
-    clearAll(): void;
-    /**
-     * Get number of stored tokens
-     */
-    size(): number;
-}
-
-/**
- * File-based token storage
- * Tokens are encrypted and stored in individual files with restrictive permissions
- */
-
-interface FileStorageConfig {
-    directory: string;
-    encryptionKey: string;
-}
-declare class FileStorage implements ITokenStorage {
-    private directory;
-    private encryptionKey;
-    constructor(config: FileStorageConfig);
-    private ensureDirectory;
-    /**
-     * Get file path for a token key (hashed for security)
-     */
-    private getFilePath;
-    storeToken(key: string, token: StoredToken): Promise<void>;
-    getToken(key: string): Promise<StoredToken | null>;
-    deleteToken(key: string): Promise<void>;
-    hasToken(key: string): Promise<boolean>;
-    /**
-     * List all token keys (for debugging)
-     */
-    listTokens(): Promise<string[]>;
-    /**
-     * Clear all tokens
-     */
-    clearAll(): Promise<void>;
-}
-
-/**
  * Generate a secure random encryption key
  * Use this to generate OAUTH_ENCRYPTION_KEY for your .env file
  */
 declare function generateEncryptionKey(): string;
 
-export { AIError, type APIKeyConnectorAuth, AgentManager, BaseProvider, BaseTextProvider, type ClipboardImageResult, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, type ConnectorRegistrationConfig, ConnectorRegistry, type IConnector, IDisposable, type ITokenStorage as IOAuthTokenStorage, IProvider, ITextProvider, ImageManager, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, type LogLevel, type Logger, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, OAuthConnector, type OAuthConnectorAuth, FileStorage as OAuthFileStorage, type FileStorageConfig as OAuthFileStorageConfig, type OAuthFlow, OAuthManager, MemoryStorage as OAuthMemoryStorage, OAuthRegistry, OneRingAI, type OneRingAIConfig, ProviderAuthError, ProviderCapabilities, ProviderConfig, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ProvidersConfig, type RegisteredConnector, type RegisteredProvider, type RequestMetadata, type SimpleTextOptions, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, TextManager, ToolCall, type ToolCallBuffer, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, authenticatedFetch, connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, oauthRegistry, readClipboardImage, index as tools };
+/**
+ * Connectors - Authenticated access to external system APIs
+ *
+ * Provides unified interface for authentication across different systems:
+ * - GitHub, Microsoft, Google, Salesforce, etc.
+ *
+ * Supports multiple authentication methods:
+ * - OAuth 2.0 (Authorization Code + PKCE, Client Credentials, JWT Bearer)
+ * - API Keys
+ * - SAML (future)
+ * - Kerberos (future)
+ */
+
+declare const connectorRegistry: ConnectorRegistry;
+
+export { AIError, type APIKeyConnectorAuth, AgentManager, BaseProvider, BaseTextProvider, type ClipboardImageResult, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, type ConnectorRegistrationConfig, ConnectorRegistry, type IConnector, IDisposable, type ITokenStorage as IOAuthTokenStorage, IProvider, ITextProvider, ImageManager, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, type LogLevel, type Logger, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, OAuthConnector, type OAuthConnectorAuth, FileStorage as OAuthFileStorage, type FileStorageConfig as OAuthFileStorageConfig, type OAuthFlow, OAuthManager, MemoryStorage as OAuthMemoryStorage, ConnectorRegistry as OAuthRegistry, OneRingAI, type OneRingAIConfig, ProviderAuthError, ProviderCapabilities, ProviderConfig, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ProvidersConfig, type RegisteredConnector, type RegisteredProvider, type RequestMetadata, type SimpleTextOptions, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, TextManager, ToolCall, type ToolCallBuffer, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, authenticatedFetch, connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, connectorRegistry$1 as oauthRegistry, readClipboardImage, index as tools };

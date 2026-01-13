@@ -2170,7 +2170,7 @@ function generateEncryptionKey() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-// src/plugins/oauth/infrastructure/storage/MemoryStorage.ts
+// src/connectors/oauth/infrastructure/storage/MemoryStorage.ts
 var MemoryStorage = class {
   tokens = /* @__PURE__ */ new Map();
   // Stores encrypted tokens
@@ -2215,7 +2215,7 @@ var MemoryStorage = class {
   }
 };
 
-// src/plugins/oauth/domain/TokenStore.ts
+// src/connectors/oauth/domain/TokenStore.ts
 var TokenStore = class {
   storage;
   baseStorageKey;
@@ -2243,6 +2243,15 @@ var TokenStore = class {
    * @param userId - Optional user identifier for multi-user support
    */
   async storeToken(tokenResponse, userId) {
+    if (!tokenResponse.access_token) {
+      throw new Error("OAuth response missing required access_token field");
+    }
+    if (typeof tokenResponse.access_token !== "string") {
+      throw new Error("access_token must be a string");
+    }
+    if (tokenResponse.expires_in !== void 0 && tokenResponse.expires_in < 0) {
+      throw new Error("expires_in must be positive");
+    }
     const token = {
       access_token: tokenResponse.access_token,
       refresh_token: tokenResponse.refresh_token,
@@ -2336,7 +2345,7 @@ function generateState() {
   return crypto.randomBytes(16).toString("hex");
 }
 
-// src/plugins/oauth/flows/AuthCodePKCE.ts
+// src/connectors/oauth/flows/AuthCodePKCE.ts
 var AuthCodePKCEFlow = class {
   constructor(config) {
     this.config = config;
@@ -2347,6 +2356,8 @@ var AuthCodePKCEFlow = class {
   // Store PKCE data per user
   codeVerifiers = /* @__PURE__ */ new Map();
   states = /* @__PURE__ */ new Map();
+  // Store refresh locks per user to prevent concurrent refresh
+  refreshLocks = /* @__PURE__ */ new Map();
   /**
    * Generate authorization URL for user to visit
    * Opens browser or redirects user to this URL
@@ -2439,11 +2450,21 @@ var AuthCodePKCEFlow = class {
    * @param userId - User identifier for multi-user support
    */
   async getToken(userId) {
+    const key = userId || "default";
+    if (this.refreshLocks.has(key)) {
+      return this.refreshLocks.get(key);
+    }
     if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
       return this.tokenStore.getAccessToken(userId);
     }
     if (await this.tokenStore.hasRefreshToken(userId)) {
-      return this.refreshToken(userId);
+      const refreshPromise = this.refreshToken(userId);
+      this.refreshLocks.set(key, refreshPromise);
+      try {
+        return await refreshPromise;
+      } finally {
+        this.refreshLocks.delete(key);
+      }
     }
     throw new Error(`No valid token available for ${userId ? `user: ${userId}` : "default user"}. User needs to authorize (call startAuthFlow).`);
   }
@@ -2511,7 +2532,7 @@ var AuthCodePKCEFlow = class {
   }
 };
 
-// src/plugins/oauth/flows/ClientCredentials.ts
+// src/connectors/oauth/flows/ClientCredentials.ts
 var ClientCredentialsFlow = class {
   constructor(config) {
     this.config = config;
@@ -2651,7 +2672,7 @@ var JWTBearerFlow = class {
   }
 };
 
-// src/plugins/oauth/flows/StaticToken.ts
+// src/connectors/oauth/flows/StaticToken.ts
 var StaticTokenFlow = class {
   constructor(config) {
     this.config = config;
@@ -2687,7 +2708,7 @@ var StaticTokenFlow = class {
   }
 };
 
-// src/plugins/oauth/OAuthManager.ts
+// src/connectors/oauth/OAuthManager.ts
 var OAuthManager = class {
   flow;
   constructor(config) {
@@ -2831,7 +2852,7 @@ var OAuthManager = class {
   }
 };
 
-// src/plugins/oauth/OAuthConnector.ts
+// src/connectors/oauth/OAuthConnector.ts
 var OAuthConnector = class {
   constructor(name, config, oauthManager) {
     this.name = name;
@@ -2871,7 +2892,7 @@ var OAuthConnector = class {
   }
 };
 
-// src/plugins/oauth/ConnectorRegistry.ts
+// src/connectors/ConnectorRegistry.ts
 var ConnectorRegistry = class _ConnectorRegistry {
   static instance;
   connectors = /* @__PURE__ */ new Map();
@@ -3110,8 +3131,6 @@ var ConnectorRegistry = class _ConnectorRegistry {
   }
 };
 var connectorRegistry = ConnectorRegistry.getInstance();
-var oauthRegistry = connectorRegistry;
-var OAuthRegistry = ConnectorRegistry;
 
 // src/client/ProviderRegistry.ts
 var ProviderRegistry = class {
@@ -7449,127 +7468,10 @@ function getEnvVarName(provider) {
   }
 }
 
-// src/plugins/oauth/OAuthRegistry.ts
-var OAuthRegistry2 = class _OAuthRegistry {
-  static instance;
-  providers = /* @__PURE__ */ new Map();
-  constructor() {
-  }
-  /**
-   * Get singleton instance
-   */
-  static getInstance() {
-    if (!_OAuthRegistry.instance) {
-      _OAuthRegistry.instance = new _OAuthRegistry();
-    }
-    return _OAuthRegistry.instance;
-  }
-  /**
-   * Register an OAuth provider
-   *
-   * @param name - Unique provider identifier (e.g., 'microsoft', 'google')
-   * @param config - Provider configuration
-   */
-  register(name, config) {
-    if (!name || name.trim().length === 0) {
-      throw new Error("Provider name cannot be empty");
-    }
-    if (this.providers.has(name)) {
-      console.warn(`OAuth provider '${name}' is already registered. Overwriting...`);
-    }
-    const oauthManager = config.oauth instanceof OAuthManager ? config.oauth : new OAuthManager(config.oauth);
-    this.providers.set(name, {
-      name,
-      displayName: config.displayName,
-      description: config.description,
-      baseURL: config.baseURL,
-      oauthManager
-    });
-  }
-  /**
-   * Get provider by name
-   *
-   * @throws Error if provider not found
-   */
-  get(name) {
-    const provider = this.providers.get(name);
-    if (!provider) {
-      const available = this.listProviderNames();
-      const availableList = available.length > 0 ? available.join(", ") : "none";
-      throw new Error(
-        `OAuth provider '${name}' not found. Available providers: ${availableList}`
-      );
-    }
-    return provider;
-  }
-  /**
-   * Check if provider exists
-   */
-  has(name) {
-    return this.providers.has(name);
-  }
-  /**
-   * Get all registered provider names
-   */
-  listProviderNames() {
-    return Array.from(this.providers.keys());
-  }
-  /**
-   * Get all registered providers with full metadata
-   */
-  listProviders() {
-    return Array.from(this.providers.values());
-  }
-  /**
-   * Get provider descriptions formatted for tool parameters
-   * Returns a string suitable for including in tool descriptions
-   */
-  getProviderDescriptionsForTools() {
-    const providers = this.listProviders();
-    if (providers.length === 0) {
-      return "No OAuth providers registered yet.";
-    }
-    return providers.map((p) => `  - "${p.name}": ${p.displayName} - ${p.description}`).join("\n");
-  }
-  /**
-   * Get provider names and descriptions as an object (for documentation)
-   */
-  getProviderInfo() {
-    const info = {};
-    for (const [name, provider] of this.providers) {
-      info[name] = {
-        displayName: provider.displayName,
-        description: provider.description,
-        baseURL: provider.baseURL
-      };
-    }
-    return info;
-  }
-  /**
-   * Unregister a provider
-   */
-  unregister(name) {
-    return this.providers.delete(name);
-  }
-  /**
-   * Clear all providers (useful for testing)
-   */
-  clear() {
-    this.providers.clear();
-  }
-  /**
-   * Get number of registered providers
-   */
-  size() {
-    return this.providers.size;
-  }
-};
-var oauthRegistry2 = OAuthRegistry2.getInstance();
-
-// src/plugins/oauth/authenticatedFetch.ts
+// src/connectors/authenticatedFetch.ts
 async function authenticatedFetch(url, options, authProvider, userId) {
-  const provider = oauthRegistry2.get(authProvider);
-  const token = await provider.oauthManager.getToken(userId);
+  const connector = connectorRegistry.get(authProvider);
+  const token = await connector.getToken(userId);
   const authOptions = {
     ...options,
     headers: {
@@ -7580,7 +7482,7 @@ async function authenticatedFetch(url, options, authProvider, userId) {
   return fetch(url, authOptions);
 }
 function createAuthenticatedFetch(authProvider, userId) {
-  oauthRegistry2.get(authProvider);
+  connectorRegistry.get(authProvider);
   return async (url, options) => {
     return authenticatedFetch(url, options, authProvider, userId);
   };
@@ -7774,120 +7676,6 @@ async function executeInVM(code, input, timeout, logs, registry = connectorRegis
   const result = await resultPromise;
   return result;
 }
-
-// src/plugins/oauth/toolGenerator.ts
-function generateWebAPITool() {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "api_request",
-        description: `Make authenticated HTTP request to any registered OAuth API.
-
-This tool automatically handles OAuth authentication for registered providers.
-
-REGISTERED PROVIDERS:
-${oauthRegistry2.getProviderDescriptionsForTools()}
-
-HOW TO USE:
-1. Choose the appropriate authProvider based on which API you need to access
-2. Provide the URL (full URL or path relative to provider's baseURL)
-3. Specify the HTTP method (GET, POST, etc.)
-4. For POST/PUT/PATCH, include the request body
-
-EXAMPLES:
-Read Microsoft emails:
-{
-  authProvider: "microsoft",
-  url: "/v1.0/me/messages",
-  method: "GET"
-}
-
-List GitHub repositories:
-{
-  authProvider: "github",
-  url: "/user/repos",
-  method: "GET"
-}
-
-Create Salesforce account:
-{
-  authProvider: "salesforce",
-  url: "/services/data/v57.0/sobjects/Account",
-  method: "POST",
-  body: { Name: "Acme Corp", Industry: "Technology" }
-}`,
-        parameters: {
-          type: "object",
-          properties: {
-            authProvider: {
-              type: "string",
-              enum: oauthRegistry2.listProviderNames(),
-              description: "Which OAuth provider to use for authentication. Choose based on the API you need to access."
-            },
-            url: {
-              type: "string",
-              description: 'URL to request. Can be full URL (https://...) or path relative to provider baseURL (e.g., "/v1.0/me")'
-            },
-            method: {
-              type: "string",
-              enum: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-              description: "HTTP method (default: GET)"
-            },
-            body: {
-              description: "Request body for POST/PUT/PATCH requests. Will be JSON-stringified automatically."
-            },
-            headers: {
-              type: "object",
-              description: "Additional headers to include. Authorization header is added automatically."
-            }
-          },
-          required: ["authProvider", "url"]
-        }
-      },
-      blocking: true,
-      timeout: 3e4
-    },
-    execute: async (args) => {
-      try {
-        const provider = oauthRegistry2.get(args.authProvider);
-        const fullUrl = args.url.startsWith("http") ? args.url : `${provider.baseURL}${args.url}`;
-        const requestOptions = {
-          method: args.method || "GET",
-          headers: {
-            "Content-Type": "application/json",
-            ...args.headers
-          }
-        };
-        if (args.body && (args.method === "POST" || args.method === "PUT" || args.method === "PATCH")) {
-          requestOptions.body = JSON.stringify(args.body);
-        }
-        const response = await authenticatedFetch(fullUrl, requestOptions, args.authProvider);
-        const contentType = response.headers.get("content-type") || "";
-        let data;
-        if (contentType.includes("application/json")) {
-          data = await response.json();
-        } else {
-          data = await response.text();
-        }
-        return {
-          success: response.ok,
-          status: response.status,
-          statusText: response.statusText,
-          data
-        };
-      } catch (error) {
-        return {
-          success: false,
-          status: 0,
-          statusText: "Error",
-          data: null,
-          error: error.message
-        };
-      }
-    }
-  };
-}
 var FileStorage = class {
   directory;
   encryptionKey;
@@ -7989,6 +7777,123 @@ var FileStorage = class {
   }
 };
 
-export { AIError, Agent, AgentManager, BaseProvider, BaseTextProvider, ConnectorRegistry, ContentType, ExecutionContext, HookManager, ImageManager, InvalidConfigError, InvalidToolArgumentsError, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthConnector, FileStorage as OAuthFileStorage, OAuthManager, MemoryStorage as OAuthMemoryStorage, OAuthRegistry, OneRingAI, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, TextManager, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, assertNotDestroyed, authenticatedFetch, connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, oauthRegistry, readClipboardImage, tools_exports as tools };
+// src/connectors/toolGenerator.ts
+function generateWebAPITool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "api_request",
+        description: `Make authenticated HTTP request to any registered OAuth API.
+
+This tool automatically handles OAuth authentication for registered providers.
+
+REGISTERED PROVIDERS:
+${connectorRegistry.getConnectorDescriptionsForTools()}
+
+HOW TO USE:
+1. Choose the appropriate authProvider based on which API you need to access
+2. Provide the URL (full URL or path relative to provider's baseURL)
+3. Specify the HTTP method (GET, POST, etc.)
+4. For POST/PUT/PATCH, include the request body
+
+EXAMPLES:
+Read Microsoft emails:
+{
+  authProvider: "microsoft",
+  url: "/v1.0/me/messages",
+  method: "GET"
+}
+
+List GitHub repositories:
+{
+  authProvider: "github",
+  url: "/user/repos",
+  method: "GET"
+}
+
+Create Salesforce account:
+{
+  authProvider: "salesforce",
+  url: "/services/data/v57.0/sobjects/Account",
+  method: "POST",
+  body: { Name: "Acme Corp", Industry: "Technology" }
+}`,
+        parameters: {
+          type: "object",
+          properties: {
+            authProvider: {
+              type: "string",
+              enum: connectorRegistry.listProviderNames(),
+              description: "Which OAuth provider to use for authentication. Choose based on the API you need to access."
+            },
+            url: {
+              type: "string",
+              description: 'URL to request. Can be full URL (https://...) or path relative to provider baseURL (e.g., "/v1.0/me")'
+            },
+            method: {
+              type: "string",
+              enum: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+              description: "HTTP method (default: GET)"
+            },
+            body: {
+              description: "Request body for POST/PUT/PATCH requests. Will be JSON-stringified automatically."
+            },
+            headers: {
+              type: "object",
+              description: "Additional headers to include. Authorization header is added automatically."
+            }
+          },
+          required: ["authProvider", "url"]
+        }
+      },
+      blocking: true,
+      timeout: 3e4
+    },
+    execute: async (args) => {
+      try {
+        const provider = connectorRegistry.get(args.authProvider);
+        const fullUrl = args.url.startsWith("http") ? args.url : `${provider.baseURL}${args.url}`;
+        const requestOptions = {
+          method: args.method || "GET",
+          headers: {
+            "Content-Type": "application/json",
+            ...args.headers
+          }
+        };
+        if (args.body && (args.method === "POST" || args.method === "PUT" || args.method === "PATCH")) {
+          requestOptions.body = JSON.stringify(args.body);
+        }
+        const response = await authenticatedFetch(fullUrl, requestOptions, args.authProvider);
+        const contentType = response.headers.get("content-type") || "";
+        let data;
+        if (contentType.includes("application/json")) {
+          data = await response.json();
+        } else {
+          data = await response.text();
+        }
+        return {
+          success: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          data
+        };
+      } catch (error) {
+        return {
+          success: false,
+          status: 0,
+          statusText: "Error",
+          data: null,
+          error: error.message
+        };
+      }
+    }
+  };
+}
+
+// src/connectors/index.ts
+var connectorRegistry2 = ConnectorRegistry.getInstance();
+
+export { AIError, Agent, AgentManager, BaseProvider, BaseTextProvider, ConnectorRegistry, ContentType, ExecutionContext, HookManager, ImageManager, InvalidConfigError, InvalidToolArgumentsError, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthConnector, FileStorage as OAuthFileStorage, OAuthManager, MemoryStorage as OAuthMemoryStorage, ConnectorRegistry as OAuthRegistry, OneRingAI, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, TextManager, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, assertNotDestroyed, authenticatedFetch, connectorRegistry2 as connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, connectorRegistry as oauthRegistry, readClipboardImage, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

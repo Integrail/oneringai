@@ -8,7 +8,7 @@
 import 'dotenv/config';
 import {
   OAuthManager,
-  OAuthFileStorage,
+  FileStorage,
   generateEncryptionKey,
 } from '../src/index.js';
 import * as http from 'http';
@@ -38,7 +38,7 @@ const oauth = new OAuthManager({
   scope: 'user:email repo',
 
   // Use file storage so tokens persist across restarts
-  storage: new OAuthFileStorage({
+  storage: new FileStorage({
     directory: './tokens',
     encryptionKey: process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey(),
   }),

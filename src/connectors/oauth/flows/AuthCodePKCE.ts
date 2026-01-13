@@ -13,6 +13,8 @@ export class AuthCodePKCEFlow {
   // Store PKCE data per user
   private codeVerifiers: Map<string, string> = new Map();
   private states: Map<string, string> = new Map();
+  // Store refresh locks per user to prevent concurrent refresh
+  private refreshLocks: Map<string, Promise<string>> = new Map();
 
   constructor(private config: OAuthConfig) {
     const storageKey = config.storageKey || `auth_code:${config.clientId}`;
@@ -148,6 +150,13 @@ export class AuthCodePKCEFlow {
    * @param userId - User identifier for multi-user support
    */
   async getToken(userId?: string): Promise<string> {
+    const key = userId || 'default';
+
+    // If already refreshing for this user, wait for the existing refresh
+    if (this.refreshLocks.has(key)) {
+      return this.refreshLocks.get(key)!;
+    }
+
     // Return cached token if valid
     if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
       return this.tokenStore.getAccessToken(userId);
@@ -155,7 +164,16 @@ export class AuthCodePKCEFlow {
 
     // Try to refresh if we have a refresh token
     if (await this.tokenStore.hasRefreshToken(userId)) {
-      return this.refreshToken(userId);
+      // Start refresh and lock it
+      const refreshPromise = this.refreshToken(userId);
+      this.refreshLocks.set(key, refreshPromise);
+
+      try {
+        return await refreshPromise;
+      } finally {
+        // Always clean up lock, even on error
+        this.refreshLocks.delete(key);
+      }
     }
 
     // No valid token and can't refresh

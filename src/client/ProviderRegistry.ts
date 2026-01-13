@@ -23,7 +23,7 @@ import { GenericOpenAIProvider } from '../infrastructure/providers/generic/Gener
 import { AnthropicTextProvider } from '../infrastructure/providers/anthropic/AnthropicTextProvider.js';
 import { GoogleTextProvider } from '../infrastructure/providers/google/GoogleTextProvider.js';
 import { VertexAITextProvider } from '../infrastructure/providers/vertex/VertexAITextProvider.js';
-import { connectorRegistry } from '../plugins/oauth/ConnectorRegistry.js';
+import { connectorRegistry } from '../connectors/ConnectorRegistry.js';
 
 export class ProviderRegistry implements IDisposable {
   private configs: Map<string, ProviderConfig> = new Map();

@@ -7,7 +7,7 @@
 import 'dotenv/config';
 import {
   OAuthManager,
-  OAuthFileStorage,
+  FileStorage,
   generateEncryptionKey,
 } from '../src/index.js';
 
@@ -68,7 +68,7 @@ async function main() {
     tokenUrl: 'https://example.com/oauth/token',
 
     // Use file storage
-    storage: new OAuthFileStorage({
+    storage: new FileStorage({
       directory: './temp-tokens',
       encryptionKey: process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey(),
     }),

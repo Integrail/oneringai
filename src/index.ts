@@ -193,17 +193,17 @@ export * as tools from './tools/index.js';
 // Factory function for dynamic OAuth provider support
 export { createExecuteJavaScriptTool } from './tools/code/executeJavaScript.js';
 
-// Connectors plugin (external system authentication)
+// Connectors (external system authentication)
 export {
   connectorRegistry,
   ConnectorRegistry,
   oauthRegistry, // @deprecated - use connectorRegistry
   OAuthRegistry, // @deprecated - use ConnectorRegistry
   OAuthManager,
-} from './plugins/oauth/index.js';
+} from './connectors/index.js';
 
-export { MemoryStorage as OAuthMemoryStorage, FileStorage as OAuthFileStorage } from './plugins/oauth/index.js';
-export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch, generateWebAPITool } from './plugins/oauth/index.js';
+export { MemoryStorage as OAuthMemoryStorage, FileStorage as OAuthFileStorage } from './connectors/index.js';
+export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch, generateWebAPITool } from './connectors/index.js';
 
 // Connector types (NEW recommended way)
 export type {
@@ -221,9 +221,9 @@ export type {
   ConnectorRegistrationConfig,
   RegisteredProvider, // @deprecated - use IConnector
   RegisteredConnector, // @deprecated - use IConnector
-} from './plugins/oauth/index.js';
+} from './connectors/index.js';
 
-export { OAuthConnector } from './plugins/oauth/index.js';
+export { OAuthConnector } from './connectors/index.js';
 
 // OAuth types (legacy, still needed internally)
 export type {
@@ -231,4 +231,4 @@ export type {
   OAuthFlow,
   ITokenStorage as IOAuthTokenStorage,
   FileStorageConfig as OAuthFileStorageConfig,
-} from './plugins/oauth/index.js';
+} from './connectors/index.js';

@@ -7,11 +7,11 @@
  * Register connectors once, use everywhere with authenticatedFetch and tools
  */
 
-import { OAuthManager } from './OAuthManager.js';
-import type { OAuthConfig } from './types.js';
-import { ConnectorConfig, ConnectorAuth } from '../../domain/entities/Connector.js';
-import { IConnector } from '../../domain/interfaces/IConnector.js';
-import { OAuthConnector } from './OAuthConnector.js';
+import { OAuthManager } from './oauth/OAuthManager.js';
+import type { OAuthConfig } from './oauth/types.js';
+import { ConnectorConfig, ConnectorAuth } from '../domain/entities/Connector.js';
+import { IConnector } from '../domain/interfaces/IConnector.js';
+import { OAuthConnector } from './oauth/OAuthConnector.js';
 
 /**
  * Legacy registration config (for backward compatibility during migration)

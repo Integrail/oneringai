@@ -39,6 +39,19 @@ export class TokenStore {
    * @param userId - Optional user identifier for multi-user support
    */
   async storeToken(tokenResponse: any, userId?: string): Promise<void> {
+    // Validate required fields
+    if (!tokenResponse.access_token) {
+      throw new Error('OAuth response missing required access_token field');
+    }
+
+    if (typeof tokenResponse.access_token !== 'string') {
+      throw new Error('access_token must be a string');
+    }
+
+    if (tokenResponse.expires_in !== undefined && tokenResponse.expires_in < 0) {
+      throw new Error('expires_in must be positive');
+    }
+
     const token: StoredToken = {
       access_token: tokenResponse.access_token,
       refresh_token: tokenResponse.refresh_token,

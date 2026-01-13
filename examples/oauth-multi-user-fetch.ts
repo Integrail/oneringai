@@ -10,7 +10,7 @@ import {
   connectorRegistry,
   authenticatedFetch,
   createAuthenticatedFetch,
-  OAuthFileStorage,
+  FileStorage,
   generateEncryptionKey,
 } from '../src/index.js';
 
@@ -41,7 +41,7 @@ async function main() {
       tokenUrl: 'https://github.com/login/oauth/access_token',
       redirectUri: 'http://localhost:3000/callback',
       scope: 'user:email repo',
-      storage: new OAuthFileStorage({
+      storage: new FileStorage({
         directory: './tokens',
         encryptionKey: process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey(),
       }),

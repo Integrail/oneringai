@@ -237,14 +237,30 @@ const agent = await client.agents.create({
    - `oauth.getToken('user123')` → multi-user mode (key: `provider:clientId:user123`)
 
 **Location**:
-- `src/plugins/oauth/domain/TokenStore.ts` - User-scoped key generation
-- `src/plugins/oauth/flows/AuthCodePKCE.ts` - Per-user PKCE state management
-- `src/plugins/oauth/OAuthManager.ts` - Multi-user API exposure
-- `src/plugins/oauth/authenticatedFetch.ts` - userId parameter support
+- `src/connectors/oauth/domain/TokenStore.ts` - User-scoped key generation
+- `src/connectors/oauth/flows/AuthCodePKCE.ts` - Per-user PKCE state management
+- `src/connectors/oauth/OAuthManager.ts` - Multi-user API exposure
+- `src/connectors/authenticatedFetch.ts` - userId parameter support
 
 **Examples**:
 - `examples/oauth-multi-user.ts` - Multi-user patterns
 - `examples/oauth-multi-user-fetch.ts` - authenticatedFetch with multiple users
+
+**Concurrency Safety** (Phase 1 Fix):
+
+5. **Race Condition Prevention**: Per-user refresh locks prevent concurrent token refresh
+   - Problem: Multiple concurrent `getToken()` calls could all trigger `refreshToken()`
+   - Solution: `refreshLocks: Map<string, Promise<string>>` tracks in-progress refreshes
+   - If refresh is in-progress, subsequent calls wait for the existing Promise
+   - Lock cleaned up in `finally` block (even on error)
+   - Result: Only ONE token refresh request per user, even with 10+ concurrent calls
+
+6. **Token Response Validation**: All OAuth token responses validated before storage
+   - Validates `access_token` field exists
+   - Validates `access_token` is a string (not number, object, etc.)
+   - Validates `expires_in` is positive (if provided)
+   - Throws descriptive errors before storing corrupted tokens
+   - Prevents silent failures from malformed OAuth provider responses
 
 ### 7. Extensibility - Custom Infrastructure Providers 🆕
 
@@ -399,18 +415,44 @@ src/
 │   │   ├── Message.ts                # Message, MessageRole, InputItem, OutputItem
 │   │   ├── Content.ts                # ContentType, Content unions
 │   │   ├── Tool.ts                   # ToolFunction, ToolCall, ToolResult
+│   │   ├── Connector.ts              # ConnectorConfig, ConnectorAuth types
 │   │   └── Response.ts               # LLMResponse
 │   ├── interfaces/                   # Contracts
 │   │   ├── IProvider.ts              # Base provider interface
 │   │   ├── ITextProvider.ts          # Text generation provider
 │   │   ├── IImageProvider.ts         # Image generation provider
+│   │   ├── IConnector.ts             # External system connector interface
 │   │   └── IToolExecutor.ts          # Tool execution interface
 │   ├── types/                        # Shared types
 │   │   ├── ProviderConfig.ts         # Provider configuration types
 │   │   └── CommonTypes.ts            # Logger, metadata, etc.
 │   └── errors/                       # Domain errors
 │       └── AIErrors.ts               # Custom error classes
-├── agents/                           # Built-in AI agents (NEW!)
+├── connectors/                       # External system authentication (MOVED from plugins/oauth)
+│   ├── index.ts                      # Central export point
+│   ├── ConnectorRegistry.ts          # Manage all registered connectors
+│   ├── authenticatedFetch.ts         # Drop-in fetch() replacement with OAuth
+│   ├── toolGenerator.ts              # Auto-generate tools for connectors
+│   └── oauth/                        # OAuth 2.0 implementation
+│       ├── index.ts                  # OAuth exports
+│       ├── OAuthConnector.ts         # IConnector implementation
+│       ├── OAuthManager.ts           # OAuth flow orchestration
+│       ├── flows/                    # Flow implementations
+│       │   ├── AuthCodePKCE.ts       # Authorization Code + PKCE
+│       │   ├── ClientCredentials.ts  # Client Credentials
+│       │   ├── JWTBearer.ts          # JWT Bearer
+│       │   └── StaticToken.ts        # Static API keys
+│       ├── domain/                   # OAuth-specific domain
+│       │   ├── TokenStore.ts         # Token management with user scoping
+│       │   └── ITokenStorage.ts      # Storage interface
+│       ├── infrastructure/           # Storage implementations
+│       │   └── storage/
+│       │       ├── MemoryStorage.ts  # Encrypted in-memory storage
+│       │       └── FileStorage.ts    # Encrypted file storage
+│       └── utils/                    # OAuth utilities
+│           ├── pkce.ts               # PKCE generation
+│           └── encryption.ts         # AES-256-GCM encryption
+├── agents/                           # Built-in AI agents
 │   ├── index.ts                      # Public exports
 │   ├── ProviderConfigAgent.ts        # OAuth config generator
 │   └── README.md                     # Agent documentation
@@ -897,11 +939,21 @@ This is a private project. For questions or contributions, contact the project m
 
 ---
 
-**Last Updated**: 2026-01-12
+**Last Updated**: 2026-01-13
 **Version**: 0.1.0
 **Status**: MVP Complete, Production-Ready Architecture
 
-**Recent Changes (2026-01-12)**:
+**Recent Changes (2026-01-13)**:
+- 🏗️ **ARCHITECTURE**: Reorganized connector system - moved from `plugins/oauth/` to `src/connectors/`
+- ✅ **Phase 0 Complete**: Clean separation of concerns for future extensibility (SAML, Kerberos, etc.)
+- ⚠️ **Phase 1 Complete - Critical Fixes**:
+  - **Race Condition Fix**: OAuth token refresh now uses per-user locks to prevent concurrent refresh requests
+  - **Token Validation**: Added validation for OAuth token responses (access_token presence, type checking, expires_in validation)
+- 🐛 **Bug Fix**: Changed `OAuthFileStorage` → `FileStorage` in all examples (was causing import errors)
+- 📦 All connector code now in unified location: `src/connectors/oauth/`
+- 🔄 Backward compatibility maintained with deprecated aliases (`oauthRegistry`, `OAuthRegistry`)
+
+**Previous Changes (2026-01-12)**:
 - **BREAKING**: `AgentManager.create()` is now async and returns `Promise<Agent>`
 - 🆕 **Built-in AI Agents** - Created `ProviderConfigAgent` for OAuth provider configuration (no templates, AI-generated)
 - 🆕 **Multi-user OAuth support** - `userId` parameter in all OAuth methods (TokenStore, OAuthManager, authenticatedFetch)
