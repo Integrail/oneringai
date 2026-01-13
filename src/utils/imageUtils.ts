@@ -172,14 +172,6 @@ export function calculateBase64Size(base64Data: string): number {
 }
 
 /**
- * Get image size from base64 data (in bytes)
- * @deprecated Use calculateBase64Size instead for accurate size
- */
-export function getBase64ImageSize(base64Data: string): number {
-  return calculateBase64Size(base64Data);
-}
-
-/**
  * Format bytes into human-readable string
  */
 function formatBytes(bytes: number): string {

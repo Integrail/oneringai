@@ -38,7 +38,7 @@ export interface AgentConfig {
   };
   errorHandling?: {
     hookFailureMode?: 'fail' | 'warn' | 'ignore';
-    toolFailureMode?: 'fail' | 'warn' | 'continue';
+    toolFailureMode?: 'fail' | 'continue';
     maxConsecutiveErrors?: number;
   };
 }

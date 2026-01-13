@@ -160,19 +160,18 @@ TAVILY_API_KEY=your-key-here
 **Context Provided**:
 - `input` - Input data
 - `output` - Result variable (set this!)
-- `authenticatedFetch(url, options, provider)` - OAuth-authenticated HTTP
+- `authenticatedFetch(url, options, provider, userId?)` - OAuth-authenticated HTTP
 - `fetch(url, options)` - Standard HTTP
-- `oauth.listProviders()` - List registered providers
 - `console.log/error/warn` - Logging
 - Standard globals: Buffer, JSON, Math, Date, etc.
 
 **Example**:
 ```typescript
-import { tools, oauthRegistry } from '@oneringai/agents';
+import { tools, connectorRegistry } from '@oneringai/agents';
 
-// Register OAuth providers first
-oauthRegistry.register('microsoft', { ... });
-oauthRegistry.register('github', { ... });
+// Register OAuth connectors first
+connectorRegistry.register('microsoft', { ... });
+connectorRegistry.register('github', { ... });
 
 const agent = client.agents.create({
   tools: [tools.executeJavaScript]

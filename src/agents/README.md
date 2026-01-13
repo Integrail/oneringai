@@ -37,8 +37,8 @@ console.log(result.setupInstructions);
 console.log(result.envVariables);
 
 // Use the config
-import { oauthRegistry } from '@oneringai/agents';
-oauthRegistry.register(result.providerName, result.config);
+import { connectorRegistry } from '@oneringai/agents';
+connectorRegistry.register(result.providerName, result.config);
 ```
 
 **Interactive Example**:

@@ -7811,7 +7811,7 @@ Create Salesforce account:
           properties: {
             authProvider: {
               type: "string",
-              enum: connectorRegistry.listProviderNames(),
+              enum: connectorRegistry.listConnectorNames(),
               description: "Which OAuth provider to use for authentication. Choose based on the API you need to access."
             },
             url: {
