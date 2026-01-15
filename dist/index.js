@@ -1970,6 +1970,9 @@ var AnthropicStreamConverter = class {
    */
   handleMessageStart(event) {
     this.responseId = event.message.id;
+    if (event.message.usage) {
+      this.usage.input_tokens = event.message.usage.input_tokens || 0;
+    }
     return [
       {
         type: "response.created" /* RESPONSE_CREATED */,

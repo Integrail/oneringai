@@ -181,11 +181,38 @@ TAVILY_API_KEY=your-key-here
 
 **Example**:
 ```typescript
-import { Connector, Agent, Vendor, tools, connectorRegistry } from '@oneringai/agents';
+import { Connector, Agent, Vendor, tools } from '@oneringai/agents';
 
 // Register OAuth connectors first
-connectorRegistry.register('microsoft', { ... });
-connectorRegistry.register('github', { ... });
+Connector.create({
+  name: 'microsoft',
+  displayName: 'Microsoft Graph API',
+  baseURL: 'https://graph.microsoft.com',
+  auth: {
+    type: 'oauth',
+    flow: 'client_credentials',
+    clientId: process.env.MICROSOFT_CLIENT_ID!,
+    clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+    tokenUrl: 'https://login.microsoftonline.com/.../oauth2/v2.0/token',
+    scope: 'https://graph.microsoft.com/.default'
+  }
+});
+
+Connector.create({
+  name: 'github',
+  displayName: 'GitHub API',
+  baseURL: 'https://api.github.com',
+  auth: {
+    type: 'oauth',
+    flow: 'authorization_code',
+    clientId: process.env.GITHUB_CLIENT_ID!,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    authorizationUrl: 'https://github.com/login/oauth/authorize',
+    tokenUrl: 'https://github.com/login/oauth/access_token',
+    redirectUri: 'http://localhost:3000/callback',
+    scope: 'repo user'
+  }
+});
 
 Connector.create({
   name: 'openai',

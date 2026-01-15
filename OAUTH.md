@@ -133,11 +133,13 @@ OAUTH_ENCRYPTION_KEY=997db3aa6f28973c4e5d8b2a1f3c6e9d8a7b4c3e2d1f0a9b8c7d6e5f4a3
 
 **Example**:
 ```typescript
-connectorRegistry.register('openai-api', {
+Connector.create({
+  name: 'openai-api',
   displayName: 'OpenAI API',
   description: 'Access OpenAI models and completions',
   baseURL: 'https://api.openai.com/v1',
-  oauth: {
+  auth: {
+    type: 'oauth',
     flow: 'static_token',
     staticToken: process.env.OPENAI_API_KEY!,
     clientId: 'openai',  // For identification
@@ -216,11 +218,13 @@ const oauth = new OAuthManager({
 ### OpenAI
 
 ```typescript
-connectorRegistry.register('openai-api', {
+Connector.create({
+  name: 'openai-api',
   displayName: 'OpenAI API',
   description: 'Access OpenAI: models, completions, embeddings, fine-tuning',
   baseURL: 'https://api.openai.com/v1',
-  oauth: {
+  auth: {
+    type: 'oauth',
     flow: 'static_token',
     staticToken: process.env.OPENAI_API_KEY!,
     clientId: 'openai',
@@ -239,11 +243,13 @@ const models = await authenticatedFetch(
 ### Anthropic
 
 ```typescript
-connectorRegistry.register('anthropic-api', {
+Connector.create({
+  name: 'anthropic-api',
   displayName: 'Anthropic API',
   description: 'Access Anthropic Claude models',
   baseURL: 'https://api.anthropic.com/v1',
-  oauth: {
+  auth: {
+    type: 'oauth',
     flow: 'static_token',
     staticToken: process.env.ANTHROPIC_API_KEY!,
     clientId: 'anthropic',
@@ -269,11 +275,13 @@ const response = await authenticatedFetch(
 
 ```typescript
 // Works with any API that uses Bearer tokens or API keys
-connectorRegistry.register('custom-api', {
+Connector.create({
+  name: 'custom-api',
   displayName: 'Custom SaaS API',
   description: 'Your custom API endpoints',
   baseURL: 'https://api.custom.com/v1',
-  oauth: {
+  auth: {
+    type: 'oauth',
     flow: 'static_token',
     staticToken: process.env.CUSTOM_API_KEY!,
     clientId: 'custom',
@@ -508,12 +516,25 @@ import {
   Connector,
   Agent,
   Vendor,
-  connectorRegistry,
   createExecuteJavaScriptTool
 } from '@oneringai/agents';
 
 // Register OAuth provider
-connectorRegistry.register('github', { /* ... */ });
+Connector.create({
+  name: 'github',
+  displayName: 'GitHub API',
+  baseURL: 'https://api.github.com',
+  auth: {
+    type: 'oauth',
+    flow: 'authorization_code',
+    clientId: process.env.GITHUB_CLIENT_ID!,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    authorizationUrl: 'https://github.com/login/oauth/authorize',
+    tokenUrl: 'https://github.com/login/oauth/access_token',
+    redirectUri: 'http://localhost:3000/callback',
+    scope: 'repo user'
+  }
+});
 
 // Create AI connector
 Connector.create({
@@ -523,7 +544,7 @@ Connector.create({
 });
 
 // Create agent with JavaScript execution tool
-const jsTool = createExecuteJavaScriptTool(connectorRegistry);
+const jsTool = createExecuteJavaScriptTool();
 
 const agent = Agent.create({
   connector: 'openai',

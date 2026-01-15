@@ -39,8 +39,7 @@ console.log(result.setupInstructions);
 console.log(result.envVariables);
 
 // Use the config
-import { connectorRegistry } from '@oneringai/agents';
-connectorRegistry.register(result.providerName, result.config);
+Connector.create({ name: result.name, ...result.config });
 ```
 
 **Interactive Example**:

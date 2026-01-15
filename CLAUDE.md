@@ -181,8 +181,7 @@ src/
 │       └── generic/                  # OpenAI-compatible
 ├── connectors/                       # External API auth (OAuth)
 │   ├── oauth/                        # OAuth 2.0 implementation
-│   ├── ConnectorRegistry.ts          # For external APIs
-│   └── authenticatedFetch.ts
+│   └── authenticatedFetch.ts         # Authenticated fetch using Connector
 ├── tools/                            # Built-in tools
 │   ├── code/
 │   └── json/

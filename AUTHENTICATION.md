@@ -300,20 +300,20 @@ const response = await agent.run('Summarize my unread emails from today');
 
 ## Unified Approach (Best of Both Worlds)
 
-You can use OAuth Registry for **both** OAuth and static tokens:
+You can use Connector for **both** OAuth and static tokens:
 
 ```typescript
 import {
   Connector,
   Agent,
   Vendor,
-  connectorRegistry,
   authenticatedFetch,
   generateWebAPITool
 } from '@oneringai/agents';
 
-// Register ALL external APIs in one place
-connectorRegistry.register('openai-api', {
+// Register ALL external APIs in one place using Connector
+Connector.create({
+  name: 'openai-api',
   displayName: 'OpenAI API',
   baseURL: 'https://api.openai.com/v1',
   auth: {
@@ -325,7 +325,8 @@ connectorRegistry.register('openai-api', {
   }
 });
 
-connectorRegistry.register('microsoft', {
+Connector.create({
+  name: 'microsoft',
   displayName: 'Microsoft Graph',
   baseURL: 'https://graph.microsoft.com',
   auth: {

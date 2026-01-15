@@ -82,8 +82,7 @@ export interface JWTConnectorAuth {
  * Used for BOTH AI providers AND external APIs
  */
 export interface ConnectorConfig {
-  // Unique identifier (required for AI providers via Connector.create())
-  // For old ConnectorRegistry API, name is passed separately
+  // Unique identifier (required for Connector.create())
   name?: string; // e.g., 'openai-main', 'openai-backup', 'github-user'
 
   // For AI providers: specify vendor (auto-selects SDK)
