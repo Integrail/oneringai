@@ -11,6 +11,7 @@
 - **Unified API** - One interface for 10+ AI providers
 - **Connector-First Architecture** - Single auth system for AI providers AND external APIs
 - **Multiple Keys Per Vendor** - Support for multiple API keys per vendor (e.g., `openai-main`, `openai-backup`)
+- **Model Registry** - Complete metadata for 23+ latest (2026) models with pricing, features, and capabilities
 - **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - **Vision Support** - Analyze images with AI across all providers
 - **Clipboard Paste** - Ctrl+V screenshots directly (just like Claude Code!)
@@ -126,6 +127,45 @@ const agent = Agent.create({
 
 const response = await agent.run('Hello!');
 ```
+
+### Model Registry
+
+Access comprehensive metadata for 23+ latest (2026) models from OpenAI, Anthropic, and Google:
+
+```typescript
+import { MODEL_REGISTRY, LLM_MODELS, Vendor, getModelInfo, calculateCost } from '@oneringai/agents';
+
+// Get model information
+const gpt52 = getModelInfo(LLM_MODELS[Vendor.OpenAI].GPT_5_2_THINKING);
+console.log(`Context window: ${gpt52.features.input.tokens} tokens`);
+console.log(`Supports vision: ${gpt52.features.vision}`);
+console.log(`Pricing: $${gpt52.features.input.cpm}/$${gpt52.features.output.cpm} per M tokens`);
+
+// Calculate API costs
+const cost = calculateCost('gpt-5.2-thinking', 50_000, 2_000);
+console.log(`Cost for 50K input + 2K output: $${cost?.toFixed(4)}`); // $0.1155
+
+// Calculate with cache discount (90% off for cached input)
+const cachedCost = calculateCost('gpt-5.2-thinking', 50_000, 2_000, { useCachedInput: true });
+console.log(`With caching: $${cachedCost?.toFixed(4)}`); // $0.0293
+
+// Filter models by vendor
+const anthropicModels = getModelsByVendor(Vendor.Anthropic);
+console.log(`Anthropic has ${anthropicModels.length} models`); // 5
+
+// List all available models
+Object.keys(MODEL_REGISTRY).forEach(name => {
+  const model = MODEL_REGISTRY[name];
+  console.log(`${name}: $${model.features.input.cpm}/$${model.features.output.cpm}`);
+});
+```
+
+**Available Models (2026):**
+- **OpenAI (11)**: GPT-5.2 series (instant, thinking, pro, codex), GPT-5 family (5, 5.1, mini, nano), GPT-4.1 series, o3-mini
+- **Anthropic (5)**: Claude Opus 4.5, Sonnet 4.5, Haiku 4.5, Opus 4.1, Sonnet 4
+- **Google (7)**: Gemini 3 (Flash, Pro, Pro-Image), Gemini 2.5 (Pro, Flash, Flash-Lite, Flash-Image)
+
+All models include: pricing (input/output/cached), context windows, feature flags (reasoning, vision, tools, streaming, etc.).
 
 ---
 
@@ -616,6 +656,82 @@ Vendor.Mistral      // 'mistral'
 Vendor.Perplexity   // 'perplexity'
 Vendor.Ollama       // 'ollama'
 Vendor.Custom       // 'custom'
+```
+
+### Model Registry
+
+```typescript
+import { MODEL_REGISTRY, LLM_MODELS, getModelInfo, calculateCost, getModelsByVendor, getActiveModels } from '@oneringai/agents';
+
+// Model constants (organized by vendor)
+LLM_MODELS[Vendor.OpenAI].GPT_5_2_THINKING      // 'gpt-5.2-thinking'
+LLM_MODELS[Vendor.Anthropic].CLAUDE_OPUS_4_5    // 'claude-opus-4-5-20251101'
+LLM_MODELS[Vendor.Google].GEMINI_3_FLASH_PREVIEW // 'gemini-3-flash-preview'
+
+// Get model information
+const model = getModelInfo('gpt-5.2-thinking');
+// Returns: ILLMDescription with pricing, features, context window, etc.
+
+// Calculate costs
+const cost = calculateCost(
+  'gpt-5.2-thinking',           // model name
+  1_000_000,                    // input tokens
+  1_000_000,                    // output tokens
+  { useCachedInput: true }      // optional: use cached pricing
+);
+// Returns: number (cost in dollars) or null if model not found
+
+// Filter models by vendor
+const openaiModels = getModelsByVendor(Vendor.OpenAI);
+// Returns: ILLMDescription[]
+
+// Get all active models
+const activeModels = getActiveModels();
+// Returns: ILLMDescription[] (currently 23 models)
+
+// Access full registry
+const allModels = MODEL_REGISTRY;
+// Returns: Record<string, ILLMDescription>
+```
+
+**ILLMDescription Interface:**
+```typescript
+interface ILLMDescription {
+  name: string;
+  provider: string;
+  description?: string;
+  isActive: boolean;
+  releaseDate?: string;
+  knowledgeCutoff?: string;
+  features: {
+    reasoning?: boolean;
+    streaming: boolean;
+    structuredOutput?: boolean;
+    functionCalling?: boolean;
+    vision?: boolean;
+    audio?: boolean;
+    video?: boolean;
+    extendedThinking?: boolean;  // Claude
+    batchAPI?: boolean;
+    promptCaching?: boolean;
+    input: {
+      tokens: number;             // Max context window
+      text: boolean;
+      image?: boolean;
+      audio?: boolean;
+      video?: boolean;
+      cpm: number;                // Cost per million tokens
+      cpmCached?: number;         // Cached input cost
+    };
+    output: {
+      tokens: number;             // Max output tokens
+      text: boolean;
+      image?: boolean;
+      audio?: boolean;
+      cpm: number;                // Cost per million tokens
+    };
+  };
+}
 ```
 
 ---

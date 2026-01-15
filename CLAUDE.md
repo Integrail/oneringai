@@ -159,6 +159,63 @@ export const Vendor = {
 } as const;
 ```
 
+### Model Registry (`src/domain/entities/Model.ts`)
+
+Comprehensive model metadata registry with 23+ latest (2026) models:
+
+```typescript
+import { MODEL_REGISTRY, LLM_MODELS, Vendor, getModelInfo, calculateCost, getModelsByVendor } from '@oneringai/agents';
+
+// Access model constants (organized by vendor)
+const gpt52 = LLM_MODELS[Vendor.OpenAI].GPT_5_2_THINKING;        // 'gpt-5.2-thinking'
+const claude = LLM_MODELS[Vendor.Anthropic].CLAUDE_OPUS_4_5;     // 'claude-opus-4-5-20251101'
+const gemini = LLM_MODELS[Vendor.Google].GEMINI_3_FLASH_PREVIEW; // 'gemini-3-flash-preview'
+
+// Get model information
+const model = getModelInfo('gpt-5.2-thinking');
+console.log(model.features.input.tokens);   // 400000
+console.log(model.features.output.tokens);  // 128000
+console.log(model.features.input.cpm);      // 1.75
+console.log(model.features.output.cpm);     // 14
+console.log(model.features.reasoning);      // true
+console.log(model.features.vision);         // true
+
+// Calculate API costs
+const cost = calculateCost('gpt-5.2-thinking', 50_000, 2_000);
+console.log(`Cost: $${cost}`); // 0.1155
+
+// Calculate with cache discount (90% for OpenAI, 90% for Anthropic, standard for Google)
+const cachedCost = calculateCost('gpt-5.2-thinking', 50_000, 2_000, { useCachedInput: true });
+console.log(`Cached: $${cachedCost}`); // 0.0293
+
+// Filter models by vendor
+const anthropicModels = getModelsByVendor(Vendor.Anthropic);  // 5 models
+const openaiModels = getModelsByVendor(Vendor.OpenAI);        // 11 models
+const googleModels = getModelsByVendor(Vendor.Google);        // 7 models
+
+// Get all active models
+const activeModels = getActiveModels();  // All 23 currently active models
+```
+
+**Registry Contents (23 models total):**
+- **OpenAI (11 models)**: GPT-5.2 series (instant, thinking, pro, codex), GPT-5 family (5, 5.1, mini, nano), GPT-4.1 (standard, mini), o3-mini
+- **Anthropic (5 models)**: Claude 4.5 series (Opus, Sonnet, Haiku), Claude 4.x legacy (Opus 4.1, Sonnet 4)
+- **Google (7 models)**: Gemini 3 series (Flash preview, Pro, Pro Image), Gemini 2.5 series (Pro, Flash, Flash-Lite, Flash Image)
+
+**Model Metadata (ILLMDescription):**
+- Pricing: Input/output CPM (cost per million tokens), cached input pricing
+- Context windows: Max input/output tokens
+- Feature flags: reasoning, streaming, structuredOutput, functionCalling, vision, audio, video, extendedThinking, batchAPI, promptCaching
+- Release date and knowledge cutoff dates
+- Active status
+
+**Use Cases:**
+- Cost estimation for API calls
+- Model selection based on capabilities
+- Feature availability checking
+- Pricing comparison across vendors
+- Documentation and tooling
+
 ### createProvider (`src/core/createProvider.ts`)
 
 Factory that creates ITextProvider from Connector:
@@ -187,6 +244,7 @@ src/
 │   │   ├── Content.ts                # ContentType
 │   │   ├── Tool.ts                   # ToolFunction, ToolCall
 │   │   ├── Connector.ts              # ConnectorConfig types
+│   │   ├── Model.ts                  # Model registry (23+ models)
 │   │   └── Response.ts               # LLMResponse
 │   ├── interfaces/                   # Contracts
 │   │   ├── IProvider.ts
@@ -420,8 +478,9 @@ npm test               # Run tests
 2. `src/core/Agent.ts` - Agent creation
 3. `src/core/createProvider.ts` - Provider factory
 4. `src/core/Vendor.ts` - Vendor enum
-5. `src/capabilities/agents/AgenticLoop.ts` - Tool calling
-6. `src/infrastructure/providers/` - Provider implementations
+5. `src/domain/entities/Model.ts` - Model registry (23+ models with pricing, features)
+6. `src/capabilities/agents/AgenticLoop.ts` - Tool calling
+7. `src/infrastructure/providers/` - Provider implementations
 
 ---
 
