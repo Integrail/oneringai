@@ -488,6 +488,150 @@ declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposab
 declare function createProvider(connector: Connector): ITextProvider;
 
 /**
+ * Complete description of an LLM model including capabilities, pricing, and features
+ */
+interface ILLMDescription {
+    /** Model identifier (e.g., "gpt-5.2-instant") */
+    name: string;
+    /** Vendor/provider (Vendor.OpenAI, Vendor.Anthropic, etc.) */
+    provider: string;
+    /** Optional description of the model */
+    description?: string;
+    /** Whether the model is currently available for use */
+    isActive: boolean;
+    /** Release date (YYYY-MM-DD format) */
+    releaseDate?: string;
+    /** Knowledge cutoff date */
+    knowledgeCutoff?: string;
+    /** Model capabilities and pricing */
+    features: {
+        /** Supports extended reasoning/thinking */
+        reasoning?: boolean;
+        /** Supports streaming responses */
+        streaming: boolean;
+        /** Supports structured output (JSON mode) */
+        structuredOutput?: boolean;
+        /** Supports function/tool calling */
+        functionCalling?: boolean;
+        /** Supports fine-tuning */
+        fineTuning?: boolean;
+        /** Supports predicted outputs */
+        predictedOutputs?: boolean;
+        /** Supports realtime API */
+        realtime?: boolean;
+        /** Supports image input (vision) */
+        vision?: boolean;
+        /** Supports audio input/output */
+        audio?: boolean;
+        /** Supports video input */
+        video?: boolean;
+        /** Supports extended thinking (Claude-specific) */
+        extendedThinking?: boolean;
+        /** Supports batch API */
+        batchAPI?: boolean;
+        /** Supports prompt caching */
+        promptCaching?: boolean;
+        /** Input specifications */
+        input: {
+            /** Maximum input context window (in tokens) */
+            tokens: number;
+            /** Supports text input */
+            text: boolean;
+            /** Supports image input */
+            image?: boolean;
+            /** Supports audio input */
+            audio?: boolean;
+            /** Supports video input */
+            video?: boolean;
+            /** Cost per million tokens (input) */
+            cpm: number;
+            /** Cost per million cached tokens (if prompt caching supported) */
+            cpmCached?: number;
+        };
+        /** Output specifications */
+        output: {
+            /** Maximum output tokens */
+            tokens: number;
+            /** Supports text output */
+            text: boolean;
+            /** Supports image output */
+            image?: boolean;
+            /** Supports audio output */
+            audio?: boolean;
+            /** Cost per million tokens (output) */
+            cpm: number;
+        };
+    };
+}
+/**
+ * Model name constants organized by vendor
+ */
+declare const LLM_MODELS: {
+    readonly openai: {
+        readonly GPT_5_2_INSTANT: "gpt-5.2-instant";
+        readonly GPT_5_2_THINKING: "gpt-5.2-thinking";
+        readonly GPT_5_2_PRO: "gpt-5.2-pro";
+        readonly GPT_5_2_CODEX: "gpt-5.2-codex";
+        readonly GPT_5_1: "gpt-5.1";
+        readonly GPT_5: "gpt-5";
+        readonly GPT_5_MINI: "gpt-5-mini";
+        readonly GPT_5_NANO: "gpt-5-nano";
+        readonly GPT_4_1: "gpt-4.1";
+        readonly GPT_4_1_MINI: "gpt-4.1-mini";
+        readonly O3_MINI: "o3-mini";
+    };
+    readonly anthropic: {
+        readonly CLAUDE_OPUS_4_5: "claude-opus-4-5-20251101";
+        readonly CLAUDE_SONNET_4_5: "claude-sonnet-4-5-20250929";
+        readonly CLAUDE_HAIKU_4_5: "claude-haiku-4-5-20251001";
+        readonly CLAUDE_OPUS_4_1: "claude-opus-4-1-20250805";
+        readonly CLAUDE_SONNET_4: "claude-sonnet-4-20250514";
+    };
+    readonly google: {
+        readonly GEMINI_3_FLASH_PREVIEW: "gemini-3-flash-preview";
+        readonly GEMINI_3_PRO: "gemini-3-pro";
+        readonly GEMINI_3_PRO_IMAGE: "gemini-3-pro-image";
+        readonly GEMINI_2_5_PRO: "gemini-2.5-pro";
+        readonly GEMINI_2_5_FLASH: "gemini-2.5-flash";
+        readonly GEMINI_2_5_FLASH_LITE: "gemini-2.5-flash-lite";
+        readonly GEMINI_2_5_FLASH_IMAGE: "gemini-2.5-flash-image";
+    };
+};
+/**
+ * Complete model registry with all model metadata
+ * Updated: January 2026
+ */
+declare const MODEL_REGISTRY: Record<string, ILLMDescription>;
+/**
+ * Get model information by name
+ * @param modelName The model identifier
+ * @returns Model description or undefined if not found
+ */
+declare function getModelInfo(modelName: string): ILLMDescription | undefined;
+/**
+ * Get all models for a specific vendor
+ * @param vendor The vendor to filter by
+ * @returns Array of model descriptions for the vendor
+ */
+declare function getModelsByVendor(vendor: Vendor): ILLMDescription[];
+/**
+ * Get all currently active models
+ * @returns Array of active model descriptions
+ */
+declare function getActiveModels(): ILLMDescription[];
+/**
+ * Calculate the cost for a given model and token usage
+ * @param model Model name
+ * @param inputTokens Number of input tokens
+ * @param outputTokens Number of output tokens
+ * @param options Optional calculation options
+ * @returns Total cost in dollars, or null if model not found
+ */
+declare function calculateCost(model: string, inputTokens: number, outputTokens: number, options?: {
+    useCachedInput?: boolean;
+}): number | null;
+
+/**
  * StreamState - Accumulates streaming events to reconstruct complete response
  */
 
@@ -1424,4 +1568,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig, AgentResponse, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ExecutionContext, ExecutionMetrics, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAsyncDisposable, type IDisposable, IProvider, ITextProvider, type ITokenStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isVendor, readClipboardImage, index as tools };
+export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig, AgentResponse, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ExecutionContext, ExecutionMetrics, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAsyncDisposable, type IDisposable, type ILLMDescription, IProvider, ITextProvider, type ITokenStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, MODEL_REGISTRY, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, calculateCost, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, readClipboardImage, index as tools };

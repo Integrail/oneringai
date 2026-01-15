@@ -78,6 +78,17 @@ export type {
   JWTConnectorAuth,
 } from './domain/entities/Connector.js';
 
+// Model Registry
+export type { ILLMDescription } from './domain/entities/Model.js';
+export {
+  LLM_MODELS,
+  MODEL_REGISTRY,
+  getModelInfo,
+  getModelsByVendor,
+  getActiveModels,
+  calculateCost,
+} from './domain/entities/Model.js';
+
 // ============ Streaming ============
 export { StreamEventType } from './domain/entities/StreamEvent.js';
 export type {
