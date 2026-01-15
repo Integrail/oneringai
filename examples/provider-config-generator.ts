@@ -107,7 +107,7 @@ async function main() {
               saveConfig(response);
             }
 
-            console.log('\n✨ Done! You can now use this config with connectorRegistry.register()');
+            console.log('\n✨ Done! You can now use this config with Connector.create()');
             console.log('\n👋 Goodbye!');
             rl.close();
             process.exit(0);
@@ -156,9 +156,9 @@ function displayConfig(result: any) {
 
   console.log('💻 Code to Register:');
   console.log('```typescript');
-  console.log(`import { connectorRegistry } from '@oneringai/agents';`);
+  console.log(`import { Connector } from '@oneringai/agents';`);
   console.log('');
-  console.log(`connectorRegistry.register('${result.name}', ${JSON.stringify(result.config, null, 2)});`);
+  console.log(`Connector.create({ name: '${result.name}', ...${JSON.stringify(result.config, null, 2)} });`);
   console.log('```');
   console.log('');
 

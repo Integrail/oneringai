@@ -6,7 +6,7 @@
 
 import * as vm from 'vm';
 import { ToolFunction } from '../../domain/entities/Tool.js';
-import { connectorRegistry, ConnectorRegistry } from '../../connectors/ConnectorRegistry.js';
+import { Connector } from '../../core/Connector.js';
 import { authenticatedFetch } from '../../connectors/authenticatedFetch.js';
 
 interface ExecuteJSArgs {
@@ -26,13 +26,13 @@ interface ExecuteJSResult {
 /**
  * Generate the tool description with current connectors
  */
-function generateDescription(registry: ConnectorRegistry): string {
-  const connectors = registry.listConnectors();
+function generateDescription(): string {
+  const connectors = Connector.listAll();
   const connectorList = connectors.length > 0
     ? connectors
-        .map(c => `   • "${c.name}": ${c.displayName}\n     ${c.config.description}\n     Base URL: ${c.baseURL}`)
+        .map(c => `   • "${c.name}": ${c.displayName}\n     ${c.config.description || 'No description'}\n     Base URL: ${c.baseURL}`)
         .join('\n\n')
-    : '   No connectors registered yet. Register connectors with connectorRegistry.register().';
+    : '   No connectors registered yet. Register connectors with Connector.create().';
 
   return `Execute JavaScript code in a secure sandbox with connector integration.
 
@@ -101,18 +101,16 @@ RETURNS:
 }
 
 /**
- * Create an execute_javascript tool with the current connector registry state
+ * Create an execute_javascript tool with the current connector state
  * Use this factory when you need the tool to reflect currently registered connectors
- *
- * @param registry - ConnectorRegistry instance (defaults to global connectorRegistry)
  */
-export function createExecuteJavaScriptTool(registry: ConnectorRegistry = connectorRegistry): ToolFunction<ExecuteJSArgs, ExecuteJSResult> {
+export function createExecuteJavaScriptTool(): ToolFunction<ExecuteJSArgs, ExecuteJSResult> {
   return {
     definition: {
       type: 'function',
       function: {
         name: 'execute_javascript',
-        description: generateDescription(registry),
+        description: generateDescription(),
         parameters: {
           type: 'object',
           properties: {
@@ -144,8 +142,8 @@ export function createExecuteJavaScriptTool(registry: ConnectorRegistry = connec
         // Validate timeout
         const timeout = Math.min(args.timeout || 10000, 30000);
 
-        // Execute in VM with the specified registry
-        const result = await executeInVM(args.code, args.input, timeout, logs, registry);
+        // Execute in VM
+        const result = await executeInVM(args.code, args.input, timeout, logs);
 
         return {
           success: true,
@@ -167,11 +165,11 @@ export function createExecuteJavaScriptTool(registry: ConnectorRegistry = connec
 }
 
 /**
- * Default executeJavaScript tool (uses global connectorRegistry)
+ * Default executeJavaScript tool
  * NOTE: The description is generated at module load time. If you register
  * connectors after importing this, use createExecuteJavaScriptTool() instead.
  */
-export const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult> = createExecuteJavaScriptTool(connectorRegistry);
+export const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult> = createExecuteJavaScriptTool();
 
 /**
  * Execute code in Node.js vm module
@@ -180,8 +178,7 @@ async function executeInVM(
   code: string,
   input: any,
   timeout: number,
-  logs: string[],
-  registry: ConnectorRegistry = connectorRegistry
+  logs: string[]
 ): Promise<any> {
   // Create sandbox context
   const sandbox: any = {
@@ -202,15 +199,15 @@ async function executeInVM(
     // Standard fetch
     fetch: globalThis.fetch,
 
-    // Connector registry info (uses the provided registry)
+    // Connector info
     connectors: {
-      list: () => registry.listConnectorNames(),
+      list: () => Connector.list(),
       get: (name: string) => {
         try {
-          const connector = registry.get(name);
+          const connector = Connector.get(name);
           return {
             displayName: connector.displayName,
-            description: connector.config.description,
+            description: connector.config.description || '',
             baseURL: connector.baseURL,
           };
         } catch {

@@ -34,7 +34,6 @@ import {
   MessageRole,
   ContentType,
   MessageBuilder,
-  connectorRegistry,
   authenticatedFetch,
   ToolFunction,
   tools,
@@ -265,7 +264,8 @@ async function main() {
     process.env.MICROSOFT_CLIENT_SECRET &&
     process.env.MICROSOFT_TENANT_ID
   ) {
-    connectorRegistry.register('microsoft', {
+    Connector.create({
+      name: 'microsoft',
       displayName: 'Microsoft Graph API',
       description: 'Access Microsoft 365: users, mail, calendar, files, teams',
       baseURL: 'https://graph.microsoft.com',
@@ -281,7 +281,7 @@ async function main() {
   }
 
   // ========== Create Microsoft Graph tool (if registered) ==========
-  const microsoftTool: ToolFunction | null = connectorRegistry.has('microsoft')
+  const microsoftTool: ToolFunction | null = Connector.has('microsoft')
     ? {
         definition: {
           type: 'function',
@@ -368,8 +368,8 @@ Example endpoints:
     console.log(`Microsoft Graph: ✅ Available (access M365 data)`);
   }
   console.log(`Code Execution: ✅ Available (run JavaScript)`);
-  if (connectorRegistry.listConnectorNames().length > 0) {
-    console.log(`OAuth Providers: ${connectorRegistry.listConnectorNames().join(', ')}`);
+  if (Connector.list().length > 0) {
+    console.log(`OAuth Providers: ${Connector.list().join(', ')}`);
   }
 
   console.log('');
@@ -409,7 +409,7 @@ Example endpoints:
 
   // Use factory function to create tool with CURRENT OAuth providers
   // (tools.executeJavaScript has a static description from module load time)
-  agentTools.push(createExecuteJavaScriptTool(connectorRegistry));
+  agentTools.push(createExecuteJavaScriptTool());
 
   let instructions = 'You are a helpful, friendly, and knowledgeable AI assistant';
 
@@ -430,7 +430,7 @@ Example endpoints:
   instructions += '\n- Need complex data transformations';
   instructions += '\n\nIn execute_javascript, you have:';
   instructions += '\n- authenticatedFetch(url, options, provider) for OAuth-authenticated API calls';
-  instructions += `\n- Available OAuth providers: ${connectorRegistry.listConnectorNames().join(', ') || 'none (register providers first)'}`;
+  instructions += `\n- Available OAuth providers: ${Connector.list().join(', ') || 'none (register providers first)'}`;
   instructions += '\n- Standard JavaScript globals (JSON, Math, Date, etc.)';
   instructions += '\n- Console output (console.log)';
   instructions += '\n\nIMPORTANT: When user says "run code" or "execute code", you MUST use the execute_javascript tool, not describe what code would do.';
@@ -788,7 +788,7 @@ function showProviderInfo() {
  * Show Microsoft Graph info
  */
 function showMicrosoftGraphInfo() {
-  if (!connectorRegistry.has('microsoft')) {
+  if (!Connector.has('microsoft')) {
     console.log('\n❌ Microsoft Graph not configured\n');
     console.log('To enable Microsoft Graph:');
     console.log('  1. Set up app at https://portal.azure.com');
@@ -830,11 +830,11 @@ function showAvailableTools() {
   console.log('1. execute_javascript');
   console.log('   • Execute JavaScript code in sandbox');
   console.log('   • Access to authenticatedFetch');
-  console.log(`   • OAuth providers: ${connectorRegistry.listConnectorNames().join(', ') || 'none'}`);
+  console.log(`   • OAuth providers: ${Connector.list().join(', ') || 'none'}`);
   console.log('   • Use for: Complex logic, multi-API calls, data processing');
   console.log('');
 
-  if (connectorRegistry.has('microsoft')) {
+  if (Connector.has('microsoft')) {
     console.log('2. microsoft_graph');
     console.log('   • Access Microsoft 365 APIs');
     console.log('   • Endpoints: /v1.0/users, /v1.0/me/messages, etc.');
@@ -845,7 +845,7 @@ function showAvailableTools() {
   console.log('Example queries:');
   console.log('  "Execute JavaScript to calculate the Fibonacci sequence"');
   console.log('  "Run code to fetch and process API data"');
-  if (connectorRegistry.has('microsoft')) {
+  if (Connector.has('microsoft')) {
     console.log('  "How many users are in my org?" (uses microsoft_graph)');
   }
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -983,7 +983,7 @@ function showHelp() {
   console.log('  /streaming        - Toggle streaming mode (currently: ' + (streamingEnabled ? 'ON' : 'OFF') + ')');
   console.log('  /images           - Show pending images');
   console.log('  /help             - Show this help message');
-  if (connectorRegistry.has('microsoft')) {
+  if (Connector.has('microsoft')) {
     console.log('  /msgraph          - Microsoft Graph info');
   }
   console.log('  /tools            - Show available tools');

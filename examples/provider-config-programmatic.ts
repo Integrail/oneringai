@@ -5,7 +5,7 @@
  */
 
 import 'dotenv/config';
-import { Connector, Vendor, ProviderConfigAgent, connectorRegistry } from '../src/index.js';
+import { Connector, Vendor, ProviderConfigAgent } from '../src/index.js';
 
 async function main() {
   console.log('🔌 Programmatic OAuth Provider Configuration\n');
@@ -44,10 +44,10 @@ async function main() {
     console.log('');
 
     // Register it immediately!
-    console.log('📝 Registering provider...');
-    connectorRegistry.register(result.name, result.config);
-    console.log(`✅ Provider '${result.name}' registered!`);
-    console.log(`   Available providers: ${connectorRegistry.listConnectorNames().join(', ')}`);
+    console.log('📝 Registering connector...');
+    Connector.create({ name: result.name, ...result.config });
+    console.log(`✅ Connector '${result.name}' registered!`);
+    console.log(`   Available connectors: ${Connector.list().join(', ')}`);
   } catch (error) {
     console.error('❌ Error:', (error as Error).message);
   }

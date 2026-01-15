@@ -216,6 +216,27 @@ declare class Connector {
      * Set default token storage for OAuth connectors
      */
     static setDefaultStorage(storage: ITokenStorage): void;
+    /**
+     * Get all registered connectors
+     */
+    static listAll(): Connector[];
+    /**
+     * Get number of registered connectors
+     */
+    static size(): number;
+    /**
+     * Get connector descriptions formatted for tool parameters
+     * Useful for generating dynamic tool descriptions
+     */
+    static getDescriptionsForTools(): string;
+    /**
+     * Get connector info (for tools and documentation)
+     */
+    static getInfo(): Record<string, {
+        displayName: string;
+        description: string;
+        baseURL: string;
+    }>;
     readonly name: string;
     readonly vendor?: Vendor;
     readonly config: ConnectorConfig;
@@ -223,11 +244,19 @@ declare class Connector {
     private disposed;
     private constructor();
     /**
+     * Human-readable display name
+     */
+    get displayName(): string;
+    /**
+     * API base URL for this connector
+     */
+    get baseURL(): string;
+    /**
      * Get the API key (for api_key auth type)
      */
     getApiKey(): string;
     /**
-     * Get the current access token (for OAuth)
+     * Get the current access token (for OAuth, JWT, or API key)
      * Handles automatic refresh if needed
      */
     getToken(userId?: string): Promise<string>;
@@ -254,6 +283,7 @@ declare class Connector {
      */
     dispose(): void;
     private initOAuthManager;
+    private initJWTManager;
 }
 
 /**
@@ -919,198 +949,6 @@ declare class OAuthManager {
 }
 
 /**
- * Connector Interface
- *
- * Represents an authenticated connection to an external system API
- * (GitHub, Microsoft, Salesforce, Slack, etc.)
- *
- * IMPORTANT: This is DIFFERENT from IProvider (OpenAI, Anthropic)
- * - Providers: AI capabilities (text generation, vision, etc.)
- * - Connectors: External system authentication and API access
- */
-
-/**
- * Connector interface for external system authentication
- */
-interface IConnector {
-    /**
-     * Unique connector name (e.g., "github", "microsoft")
-     */
-    readonly name: string;
-    /**
-     * Human-readable display name (e.g., "GitHub API")
-     */
-    readonly displayName: string;
-    /**
-     * API base URL
-     */
-    readonly baseURL: string;
-    /**
-     * Connector configuration
-     */
-    readonly config: ConnectorConfig;
-    /**
-     * Get valid access token for API calls
-     * Automatically refreshes if expired (for OAuth)
-     *
-     * @param userId - Optional user identifier for multi-user support
-     * @returns Access token for API authorization
-     */
-    getToken(userId?: string): Promise<string>;
-    /**
-     * Check if current token is valid
-     *
-     * @param userId - Optional user identifier for multi-user support
-     * @returns True if token is valid and not expired
-     */
-    isTokenValid(userId?: string): Promise<boolean>;
-    /**
-     * Force refresh the token
-     * Only applicable for OAuth flows with refresh tokens
-     *
-     * @param userId - Optional user identifier for multi-user support
-     * @returns New access token
-     */
-    refreshToken(userId?: string): Promise<string>;
-    /**
-     * Start OAuth authorization flow (OAuth connectors only)
-     * Generates authorization URL for user to visit
-     *
-     * @param userId - User identifier for multi-user support
-     * @returns Authorization URL for user to visit
-     */
-    startAuthFlow?(userId?: string): Promise<string>;
-    /**
-     * Handle OAuth callback (OAuth connectors only)
-     * Exchanges authorization code for access token
-     *
-     * @param callbackUrl - Full callback URL with code and state
-     * @param userId - Optional user identifier (can be extracted from state)
-     */
-    handleCallback?(callbackUrl: string, userId?: string): Promise<void>;
-    /**
-     * Revoke token (if supported by connector)
-     *
-     * @param revocationUrl - Optional revocation endpoint
-     * @param userId - Optional user identifier
-     */
-    revokeToken?(revocationUrl?: string, userId?: string): Promise<void>;
-    /**
-     * Get connector metadata (rate limits, API version, etc.)
-     */
-    getMetadata?(): {
-        apiVersion?: string;
-        rateLimit?: {
-            requestsPerMinute?: number;
-            requestsPerDay?: number;
-        };
-        documentation?: string;
-    };
-}
-
-/**
- * Connector Registry - Global singleton for managing external system connectors
- *
- * Connectors provide authenticated access to external APIs (GitHub, Microsoft, Salesforce, etc.)
- * This is DIFFERENT from Providers (OpenAI, Anthropic) which provide AI capabilities.
- *
- * Register connectors once, use everywhere with authenticatedFetch and tools
- */
-
-/**
- * Connector registration config
- */
-type ConnectorRegistrationConfig = ConnectorConfig;
-/**
- * Connector Registry - manages all external system connectors
- */
-declare class ConnectorRegistry {
-    private static instance;
-    private connectors;
-    private constructor();
-    /**
-     * Get singleton instance
-     */
-    static getInstance(): ConnectorRegistry;
-    /**
-     * Register a connector for external system access
-     *
-     * @param name - Unique connector identifier (e.g., 'microsoft', 'google', 'github')
-     * @param config - Connector configuration
-     *
-     * @example
-     * ```typescript
-     * connectorRegistry.register('github', {
-     *   displayName: 'GitHub API',
-     *   description: 'Access GitHub repos and user data',
-     *   baseURL: 'https://api.github.com',
-     *   auth: {
-     *     type: 'oauth',
-     *     flow: 'authorization_code',
-     *     clientId: process.env.GITHUB_CLIENT_ID!,
-     *     clientSecret: process.env.GITHUB_CLIENT_SECRET,
-     *     tokenUrl: 'https://github.com/login/oauth/access_token',
-     *     authorizationUrl: 'https://github.com/login/oauth/authorize',
-     *     scope: 'user:email repo'
-     *   }
-     * });
-     * ```
-     */
-    register(name: string, config: ConnectorRegistrationConfig): void;
-    /**
-     * Get connector by name
-     *
-     * @throws Error if connector not found
-     */
-    get(name: string): IConnector;
-    /**
-     * Get OAuthManager for a connector (for internal use)
-     * @internal
-     */
-    getManager(name: string): OAuthManager;
-    /**
-     * Check if connector exists
-     */
-    has(name: string): boolean;
-    /**
-     * Get all registered connector names
-     */
-    listConnectorNames(): string[];
-    /**
-     * Get all registered connectors
-     */
-    listConnectors(): IConnector[];
-    /**
-     * Get connector descriptions formatted for tool parameters
-     */
-    getConnectorDescriptionsForTools(): string;
-    /**
-     * Get connector info (for tools and documentation)
-     */
-    getConnectorInfo(): Record<string, {
-        displayName: string;
-        description: string;
-        baseURL: string;
-    }>;
-    /**
-     * Unregister a connector
-     */
-    unregister(name: string): boolean;
-    /**
-     * Clear all connectors (useful for testing)
-     */
-    clear(): void;
-    /**
-     * Get number of registered connectors
-     */
-    size(): number;
-    /**
-     * Create OAuthManager from ConnectorAuth format
-     */
-    private createOAuthManagerFromConnectorAuth;
-}
-
-/**
  * In-memory token storage (default)
  * Tokens are encrypted in memory using AES-256-GCM
  */
@@ -1251,21 +1089,6 @@ declare function createAuthenticatedFetch(authProvider: string, userId?: string)
  * Use this to generate OAUTH_ENCRYPTION_KEY for your .env file
  */
 declare function generateEncryptionKey(): string;
-
-/**
- * Connectors - Authenticated access to external system APIs
- *
- * Provides unified interface for authentication across different systems:
- * - GitHub, Microsoft, Google, Salesforce, etc.
- *
- * Supports multiple authentication methods:
- * - OAuth 2.0 (Authorization Code + PKCE, Client Credentials, JWT Bearer)
- * - API Keys
- * - SAML (future)
- * - Kerberos (future)
- */
-
-declare const connectorRegistry: ConnectorRegistry;
 
 /**
  * Message builder utilities for constructing complex inputs
@@ -1449,14 +1272,12 @@ interface ExecuteJSResult {
     executionTime: number;
 }
 /**
- * Create an execute_javascript tool with the current connector registry state
+ * Create an execute_javascript tool with the current connector state
  * Use this factory when you need the tool to reflect currently registered connectors
- *
- * @param registry - ConnectorRegistry instance (defaults to global connectorRegistry)
  */
-declare function createExecuteJavaScriptTool(registry?: ConnectorRegistry): ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
+declare function createExecuteJavaScriptTool(): ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
 /**
- * Default executeJavaScript tool (uses global connectorRegistry)
+ * Default executeJavaScript tool
  * NOTE: The description is generated at module load time. If you register
  * connectors after importing this, use createExecuteJavaScriptTool() instead.
  */
@@ -1488,4 +1309,4 @@ declare namespace index {
   export { index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_executeJavaScript as executeJavaScript, index_jsonManipulator as jsonManipulator, index_webFetch as webFetch, index_webFetchJS as webFetchJS, index_webSearch as webSearch };
 }
 
-export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig, AgentResponse, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, ConnectorRegistry, ExecutionContext, ExecutionMetrics, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAsyncDisposable, type IDisposable, IProvider, ITextProvider, type ITokenStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, ProviderAuthError, ProviderCapabilities, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, hasClipboardImage, isVendor, readClipboardImage, index as tools };
+export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig, AgentResponse, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, ExecutionContext, ExecutionMetrics, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAsyncDisposable, type IDisposable, IProvider, ITextProvider, type ITokenStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, ProviderAuthError, ProviderCapabilities, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, hasClipboardImage, isVendor, readClipboardImage, index as tools };

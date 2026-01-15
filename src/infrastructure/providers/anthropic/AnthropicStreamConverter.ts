@@ -74,6 +74,11 @@ export class AnthropicStreamConverter {
   private handleMessageStart(event: Anthropic.MessageStartEvent): StreamEvent[] {
     this.responseId = event.message.id;
 
+    // Capture input_tokens from message_start (only place it's available)
+    if (event.message.usage) {
+      this.usage.input_tokens = event.message.usage.input_tokens || 0;
+    }
+
     return [
       {
         type: StreamEventType.RESPONSE_CREATED,
@@ -191,9 +196,9 @@ export class AnthropicStreamConverter {
    * Handle message_delta event (usage info, stop_reason)
    */
   private handleMessageDelta(event: Anthropic.MessageDeltaEvent): StreamEvent[] {
-    // Extract usage info (Anthropic sends cumulative usage in message_delta)
+    // Extract usage info (Anthropic sends output_tokens in message_delta)
+    // Note: input_tokens is only available in message_start, not in delta
     if (event.usage) {
-      this.usage.input_tokens = event.usage.input_tokens || 0;
       this.usage.output_tokens = event.usage.output_tokens || 0;
     }
 

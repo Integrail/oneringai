@@ -7,7 +7,7 @@ import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js
 import { LLMResponse } from '../../../domain/entities/Response.js';
 import { InputItem, MessageRole, OutputItem } from '../../../domain/entities/Message.js';
 import { Content, ContentType } from '../../../domain/entities/Content.js';
-import { Tool, FunctionToolDefinition } from '../../../domain/entities/Tool.js';
+import { Tool } from '../../../domain/entities/Tool.js';
 import { InvalidToolArgumentsError } from '../../../domain/errors/AIErrors.js';
 import { convertToolsToStandardFormat, transformForAnthropic } from '../shared/ToolConversionUtils.js';
 

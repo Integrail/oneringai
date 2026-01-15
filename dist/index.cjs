@@ -618,14 +618,13 @@ var JWTBearerFlow = class {
 
 // src/connectors/oauth/flows/StaticToken.ts
 var StaticTokenFlow = class {
+  token;
   constructor(config) {
-    this.config = config;
     if (!config.staticToken) {
       throw new Error("Static token flow requires staticToken in config");
     }
     this.token = config.staticToken;
   }
-  token;
   /**
    * Get token (always returns the static token)
    */
@@ -864,6 +863,43 @@ var Connector = class _Connector {
   static setDefaultStorage(storage) {
     _Connector.defaultStorage = storage;
   }
+  /**
+   * Get all registered connectors
+   */
+  static listAll() {
+    return Array.from(_Connector.registry.values());
+  }
+  /**
+   * Get number of registered connectors
+   */
+  static size() {
+    return _Connector.registry.size;
+  }
+  /**
+   * Get connector descriptions formatted for tool parameters
+   * Useful for generating dynamic tool descriptions
+   */
+  static getDescriptionsForTools() {
+    const connectors = _Connector.listAll();
+    if (connectors.length === 0) {
+      return "No connectors registered yet.";
+    }
+    return connectors.map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description || "No description"}`).join("\n");
+  }
+  /**
+   * Get connector info (for tools and documentation)
+   */
+  static getInfo() {
+    const info = {};
+    for (const connector of _Connector.registry.values()) {
+      info[connector.name] = {
+        displayName: connector.displayName,
+        description: connector.config.description || "",
+        baseURL: connector.baseURL
+      };
+    }
+    return info;
+  }
   // ============ Instance ============
   name;
   vendor;
@@ -876,7 +912,21 @@ var Connector = class _Connector {
     this.config = config;
     if (config.auth.type === "oauth") {
       this.initOAuthManager(config.auth);
+    } else if (config.auth.type === "jwt") {
+      this.initJWTManager(config.auth);
     }
+  }
+  /**
+   * Human-readable display name
+   */
+  get displayName() {
+    return this.config.displayName || this.name;
+  }
+  /**
+   * API base URL for this connector
+   */
+  get baseURL() {
+    return this.config.baseURL || "";
   }
   /**
    * Get the API key (for api_key auth type)
@@ -888,15 +938,12 @@ var Connector = class _Connector {
     return this.config.auth.apiKey;
   }
   /**
-   * Get the current access token (for OAuth)
+   * Get the current access token (for OAuth, JWT, or API key)
    * Handles automatic refresh if needed
    */
   async getToken(userId) {
     if (this.config.auth.type === "api_key") {
       return this.config.auth.apiKey;
-    }
-    if (this.config.auth.type === "jwt") {
-      throw new Error("JWT auth getToken() not yet implemented");
     }
     if (!this.oauthManager) {
       throw new Error(`OAuth manager not initialized for connector '${this.name}'`);
@@ -967,11 +1014,25 @@ var Connector = class _Connector {
       usePKCE: auth.usePKCE,
       privateKey: auth.privateKey,
       privateKeyPath: auth.privateKeyPath,
+      audience: auth.audience,
       refreshBeforeExpiry: auth.refreshBeforeExpiry,
       storage: _Connector.defaultStorage,
       storageKey: auth.storageKey ?? this.name
     };
     this.oauthManager = new OAuthManager(oauthConfig);
+  }
+  initJWTManager(auth) {
+    this.oauthManager = new OAuthManager({
+      flow: "jwt_bearer",
+      clientId: auth.clientId,
+      tokenUrl: auth.tokenUrl,
+      privateKey: auth.privateKey,
+      privateKeyPath: auth.privateKeyPath,
+      scope: auth.scope,
+      audience: auth.audience,
+      storage: _Connector.defaultStorage,
+      storageKey: this.name
+    });
   }
 };
 
@@ -2041,7 +2102,6 @@ var AnthropicStreamConverter = class {
    */
   handleMessageDelta(event) {
     if (event.usage) {
-      this.usage.input_tokens = event.usage.input_tokens || 0;
       this.usage.output_tokens = event.usage.output_tokens || 0;
     }
     return [];
@@ -2848,7 +2908,7 @@ var GoogleTextProvider = class extends BaseTextProvider {
           systemInstruction: googleRequest.systemInstruction,
           tools: googleRequest.tools,
           toolConfig: googleRequest.toolConfig,
-          generationConfig: googleRequest.generationConfig
+          ...googleRequest.generationConfig
         }
       });
       if (process.env.DEBUG_GOOGLE) {
@@ -2882,7 +2942,7 @@ var GoogleTextProvider = class extends BaseTextProvider {
           systemInstruction: googleRequest.systemInstruction,
           tools: googleRequest.tools,
           toolConfig: googleRequest.toolConfig,
-          generationConfig: googleRequest.generationConfig
+          ...googleRequest.generationConfig
         }
       });
       this.streamConverter.reset();
@@ -2980,7 +3040,7 @@ var VertexAITextProvider = class extends BaseTextProvider {
           systemInstruction: googleRequest.systemInstruction,
           tools: googleRequest.tools,
           toolConfig: googleRequest.toolConfig,
-          generationConfig: googleRequest.generationConfig
+          ...googleRequest.generationConfig
         }
       });
       return this.converter.convertResponse(result);
@@ -3002,7 +3062,7 @@ var VertexAITextProvider = class extends BaseTextProvider {
           systemInstruction: googleRequest.systemInstruction,
           tools: googleRequest.tools,
           toolConfig: googleRequest.toolConfig,
-          generationConfig: googleRequest.generationConfig
+          ...googleRequest.generationConfig
         }
       });
       const streamConverter = new GoogleStreamConverter();
@@ -5402,230 +5462,6 @@ var ProviderErrorMapper = class {
     return void 0;
   }
 };
-
-// src/connectors/oauth/OAuthConnector.ts
-var OAuthConnector = class {
-  constructor(name, config, oauthManager) {
-    this.name = name;
-    this.config = config;
-    this.oauthManager = oauthManager;
-  }
-  get displayName() {
-    return this.config.displayName || this.name;
-  }
-  get baseURL() {
-    return this.config.baseURL || "";
-  }
-  async getToken(userId) {
-    return this.oauthManager.getToken(userId);
-  }
-  async isTokenValid(userId) {
-    return this.oauthManager.isTokenValid(userId);
-  }
-  async refreshToken(userId) {
-    return this.oauthManager.refreshToken(userId);
-  }
-  async startAuthFlow(userId) {
-    return this.oauthManager.startAuthFlow(userId);
-  }
-  async handleCallback(callbackUrl, userId) {
-    return this.oauthManager.handleCallback(callbackUrl, userId);
-  }
-  async revokeToken(revocationUrl, userId) {
-    return this.oauthManager.revokeToken(revocationUrl, userId);
-  }
-  getMetadata() {
-    return {
-      apiVersion: this.config.apiVersion,
-      rateLimit: this.config.rateLimit,
-      documentation: this.config.documentation
-    };
-  }
-};
-
-// src/connectors/ConnectorRegistry.ts
-var ConnectorRegistry = class _ConnectorRegistry {
-  static instance;
-  connectors = /* @__PURE__ */ new Map();
-  constructor() {
-  }
-  /**
-   * Get singleton instance
-   */
-  static getInstance() {
-    if (!_ConnectorRegistry.instance) {
-      _ConnectorRegistry.instance = new _ConnectorRegistry();
-    }
-    return _ConnectorRegistry.instance;
-  }
-  /**
-   * Register a connector for external system access
-   *
-   * @param name - Unique connector identifier (e.g., 'microsoft', 'google', 'github')
-   * @param config - Connector configuration
-   *
-   * @example
-   * ```typescript
-   * connectorRegistry.register('github', {
-   *   displayName: 'GitHub API',
-   *   description: 'Access GitHub repos and user data',
-   *   baseURL: 'https://api.github.com',
-   *   auth: {
-   *     type: 'oauth',
-   *     flow: 'authorization_code',
-   *     clientId: process.env.GITHUB_CLIENT_ID!,
-   *     clientSecret: process.env.GITHUB_CLIENT_SECRET,
-   *     tokenUrl: 'https://github.com/login/oauth/access_token',
-   *     authorizationUrl: 'https://github.com/login/oauth/authorize',
-   *     scope: 'user:email repo'
-   *   }
-   * });
-   * ```
-   */
-  register(name, config) {
-    if (!name || name.trim().length === 0) {
-      throw new Error("Connector name cannot be empty");
-    }
-    if (this.connectors.has(name)) {
-      console.warn(`Connector '${name}' is already registered. Overwriting...`);
-    }
-    const oauthManager = this.createOAuthManagerFromConnectorAuth(name, config.auth);
-    const connector = new OAuthConnector(name, config, oauthManager);
-    this.connectors.set(name, connector);
-  }
-  /**
-   * Get connector by name
-   *
-   * @throws Error if connector not found
-   */
-  get(name) {
-    const connector = this.connectors.get(name);
-    if (!connector) {
-      const available = this.listConnectorNames();
-      const availableList = available.length > 0 ? available.join(", ") : "none";
-      throw new Error(
-        `Connector '${name}' not found. Available connectors: ${availableList}`
-      );
-    }
-    return connector;
-  }
-  /**
-   * Get OAuthManager for a connector (for internal use)
-   * @internal
-   */
-  getManager(name) {
-    const connector = this.get(name);
-    if (connector instanceof OAuthConnector) {
-      return connector.oauthManager;
-    }
-    throw new Error(`Connector '${name}' does not have an OAuthManager`);
-  }
-  /**
-   * Check if connector exists
-   */
-  has(name) {
-    return this.connectors.has(name);
-  }
-  /**
-   * Get all registered connector names
-   */
-  listConnectorNames() {
-    return Array.from(this.connectors.keys());
-  }
-  /**
-   * Get all registered connectors
-   */
-  listConnectors() {
-    return Array.from(this.connectors.values());
-  }
-  /**
-   * Get connector descriptions formatted for tool parameters
-   */
-  getConnectorDescriptionsForTools() {
-    const connectors = this.listConnectors();
-    if (connectors.length === 0) {
-      return "No connectors registered yet.";
-    }
-    return connectors.map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description}`).join("\n");
-  }
-  /**
-   * Get connector info (for tools and documentation)
-   */
-  getConnectorInfo() {
-    const info = {};
-    for (const [name, connector] of this.connectors) {
-      info[name] = {
-        displayName: connector.displayName,
-        description: connector.config.description,
-        baseURL: connector.baseURL
-      };
-    }
-    return info;
-  }
-  /**
-   * Unregister a connector
-   */
-  unregister(name) {
-    return this.connectors.delete(name);
-  }
-  /**
-   * Clear all connectors (useful for testing)
-   */
-  clear() {
-    this.connectors.clear();
-  }
-  /**
-   * Get number of registered connectors
-   */
-  size() {
-    return this.connectors.size;
-  }
-  // ==================== Internal Helpers ====================
-  /**
-   * Create OAuthManager from ConnectorAuth format
-   */
-  createOAuthManagerFromConnectorAuth(name, auth) {
-    if (auth.type === "api_key") {
-      return new OAuthManager({
-        flow: "static_token",
-        staticToken: auth.apiKey,
-        clientId: name,
-        tokenUrl: ""
-      });
-    }
-    if (auth.type === "oauth") {
-      const oauthConfig = {
-        flow: auth.flow,
-        clientId: auth.clientId,
-        clientSecret: auth.clientSecret,
-        tokenUrl: auth.tokenUrl,
-        authorizationUrl: auth.authorizationUrl,
-        redirectUri: auth.redirectUri,
-        scope: auth.scope,
-        usePKCE: auth.usePKCE,
-        privateKey: auth.privateKey,
-        privateKeyPath: auth.privateKeyPath,
-        audience: auth.audience,
-        refreshBeforeExpiry: auth.refreshBeforeExpiry,
-        storageKey: auth.storageKey
-      };
-      return new OAuthManager(oauthConfig);
-    }
-    if (auth.type === "jwt") {
-      return new OAuthManager({
-        flow: "jwt_bearer",
-        clientId: auth.clientId,
-        tokenUrl: auth.tokenUrl,
-        privateKey: auth.privateKey,
-        privateKeyPath: auth.privateKeyPath,
-        scope: auth.scope,
-        audience: auth.audience
-      });
-    }
-    throw new Error(`Unknown connector auth type: ${auth.type}`);
-  }
-};
-var connectorRegistry = ConnectorRegistry.getInstance();
 var FileStorage = class {
   directory;
   encryptionKey;
@@ -5729,7 +5565,7 @@ var FileStorage = class {
 
 // src/connectors/authenticatedFetch.ts
 async function authenticatedFetch(url, options, authProvider, userId) {
-  const connector = connectorRegistry.get(authProvider);
+  const connector = Connector.get(authProvider);
   const token = await connector.getToken(userId);
   const authOptions = {
     ...options,
@@ -5741,14 +5577,11 @@ async function authenticatedFetch(url, options, authProvider, userId) {
   return fetch(url, authOptions);
 }
 function createAuthenticatedFetch(authProvider, userId) {
-  connectorRegistry.get(authProvider);
+  Connector.get(authProvider);
   return async (url, options) => {
     return authenticatedFetch(url, options, authProvider, userId);
   };
 }
-
-// src/connectors/index.ts
-var connectorRegistry2 = ConnectorRegistry.getInstance();
 
 // src/utils/messageBuilder.ts
 var MessageBuilder = class {
@@ -7103,11 +6936,11 @@ function getEnvVarName(provider) {
       return "UNKNOWN_API_KEY";
   }
 }
-function generateDescription(registry) {
-  const connectors = registry.listConnectors();
+function generateDescription() {
+  const connectors = Connector.listAll();
   const connectorList = connectors.length > 0 ? connectors.map((c) => `   \u2022 "${c.name}": ${c.displayName}
-     ${c.config.description}
-     Base URL: ${c.baseURL}`).join("\n\n") : "   No connectors registered yet. Register connectors with connectorRegistry.register().";
+     ${c.config.description || "No description"}
+     Base URL: ${c.baseURL}`).join("\n\n") : "   No connectors registered yet. Register connectors with Connector.create().";
   return `Execute JavaScript code in a secure sandbox with connector integration.
 
 IMPORTANT: This tool runs JavaScript code in a sandboxed environment with authenticated access to external APIs via connectors.
@@ -7173,13 +7006,13 @@ RETURNS:
   executionTime: number
 }`;
 }
-function createExecuteJavaScriptTool(registry = connectorRegistry) {
+function createExecuteJavaScriptTool() {
   return {
     definition: {
       type: "function",
       function: {
         name: "execute_javascript",
-        description: generateDescription(registry),
+        description: generateDescription(),
         parameters: {
           type: "object",
           properties: {
@@ -7207,7 +7040,7 @@ function createExecuteJavaScriptTool(registry = connectorRegistry) {
       const startTime = Date.now();
       try {
         const timeout = Math.min(args.timeout || 1e4, 3e4);
-        const result = await executeInVM(args.code, args.input, timeout, logs, registry);
+        const result = await executeInVM(args.code, args.input, timeout, logs);
         return {
           success: true,
           result,
@@ -7226,8 +7059,8 @@ function createExecuteJavaScriptTool(registry = connectorRegistry) {
     }
   };
 }
-var executeJavaScript = createExecuteJavaScriptTool(connectorRegistry);
-async function executeInVM(code, input, timeout, logs, registry = connectorRegistry) {
+var executeJavaScript = createExecuteJavaScriptTool();
+async function executeInVM(code, input, timeout, logs) {
   const sandbox = {
     // Input/output
     input: input || {},
@@ -7242,15 +7075,15 @@ async function executeInVM(code, input, timeout, logs, registry = connectorRegis
     authenticatedFetch,
     // Standard fetch
     fetch: globalThis.fetch,
-    // Connector registry info (uses the provided registry)
+    // Connector info
     connectors: {
-      list: () => registry.listConnectorNames(),
+      list: () => Connector.list(),
       get: (name) => {
         try {
-          const connector = registry.get(name);
+          const connector = Connector.get(name);
           return {
             displayName: connector.displayName,
-            description: connector.config.description,
+            description: connector.config.description || "",
             baseURL: connector.baseURL
           };
         } catch {
@@ -7296,7 +7129,6 @@ exports.Agent = Agent;
 exports.BaseProvider = BaseProvider;
 exports.BaseTextProvider = BaseTextProvider;
 exports.Connector = Connector;
-exports.ConnectorRegistry = ConnectorRegistry;
 exports.ContentType = ContentType;
 exports.ExecutionContext = ExecutionContext;
 exports.FileStorage = FileStorage;
@@ -7326,7 +7158,6 @@ exports.VENDORS = VENDORS;
 exports.Vendor = Vendor;
 exports.assertNotDestroyed = assertNotDestroyed;
 exports.authenticatedFetch = authenticatedFetch;
-exports.connectorRegistry = connectorRegistry2;
 exports.createAuthenticatedFetch = createAuthenticatedFetch;
 exports.createExecuteJavaScriptTool = createExecuteJavaScriptTool;
 exports.createMessageWithImages = createMessageWithImages;

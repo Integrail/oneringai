@@ -2,7 +2,7 @@
  * Authenticated Fetch - Drop-in replacement for fetch() with OAuth authentication
  */
 
-import { connectorRegistry } from './ConnectorRegistry.js';
+import { Connector } from '../core/Connector.js';
 
 /**
  * Fetch with automatic OAuth authentication
@@ -44,7 +44,7 @@ export async function authenticatedFetch(
   userId?: string
 ): Promise<Response> {
   // Get connector from registry
-  const connector = connectorRegistry.get(authProvider);
+  const connector = Connector.get(authProvider);
 
   // Get OAuth token for the user (automatically refreshed if needed)
   const token = await connector.getToken(userId);
@@ -111,7 +111,7 @@ export function createAuthenticatedFetch(
   userId?: string
 ): (url: string | URL, options?: RequestInit) => Promise<Response> {
   // Validate provider exists at creation time
-  connectorRegistry.get(authProvider);
+  Connector.get(authProvider);
 
   return async (url: string | URL, options?: RequestInit) => {
     return authenticatedFetch(url, options, authProvider, userId);

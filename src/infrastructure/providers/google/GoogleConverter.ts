@@ -15,7 +15,7 @@ import { LLMResponse } from '../../../domain/entities/Response.js';
 import { InputItem, MessageRole, OutputItem } from '../../../domain/entities/Message.js';
 import { convertToolsToStandardFormat } from '../shared/ToolConversionUtils.js';
 import { Content, ContentType } from '../../../domain/entities/Content.js';
-import { Tool, FunctionToolDefinition } from '../../../domain/entities/Tool.js';
+import { Tool } from '../../../domain/entities/Tool.js';
 import { fetchImageAsBase64 } from '../../../utils/imageUtils.js';
 import { InvalidToolArgumentsError } from '../../../domain/errors/AIErrors.js';
 

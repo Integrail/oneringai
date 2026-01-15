@@ -1,27 +1,24 @@
 /**
- * ConnectorRegistry Unit Tests
- * Tests connector registration, lookup, and management
+ * Connector Unit Tests
+ * Tests connector registration, lookup, and management using the unified Connector class
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ConnectorRegistry, connectorRegistry } from '@/connectors/ConnectorRegistry.js';
-import type { ConnectorConfig, ConnectorAuth } from '@/domain/entities/Connector.js';
+import { Connector } from '@/core/Connector.js';
+import type { ConnectorConfig } from '@/domain/entities/Connector.js';
 
-describe('ConnectorRegistry', () => {
-  // Use the singleton but clear it between tests
-  let registry: ConnectorRegistry;
-
+describe('Connector', () => {
   beforeEach(() => {
-    registry = ConnectorRegistry.getInstance();
-    registry.clear();
+    Connector.clear();
   });
 
   afterEach(() => {
-    registry.clear();
+    Connector.clear();
   });
 
   // Helper to create a valid API key connector config
-  const createApiKeyConfig = (overrides?: Partial<ConnectorConfig>): ConnectorConfig => ({
+  const createApiKeyConfig = (name: string, overrides?: Partial<ConnectorConfig>): ConnectorConfig & { name: string } => ({
+    name,
     displayName: 'Test API',
     description: 'A test API connector',
     baseURL: 'https://api.example.com',
@@ -32,83 +29,59 @@ describe('ConnectorRegistry', () => {
     ...overrides
   });
 
-  // Helper to create static token OAuth config
-  const createStaticTokenConfig = (overrides?: Partial<ConnectorConfig>): ConnectorConfig => ({
-    displayName: 'Static Token API',
-    description: 'An API with static token',
-    baseURL: 'https://api.static.com',
-    auth: {
-      type: 'oauth',
-      flow: 'static_token',
-      staticToken: 'sk-static-token',
-      clientId: 'static-client'
-    } as any,
-    ...overrides
-  });
+  describe('Static Registry', () => {
+    it('should use static registry pattern', () => {
+      Connector.create(createApiKeyConfig('test1'));
+      Connector.create(createApiKeyConfig('test2'));
 
-  describe('Singleton Pattern', () => {
-    it('should return the same instance', () => {
-      const instance1 = ConnectorRegistry.getInstance();
-      const instance2 = ConnectorRegistry.getInstance();
-
-      expect(instance1).toBe(instance2);
-    });
-
-    it('should export a global singleton', () => {
-      expect(connectorRegistry).toBe(ConnectorRegistry.getInstance());
+      expect(Connector.list()).toContain('test1');
+      expect(Connector.list()).toContain('test2');
     });
   });
 
   describe('Connector Registration', () => {
     it('should register a connector with API key auth', () => {
-      registry.register('test_api', createApiKeyConfig());
+      Connector.create(createApiKeyConfig('test_api'));
 
-      expect(registry.has('test_api')).toBe(true);
-      expect(registry.size()).toBe(1);
+      expect(Connector.has('test_api')).toBe(true);
+      expect(Connector.size()).toBe(1);
     });
 
     it('should register multiple connectors', () => {
-      registry.register('api1', createApiKeyConfig({ displayName: 'API 1' }));
-      registry.register('api2', createApiKeyConfig({ displayName: 'API 2' }));
-      registry.register('api3', createApiKeyConfig({ displayName: 'API 3' }));
+      Connector.create(createApiKeyConfig('api1', { displayName: 'API 1' }));
+      Connector.create(createApiKeyConfig('api2', { displayName: 'API 2' }));
+      Connector.create(createApiKeyConfig('api3', { displayName: 'API 3' }));
 
-      expect(registry.size()).toBe(3);
-      expect(registry.listConnectorNames()).toContain('api1');
-      expect(registry.listConnectorNames()).toContain('api2');
-      expect(registry.listConnectorNames()).toContain('api3');
+      expect(Connector.size()).toBe(3);
+      expect(Connector.list()).toContain('api1');
+      expect(Connector.list()).toContain('api2');
+      expect(Connector.list()).toContain('api3');
     });
 
     it('should throw on empty connector name', () => {
       expect(() => {
-        registry.register('', createApiKeyConfig());
-      }).toThrow(/cannot be empty/i);
+        Connector.create({ ...createApiKeyConfig(''), name: '' });
+      }).toThrow(/required/i);
     });
 
     it('should throw on whitespace-only connector name', () => {
       expect(() => {
-        registry.register('   ', createApiKeyConfig());
-      }).toThrow(/cannot be empty/i);
+        Connector.create({ ...createApiKeyConfig('   '), name: '   ' });
+      }).toThrow(/required/i);
     });
 
-    it('should warn and overwrite on duplicate registration', () => {
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    it('should throw on duplicate registration', () => {
+      Connector.create(createApiKeyConfig('duplicate', { displayName: 'Original' }));
 
-      registry.register('duplicate', createApiKeyConfig({ displayName: 'Original' }));
-      registry.register('duplicate', createApiKeyConfig({ displayName: 'Replacement' }));
-
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('already registered'));
-      expect(registry.size()).toBe(1);
-
-      const connector = registry.get('duplicate');
-      expect(connector.displayName).toBe('Replacement');
-
-      warnSpy.mockRestore();
+      expect(() => {
+        Connector.create(createApiKeyConfig('duplicate', { displayName: 'Replacement' }));
+      }).toThrow(/already exists/i);
     });
   });
 
   describe('Connector Lookup', () => {
     beforeEach(() => {
-      registry.register('github', createApiKeyConfig({
+      Connector.create(createApiKeyConfig('github', {
         displayName: 'GitHub API',
         description: 'Access GitHub repos',
         baseURL: 'https://api.github.com'
@@ -116,7 +89,7 @@ describe('ConnectorRegistry', () => {
     });
 
     it('should retrieve connector by name', () => {
-      const connector = registry.get('github');
+      const connector = Connector.get('github');
 
       expect(connector).toBeDefined();
       expect(connector.name).toBe('github');
@@ -126,24 +99,24 @@ describe('ConnectorRegistry', () => {
 
     it('should throw on unknown connector with helpful error', () => {
       expect(() => {
-        registry.get('nonexistent');
-      }).toThrow(/not found.*Available connectors: github/);
+        Connector.get('nonexistent');
+      }).toThrow(/not found.*Available: github/);
     });
 
-    it('should return undefined for has() on unknown connector', () => {
-      expect(registry.has('nonexistent')).toBe(false);
+    it('should return false for has() on unknown connector', () => {
+      expect(Connector.has('nonexistent')).toBe(false);
     });
   });
 
   describe('Connector Listing', () => {
     beforeEach(() => {
-      registry.register('github', createApiKeyConfig({ displayName: 'GitHub' }));
-      registry.register('microsoft', createApiKeyConfig({ displayName: 'Microsoft Graph' }));
-      registry.register('google', createApiKeyConfig({ displayName: 'Google APIs' }));
+      Connector.create(createApiKeyConfig('github', { displayName: 'GitHub' }));
+      Connector.create(createApiKeyConfig('microsoft', { displayName: 'Microsoft Graph' }));
+      Connector.create(createApiKeyConfig('google', { displayName: 'Google APIs' }));
     });
 
     it('should list all connector names', () => {
-      const names = registry.listConnectorNames();
+      const names = Connector.list();
 
       expect(names).toHaveLength(3);
       expect(names).toContain('github');
@@ -152,14 +125,14 @@ describe('ConnectorRegistry', () => {
     });
 
     it('should list all connectors', () => {
-      const connectors = registry.listConnectors();
+      const connectors = Connector.listAll();
 
       expect(connectors).toHaveLength(3);
       expect(connectors.map(c => c.name)).toContain('github');
     });
 
     it('should return connector info for tools', () => {
-      const info = registry.getConnectorInfo();
+      const info = Connector.getInfo();
 
       expect(Object.keys(info)).toHaveLength(3);
       expect(info.github.displayName).toBe('GitHub');
@@ -167,7 +140,7 @@ describe('ConnectorRegistry', () => {
     });
 
     it('should return formatted descriptions for tools', () => {
-      const descriptions = registry.getConnectorDescriptionsForTools();
+      const descriptions = Connector.getDescriptionsForTools();
 
       expect(descriptions).toContain('github');
       expect(descriptions).toContain('GitHub');
@@ -175,67 +148,71 @@ describe('ConnectorRegistry', () => {
     });
 
     it('should handle empty registry for descriptions', () => {
-      registry.clear();
+      Connector.clear();
 
-      const descriptions = registry.getConnectorDescriptionsForTools();
+      const descriptions = Connector.getDescriptionsForTools();
 
       expect(descriptions).toContain('No connectors registered');
     });
   });
 
-  describe('Connector Unregistration', () => {
+  describe('Connector Removal', () => {
     beforeEach(() => {
-      registry.register('removable', createApiKeyConfig());
+      Connector.create(createApiKeyConfig('removable'));
     });
 
-    it('should unregister connector', () => {
-      expect(registry.has('removable')).toBe(true);
+    it('should remove connector', () => {
+      expect(Connector.has('removable')).toBe(true);
 
-      const result = registry.unregister('removable');
+      const result = Connector.remove('removable');
 
       expect(result).toBe(true);
-      expect(registry.has('removable')).toBe(false);
+      expect(Connector.has('removable')).toBe(false);
     });
 
-    it('should return false when unregistering non-existent connector', () => {
-      const result = registry.unregister('nonexistent');
+    it('should return false when removing non-existent connector', () => {
+      const result = Connector.remove('nonexistent');
 
       expect(result).toBe(false);
     });
 
     it('should clear all connectors', () => {
-      registry.register('keep1', createApiKeyConfig());
-      registry.register('keep2', createApiKeyConfig());
+      Connector.create(createApiKeyConfig('keep1'));
+      Connector.create(createApiKeyConfig('keep2'));
 
-      expect(registry.size()).toBe(3);
+      expect(Connector.size()).toBe(3);
 
-      registry.clear();
+      Connector.clear();
 
-      expect(registry.size()).toBe(0);
-      expect(registry.listConnectorNames()).toHaveLength(0);
+      expect(Connector.size()).toBe(0);
+      expect(Connector.list()).toHaveLength(0);
     });
   });
 
-  describe('OAuth Manager Access', () => {
-    it('should provide OAuthManager for connector', () => {
-      registry.register('oauth_test', createApiKeyConfig());
+  describe('Token Access', () => {
+    it('should return API key via getToken()', async () => {
+      Connector.create(createApiKeyConfig('apikey_test'));
 
-      const manager = registry.getManager('oauth_test');
+      const connector = Connector.get('apikey_test');
+      const token = await connector.getToken();
 
-      expect(manager).toBeDefined();
-      expect(typeof manager.getToken).toBe('function');
+      expect(token).toBe('test-api-key-123');
     });
 
-    it('should throw when getting manager for unknown connector', () => {
-      expect(() => {
-        registry.getManager('unknown');
-      }).toThrow(/not found/i);
+    it('should return API key via getApiKey()', () => {
+      Connector.create(createApiKeyConfig('apikey_test2'));
+
+      const connector = Connector.get('apikey_test2');
+      const apiKey = connector.getApiKey();
+
+      expect(apiKey).toBe('test-api-key-123');
     });
   });
 
   describe('Auth Type Handling', () => {
     it('should handle api_key auth type', () => {
-      registry.register('apikey', {
+      Connector.create({
+        name: 'apikey',
         displayName: 'API Key Service',
         description: 'Uses API key',
         baseURL: 'https://api.example.com',
@@ -245,13 +222,13 @@ describe('ConnectorRegistry', () => {
         }
       });
 
-      const connector = registry.get('apikey');
+      const connector = Connector.get('apikey');
       expect(connector).toBeDefined();
     });
 
     it('should handle oauth auth type (client_credentials)', () => {
-      // Note: client_credentials flow requires clientSecret
-      registry.register('oauth', {
+      Connector.create({
+        name: 'oauth',
         displayName: 'OAuth Service',
         description: 'Uses OAuth',
         baseURL: 'https://oauth.example.com',
@@ -264,36 +241,59 @@ describe('ConnectorRegistry', () => {
         }
       });
 
-      const connector = registry.get('oauth');
+      const connector = Connector.get('oauth');
       expect(connector).toBeDefined();
-    });
-
-    it('should throw on unknown auth type', () => {
-      expect(() => {
-        registry.register('bad_auth', {
-          displayName: 'Bad Auth',
-          description: 'Invalid auth type',
-          baseURL: 'https://api.example.com',
-          auth: {
-            type: 'unknown' as any
-          }
-        });
-      }).toThrow(/unknown.*auth type/i);
     });
   });
 
   describe('Size and State', () => {
     it('should report correct size', () => {
-      expect(registry.size()).toBe(0);
+      expect(Connector.size()).toBe(0);
 
-      registry.register('a', createApiKeyConfig());
-      expect(registry.size()).toBe(1);
+      Connector.create(createApiKeyConfig('a'));
+      expect(Connector.size()).toBe(1);
 
-      registry.register('b', createApiKeyConfig());
-      expect(registry.size()).toBe(2);
+      Connector.create(createApiKeyConfig('b'));
+      expect(Connector.size()).toBe(2);
 
-      registry.unregister('a');
-      expect(registry.size()).toBe(1);
+      Connector.remove('a');
+      expect(Connector.size()).toBe(1);
+    });
+  });
+
+  describe('Instance Properties', () => {
+    it('should expose displayName getter', () => {
+      Connector.create(createApiKeyConfig('display_test', { displayName: 'My Display Name' }));
+
+      const connector = Connector.get('display_test');
+      expect(connector.displayName).toBe('My Display Name');
+    });
+
+    it('should fallback to name for displayName', () => {
+      Connector.create({
+        name: 'no_display',
+        auth: { type: 'api_key', apiKey: 'key' }
+      });
+
+      const connector = Connector.get('no_display');
+      expect(connector.displayName).toBe('no_display');
+    });
+
+    it('should expose baseURL getter', () => {
+      Connector.create(createApiKeyConfig('base_test', { baseURL: 'https://custom.api.com' }));
+
+      const connector = Connector.get('base_test');
+      expect(connector.baseURL).toBe('https://custom.api.com');
+    });
+
+    it('should return empty string for missing baseURL', () => {
+      Connector.create({
+        name: 'no_base',
+        auth: { type: 'api_key', apiKey: 'key' }
+      });
+
+      const connector = Connector.get('no_base');
+      expect(connector.baseURL).toBe('');
     });
   });
 });

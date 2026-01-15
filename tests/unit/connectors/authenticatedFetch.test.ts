@@ -6,18 +6,16 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setGlobalDispatcher, getGlobalDispatcher, MockAgent, MockPool } from 'undici';
 import { authenticatedFetch, createAuthenticatedFetch } from '@/connectors/authenticatedFetch.js';
-import { ConnectorRegistry } from '@/connectors/ConnectorRegistry.js';
+import { Connector } from '@/core/Connector.js';
 import type { ConnectorConfig } from '@/domain/entities/Connector.js';
 
 describe('authenticatedFetch', () => {
-  let registry: ConnectorRegistry;
   let mockAgent: MockAgent;
   let mockPool: MockPool;
   let originalDispatcher: any;
 
   beforeEach(() => {
-    registry = ConnectorRegistry.getInstance();
-    registry.clear();
+    Connector.clear();
 
     // Set up mock HTTP
     mockAgent = new MockAgent();
@@ -27,8 +25,9 @@ describe('authenticatedFetch', () => {
     originalDispatcher = getGlobalDispatcher();
     setGlobalDispatcher(mockAgent);
 
-    // Register a test connector with static token (for simplicity)
-    registry.register('test_api', {
+    // Register a test connector with API key auth
+    Connector.create({
+      name: 'test_api',
       displayName: 'Test API',
       description: 'Test API for testing',
       baseURL: 'https://api.example.com',
@@ -40,7 +39,7 @@ describe('authenticatedFetch', () => {
   });
 
   afterEach(() => {
-    registry.clear();
+    Connector.clear();
     setGlobalDispatcher(originalDispatcher);
   });
 
@@ -170,15 +169,15 @@ describe('authenticatedFetch', () => {
 
   describe('Multi-User Support', () => {
     beforeEach(() => {
-      // Register a connector that simulates multi-user (using static token for simplicity)
-      // In real scenarios, different users would have different tokens
-      registry.register('multi_user_api', {
+      // Register a connector that simulates multi-user (using API key for simplicity)
+      Connector.create({
+        name: 'multi_user_api',
         displayName: 'Multi-User API',
         description: 'Supports multiple users',
         baseURL: 'https://api.example.com',
         auth: {
           type: 'api_key',
-          apiKey: 'user-agnostic-token' // In reality, this would be user-specific
+          apiKey: 'user-agnostic-token'
         }
       });
     });
@@ -247,7 +246,8 @@ describe('authenticatedFetch', () => {
 
     it('should create multiple independent fetch functions', async () => {
       // Register second connector
-      registry.register('other_api', {
+      Connector.create({
+        name: 'other_api',
         displayName: 'Other API',
         description: 'Another API',
         baseURL: 'https://api.other.com',
@@ -292,8 +292,6 @@ describe('authenticatedFetch', () => {
     });
 
     it('should pass through request options', async () => {
-      let capturedMethod = '';
-
       mockPool
         .intercept({
           path: '/create',
@@ -369,7 +367,7 @@ describe('authenticatedFetch', () => {
           { method: 'GET' },
           'test_api'
         )
-      ).rejects.toThrow(); // Network errors are wrapped by fetch
+      ).rejects.toThrow();
     });
   });
 });

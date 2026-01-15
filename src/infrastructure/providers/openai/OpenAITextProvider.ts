@@ -17,7 +17,7 @@ import {
 import { StreamEvent, StreamEventType } from '../../../domain/entities/StreamEvent.js';
 
 export class OpenAITextProvider extends BaseTextProvider {
-  readonly name = 'openai';
+  readonly name: string = 'openai';
   readonly capabilities: ProviderCapabilities = {
     text: true,
     images: true,

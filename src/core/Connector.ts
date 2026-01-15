@@ -91,6 +91,53 @@ export class Connector {
     Connector.defaultStorage = storage;
   }
 
+  /**
+   * Get all registered connectors
+   */
+  static listAll(): Connector[] {
+    return Array.from(Connector.registry.values());
+  }
+
+  /**
+   * Get number of registered connectors
+   */
+  static size(): number {
+    return Connector.registry.size;
+  }
+
+  /**
+   * Get connector descriptions formatted for tool parameters
+   * Useful for generating dynamic tool descriptions
+   */
+  static getDescriptionsForTools(): string {
+    const connectors = Connector.listAll();
+
+    if (connectors.length === 0) {
+      return 'No connectors registered yet.';
+    }
+
+    return connectors
+      .map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description || 'No description'}`)
+      .join('\n');
+  }
+
+  /**
+   * Get connector info (for tools and documentation)
+   */
+  static getInfo(): Record<string, { displayName: string; description: string; baseURL: string }> {
+    const info: Record<string, { displayName: string; description: string; baseURL: string }> = {};
+
+    for (const connector of Connector.registry.values()) {
+      info[connector.name] = {
+        displayName: connector.displayName,
+        description: connector.config.description || '',
+        baseURL: connector.baseURL,
+      };
+    }
+
+    return info;
+  }
+
   // ============ Instance ============
 
   readonly name: string;
@@ -105,10 +152,26 @@ export class Connector {
     this.vendor = config.vendor;
     this.config = config;
 
-    // Initialize OAuth manager if needed
+    // Initialize OAuth manager for OAuth and JWT auth types
     if (config.auth.type === 'oauth') {
       this.initOAuthManager(config.auth);
+    } else if (config.auth.type === 'jwt') {
+      this.initJWTManager(config.auth);
     }
+  }
+
+  /**
+   * Human-readable display name
+   */
+  get displayName(): string {
+    return this.config.displayName || this.name;
+  }
+
+  /**
+   * API base URL for this connector
+   */
+  get baseURL(): string {
+    return this.config.baseURL || '';
   }
 
   /**
@@ -122,7 +185,7 @@ export class Connector {
   }
 
   /**
-   * Get the current access token (for OAuth)
+   * Get the current access token (for OAuth, JWT, or API key)
    * Handles automatic refresh if needed
    */
   async getToken(userId?: string): Promise<string> {
@@ -130,11 +193,7 @@ export class Connector {
       return this.config.auth.apiKey;
     }
 
-    if (this.config.auth.type === 'jwt') {
-      // JWT auth - token is generated on demand
-      throw new Error('JWT auth getToken() not yet implemented');
-    }
-
+    // OAuth and JWT both use OAuthManager
     if (!this.oauthManager) {
       throw new Error(`OAuth manager not initialized for connector '${this.name}'`);
     }
@@ -214,11 +273,27 @@ export class Connector {
       usePKCE: auth.usePKCE,
       privateKey: auth.privateKey,
       privateKeyPath: auth.privateKeyPath,
+      audience: auth.audience,
       refreshBeforeExpiry: auth.refreshBeforeExpiry,
       storage: Connector.defaultStorage,
       storageKey: auth.storageKey ?? this.name,
     };
 
     this.oauthManager = new OAuthManager(oauthConfig);
+  }
+
+  private initJWTManager(auth: ConnectorAuth & { type: 'jwt' }): void {
+    // JWT uses jwt_bearer flow via OAuthManager
+    this.oauthManager = new OAuthManager({
+      flow: 'jwt_bearer',
+      clientId: auth.clientId,
+      tokenUrl: auth.tokenUrl,
+      privateKey: auth.privateKey,
+      privateKeyPath: auth.privateKeyPath,
+      scope: auth.scope,
+      audience: auth.audience,
+      storage: Connector.defaultStorage,
+      storageKey: this.name,
+    });
   }
 }

@@ -8,7 +8,7 @@ import type { OAuthConfig } from '../types.js';
 export class StaticTokenFlow {
   private token: string;
 
-  constructor(private config: OAuthConfig) {
+  constructor(config: OAuthConfig) {
     if (!config.staticToken) {
       throw new Error('Static token flow requires staticToken in config');
     }

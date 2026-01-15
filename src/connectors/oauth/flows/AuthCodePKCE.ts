@@ -3,7 +3,6 @@
  * User authentication for web and mobile apps
  */
 
-import * as crypto from 'crypto';
 import { TokenStore } from '../domain/TokenStore.js';
 import { generatePKCE, generateState } from '../utils/pkce.js';
 import type { OAuthConfig } from '../types.js';

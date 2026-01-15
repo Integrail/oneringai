@@ -30,7 +30,7 @@ export class VertexAITextProvider extends BaseTextProvider {
 
   private client: GoogleGenAI;
   private converter: GoogleConverter;
-  private config: VertexAIConfig;
+  protected override config: VertexAIConfig;
 
   constructor(config: VertexAIConfig) {
     super(config);
@@ -73,7 +73,7 @@ export class VertexAITextProvider extends BaseTextProvider {
       const googleRequest = await this.converter.convertRequest(options);
 
       // Call Vertex AI using new SDK structure
-      // Note: contents goes at top level, tools/generationConfig go in config
+      // Note: contents goes at top level, generation config properties go directly in config
       const result = await this.client.models.generateContent({
         model: options.model,
         contents: googleRequest.contents,
@@ -81,7 +81,7 @@ export class VertexAITextProvider extends BaseTextProvider {
           systemInstruction: googleRequest.systemInstruction,
           tools: googleRequest.tools,
           toolConfig: googleRequest.toolConfig,
-          generationConfig: googleRequest.generationConfig,
+          ...googleRequest.generationConfig,
         },
       });
 
@@ -102,7 +102,7 @@ export class VertexAITextProvider extends BaseTextProvider {
       const googleRequest = await this.converter.convertRequest(options);
 
       // Create stream using new SDK
-      // Note: contents goes at top level, tools/generationConfig go in config
+      // Note: contents goes at top level, generation config properties go directly in config
       const stream = await this.client.models.generateContentStream({
         model: options.model,
         contents: googleRequest.contents,
@@ -110,7 +110,7 @@ export class VertexAITextProvider extends BaseTextProvider {
           systemInstruction: googleRequest.systemInstruction,
           tools: googleRequest.tools,
           toolConfig: googleRequest.toolConfig,
-          generationConfig: googleRequest.generationConfig,
+          ...googleRequest.generationConfig,
         },
       });
 

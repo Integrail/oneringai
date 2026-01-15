@@ -1,9 +1,9 @@
 /**
- * OAuth Tool Generator - Auto-generate tools for registered OAuth providers
+ * Tool Generator - Auto-generate tools for registered connectors
  */
 
 import { ToolFunction } from '../domain/entities/Tool.js';
-import { connectorRegistry } from './ConnectorRegistry.js';
+import { Connector } from '../core/Connector.js';
 import { authenticatedFetch } from './authenticatedFetch.js';
 
 interface APIRequestArgs {
@@ -41,7 +41,7 @@ export function generateWebAPITool(): ToolFunction<APIRequestArgs, APIRequestRes
 This tool automatically handles OAuth authentication for registered providers.
 
 REGISTERED PROVIDERS:
-${connectorRegistry.getConnectorDescriptionsForTools()}
+${Connector.getDescriptionsForTools()}
 
 HOW TO USE:
 1. Choose the appropriate authProvider based on which API you need to access
@@ -77,9 +77,9 @@ Create Salesforce account:
           properties: {
             authProvider: {
               type: 'string',
-              enum: connectorRegistry.listConnectorNames(),
+              enum: Connector.list(),
               description:
-                'Which OAuth provider to use for authentication. Choose based on the API you need to access.',
+                'Which connector to use for authentication. Choose based on the API you need to access.',
             },
             url: {
               type: 'string',
@@ -110,13 +110,13 @@ Create Salesforce account:
 
     execute: async (args: APIRequestArgs): Promise<APIRequestResult> => {
       try {
-        // Get provider info
-        const provider = connectorRegistry.get(args.authProvider);
+        // Get connector info
+        const connector = Connector.get(args.authProvider);
 
         // Build full URL
         const fullUrl = args.url.startsWith('http')
           ? args.url
-          : `${provider.baseURL}${args.url}`;
+          : `${connector.baseURL}${args.url}`;
 
         // Prepare request options
         const requestOptions: RequestInit = {

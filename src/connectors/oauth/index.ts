@@ -3,7 +3,6 @@
  */
 
 export { OAuthManager } from './OAuthManager.js';
-export { OAuthConnector } from './OAuthConnector.js';
 
 export type {
   OAuthConfig,

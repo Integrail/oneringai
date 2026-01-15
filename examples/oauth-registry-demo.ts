@@ -1,11 +1,11 @@
 /**
- * OAuth Registry & Authenticated Fetch Demo
+ * Connector Registry & Authenticated Fetch Demo
  *
  * Demonstrates:
- * - Registering multiple OAuth providers
- * - Using authenticatedFetch with provider names
- * - Auto-generated API tool with dynamic provider list
- * - AI agent choosing correct provider
+ * - Registering multiple OAuth connectors
+ * - Using authenticatedFetch with connector names
+ * - Auto-generated API tool with dynamic connector list
+ * - AI agent choosing correct connector
  */
 
 import 'dotenv/config';
@@ -13,21 +13,21 @@ import {
   Connector,
   Agent,
   Vendor,
-  connectorRegistry,
   authenticatedFetch,
   generateWebAPITool,
 } from '../src/index.js';
 
 async function main() {
-  console.log('🌐 OAuth Registry & Authenticated Fetch Demo\n');
+  console.log('🌐 Connector Registry & Authenticated Fetch Demo\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-  // ==================== Step 1: Register OAuth Providers ====================
-  console.log('Step 1: Registering OAuth Providers');
+  // ==================== Step 1: Register OAuth Connectors ====================
+  console.log('Step 1: Registering OAuth Connectors');
   console.log('─────────────────────────────────\n');
 
   // Register Microsoft Graph
-  connectorRegistry.register('microsoft', {
+  Connector.create({
+    name: 'microsoft',
     displayName: 'Microsoft Graph API',
     description: 'Access Microsoft 365: Outlook, OneDrive, Teams, Calendar',
     baseURL: 'https://graph.microsoft.com',
@@ -46,7 +46,8 @@ async function main() {
   console.log('✅ Registered: Microsoft Graph API');
 
   // Register Google
-  connectorRegistry.register('google', {
+  Connector.create({
+    name: 'google',
     displayName: 'Google APIs',
     description: 'Access Google Drive, Gmail, Calendar, Contacts',
     baseURL: 'https://www.googleapis.com',
@@ -65,7 +66,8 @@ async function main() {
   console.log('✅ Registered: Google APIs');
 
   // Register GitHub
-  connectorRegistry.register('github', {
+  Connector.create({
+    name: 'github',
     displayName: 'GitHub API',
     description: 'Access GitHub repositories, issues, pull requests, gists',
     baseURL: 'https://api.github.com',
@@ -84,7 +86,8 @@ async function main() {
   console.log('✅ Registered: GitHub API');
 
   // Register Salesforce (Client Credentials example)
-  connectorRegistry.register('salesforce', {
+  Connector.create({
+    name: 'salesforce',
     displayName: 'Salesforce API',
     description: 'Access Salesforce CRM: accounts, contacts, opportunities, leads',
     baseURL: 'https://yourinstance.salesforce.com',
@@ -99,13 +102,13 @@ async function main() {
 
   console.log('✅ Registered: Salesforce API\n');
 
-  // ==================== Step 2: List Registered Providers ====================
-  console.log('Step 2: Listing Registered Providers');
+  // ==================== Step 2: List Registered Connectors ====================
+  console.log('Step 2: Listing Registered Connectors');
   console.log('─────────────────────────────────\n');
 
-  console.log('Provider Names:', connectorRegistry.listConnectorNames());
-  console.log('\nProvider Info:');
-  console.log(JSON.stringify(connectorRegistry.getProviderInfo(), null, 2));
+  console.log('Connector Names:', Connector.list());
+  console.log('\nConnector Info:');
+  console.log(JSON.stringify(Connector.getInfo(), null, 2));
   console.log('');
 
   // ==================== Step 3: Show Tool Description ====================
@@ -113,8 +116,8 @@ async function main() {
   console.log('Step 3: Dynamic Tool Description');
   console.log('─────────────────────────────────\n');
 
-  console.log('Provider descriptions for tools:\n');
-  console.log(connectorRegistry.getProviderDescriptionsForTools());
+  console.log('Connector descriptions for tools:\n');
+  console.log(Connector.getDescriptionsForTools());
   console.log('');
 
   // ==================== Step 4: Generate API Tool ====================
@@ -125,13 +128,13 @@ async function main() {
   const apiTool = generateWebAPITool();
 
   console.log('Tool name:', apiTool.definition.function.name);
-  console.log('Supported auth providers:', apiTool.definition.function.parameters.properties.authProvider.enum);
+  console.log('Supported connectors:', apiTool.definition.function.parameters.properties.authProvider.enum);
   console.log('\nThe AI agent can now call ANY registered OAuth API!\n');
 
   // ==================== Step 5: Example with AI Agent ====================
   if (process.env.OPENAI_API_KEY) {
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-    console.log('Step 5: AI Agent with OAuth Registry');
+    console.log('Step 5: AI Agent with Connector Registry');
     console.log('─────────────────────────────────\n');
 
     Connector.create({
@@ -145,17 +148,17 @@ async function main() {
       model: 'gpt-4',
       tools: [apiTool],
       instructions:
-        'You have access to multiple OAuth-authenticated APIs. When the user asks to access data from a service, choose the appropriate authProvider and make the request.',
+        'You have access to multiple OAuth-authenticated APIs. When the user asks to access data from a service, choose the appropriate connector and make the request.',
     });
 
     console.log('Agent created with api_request tool');
-    console.log('Available providers:', connectorRegistry.listConnectorNames());
-    console.log('\nThe agent can intelligently choose which OAuth provider to use based on the user request!');
+    console.log('Available connectors:', Connector.list());
+    console.log('\nThe agent can intelligently choose which connector to use based on the user request!');
     console.log('');
     console.log('Examples:');
-    console.log('  "Get my GitHub repos" → Uses github provider');
-    console.log('  "Read my emails" → Uses microsoft provider');
-    console.log('  "List my Google Drive files" → Uses google provider');
+    console.log('  "Get my GitHub repos" → Uses github connector');
+    console.log('  "Read my emails" → Uses microsoft connector');
+    console.log('  "List my Google Drive files" → Uses google connector');
     console.log('');
   }
 
@@ -170,7 +173,7 @@ async function main() {
 const response = await authenticatedFetch(
   'https://graph.microsoft.com/v1.0/me',
   { method: 'GET' },
-  'microsoft'  // Provider name
+  'microsoft'  // Connector name
 );
 
 const userData = await response.json();
@@ -191,10 +194,10 @@ const emails = await msftFetch('https://graph.microsoft.com/v1.0/me/messages');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   console.log('Key Features:');
-  console.log('  ✅ Global OAuth registry (register once, use everywhere)');
+  console.log('  ✅ Global connector registry (register once, use everywhere)');
   console.log('  ✅ Authenticated fetch (same API as fetch + auth)');
-  console.log('  ✅ Auto-generated tools (dynamic provider lists)');
-  console.log('  ✅ AI chooses correct provider');
+  console.log('  ✅ Auto-generated tools (dynamic connector lists)');
+  console.log('  ✅ AI chooses correct connector');
   console.log('  ✅ Encrypted token storage');
   console.log('');
 
@@ -206,7 +209,7 @@ const emails = await msftFetch('https://graph.microsoft.com/v1.0/me/messages');
   console.log('');
 
   // Cleanup
-  connectorRegistry.clear();
+  Connector.clear();
 }
 
 main().catch(console.error);

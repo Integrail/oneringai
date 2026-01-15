@@ -1,33 +1,18 @@
 /**
- * Connectors - Authenticated access to external system APIs
+ * Connectors - OAuth and authentication utilities
  *
- * Provides unified interface for authentication across different systems:
- * - GitHub, Microsoft, Google, Salesforce, etc.
+ * Provides OAuth 2.0 infrastructure for authenticated API access.
+ * Use Connector.create() from '@oneringai/agents' for connector registration.
  *
- * Supports multiple authentication methods:
+ * Supports:
  * - OAuth 2.0 (Authorization Code + PKCE, Client Credentials, JWT Bearer)
  * - API Keys
- * - SAML (future)
- * - Kerberos (future)
+ * - JWT Bearer tokens
  */
 
-// Registry
-export {
-  ConnectorRegistry,
-} from './ConnectorRegistry.js';
-
-// Export singleton instance
-import { ConnectorRegistry } from './ConnectorRegistry.js';
-export const connectorRegistry = ConnectorRegistry.getInstance();
-
-export type {
-  ConnectorRegistrationConfig,
-} from './ConnectorRegistry.js';
-
-// OAuth connectors
+// OAuth manager
 export {
   OAuthManager,
-  OAuthConnector,
 } from './oauth/index.js';
 
 export type {

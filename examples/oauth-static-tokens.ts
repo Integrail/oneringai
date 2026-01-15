@@ -1,82 +1,76 @@
 /**
- * OAuth Registry with Static Tokens
+ * Connector Registry with Static Tokens
  *
- * Demonstrates registering static API key providers (OpenAI, Anthropic, etc.)
- * alongside OAuth providers for unified authenticated fetch interface
+ * Demonstrates registering static API key connectors (OpenAI, Anthropic, etc.)
+ * alongside OAuth connectors for unified authenticated fetch interface
  */
 
 import 'dotenv/config';
 import {
-  connectorRegistry,
-  authenticatedFetch,
-  generateWebAPITool,
   Connector,
   Agent,
   Vendor,
+  authenticatedFetch,
+  generateWebAPITool,
 } from '../src/index.js';
 
 async function main() {
-  console.log('🔑 OAuth Registry with Static Tokens Demo\n');
+  console.log('🔑 Connector Registry with Static Tokens Demo\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-  // ==================== Register Static Token Providers ====================
-  console.log('Registering Static Token Providers');
+  // ==================== Register Static Token Connectors ====================
+  console.log('Registering Static Token Connectors');
   console.log('─────────────────────────────────\n');
 
-  // Register OpenAI
-  connectorRegistry.register('openai-api', {
+  // Register OpenAI API connector
+  Connector.create({
+    name: 'openai-api',
     displayName: 'OpenAI API',
     description: 'Access OpenAI: models, completions, embeddings, fine-tuning',
     baseURL: 'https://api.openai.com/v1',
     auth: {
-      type: 'oauth',
-      flow: 'static_token',
-      staticToken: process.env.OPENAI_API_KEY || 'sk-demo-key',
-      clientId: 'openai',  // Just for identification
-      tokenUrl: ''  // Not used for static tokens
+      type: 'api_key',
+      apiKey: process.env.OPENAI_API_KEY || 'sk-demo-key',
     },
   });
 
-  console.log('✅ Registered: OpenAI API (static token)');
+  console.log('✅ Registered: OpenAI API (API key)');
 
-  // Register Anthropic
-  connectorRegistry.register('anthropic-api', {
+  // Register Anthropic API connector
+  Connector.create({
+    name: 'anthropic-api',
     displayName: 'Anthropic API',
     description: 'Access Anthropic Claude: messages, completions',
     baseURL: 'https://api.anthropic.com/v1',
     auth: {
-      type: 'oauth',
-      flow: 'static_token',
-      staticToken: process.env.ANTHROPIC_API_KEY || 'sk-ant-demo-key',
-      clientId: 'anthropic',
-      tokenUrl: ''
+      type: 'api_key',
+      apiKey: process.env.ANTHROPIC_API_KEY || 'sk-ant-demo-key',
     },
   });
 
-  console.log('✅ Registered: Anthropic API (static token)');
+  console.log('✅ Registered: Anthropic API (API key)');
 
-  // Register a custom API with static token
-  connectorRegistry.register('custom-api', {
+  // Register a custom API with API key
+  Connector.create({
+    name: 'custom-api',
     displayName: 'Custom API',
-    description: 'Your custom API with static token',
+    description: 'Your custom API with API key',
     baseURL: 'https://api.custom.com/v1',
     auth: {
-      type: 'oauth',
-      flow: 'static_token',
-      staticToken: process.env.CUSTOM_API_KEY || 'custom-api-key',
-      clientId: 'custom',
-      tokenUrl: ''
+      type: 'api_key',
+      apiKey: process.env.CUSTOM_API_KEY || 'custom-api-key',
     },
   });
 
-  console.log('✅ Registered: Custom API (static token)\n');
+  console.log('✅ Registered: Custom API (API key)\n');
 
-  // ==================== Mix with OAuth Providers ====================
-  console.log('Registering OAuth Providers');
+  // ==================== Mix with OAuth Connectors ====================
+  console.log('Registering OAuth Connectors');
   console.log('─────────────────────────────────\n');
 
   // Register Microsoft (OAuth)
-  connectorRegistry.register('microsoft', {
+  Connector.create({
+    name: 'microsoft',
     displayName: 'Microsoft Graph',
     description: 'Access Microsoft 365: mail, calendar, files',
     baseURL: 'https://graph.microsoft.com',
@@ -94,17 +88,17 @@ async function main() {
 
   console.log('✅ Registered: Microsoft Graph (OAuth)\n');
 
-  // ==================== List All Providers ====================
+  // ==================== List All Connectors ====================
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
-  console.log('All Registered Providers (Mixed):');
+  console.log('All Registered Connectors (Mixed):');
   console.log('─────────────────────────────────\n');
 
-  const providers = connectorRegistry.listConnectors();
-  providers.forEach((p) => {
-    console.log(`• ${p.name}`);
-    console.log(`  Name: ${p.displayName}`);
-    console.log(`  Base URL: ${p.baseURL}`);
-    console.log(`  Description: ${p.description}`);
+  const connectors = Connector.listAll();
+  connectors.forEach((c) => {
+    console.log(`• ${c.name}`);
+    console.log(`  Name: ${c.displayName}`);
+    console.log(`  Base URL: ${c.baseURL}`);
+    console.log(`  Description: ${c.config.description || 'No description'}`);
     console.log('');
   });
 
@@ -113,12 +107,12 @@ async function main() {
   console.log('Using Authenticated Fetch');
   console.log('─────────────────────────────────\n');
 
-  // Example: Call OpenAI API with static token
+  // Example: Call OpenAI API with API key
   console.log('Example: Calling OpenAI API');
   console.log('const response = await authenticatedFetch(');
   console.log('  \'https://api.openai.com/v1/models\',');
   console.log('  { method: \'GET\' },');
-  console.log('  \'openai-api\'  // Uses static token automatically!');
+  console.log('  \'openai-api\'  // Uses API key automatically!');
   console.log(');\n');
 
   try {
@@ -148,9 +142,9 @@ async function main() {
   const apiTool = generateWebAPITool();
 
   console.log('Generated tool:', apiTool.definition.function.name);
-  console.log('Supports providers:', apiTool.definition.function.parameters.properties.authProvider.enum);
+  console.log('Supports connectors:', apiTool.definition.function.parameters.properties.authProvider.enum);
   console.log('\nTool description includes:\n');
-  console.log(connectorRegistry.getProviderDescriptionsForTools());
+  console.log(Connector.getDescriptionsForTools());
   console.log('');
 
   // ==================== Use with AI Agent ====================
@@ -159,6 +153,7 @@ async function main() {
     console.log('Using with AI Agent');
     console.log('─────────────────────────────────\n');
 
+    // Create AI provider connector
     Connector.create({
       name: 'openai',
       vendor: Vendor.OpenAI,
@@ -171,17 +166,17 @@ async function main() {
       tools: [apiTool],
       instructions: `You have access to multiple APIs through the api_request tool.
 
-Available providers: ${connectorRegistry.listConnectorNames().join(', ')}
+Available connectors: ${Connector.list().join(', ')}
 
-Choose the appropriate provider based on what the user asks for.`,
+Choose the appropriate connector based on what the user asks for.`,
     });
 
     console.log('Agent created with universal API tool');
     console.log('The agent can call:');
-    console.log('  • OpenAI API (via openai-api provider)');
-    console.log('  • Anthropic API (via anthropic-api provider)');
-    console.log('  • Microsoft Graph (via microsoft provider)');
-    console.log('  • Any other registered provider!');
+    console.log('  • OpenAI API (via openai-api connector)');
+    console.log('  • Anthropic API (via anthropic-api connector)');
+    console.log('  • Microsoft Graph (via microsoft connector)');
+    console.log('  • Any other registered connector!');
     console.log('');
   }
 
@@ -191,25 +186,25 @@ Choose the appropriate provider based on what the user asks for.`,
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   console.log('Key Benefits:');
-  console.log('  ✅ Unified interface for OAuth AND static tokens');
+  console.log('  ✅ Unified interface for OAuth AND API keys');
   console.log('  ✅ Register once, use everywhere');
   console.log('  ✅ One tool can call multiple APIs');
-  console.log('  ✅ AI chooses correct provider automatically');
+  console.log('  ✅ AI chooses correct connector automatically');
   console.log('');
 
   console.log('Usage:');
-  console.log('  // Register any API (OAuth or static)');
-  console.log('  connectorRegistry.register(name, config)');
+  console.log('  // Register any connector (OAuth or API key)');
+  console.log('  Connector.create({ name, auth, ... })');
   console.log('');
   console.log('  // Use unified fetch');
-  console.log('  authenticatedFetch(url, options, providerName)');
+  console.log('  authenticatedFetch(url, options, connectorName)');
   console.log('');
   console.log('  // Or generate universal tool');
   console.log('  const tool = generateWebAPITool()');
   console.log('');
 
   // Cleanup
-  connectorRegistry.clear();
+  Connector.clear();
 }
 
 main().catch(console.error);

@@ -7,7 +7,7 @@
 
 import 'dotenv/config';
 import {
-  connectorRegistry,
+  Connector,
   authenticatedFetch,
   createAuthenticatedFetch,
   FileStorage,
@@ -25,11 +25,18 @@ async function main() {
   console.log('🌐 Multi-User authenticatedFetch Example\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-  // ==================== Setup: Register OAuth Provider ====================
-  console.log('Step 1: Register GitHub OAuth Provider');
+  // Set default storage for all connectors
+  Connector.setDefaultStorage(new FileStorage({
+    directory: './tokens',
+    encryptionKey: process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey(),
+  }));
+
+  // ==================== Setup: Register OAuth Connector ====================
+  console.log('Step 1: Register GitHub OAuth Connector');
   console.log('────────────────────────────────────────────────────────────\n');
 
-  connectorRegistry.register('github', {
+  Connector.create({
+    name: 'github',
     displayName: 'GitHub API',
     description: 'Access GitHub repositories, issues, and user data',
     baseURL: 'https://api.github.com',
@@ -43,15 +50,11 @@ async function main() {
       redirectUri: 'http://localhost:3000/callback',
       scope: 'user:email repo',
       storageKey: 'github',
-      storage: new FileStorage({
-        directory: './tokens',
-        encryptionKey: process.env.OAUTH_ENCRYPTION_KEY || generateEncryptionKey(),
-      }),
     },
   });
 
-  console.log('✅ Provider registered: github');
-  console.log('   All users will use this provider with separate tokens\n');
+  console.log('✅ Connector registered: github');
+  console.log('   All users will use this connector with separate tokens\n');
 
   // ==================== Pattern 1: Direct authenticatedFetch ====================
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -192,11 +195,16 @@ async function main() {
   console.log('────────────────────────────────────────────────────────────\n');
 
   console.log('```typescript');
-  console.log('import { createExecuteJavaScriptTool } from "@oneringai/agents";\n');
+  console.log('import { Connector, Agent, Vendor, createExecuteJavaScriptTool } from "@oneringai/agents";\n');
   console.log('// Create agent with JavaScript execution tool');
-  console.log('const jsTool = createExecuteJavaScriptTool(connectorRegistry);\n');
-  console.log('const agent = await client.agents.create({');
-  console.log('  provider: "openai",');
+  console.log('const jsTool = createExecuteJavaScriptTool();\n');
+  console.log('Connector.create({');
+  console.log('  name: "openai",');
+  console.log('  vendor: Vendor.OpenAI,');
+  console.log('  auth: { type: "api_key", apiKey: process.env.OPENAI_API_KEY }');
+  console.log('});\n');
+  console.log('const agent = Agent.create({');
+  console.log('  connector: "openai",');
   console.log('  model: "gpt-4",');
   console.log('  tools: [jsTool],');
   console.log('  instructions: `You can access GitHub API using authenticatedFetch.');
@@ -229,13 +237,13 @@ async function main() {
   console.log('📚 API Summary');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-  console.log('authenticatedFetch(url, options, provider, userId?)');
+  console.log('authenticatedFetch(url, options, connector, userId?)');
   console.log('  • Direct function for making authenticated requests');
   console.log('  • userId is optional (defaults to single-user mode)');
   console.log('  • Auto-refreshes tokens');
   console.log('  • Returns: Promise<Response>\n');
 
-  console.log('createAuthenticatedFetch(provider, userId?)');
+  console.log('createAuthenticatedFetch(connector, userId?)');
   console.log('  • Creates reusable fetch function');
   console.log('  • Can bind to specific user');
   console.log('  • Returns: (url, options) => Promise<Response>\n');
@@ -245,7 +253,7 @@ async function main() {
   console.log('  ✅ Automatic token refresh');
   console.log('  ✅ Isolated token storage');
   console.log('  ✅ Backward compatible (userId optional)');
-  console.log('  ✅ Works with any OAuth provider');
+  console.log('  ✅ Works with any OAuth connector');
   console.log('  ✅ Clean Architecture (pluggable storage)');
 
   console.log('\n🚀 Production Checklist:');
@@ -257,6 +265,9 @@ async function main() {
   console.log('  [ ] Monitor token refresh rates');
 
   console.log('\n✨ Your OAuth system is now multi-user ready!');
+
+  // Cleanup
+  Connector.clear();
 }
 
 main().catch(console.error);

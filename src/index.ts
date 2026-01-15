@@ -154,7 +154,7 @@ export { BaseTextProvider } from './infrastructure/providers/base/BaseTextProvid
 export { ProviderErrorMapper } from './infrastructure/providers/base/ProviderErrorMapper.js';
 
 // ============ OAuth & Storage (for external APIs) ============
-export { OAuthManager, MemoryStorage, FileStorage, connectorRegistry, ConnectorRegistry } from './connectors/index.js';
+export { OAuthManager, MemoryStorage, FileStorage } from './connectors/index.js';
 export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch } from './connectors/index.js';
 export type { OAuthConfig, OAuthFlow, ITokenStorage, FileStorageConfig } from './connectors/index.js';
 
