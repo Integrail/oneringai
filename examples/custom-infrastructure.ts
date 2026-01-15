@@ -154,6 +154,11 @@ class MyAIProvider extends BaseTextProvider {
   private convertFromMyAIFormat(data: any): LLMResponse {
     // Convert your provider's response to our standard format
     return {
+      id: data.id || `myai-${Date.now()}`,
+      object: 'response',
+      created_at: Date.now(),
+      status: 'completed',
+      model: data.model || 'myai-default',
       output: [
         {
           type: 'message',
@@ -166,12 +171,12 @@ class MyAIProvider extends BaseTextProvider {
           ],
         },
       ],
+      output_text: data.choices[0].message.content,
       usage: {
         input_tokens: data.usage?.prompt_tokens || 0,
         output_tokens: data.usage?.completion_tokens || 0,
         total_tokens: data.usage?.total_tokens || 0,
       },
-      stop_reason: data.choices[0].finish_reason,
     };
   }
 }

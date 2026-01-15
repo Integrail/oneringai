@@ -4,45 +4,74 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createProvider, createProviderAsync } from '@/core/createProvider.js';
-import { Connector } from '@/core/Connector.js';
-import { Vendor } from '@/core/Vendor.js';
+
+// Create mock classes with vi.hoisted for proper hoisting
+const {
+  MockOpenAITextProvider,
+  MockAnthropicTextProvider,
+  MockGoogleTextProvider,
+  MockVertexAITextProvider,
+  MockGenericOpenAIProvider,
+} = vi.hoisted(() => {
+  const MockOpenAITextProvider = vi.fn().mockImplementation((config) => ({
+    name: 'openai',
+    config,
+  }));
+
+  const MockAnthropicTextProvider = vi.fn().mockImplementation((config) => ({
+    name: 'anthropic',
+    config,
+  }));
+
+  const MockGoogleTextProvider = vi.fn().mockImplementation((config) => ({
+    name: 'google',
+    config,
+  }));
+
+  const MockVertexAITextProvider = vi.fn().mockImplementation((config) => ({
+    name: 'vertex-ai',
+    config,
+  }));
+
+  const MockGenericOpenAIProvider = vi.fn().mockImplementation((name, config) => ({
+    name,
+    config,
+  }));
+
+  return {
+    MockOpenAITextProvider,
+    MockAnthropicTextProvider,
+    MockGoogleTextProvider,
+    MockVertexAITextProvider,
+    MockGenericOpenAIProvider,
+  };
+});
 
 // Mock all provider classes
 vi.mock('@/infrastructure/providers/openai/OpenAITextProvider.js', () => ({
-  OpenAITextProvider: vi.fn().mockImplementation((config) => ({
-    name: 'openai',
-    config,
-  })),
+  OpenAITextProvider: MockOpenAITextProvider,
 }));
 
 vi.mock('@/infrastructure/providers/anthropic/AnthropicTextProvider.js', () => ({
-  AnthropicTextProvider: vi.fn().mockImplementation((config) => ({
-    name: 'anthropic',
-    config,
-  })),
+  AnthropicTextProvider: MockAnthropicTextProvider,
 }));
 
 vi.mock('@/infrastructure/providers/google/GoogleTextProvider.js', () => ({
-  GoogleTextProvider: vi.fn().mockImplementation((config) => ({
-    name: 'google',
-    config,
-  })),
+  GoogleTextProvider: MockGoogleTextProvider,
 }));
 
 vi.mock('@/infrastructure/providers/vertex/VertexAITextProvider.js', () => ({
-  VertexAITextProvider: vi.fn().mockImplementation((config) => ({
-    name: 'vertex-ai',
-    config,
-  })),
+  VertexAITextProvider: MockVertexAITextProvider,
 }));
 
 vi.mock('@/infrastructure/providers/generic/GenericOpenAIProvider.js', () => ({
-  GenericOpenAIProvider: vi.fn().mockImplementation((name, config) => ({
-    name,
-    config,
-  })),
+  GenericOpenAIProvider: MockGenericOpenAIProvider,
 }));
+
+// Import after mocking
+import { createProvider, createProviderAsync } from '@/core/createProvider.js';
+import { Connector } from '@/core/Connector.js';
+import { Vendor } from '@/core/Vendor.js';
 
 describe('createProvider', () => {
   beforeEach(() => {
@@ -238,6 +267,8 @@ describe('createProvider', () => {
           flow: 'authorization_code',
           clientId: 'client-id',
           tokenUrl: 'https://auth.example.com/token',
+          authorizationUrl: 'https://auth.example.com/authorize',
+          redirectUri: 'http://localhost:3000/callback',
         },
       });
 
@@ -266,8 +297,6 @@ describe('createProvider', () => {
 
   describe('config extraction', () => {
     it('should pass API key from connector', () => {
-      const { OpenAITextProvider } = require('@/infrastructure/providers/openai/OpenAITextProvider.js');
-
       Connector.create({
         name: 'openai-config',
         vendor: Vendor.OpenAI,
@@ -276,7 +305,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('openai-config'));
 
-      expect(OpenAITextProvider).toHaveBeenCalledWith(
+      expect(MockOpenAITextProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           apiKey: 'sk-my-secret-key',
         })
@@ -284,8 +313,6 @@ describe('createProvider', () => {
     });
 
     it('should pass baseURL from connector', () => {
-      const { OpenAITextProvider } = require('@/infrastructure/providers/openai/OpenAITextProvider.js');
-
       Connector.create({
         name: 'openai-baseurl',
         vendor: Vendor.OpenAI,
@@ -295,7 +322,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('openai-baseurl'));
 
-      expect(OpenAITextProvider).toHaveBeenCalledWith(
+      expect(MockOpenAITextProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           baseURL: 'https://custom.openai.com/v1',
         })
@@ -303,8 +330,6 @@ describe('createProvider', () => {
     });
 
     it('should pass timeout from options', () => {
-      const { OpenAITextProvider } = require('@/infrastructure/providers/openai/OpenAITextProvider.js');
-
       Connector.create({
         name: 'openai-timeout',
         vendor: Vendor.OpenAI,
@@ -314,7 +339,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('openai-timeout'));
 
-      expect(OpenAITextProvider).toHaveBeenCalledWith(
+      expect(MockOpenAITextProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           timeout: 30000,
         })
@@ -322,8 +347,6 @@ describe('createProvider', () => {
     });
 
     it('should pass maxRetries from options', () => {
-      const { OpenAITextProvider } = require('@/infrastructure/providers/openai/OpenAITextProvider.js');
-
       Connector.create({
         name: 'openai-retries',
         vendor: Vendor.OpenAI,
@@ -333,7 +356,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('openai-retries'));
 
-      expect(OpenAITextProvider).toHaveBeenCalledWith(
+      expect(MockOpenAITextProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           maxRetries: 5,
         })
@@ -341,8 +364,6 @@ describe('createProvider', () => {
     });
 
     it('should pass organization for OpenAI', () => {
-      const { OpenAITextProvider } = require('@/infrastructure/providers/openai/OpenAITextProvider.js');
-
       Connector.create({
         name: 'openai-org',
         vendor: Vendor.OpenAI,
@@ -352,7 +373,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('openai-org'));
 
-      expect(OpenAITextProvider).toHaveBeenCalledWith(
+      expect(MockOpenAITextProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           organization: 'org-123',
         })
@@ -360,8 +381,6 @@ describe('createProvider', () => {
     });
 
     it('should pass anthropicVersion for Anthropic', () => {
-      const { AnthropicTextProvider } = require('@/infrastructure/providers/anthropic/AnthropicTextProvider.js');
-
       Connector.create({
         name: 'anthropic-version',
         vendor: Vendor.Anthropic,
@@ -371,7 +390,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('anthropic-version'));
 
-      expect(AnthropicTextProvider).toHaveBeenCalledWith(
+      expect(MockAnthropicTextProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           anthropicVersion: '2024-01-01',
         })
@@ -379,8 +398,6 @@ describe('createProvider', () => {
     });
 
     it('should pass projectId and location for Vertex AI', () => {
-      const { VertexAITextProvider } = require('@/infrastructure/providers/vertex/VertexAITextProvider.js');
-
       Connector.create({
         name: 'vertex-config',
         vendor: Vendor.GoogleVertex,
@@ -393,7 +410,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('vertex-config'));
 
-      expect(VertexAITextProvider).toHaveBeenCalledWith(
+      expect(MockVertexAITextProvider).toHaveBeenCalledWith(
         expect.objectContaining({
           projectId: 'my-gcp-project',
           location: 'europe-west1',
@@ -404,8 +421,6 @@ describe('createProvider', () => {
 
   describe('default baseURLs for generic providers', () => {
     it('should use default Groq baseURL', () => {
-      const { GenericOpenAIProvider } = require('@/infrastructure/providers/generic/GenericOpenAIProvider.js');
-
       Connector.create({
         name: 'groq-default',
         vendor: Vendor.Groq,
@@ -414,7 +429,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('groq-default'));
 
-      expect(GenericOpenAIProvider).toHaveBeenCalledWith(
+      expect(MockGenericOpenAIProvider).toHaveBeenCalledWith(
         'groq-default',
         expect.objectContaining({
           baseURL: 'https://api.groq.com/openai/v1',
@@ -423,8 +438,6 @@ describe('createProvider', () => {
     });
 
     it('should use default Together baseURL', () => {
-      const { GenericOpenAIProvider } = require('@/infrastructure/providers/generic/GenericOpenAIProvider.js');
-
       Connector.create({
         name: 'together-default',
         vendor: Vendor.Together,
@@ -433,7 +446,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('together-default'));
 
-      expect(GenericOpenAIProvider).toHaveBeenCalledWith(
+      expect(MockGenericOpenAIProvider).toHaveBeenCalledWith(
         'together-default',
         expect.objectContaining({
           baseURL: 'https://api.together.xyz/v1',
@@ -442,8 +455,6 @@ describe('createProvider', () => {
     });
 
     it('should use default Ollama baseURL', () => {
-      const { GenericOpenAIProvider } = require('@/infrastructure/providers/generic/GenericOpenAIProvider.js');
-
       Connector.create({
         name: 'ollama-default',
         vendor: Vendor.Ollama,
@@ -452,7 +463,7 @@ describe('createProvider', () => {
 
       createProvider(Connector.get('ollama-default'));
 
-      expect(GenericOpenAIProvider).toHaveBeenCalledWith(
+      expect(MockGenericOpenAIProvider).toHaveBeenCalledWith(
         'ollama-default',
         expect.objectContaining({
           baseURL: 'http://localhost:11434/v1',
