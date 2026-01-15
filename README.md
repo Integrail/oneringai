@@ -8,29 +8,31 @@
 
 ## Features
 
-- 🎯 **Unified API** - One interface for 6+ AI providers
-- 🤖 **Agentic Workflows** - Built-in tool calling and multi-turn conversations
-- 🤖 **Built-in AI Agents** - Pre-built agents for common tasks (OAuth config generation)
-- 🖼️ **Vision Support** - Analyze images with AI across all providers
-- 📸 **Clipboard Paste** - Ctrl+V screenshots directly (just like Claude Code!)
-- 🔧 **Extensible** - Easy to add new providers and capabilities
-- 📦 **Type-Safe** - Full TypeScript support
-- 🏗️ **Clean Architecture** - Domain-driven design
+- **Unified API** - One interface for 10+ AI providers
+- **Connector-First Architecture** - Single auth system for AI providers AND external APIs
+- **Multiple Keys Per Vendor** - Support for multiple API keys per vendor (e.g., `openai-main`, `openai-backup`)
+- **Agentic Workflows** - Built-in tool calling and multi-turn conversations
+- **Vision Support** - Analyze images with AI across all providers
+- **Clipboard Paste** - Ctrl+V screenshots directly (just like Claude Code!)
+- **OAuth 2.0** - Full OAuth support for external APIs with multi-user support
+- **Type-Safe** - Full TypeScript support
+- **Clean Architecture** - Domain-driven design
 
-## Supported Providers
+## Supported AI Providers
 
 | Provider | Text | Vision | Tools | JSON Schema | Context |
 |----------|------|--------|-------|-------------|---------|
-| **OpenAI** | ✅ | ✅ | ✅ | ✅ Native | 128K |
-| **Anthropic (Claude)** | ✅ | ✅ | ✅ | ⚠️ Prompt | 200K |
-| **Google (Gemini)** | ✅ | ✅ | ✅ | ⚠️ Prompt | 1M |
-| **Google Vertex AI** | ✅ | ✅ | ✅ | ⚠️ Prompt | 1M |
-| **Grok (xAI)** | ✅ | ✅ | ✅ | ❌ | 128K |
-| **Groq** | ✅ | ❌ | ✅ | ❌ | 128K |
-| **Together AI** | ✅ | ⚠️ Some | ✅ | ❌ | 128K |
-| **Custom** | ✅ | Varies | ✅ | Varies | Varies |
-
-> **Note**: Google Vertex AI provides enterprise features (SLA, IAM, tuning, caching) not available in the regular Gemini API.
+| **OpenAI** | Yes | Yes | Yes | Native | 128K |
+| **Anthropic (Claude)** | Yes | Yes | Yes | Prompt | 200K |
+| **Google (Gemini)** | Yes | Yes | Yes | Prompt | 1M |
+| **Google Vertex AI** | Yes | Yes | Yes | Prompt | 1M |
+| **Grok (xAI)** | Yes | Yes | Yes | No | 128K |
+| **Groq** | Yes | No | Yes | No | 128K |
+| **Together AI** | Yes | Some | Yes | No | 128K |
+| **DeepSeek** | Yes | No | Yes | No | 64K |
+| **Mistral** | Yes | No | Yes | No | 32K |
+| **Ollama** | Yes | Varies | Yes | No | Varies |
+| **Custom** | Yes | Varies | Yes | Varies | Varies |
 
 ---
 
@@ -40,13 +42,6 @@
 
 ```bash
 npm install @oneringai/agents
-
-# Or install from GitHub (if not published to npm yet)
-npm install github:your-username/oneringai
-
-# Or for local development
-npm link  # in oneringai directory
-npm link @oneringai/agents  # in your project
 ```
 
 ### 2. Setup
@@ -54,82 +49,115 @@ npm link @oneringai/agents  # in your project
 Create a `.env` file:
 
 ```bash
-# Minimum (for OpenAI)
 OPENAI_API_KEY=sk-your-key-here
-
-# Optional (add as needed)
+# Optional providers
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=AIza...
-GROQ_API_KEY=gsk_...
-TOGETHER_API_KEY=...
 ```
 
 ### 3. Basic Usage
 
 ```typescript
-import { OneRingAI } from '@oneringai/agents';
+import { Connector, Agent, Vendor } from '@oneringai/agents';
 
-const client = new OneRingAI({
-  providers: {
-    openai: { apiKey: process.env.OPENAI_API_KEY }
-  }
+// Step 1: Create a connector (auth configuration)
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
 });
 
-// Simple text generation
-const response = await client.text.generate('What is AI?', {
-  provider: 'openai',
-  model: 'gpt-4'
+// Step 2: Create an agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
 });
 
-console.log(response);
+// Step 3: Run
+const response = await agent.run('What is AI?');
+console.log(response.output_text);
+```
+
+---
+
+## Core Concepts
+
+### Connectors
+
+A **Connector** is a named authentication configuration. Create connectors once, use them everywhere:
+
+```typescript
+import { Connector, Vendor } from '@oneringai/agents';
+
+// Create connectors for different providers
+Connector.create({
+  name: 'openai-main',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+Connector.create({
+  name: 'anthropic',
+  vendor: Vendor.Anthropic,
+  auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
+});
+
+// Multiple keys for the same vendor!
+Connector.create({
+  name: 'openai-backup',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_BACKUP_KEY! },
+});
+```
+
+### Agents
+
+An **Agent** is created from a connector and can run tasks:
+
+```typescript
+import { Agent } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai-main',  // Reference connector by name
+  model: 'gpt-4',
+  instructions: 'You are a helpful assistant.',
+  temperature: 0.7,
+});
+
+const response = await agent.run('Hello!');
 ```
 
 ---
 
 ## Usage Guide
 
-### Text Generation
+### Simple Text Generation
 
 ```typescript
-import { OneRingAI } from '@oneringai/agents';
+import { Connector, Agent, Vendor } from '@oneringai/agents';
 
-const client = new OneRingAI({
-  providers: {
-    openai: { apiKey: process.env.OPENAI_API_KEY }
-  }
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
 });
 
-// Simple text
-const text = await client.text.generate('Explain quantum computing', {
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   temperature: 0.7,
-  max_output_tokens: 200
 });
 
-// Structured JSON
-const recipe = await client.text.generateJSON(
-  'Give me a pasta recipe',
-  {
-    provider: 'openai',
-    model: 'gpt-4',
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        ingredients: { type: 'array', items: { type: 'string' } },
-        steps: { type: 'array', items: { type: 'string' } }
-      }
-    }
-  }
-);
+const response = await agent.run('Explain quantum computing in one sentence.');
+console.log(response.output_text);
 ```
 
 ### Agents with Tools
 
 ```typescript
-import { OneRingAI, ToolFunction } from '@oneringai/agents';
+import { Connector, Agent, Vendor, ToolFunction } from '@oneringai/agents';
 
+// Define a tool
 const weatherTool: ToolFunction = {
   definition: {
     type: 'function',
@@ -139,24 +167,30 @@ const weatherTool: ToolFunction = {
       parameters: {
         type: 'object',
         properties: {
-          location: { type: 'string' }
+          location: { type: 'string', description: 'City name' },
         },
-        required: ['location']
-      }
+        required: ['location'],
+      },
     },
-    blocking: true  // Wait for result (default)
   },
   execute: async (args: { location: string }) => {
-    // Your implementation
-    return { temperature: 72, conditions: 'sunny' };
-  }
+    return { temperature: 72, conditions: 'sunny', location: args.location };
+  },
 };
 
-const agent = await client.agents.create({
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-20250514',
+// Create connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Create agent with tools
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [weatherTool],
-  instructions: 'You are a helpful assistant.'
+  instructions: 'You are a helpful weather assistant.',
 });
 
 const result = await agent.run('What is the weather in Paris?');
@@ -166,265 +200,321 @@ console.log(result.output_text);
 ### Vision / Image Analysis
 
 ```typescript
-import { OneRingAI, createMessageWithImages } from '@oneringai/agents';
+import { Connector, Agent, Vendor, createMessageWithImages } from '@oneringai/agents';
 
-const client = new OneRingAI({
-  providers: {
-    google: { apiKey: process.env.GOOGLE_API_KEY }
-  }
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
 });
 
-// Analyze an image
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4o',
+});
+
 const input = createMessageWithImages(
   'What do you see in this image?',
   ['https://example.com/photo.jpg']
 );
 
-const response = await client.text.generateRaw([input], {
-  provider: 'google',
-  model: 'gemini-1.5-pro-latest'
-});
-
+const response = await agent.run(input);
 console.log(response.output_text);
 ```
 
-### Multi-Provider Setup
+### Streaming
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    openai: { apiKey: process.env.OPENAI_API_KEY },
-    anthropic: { apiKey: process.env.ANTHROPIC_API_KEY },
-    google: { apiKey: process.env.GOOGLE_API_KEY },
-    groq: {
-      apiKey: process.env.GROQ_API_KEY,
-      baseURL: 'https://api.groq.com/openai/v1'
-    }
-  }
+import { Connector, Agent, Vendor, isOutputTextDelta, StreamHelpers } from '@oneringai/agents';
+
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
 });
 
-// Same code, different providers!
-const providers = ['openai', 'anthropic', 'google', 'groq'];
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+});
 
-for (const provider of providers) {
-  const response = await client.text.generate('What is AI?', {
-    provider,
-    model: getModelFor(provider)
+// Option 1: Manual iteration
+for await (const event of agent.stream('Write a haiku about AI.')) {
+  if (isOutputTextDelta(event)) {
+    process.stdout.write(event.delta);
+  }
+}
+
+// Option 2: Use StreamHelpers
+for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
+  process.stdout.write(text);
+}
+
+// Option 3: Accumulate complete text
+const text = await StreamHelpers.accumulateText(agent.stream('Hello'));
+```
+
+### Multi-Provider Comparison
+
+```typescript
+import { Connector, Agent, Vendor } from '@oneringai/agents';
+
+// Create connectors for each provider
+const providers = [
+  { name: 'openai', vendor: Vendor.OpenAI, model: 'gpt-4o', key: process.env.OPENAI_API_KEY! },
+  { name: 'anthropic', vendor: Vendor.Anthropic, model: 'claude-sonnet-4-5-20250929', key: process.env.ANTHROPIC_API_KEY! },
+  { name: 'google', vendor: Vendor.Google, model: 'gemini-2.0-flash', key: process.env.GOOGLE_API_KEY! },
+];
+
+for (const p of providers) {
+  if (!p.key) continue;
+
+  Connector.create({
+    name: p.name,
+    vendor: p.vendor,
+    auth: { type: 'api_key', apiKey: p.key },
   });
-  console.log(`${provider}: ${response}`);
+
+  const agent = Agent.create({ connector: p.name, model: p.model });
+  const response = await agent.run('What is 2 + 2?');
+  console.log(`${p.name}: ${response.output_text}`);
 }
 ```
 
----
+### Multi-Turn Conversations
 
-## Interactive Chat with Vision
+```typescript
+import { Connector, Agent, Vendor, InputItem, MessageRole, ContentType } from '@oneringai/agents';
 
-### Try It Now!
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
 
-```bash
-npm run example:chat
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  instructions: 'You are a knowledgeable tour guide.',
+});
+
+const history: InputItem[] = [];
+
+// Turn 1
+history.push({
+  type: 'message',
+  role: MessageRole.USER,
+  content: [{ type: ContentType.INPUT_TEXT, text: 'Tell me about the Eiffel Tower' }],
+});
+
+const response1 = await agent.run(history);
+history.push(...response1.output.filter((item): item is InputItem =>
+  item.type === 'message' || item.type === 'compaction'
+));
+
+// Turn 2 (follow-up)
+history.push({
+  type: 'message',
+  role: MessageRole.USER,
+  content: [{ type: ContentType.INPUT_TEXT, text: 'When was it built?' }],
+});
+
+const response2 = await agent.run(history);
+console.log(response2.output_text);
 ```
-
-### Features
-
-- 💬 **Real-time chat** with any AI provider
-- 📸 **Screenshot paste** - Press Ctrl+V (Cmd+V on Mac) to paste images!
-- 🖼️ **Vision support** - AI can see and analyze your images
-- 📋 **Multiple image methods** - Clipboard, URLs, file paths
-- 💾 **Full conversation history** - Context preserved across turns
-- 📊 **Token tracking** - See usage after each message
-
-### Screenshot Workflow
-
-1. **Take a screenshot**: Cmd+Ctrl+Shift+4 (Mac) or Win+Shift+S (Windows)
-2. **Press Cmd+V** in the chat (or Ctrl+V)
-3. **See**: `📎 [image #1] Pasted from clipboard (128KB PNG)`
-4. **Type your question**: "What do you see in this screenshot?"
-5. **Get AI analysis** with vision!
-
-### Setup (Mac - Optional)
-
-For best experience on Mac:
-```bash
-brew install pngpaste
-```
-
-Without it, works with AppleScript (slightly slower).
-
-### Commands
-
-| Command | Description |
-|---------|-------------|
-| **Cmd+V / Ctrl+V** | Paste screenshot from clipboard |
-| `/paste` | Paste image URL from clipboard |
-| `[img:URL]` | Attach image inline |
-| `/images` | Show pending images |
-| `/history` | View conversation |
-| `/clear` | Clear history |
-| `/exit` | Exit chat |
-| `/help` | Show help |
 
 ---
 
-## Provider Configuration
+## Vendor Configuration
 
 ### OpenAI
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    openai: {
-      apiKey: process.env.OPENAI_API_KEY,
-      organization: 'org-...', // Optional
-    }
-  }
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+  options: {
+    organization: 'org-...', // Optional
+    project: 'proj-...',     // Optional
+  },
 });
-
-// Models: gpt-4o, gpt-4o-mini, gpt-4-turbo, gpt-3.5-turbo
+// Models: gpt-4o, gpt-4o-mini, gpt-4-turbo, o1-preview
 ```
-
-Get API key: https://platform.openai.com/api-keys
 
 ### Anthropic (Claude)
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    anthropic: {
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    }
-  }
+Connector.create({
+  name: 'anthropic',
+  vendor: Vendor.Anthropic,
+  auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
 });
-
-// Models: claude-sonnet-4-20250514, claude-3-5-sonnet-20240620, claude-3-opus, claude-3-haiku
+// Models: claude-sonnet-4-5-20250929, claude-3-5-sonnet, claude-3-opus
 ```
-
-Get API key: https://console.anthropic.com/
 
 ### Google (Gemini)
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    google: {
-      apiKey: process.env.GOOGLE_API_KEY,
-    }
-  }
+Connector.create({
+  name: 'google',
+  vendor: Vendor.Google,
+  auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
 });
-
-// Models: gemini-2.0-flash-exp, gemini-1.5-pro-latest, gemini-1.5-flash-latest
+// Models: gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash
 ```
 
-Get API key: https://makersuite.google.com/app/apikey
-
-### Google Vertex AI (Enterprise)
+### Google Vertex AI
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    'vertex-ai': {
-      projectId: process.env.GOOGLE_CLOUD_PROJECT,
-      location: process.env.GOOGLE_CLOUD_LOCATION, // e.g., 'us-central1'
-      // credentials: optional service account JSON
-    }
-  }
+Connector.create({
+  name: 'vertex',
+  vendor: Vendor.GoogleVertex,
+  auth: { type: 'api_key', apiKey: '' }, // Uses ADC
+  options: {
+    projectId: process.env.GOOGLE_CLOUD_PROJECT!,
+    location: 'us-central1',
+  },
 });
-
-// Models: gemini-3-flash-preview, gemini-3-pro-preview, gemini-2.5-flash, gemini-2.5-pro
 ```
-
-**Setup Required**:
-1. Create GCP project at https://console.cloud.google.com
-2. Enable Vertex AI API
-3. Set up authentication:
-   ```bash
-   gcloud auth application-default login
-   ```
-   OR set service account:
-   ```bash
-   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-   ```
-4. Set environment variables:
-   ```bash
-   GOOGLE_CLOUD_PROJECT=your-project-id
-   GOOGLE_CLOUD_LOCATION=us-central1
-   ```
-
-**Enterprise Features**:
-- SLA guarantees
-- IAM controls & audit logging
-- Model tuning & customization
-- Context caching
-- RAG Engine
-- Grounding with Google Search
 
 ### Groq (Fast Llama)
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    groq: {
-      apiKey: process.env.GROQ_API_KEY,
-      baseURL: 'https://api.groq.com/openai/v1' // Auto-configured
-    }
-  }
+Connector.create({
+  name: 'groq',
+  vendor: Vendor.Groq,
+  auth: { type: 'api_key', apiKey: process.env.GROQ_API_KEY! },
 });
-
-// Models: llama-3.1-70b-versatile, llama-3.1-8b-instant, mixtral-8x7b-32768
+// Models: llama-3.1-70b-versatile, mixtral-8x7b-32768
 ```
 
-Get API key: https://console.groq.com/
-
-### Together AI (Llama & More)
+### Together AI
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    'together-ai': {
-      apiKey: process.env.TOGETHER_API_KEY,
-      baseURL: 'https://api.together.xyz/v1' // Auto-configured
-    }
-  }
+Connector.create({
+  name: 'together',
+  vendor: Vendor.Together,
+  auth: { type: 'api_key', apiKey: process.env.TOGETHER_API_KEY! },
 });
-
-// Models: meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo, Llama-3.2-90B-Vision-Instruct
+// Models: meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo
 ```
 
-Get API key: https://api.together.xyz/settings/api-keys
+### DeepSeek
+
+```typescript
+Connector.create({
+  name: 'deepseek',
+  vendor: Vendor.DeepSeek,
+  auth: { type: 'api_key', apiKey: process.env.DEEPSEEK_API_KEY! },
+});
+// Models: deepseek-chat, deepseek-reasoner
+```
+
+### Ollama (Local)
+
+```typescript
+Connector.create({
+  name: 'ollama',
+  vendor: Vendor.Ollama,
+  auth: { type: 'api_key', apiKey: '' }, // No key needed
+  baseURL: 'http://localhost:11434/v1',
+});
+// Models: llama2, codellama, mistral
+```
 
 ### Custom OpenAI-Compatible
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    'my-provider': {
-      apiKey: 'your-key',
-      baseURL: 'https://api.custom-provider.com/v1'
-    }
-  }
+Connector.create({
+  name: 'custom',
+  vendor: Vendor.Custom,
+  auth: { type: 'api_key', apiKey: 'your-key' },
+  baseURL: 'https://api.custom-provider.com/v1',
+});
+```
+
+---
+
+## Hooks & Events
+
+Control agent execution with hooks and events:
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [myTool],
 });
 
-// Works with: Perplexity, Fireworks, OpenRouter, local models, etc.
+// Events (async notifications)
+agent.on('tool:start', ({ toolCall }) => {
+  console.log(`Tool starting: ${toolCall.function.name}`);
+});
+
+agent.on('tool:complete', ({ result }) => {
+  console.log(`Tool completed in ${result.executionTime}ms`);
+});
+
+// Run with hooks
+const response = await agent.run('Do something');
+
+// Get metrics
+const metrics = agent.getMetrics();
+console.log('Total tokens:', metrics.totalTokens);
 ```
+
+See [HOOKS.md](./HOOKS.md) for full documentation.
+
+---
+
+## OAuth for External APIs
+
+Use OAuth to authenticate with external APIs like GitHub, Microsoft, Google:
+
+```typescript
+import { OAuthManager, FileStorage, generateEncryptionKey } from '@oneringai/agents';
+
+const oauth = new OAuthManager({
+  flow: 'authorization_code',
+  clientId: process.env.GITHUB_CLIENT_ID!,
+  clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+  authorizationUrl: 'https://github.com/login/oauth/authorize',
+  tokenUrl: 'https://github.com/login/oauth/access_token',
+  redirectUri: 'http://localhost:3000/callback',
+  scope: 'user:email repo',
+  storage: new FileStorage({
+    directory: './tokens',
+    encryptionKey: generateEncryptionKey(),
+  }),
+});
+
+// Start OAuth flow
+const authUrl = await oauth.startAuthFlow('user123');
+console.log('Visit:', authUrl);
+
+// After callback, get token
+const token = await oauth.getToken('user123');
+```
+
+See [OAUTH.md](./OAUTH.md) for full documentation.
 
 ---
 
 ## Examples
 
-### Run the Examples
-
 ```bash
-# Interactive chat with vision support
+# Interactive chat with vision
 npm run example:chat
 
-# Agent with tool calling
+# Agent with tools
 npm run example:agent
 
 # Simple text generation
 npm run example:text
 
-# Vision/image analysis
-npm run example:vision
+# Streaming
+npm run example:streaming
 
 # Multi-provider comparison
 npm run example:providers
@@ -432,578 +522,89 @@ npm run example:providers
 # Multi-turn conversation
 npm run example:conversation
 
-# JSON manipulation tool
-npm run example:json-tool
-
-# Hooks & events (NEW!)
+# Hooks & events
 npm run example:hooks
-```
 
-### Example 1: Simple Agent
-
-```typescript
-import { OneRingAI, ToolFunction } from '@oneringai/agents';
-
-const searchTool: ToolFunction = {
-  definition: {
-    type: 'function',
-    function: {
-      name: 'web_search',
-      description: 'Search the web',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string' }
-        },
-        required: ['query']
-      }
-    }
-  },
-  execute: async (args: { query: string }) => {
-    // Your implementation
-    return { results: ['...'] };
-  }
-};
-
-const agent = await client.agents.create({
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-20250514',
-  tools: [searchTool]
-});
-
-const result = await agent.run('Search for the latest AI news');
-console.log(result.output_text);
-```
-
-### Example 2: Vision with MessageBuilder
-
-```typescript
-import { MessageBuilder } from '@oneringai/agents';
-
-const builder = new MessageBuilder();
-
-// Add message with images
-builder.addUserMessageWithImages(
-  'Compare these two images',
-  ['https://example.com/img1.jpg', 'https://example.com/img2.jpg']
-);
-
-const response = await client.text.generateRaw(builder.build(), {
-  provider: 'google',
-  model: 'gemini-1.5-pro-latest'
-});
-```
-
-### Example 3: Multi-Provider Comparison
-
-```typescript
-const question = 'What is the capital of France?';
-
-// Ask all providers the same question
-const providers = ['openai', 'anthropic', 'google', 'groq'];
-
-for (const provider of providers) {
-  const response = await client.text.generate(question, {
-    provider,
-    model: getModelFor(provider)
-  });
-  console.log(`${provider}: ${response}`);
-}
+# OAuth demo
+npm run example:oauth
 ```
 
 ---
 
 ## API Reference
 
-### OneRingAI Client
+### Connector
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    openai?: { apiKey: string, organization?: string },
-    anthropic?: { apiKey: string },
-    google?: { apiKey: string },
-    groq?: { apiKey: string, baseURL?: string },
-    'together-ai'?: { apiKey: string, baseURL?: string },
-    [key: string]: ProviderConfig // Custom providers
-  },
-  defaultProvider?: string,
-  logLevel?: 'debug' | 'info' | 'warn' | 'error'
+// Create a connector
+Connector.create({
+  name: string,              // Unique name
+  vendor: Vendor,            // Vendor enum value
+  auth: ConnectorAuth,       // Authentication config
+  baseURL?: string,          // Custom API URL
+  options?: object,          // Vendor-specific options
 });
+
+// Get an existing connector
+const connector = Connector.get('openai');
+
+// Check if connector exists
+if (Connector.has('openai')) { ... }
+
+// List all connector names
+const names = Connector.list();
 ```
 
-### Capabilities
-
-#### `client.agents` - Agentic Text Generation
+### Agent
 
 ```typescript
-// Agent.create() is async and returns Promise<Agent>
-const agent = await client.agents.create({
-  provider: string,
-  model: string,
-  instructions?: string,
-  tools?: ToolFunction[],
-  temperature?: number,
-  maxIterations?: number
+// Create an agent
+const agent = Agent.create({
+  connector: string | Connector, // Connector name or instance
+  model: string,                 // Model name
+  instructions?: string,         // System instructions
+  tools?: ToolFunction[],        // Tools to use
+  temperature?: number,          // 0-1
+  maxIterations?: number,        // Max tool call iterations
+  maxOutputTokens?: number,      // Max output tokens
 });
 
+// Run agent
 const response = await agent.run(input: string | InputItem[]);
-```
 
-#### `client.text` - Simple Text Generation
+// Stream response
+for await (const event of agent.stream(input)) { ... }
 
-```typescript
-// Text generation
-const text = await client.text.generate(input, {
-  provider: string,
-  model: string,
-  instructions?: string,
-  temperature?: number,
-  max_output_tokens?: number
-});
+// Events
+agent.on('tool:start', handler);
+agent.on('tool:complete', handler);
 
-// JSON generation
-const json = await client.text.generateJSON(input, {
-  provider: string,
-  model: string,
-  schema: JSONSchema
-});
-
-// Raw response (full LLMResponse object)
-const response = await client.text.generateRaw(input, options);
-```
-
-#### `client.images` - Image Generation (Future)
-
-```typescript
-const image = await client.images.generate({
-  provider: string,
-  model: string,
-  prompt: string
-});
-```
-
-### Utilities
-
-```typescript
-// Message building
-import { MessageBuilder, createMessageWithImages } from '@oneringai/agents';
-
-const builder = new MessageBuilder();
-builder.addUserMessage('Hello');
-builder.addUserMessageWithImages('Analyze these', ['img1.jpg', 'img2.jpg']);
-builder.addAssistantMessage('Here is my analysis');
-
-// Or use helper
-const input = createMessageWithImages('Describe this', ['image.jpg']);
-
-// Clipboard
-import { readClipboardImage } from '@oneringai/agents';
-const result = await readClipboardImage();
-if (result.success) {
-  console.log(result.dataUri); // base64 data URI
-}
-```
-
----
-
-## Vision & Images
-
-### Image Input Methods
-
-#### 1. Ctrl+V / Cmd+V (Interactive Chat)
-
-Take a screenshot and paste it directly:
-
-```bash
-npm run example:chat
-
-# In the chat:
-# 1. Press Cmd+Ctrl+Shift+4 (Mac) or Win+Shift+S (Windows)
-# 2. Press Cmd+V in the chat
-# 3. Type your question
-```
-
-#### 2. Image URLs
-
-```typescript
-import { createMessageWithImages } from '@oneringai/agents';
-
-const input = createMessageWithImages(
-  'What is in this image?',
-  ['https://example.com/photo.jpg']
-);
-
-const response = await client.text.generateRaw([input], {
-  provider: 'openai',
-  model: 'gpt-4o'
-});
-```
-
-#### 3. Local Files
-
-```typescript
-// Files are auto-converted to base64
-const input = createMessageWithImages(
-  'Analyze this',
-  ['./photos/vacation.jpg']
-);
-```
-
-#### 4. MessageBuilder
-
-```typescript
-import { MessageBuilder } from '@oneringai/agents';
-
-const builder = new MessageBuilder();
-builder.addUserMessageWithImages(
-  'Compare these screenshots',
-  ['screenshot1.png', 'screenshot2.png']
-);
-
-const messages = builder.build();
-```
-
-### Vision-Capable Models
-
-| Provider | Models |
-|----------|--------|
-| OpenAI | gpt-4o, gpt-4o-mini, gpt-4-turbo |
-| Anthropic | claude-3-5-sonnet, claude-3-opus, claude-3-sonnet, claude-3-haiku |
-| Google | gemini-1.5-pro-latest, gemini-1.5-flash-latest, gemini-2.0-flash |
-| Grok | grok-2-vision |
-| Together AI | meta-llama/Llama-3.2-90B-Vision-Instruct |
-
-### Image Formats
-
-- ✅ URLs: `https://example.com/image.jpg`
-- ✅ Data URIs: `data:image/png;base64,...`
-- ✅ Local files: `./path/to/image.jpg` (auto-converted)
-- ✅ Formats: JPG, PNG, GIF, WebP
-
----
-
-## Provider Comparison
-
-### Speed
-
-| Provider | Typical Latency | Best For |
-|----------|----------------|----------|
-| **Groq** | ⚡⚡⚡⚡⚡ 100-300ms | Speed-critical apps |
-| **Together AI** | ⚡⚡⚡⚡ 500-1000ms | Fast + cost-effective |
-| **OpenAI** | ⚡⚡⚡ 1-3s | General purpose |
-| **Anthropic** | ⚡⚡⚡ 1-3s | Coding, analysis |
-| **Google** | ⚡⚡ 2-5s | Long context |
-
-### Cost (Approximate per 1M tokens)
-
-| Provider | Model | Input | Output |
-|----------|-------|-------|--------|
-| OpenAI | gpt-4o-mini | $0.15 | $0.60 |
-| Google | gemini-1.5-flash-latest | $0.075 | $0.30 |
-| Anthropic | claude-3-haiku | $0.25 | $1.25 |
-| Groq | llama-3.1-70b | Free tier | Free tier |
-
-### Best Use Cases
-
-- **Coding**: Anthropic Claude 3.5 Sonnet
-- **Speed**: Groq Llama 3.1
-- **Cost**: Google Gemini Flash
-- **Long context**: Google Gemini (1M) or Anthropic Claude (200K)
-- **Vision**: OpenAI GPT-4o or Anthropic Claude 3.5
-- **General**: OpenAI GPT-4o (best balance)
-
----
-
-## Advanced Features
-
-### Hooks & Events (Enterprise Control)
-
-Control agent execution with hooks (modify behavior) and events (monitoring).
-
-#### Events (Async Notifications)
-
-Listen to execution events for logging, UI updates, monitoring:
-
-```typescript
-const agent = await client.agents.create({ ... });
-
-// Listen to tool execution
-agent.on('tool:start', ({ toolCall }) => {
-  console.log(`Tool starting: ${toolCall.function.name}`);
-  websocket.send({ type: 'tool-progress', status: 'executing' });
-});
-
-agent.on('tool:complete', ({ result }) => {
-  console.log(`Tool completed in ${result.executionTime}ms`);
-  websocket.send({ type: 'tool-progress', status: 'completed' });
-});
-
-// Listen to LLM calls
-agent.on('llm:request', ({ options }) => {
-  console.log(`Calling ${options.model}...`);
-});
-
-// Listen to errors
-agent.on('tool:error', ({ error }) => {
-  logger.error('Tool failed:', error);
-});
-
-const response = await agent.run('Do something');
-```
-
-**Available Events**:
-- `execution:start`, `execution:complete`, `execution:error`
-- `execution:paused`, `execution:resumed`, `execution:cancelled`
-- `iteration:start`, `iteration:complete`
-- `llm:request`, `llm:response`, `llm:error`
-- `tool:detected`, `tool:start`, `tool:complete`, `tool:error`, `tool:timeout`
-- `hook:error`
-
-#### Hooks (Sync/Async Control)
-
-Modify execution flow with hooks - approve tools, cache results, add retry logic:
-
-```typescript
-const agent = await client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4',
-  tools: [dangerousTool],
-
-  hooks: {
-    // Approve tools before execution (human-in-the-loop)
-    'approve:tool': async ({ toolCall }) => {
-      if (toolCall.function.name === 'delete_database') {
-        const approved = await askUser('Execute delete_database?');
-        return { approved };
-      }
-      return { approved: true };
-    },
-
-    // Cache tool results
-    'before:tool': async ({ toolCall }) => {
-      const cached = await cache.get(toolCall.id);
-      if (cached) {
-        return { skip: true, mockResult: cached };
-      }
-      return {};
-    },
-
-    'after:tool': async ({ toolCall, result }) => {
-      await cache.set(toolCall.id, result);
-      return {};
-    }
-  }
-});
-```
-
-**Available Hooks**:
-- `before:execution`, `after:execution` - Lifecycle
-- `before:llm`, `after:llm` - Modify LLM calls
-- `before:tool`, `after:tool` - Intercept tool execution
-- `approve:tool` - Approve/reject tools
-- `pause:check` - Custom pause logic
-
-#### Pause/Resume/Cancel
-
-Control execution flow:
-
-```typescript
-const agent = await client.agents.create({ ... });
-
-// Start execution (async)
-const responsePromise = agent.run('Long task');
-
-// Pause from another thread/callback
-setTimeout(() => {
-  agent.pause('User requested pause');
-}, 1000);
-
-// Resume later
-setTimeout(() => {
-  agent.resume();
-}, 5000);
-
-// Or cancel
-agent.cancel('User cancelled');
-
-const response = await responsePromise;
-```
-
-#### Metrics & Introspection
-
-Get detailed execution metrics:
-
-```typescript
-const agent = await client.agents.create({ ... });
-const response = await agent.run('Process data');
-
-// Get metrics
+// Metrics
 const metrics = agent.getMetrics();
-console.log('Tool success rate:', metrics.toolSuccessCount / metrics.toolCallCount);
-console.log('Total duration:', metrics.totalDuration);
-console.log('Tokens used:', metrics.totalTokens);
-
-// Get audit trail
-const audit = agent.getAuditTrail();
-console.log('Last 10 actions:', audit.slice(-10));
-
-// Check state
-console.log('Is running:', agent.isRunning());
-console.log('Is paused:', agent.isPaused());
-
-// Cleanup
-agent.destroy();
 ```
 
-#### Enterprise Configuration
+### Vendor Enum
 
 ```typescript
-const agent = await client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4',
-  tools: [myTool],
+import { Vendor } from '@oneringai/agents';
 
-  // Resource limits (prevent runaway execution)
-  limits: {
-    maxExecutionTime: 300000,  // 5 minutes
-    maxToolCalls: 100,
-    maxContextSize: 10485760,  // 10MB
-  },
-
-  // History mode (memory management)
-  historyMode: 'summary',  // 'none' | 'summary' | 'full'
-
-  // Error handling
-  errorHandling: {
-    hookFailureMode: 'warn',      // Continue on hook errors
-    toolFailureMode: 'fail',      // Stop on tool errors
-    maxConsecutiveErrors: 3
-  },
-
-  // Hooks for control
-  hooks: { ... }
-});
+Vendor.OpenAI       // 'openai'
+Vendor.Anthropic    // 'anthropic'
+Vendor.Google       // 'google'
+Vendor.GoogleVertex // 'google-vertex'
+Vendor.Groq         // 'groq'
+Vendor.Together     // 'together'
+Vendor.Grok         // 'grok'
+Vendor.DeepSeek     // 'deepseek'
+Vendor.Mistral      // 'mistral'
+Vendor.Perplexity   // 'perplexity'
+Vendor.Ollama       // 'ollama'
+Vendor.Custom       // 'custom'
 ```
-
-**Full Documentation**: See [HOOKS.md](./HOOKS.md) for:
-- Complete event reference
-- All hook examples
-- Pause/resume patterns
-- Metrics and audit trails
-- Production best practices
-
-**Try it**: `npm run example:hooks`
-
-### OAuth 2.0 Authentication & API Registry
-
-Authenticate with OAuth-protected APIs AND static API key services using the unified OAuth plugin.
-
-**4 Flows Supported**:
-- Authorization Code (with PKCE) - User authentication ⭐ **Multi-user ready!**
-- Client Credentials - Service-to-service
-- JWT Bearer - Service accounts
-- **Static Token** - API keys (OpenAI, Anthropic, any API)
-
-```typescript
-import { OAuthManager, OAuthFileStorage } from '@oneringai/agents';
-
-// Client Credentials (simplest)
-const oauth = new OAuthManager({
-  flow: 'client_credentials',
-  clientId: process.env.CLIENT_ID!,
-  clientSecret: process.env.CLIENT_SECRET!,
-  tokenUrl: 'https://api.example.com/oauth/token',
-
-  // Optional: encrypted file storage
-  storage: new OAuthFileStorage({
-    directory: './tokens',
-    encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
-  })
-});
-
-const token = await oauth.getToken();  // Automatically cached & refreshed
-```
-
-**Security**:
-- ✅ AES-256-GCM encryption (all tokens encrypted at rest)
-- ✅ PBKDF2 key derivation (100,000 iterations)
-- ✅ File permissions: 0o600 (owner only)
-- ✅ Clean Architecture (pluggable storage)
-
-**Storage Backends**:
-- MemoryStorage (default, encrypted in memory)
-- FileStorage (encrypted files)
-- Custom (implement `IOAuthTokenStorage`)
-
-**Unified Registry** - Register ALL your APIs in one place:
-```typescript
-import { connectorRegistry, authenticatedFetch, generateWebAPITool, createExecuteJavaScriptTool } from '@oneringai/agents';
-
-// Register Connectors
-connectorRegistry.register('microsoft', { flow: 'authorization_code', ... });
-
-// Register static token providers
-connectorRegistry.register('openai-api', {
-  flow: 'static_token',
-  staticToken: process.env.OPENAI_API_KEY!,
-  // ...
-});
-
-// Use unified fetch for ANY provider
-await authenticatedFetch(url, options, 'microsoft');
-await authenticatedFetch(url, options, 'openai-api');
-
-// Multi-user support: pass userId for user-specific tokens
-await authenticatedFetch(url, options, 'github', 'user123');  // Alice's token
-await authenticatedFetch(url, options, 'github', 'user456');  // Bob's token
-
-// Or generate universal API tool
-const apiTool = generateWebAPITool();  // Works with all providers!
-
-// Create JavaScript execution tool with current Connectors
-// IMPORTANT: Use createExecuteJavaScriptTool() AFTER registering providers
-// to ensure the tool description includes all available Connectors
-const jsTool = createExecuteJavaScriptTool(connectorRegistry);
-const agent = await client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4',
-  tools: [jsTool]  // Tool will show all registered Connectors to the AI
-});
-```
-
-**Multi-User Support** 🆕:
-```typescript
-// ONE OAuthManager handles multiple users automatically!
-const authUrl1 = await oauth.startAuthFlow('alice_123');  // Alice's auth
-const authUrl2 = await oauth.startAuthFlow('bob_456');    // Bob's auth
-
-// Each user gets isolated, encrypted tokens
-const aliceToken = await oauth.getToken('alice_123');
-const bobToken = await oauth.getToken('bob_456');
-
-// Use in API calls
-await authenticatedFetch(url, options, 'github', 'alice_123');  // Alice's token
-await authenticatedFetch(url, options, 'github', 'bob_456');    // Bob's token
-```
-
-**Full Documentation**: See [OAUTH.md](./OAUTH.md) for:
-- Complete API configurations (Microsoft, Google, GitHub, Salesforce, OpenAI, etc.)
-- User OAuth vs App Token vs Static Token flows
-- **Multi-user OAuth architecture** 🆕
-- Production setup guide
-- Custom storage examples (MongoDB, Redis)
-- Unified registry examples
-
-**Try it**:
-- `npm run example:oauth-static` - Static token APIs
-- `npm run example:oauth-multi-user` - Multi-user patterns 🆕
 
 ---
 
 ## Development
-
-### Build the Library
 
 ```bash
 # Install dependencies
@@ -1018,456 +619,43 @@ npm run dev
 # Type check
 npm run typecheck
 
-# Lint
-npm run lint
+# Run tests
+npm test
 ```
-
-### Project Structure
-
-```
-src/
-├── index.ts                    # Main entry point
-├── client/                     # Client infrastructure
-│   ├── OneRingAI.ts
-│   └── ProviderRegistry.ts
-├── domain/                     # Core business logic
-│   ├── entities/              # Message, Content, Tool, Response
-│   ├── interfaces/            # IProvider, ITextProvider, etc.
-│   ├── types/                 # Configuration types
-│   └── errors/                # Error classes
-├── capabilities/              # Feature modules
-│   ├── agents/               # Agentic workflows
-│   ├── text/                 # Simple text generation
-│   └── images/               # Image generation (future)
-├── infrastructure/           # Provider implementations
-│   └── providers/
-│       ├── openai/          # OpenAI implementation
-│       ├── anthropic/       # Anthropic + converter
-│       ├── google/          # Google + converter
-│       └── generic/         # Generic OpenAI-compatible
-└── utils/                   # Utilities
-    ├── messageBuilder.ts
-    ├── clipboardImage.ts
-    └── imageUtils.ts
-```
-
-### Architecture
-
-The library follows **Clean Architecture** principles:
-
-- **Domain Layer**: Core entities, interfaces, business rules
-- **Application Layer**: Use cases, services (AgentManager, TextManager)
-- **Infrastructure Layer**: Provider implementations, external dependencies
-
-### Adding a New Provider
-
-See `CLAUDE.md` for detailed instructions on adding providers with converters.
 
 ---
 
 ## Troubleshooting
 
-### "Provider not found"
-Make sure you configured the provider in the OneRingAI constructor.
+### "Connector not found"
+Make sure you created the connector with `Connector.create()` before using it.
 
 ### "Invalid API key"
-- Check your `.env` file exists
-- Ensure the key is correct for that provider
-- Check for typos in environment variable names
+Check your `.env` file and ensure the key is correct for that vendor.
 
 ### "Model not found"
-Each provider has different model names. Check provider documentation:
-- OpenAI: https://platform.openai.com/docs/models
-- Anthropic: https://docs.anthropic.com/en/docs/models-overview
-- Google: https://ai.google.dev/models/gemini
+Each vendor has different model names. Check vendor documentation.
 
 ### Vision not working
-Make sure you're using a vision-capable model:
-- OpenAI: `gpt-4o`, `gpt-4-turbo`
-- Anthropic: Claude 3+ models
-- Google: `gemini-1.5-pro-latest`, `gemini-1.5-flash-latest`
-
-### Tool calling not working
-Most modern models support tools. Legacy models (GPT-3.5, Claude 2) may not.
-
-### Clipboard paste not working (Mac)
-Install pngpaste for best experience:
-```bash
-brew install pngpaste
-```
+Use a vision-capable model: `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`.
 
 ---
 
-## Advanced Topics
+## Documentation
 
-### Tool System
-
-Define tools that agents can call:
-
-```typescript
-interface ToolFunction {
-  definition: {
-    type: 'function';
-    function: {
-      name: string;
-      description: string;
-      parameters: JSONSchema;
-    };
-    blocking?: boolean;  // Default: true
-    timeout?: number;    // Default: 30000ms
-  };
-  execute: (args: any) => Promise<any>;
-}
-```
-
-### Multi-Turn Conversations
-
-```typescript
-import { MessageBuilder, MessageRole, ContentType } from '@oneringai/agents';
-
-const builder = new MessageBuilder();
-
-// Turn 1
-builder.addUserMessage('What is the Eiffel Tower?');
-let response = await client.text.generateRaw(builder.build(), options);
-builder.addAssistantMessage(response.output_text);
-
-// Turn 2
-builder.addUserMessage('When was it built?');
-response = await client.text.generateRaw(builder.build(), options);
-```
-
-### Error Handling
-
-```typescript
-import { ProviderAuthError, ProviderRateLimitError } from '@oneringai/agents';
-
-try {
-  const response = await client.text.generate('Hello', options);
-} catch (error) {
-  if (error instanceof ProviderAuthError) {
-    console.error('Invalid API key');
-  } else if (error instanceof ProviderRateLimitError) {
-    console.error('Rate limited, retry after:', error.retryAfter);
-  }
-}
-```
-
-### Image Detail Control
-
-```typescript
-import { InputItem, MessageRole, ContentType } from '@oneringai/agents';
-
-const input: InputItem[] = [{
-  type: 'message',
-  role: MessageRole.USER,
-  content: [
-    { type: ContentType.INPUT_TEXT, text: 'Describe this' },
-    {
-      type: ContentType.INPUT_IMAGE_URL,
-      image_url: {
-        url: 'https://example.com/image.jpg',
-        detail: 'low'  // 'low' (~85 tokens), 'high' (~170-340), 'auto'
-      }
-    }
-  ]
-}];
-```
+- **[HOOKS.md](./HOOKS.md)** - Hooks & events system
+- **[OAUTH.md](./OAUTH.md)** - OAuth 2.0 integration
+- **[PROVIDERS.md](./PROVIDERS.md)** - Provider details
+- **[EXTENSIBILITY.md](./EXTENSIBILITY.md)** - Custom implementations
+- **[CLAUDE.md](./CLAUDE.md)** - Architecture guide for AI assistants
 
 ---
-
-## Installation Methods
-
-### From npm (When Published)
-
-```bash
-npm install @oneringai/agents
-```
-
-### From GitHub
-
-```bash
-# Latest from main branch
-npm install github:your-username/oneringai
-
-# Specific branch/tag
-npm install github:your-username/oneringai#develop
-npm install github:your-username/oneringai#v0.1.0
-```
-
-### Local Development (npm link)
-
-```bash
-# In oneringai directory
-npm link
-
-# In your project
-npm link @oneringai/agents
-
-# Unlink when done
-npm unlink @oneringai/agents
-```
-
-### Local File Path
-
-```bash
-# Absolute path
-npm install /Users/aantich/dev/oneringai
-
-# Relative path
-npm install ../oneringai
-```
-
----
-
-## Extensibility & Custom Infrastructure
-
-### Clean Architecture Approach
-
-`@oneringai/agents` follows **Clean Architecture** principles, making it easy to implement custom infrastructure:
-
-```typescript
-import {
-  // Domain interfaces
-  ITextProvider,
-  IOAuthTokenStorage,
-  IToolExecutor,
-
-  // Base classes (reusable logic)
-  BaseProvider,
-  BaseTextProvider,
-  ProviderErrorMapper,
-} from '@oneringai/agents';
-```
-
-### What You Can Extend
-
-✅ **Custom LLM Providers** - Add Cohere, Replicate, Ollama, local models
-✅ **Custom OAuth Storage** - MongoDB, Redis, PostgreSQL, AWS Secrets Manager
-✅ **Custom Tool Executors** - Rate limiting, caching, audit logging
-
-### Example: Custom Provider
-
-```typescript
-import { BaseTextProvider, ProviderErrorMapper } from '@oneringai/agents';
-
-class OllamaProvider extends BaseTextProvider {
-  readonly name = 'ollama';
-  readonly capabilities = { text: true, images: false, videos: false, audio: false };
-
-  async generate(options) {
-    const response = await fetch('http://localhost:11434/api/generate', {
-      method: 'POST',
-      body: JSON.stringify({
-        model: options.model,
-        prompt: this.normalizeInputToString(options.input),
-      }),
-    });
-
-    const data = await response.json();
-    return this.convertToLLMResponse(data);
-  }
-
-  // ... implement other required methods
-}
-
-// Use like any other provider!
-const agent = await client.agents.create({
-  provider: 'ollama',
-  model: 'llama2'
-});
-```
-
-### Example: Custom OAuth Storage
-
-```typescript
-import { IOAuthTokenStorage, StoredToken } from '@oneringai/agents';
-
-class MongoOAuthStorage implements IOAuthTokenStorage {
-  async storeToken(key: string, token: StoredToken) {
-    await tokens.updateOne(
-      { _id: key },  // key is "provider:clientId:userId"
-      { $set: { ...encrypt(token), updatedAt: new Date() } },
-      { upsert: true }
-    );
-  }
-
-  async getToken(key: string) {
-    const doc = await tokens.findOne({ _id: key });
-    return doc ? decrypt(doc) : null;
-  }
-
-  // ... implement other methods
-}
-
-// Use with OAuth
-const oauth = new OAuthManager({
-  flow: 'authorization_code',
-  storage: new MongoOAuthStorage(mongoClient)  // Custom storage!
-});
-
-// Works automatically with multi-user!
-await oauth.getToken('user123');
-```
-
-**Full Guide**: See [EXTENSIBILITY.md](./EXTENSIBILITY.md) for:
-- Complete interface reference
-- Custom provider examples (Cohere, Ollama)
-- Custom storage examples (MongoDB, Redis, PostgreSQL)
-- Custom tool executor patterns
-- Clean Architecture best practices
-
-**Try it**: `npm run example:custom-infrastructure`
-
----
-
-## Built-in AI Agents
-
-Pre-built AI agents for common tasks - just provide a client and the agent handles the complexity!
-
-### Provider Config Generator Agent
-
-AI-powered assistant that helps you configure Connectors through interactive conversation.
-
-```typescript
-import { OneRingAI, ProviderConfigAgent } from '@oneringai/agents';
-
-const client = new OneRingAI({
-  providers: {
-    openai: { apiKey: process.env.OPENAI_API_KEY }
-  }
-});
-
-// Create the agent
-const configAgent = new ProviderConfigAgent(client);
-
-// Start interactive session
-const result = await configAgent.run('I want to connect to Slack');
-
-// Get generated configuration
-console.log(result.name);        // "slack"
-console.log(result.config);              // Full OAuth config object
-console.log(result.setupInstructions);   // Step-by-step setup guide
-console.log(result.envVariables);        // ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"]
-
-// Use it immediately!
-import { connectorRegistry } from '@oneringai/agents';
-connectorRegistry.register(result.name, result.config);
-```
-
-**What it does**:
-- ✅ Asks which system to connect to (GitHub, Google, Microsoft, Salesforce, etc.)
-- ✅ Determines the right OAuth flow (user auth, app token, static key)
-- ✅ Guides you through credential setup in the provider's portal
-- ✅ Generates complete JSON configuration
-- ✅ Provides environment variable names and setup instructions
-
-**Interactive CLI**:
-
-```bash
-npm run example:provider-config
-```
-
-```
-🤖 Assistant: Which system would you like to connect to?
-👤 You: GitHub
-🤖 Assistant: Great! Are you building:
-             1. User authentication (users log in with GitHub)
-             2. Service-to-service (your app accesses GitHub on its own)
-👤 You: User authentication
-🤖 Assistant: Perfect! Go to https://github.com/settings/developers
-             to create a new OAuth App...
-```
-
-**Why it's useful**:
-- No need to look up OAuth documentation for each provider
-- AI knows the correct URLs, scopes, and flow types
-- Generates production-ready configuration
-- Saves to file for easy integration
-
-**Try it**: `npm run example:provider-config`
-
----
-
-## Documentation Files
-
-- **`README.md`** (this file) - Complete guide
-- **`HOOKS.md`** - Comprehensive hooks & events guide
-- **`OAUTH.md`** - OAuth 2.0 plugin guide with multi-user support
-- **`PROVIDERS.md`** - Detailed provider comparison and configuration
-- **`EXTENSIBILITY.md`** - Custom infrastructure implementation guide 🆕
-- **`CLAUDE.md`** - For AI assistants (architecture, development guide)
-- **`.env.example`** - Environment variable template
-
----
-
-## Contributing
-
-This is currently a private project. For questions or contributions, contact the maintainer.
 
 ## License
 
-MIT License - See [LICENSE](./LICENSE) file for details.
-
-## Support
-
-For detailed documentation:
-- **Provider Guide**: See `PROVIDERS.md`
-- **Architecture**: See `CLAUDE.md`
-- **Examples**: Run `npm run example:*` commands
+MIT License - See [LICENSE](./LICENSE) file.
 
 ---
 
-## Quick Reference
-
-### Basic Commands
-
-```bash
-# Build
-npm run build
-
-# Run examples
-npm run example:chat        # Interactive chat
-npm run example:agent       # Agent with tools
-npm run example:vision      # Vision examples
-npm run example:providers   # Compare all providers
-
-# Development
-npm run dev                 # Watch mode
-npm run typecheck          # Type check
-```
-
-### Code Templates
-
-**Simple text:**
-```typescript
-const text = await client.text.generate('Question?', { provider: 'openai', model: 'gpt-4' });
-```
-
-**Agent with tools:**
-```typescript
-const agent = await client.agents.create({ provider: 'anthropic', model: 'claude-sonnet-4-20250514', tools: [...] });
-const result = await agent.run('Do something');
-```
-
-**Vision:**
-```typescript
-const input = createMessageWithImages('Describe this', ['image.jpg']);
-const response = await client.text.generateRaw([input], { provider: 'google', model: 'gemini-1.5-pro-latest' });
-```
-
----
-
-**Version**: 0.1.0
-**Last Updated**: 2026-01-12
-**Supported Providers**: 6+ (OpenAI, Anthropic, Google, Grok, Groq, Together AI, Custom)
-
-**Recent Changes**:
-- **BREAKING**: `client.agents.create()` is now async and returns `Promise<Agent>` (add `await`)
-- 🆕 **Built-in AI Agents** - `ProviderConfigAgent` for interactive Connector configuration
-- 🆕 **Multi-user OAuth support** - All OAuth methods accept optional `userId` parameter
-- 🆕 **Extensibility** - Exported `BaseProvider`, `BaseTextProvider`, `ProviderErrorMapper` for custom implementations
-- 🆕 `createExecuteJavaScriptTool(connectorRegistry)` for dynamic Connector support
-- 🆕 `authenticatedFetch(url, options, provider, userId?)` supports multi-user
-- Completed Phases 1-6 of improvement plan (memory safety, error handling, concurrency)
-- New docs: `EXTENSIBILITY.md` with custom provider/storage examples
+**Version**: 0.2.0
+**Last Updated**: 2026-01-15

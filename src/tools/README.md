@@ -27,9 +27,17 @@ This library provides production-ready tools that agents can use. All tools are 
 
 **Example**:
 ```typescript
-import { tools } from '@oneringai/agents';
+import { Connector, Agent, Vendor, tools } from '@oneringai/agents';
 
-const agent = client.agents.create({
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! }
+});
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [tools.jsonManipulator]
 });
 
@@ -62,7 +70,9 @@ await agent.run('Delete the email field from {"name": "John", "email": "j@ex.com
 
 **Example**:
 ```typescript
-const agent = client.agents.create({
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [tools.webFetch]
 });
 
@@ -94,7 +104,9 @@ await agent.run('Fetch content from https://example.com/article');
 
 **Example**:
 ```typescript
-const agent = client.agents.create({
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [tools.webFetch, tools.webFetchJS]
 });
 
@@ -120,7 +132,9 @@ await agent.run('Get content from https://react-app.com (use JS rendering if nee
 
 **Example**:
 ```typescript
-const agent = client.agents.create({
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [tools.webSearch, tools.webFetch]
 });
 
@@ -167,13 +181,21 @@ TAVILY_API_KEY=your-key-here
 
 **Example**:
 ```typescript
-import { tools, connectorRegistry } from '@oneringai/agents';
+import { Connector, Agent, Vendor, tools, connectorRegistry } from '@oneringai/agents';
 
 // Register OAuth connectors first
 connectorRegistry.register('microsoft', { ... });
 connectorRegistry.register('github', { ... });
 
-const agent = client.agents.create({
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! }
+});
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [tools.executeJavaScript]
 });
 
@@ -214,7 +236,9 @@ Tools work great together:
 
 ### Research Workflow
 ```typescript
-const agent = client.agents.create({
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [
     tools.webSearch,      // Find URLs
     tools.webFetch,       // Get content
@@ -225,7 +249,9 @@ const agent = client.agents.create({
 
 ### Multi-API Integration
 ```typescript
-const agent = client.agents.create({
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [
     tools.executeJavaScript,  // Execute custom logic with OAuth
     tools.jsonManipulator     // Process results
@@ -235,7 +261,9 @@ const agent = client.agents.create({
 
 ### Complete Web Agent
 ```typescript
-const agent = client.agents.create({
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [
     tools.webSearch,
     tools.webFetch,
@@ -268,7 +296,7 @@ const agent = client.agents.create({
 - Rate limits apply
 
 ### executeJavaScript
-- ⚠️ **Use with caution** - Executes code
+- Use with caution - Executes code
 - Sandboxed (no file/process access)
 - 10-second timeout
 - Safe for LLM-generated code in controlled environments
@@ -318,9 +346,17 @@ export { myTool } from './myCategory/myTool.js';
 ### Step 3: Use
 
 ```typescript
-import { tools } from '@oneringai/agents';
+import { Connector, Agent, Vendor, tools } from '@oneringai/agents';
 
-const agent = client.agents.create({
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! }
+});
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
   tools: [tools.myTool]
 });
 ```
@@ -390,6 +426,6 @@ Organize tools by category:
 
 ---
 
-**Version**: 0.2.0
+**Version**: 0.3.0
 **Total Tools**: 5 (JSON, Web Fetch, Web Fetch JS, Web Search, Execute JavaScript)
 **All tools**: Type-safe, well-documented, production-ready

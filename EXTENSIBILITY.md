@@ -42,7 +42,7 @@ Complete guide to extending `@oneringai/agents` with custom infrastructure imple
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                   APPLICATION LAYER                          │
-│  AgentManager, TextManager, OAuthManager                    │
+│  Connector, Agent, OAuthManager                             │
 │  Depends on: Domain interfaces                              │
 └─────────────────────────────────────────────────────────────┘
                               ▲
@@ -428,7 +428,6 @@ class RedisOAuthStorage implements IOAuthTokenStorage {
 
   private encrypt(token: StoredToken): any {
     // Same AES-256-GCM encryption as FileStorage
-    // See src/plugins/oauth/infrastructure/storage/FileStorage.ts
     return token;
   }
 
@@ -444,91 +443,9 @@ class RedisOAuthStorage implements IOAuthTokenStorage {
 - ✅ Works with Redis Cluster (scalable)
 - ✅ Perfect for multi-server deployments
 
-### Example: PostgreSQL Storage
-
-```typescript
-import { IOAuthTokenStorage, StoredToken } from '@oneringai/agents';
-import { Pool } from 'pg';
-
-class PostgresOAuthStorage implements IOAuthTokenStorage {
-  private pool: Pool;
-  private encryptionKey: Buffer;
-
-  constructor(pool: Pool, encryptionKey: string) {
-    this.pool = pool;
-    this.encryptionKey = Buffer.from(encryptionKey, 'hex');
-  }
-
-  async storeToken(key: string, token: StoredToken): Promise<void> {
-    const encrypted = this.encrypt(token);
-    const expiresAt = new Date(token.obtained_at + token.expires_in * 1000);
-
-    await this.pool.query(
-      `INSERT INTO oauth_tokens (key, encrypted_data, iv, auth_tag, expires_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       ON CONFLICT (key) DO UPDATE
-       SET encrypted_data = $2, iv = $3, auth_tag = $4, expires_at = $5, updated_at = NOW()`,
-      [key, encrypted.data, encrypted.iv, encrypted.authTag, expiresAt]
-    );
-  }
-
-  async getToken(key: string): Promise<StoredToken | null> {
-    const result = await this.pool.query(
-      'SELECT encrypted_data, iv, auth_tag FROM oauth_tokens WHERE key = $1 AND expires_at > NOW()',
-      [key]
-    );
-
-    if (result.rows.length === 0) {
-      return null;
-    }
-
-    return this.decrypt(result.rows[0]);
-  }
-
-  async deleteToken(key: string): Promise<void> {
-    await this.pool.query('DELETE FROM oauth_tokens WHERE key = $1', [key]);
-  }
-
-  async hasToken(key: string): Promise<boolean> {
-    const result = await this.pool.query(
-      'SELECT 1 FROM oauth_tokens WHERE key = $1 AND expires_at > NOW()',
-      [key]
-    );
-    return result.rows.length > 0;
-  }
-
-  private encrypt(token: StoredToken): any {
-    // AES-256-GCM encryption
-    return { data: '', iv: '', authTag: '' };
-  }
-
-  private decrypt(doc: any): StoredToken {
-    // Decrypt
-    return {} as StoredToken;
-  }
-}
-```
-
-**SQL Schema**:
-
-```sql
-CREATE TABLE oauth_tokens (
-  key VARCHAR(255) PRIMARY KEY,
-  encrypted_data TEXT NOT NULL,
-  iv VARCHAR(24) NOT NULL,
-  auth_tag VARCHAR(24) NOT NULL,
-  expires_at TIMESTAMP NOT NULL,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-
--- Auto-cleanup expired tokens
-CREATE INDEX idx_expires_at ON oauth_tokens(expires_at);
-```
-
 ---
 
-## Custom LLM Providers
+## Custom LLM Providers - Full Examples
 
 ### Example: Cohere Provider
 
@@ -644,7 +561,7 @@ class CohereProvider extends BaseTextProvider {
 ### Example: Local Ollama Provider
 
 ```typescript
-import { BaseTextProvider } from '@oneringai/agents';
+import { BaseTextProvider, Connector, Vendor } from '@oneringai/agents';
 
 class OllamaProvider extends BaseTextProvider {
   readonly name = 'ollama';
@@ -712,22 +629,21 @@ class OllamaProvider extends BaseTextProvider {
     };
   }
 }
-```
 
-**Usage**:
-
-```typescript
-const client = new OneRingAI({
-  providers: {
-    ollama: new OllamaProvider({ baseURL: 'http://localhost:11434' })
-  }
+// Usage with the new Connector-First API:
+Connector.create({
+  name: 'ollama',
+  vendor: Vendor.OpenAI, // Use OpenAI-compatible vendor
+  auth: { type: 'none' }, // No auth needed for local Ollama
+  baseURL: 'http://localhost:11434/v1',
 });
 
-// Use like any other provider!
-const response = await client.text.generate('Hello!', {
-  provider: 'ollama',
-  model: 'llama2'
+const agent = Agent.create({
+  connector: 'ollama',
+  model: 'llama2',
 });
+
+const response = await agent.run('Hello!');
 ```
 
 ---
@@ -808,59 +724,6 @@ class RateLimitedToolExecutor implements IToolExecutor {
 }
 ```
 
-### Example: Caching Executor
-
-```typescript
-class CachingToolExecutor implements IToolExecutor {
-  private cache: Map<string, any> = new Map();
-
-  async executeTool(
-    toolCall: ToolCall,
-    context: ToolExecutionContext
-  ): Promise<ToolResult> {
-    // Generate cache key from tool name + arguments
-    const cacheKey = this.getCacheKey(toolCall);
-
-    // Check cache
-    if (this.cache.has(cacheKey)) {
-      console.log(`✅ Cache hit for ${toolCall.function.name}`);
-      return {
-        tool_call_id: toolCall.id,
-        output: this.cache.get(cacheKey),
-      };
-    }
-
-    // Execute tool
-    const tool = context.tools.find(
-      (t) => t.definition.function.name === toolCall.function.name
-    );
-
-    if (!tool) {
-      return {
-        tool_call_id: toolCall.id,
-        output: JSON.stringify({ error: 'Tool not found' }),
-        error: true,
-      };
-    }
-
-    const result = await tool.execute(toolCall.function.arguments);
-    const output = JSON.stringify(result);
-
-    // Cache result
-    this.cache.set(cacheKey, output);
-
-    return {
-      tool_call_id: toolCall.id,
-      output,
-    };
-  }
-
-  private getCacheKey(toolCall: ToolCall): string {
-    return `${toolCall.function.name}:${JSON.stringify(toolCall.function.arguments)}`;
-  }
-}
-```
-
 ---
 
 ## Examples
@@ -935,6 +798,8 @@ Implement only what you need!
 ### 4. Testability
 
 ```typescript
+import { Connector, Agent, Vendor } from '@oneringai/agents';
+
 // Mock provider for testing
 class MockTextProvider implements ITextProvider {
   async generate(): Promise<LLMResponse> {
@@ -944,159 +809,17 @@ class MockTextProvider implements ITextProvider {
 }
 
 // Use in tests
-const agent = await client.agents.create({
-  provider: 'mock',
-  model: 'test',
-  tools: [myTool]
+Connector.create({
+  name: 'mock',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: 'test-key' },
 });
-```
 
----
-
-## Exported Interfaces & Base Classes
-
-### Domain Interfaces (Contracts)
-
-```typescript
-import {
-  // Provider interfaces
-  IProvider,
-  ITextProvider,
-  IImageProvider,
-  IToolExecutor,
-
-  // Lifecycle
-  IDisposable,
-  IAsyncDisposable,
-
-  // OAuth
-  IOAuthTokenStorage,
-
-  // Types for implementation
-  ProviderCapabilities,
-  TextGenerateOptions,
-  ModelCapabilities,
-  LLMResponse,
-  StreamEvent,
-  ToolCall,
-  ToolResult,
-  ToolExecutionContext,
-  StoredToken,
-} from '@oneringai/agents';
-```
-
-### Infrastructure Base Classes
-
-```typescript
-import {
-  // Base classes with reusable logic
-  BaseProvider,
-  BaseTextProvider,
-
-  // Utilities
-  ProviderErrorMapper,
-} from '@oneringai/agents';
-```
-
-**Base Class Benefits**:
-- ✅ Common validation logic
-- ✅ API key handling
-- ✅ Input normalization helpers
-- ✅ Error mapping utilities
-- ✅ Less boilerplate
-
----
-
-## Implementation Checklist
-
-### For Custom LLM Provider:
-
-- [ ] Extend `BaseTextProvider` or implement `ITextProvider`
-- [ ] Implement `generate(options)` - main text generation
-- [ ] Implement `streamGenerate(options)` - streaming (can throw if not supported)
-- [ ] Implement `getModelCapabilities(model)` - model metadata
-- [ ] Convert between your API format and our standard format
-- [ ] Use `ProviderErrorMapper` for consistent error handling
-- [ ] Test with `client.text.generate()` and `client.agents.create()`
-
-### For Custom OAuth Storage:
-
-- [ ] Implement `IOAuthTokenStorage` interface
-- [ ] Implement all 4 methods: `storeToken`, `getToken`, `deleteToken`, `hasToken`
-- [ ] MUST encrypt tokens at rest (use Node.js crypto AES-256-GCM)
-- [ ] Handle multi-user keys automatically (key includes userId)
-- [ ] Pass to OAuthManager: `storage: new YourStorage()`
-- [ ] Test with `oauth.getToken(userId)` for multiple users
-
-### For Custom Tool Executor:
-
-- [ ] Implement `IToolExecutor` interface
-- [ ] Implement `executeTool(toolCall, context)`
-- [ ] Add your custom logic (rate limiting, caching, etc.)
-- [ ] Return `ToolResult` with proper error handling
-- [ ] Pass to ToolRegistry (advanced usage)
-
----
-
-## Production Best Practices
-
-### 1. Implement IDisposable
-
-```typescript
-class MyProvider extends BaseTextProvider implements IDisposable {
-  private _isDestroyed = false;
-
-  get isDestroyed(): boolean {
-    return this._isDestroyed;
-  }
-
-  destroy(): void {
-    if (this._isDestroyed) return;
-    this._isDestroyed = true;
-
-    // Cleanup resources
-    this.client?.close();
-  }
-}
-```
-
-### 2. Use ProviderErrorMapper
-
-```typescript
-try {
-  const response = await yourAPI.call();
-} catch (error) {
-  // Maps to: ProviderAuthError, ProviderRateLimitError, etc.
-  throw ProviderErrorMapper.mapError(error, this.name);
-}
-```
-
-### 3. Handle Multi-User in Storage
-
-```typescript
-// Storage keys are already user-scoped by TokenStore
-// Just implement the interface - multi-user works automatically!
-async storeToken(key: string, token: StoredToken): Promise<void> {
-  // key is "provider:clientId:userId" for multi-user
-  // key is "provider:clientId" for single-user
-  await this.db.save(key, encrypt(token));
-}
-```
-
-### 4. Add Proper Validation
-
-```typescript
-class MyProvider extends BaseTextProvider {
-  protected validateProviderSpecificKeyFormat(apiKey: string) {
-    if (!apiKey.startsWith('myai_')) {
-      return {
-        isValid: false,
-        warning: 'MyAI keys should start with myai_',
-      };
-    }
-    return { isValid: true };
-  }
-}
+const agent = Agent.create({
+  connector: 'mock',
+  model: 'test',
+  tools: [myTool],
+});
 ```
 
 ---
@@ -1119,4 +842,4 @@ class MyProvider extends BaseTextProvider {
 
 ---
 
-**Last Updated**: 2026-01-12
+**Last Updated**: 2026-01-15

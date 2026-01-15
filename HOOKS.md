@@ -44,27 +44,27 @@ Complete guide to controlling agent execution with hooks and events.
 ### Basic Event Listening
 
 ```typescript
-import { OneRingAI } from '@oneringai/agents';
+import { Connector, Agent, Vendor } from '@oneringai/agents';
 
-const client = new OneRingAI({
-  providers: {
-    openai: { apiKey: process.env.OPENAI_API_KEY }
-  }
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
 });
 
-const agent = await client.agents.create({
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
-  tools: [myTool]
+  tools: [myTool],
 });
 
 // Listen to tool execution
 agent.on('tool:start', ({ toolCall }) => {
-  console.log(`▶️  Starting: ${toolCall.function.name}`);
+  console.log(`Starting: ${toolCall.function.name}`);
 });
 
 agent.on('tool:complete', ({ result }) => {
-  console.log(`✅ Completed in ${result.executionTime}ms`);
+  console.log(`Completed in ${result.executionTime}ms`);
 });
 
 const response = await agent.run('Do something');
@@ -73,8 +73,8 @@ const response = await agent.run('Do something');
 ### Basic Hook Usage
 
 ```typescript
-const agent = await client.agents.create({
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   tools: [myTool],
 
@@ -123,7 +123,7 @@ const agent = await client.agents.create({
 #### Example 1: Real-Time UI Updates
 
 ```typescript
-const agent = await client.agents.create({ ... });
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4', tools: [myTool] });
 
 // Send progress to WebSocket
 agent.on('iteration:start', ({ iteration }) => {
@@ -200,33 +200,6 @@ agent.on('execution:complete', ({ duration }) => {
 });
 ```
 
-#### Example 3: Performance Monitoring
-
-```typescript
-const performanceTracker = {
-  llmCalls: 0,
-  llmTotalTime: 0,
-  toolCalls: 0,
-  toolTotalTime: 0
-};
-
-agent.on('llm:response', ({ duration }) => {
-  performanceTracker.llmCalls++;
-  performanceTracker.llmTotalTime += duration;
-});
-
-agent.on('tool:complete', ({ result }) => {
-  performanceTracker.toolCalls++;
-  performanceTracker.toolTotalTime += result.executionTime || 0;
-});
-
-await agent.run('Process data');
-
-console.log('Performance Report:');
-console.log(`  Avg LLM time: ${performanceTracker.llmTotalTime / performanceTracker.llmCalls}ms`);
-console.log(`  Avg Tool time: ${performanceTracker.toolTotalTime / performanceTracker.toolCalls}ms`);
-```
-
 ---
 
 ## Hooks (Control)
@@ -244,54 +217,13 @@ console.log(`  Avg Tool time: ${performanceTracker.toolTotalTime / performanceTr
 | `approve:tool` | Before executing tool | `{ approved, reason? }` | Human approval |
 | `pause:check` | Each iteration | `{ shouldPause, reason? }` | Custom pause logic |
 
-### Hook Return Values
-
-**Skip an operation**:
-```typescript
-'before:tool': async ({ toolCall }) => {
-  if (toolCall.function.name === 'expensive_operation') {
-    return { skip: true, mockResult: 'skipped' };
-  }
-  return {};
-}
-```
-
-**Modify data**:
-```typescript
-'before:llm': async ({ options }) => {
-  return {
-    modified: {
-      temperature: 0.5,  // Lower temperature
-      max_output_tokens: 100  // Limit response
-    }
-  };
-}
-```
-
-**Reject/approve**:
-```typescript
-'approve:tool': async ({ toolCall }) => {
-  return { approved: false, reason: 'Tool not allowed' };
-}
-```
-
-**Trigger pause**:
-```typescript
-'pause:check': async ({ iteration }) => {
-  if (iteration > 5) {
-    return { shouldPause: true, reason: 'Too many iterations' };
-  }
-  return { shouldPause: false };
-}
-```
-
 ### Hook Examples
 
 #### Example 1: Tool Approval (Human-in-the-Loop)
 
 ```typescript
-const agent = await client.agents.create({
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   tools: [deleteTool, updateTool],
 
@@ -299,7 +231,7 @@ const agent = await client.agents.create({
     'approve:tool': async ({ toolCall }) => {
       // Dangerous tools require approval
       if (toolCall.function.name === 'delete_database') {
-        console.log('\n⚠️  DANGEROUS OPERATION DETECTED');
+        console.log('\n DANGEROUS OPERATION DETECTED');
         console.log(`Tool: ${toolCall.function.name}`);
         console.log(`Args:`, JSON.parse(toolCall.function.arguments));
 
@@ -325,8 +257,8 @@ const agent = await client.agents.create({
 import Redis from 'ioredis';
 const redis = new Redis();
 
-const agent = await client.agents.create({
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   tools: [expensiveTool],
 
@@ -338,7 +270,7 @@ const agent = await client.agents.create({
       // Check cache
       const cached = await redis.get(cacheKey);
       if (cached) {
-        console.log(`💾 Cache hit: ${toolCall.function.name}`);
+        console.log(`Cache hit: ${toolCall.function.name}`);
         return {
           skip: true,
           mockResult: JSON.parse(cached),
@@ -356,7 +288,7 @@ const agent = await client.agents.create({
 
         // Cache for 1 hour
         await redis.setex(cacheKey, 3600, JSON.stringify(result.content));
-        console.log(`💾 Cached: ${toolCall.function.name}`);
+        console.log(`Cached: ${toolCall.function.name}`);
       }
 
       return {};
@@ -365,46 +297,7 @@ const agent = await client.agents.create({
 });
 ```
 
-#### Example 3: Retry Logic
-
-```typescript
-const agent = await client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4',
-  tools: [unreliableTool],
-
-  hooks: {
-    'after:tool': async ({ toolCall, result, context }) => {
-      // Retry failed tools
-      if (result.state === 'failed') {
-        const retryKey = `retry:${toolCall.id}`;
-        const retryCount = context.metadata.get(retryKey) || 0;
-
-        if (retryCount < 3) {
-          console.log(`🔄 Retrying ${toolCall.function.name} (attempt ${retryCount + 1}/3)`);
-
-          context.metadata.set(retryKey, retryCount + 1);
-
-          // Request retry by returning modified result with PENDING state
-          return {
-            modified: {
-              ...result,
-              state: 'pending' as any  // Trigger re-execution
-            },
-            retry: true
-          };
-        }
-
-        console.log(`❌ Max retries reached for ${toolCall.function.name}`);
-      }
-
-      return {};
-    }
-  }
-});
-```
-
-#### Example 4: Rate Limiting
+#### Example 3: Rate Limiting
 
 ```typescript
 const rateLimiter = {
@@ -412,8 +305,8 @@ const rateLimiter = {
   minInterval: 1000  // 1 second between LLM calls
 };
 
-const agent = await client.agents.create({
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   tools: [myTool],
 
@@ -424,48 +317,11 @@ const agent = await client.agents.create({
 
       if (timeSinceLastCall < rateLimiter.minInterval) {
         const waitTime = rateLimiter.minInterval - timeSinceLastCall;
-        console.log(`⏳ Rate limiting: waiting ${waitTime}ms`);
+        console.log(`Rate limiting: waiting ${waitTime}ms`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
 
       rateLimiter.lastCall = Date.now();
-      return {};
-    }
-  }
-});
-```
-
-#### Example 5: Custom Validation
-
-```typescript
-const agent = await client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4',
-  tools: [dataProcessingTool],
-
-  hooks: {
-    'before:tool': async ({ toolCall }) => {
-      const args = JSON.parse(toolCall.function.arguments);
-
-      // Validate tool arguments
-      if (toolCall.function.name === 'process_data') {
-        if (!args.data || args.data.length === 0) {
-          console.log('❌ Validation failed: empty data');
-          return {
-            skip: true,
-            mockResult: { error: 'Data cannot be empty' }
-          };
-        }
-
-        if (args.data.length > 1000) {
-          console.log('❌ Validation failed: data too large');
-          return {
-            skip: true,
-            mockResult: { error: 'Data exceeds 1000 items' }
-          };
-        }
-      }
-
       return {};
     }
   }
@@ -479,7 +335,7 @@ const agent = await client.agents.create({
 ### Manual Control
 
 ```typescript
-const agent = await client.agents.create({ ... });
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4', tools: [myTool] });
 
 // Start execution (non-blocking)
 const responsePromise = agent.run('Long running task');
@@ -487,44 +343,23 @@ const responsePromise = agent.run('Long running task');
 // Pause from another thread (e.g., button click)
 setTimeout(() => {
   agent.pause('User clicked pause button');
-  console.log('⏸️  Paused');
+  console.log('Paused');
 }, 2000);
 
 // Resume later
 setTimeout(() => {
   agent.resume();
-  console.log('▶️  Resumed');
+  console.log('Resumed');
 }, 5000);
 
 const response = await responsePromise;
 ```
 
-### Pause from Hook
-
-```typescript
-const agent = await client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4',
-  tools: [myTool],
-
-  hooks: {
-    'approve:tool': async ({ toolCall }) => {
-      // Execution automatically pauses while waiting
-      const approved = await askUserApproval(toolCall);
-
-      return { approved };
-    }
-  }
-});
-
-// Execution will pause during approval, then resume
-```
-
 ### Auto-Pause After N Iterations
 
 ```typescript
-const agent = await client.agents.create({
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   tools: [myTool],
 
@@ -542,24 +377,20 @@ const agent = await client.agents.create({
   }
 });
 
-// Start execution
-const responsePromise = agent.run('Task');
-
 // Listen for pause
 agent.on('execution:paused', ({ reason }) => {
   console.log(`Paused: ${reason}`);
-
   // Auto-resume after 1 second
   setTimeout(() => agent.resume(), 1000);
 });
 
-await responsePromise;
+await agent.run('Task');
 ```
 
 ### Cancel Execution
 
 ```typescript
-const agent = await client.agents.create({ ... });
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4', tools: [myTool] });
 const responsePromise = agent.run('Long task');
 
 // Cancel from button or timeout
@@ -581,12 +412,12 @@ try {
 ### Get Execution Metrics
 
 ```typescript
-const agent = await client.agents.create({ ... });
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4', tools: [myTool] });
 const response = await agent.run('Process data');
 
 const metrics = agent.getMetrics();
 
-console.log('📊 Metrics:');
+console.log('Metrics:');
 console.log(`  Total Duration: ${metrics.totalDuration}ms`);
 console.log(`  LLM Duration: ${metrics.llmDuration}ms`);
 console.log(`  Tool Duration: ${metrics.toolDuration}ms`);
@@ -603,7 +434,7 @@ console.log(`  Errors: ${metrics.errors.length}`);
 ```typescript
 const audit = agent.getAuditTrail();
 
-console.log('📋 Audit Trail:');
+console.log('Audit Trail:');
 audit.forEach(entry => {
   console.log(`${entry.timestamp.toISOString()} - ${entry.type}`);
   if (entry.toolName) console.log(`  Tool: ${entry.toolName}`);
@@ -629,21 +460,6 @@ if (agent.isCancelled()) {
 }
 ```
 
-### Get Execution Summary
-
-```typescript
-const summary = agent.getSummary();
-
-console.log('Summary:', {
-  executionId: summary.executionId,
-  currentIteration: summary.currentIteration,
-  paused: summary.paused,
-  cancelled: summary.cancelled,
-  totalDuration: summary.totalDuration,
-  metrics: summary.metrics
-});
-```
-
 ---
 
 ## Enterprise Configuration
@@ -651,8 +467,8 @@ console.log('Summary:', {
 ### Full Configuration Example
 
 ```typescript
-const agent = await client.agents.create({
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   tools: [tool1, tool2, tool3],
   instructions: 'You are a helpful assistant',
@@ -666,9 +482,6 @@ const agent = await client.agents.create({
 
   // === HISTORY MODE (Memory Management) ===
   historyMode: 'summary',  // Options: 'none', 'summary', 'full'
-  // 'none' - No history (fastest, least memory)
-  // 'summary' - Store summaries only (recommended)
-  // 'full' - Store everything (debugging)
 
   // === ERROR HANDLING ===
   errorHandling: {
@@ -680,17 +493,14 @@ const agent = await client.agents.create({
   // === HOOKS ===
   hooks: {
     'approve:tool': async (ctx) => {
-      // Your approval logic
       return { approved: true };
     },
 
     'before:tool': async (ctx) => {
-      // Your pre-execution logic
       return {};
     },
 
     'after:tool': async (ctx) => {
-      // Your post-execution logic
       return {};
     },
 
@@ -725,8 +535,8 @@ const agent = await client.agents.create({
 // Example: Different modes for different environments
 const historyMode = process.env.NODE_ENV === 'production' ? 'summary' : 'full';
 
-const agent = await client.agents.create({
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   tools: [myTool],
   historyMode
@@ -740,12 +550,18 @@ const agent = await client.agents.create({
 ### Example 1: Production Agent with Full Monitoring
 
 ```typescript
-import { OneRingAI, tools } from '@oneringai/agents';
+import { Connector, Agent, Vendor, tools } from '@oneringai/agents';
 import { logger } from './logger';
 import { metrics } from './metrics';
 
-const agent = await client.agents.create({
-  provider: 'anthropic',
+Connector.create({
+  name: 'anthropic',
+  vendor: Vendor.Anthropic,
+  auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
+});
+
+const agent = Agent.create({
+  connector: 'anthropic',
   model: 'claude-sonnet-4-5-20250929',
   tools: [tools.jsonManipulator],
 
@@ -764,7 +580,6 @@ const agent = await client.agents.create({
   // Hooks
   hooks: {
     'before:tool': async ({ toolCall }) => {
-      // Log to metrics system
       metrics.increment('tool.started', {
         tool: toolCall.function.name
       });
@@ -772,7 +587,6 @@ const agent = await client.agents.create({
     },
 
     'after:tool': async ({ toolCall, result }) => {
-      // Log result
       metrics.timing('tool.duration', result.executionTime || 0, {
         tool: toolCall.function.name,
         state: result.state
@@ -819,6 +633,7 @@ try {
 
 ```typescript
 import readline from 'readline';
+import { Connector, Agent, Vendor } from '@oneringai/agents';
 
 async function askUserApproval(toolCall: ToolCall): Promise<boolean> {
   return new Promise((resolve) => {
@@ -827,7 +642,7 @@ async function askUserApproval(toolCall: ToolCall): Promise<boolean> {
       output: process.stdout
     });
 
-    console.log(`\n⚠️  Approve tool execution?`);
+    console.log(`\n Approve tool execution?`);
     console.log(`   Tool: ${toolCall.function.name}`);
     console.log(`   Args: ${toolCall.function.arguments}`);
 
@@ -838,8 +653,14 @@ async function askUserApproval(toolCall: ToolCall): Promise<boolean> {
   });
 }
 
-const agent = await client.agents.create({
-  provider: 'openai',
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   tools: [dangerousTool],
 
@@ -859,63 +680,6 @@ const agent = await client.agents.create({
 const response = await agent.run('Delete old records');
 ```
 
-### Example 3: Real-Time Progress Dashboard
-
-```typescript
-import { Server as WebSocketServer } from 'ws';
-
-const wss = new WebSocketServer({ port: 8080 });
-
-const agent = await client.agents.create({
-  provider: 'openai',
-  model: 'gpt-4',
-  tools: [tool1, tool2, tool3]
-});
-
-// Broadcast to all connected clients
-function broadcast(data: any) {
-  wss.clients.forEach(client => {
-    if (client.readyState === 1) {  // OPEN
-      client.send(JSON.stringify(data));
-    }
-  });
-}
-
-// Send progress updates
-agent.on('iteration:start', ({ iteration }) => {
-  broadcast({ type: 'iteration', iteration, status: 'started' });
-});
-
-agent.on('tool:start', ({ toolCall }) => {
-  broadcast({
-    type: 'tool',
-    tool: toolCall.function.name,
-    status: 'executing'
-  });
-});
-
-agent.on('tool:complete', ({ toolCall, result }) => {
-  broadcast({
-    type: 'tool',
-    tool: toolCall.function.name,
-    status: 'completed',
-    duration: result.executionTime
-  });
-});
-
-agent.on('execution:complete', ({ duration }) => {
-  const metrics = agent.getMetrics();
-  broadcast({
-    type: 'complete',
-    duration,
-    metrics
-  });
-});
-
-// Execute
-await agent.run('Complex task');
-```
-
 ---
 
 ## Best Practices
@@ -923,7 +687,7 @@ await agent.run('Complex task');
 ### 1. Always Cleanup
 
 ```typescript
-const agent = await client.agents.create({ ... });
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4', tools: [myTool] });
 
 try {
   const response = await agent.run('Task');
@@ -936,29 +700,36 @@ try {
 ### 2. Use Summary Mode in Production
 
 ```typescript
-const agent = await client.agents.create({
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [myTool],
   historyMode: process.env.NODE_ENV === 'production' ? 'summary' : 'full',
-  // ...
 });
 ```
 
 ### 3. Set Resource Limits
 
 ```typescript
-const agent = await client.agents.create({
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [myTool],
   limits: {
     maxExecutionTime: 300000,  // Prevent infinite loops
     maxToolCalls: 100,         // Prevent tool spam
     maxContextSize: 10485760   // Prevent memory issues
   },
-  // ...
 });
 ```
 
 ### 4. Handle Hook Errors Gracefully
 
 ```typescript
-const agent = await client.agents.create({
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [myTool],
   errorHandling: {
     hookFailureMode: 'warn',  // Don't crash on hook errors
     maxConsecutiveErrors: 3
@@ -985,17 +756,17 @@ agent.on('hook:error', ({ hookName, error }) => {
 ### 5. Use Events for Monitoring, Hooks for Control
 
 ```typescript
-// ✅ Good: Events for logging
+// Good: Events for logging
 agent.on('tool:complete', ({ result }) => {
   logger.info('Tool completed', result);
 });
 
-// ✅ Good: Hooks for control
+// Good: Hooks for control
 hooks: {
   'approve:tool': async (ctx) => ({ approved: await checkPermissions() })
 }
 
-// ❌ Bad: Don't use hooks for logging only
+// Bad: Don't use hooks for logging only
 hooks: {
   'after:tool': async ({ result }) => {
     logger.info('Tool completed', result);  // Use events for this!
@@ -1047,90 +818,6 @@ errorHandling: {
 }
 ```
 
-### Agent Won't Resume
-
-**Cause**: Pause/resume state mismatch
-
-**Fix**: Check state before resume
-```typescript
-if (agent.isPaused()) {
-  agent.resume();
-}
-```
-
----
-
-## API Reference
-
-### Agent Methods
-
-```typescript
-// Control
-agent.pause(reason?: string): void
-agent.resume(): void
-agent.cancel(reason?: string): void
-
-// Introspection
-agent.getContext(): ExecutionContext | null
-agent.getMetrics(): ExecutionMetrics | null
-agent.getSummary(): ExecutionSummary | null
-agent.getAuditTrail(): AuditEntry[]
-agent.isRunning(): boolean
-agent.isPaused(): boolean
-agent.isCancelled(): boolean
-
-// Cleanup
-agent.destroy(): void
-agent.onCleanup(callback: () => void): void
-```
-
-### Hook Context Types
-
-```typescript
-// All hook contexts include
-interface BaseContext {
-  executionId: string;
-  iteration: number;
-  context: ExecutionContext;
-  timestamp: Date;
-}
-
-// Tool hooks add
-interface BeforeToolContext extends BaseContext {
-  toolCall: ToolCall;
-}
-
-interface AfterToolContext extends BaseContext {
-  toolCall: ToolCall;
-  result: ToolResult;
-}
-```
-
-### Hook Return Types
-
-```typescript
-// Tool modification
-interface ToolModification {
-  modified?: Partial<ToolCall>;
-  skip?: boolean;
-  mockResult?: any;
-  reason?: string;
-}
-
-// Approval
-interface ApprovalResult {
-  approved: boolean;
-  reason?: string;
-  modifiedArgs?: any;
-}
-
-// Pause decision
-interface PauseDecision {
-  shouldPause: boolean;
-  reason?: string;
-}
-```
-
 ---
 
 ## Examples
@@ -1151,6 +838,6 @@ This demonstrates:
 
 ---
 
-**Version**: 0.2.0
+**Version**: 0.3.0
 **Added**: Hooks & Events system
 **Breaking Changes**: None (fully backward compatible)

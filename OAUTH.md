@@ -174,12 +174,12 @@ const oauth = new OAuthManager({
 ### File Storage
 
 ```typescript
-import { OAuthFileStorage } from '@oneringai/agents';
+import { FileStorage } from '@oneringai/agents';
 
 const oauth = new OAuthManager({
   flow: 'client_credentials',
   // ... other config
-  storage: new OAuthFileStorage({
+  storage: new FileStorage({
     directory: './tokens',
     encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
   })
@@ -325,7 +325,7 @@ All stored separately, all encrypted!
 ### Basic Multi-User Pattern
 
 ```typescript
-import { OAuthManager, OAuthFileStorage } from '@oneringai/agents';
+import { OAuthManager, FileStorage } from '@oneringai/agents';
 
 // Create ONE OAuthManager for the provider
 const oauth = new OAuthManager({
@@ -338,7 +338,7 @@ const oauth = new OAuthManager({
   scope: 'user:email repo',
 
   // Persistent storage (all users share backend, tokens isolated by key)
-  storage: new OAuthFileStorage({
+  storage: new FileStorage({
     directory: './tokens',
     encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
   })
@@ -365,7 +365,7 @@ console.log(aliceToken === bobToken); // false
 ```typescript
 import express from 'express';
 import session from 'express-session';
-import { OAuthManager, OAuthFileStorage, authenticatedFetch } from '@oneringai/agents';
+import { OAuthManager, FileStorage, authenticatedFetch } from '@oneringai/agents';
 
 const app = express();
 
@@ -381,7 +381,7 @@ const oauth = new OAuthManager({
   tokenUrl: 'https://github.com/login/oauth/access_token',
   redirectUri: 'http://localhost:3000/auth/callback',
   scope: 'user:email repo',
-  storage: new OAuthFileStorage({
+  storage: new FileStorage({
     directory: './tokens',
     encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
   })
@@ -505,7 +505,9 @@ const bobIssues = await bobFetch('https://api.github.com/user/issues');
 
 ```typescript
 import {
-  OneRingAI,
+  Connector,
+  Agent,
+  Vendor,
   connectorRegistry,
   createExecuteJavaScriptTool
 } from '@oneringai/agents';
@@ -513,11 +515,18 @@ import {
 // Register OAuth provider
 connectorRegistry.register('github', { /* ... */ });
 
+// Create AI connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
 // Create agent with JavaScript execution tool
 const jsTool = createExecuteJavaScriptTool(connectorRegistry);
 
-const agent = await client.agents.create({
-  provider: 'openai',
+const agent = Agent.create({
+  connector: 'openai',
   model: 'gpt-4',
   tools: [jsTool],
   instructions: `You can access GitHub API using authenticatedFetch.
@@ -565,7 +574,7 @@ const userFetch = createAuthenticatedFetch(provider, userId?)
 
 #### Option 1: FileStorage
 ```typescript
-new OAuthFileStorage({
+new FileStorage({
   directory: './tokens',
   encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
 })
@@ -848,18 +857,25 @@ const response = await fetch(
 );
 ```
 
-**Or use with OneRingAI + OAuth**:
+**Or use with Connector + OAuth**:
 ```typescript
+import { Connector, Agent, Vendor } from '@oneringai/agents';
+
 const token = await vertexAIOAuth.getToken();
 
-const client = new OneRingAI({
-  providers: {
-    'vertex-ai': {
-      projectId: 'your-project-id',
-      location: 'us-central1',
-      // credentials: can be set via OAuth token
-    }
+Connector.create({
+  name: 'vertex',
+  vendor: Vendor.VertexAI,
+  auth: {
+    type: 'adc',
+    projectId: 'your-project-id',
+    location: 'us-central1',
   }
+});
+
+const agent = Agent.create({
+  connector: 'vertex',
+  model: 'gemini-1.5-pro',
 });
 ```
 
@@ -1141,7 +1157,7 @@ const account = await fetch('https://api.dropboxapi.com/2/users/get_current_acco
 ### With File Storage (Production)
 
 ```typescript
-import { OAuthManager, OAuthFileStorage } from '@oneringai/agents';
+import { OAuthManager, FileStorage } from '@oneringai/agents';
 
 const oauth = new OAuthManager({
   flow: 'client_credentials',
@@ -1150,7 +1166,7 @@ const oauth = new OAuthManager({
   tokenUrl: 'https://api.example.com/oauth/token',
 
   // Persistent encrypted storage
-  storage: new OAuthFileStorage({
+  storage: new FileStorage({
     directory: '/var/lib/myapp/tokens',
     encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
   }),
@@ -1166,7 +1182,7 @@ const token = await oauth.getToken();
 ### Auto-Refresh with Agents
 
 ```typescript
-import { OneRingAI, OAuthManager } from '@oneringai/agents';
+import { Connector, Agent, Vendor, OAuthManager } from '@oneringai/agents';
 
 const oauth = new OAuthManager({
   flow: 'client_credentials',
@@ -1178,17 +1194,16 @@ const oauth = new OAuthManager({
 // Get initial token
 const initialToken = await oauth.getToken();
 
-const client = new OneRingAI({
-  providers: {
-    'custom-llm': {
-      apiKey: initialToken,
-      baseURL: 'https://api.example.com/v1'
-    }
-  }
+// Create connector with initial token
+Connector.create({
+  name: 'custom-llm',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: initialToken },
+  baseURL: 'https://api.example.com/v1'
 });
 
-const agent = await client.agents.create({
-  provider: 'custom-llm',
+const agent = Agent.create({
+  connector: 'custom-llm',
   model: 'their-model',
 
   // Refresh token before each LLM call
@@ -1197,8 +1212,8 @@ const agent = await client.agents.create({
       if (!await oauth.isTokenValid()) {
         const newToken = await oauth.refreshToken();
         console.log('Token refreshed');
-        // Note: Updating provider token at runtime would require
-        // additional API in ProviderRegistry (future enhancement)
+        // Note: Token is refreshed but connector may need recreation
+        // for the new token to take effect
       }
       return {};
     }
@@ -1210,7 +1225,7 @@ const agent = await client.agents.create({
 
 ```typescript
 import express from 'express';
-import { OAuthManager, OAuthFileStorage } from '@oneringai/agents';
+import { OAuthManager, FileStorage } from '@oneringai/agents';
 
 const app = express();
 
@@ -1224,7 +1239,7 @@ const oauth = new OAuthManager({
   redirectUri: 'http://localhost:3000/callback',
   scope: 'https://www.googleapis.com/auth/userinfo.email',
 
-  storage: new OAuthFileStorage({
+  storage: new FileStorage({
     directory: './tokens',
     encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
   })
@@ -1516,7 +1531,7 @@ const oauth = new OAuthManager({
 ### Microsoft Graph (Production)
 
 ```typescript
-import { OAuthManager, OAuthFileStorage } from '@oneringai/agents';
+import { OAuthManager, FileStorage } from '@oneringai/agents';
 
 const config = {
   flow: 'authorization_code' as const,
@@ -1527,7 +1542,7 @@ const config = {
   redirectUri: process.env.REDIRECT_URI || 'http://localhost:3000/callback',
   scope: 'User.Read Mail.Read Calendars.ReadWrite Files.ReadWrite.All',
   usePKCE: true,
-  storage: new OAuthFileStorage({
+  storage: new FileStorage({
     directory: './secure-tokens',
     encryptionKey: process.env.OAUTH_ENCRYPTION_KEY!
   }),

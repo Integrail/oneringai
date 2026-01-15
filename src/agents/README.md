@@ -18,15 +18,17 @@ AI-powered assistant that helps you configure OAuth providers through interactiv
 **Usage**:
 
 ```typescript
-import { OneRingAI, ProviderConfigAgent } from '@oneringai/agents';
+import { Connector, Vendor, ProviderConfigAgent } from '@oneringai/agents';
 
-const client = new OneRingAI({
-  providers: {
-    openai: { apiKey: process.env.OPENAI_API_KEY }
-  }
+// Create connector for the AI
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! }
 });
 
-const configAgent = new ProviderConfigAgent(client);
+// Create the config agent using the connector
+const configAgent = new ProviderConfigAgent('openai');
 
 // Start interactive session
 const result = await configAgent.run('I want to connect to GitHub');
@@ -62,7 +64,8 @@ interface ProviderConfigResult {
     displayName: string;          // e.g., "GitHub API"
     description: string;          // What this provider does
     baseURL: string;              // API base URL
-    oauth: {
+    auth: {
+      type: 'oauth';
       flow: 'authorization_code' | 'client_credentials' | 'jwt_bearer' | 'static_token';
       clientId?: string;          // Uses ENV:VARIABLE_NAME format
       clientSecret?: string;      // Uses ENV:VARIABLE_NAME format

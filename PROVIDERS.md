@@ -1,789 +1,527 @@
-# Provider Guide
+# AI Provider Guide
 
-Complete guide to all supported AI providers in `@oneringai/agents`.
+Complete guide to configuring and using AI providers with `@oneringai/agents`.
+
+## Table of Contents
+
+- [Supported Providers](#supported-providers)
+- [Connector-First Architecture](#connector-first-architecture)
+- [Provider Configuration](#provider-configuration)
+- [Provider-Specific Notes](#provider-specific-notes)
+- [Model Recommendations](#model-recommendations)
+- [Troubleshooting](#troubleshooting)
+
+---
 
 ## Supported Providers
 
-| Provider | Status | Text | Vision | Tools | JSON Schema | Context |
-|----------|--------|------|--------|-------|-------------|---------|
-| **OpenAI** | ✅ | ✅ | ✅ | ✅ | ✅ Native | 128K |
-| **Anthropic** | ✅ | ✅ | ✅ | ✅ | ⚠️ Prompt | 200K |
-| **Google** | ✅ | ✅ | ✅ | ✅ | ⚠️ Prompt | 1M |
-| **Grok** (xAI) | ✅ | ✅ | ✅ | ✅ | ❌ | 128K |
-| **Groq** | ✅ | ✅ | ❌ | ✅ | ❌ | 128K |
-| **Together AI** | ✅ | ✅ | ⚠️ Some | ✅ | ❌ | 128K |
-| **Custom** | ✅ | ✅ | Varies | ✅ | Varies | Varies |
-
-## OpenAI
-
-### Configuration
-
-```typescript
-const client = new OneRingAI({
-  providers: {
-    openai: {
-      apiKey: process.env.OPENAI_API_KEY,
-      organization: 'org-...', // Optional
-      project: 'proj_...', // Optional
-    }
-  }
-});
-```
-
-### Popular Models
-
-| Model | Context | Output | Best For |
-|-------|---------|--------|----------|
-| `gpt-4o` | 128K | 16K | Vision, speed, cost |
-| `gpt-4o-mini` | 128K | 16K | Cheapest, fast |
-| `gpt-4-turbo` | 128K | 4K | Complex tasks |
-| `gpt-3.5-turbo` | 16K | 4K | Simple tasks, speed |
-| `o1-preview` | 128K | 32K | Reasoning (no tools) |
-
-### Features
-- ✅ Native Responses API (no conversion)
-- ✅ Tool calling
-- ✅ Vision (URLs and base64)
-- ✅ JSON schema validation
-- ✅ Streaming (future)
-
-### Get API Key
-https://platform.openai.com/api-keys
+| Provider | Vendor Enum | Text | Vision | Tools | Streaming | JSON Mode |
+|----------|-------------|------|--------|-------|-----------|-----------|
+| OpenAI | `Vendor.OpenAI` | Yes | Yes | Yes | Yes | Yes |
+| Anthropic | `Vendor.Anthropic` | Yes | Yes | Yes | Yes | Yes |
+| Google Gemini | `Vendor.Google` | Yes | Yes | Yes | Yes | Yes |
+| Google Vertex AI | `Vendor.VertexAI` | Yes | Yes | Yes | Yes | Yes |
+| Groq | `Vendor.Groq` | Yes | Limited | Yes | Yes | Yes |
+| Together AI | `Vendor.Together` | Yes | Limited | Yes | Yes | Limited |
+| Grok (xAI) | `Vendor.Grok` | Yes | Yes | Yes | Yes | Yes |
+| OpenAI Compatible | `Vendor.OpenAI` | Varies | Varies | Varies | Varies | Varies |
 
 ---
 
-## Anthropic (Claude)
+## Connector-First Architecture
 
-### Configuration
+### Overview
+
+`@oneringai/agents` uses a **Connector-First** architecture. You create connectors first, then create agents that use those connectors.
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    anthropic: {
-      apiKey: process.env.ANTHROPIC_API_KEY,
-      anthropicVersion: '2023-06-01', // Optional
-    }
-  }
+import { Connector, Agent, Vendor } from '@oneringai/agents';
+
+// 1. Create connectors
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
 });
+
+Connector.create({
+  name: 'anthropic',
+  vendor: Vendor.Anthropic,
+  auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
+});
+
+// 2. Create agents using connectors
+const gptAgent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+const claudeAgent = Agent.create({ connector: 'anthropic', model: 'claude-sonnet-4-5-20250929' });
+
+// 3. Use agents
+const response = await gptAgent.run('Hello!');
 ```
 
-### Popular Models
+### Named Connectors
 
-| Model | Context | Output | Best For |
-|-------|---------|--------|----------|
-| `claude-sonnet-4-20250514` | 200K | 8K | Latest Sonnet (best overall, vision) |
-| `claude-3-5-sonnet-20240620` | 200K | 8K | Claude 3.5 Sonnet |
-| `claude-3-opus-20240229` | 200K | 4K | Most capable |
-| `claude-3-sonnet-20240229` | 200K | 4K | Balanced |
-| `claude-3-haiku-20240307` | 200K | 4K | Fastest, cheapest |
+You can create multiple connectors per vendor:
 
-### Features
-- ✅ Tool calling
-- ✅ Vision (URLs and base64)
-- ⚠️ JSON via prompt engineering (no native schema)
-- ✅ Very large context (200K)
-- ✅ Extended thinking in Claude 3.7
+```typescript
+// Different API keys for different purposes
+Connector.create({
+  name: 'openai-main',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
 
-### Notes
-- Uses Messages API (converted from Responses API)
-- Vision requires Claude 3+ models
-- Tool format slightly different (object vs JSON string)
+Connector.create({
+  name: 'openai-backup',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_BACKUP_KEY! },
+});
 
-### Get API Key
-https://console.anthropic.com/
+// Use specific connector
+const agent = Agent.create({ connector: 'openai-main', model: 'gpt-4' });
+```
 
 ---
 
-## Google (Gemini)
+## Provider Configuration
 
-### Configuration
+### OpenAI
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    google: {
-      apiKey: process.env.GOOGLE_API_KEY,
-    }
-  }
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+  // Optional
+  baseURL: 'https://api.openai.com/v1',
+  organization: 'org-xxx',
+});
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4o',  // or 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'
+  tools: [myTool],
+  instructions: 'You are a helpful assistant.',
 });
 ```
 
-### Popular Models
+**Get API Key**: https://platform.openai.com/api-keys
 
-| Model | Context | Output | Best For |
-|-------|---------|--------|----------|
-| `gemini-2.0-flash-exp` | 1M | 8K | Latest, fast, experimental |
-| `gemini-1.5-pro-latest` | 1M | 8K | Most capable |
-| `gemini-1.5-flash-latest` | 1M | 8K | Fast, cost-effective |
-
-### Features
-- ✅ Tool calling (functionCall/functionResponse)
-- ✅ Vision (inline data - base64)
-- ⚠️ JSON mode (no full schema support)
-- ✅ Massive context window (1M tokens)
-
-### Notes
-- Uses Gemini API (very different format)
-- **Images converted to base64 automatically** (URLs fetched)
-- Tool results need function name (tracked internally)
-
-### Get API Key
-https://makersuite.google.com/app/apikey
-
----
-
-## Google Vertex AI (Enterprise)
-
-### Configuration
+### Anthropic (Claude)
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    'vertex-ai': {
-      projectId: 'your-gcp-project-id',
-      location: 'us-central1', // or 'europe-west1', 'asia-northeast1', etc.
-      // credentials: optional service account JSON
-    }
-  }
+Connector.create({
+  name: 'anthropic',
+  vendor: Vendor.Anthropic,
+  auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
+});
+
+const agent = Agent.create({
+  connector: 'anthropic',
+  model: 'claude-sonnet-4-5-20250929',  // or 'claude-3-opus-20240229', 'claude-3-haiku-20240307'
+  tools: [myTool],
+  instructions: 'You are Claude, a helpful AI assistant.',
 });
 ```
 
-### Setup Steps
+**Get API Key**: https://console.anthropic.com/
 
-1. **Create GCP Project**: https://console.cloud.google.com
-2. **Enable Vertex AI API**: In GCP Console → APIs & Services
-3. **Set up authentication**:
-   ```bash
-   # Option 1: Application Default Credentials (recommended)
-   gcloud auth application-default login
-
-   # Option 2: Service Account
-   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-   ```
-4. **Set environment variables**:
-   ```bash
-   GOOGLE_CLOUD_PROJECT=your-project-id
-   GOOGLE_CLOUD_LOCATION=us-central1
-   ```
-
-### Models
-
-Same Gemini models as the regular API:
-
-| Model | Context | Output | Best For |
-|-------|---------|--------|----------|
-| `gemini-3-flash-preview` | 1M | 8K | Latest, fastest |
-| `gemini-3-pro-preview` | 1M | 8K | Complex reasoning |
-| `gemini-2.5-flash` | 1M | 8K | Stable, fast |
-| `gemini-2.5-pro` | 1M | 8K | Stable, powerful |
-
-### Enterprise Features
-
-- ✅ **SLA Guarantees**: 99.9% uptime
-- ✅ **IAM Controls**: Fine-grained permissions
-- ✅ **Audit Logging**: Track all API usage
-- ✅ **Model Tuning**: Custom fine-tuning
-- ✅ **Context Caching**: Reduce costs
-- ✅ **RAG Engine**: Built-in retrieval
-- ✅ **Grounding**: Google Search integration
-- ✅ **Batch Inference**: Process large datasets
-- ✅ **Provisioned Throughput**: Reserved capacity
-
-### When to Use Vertex AI vs Regular Gemini API
-
-**Use Vertex AI if you need**:
-- Enterprise SLA and support
-- IAM/audit logging for compliance
-- Model customization and tuning
-- Integration with GCP services (BigQuery, Cloud Storage)
-- Dedicated capacity/throughput
-- Advanced features (caching, grounding, RAG)
-
-**Use regular Gemini API if you want**:
-- Quick prototyping
-- Simple API key authentication
-- Free tier for testing
-- No GCP account required
-
-### Pricing
-
-Vertex AI uses GCP billing (no free tier):
-- Input: ~$1.25-3.00 per 1M tokens (model-dependent)
-- Output: ~$5.00-15.00 per 1M tokens
-- Additional costs for tuning, caching, etc.
-
-### Get Started
-
-https://console.cloud.google.com/vertex-ai
-
----
-
-## Grok (xAI)
-
-### Configuration
+### Google Gemini
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    grok: {
-      apiKey: process.env.GROK_API_KEY,
-      baseURL: 'https://api.x.ai/v1', // Auto-configured
-    }
-  }
+Connector.create({
+  name: 'google',
+  vendor: Vendor.Google,
+  auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
+});
+
+const agent = Agent.create({
+  connector: 'google',
+  model: 'gemini-2.0-flash',  // or 'gemini-1.5-pro', 'gemini-1.5-flash'
+  tools: [myTool],
 });
 ```
 
-### Models
+**Get API Key**: https://makersuite.google.com/app/apikey
 
-| Model | Context | Output | Best For |
-|-------|---------|--------|----------|
-| `grok-2` | 128K | 4K | Latest model |
-| `grok-2-vision` | 128K | 4K | Vision support |
-
-### Features
-- ✅ OpenAI-compatible API
-- ✅ Tool calling
-- ✅ Vision (grok-2-vision)
-- ❌ No JSON schema
-
-### Notes
-- Uses Generic OpenAI Provider
-- Same interface as OpenAI
-- Developed by xAI (Elon Musk's company)
-
-### Get API Key
-https://x.ai/api
-
----
-
-## Groq (Fast Inference)
-
-### Configuration
+### Google Vertex AI
 
 ```typescript
-const client = new OneRingAI({
-  providers: {
-    groq: {
-      apiKey: process.env.GROQ_API_KEY,
-      baseURL: 'https://api.groq.com/openai/v1', // Auto-configured
-    }
-  }
+Connector.create({
+  name: 'vertex',
+  vendor: Vendor.VertexAI,
+  auth: {
+    type: 'adc',  // Application Default Credentials
+    projectId: process.env.GOOGLE_PROJECT_ID!,
+    location: 'us-central1',  // or your region
+  },
+});
+
+const agent = Agent.create({
+  connector: 'vertex',
+  model: 'gemini-1.5-pro',  // Same models as Gemini API
+  tools: [myTool],
 });
 ```
 
-### Popular Models
-
-| Model | Context | Output | Best For |
-|-------|---------|--------|----------|
-| `llama-3.1-70b-versatile` | 128K | 8K | Best Llama model |
-| `llama-3.1-8b-instant` | 128K | 8K | Fastest |
-| `mixtral-8x7b-32768` | 32K | 32K | Good quality |
-
-### Features
-- ✅ OpenAI-compatible API
-- ✅ Tool calling
-- ❌ No vision
-- ✅ Extremely fast inference (LPU hardware)
-
-### Notes
-- Uses Generic OpenAI Provider
-- Focus on speed (sub-second latency)
-- Free tier available
-- May have capacity limits
-
-### Get API Key
-https://console.groq.com/
-
----
-
-## Together AI (Llama & More)
-
-### Configuration
-
-```typescript
-const client = new OneRingAI({
-  providers: {
-    'together-ai': {
-      apiKey: process.env.TOGETHER_API_KEY,
-      baseURL: 'https://api.together.xyz/v1', // Auto-configured
-    }
-  }
-});
-```
-
-### Popular Models
-
-| Model | Context | Output | Best For |
-|-------|---------|--------|----------|
-| `meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo` | 128K | 4K | Best Llama |
-| `meta-llama/Llama-3.2-90B-Vision-Instruct` | 128K | 4K | Vision support |
-| `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo` | 128K | 4K | Fast, cheap |
-| `mistralai/Mixtral-8x7B-Instruct-v0.1` | 32K | 4K | Good quality |
-
-### Features
-- ✅ OpenAI-compatible API
-- ✅ Tool calling
-- ⚠️ Vision (some models)
-- ✅ Many open-source models
-
-### Notes
-- Uses Generic OpenAI Provider
-- Hosts many popular open-source models
-- Good for Llama models
-- Cost-effective
-
-### Get API Key
-https://api.together.xyz/settings/api-keys
-
----
-
-## Custom OpenAI-Compatible Providers
-
-### Configuration
-
-Any provider with an OpenAI-compatible API:
-
-```typescript
-const client = new OneRingAI({
-  providers: {
-    'my-custom-provider': {
-      apiKey: 'your-api-key',
-      baseURL: 'https://api.custom-provider.com/v1',
-    }
-  }
-});
-```
-
-Then use it:
-```typescript
-const response = await client.text.generate('Hello', {
-  provider: 'my-custom-provider',
-  model: 'their-model-name',
-});
-```
-
-### Supported Custom Providers
-- **Perplexity**: `https://api.perplexity.ai`
-- **Fireworks AI**: `https://api.fireworks.ai/inference/v1`
-- **Anyscale**: `https://api.endpoints.anyscale.com/v1`
-- **OpenRouter**: `https://openrouter.ai/api/v1`
-- **Local models** (LM Studio, Ollama with OpenAI compat)
-
----
-
-## Usage Examples
-
-### Simple Text Generation
-
-```typescript
-import { OneRingAI } from '@oneringai/agents';
-
-const client = new OneRingAI({
-  providers: {
-    anthropic: { apiKey: process.env.ANTHROPIC_API_KEY }
-  }
-});
-
-const response = await client.text.generate('What is AI?', {
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-20250514'
-});
-```
-
-### Agent with Tools
-
-```typescript
-const agent = await client.agents.create({
-  provider: 'google',
-  model: 'gemini-1.5-pro-latest',
-  tools: [weatherTool, calculatorTool],
-});
-
-const result = await agent.run('What is the weather in Tokyo?');
-```
-
-### Vision / Image Analysis
-
-```typescript
-import { createMessageWithImages } from '@oneringai/agents';
-
-const input = createMessageWithImages(
-  'What is in this image?',
-  ['https://example.com/photo.jpg']
-);
-
-const response = await client.text.generateRaw([input], {
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-20250514'
-});
-```
-
-### Multi-Provider Setup
-
-```typescript
-const client = new OneRingAI({
-  providers: {
-    openai: { apiKey: process.env.OPENAI_API_KEY },
-    anthropic: { apiKey: process.env.ANTHROPIC_API_KEY },
-    google: { apiKey: process.env.GOOGLE_API_KEY },
-    groq: {
-      apiKey: process.env.GROQ_API_KEY,
-      baseURL: 'https://api.groq.com/openai/v1'
-    }
-  }
-});
-
-// Use different providers for different tasks
-const gptAgent = await client.agents.create({ provider: 'openai', model: 'gpt-4' });
-const claudeAgent = await client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' });
-const geminiAgent = await client.agents.create({ provider: 'google', model: 'gemini-1.5-pro-latest' });
-```
-
-## Provider Comparison
-
-### Pricing (Approximate, as of Jan 2025)
-
-| Provider | Model | Input (per 1M tokens) | Output (per 1M tokens) |
-|----------|-------|----------------------|------------------------|
-| OpenAI | gpt-4o | $2.50 | $10.00 |
-| OpenAI | gpt-4o-mini | $0.15 | $0.60 |
-| Anthropic | claude-3-5-sonnet | $3.00 | $15.00 |
-| Anthropic | claude-3-haiku | $0.25 | $1.25 |
-| Google | gemini-1.5-pro-latest | $1.25 | $5.00 |
-| Google | gemini-1.5-flash-latest | $0.075 | $0.30 |
-| Groq | llama-3.1-70b | Free tier | Free tier |
-| Together AI | llama-3.1-70b | $0.88 | $0.88 |
-
-### Speed (Approximate)
-
-| Provider | Typical Latency | Notes |
-|----------|----------------|-------|
-| **Groq** | ⚡⚡⚡⚡⚡ Ultra-fast | 100-300ms, LPU hardware |
-| **Together AI** | ⚡⚡⚡⚡ Very fast | 500-1000ms |
-| **OpenAI** | ⚡⚡⚡ Fast | 1-3s |
-| **Anthropic** | ⚡⚡⚡ Fast | 1-3s |
-| **Google** | ⚡⚡ Moderate | 2-5s |
-
-### Quality (Subjective)
-
-| Provider | Model | Quality | Best Use Cases |
-|----------|-------|---------|----------------|
-| **Anthropic** | Claude 3.5 Sonnet | ⭐⭐⭐⭐⭐ | Coding, analysis, long context |
-| **OpenAI** | GPT-4o | ⭐⭐⭐⭐⭐ | General purpose, vision |
-| **Google** | Gemini 1.5 Pro | ⭐⭐⭐⭐ | Massive context, multimodal |
-| **Groq** | Llama 3.1 70B | ⭐⭐⭐⭐ | Speed-critical apps |
-| **Together AI** | Llama 3.1 70B | ⭐⭐⭐⭐ | Cost-effective, open source |
-
-## Configuration Examples
-
-### All Providers at Once
-
-```typescript
-const client = new OneRingAI({
-  providers: {
-    // OpenAI
-    openai: {
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-
-    // Anthropic (Claude)
-    anthropic: {
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    },
-
-    // Google (Gemini)
-    google: {
-      apiKey: process.env.GOOGLE_API_KEY,
-    },
-
-    // Grok (xAI)
-    grok: {
-      apiKey: process.env.GROK_API_KEY,
-    },
-
-    // Groq (fast Llama)
-    groq: {
-      apiKey: process.env.GROQ_API_KEY,
-    },
-
-    // Together AI (Llama & more)
-    'together-ai': {
-      apiKey: process.env.TOGETHER_API_KEY,
-    },
-  }
-});
-```
-
-### Environment Variables
-
-Add to `.env`:
-
+**Setup**:
 ```bash
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-GOOGLE_API_KEY=AIza...
-GROK_API_KEY=xai-...
-GROQ_API_KEY=gsk_...
-TOGETHER_API_KEY=...
+# One-time setup
+gcloud auth application-default login
+
+# Or use service account
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 ```
+
+### Groq
+
+```typescript
+Connector.create({
+  name: 'groq',
+  vendor: Vendor.Groq,
+  auth: { type: 'api_key', apiKey: process.env.GROQ_API_KEY! },
+});
+
+const agent = Agent.create({
+  connector: 'groq',
+  model: 'llama-3.1-70b-versatile',  // or 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'
+  tools: [myTool],
+});
+```
+
+**Get API Key**: https://console.groq.com/
+
+### Together AI
+
+```typescript
+Connector.create({
+  name: 'together',
+  vendor: Vendor.Together,
+  auth: { type: 'api_key', apiKey: process.env.TOGETHER_API_KEY! },
+});
+
+const agent = Agent.create({
+  connector: 'together',
+  model: 'meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo',
+  tools: [myTool],
+});
+```
+
+**Get API Key**: https://together.ai/
+
+### Grok (xAI)
+
+```typescript
+Connector.create({
+  name: 'grok',
+  vendor: Vendor.Grok,
+  auth: { type: 'api_key', apiKey: process.env.XAI_API_KEY! },
+});
+
+const agent = Agent.create({
+  connector: 'grok',
+  model: 'grok-2',  // or 'grok-2-vision'
+  tools: [myTool],
+});
+```
+
+**Get API Key**: https://console.x.ai/
+
+### OpenAI-Compatible APIs
+
+Use any OpenAI-compatible API:
+
+```typescript
+// Ollama (local)
+Connector.create({
+  name: 'ollama',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'none' },
+  baseURL: 'http://localhost:11434/v1',
+});
+
+const agent = Agent.create({
+  connector: 'ollama',
+  model: 'llama2',
+});
+
+// Perplexity
+Connector.create({
+  name: 'perplexity',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.PERPLEXITY_API_KEY! },
+  baseURL: 'https://api.perplexity.ai',
+});
+
+// LM Studio
+Connector.create({
+  name: 'lmstudio',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'none' },
+  baseURL: 'http://localhost:1234/v1',
+});
+```
+
+---
+
+## Provider-Specific Notes
+
+### OpenAI
+
+**Best for**: General purpose, JSON mode, structured output
+**Models**: GPT-4o (vision), GPT-4 Turbo, GPT-3.5 Turbo
+**Token Limits**: 128K (GPT-4o), 128K (GPT-4 Turbo), 16K (GPT-3.5)
+**Special**: Native Responses API support (no conversion needed)
+
+### Anthropic (Claude)
+
+**Best for**: Long context, coding, analysis, safety
+**Models**: Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku
+**Token Limits**: 200K context
+**Special**: Best at following complex instructions
+
+### Google Gemini
+
+**Best for**: Long context, multimodal (images, PDF, video)
+**Models**: Gemini 1.5 Pro (best), Gemini 1.5 Flash (fast), Gemini 2.0
+**Token Limits**: 1M context (Gemini 1.5 Pro!)
+**Special**: Native video and PDF understanding
+
+### Google Vertex AI
+
+**Same as Gemini** with enterprise features:
+- SLA guarantees
+- Enterprise security
+- Custom model tuning
+- Usage analytics
+
+### Groq
+
+**Best for**: Speed! Fastest inference available
+**Models**: Llama 3.1 (70B, 8B), Mixtral
+**Token Limits**: 32K-128K depending on model
+**Special**: Sub-second response times
+
+### Together AI
+
+**Best for**: Open-source models, cost-effectiveness
+**Models**: Llama 3.1, Mistral, CodeLlama, and many more
+**Special**: Widest selection of open-source models
+
+### Grok (xAI)
+
+**Best for**: Real-time information, humor, unfiltered
+**Models**: Grok-2, Grok-2-Vision
+**Special**: Access to X/Twitter data
+
+---
+
+## Model Recommendations
+
+### By Use Case
+
+| Use Case | Recommended | Why |
+|----------|-------------|-----|
+| **General Chat** | GPT-4o, Claude 3.5 Sonnet | Best overall quality |
+| **Code Generation** | Claude 3.5 Sonnet, GPT-4o | Excellent code understanding |
+| **Long Documents** | Gemini 1.5 Pro | 1M token context |
+| **Speed Priority** | Groq Llama 3.1, GPT-4o mini | Sub-second responses |
+| **Cost Sensitive** | Groq, Together AI, GPT-3.5 | Much cheaper |
+| **Vision/Images** | GPT-4o, Claude 3.5, Gemini 1.5 | Native vision support |
+| **Enterprise** | Vertex AI, Azure OpenAI | SLA, compliance |
+| **Local/Offline** | Ollama + Llama 3.1 | No cloud dependency |
+
+### By Budget
+
+| Budget | Models |
+|--------|--------|
+| **Premium** | GPT-4o, Claude 3.5 Sonnet, Gemini 1.5 Pro |
+| **Mid-range** | GPT-4o mini, Claude 3 Haiku, Gemini 1.5 Flash |
+| **Budget** | Groq (free tier), Together AI, GPT-3.5 |
+| **Free** | Ollama (local), LM Studio (local) |
+
+---
 
 ## Feature Support Matrix
-
-### Text Generation
-
-All providers support basic text generation:
-
-```typescript
-const response = await client.text.generate('Hello, world!', {
-  provider: 'anthropic', // or 'openai', 'google', etc.
-  model: 'claude-sonnet-4-20250514',
-});
-```
 
 ### Tool Calling
 
 | Provider | Support | Notes |
 |----------|---------|-------|
-| OpenAI | ✅ Full | Native support |
-| Anthropic | ✅ Full | Native support |
-| Google | ✅ Full | FunctionCall format |
-| Grok | ✅ Full | OpenAI-compatible |
-| Groq | ✅ Full | OpenAI-compatible |
-| Together AI | ✅ Full | OpenAI-compatible |
-
-```typescript
-const agent = await client.agents.create({
-  provider: 'google', // Works with any provider!
-  model: 'gemini-1.5-pro-latest',
-  tools: [myTool],
-});
-```
+| OpenAI | Yes | Native support |
+| Anthropic | Yes | Native support |
+| Google | Yes | FunctionCall format |
+| Grok | Yes | OpenAI-compatible |
+| Groq | Yes | OpenAI-compatible |
+| Together AI | Yes | OpenAI-compatible |
 
 ### Vision / Image Analysis
 
 | Provider | Support | Image Format | Notes |
 |----------|---------|--------------|-------|
-| OpenAI | ✅ | URLs, base64 | gpt-4o, gpt-4-turbo |
-| Anthropic | ✅ | URLs, base64 | Claude 3+ models |
-| Google | ✅ | Base64 only | **URLs auto-converted** |
-| Grok | ✅ | URLs, base64 | grok-2-vision model |
-| Groq | ❌ | N/A | No vision models |
-| Together AI | ⚠️ | Varies | Some Llama 3.2 models |
-
-```typescript
-import { createMessageWithImages } from '@oneringai/agents';
-
-const input = createMessageWithImages(
-  'Describe this image',
-  ['https://example.com/photo.jpg']
-);
-
-const response = await client.text.generateRaw([input], {
-  provider: 'google', // Works! Auto-converts URL to base64
-  model: 'gemini-1.5-pro-latest',
-});
-```
+| OpenAI | Yes | URLs, base64 | gpt-4o, gpt-4-turbo |
+| Anthropic | Yes | URLs, base64 | Claude 3+ models |
+| Google | Yes | Base64 only | **URLs auto-converted** |
+| Grok | Yes | URLs, base64 | grok-2-vision model |
+| Groq | No | N/A | No vision models |
+| Together AI | Limited | Varies | Some Llama 3.2 models |
 
 ### JSON Output
 
 | Provider | Schema Support | How It Works |
 |----------|---------------|--------------|
-| OpenAI | ✅ Native | `json_schema` parameter |
-| Anthropic | ⚠️ Prompt | Schema added to system prompt |
-| Google | ⚠️ Prompt | `responseMimeType: application/json` |
-| Others | ❌ | Use `json_object` mode |
-
-```typescript
-const result = await client.text.generateJSON(
-  'List 3 colors',
-  {
-    provider: 'openai', // Best JSON schema support
-    model: 'gpt-4',
-    schema: {
-      type: 'object',
-      properties: {
-        colors: { type: 'array', items: { type: 'string' } }
-      }
-    }
-  }
-);
-```
-
-## Provider-Specific Tips
-
-### OpenAI
-- Use `gpt-4o-mini` for cost savings (80% cheaper than GPT-4)
-- Use `gpt-4o` for vision (faster than gpt-4-vision)
-- Set `organization` for team accounts
-
-### Anthropic
-- Claude 3.5 Sonnet is excellent for coding
-- Use `max_tokens` not `max_output_tokens` internally (handled by library)
-- Vision works best with Claude 3+
-- Massive 200K context window
-
-### Google
-- Gemini has the largest context (1M tokens)
-- Image URLs are automatically fetched and converted to base64
-- Very cost-effective ($1.25/M input tokens)
-- Use `gemini-1.5-flash-latest` for speed
-
-### Groq
-- **Fastest inference** (100-300ms typical)
-- Free tier available
-- Limited to Llama and Mixtral models
-- No vision support yet
-- May hit capacity limits during high usage
-
-### Together AI
-- Great for open-source models
-- Supports Llama 3.2 90B Vision
-- More models than Groq
-- Pay per use, no free tier
-
-## Switching Providers
-
-All examples work with any provider by just changing configuration:
-
-```typescript
-// Same code, different provider
-const agents = [
-  await client.agents.create({ provider: 'openai', model: 'gpt-4' }),
-  await client.agents.create({ provider: 'anthropic', model: 'claude-3-5-sonnet-20241022' }),
-  await client.agents.create({ provider: 'google', model: 'gemini-1.5-pro-latest' }),
-  await client.agents.create({ provider: 'groq', model: 'llama-3.1-70b-versatile' }),
-];
-
-// All work exactly the same
-for (const agent of agents) {
-  const result = await agent.run('What is 2+2?');
-  console.log(result.output_text);
-}
-```
-
-## Troubleshooting
-
-### "Provider not found"
-Make sure you configured the provider in the OneRingAI constructor.
-
-### "Invalid API key"
-Check your .env file and ensure the key is correct for that provider.
-
-### "Model not found" or "Model not supported"
-- OpenAI: Check https://platform.openai.com/docs/models
-- Anthropic: Check https://docs.anthropic.com/en/docs/models-overview
-- Google: Check https://ai.google.dev/models/gemini
-- Groq: Check https://console.groq.com/docs/models
-- Together AI: Check https://docs.together.ai/docs/inference-models
-
-### Vision not working
-- Make sure you're using a vision-capable model
-- OpenAI: Use `gpt-4o` or `gpt-4-turbo`
-- Anthropic: Use Claude 3+ models
-- Google: Use `gemini-1.5-pro-latest` or `gemini-1.5-flash-latest`
-- Together AI: Use `Llama-3.2-90B-Vision-Instruct`
-
-### Tool calling not working
-- Most modern models support tools
-- Check provider documentation for supported models
-- Legacy models (GPT-3.5, Claude 2) may not support tools
-
-## Best Practices
-
-### 1. **Start with One Provider**
-Begin with OpenAI (easiest to get started), then add others as needed.
-
-### 2. **Use Environment Variables**
-Never hardcode API keys in your code.
-
-### 3. **Handle Provider-Specific Errors**
-Different providers may have different rate limits and error codes.
-
-### 4. **Choose Based on Task**
-- **Coding**: Anthropic Claude 3.5 Sonnet
-- **Speed**: Groq Llama 3.1
-- **Cost**: Google Gemini Flash or OpenAI GPT-4o-mini
-- **Long context**: Google Gemini (1M) or Anthropic Claude (200K)
-- **Vision**: OpenAI GPT-4o or Anthropic Claude 3.5
-
-### 5. **Test with Multiple Providers**
-Run `npm run example:providers` to compare responses.
-
-## Rate Limits
-
-| Provider | Free Tier | Paid Tier (Typical) |
-|----------|-----------|---------------------|
-| OpenAI | None | 10K RPM, 2M TPM |
-| Anthropic | None | Varies by plan |
-| Google | 15 RPM free | 360+ RPM paid |
-| Groq | 30 RPM free | Higher with paid |
-| Together AI | None | Pay per use |
-
-**RPM** = Requests per minute
-**TPM** = Tokens per minute
-
-## Migration Guide
-
-### From OpenAI SDK
-
-```typescript
-// Before (OpenAI SDK)
-import OpenAI from 'openai';
-const openai = new OpenAI();
-const response = await openai.chat.completions.create({...});
-
-// After (@oneringai/agents)
-import { OneRingAI } from '@oneringai/agents';
-const client = new OneRingAI({ providers: { openai: {...} } });
-const response = await client.text.generate('...', { provider: 'openai', ... });
-```
-
-### From Anthropic SDK
-
-```typescript
-// Before (Anthropic SDK)
-import Anthropic from '@anthropic-ai/sdk';
-const anthropic = new Anthropic();
-const response = await anthropic.messages.create({...});
-
-// After (@oneringai/agents)
-import { OneRingAI } from '@oneringai/agents';
-const client = new OneRingAI({ providers: { anthropic: {...} } });
-const response = await client.text.generate('...', { provider: 'anthropic', ... });
-```
-
-### Benefits of Using This Library
-- ✅ Unified API across all providers
-- ✅ Switch providers without code changes
-- ✅ Agentic workflows built-in
-- ✅ Vision support normalized
-- ✅ Tool calling standardized
-- ✅ Better TypeScript types
-
-## Running Examples
-
-```bash
-# Compare all providers side-by-side
-npm run example:providers
-
-# Use in interactive chat (try different providers)
-npm run example:chat
-
-# Vision with any provider
-npm run example:vision
-```
-
-## Support & Resources
-
-- **OpenAI**: https://platform.openai.com/docs
-- **Anthropic**: https://docs.anthropic.com
-- **Google**: https://ai.google.dev/docs
-- **Groq**: https://console.groq.com/docs
-- **Together AI**: https://docs.together.ai
-- **Grok**: https://x.ai/api
+| OpenAI | Native | `json_schema` parameter |
+| Anthropic | Prompt | Schema added to system prompt |
+| Google | Prompt | `responseMimeType: application/json` |
+| Others | No | Use `json_object` mode |
 
 ---
 
-**Last Updated**: 2025-01-06
-**Library Version**: 0.1.0
-**Providers Supported**: 6+ (OpenAI, Anthropic, Google, Grok, Groq, Together AI, Custom)
+## Troubleshooting
+
+### Authentication Errors
+
+**Error**: `401 Unauthorized`
+
+**Solutions**:
+1. Check API key is correct
+2. Check API key is not expired
+3. Check you have billing set up
+4. Check you have access to the model
+
+```typescript
+// Debug: Print masked key
+console.log('Key:', process.env.OPENAI_API_KEY?.slice(0, 10) + '...');
+```
+
+### Model Not Found
+
+**Error**: `Model not found` or `Invalid model`
+
+**Solutions**:
+1. Check model name spelling
+2. Check you have access to the model
+3. Some models require special access (GPT-4, Claude Opus)
+
+```typescript
+// Check available models
+// OpenAI: https://platform.openai.com/docs/models
+// Anthropic: https://docs.anthropic.com/claude/docs/models-overview
+// Google: https://ai.google.dev/models/gemini
+```
+
+### Rate Limits
+
+**Error**: `429 Too Many Requests`
+
+**Solutions**:
+1. Add retry logic with exponential backoff
+2. Reduce request frequency
+3. Upgrade to higher tier
+
+```typescript
+// Rate limit handling is automatic in the library
+// For custom handling, use hooks:
+hooks: {
+  'before:llm': async () => {
+    await new Promise(r => setTimeout(r, 1000));  // 1 second delay
+    return {};
+  }
+}
+```
+
+### Context Length Exceeded
+
+**Error**: `Context length exceeded` or `Max tokens exceeded`
+
+**Solutions**:
+1. Use a model with longer context (Gemini 1.5 Pro = 1M)
+2. Summarize or truncate input
+3. Split into multiple calls
+
+### Vision Not Working
+
+**Error**: Images not being processed
+
+**Solutions**:
+1. Check model supports vision (GPT-4o, Claude 3, Gemini)
+2. Check image format (base64 or URL)
+3. Check image size (most providers limit ~4MB)
+
+---
+
+## Examples
+
+### Multi-Provider Comparison
+
+```typescript
+import { Connector, Agent, Vendor } from '@oneringai/agents';
+
+// Create connectors for all providers
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+Connector.create({
+  name: 'anthropic',
+  vendor: Vendor.Anthropic,
+  auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
+});
+
+Connector.create({
+  name: 'google',
+  vendor: Vendor.Google,
+  auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
+});
+
+// Compare responses
+const prompt = 'What is the meaning of life?';
+
+const configs = [
+  { connector: 'openai', model: 'gpt-4o' },
+  { connector: 'anthropic', model: 'claude-sonnet-4-5-20250929' },
+  { connector: 'google', model: 'gemini-1.5-pro' },
+];
+
+for (const config of configs) {
+  const agent = Agent.create(config);
+  const response = await agent.run(prompt);
+
+  console.log(`\n${config.connector} (${config.model}):`);
+  console.log(response.output_text);
+}
+```
+
+### Run Example
+
+```bash
+npm run example:multi-provider
+```
+
+---
+
+## Environment Variables
+
+Create a `.env` file with your API keys:
+
+```bash
+# Required (pick at least one)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+GOOGLE_API_KEY=AIza...
+
+# Optional
+GROQ_API_KEY=gsk_...
+TOGETHER_API_KEY=...
+XAI_API_KEY=xai-...
+
+# Google Vertex AI (instead of API key)
+GOOGLE_PROJECT_ID=your-project
+GOOGLE_LOCATION=us-central1
+```
+
+---
+
+**Last Updated**: 2026-01-15
+**Supported Providers**: 7+ with unified API
