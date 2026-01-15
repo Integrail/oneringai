@@ -4097,7 +4097,10 @@ var AgenticLoop = class extends EventEmitter {
           timestamp: /* @__PURE__ */ new Date(),
           duration: Date.now() - iterationStartTime
         });
-        currentInput = this.buildInputWithToolResults(response.output, toolResults);
+        const newMessages = this.buildNewMessages(response.output, toolResults);
+        currentInput = this.appendToContext(currentInput, newMessages);
+        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         iteration++;
       }
       if (iteration >= config.maxIterations) {
@@ -4270,7 +4273,16 @@ var AgenticLoop = class extends EventEmitter {
               execution_time_ms: Date.now() - toolStartTime,
               error: error.message
             };
-            throw error;
+            const failureMode = config.errorHandling?.toolFailureMode || "continue";
+            if (failureMode === "fail") {
+              throw error;
+            }
+            toolResults.push({
+              tool_use_id: toolCall.id,
+              content: "",
+              error: error.message,
+              state: "failed" /* FAILED */
+            });
           }
         }
         const assistantMessage = {
@@ -4299,30 +4311,10 @@ var AgenticLoop = class extends EventEmitter {
             error: tr.error
           }))
         };
-        if (Array.isArray(currentInput)) {
-          currentInput = [...currentInput, assistantMessage, toolResultsMessage];
-        } else {
-          currentInput = [
-            {
-              type: "message",
-              role: "user" /* USER */,
-              content: [{ type: "input_text" /* INPUT_TEXT */, text: currentInput }]
-            },
-            assistantMessage,
-            toolResultsMessage
-          ];
-        }
+        const newMessages = [assistantMessage, toolResultsMessage];
+        currentInput = this.appendToContext(currentInput, newMessages);
         const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-        if (Array.isArray(currentInput) && currentInput.length > maxInputMessages) {
-          const firstMessage = currentInput[0];
-          const recentMessages = currentInput.slice(-(maxInputMessages - 1));
-          const isSystemMessage = firstMessage?.type === "message" && firstMessage.role === "developer" /* DEVELOPER */;
-          if (isSystemMessage) {
-            currentInput = [firstMessage, ...recentMessages];
-          } else {
-            currentInput = currentInput.slice(-maxInputMessages);
-          }
-        }
+        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         yield {
           type: "response.iteration.complete" /* ITERATION_COMPLETE */,
           response_id: executionId,
@@ -4816,14 +4808,16 @@ var AgenticLoop = class extends EventEmitter {
       });
     });
   }
+  // ============ Shared Helper Methods ============
+  // These methods provide unified logic for both execute() and executeStreaming()
   /**
-   * Build input with tool results
+   * Build new messages from tool results (assistant response + tool results)
    */
-  buildInputWithToolResults(previousOutput, toolResults) {
-    const input = [];
+  buildNewMessages(previousOutput, toolResults) {
+    const messages = [];
     for (const item of previousOutput) {
       if (item.type === "message") {
-        input.push(item);
+        messages.push(item);
       }
     }
     const toolResultContents = toolResults.map((result) => ({
@@ -4833,13 +4827,106 @@ var AgenticLoop = class extends EventEmitter {
       error: result.error
     }));
     if (toolResultContents.length > 0) {
-      input.push({
+      messages.push({
         type: "message",
         role: "user" /* USER */,
         content: toolResultContents
       });
     }
-    return input;
+    return messages;
+  }
+  /**
+   * Append new messages to current context, preserving history
+   * Unified logic for both execute() and executeStreaming()
+   */
+  appendToContext(currentInput, newMessages) {
+    if (Array.isArray(currentInput)) {
+      return [...currentInput, ...newMessages];
+    }
+    return [
+      {
+        type: "message",
+        role: "user" /* USER */,
+        content: [{ type: "input_text" /* INPUT_TEXT */, text: currentInput }]
+      },
+      ...newMessages
+    ];
+  }
+  /**
+   * Apply sliding window to prevent unbounded input growth
+   * Preserves system/developer message at the start if present
+   * IMPORTANT: Ensures tool_use and tool_result pairs are never broken
+   */
+  applySlidingWindow(input, maxMessages = 50) {
+    if (input.length <= maxMessages) {
+      return input;
+    }
+    const firstMessage = input[0];
+    const isSystemMessage = firstMessage?.type === "message" && firstMessage.role === "developer" /* DEVELOPER */;
+    const maxToKeep = isSystemMessage ? maxMessages - 1 : maxMessages;
+    const safeCutIndex = this.findSafeToolBoundary(input, input.length - maxToKeep);
+    const recentMessages = input.slice(safeCutIndex);
+    if (isSystemMessage) {
+      return [firstMessage, ...recentMessages];
+    }
+    return recentMessages;
+  }
+  /**
+   * Find a safe index to cut the message array without breaking tool call/result pairs
+   * A safe boundary is one where all tool_use IDs have matching tool_result IDs
+   */
+  findSafeToolBoundary(input, targetIndex) {
+    let cutIndex = Math.max(0, Math.min(targetIndex, input.length - 1));
+    while (cutIndex < input.length - 1) {
+      if (this.isToolBoundarySafe(input, cutIndex)) {
+        return cutIndex;
+      }
+      cutIndex++;
+    }
+    cutIndex = Math.max(0, targetIndex);
+    while (cutIndex > 0) {
+      if (this.isToolBoundarySafe(input, cutIndex)) {
+        return cutIndex;
+      }
+      cutIndex--;
+    }
+    return Math.max(0, targetIndex);
+  }
+  /**
+   * Check if cutting at this index would leave tool calls/results balanced
+   * Returns true if all tool_use IDs in the slice have matching tool_result IDs
+   */
+  isToolBoundarySafe(input, startIndex) {
+    const slicedMessages = input.slice(startIndex);
+    const toolUseIds = /* @__PURE__ */ new Set();
+    const toolResultIds = /* @__PURE__ */ new Set();
+    for (const item of slicedMessages) {
+      if (item.type !== "message") continue;
+      for (const content of item.content) {
+        if (content.type === "tool_use" /* TOOL_USE */) {
+          toolUseIds.add(content.id);
+        } else if (content.type === "tool_result" /* TOOL_RESULT */) {
+          toolResultIds.add(content.tool_use_id);
+        }
+      }
+    }
+    for (const resultId of toolResultIds) {
+      if (!toolUseIds.has(resultId)) {
+        return false;
+      }
+    }
+    for (const useId of toolUseIds) {
+      if (!toolResultIds.has(useId)) {
+        const lastMessage = slicedMessages[slicedMessages.length - 1];
+        const isLastMessageWithThisToolUse = lastMessage?.type === "message" && lastMessage.role === "assistant" /* ASSISTANT */ && lastMessage.content.some(
+          (c) => c.type === "tool_use" /* TOOL_USE */ && c.id === useId
+        );
+        if (!isLastMessageWithThisToolUse) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
   /**
    * Pause execution (thread-safe with mutex)
@@ -5080,6 +5167,38 @@ var Agent = class _Agent extends EventEmitter {
    */
   listTools() {
     return this.toolRegistry.listTools();
+  }
+  /**
+   * Replace all tools with a new array
+   */
+  setTools(tools) {
+    for (const name of this.toolRegistry.listTools()) {
+      this.toolRegistry.unregisterTool(name);
+    }
+    for (const tool of tools) {
+      this.toolRegistry.registerTool(tool);
+    }
+    this.config.tools = [...tools];
+  }
+  // ============ Configuration Methods ============
+  /**
+   * Change the model
+   */
+  setModel(model) {
+    this.model = model;
+    this.config.model = model;
+  }
+  /**
+   * Get current temperature
+   */
+  getTemperature() {
+    return this.config.temperature;
+  }
+  /**
+   * Change the temperature
+   */
+  setTemperature(temperature) {
+    this.config.temperature = temperature;
   }
   // ============ Control Methods ============
   pause(reason) {
@@ -5553,6 +5672,120 @@ function createAuthenticatedFetch(authProvider, userId) {
   Connector.get(authProvider);
   return async (url, options) => {
     return authenticatedFetch(url, options, authProvider, userId);
+  };
+}
+
+// src/connectors/toolGenerator.ts
+function generateWebAPITool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "api_request",
+        description: `Make authenticated HTTP request to any registered OAuth API.
+
+This tool automatically handles OAuth authentication for registered providers.
+
+REGISTERED PROVIDERS:
+${Connector.getDescriptionsForTools()}
+
+HOW TO USE:
+1. Choose the appropriate authProvider based on which API you need to access
+2. Provide the URL (full URL or path relative to provider's baseURL)
+3. Specify the HTTP method (GET, POST, etc.)
+4. For POST/PUT/PATCH, include the request body
+
+EXAMPLES:
+Read Microsoft emails:
+{
+  authProvider: "microsoft",
+  url: "/v1.0/me/messages",
+  method: "GET"
+}
+
+List GitHub repositories:
+{
+  authProvider: "github",
+  url: "/user/repos",
+  method: "GET"
+}
+
+Create Salesforce account:
+{
+  authProvider: "salesforce",
+  url: "/services/data/v57.0/sobjects/Account",
+  method: "POST",
+  body: { Name: "Acme Corp", Industry: "Technology" }
+}`,
+        parameters: {
+          type: "object",
+          properties: {
+            authProvider: {
+              type: "string",
+              enum: Connector.list(),
+              description: "Which connector to use for authentication. Choose based on the API you need to access."
+            },
+            url: {
+              type: "string",
+              description: 'URL to request. Can be full URL (https://...) or path relative to provider baseURL (e.g., "/v1.0/me")'
+            },
+            method: {
+              type: "string",
+              enum: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+              description: "HTTP method (default: GET)"
+            },
+            body: {
+              description: "Request body for POST/PUT/PATCH requests. Will be JSON-stringified automatically."
+            },
+            headers: {
+              type: "object",
+              description: "Additional headers to include. Authorization header is added automatically."
+            }
+          },
+          required: ["authProvider", "url"]
+        }
+      },
+      blocking: true,
+      timeout: 3e4
+    },
+    execute: async (args) => {
+      try {
+        const connector = Connector.get(args.authProvider);
+        const fullUrl = args.url.startsWith("http") ? args.url : `${connector.baseURL}${args.url}`;
+        const requestOptions = {
+          method: args.method || "GET",
+          headers: {
+            "Content-Type": "application/json",
+            ...args.headers
+          }
+        };
+        if (args.body && (args.method === "POST" || args.method === "PUT" || args.method === "PATCH")) {
+          requestOptions.body = JSON.stringify(args.body);
+        }
+        const response = await authenticatedFetch(fullUrl, requestOptions, args.authProvider);
+        const contentType = response.headers.get("content-type") || "";
+        let data;
+        if (contentType.includes("application/json")) {
+          data = await response.json();
+        } else {
+          data = await response.text();
+        }
+        return {
+          success: response.ok,
+          status: response.status,
+          statusText: response.statusText,
+          data
+        };
+      } catch (error) {
+        return {
+          success: false,
+          status: 0,
+          statusText: "Error",
+          data: null,
+          error: error.message
+        };
+      }
+    }
   };
 }
 
@@ -7097,6 +7330,185 @@ async function executeInVM(code, input, timeout, logs) {
   return result;
 }
 
-export { AIError, Agent, BaseProvider, BaseTextProvider, Connector, ContentType, ExecutionContext, FileStorage, HookManager, InvalidConfigError, InvalidToolArgumentsError, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthManager, ProviderAuthError, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, readClipboardImage, tools_exports as tools };
+// src/agents/ProviderConfigAgent.ts
+var ProviderConfigAgent = class {
+  agent = null;
+  conversationHistory = [];
+  connectorName;
+  /**
+   * Create a provider config agent
+   * @param connectorName - Name of the connector to use (must be created first with Connector.create())
+   */
+  constructor(connectorName = "openai") {
+    this.connectorName = connectorName;
+  }
+  /**
+   * Start interactive configuration session
+   * AI will ask questions and generate the connector config
+   *
+   * @param initialInput - Optional initial message (e.g., "I want to connect to GitHub")
+   * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
+   */
+  async run(initialInput) {
+    this.agent = Agent.create({
+      connector: this.connectorName,
+      model: this.getDefaultModel(),
+      instructions: this.getSystemInstructions(),
+      temperature: 0.1,
+      // Very low temperature for consistent, focused behavior
+      maxIterations: 10
+    });
+    const builder = new MessageBuilder();
+    const startMessage = initialInput || "I want to configure an OAuth provider";
+    builder.addUserMessage(startMessage);
+    this.conversationHistory.push(...builder.build());
+    const response = await this.agent.run(this.conversationHistory);
+    this.conversationHistory.push(...response.output.filter(
+      (item) => item.type === "message" || item.type === "compaction"
+    ));
+    const responseText = response.output_text || "";
+    if (responseText.includes("===CONFIG_START===")) {
+      return this.extractConfig(responseText);
+    }
+    return responseText;
+  }
+  /**
+   * Continue conversation (for multi-turn interaction)
+   *
+   * @param userMessage - User's response
+   * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
+   */
+  async continue(userMessage) {
+    if (!this.agent) {
+      throw new Error("Agent not initialized. Call run() first.");
+    }
+    const builder = new MessageBuilder();
+    builder.addUserMessage(userMessage);
+    this.conversationHistory.push(...builder.build());
+    const response = await this.agent.run(this.conversationHistory);
+    this.conversationHistory.push(...response.output.filter(
+      (item) => item.type === "message" || item.type === "compaction"
+    ));
+    const responseText = response.output_text || "";
+    if (responseText.includes("===CONFIG_START===")) {
+      return this.extractConfig(responseText);
+    }
+    return responseText;
+  }
+  /**
+   * Get system instructions for the agent
+   */
+  getSystemInstructions() {
+    return `You are a friendly OAuth Setup Assistant. Your ONLY job is to help users connect their apps to third-party services like Microsoft, Google, GitHub, etc.
+
+YOU MUST NOT answer general questions. ONLY focus on helping set up API connections.
+
+YOUR PROCESS (use NON-TECHNICAL, FRIENDLY language):
+
+1. Ask which system they want to connect to (e.g., Microsoft, Google, GitHub, Salesforce, Slack)
+
+2. Ask about HOW they want to use it (use SIMPLE language):
+   - "Will your users log in with their [Provider] accounts?" \u2192 authorization_code
+   - "Does your app need to access [Provider] without users logging in?" \u2192 client_credentials
+   - "Is this just an API key from [Provider]?" \u2192 static_token
+
+3. Ask BUSINESS questions about what they want to do (then YOU figure out the technical scopes):
+
+   For Microsoft:
+   - "Do you need to read user profiles?" \u2192 User.Read
+   - "Do you need to read emails?" \u2192 Mail.Read
+   - "Do you need to access calendar?" \u2192 Calendars.Read
+   - "Do you need to read/write SharePoint files?" \u2192 Sites.Read.All or Sites.ReadWrite.All
+   - "Do you need to access Teams?" \u2192 Team.ReadBasic.All
+   - Combine multiple scopes if needed
+
+   For Google:
+   - "Do you need to read emails?" \u2192 https://www.googleapis.com/auth/gmail.readonly
+   - "Do you need to access Google Drive?" \u2192 https://www.googleapis.com/auth/drive
+   - "Do you need calendar access?" \u2192 https://www.googleapis.com/auth/calendar
+
+   For GitHub:
+   - "Do you need to read user info?" \u2192 user:email
+   - "Do you need to access repositories?" \u2192 repo
+   - "Do you need to read organization data?" \u2192 read:org
+
+   For Salesforce:
+   - "Do you need full access?" \u2192 full
+   - "Do you need to access/manage data?" \u2192 api
+   - "Do you need refresh tokens?" \u2192 refresh_token offline_access
+
+4. DO NOT ask about redirect URI - it will be configured in code (use "http://localhost:3000/callback" as default)
+
+5. Generate complete JSON configuration
+
+CRITICAL RULES:
+- Ask ONE simple question at a time
+- Use BUSINESS language, NOT technical OAuth terms
+- Ask "What do you want to do?" NOT "What scopes do you need?"
+- YOU translate business needs into technical scopes
+- Be friendly and conversational
+- Provide specific setup URLs (e.g., https://portal.azure.com for Microsoft, https://github.com/settings/developers for GitHub)
+- When you have all info, IMMEDIATELY output the config in this EXACT format:
+
+===CONFIG_START===
+{
+  "name": "github",
+  "config": {
+    "displayName": "GitHub API",
+    "description": "Access GitHub repositories and user data",
+    "baseURL": "https://api.github.com",
+    "auth": {
+      "type": "oauth",
+      "flow": "authorization_code",
+      "clientId": "ENV:GITHUB_CLIENT_ID",
+      "clientSecret": "ENV:GITHUB_CLIENT_SECRET",
+      "authorizationUrl": "https://github.com/login/oauth/authorize",
+      "tokenUrl": "https://github.com/login/oauth/access_token",
+      "redirectUri": "http://localhost:3000/callback",
+      "scope": "user:email repo"
+    }
+  },
+  "setupInstructions": "1. Go to https://github.com/settings/developers\\n2. Create New OAuth App\\n3. Set Authorization callback URL\\n4. Copy Client ID and Client Secret",
+  "envVariables": ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"],
+  "setupUrl": "https://github.com/settings/developers"
+}
+===CONFIG_END===
+
+Use "ENV:VARIABLE_NAME" for values that should come from environment variables.
+
+REMEMBER: Keep it conversational, ask one question at a time, and only output the config when you have all necessary information.`;
+  }
+  /**
+   * Extract configuration from AI response
+   */
+  extractConfig(responseText) {
+    const configMatch = responseText.match(/===CONFIG_START===\s*([\s\S]*?)\s*===CONFIG_END===/);
+    if (!configMatch) {
+      throw new Error("No configuration found in response. The AI may need more information.");
+    }
+    try {
+      const configJson = configMatch[1].trim();
+      const config = JSON.parse(configJson);
+      return config;
+    } catch (error) {
+      throw new Error(`Failed to parse configuration JSON: ${error.message}`);
+    }
+  }
+  /**
+   * Get default model
+   */
+  getDefaultModel() {
+    return "gpt-4.1";
+  }
+  /**
+   * Reset conversation
+   */
+  reset() {
+    this.conversationHistory = [];
+    this.agent = null;
+  }
+};
+
+export { AIError, Agent, BaseProvider, BaseTextProvider, Connector, ContentType, ExecutionContext, FileStorage, HookManager, InvalidConfigError, InvalidToolArgumentsError, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthManager, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, readClipboardImage, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

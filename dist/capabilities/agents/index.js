@@ -901,7 +901,10 @@ var AgenticLoop = class extends EventEmitter {
           timestamp: /* @__PURE__ */ new Date(),
           duration: Date.now() - iterationStartTime
         });
-        currentInput = this.buildInputWithToolResults(response.output, toolResults);
+        const newMessages = this.buildNewMessages(response.output, toolResults);
+        currentInput = this.appendToContext(currentInput, newMessages);
+        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         iteration++;
       }
       if (iteration >= config.maxIterations) {
@@ -1074,7 +1077,16 @@ var AgenticLoop = class extends EventEmitter {
               execution_time_ms: Date.now() - toolStartTime,
               error: error.message
             };
-            throw error;
+            const failureMode = config.errorHandling?.toolFailureMode || "continue";
+            if (failureMode === "fail") {
+              throw error;
+            }
+            toolResults.push({
+              tool_use_id: toolCall.id,
+              content: "",
+              error: error.message,
+              state: "failed" /* FAILED */
+            });
           }
         }
         const assistantMessage = {
@@ -1103,30 +1115,10 @@ var AgenticLoop = class extends EventEmitter {
             error: tr.error
           }))
         };
-        if (Array.isArray(currentInput)) {
-          currentInput = [...currentInput, assistantMessage, toolResultsMessage];
-        } else {
-          currentInput = [
-            {
-              type: "message",
-              role: "user" /* USER */,
-              content: [{ type: "input_text" /* INPUT_TEXT */, text: currentInput }]
-            },
-            assistantMessage,
-            toolResultsMessage
-          ];
-        }
+        const newMessages = [assistantMessage, toolResultsMessage];
+        currentInput = this.appendToContext(currentInput, newMessages);
         const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-        if (Array.isArray(currentInput) && currentInput.length > maxInputMessages) {
-          const firstMessage = currentInput[0];
-          const recentMessages = currentInput.slice(-(maxInputMessages - 1));
-          const isSystemMessage = firstMessage?.type === "message" && firstMessage.role === "developer" /* DEVELOPER */;
-          if (isSystemMessage) {
-            currentInput = [firstMessage, ...recentMessages];
-          } else {
-            currentInput = currentInput.slice(-maxInputMessages);
-          }
-        }
+        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         yield {
           type: "response.iteration.complete" /* ITERATION_COMPLETE */,
           response_id: executionId,
@@ -1620,14 +1612,16 @@ var AgenticLoop = class extends EventEmitter {
       });
     });
   }
+  // ============ Shared Helper Methods ============
+  // These methods provide unified logic for both execute() and executeStreaming()
   /**
-   * Build input with tool results
+   * Build new messages from tool results (assistant response + tool results)
    */
-  buildInputWithToolResults(previousOutput, toolResults) {
-    const input = [];
+  buildNewMessages(previousOutput, toolResults) {
+    const messages = [];
     for (const item of previousOutput) {
       if (item.type === "message") {
-        input.push(item);
+        messages.push(item);
       }
     }
     const toolResultContents = toolResults.map((result) => ({
@@ -1637,13 +1631,106 @@ var AgenticLoop = class extends EventEmitter {
       error: result.error
     }));
     if (toolResultContents.length > 0) {
-      input.push({
+      messages.push({
         type: "message",
         role: "user" /* USER */,
         content: toolResultContents
       });
     }
-    return input;
+    return messages;
+  }
+  /**
+   * Append new messages to current context, preserving history
+   * Unified logic for both execute() and executeStreaming()
+   */
+  appendToContext(currentInput, newMessages) {
+    if (Array.isArray(currentInput)) {
+      return [...currentInput, ...newMessages];
+    }
+    return [
+      {
+        type: "message",
+        role: "user" /* USER */,
+        content: [{ type: "input_text" /* INPUT_TEXT */, text: currentInput }]
+      },
+      ...newMessages
+    ];
+  }
+  /**
+   * Apply sliding window to prevent unbounded input growth
+   * Preserves system/developer message at the start if present
+   * IMPORTANT: Ensures tool_use and tool_result pairs are never broken
+   */
+  applySlidingWindow(input, maxMessages = 50) {
+    if (input.length <= maxMessages) {
+      return input;
+    }
+    const firstMessage = input[0];
+    const isSystemMessage = firstMessage?.type === "message" && firstMessage.role === "developer" /* DEVELOPER */;
+    const maxToKeep = isSystemMessage ? maxMessages - 1 : maxMessages;
+    const safeCutIndex = this.findSafeToolBoundary(input, input.length - maxToKeep);
+    const recentMessages = input.slice(safeCutIndex);
+    if (isSystemMessage) {
+      return [firstMessage, ...recentMessages];
+    }
+    return recentMessages;
+  }
+  /**
+   * Find a safe index to cut the message array without breaking tool call/result pairs
+   * A safe boundary is one where all tool_use IDs have matching tool_result IDs
+   */
+  findSafeToolBoundary(input, targetIndex) {
+    let cutIndex = Math.max(0, Math.min(targetIndex, input.length - 1));
+    while (cutIndex < input.length - 1) {
+      if (this.isToolBoundarySafe(input, cutIndex)) {
+        return cutIndex;
+      }
+      cutIndex++;
+    }
+    cutIndex = Math.max(0, targetIndex);
+    while (cutIndex > 0) {
+      if (this.isToolBoundarySafe(input, cutIndex)) {
+        return cutIndex;
+      }
+      cutIndex--;
+    }
+    return Math.max(0, targetIndex);
+  }
+  /**
+   * Check if cutting at this index would leave tool calls/results balanced
+   * Returns true if all tool_use IDs in the slice have matching tool_result IDs
+   */
+  isToolBoundarySafe(input, startIndex) {
+    const slicedMessages = input.slice(startIndex);
+    const toolUseIds = /* @__PURE__ */ new Set();
+    const toolResultIds = /* @__PURE__ */ new Set();
+    for (const item of slicedMessages) {
+      if (item.type !== "message") continue;
+      for (const content of item.content) {
+        if (content.type === "tool_use" /* TOOL_USE */) {
+          toolUseIds.add(content.id);
+        } else if (content.type === "tool_result" /* TOOL_RESULT */) {
+          toolResultIds.add(content.tool_use_id);
+        }
+      }
+    }
+    for (const resultId of toolResultIds) {
+      if (!toolUseIds.has(resultId)) {
+        return false;
+      }
+    }
+    for (const useId of toolUseIds) {
+      if (!toolResultIds.has(useId)) {
+        const lastMessage = slicedMessages[slicedMessages.length - 1];
+        const isLastMessageWithThisToolUse = lastMessage?.type === "message" && lastMessage.role === "assistant" /* ASSISTANT */ && lastMessage.content.some(
+          (c) => c.type === "tool_use" /* TOOL_USE */ && c.id === useId
+        );
+        if (!isLastMessageWithThisToolUse) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
   /**
    * Pause execution (thread-safe with mutex)

@@ -1251,6 +1251,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
   /**
    * Apply sliding window to prevent unbounded input growth
    * Preserves system/developer message at the start if present
+   * IMPORTANT: Ensures tool_use and tool_result pairs are never broken
    */
   private applySlidingWindow(
     input: InputItem[],
@@ -1260,20 +1261,110 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
       return input;
     }
 
-    // Keep the first message (usually system/developer message) and last N-1 messages
-    const firstMessage = input[0];
-    const recentMessages = input.slice(-(maxMessages - 1));
-
     // Check if first message is a developer/system message
+    const firstMessage = input[0];
     const isSystemMessage = firstMessage?.type === 'message' &&
       firstMessage.role === MessageRole.DEVELOPER;
+
+    // Calculate how many messages we can keep (excluding system message if present)
+    const maxToKeep = isSystemMessage ? maxMessages - 1 : maxMessages;
+
+    // Find a safe cut point that doesn't break tool call/result pairs
+    const safeCutIndex = this.findSafeToolBoundary(input, input.length - maxToKeep);
+
+    // Slice from safe cut point to end
+    const recentMessages = input.slice(safeCutIndex);
 
     if (isSystemMessage) {
       return [firstMessage, ...recentMessages];
     }
 
-    // No system message, just keep the most recent messages
-    return input.slice(-maxMessages);
+    return recentMessages;
+  }
+
+  /**
+   * Find a safe index to cut the message array without breaking tool call/result pairs
+   * A safe boundary is one where all tool_use IDs have matching tool_result IDs
+   */
+  private findSafeToolBoundary(input: InputItem[], targetIndex: number): number {
+    // Ensure we don't go below 0 or above the array length
+    let cutIndex = Math.max(0, Math.min(targetIndex, input.length - 1));
+
+    // Start from targetIndex and search forward for a safe boundary
+    // A safe boundary is where we don't have orphaned tool calls or results
+    while (cutIndex < input.length - 1) {
+      if (this.isToolBoundarySafe(input, cutIndex)) {
+        return cutIndex;
+      }
+      cutIndex++;
+    }
+
+    // If no safe boundary found going forward, try going backward
+    cutIndex = Math.max(0, targetIndex);
+    while (cutIndex > 0) {
+      if (this.isToolBoundarySafe(input, cutIndex)) {
+        return cutIndex;
+      }
+      cutIndex--;
+    }
+
+    // Fallback: return original target (may cause issues but better than infinite loop)
+    return Math.max(0, targetIndex);
+  }
+
+  /**
+   * Check if cutting at this index would leave tool calls/results balanced
+   * Returns true if all tool_use IDs in the slice have matching tool_result IDs
+   */
+  private isToolBoundarySafe(input: InputItem[], startIndex: number): boolean {
+    const slicedMessages = input.slice(startIndex);
+
+    // Collect all tool_use IDs and tool_result IDs in the slice
+    const toolUseIds = new Set<string>();
+    const toolResultIds = new Set<string>();
+
+    for (const item of slicedMessages) {
+      if (item.type !== 'message') continue;
+
+      for (const content of item.content) {
+        if (content.type === ContentType.TOOL_USE) {
+          toolUseIds.add(content.id);
+        } else if (content.type === ContentType.TOOL_RESULT) {
+          toolResultIds.add(content.tool_use_id);
+        }
+      }
+    }
+
+    // Check 1: Every tool_result must have a matching tool_use
+    // (tool_result without tool_use = API error)
+    for (const resultId of toolResultIds) {
+      if (!toolUseIds.has(resultId)) {
+        return false;
+      }
+    }
+
+    // Check 2: Every tool_use should have a matching tool_result
+    // (tool_use without tool_result = incomplete, but less critical for some APIs)
+    // However, for safety, we enforce this too
+    for (const useId of toolUseIds) {
+      if (!toolResultIds.has(useId)) {
+        // Exception: the LAST assistant message may have tool_use without result yet
+        // This is only safe if it's the very last message (current iteration)
+        const lastMessage = slicedMessages[slicedMessages.length - 1];
+        const isLastMessageWithThisToolUse =
+          lastMessage?.type === 'message' &&
+          lastMessage.role === MessageRole.ASSISTANT &&
+          lastMessage.content.some(
+            (c: any) => c.type === ContentType.TOOL_USE && c.id === useId
+          );
+
+        if (!isLastMessageWithThisToolUse) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
 

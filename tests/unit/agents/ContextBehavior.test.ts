@@ -596,6 +596,199 @@ describe('Context Behavior', () => {
     });
   });
 
+  describe('Sliding Window - Tool Boundary Preservation', () => {
+    it('should never break tool_use/tool_result pairs when sliding', async () => {
+      // Create many iterations to trigger sliding window
+      const iterations = 12;
+      const responses: any[] = [];
+
+      for (let i = 0; i < iterations - 1; i++) {
+        responses.push({
+          output: [{
+            type: 'message',
+            role: MessageRole.ASSISTANT,
+            content: [{
+              type: ContentType.TOOL_USE,
+              id: `tool_${i}`,
+              name: 'get_weather',
+              arguments: JSON.stringify({ city: `City${i}` })
+            }]
+          }],
+          status: 'completed'
+        });
+      }
+      responses.push({ text: 'All done', status: 'completed' });
+
+      mockProvider.setResponseSequence(responses);
+      mockToolExecutor.registerTool('get_weather', async () => ({ temp: 70 }));
+
+      await loop.execute({
+        model: 'gpt-4',
+        input: 'Check many cities',
+        tools: [weatherTool],
+        maxIterations: iterations,
+        limits: { maxInputMessages: 6 } // Small limit to force sliding
+      });
+
+      // Check the last few calls to ensure tool pairs are intact
+      for (let callIdx = 5; callIdx < iterations; callIdx++) {
+        const input = mockProvider.getRequestInput(callIdx) as InputItem[];
+        if (!input) continue;
+
+        // Collect tool_use IDs and tool_result IDs
+        const toolUseIds = new Set<string>();
+        const toolResultIds = new Set<string>();
+
+        for (const item of input) {
+          if (item.type !== 'message') continue;
+          for (const content of item.content) {
+            if (content.type === ContentType.TOOL_USE) {
+              toolUseIds.add((content as any).id);
+            } else if (content.type === ContentType.TOOL_RESULT) {
+              toolResultIds.add((content as any).tool_use_id);
+            }
+          }
+        }
+
+        // Every tool_result must have a matching tool_use
+        for (const resultId of toolResultIds) {
+          expect(toolUseIds.has(resultId)).toBe(true);
+        }
+      }
+    });
+
+    it('should not start sliced context with orphaned tool_result', async () => {
+      const iterations = 10;
+      const responses: any[] = [];
+
+      for (let i = 0; i < iterations - 1; i++) {
+        responses.push({
+          output: [{
+            type: 'message',
+            role: MessageRole.ASSISTANT,
+            content: [{
+              type: ContentType.TOOL_USE,
+              id: `orphan_test_${i}`,
+              name: 'get_weather',
+              arguments: JSON.stringify({ city: `City${i}` })
+            }]
+          }],
+          status: 'completed'
+        });
+      }
+      responses.push({ text: 'Done', status: 'completed' });
+
+      mockProvider.setResponseSequence(responses);
+      mockToolExecutor.registerTool('get_weather', async () => ({ temp: 72 }));
+
+      await loop.execute({
+        model: 'gpt-4',
+        input: 'Test orphan prevention',
+        tools: [weatherTool],
+        maxIterations: iterations,
+        limits: { maxInputMessages: 5 }
+      });
+
+      // Check all calls after sliding window kicks in
+      for (let callIdx = 3; callIdx < iterations; callIdx++) {
+        const input = mockProvider.getRequestInput(callIdx) as InputItem[];
+        if (!input || input.length === 0) continue;
+
+        // First non-system message should NOT be a tool_result only message
+        const firstContentMessage = input.find(
+          item => item.type === 'message' && item.role !== MessageRole.DEVELOPER
+        );
+
+        if (firstContentMessage) {
+          const hasOnlyToolResult = firstContentMessage.content.every(
+            (c: any) => c.type === ContentType.TOOL_RESULT
+          );
+          const hasToolUse = firstContentMessage.content.some(
+            (c: any) => c.type === ContentType.TOOL_USE
+          );
+
+          // If it has tool_result, it should also have corresponding tool_use somewhere
+          if (hasOnlyToolResult && !hasToolUse) {
+            // This would be an orphaned tool_result - verify tool_use exists earlier
+            const toolResultId = (firstContentMessage.content[0] as any).tool_use_id;
+            const hasMatchingToolUse = input.some(
+              item => item.type === 'message' &&
+                item.content.some((c: any) =>
+                  c.type === ContentType.TOOL_USE && c.id === toolResultId
+                )
+            );
+            expect(hasMatchingToolUse).toBe(true);
+          }
+        }
+      }
+    });
+
+    it('should handle multiple tool calls in single message during sliding', async () => {
+      // Response with multiple tool calls in one message
+      mockProvider.setResponseSequence([
+        {
+          output: [{
+            type: 'message',
+            role: MessageRole.ASSISTANT,
+            content: [
+              { type: ContentType.TOOL_USE, id: 'multi_1', name: 'get_weather', arguments: JSON.stringify({ city: 'A' }) },
+              { type: ContentType.TOOL_USE, id: 'multi_2', name: 'get_weather', arguments: JSON.stringify({ city: 'B' }) },
+              { type: ContentType.TOOL_USE, id: 'multi_3', name: 'get_weather', arguments: JSON.stringify({ city: 'C' }) }
+            ]
+          }],
+          status: 'completed'
+        },
+        {
+          output: [{
+            type: 'message',
+            role: MessageRole.ASSISTANT,
+            content: [
+              { type: ContentType.TOOL_USE, id: 'multi_4', name: 'get_weather', arguments: JSON.stringify({ city: 'D' }) },
+              { type: ContentType.TOOL_USE, id: 'multi_5', name: 'get_weather', arguments: JSON.stringify({ city: 'E' }) }
+            ]
+          }],
+          status: 'completed'
+        },
+        {
+          text: 'Got weather for all cities',
+          status: 'completed'
+        }
+      ]);
+
+      mockToolExecutor.registerTool('get_weather', async (args) => ({ temp: 75, city: args.city }));
+
+      await loop.execute({
+        model: 'gpt-4',
+        input: 'Weather for A, B, C, D, E',
+        tools: [weatherTool],
+        maxIterations: 5,
+        limits: { maxInputMessages: 4 } // Force sliding during multi-tool calls
+      });
+
+      // Verify the last call has balanced tool pairs
+      const lastInput = mockProvider.getRequestInput(2) as InputItem[];
+
+      const toolUseIds = new Set<string>();
+      const toolResultIds = new Set<string>();
+
+      for (const item of lastInput) {
+        if (item.type !== 'message') continue;
+        for (const content of item.content) {
+          if (content.type === ContentType.TOOL_USE) {
+            toolUseIds.add((content as any).id);
+          } else if (content.type === ContentType.TOOL_RESULT) {
+            toolResultIds.add((content as any).tool_use_id);
+          }
+        }
+      }
+
+      // All tool_results should have matching tool_use
+      for (const resultId of toolResultIds) {
+        expect(toolUseIds.has(resultId)).toBe(true);
+      }
+    });
+  });
+
   describe('Edge Cases', () => {
     it('should handle string input conversion to array format', async () => {
       mockProvider.setResponseSequence([

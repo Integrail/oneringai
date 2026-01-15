@@ -478,9 +478,23 @@ private buildNewMessages(previousOutput: OutputItem[], toolResults: ToolResult[]
 // Append new messages to context, preserving history
 private appendToContext(currentInput: string | InputItem[], newMessages: InputItem[]): InputItem[]
 
-// Apply sliding window to prevent unbounded growth
+// Apply sliding window to prevent unbounded growth (tool-boundary safe)
 private applySlidingWindow(input: InputItem[], maxMessages: number): InputItem[]
+
+// Find safe cut point that doesn't break tool_use/tool_result pairs
+private findSafeToolBoundary(input: InputItem[], targetIndex: number): number
+
+// Verify tool_use and tool_result IDs are balanced in a slice
+private isToolBoundarySafe(input: InputItem[], startIndex: number): boolean
 ```
+
+### Tool Boundary Safety
+
+The sliding window implementation ensures tool_use and tool_result pairs are never broken:
+
+1. **Every `tool_result` must have a matching `tool_use`** - Starting context with an orphaned tool_result would cause API errors
+2. **Every `tool_use` should have a matching `tool_result`** - Except for the last message in current iteration (pending execution)
+3. **Safe boundary detection** - The algorithm searches for cut points where all tool IDs are balanced
 
 ### Streaming Event Types
 

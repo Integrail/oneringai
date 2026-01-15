@@ -1,6 +1,6 @@
 import { EventEmitter } from 'eventemitter3';
-import { A as AgenticLoopEvents, T as ToolFunction, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, e as ITextProvider, f as TokenUsage, g as ToolCall, L as LLMResponse, h as StreamEventType, i as IProvider, P as ProviderCapabilities, j as TextGenerateOptions, M as ModelCapabilities, k as MessageRole } from './index-DYzJIe1v.js';
-export { a9 as AfterToolContext, a4 as AgenticLoopEventName, ac as ApprovalResult, aa as ApproveToolContext, a8 as BeforeToolContext, B as BuiltInTool, s as CompactionItem, l as Content, C as ContentType, X as ErrorEvent, F as FunctionToolDefinition, a6 as Hook, a3 as HookManager, a5 as HookName, ad as IToolExecutor, n as InputImageContent, m as InputTextContent, V as IterationCompleteEvent, J as JSONSchema, q as Message, a7 as ModifyingHook, r as OutputItem, O as OutputTextContent, z as OutputTextDeltaEvent, D as OutputTextDoneEvent, R as ReasoningItem, W as ResponseCompleteEvent, x as ResponseCreatedEvent, y as ResponseInProgressEvent, u as Tool, K as ToolCallArgumentsDeltaEvent, N as ToolCallArgumentsDoneEvent, G as ToolCallStartEvent, t as ToolCallState, w as ToolExecutionContext, U as ToolExecutionDoneEvent, Q as ToolExecutionStartEvent, ab as ToolModification, a2 as ToolRegistry, v as ToolResult, p as ToolResultContent, o as ToolUseContent, a1 as isErrorEvent, Z as isOutputTextDelta, a0 as isResponseComplete, Y as isStreamEvent, _ as isToolCallArgumentsDelta, $ as isToolCallArgumentsDone } from './index-DYzJIe1v.js';
+import { A as AgenticLoopEvents, T as ToolFunction, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, e as ITextProvider, f as TokenUsage, g as ToolCall, L as LLMResponse, h as StreamEventType, i as IProvider, P as ProviderCapabilities, j as TextGenerateOptions, M as ModelCapabilities, k as MessageRole } from './index-BsCwX9_2.js';
+export { a9 as AfterToolContext, a4 as AgenticLoopEventName, ac as ApprovalResult, aa as ApproveToolContext, a8 as BeforeToolContext, B as BuiltInTool, s as CompactionItem, l as Content, C as ContentType, X as ErrorEvent, F as FunctionToolDefinition, a6 as Hook, a3 as HookManager, a5 as HookName, ad as IToolExecutor, n as InputImageContent, m as InputTextContent, V as IterationCompleteEvent, J as JSONSchema, q as Message, a7 as ModifyingHook, r as OutputItem, O as OutputTextContent, z as OutputTextDeltaEvent, D as OutputTextDoneEvent, R as ReasoningItem, W as ResponseCompleteEvent, x as ResponseCreatedEvent, y as ResponseInProgressEvent, u as Tool, K as ToolCallArgumentsDeltaEvent, N as ToolCallArgumentsDoneEvent, G as ToolCallStartEvent, t as ToolCallState, w as ToolExecutionContext, U as ToolExecutionDoneEvent, Q as ToolExecutionStartEvent, ab as ToolModification, a2 as ToolRegistry, v as ToolResult, p as ToolResultContent, o as ToolUseContent, a1 as isErrorEvent, Z as isOutputTextDelta, a0 as isResponseComplete, Y as isStreamEvent, _ as isToolCallArgumentsDelta, $ as isToolCallArgumentsDone } from './index-BsCwX9_2.js';
 
 /**
  * Supported AI Vendors
@@ -124,12 +124,23 @@ interface ConnectorConfig {
         [key: string]: unknown;
     };
 }
+/**
+ * Result from ProviderConfigAgent
+ * Includes setup instructions and environment variables
+ */
+interface ConnectorConfigResult {
+    name: string;
+    config: ConnectorConfig;
+    setupInstructions: string;
+    envVariables: string[];
+    setupUrl?: string;
+}
 
 /**
  * Token storage interface (Clean Architecture - Domain Layer)
  * All implementations must encrypt tokens at rest
  */
-interface StoredToken {
+interface StoredToken$1 {
     access_token: string;
     refresh_token?: string;
     expires_in: number;
@@ -148,14 +159,14 @@ interface ITokenStorage {
      * @param key - Unique identifier for this token
      * @param token - Token data to store
      */
-    storeToken(key: string, token: StoredToken): Promise<void>;
+    storeToken(key: string, token: StoredToken$1): Promise<void>;
     /**
      * Retrieve token (must be decrypted by implementation)
      *
      * @param key - Unique identifier for the token
      * @returns Decrypted token or null if not found
      */
-    getToken(key: string): Promise<StoredToken | null>;
+    getToken(key: string): Promise<StoredToken$1 | null>;
     /**
      * Delete token
      *
@@ -407,6 +418,22 @@ declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposab
      * List registered tools
      */
     listTools(): string[];
+    /**
+     * Replace all tools with a new array
+     */
+    setTools(tools: ToolFunction[]): void;
+    /**
+     * Change the model
+     */
+    setModel(model: string): void;
+    /**
+     * Get current temperature
+     */
+    getTemperature(): number | undefined;
+    /**
+     * Change the temperature
+     */
+    setTemperature(temperature: number): void;
     pause(reason?: string): void;
     resume(): void;
     cancel(reason?: string): void;
@@ -894,6 +921,14 @@ interface OAuthConfig {
     storage?: ITokenStorage;
     storageKey?: string;
 }
+interface StoredToken {
+    access_token: string;
+    refresh_token?: string;
+    expires_in: number;
+    token_type: string;
+    scope?: string;
+    obtained_at: number;
+}
 
 /**
  * OAuth Manager - Main entry point for OAuth 2.0 authentication
@@ -955,8 +990,8 @@ declare class OAuthManager {
 
 declare class MemoryStorage implements ITokenStorage {
     private tokens;
-    storeToken(key: string, token: StoredToken): Promise<void>;
-    getToken(key: string): Promise<StoredToken | null>;
+    storeToken(key: string, token: StoredToken$1): Promise<void>;
+    getToken(key: string): Promise<StoredToken$1 | null>;
     deleteToken(key: string): Promise<void>;
     hasToken(key: string): Promise<boolean>;
     /**
@@ -987,8 +1022,8 @@ declare class FileStorage implements ITokenStorage {
      * Get file path for a token key (hashed for security)
      */
     private getFilePath;
-    storeToken(key: string, token: StoredToken): Promise<void>;
-    getToken(key: string): Promise<StoredToken | null>;
+    storeToken(key: string, token: StoredToken$1): Promise<void>;
+    getToken(key: string): Promise<StoredToken$1 | null>;
     deleteToken(key: string): Promise<void>;
     hasToken(key: string): Promise<boolean>;
     /**
@@ -1083,6 +1118,34 @@ declare function authenticatedFetch(url: string | URL, options: RequestInit | un
  * ```
  */
 declare function createAuthenticatedFetch(authProvider: string, userId?: string): (url: string | URL, options?: RequestInit) => Promise<Response>;
+
+/**
+ * Tool Generator - Auto-generate tools for registered connectors
+ */
+
+interface APIRequestArgs {
+    authProvider: string;
+    url: string;
+    method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+    body?: any;
+    headers?: Record<string, string>;
+}
+interface APIRequestResult {
+    success: boolean;
+    status: number;
+    statusText: string;
+    data: any;
+    error?: string;
+}
+/**
+ * Generate a universal API request tool for all registered OAuth providers
+ *
+ * This tool allows the AI agent to make authenticated requests to any registered API.
+ * The tool description is dynamically generated based on registered providers.
+ *
+ * @returns ToolFunction that can call any registered OAuth API
+ */
+declare function generateWebAPITool(): ToolFunction<APIRequestArgs, APIRequestResult>;
 
 /**
  * Generate a secure random encryption key
@@ -1309,4 +1372,56 @@ declare namespace index {
   export { index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_executeJavaScript as executeJavaScript, index_jsonManipulator as jsonManipulator, index_webFetch as webFetch, index_webFetchJS as webFetchJS, index_webSearch as webSearch };
 }
 
-export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig, AgentResponse, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, ExecutionContext, ExecutionMetrics, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAsyncDisposable, type IDisposable, IProvider, ITextProvider, type ITokenStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, ProviderAuthError, ProviderCapabilities, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, hasClipboardImage, isVendor, readClipboardImage, index as tools };
+/**
+ * Provider Config Agent
+ *
+ * AI-powered agent that helps users configure OAuth providers
+ * Asks questions, guides setup, and generates JSON configuration
+ */
+
+/**
+ * Built-in agent for generating OAuth provider configurations
+ */
+declare class ProviderConfigAgent {
+    private agent;
+    private conversationHistory;
+    private connectorName;
+    /**
+     * Create a provider config agent
+     * @param connectorName - Name of the connector to use (must be created first with Connector.create())
+     */
+    constructor(connectorName?: string);
+    /**
+     * Start interactive configuration session
+     * AI will ask questions and generate the connector config
+     *
+     * @param initialInput - Optional initial message (e.g., "I want to connect to GitHub")
+     * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
+     */
+    run(initialInput?: string): Promise<string | ConnectorConfigResult>;
+    /**
+     * Continue conversation (for multi-turn interaction)
+     *
+     * @param userMessage - User's response
+     * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
+     */
+    continue(userMessage: string): Promise<string | ConnectorConfigResult>;
+    /**
+     * Get system instructions for the agent
+     */
+    private getSystemInstructions;
+    /**
+     * Extract configuration from AI response
+     */
+    private extractConfig;
+    /**
+     * Get default model
+     */
+    private getDefaultModel;
+    /**
+     * Reset conversation
+     */
+    reset(): void;
+}
+
+export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig, AgentResponse, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ExecutionContext, ExecutionMetrics, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAsyncDisposable, type IDisposable, IProvider, ITextProvider, type ITokenStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isVendor, readClipboardImage, index as tools };

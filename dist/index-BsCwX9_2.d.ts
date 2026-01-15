@@ -809,9 +809,30 @@ declare class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
      */
     private executeWithTimeout;
     /**
-     * Build input with tool results
+     * Build new messages from tool results (assistant response + tool results)
      */
-    private buildInputWithToolResults;
+    private buildNewMessages;
+    /**
+     * Append new messages to current context, preserving history
+     * Unified logic for both execute() and executeStreaming()
+     */
+    private appendToContext;
+    /**
+     * Apply sliding window to prevent unbounded input growth
+     * Preserves system/developer message at the start if present
+     * IMPORTANT: Ensures tool_use and tool_result pairs are never broken
+     */
+    private applySlidingWindow;
+    /**
+     * Find a safe index to cut the message array without breaking tool call/result pairs
+     * A safe boundary is one where all tool_use IDs have matching tool_result IDs
+     */
+    private findSafeToolBoundary;
+    /**
+     * Check if cutting at this index would leave tool calls/results balanced
+     * Returns true if all tool_use IDs in the slice have matching tool_result IDs
+     */
+    private isToolBoundarySafe;
     /**
      * Pause execution (thread-safe with mutex)
      */
