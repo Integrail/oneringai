@@ -109,6 +109,7 @@ export { assertNotDestroyed } from './domain/interfaces/IDisposable.js';
 
 // Configuration types
 export type {
+  BaseProviderConfig,
   ProviderConfig,
   ProvidersConfig,
   OpenAIConfig,
