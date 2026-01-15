@@ -173,6 +173,66 @@ for await (const chunk of agent.stream('Tell me a story')) {
 
 **Returns:** `AsyncGenerator<StreamChunk>`
 
+### `agent.setModel(model)`
+
+Changes the model at runtime.
+
+```typescript
+agent.setModel('gpt-4-turbo');
+```
+
+### `agent.setTemperature(temperature)`
+
+Changes the temperature at runtime.
+
+```typescript
+agent.setTemperature(0.9);
+```
+
+### `agent.getTemperature()`
+
+Gets the current temperature.
+
+```typescript
+const temp = agent.getTemperature();  // 0.7 or undefined
+```
+
+**Returns:** `number | undefined`
+
+### `agent.setTools(tools)`
+
+Replaces all tools with a new array.
+
+```typescript
+agent.setTools([weatherTool, searchTool]);
+```
+
+### `agent.addTool(tool)`
+
+Adds a single tool.
+
+```typescript
+agent.addTool(newTool);
+```
+
+### `agent.removeTool(name)`
+
+Removes a tool by name.
+
+```typescript
+agent.removeTool('get_weather');
+```
+
+### `agent.listTools()`
+
+Lists all registered tool names.
+
+```typescript
+const tools = agent.listTools();  // ['get_weather', 'search']
+```
+
+**Returns:** `string[]`
+
 ### `agent.reset()`
 
 Clears conversation history.
@@ -190,6 +250,14 @@ const history = agent.getHistory();
 ```
 
 **Returns:** `InputItem[]`
+
+### `agent.destroy()`
+
+Destroys the agent, cancels any running operations, and runs cleanup callbacks.
+
+```typescript
+agent.destroy();
+```
 
 ---
 

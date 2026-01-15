@@ -472,6 +472,227 @@ describe('Agent', () => {
     });
   });
 
+  describe('configuration methods', () => {
+    let agent: Agent;
+
+    beforeEach(() => {
+      agent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+        temperature: 0.5,
+      });
+    });
+
+    describe('setModel()', () => {
+      it('should change the model', () => {
+        expect(agent.model).toBe('gpt-4');
+
+        agent.setModel('gpt-4-turbo');
+
+        expect(agent.model).toBe('gpt-4-turbo');
+      });
+
+      it('should use new model in subsequent runs', async () => {
+        mockGenerate.mockResolvedValue({
+          id: 'resp_123',
+          object: 'response',
+          created_at: Date.now(),
+          status: 'completed',
+          model: 'gpt-4-turbo',
+          output: [
+            {
+              type: 'message',
+              id: 'msg_123',
+              role: MessageRole.ASSISTANT,
+              content: [
+                {
+                  type: ContentType.OUTPUT_TEXT,
+                  text: 'Hello!',
+                  annotations: [],
+                },
+              ],
+            },
+          ],
+          output_text: 'Hello!',
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        });
+
+        agent.setModel('gpt-4-turbo');
+        await agent.run('Hello');
+
+        expect(mockGenerate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            model: 'gpt-4-turbo',
+          })
+        );
+      });
+    });
+
+    describe('setTemperature() and getTemperature()', () => {
+      it('should return initial temperature', () => {
+        expect(agent.getTemperature()).toBe(0.5);
+      });
+
+      it('should return undefined if temperature not set', () => {
+        const agentNoTemp = Agent.create({
+          connector: 'test-openai',
+          model: 'gpt-4',
+        });
+
+        expect(agentNoTemp.getTemperature()).toBeUndefined();
+      });
+
+      it('should change the temperature', () => {
+        agent.setTemperature(0.9);
+
+        expect(agent.getTemperature()).toBe(0.9);
+      });
+
+      it('should use new temperature in subsequent runs', async () => {
+        mockGenerate.mockResolvedValue({
+          id: 'resp_123',
+          object: 'response',
+          created_at: Date.now(),
+          status: 'completed',
+          model: 'gpt-4',
+          output: [
+            {
+              type: 'message',
+              id: 'msg_123',
+              role: MessageRole.ASSISTANT,
+              content: [
+                {
+                  type: ContentType.OUTPUT_TEXT,
+                  text: 'Hello!',
+                  annotations: [],
+                },
+              ],
+            },
+          ],
+          output_text: 'Hello!',
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        });
+
+        agent.setTemperature(0.9);
+        await agent.run('Hello');
+
+        expect(mockGenerate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            temperature: 0.9,
+          })
+        );
+      });
+    });
+
+    describe('setTools()', () => {
+      const tool1: ToolFunction = {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'tool_one',
+            description: 'First tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+        execute: async () => ({ result: 'one' }),
+      };
+
+      const tool2: ToolFunction = {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'tool_two',
+            description: 'Second tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+        execute: async () => ({ result: 'two' }),
+      };
+
+      const tool3: ToolFunction = {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'tool_three',
+            description: 'Third tool',
+            parameters: { type: 'object', properties: {} },
+          },
+        },
+        execute: async () => ({ result: 'three' }),
+      };
+
+      it('should replace all tools with new array', () => {
+        agent.addTool(tool1);
+        agent.addTool(tool2);
+        expect(agent.listTools()).toContain('tool_one');
+        expect(agent.listTools()).toContain('tool_two');
+
+        agent.setTools([tool3]);
+
+        expect(agent.listTools()).not.toContain('tool_one');
+        expect(agent.listTools()).not.toContain('tool_two');
+        expect(agent.listTools()).toContain('tool_three');
+      });
+
+      it('should handle empty array (clear all tools)', () => {
+        agent.addTool(tool1);
+        agent.addTool(tool2);
+        expect(agent.listTools().length).toBe(2);
+
+        agent.setTools([]);
+
+        expect(agent.listTools().length).toBe(0);
+      });
+
+      it('should replace with multiple tools', () => {
+        agent.addTool(tool1);
+        expect(agent.listTools()).toEqual(['tool_one']);
+
+        agent.setTools([tool2, tool3]);
+
+        expect(agent.listTools()).toContain('tool_two');
+        expect(agent.listTools()).toContain('tool_three');
+        expect(agent.listTools()).not.toContain('tool_one');
+        expect(agent.listTools().length).toBe(2);
+      });
+
+      it('should use new tools in subsequent runs', async () => {
+        mockGenerate.mockResolvedValue({
+          id: 'resp_123',
+          object: 'response',
+          created_at: Date.now(),
+          status: 'completed',
+          model: 'gpt-4',
+          output: [
+            {
+              type: 'message',
+              id: 'msg_123',
+              role: MessageRole.ASSISTANT,
+              content: [
+                {
+                  type: ContentType.OUTPUT_TEXT,
+                  text: 'Hello!',
+                  annotations: [],
+                },
+              ],
+            },
+          ],
+          output_text: 'Hello!',
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+        });
+
+        agent.setTools([tool1, tool2]);
+        await agent.run('Hello');
+
+        expect(mockGenerate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            tools: [tool1.definition, tool2.definition],
+          })
+        );
+      });
+    });
+  });
+
   describe('configuration options', () => {
     it('should accept temperature', () => {
       const agent = Agent.create({

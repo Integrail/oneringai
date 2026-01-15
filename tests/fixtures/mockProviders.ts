@@ -11,6 +11,15 @@ import { StreamEvent, StreamEventType } from '../../src/domain/entities/StreamEv
 import { ProviderRateLimitError, ProviderError } from '../../src/domain/errors/AIErrors.js';
 
 /**
+ * Extended response type for mock convenience
+ * Adds 'text' shortcut for simple text responses
+ */
+export interface MockResponse extends Partial<LLMResponse> {
+  /** Convenience: simple text response (creates output automatically) */
+  text?: string;
+}
+
+/**
  * Error simulation configuration for realistic testing
  */
 export interface MockErrorConfig {
@@ -43,17 +52,20 @@ export class MockTextProvider implements ITextProvider {
   public lastRequest: TextGenerateOptions | null = null;
   public callCount = 0;
 
+  /** All requests captured in order - for verifying context building */
+  public allRequests: TextGenerateOptions[] = [];
+
   /** Error simulation configuration */
   private errorConfig: MockErrorConfig | null = null;
   /** Per-call error configs for sequence testing */
   private errorSequence: (MockErrorConfig | null)[] = [];
 
-  setResponse(response: Partial<LLMResponse>) {
+  setResponse(response: MockResponse) {
     this.responses = [this.buildResponse(response)];
     this.callIndex = 0;
   }
 
-  setResponseSequence(responses: Partial<LLMResponse>[]) {
+  setResponseSequence(responses: MockResponse[]) {
     this.responses = responses.map(r => this.buildResponse(r));
     this.callIndex = 0;
   }
@@ -76,6 +88,7 @@ export class MockTextProvider implements ITextProvider {
 
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
     this.lastRequest = options;
+    this.allRequests.push(JSON.parse(JSON.stringify(options))); // Deep clone to preserve state
     this.callCount++;
 
     // Get error config for this call (callIndex is 0-based at this point)
@@ -182,26 +195,103 @@ export class MockTextProvider implements ITextProvider {
 
   async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent> {
     this.lastRequest = options;
+    this.allRequests.push(JSON.parse(JSON.stringify(options))); // Deep clone to preserve state
     this.callCount++;
 
-    // Simple mock streaming - just yield response created and complete
+    // Get current call index BEFORE incrementing (same as generate())
+    const currentCallIndex = this.callIndex;
+    this.callIndex++;
+
+    // Get error config for this call
+    const errorConfig = this.errorSequence[currentCallIndex] ?? this.errorConfig;
+
+    // Simulate network error
+    if (errorConfig?.networkError) {
+      throw new Error('Network error: Connection refused');
+    }
+
+    // Simulate rate limit error
+    if (errorConfig?.rateLimitError) {
+      throw new ProviderRateLimitError('mock', 60);
+    }
+
+    // Get response for this call
+    const response = this.responses[currentCallIndex] || this.responses[this.responses.length - 1];
+
+    let sequenceNumber = 0;
+
+    // Yield response created
     yield {
       type: StreamEventType.RESPONSE_CREATED,
       response_id: 'mock_response_id',
       model: options.model,
+      created_at: Math.floor(Date.now() / 1000),
     };
 
-    yield {
-      type: StreamEventType.OUTPUT_TEXT_DELTA,
-      response_id: 'mock_response_id',
-      delta: 'Mock response',
-    };
+    if (response) {
+      // Check for tool calls in the response
+      for (const item of response.output) {
+        if (item.type === 'message' && item.role === MessageRole.ASSISTANT) {
+          for (const content of item.content) {
+            if (content.type === ContentType.OUTPUT_TEXT) {
+              // Yield text delta
+              yield {
+                type: StreamEventType.OUTPUT_TEXT_DELTA,
+                response_id: 'mock_response_id',
+                item_id: 'mock_item',
+                output_index: 0,
+                content_index: 0,
+                delta: content.text,
+                sequence_number: sequenceNumber++,
+              };
+            } else if (content.type === ContentType.TOOL_USE) {
+              // Yield tool call events
+              yield {
+                type: StreamEventType.TOOL_CALL_START,
+                response_id: 'mock_response_id',
+                item_id: 'mock_item',
+                tool_call_id: content.id,
+                tool_name: content.name,
+              };
+              yield {
+                type: StreamEventType.TOOL_CALL_ARGUMENTS_DELTA,
+                response_id: 'mock_response_id',
+                item_id: 'mock_item',
+                tool_call_id: content.id,
+                tool_name: content.name,
+                delta: content.arguments,
+                sequence_number: sequenceNumber++,
+              };
+              yield {
+                type: StreamEventType.TOOL_CALL_ARGUMENTS_DONE,
+                response_id: 'mock_response_id',
+                tool_call_id: content.id,
+                tool_name: content.name,
+                arguments: content.arguments,
+              };
+            }
+          }
+        }
+      }
+    } else {
+      // Default text response
+      yield {
+        type: StreamEventType.OUTPUT_TEXT_DELTA,
+        response_id: 'mock_response_id',
+        item_id: 'mock_item',
+        output_index: 0,
+        content_index: 0,
+        delta: 'Mock response',
+        sequence_number: sequenceNumber++,
+      };
+    }
 
     yield {
       type: StreamEventType.RESPONSE_COMPLETE,
       response_id: 'mock_response_id',
       status: 'completed',
-      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+      usage: response?.usage || { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+      iterations: 1,
     };
   }
 
@@ -216,7 +306,7 @@ export class MockTextProvider implements ITextProvider {
     };
   }
 
-  private buildResponse(partial: Partial<LLMResponse>): LLMResponse {
+  private buildResponse(partial: MockResponse): LLMResponse {
     const output: OutputItem[] = partial.output || [{
       type: 'message',
       id: 'mock_msg_id',
@@ -248,8 +338,24 @@ export class MockTextProvider implements ITextProvider {
     this.callIndex = 0;
     this.callCount = 0;
     this.lastRequest = null;
+    this.allRequests = [];
     this.errorConfig = null;
     this.errorSequence = [];
+  }
+
+  /**
+   * Get the input from a specific call (0-indexed)
+   * Useful for verifying context building across iterations
+   */
+  getRequestInput(callIndex: number): string | any[] | undefined {
+    return this.allRequests[callIndex]?.input;
+  }
+
+  /**
+   * Get all captured inputs for inspection
+   */
+  getAllInputs(): (string | any[])[] {
+    return this.allRequests.map(r => r.input);
   }
 }
 

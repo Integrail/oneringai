@@ -224,8 +224,13 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
           duration: Date.now() - iterationStartTime,
         });
 
-        // Build next input
-        currentInput = this.buildInputWithToolResults(response.output, toolResults);
+        // Build next input - append to existing context (preserve history)
+        const newMessages = this.buildNewMessages(response.output, toolResults);
+        currentInput = this.appendToContext(currentInput, newMessages);
+
+        // Apply sliding window to prevent unbounded input growth
+        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
 
         iteration++;
       }
@@ -467,11 +472,23 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
               error: (error as Error).message,
             };
 
-            throw error; // Re-throw to stop execution
+            // Check tool failure mode - unified with execute() behavior
+            const failureMode = config.errorHandling?.toolFailureMode || 'continue';
+            if (failureMode === 'fail') {
+              throw error; // Fail-fast mode: stop execution on first tool failure
+            }
+
+            // Continue mode (default): Add error result and continue with remaining tools
+            toolResults.push({
+              tool_use_id: toolCall.id,
+              content: '',
+              error: (error as Error).message,
+              state: ToolCallState.FAILED,
+            });
           }
         }
 
-        // Build next input with tool results
+        // Build next input with tool results (streaming constructs messages from StreamState)
         const assistantMessage: InputItem = {
           type: 'message',
           role: MessageRole.ASSISTANT,
@@ -500,39 +517,13 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
           })),
         };
 
-        // Update current input for next iteration
-        if (Array.isArray(currentInput)) {
-          currentInput = [...currentInput, assistantMessage, toolResultsMessage];
-        } else {
-          currentInput = [
-            {
-              type: 'message' as const,
-              role: MessageRole.USER,
-              content: [{ type: ContentType.INPUT_TEXT, text: currentInput }],
-            },
-            assistantMessage,
-            toolResultsMessage,
-          ];
-        }
+        // Update current input for next iteration using shared methods
+        const newMessages: InputItem[] = [assistantMessage, toolResultsMessage];
+        currentInput = this.appendToContext(currentInput, newMessages);
 
         // Apply sliding window to prevent unbounded input growth
         const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-        if (Array.isArray(currentInput) && currentInput.length > maxInputMessages) {
-          // Keep the first message (usually system/developer message) and last N-1 messages
-          const firstMessage = currentInput[0];
-          const recentMessages = currentInput.slice(-(maxInputMessages - 1));
-
-          // Check if first message is a developer/system message
-          const isSystemMessage = firstMessage?.type === 'message' &&
-            firstMessage.role === MessageRole.DEVELOPER;
-
-          if (isSystemMessage) {
-            currentInput = [firstMessage, ...recentMessages];
-          } else {
-            // No system message, just keep the most recent messages
-            currentInput = currentInput.slice(-maxInputMessages);
-          }
-        }
+        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
 
         // Yield iteration complete
         yield {
@@ -1196,19 +1187,22 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     });
   }
 
+  // ============ Shared Helper Methods ============
+  // These methods provide unified logic for both execute() and executeStreaming()
+
   /**
-   * Build input with tool results
+   * Build new messages from tool results (assistant response + tool results)
    */
-  private buildInputWithToolResults(
+  private buildNewMessages(
     previousOutput: OutputItem[],
     toolResults: ToolResult[]
   ): InputItem[] {
-    const input: InputItem[] = [];
+    const messages: InputItem[] = [];
 
     // Add assistant's previous response as input
     for (const item of previousOutput) {
       if (item.type === 'message') {
-        input.push(item);
+        messages.push(item);
       }
     }
 
@@ -1221,15 +1215,67 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     }));
 
     if (toolResultContents.length > 0) {
-      input.push({
+      messages.push({
         type: 'message',
         role: MessageRole.USER,
         content: toolResultContents,
       });
     }
 
-    return input;
+    return messages;
   }
+
+  /**
+   * Append new messages to current context, preserving history
+   * Unified logic for both execute() and executeStreaming()
+   */
+  private appendToContext(
+    currentInput: string | InputItem[],
+    newMessages: InputItem[]
+  ): InputItem[] {
+    if (Array.isArray(currentInput)) {
+      return [...currentInput, ...newMessages];
+    }
+
+    // First iteration - convert string input to array format
+    return [
+      {
+        type: 'message' as const,
+        role: MessageRole.USER,
+        content: [{ type: ContentType.INPUT_TEXT, text: currentInput }],
+      },
+      ...newMessages,
+    ];
+  }
+
+  /**
+   * Apply sliding window to prevent unbounded input growth
+   * Preserves system/developer message at the start if present
+   */
+  private applySlidingWindow(
+    input: InputItem[],
+    maxMessages: number = 50
+  ): InputItem[] {
+    if (input.length <= maxMessages) {
+      return input;
+    }
+
+    // Keep the first message (usually system/developer message) and last N-1 messages
+    const firstMessage = input[0];
+    const recentMessages = input.slice(-(maxMessages - 1));
+
+    // Check if first message is a developer/system message
+    const isSystemMessage = firstMessage?.type === 'message' &&
+      firstMessage.role === MessageRole.DEVELOPER;
+
+    if (isSystemMessage) {
+      return [firstMessage, ...recentMessages];
+    }
+
+    // No system message, just keep the most recent messages
+    return input.slice(-maxMessages);
+  }
+
 
   /**
    * Pause execution (thread-safe with mutex)

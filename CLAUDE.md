@@ -110,6 +110,32 @@ for await (const event of agent.stream('Hello')) { ... }
 // Events
 agent.on('tool:start', handler);
 agent.on('tool:complete', handler);
+
+// Configuration (runtime changes)
+agent.setModel('gpt-4-turbo');       // Change model
+agent.setTemperature(0.9);           // Change temperature
+agent.getTemperature();              // Get current temperature
+
+// Tool management
+agent.addTool(tool);                 // Add a single tool
+agent.removeTool('tool_name');       // Remove a tool by name
+agent.setTools([tool1, tool2]);      // Replace all tools
+agent.listTools();                   // Get array of tool names
+
+// Control
+agent.pause();                       // Pause execution
+agent.resume();                      // Resume execution
+agent.cancel();                      // Cancel execution
+
+// Introspection
+agent.isRunning();                   // Check if running
+agent.isPaused();                    // Check if paused
+agent.getMetrics();                  // Get execution metrics
+agent.getAuditTrail();               // Get audit trail
+
+// Cleanup
+agent.onCleanup(() => { ... });      // Register cleanup callback
+agent.destroy();                     // Destroy agent
 ```
 
 ### Vendor (`src/core/Vendor.ts`)

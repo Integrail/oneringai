@@ -214,6 +214,45 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     return this.toolRegistry.listTools();
   }
 
+  /**
+   * Replace all tools with a new array
+   */
+  setTools(tools: ToolFunction[]): void {
+    // Clear existing tools
+    for (const name of this.toolRegistry.listTools()) {
+      this.toolRegistry.unregisterTool(name);
+    }
+    // Register new tools
+    for (const tool of tools) {
+      this.toolRegistry.registerTool(tool);
+    }
+    this.config.tools = [...tools];
+  }
+
+  // ============ Configuration Methods ============
+
+  /**
+   * Change the model
+   */
+  setModel(model: string): void {
+    (this as { model: string }).model = model;
+    this.config.model = model;
+  }
+
+  /**
+   * Get current temperature
+   */
+  getTemperature(): number | undefined {
+    return this.config.temperature;
+  }
+
+  /**
+   * Change the temperature
+   */
+  setTemperature(temperature: number): void {
+    this.config.temperature = temperature;
+  }
+
   // ============ Control Methods ============
 
   pause(reason?: string): void {

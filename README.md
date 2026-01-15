@@ -575,12 +575,28 @@ const response = await agent.run(input: string | InputItem[]);
 // Stream response
 for await (const event of agent.stream(input)) { ... }
 
+// Configuration (runtime changes)
+agent.setModel('gpt-4-turbo');       // Change model
+agent.setTemperature(0.9);           // Change temperature
+agent.getTemperature();              // Get current temperature
+
+// Tool management
+agent.addTool(tool);                 // Add a tool
+agent.removeTool('tool_name');       // Remove a tool
+agent.setTools([tool1, tool2]);      // Replace all tools
+agent.listTools();                   // List tool names
+
 // Events
 agent.on('tool:start', handler);
 agent.on('tool:complete', handler);
 
-// Metrics
+// Metrics & introspection
 const metrics = agent.getMetrics();
+agent.isRunning();                   // Check if running
+agent.isPaused();                    // Check if paused
+
+// Cleanup
+agent.destroy();                     // Destroy agent
 ```
 
 ### Vendor Enum
