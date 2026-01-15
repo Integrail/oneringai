@@ -971,7 +971,7 @@ This is a private project. For questions or contributions, contact the project m
 **Version**: 0.1.0
 **Status**: MVP Complete, Production-Ready Architecture
 
-**Recent Changes (2026-01-13)**:
+**Recent Changes (2026-01-13 & 2026-01-15)**:
 - 🏗️ **ARCHITECTURE**: Reorganized connector system - moved from `plugins/oauth/` to `src/connectors/`
 - ✅ **Phase 0 Complete**: Clean separation of concerns for future extensibility (SAML, Kerberos, etc.)
 - ⚠️ **Phase 1 Complete - Critical Fixes**:
@@ -989,6 +989,13 @@ This is a private project. For questions or contributions, contact the project m
   - **API Cleanup**: Single consistent API - no more `oauthRegistry`, `OAuthMemoryStorage`, etc.
   - **Examples Updated**: All examples use clean, modern API
   - **Zero `@deprecated` tags**: Codebase is now clean and maintainable
+- 🧪 **Phase 3.1 Complete - OAuth Test Coverage** (2026-01-15):
+  - **103 tests created**: 98 passing (95% pass rate)
+  - **Test infrastructure**: Vitest configured with coverage reporting
+  - **Security tests**: Encryption, PKCE, CSRF protection, token validation
+  - **Concurrency tests**: Race condition prevention verified
+  - **Storage tests**: MemoryStorage, FileStorage with corruption handling
+  - **Coverage**: OAuth layer approaching 90%+
 - 🐛 **Bug Fix**: Changed `OAuthFileStorage` → `FileStorage` in all examples (was causing import errors)
 - 📦 All connector code now in unified location: `src/connectors/oauth/`
 

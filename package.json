@@ -31,7 +31,13 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest run --coverage",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration",
+    "test:oauth": "vitest run tests/unit/oauth",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "prepare": "",
@@ -83,7 +89,9 @@
     "readline-async": "^0.1.0"
   },
   "devDependencies": {
+    "@faker-js/faker": "^9.9.0",
     "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^8.56.0",
     "tsup": "^8.0.1",
     "tsx": "^4.21.0",
