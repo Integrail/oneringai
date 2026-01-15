@@ -6,21 +6,27 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { GenericOpenAIProvider } from '@/infrastructure/providers/generic/GenericOpenAIProvider.js';
+
+// Create mock functions with vi.hoisted for proper hoisting
+const { mockCreate, mockOpenAI } = vi.hoisted(() => {
+  const mockCreate = vi.fn();
+  const mockOpenAI = vi.fn(() => ({
+    chat: {
+      completions: {
+        create: mockCreate,
+      },
+    },
+  }));
+  return { mockCreate, mockOpenAI };
+});
 
 // Mock OpenAI SDK
-const mockCreate = vi.fn();
-const mockOpenAI = vi.fn(() => ({
-  chat: {
-    completions: {
-      create: mockCreate,
-    },
-  },
-}));
-
 vi.mock('openai', () => ({
   default: mockOpenAI,
 }));
+
+// Import after mocking
+import { GenericOpenAIProvider } from '@/infrastructure/providers/generic/GenericOpenAIProvider.js';
 
 describe('GenericOpenAIProvider', () => {
   beforeEach(() => {

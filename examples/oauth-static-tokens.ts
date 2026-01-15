@@ -142,7 +142,7 @@ async function main() {
   const apiTool = generateWebAPITool();
 
   console.log('Generated tool:', apiTool.definition.function.name);
-  console.log('Supports connectors:', apiTool.definition.function.parameters.properties.authProvider.enum);
+  console.log('Supports connectors:', apiTool.definition.function.parameters?.properties?.authProvider?.enum);
   console.log('\nTool description includes:\n');
   console.log(Connector.getDescriptionsForTools());
   console.log('');

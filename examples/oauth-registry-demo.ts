@@ -128,7 +128,7 @@ async function main() {
   const apiTool = generateWebAPITool();
 
   console.log('Tool name:', apiTool.definition.function.name);
-  console.log('Supported connectors:', apiTool.definition.function.parameters.properties.authProvider.enum);
+  console.log('Supported connectors:', apiTool.definition.function.parameters?.properties?.authProvider?.enum);
   console.log('\nThe AI agent can now call ANY registered OAuth API!\n');
 
   // ==================== Step 5: Example with AI Agent ====================

@@ -6,7 +6,7 @@
  *
  * Users can implement:
  * 1. Custom LLM providers (ITextProvider, IImageProvider)
- * 2. Custom OAuth storage backends (IOAuthTokenStorage)
+ * 2. Custom OAuth storage backends (ITokenStorage)
  * 3. Custom tool executors (IToolExecutor)
  */
 
@@ -14,10 +14,9 @@ import 'dotenv/config';
 import {
   // Domain Interfaces (contracts)
   ITextProvider,
-  IImageProvider,
-  IOAuthTokenStorage,
   IToolExecutor,
   IDisposable,
+  ITokenStorage,
 
   // Base Classes (reusable infrastructure)
   BaseProvider,
@@ -33,9 +32,11 @@ import {
   ToolResult,
   ProviderCapabilities,
   ToolExecutionContext,
-
-  // OAuth Types
-  StoredToken,
+  ToolFunction,
+  Tool,
+  ToolCallState,
+  ContentType,
+  MessageRole,
 
   // For registration
   Connector,
@@ -43,6 +44,8 @@ import {
   Vendor,
   OAuthManager,
 } from '../src/index.js';
+
+import type { StoredToken } from '../src/connectors/index.js';
 
 // ==================== Example 1: Custom LLM Provider ====================
 console.log('Example 1: Custom LLM Provider');
@@ -93,7 +96,7 @@ class MyAIProvider extends BaseTextProvider {
       if (!response.ok) {
         const error = await response.json();
         // Use ProviderErrorMapper for consistent error handling!
-        throw ProviderErrorMapper.mapError(error, this.name);
+        throw ProviderErrorMapper.mapError(error, { providerName: this.name });
       }
 
       const data = await response.json();
@@ -101,7 +104,7 @@ class MyAIProvider extends BaseTextProvider {
       // Convert response to our standard LLMResponse format
       return this.convertFromMyAIFormat(data);
     } catch (error) {
-      throw ProviderErrorMapper.mapError(error, this.name);
+      throw ProviderErrorMapper.mapError(error, { providerName: this.name });
     }
   }
 
@@ -120,12 +123,13 @@ class MyAIProvider extends BaseTextProvider {
   getModelCapabilities(model: string): ModelCapabilities {
     // Define capabilities for your models
     return {
+      maxTokens: 128000,
       maxInputTokens: 128000,
       maxOutputTokens: 4096,
       supportsTools: true,
       supportsVision: false,
-      supportsStreaming: false,
       supportsJSON: true,
+      supportsJSONSchema: false,
     };
   }
 
@@ -153,10 +157,10 @@ class MyAIProvider extends BaseTextProvider {
       output: [
         {
           type: 'message',
-          role: 'assistant' as any,
+          role: MessageRole.ASSISTANT,
           content: [
             {
-              type: 'output_text',
+              type: ContentType.OUTPUT_TEXT,
               text: data.choices[0].message.content,
             },
           ],
@@ -184,9 +188,9 @@ console.log('━━━━━━━━━━━━━━━━━━━━━━�
 
 /**
  * Custom MongoDB storage for OAuth tokens
- * Implements IOAuthTokenStorage interface
+ * Implements ITokenStorage interface
  */
-class MongoTokenStorage implements IOAuthTokenStorage {
+class MongoTokenStorage implements ITokenStorage {
   private collection: any; // MongoDB collection
 
   constructor(mongoClient: any) {
@@ -258,7 +262,7 @@ class MongoTokenStorage implements IOAuthTokenStorage {
 }
 
 console.log('✅ Custom OAuth storage implemented: MongoTokenStorage');
-console.log('   Implements: IOAuthTokenStorage');
+console.log('   Implements: ITokenStorage');
 console.log('   Features: MongoDB storage, encryption, multi-user support');
 console.log('   Usage:');
 console.log('   ```typescript');
@@ -278,7 +282,7 @@ console.log('━━━━━━━━━━━━━━━━━━━━━━�
  * Redis storage for OAuth tokens
  * High-performance caching with built-in TTL
  */
-class RedisTokenStorage implements IOAuthTokenStorage {
+class RedisTokenStorage implements ITokenStorage {
   private redis: any; // Redis client
 
   constructor(redisClient: any) {
@@ -326,7 +330,7 @@ class RedisTokenStorage implements IOAuthTokenStorage {
 }
 
 console.log('✅ Custom Redis storage implemented: RedisTokenStorage');
-console.log('   Implements: IOAuthTokenStorage');
+console.log('   Implements: ITokenStorage');
 console.log('   Features: Auto-expiring tokens (TTL), high performance');
 console.log('   Best for: Multi-server deployments, high-traffic apps');
 console.log('');
@@ -340,29 +344,24 @@ console.log('━━━━━━━━━━━━━━━━━━━━━━�
  * Implements IToolExecutor interface
  */
 class RateLimitedToolExecutor implements IToolExecutor {
+  private tools: Map<string, ToolFunction> = new Map();
   private callCounts: Map<string, number> = new Map();
   private windowStart: number = Date.now();
   private readonly maxCallsPerMinute = 10;
 
-  async executeTool(
-    toolCall: ToolCall,
-    context: ToolExecutionContext
-  ): Promise<ToolResult> {
+  /**
+   * Execute a tool by name with rate limiting
+   */
+  async execute(toolName: string, args: any): Promise<any> {
     // Check rate limit
-    const count = this.callCounts.get(toolCall.function.name) || 0;
+    const count = this.callCounts.get(toolName) || 0;
 
     if (count >= this.maxCallsPerMinute) {
-      return {
-        tool_call_id: toolCall.id,
-        output: JSON.stringify({
-          error: `Rate limit exceeded: ${this.maxCallsPerMinute} calls/minute`,
-        }),
-        error: true,
-      };
+      throw new Error(`Rate limit exceeded: ${this.maxCallsPerMinute} calls/minute for ${toolName}`);
     }
 
     // Increment counter
-    this.callCounts.set(toolCall.function.name, count + 1);
+    this.callCounts.set(toolName, count + 1);
 
     // Reset window every minute
     if (Date.now() - this.windowStart > 60000) {
@@ -371,32 +370,48 @@ class RateLimitedToolExecutor implements IToolExecutor {
     }
 
     // Find and execute the tool
-    const tool = context.tools.find(
-      (t) => t.definition.function.name === toolCall.function.name
-    );
+    const tool = this.tools.get(toolName);
 
     if (!tool) {
-      return {
-        tool_call_id: toolCall.id,
-        output: JSON.stringify({ error: 'Tool not found' }),
-        error: true,
-      };
+      throw new Error(`Tool not found: ${toolName}`);
     }
 
-    try {
-      const result = await tool.execute(toolCall.function.arguments);
+    return tool.execute(args);
+  }
 
-      return {
-        tool_call_id: toolCall.id,
-        output: JSON.stringify(result),
-      };
-    } catch (error) {
-      return {
-        tool_call_id: toolCall.id,
-        output: JSON.stringify({ error: (error as Error).message }),
-        error: true,
-      };
-    }
+  /**
+   * Check if tool is available
+   */
+  hasToolFunction(toolName: string): boolean {
+    return this.tools.has(toolName);
+  }
+
+  /**
+   * Get tool definition
+   */
+  getToolDefinition(toolName: string): Tool | undefined {
+    return this.tools.get(toolName)?.definition;
+  }
+
+  /**
+   * Register a new tool
+   */
+  registerTool(tool: ToolFunction): void {
+    this.tools.set(tool.definition.function.name, tool);
+  }
+
+  /**
+   * Unregister a tool
+   */
+  unregisterTool(toolName: string): void {
+    this.tools.delete(toolName);
+  }
+
+  /**
+   * List all registered tools
+   */
+  listTools(): string[] {
+    return Array.from(this.tools.keys());
   }
 }
 
@@ -419,7 +434,7 @@ console.log('   IDisposable          - Resource cleanup contract');
 console.log('');
 
 console.log('📦 OAuth Interfaces:');
-console.log('   IOAuthTokenStorage   - Custom token storage backend');
+console.log('   ITokenStorage   - Custom token storage backend');
 console.log('');
 
 console.log('🏗️ Base Classes (extend these for easier implementation):');
@@ -445,7 +460,7 @@ console.log('  5. Register with ProviderRegistry (TODO: make this public API)');
 console.log('');
 
 console.log('For Custom OAuth Storage:');
-console.log('  1. Implement IOAuthTokenStorage interface');
+console.log('  1. Implement ITokenStorage interface');
 console.log('  2. Implement storeToken(), getToken(), deleteToken(), hasToken()');
 console.log('  3. MUST encrypt tokens at rest (use Node crypto)');
 console.log('  4. Pass to OAuthManager: storage: new YourStorage()');

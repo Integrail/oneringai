@@ -6,23 +6,29 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { VertexAITextProvider } from '@/infrastructure/providers/vertex/VertexAITextProvider.js';
 import { InvalidConfigError } from '@/domain/errors/AIErrors.js';
 import { StreamEventType } from '@/domain/entities/StreamEvent.js';
 
-// Mock Google GenAI SDK
-const mockGenerateContent = vi.fn();
-const mockGenerateContentStream = vi.fn();
-const mockGoogleGenAI = vi.fn(() => ({
-  models: {
-    generateContent: mockGenerateContent,
-    generateContentStream: mockGenerateContentStream,
-  },
-}));
+// Create mock functions with vi.hoisted for proper hoisting
+const { mockGenerateContent, mockGenerateContentStream, mockGoogleGenAI } = vi.hoisted(() => {
+  const mockGenerateContent = vi.fn();
+  const mockGenerateContentStream = vi.fn();
+  const mockGoogleGenAI = vi.fn(() => ({
+    models: {
+      generateContent: mockGenerateContent,
+      generateContentStream: mockGenerateContentStream,
+    },
+  }));
+  return { mockGenerateContent, mockGenerateContentStream, mockGoogleGenAI };
+});
 
+// Mock Google GenAI SDK
 vi.mock('@google/genai', () => ({
   GoogleGenAI: mockGoogleGenAI,
 }));
+
+// Import after mocking
+import { VertexAITextProvider } from '@/infrastructure/providers/vertex/VertexAITextProvider.js';
 
 describe('VertexAITextProvider', () => {
   // Store original env vars

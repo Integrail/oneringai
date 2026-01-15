@@ -45,10 +45,9 @@ async function main() {
   const agent1 = Agent.create({
     connector: 'openai',
     model: 'gpt-4o', // GPT-4 Vision model
-    maxOutputTokens: 300,
   });
 
-  const response1 = await agent1.run(input1);
+  const response1 = await agent1.run([input1]);
 
   console.log('📸 Image:', imageUrl1);
   console.log('\n🤖 AI Response:');
@@ -73,10 +72,9 @@ async function main() {
   const agent2 = Agent.create({
     connector: 'openai',
     model: 'gpt-4o',
-    maxOutputTokens: 300,
   });
 
-  const response2 = await agent2.run(input2);
+  const response2 = await agent2.run([input2]);
 
   console.log('📸 Image 1:', imageUrl2);
   console.log('📸 Image 2:', imageUrl3);
@@ -102,7 +100,6 @@ async function main() {
   const agent3 = Agent.create({
     connector: 'openai',
     model: 'gpt-4o',
-    maxOutputTokens: 200,
   });
 
   const response3 = await agent3.run(builder.build());
@@ -158,7 +155,6 @@ async function main() {
   const agent4 = Agent.create({
     connector: 'openai',
     model: 'gpt-4o',
-    maxOutputTokens: 150,
   });
 
   const response5 = await agent4.run(inputWithDetailControl);

@@ -73,7 +73,7 @@ async function main() {
   const response3 = await agent3.run('Give me a simple pasta recipe. Respond with JSON only.');
 
   try {
-    const recipe = JSON.parse(response3.output_text) as RecipeOutput;
+    const recipe = JSON.parse(response3.output_text || '{}') as RecipeOutput;
     console.log('Recipe:', JSON.stringify(recipe, null, 2));
   } catch {
     console.log('Raw response:', response3.output_text);

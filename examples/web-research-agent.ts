@@ -9,7 +9,7 @@
  */
 
 import 'dotenv/config';
-import { Connector, Agent, Vendor, tools } from '../src/index.js';
+import { Connector, Agent, Vendor, tools, ToolFunction } from '../src/index.js';
 
 async function main() {
   // Create connector
@@ -37,7 +37,7 @@ async function main() {
   }
 
   // Create agent with web tools
-  const webTools = [tools.webFetch, tools.webSearch, tools.jsonManipulator];
+  const webTools: ToolFunction[] = [tools.webFetch, tools.webSearch, tools.jsonManipulator];
 
   // Add Puppeteer tool if available
   try {

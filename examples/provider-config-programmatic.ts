@@ -5,7 +5,12 @@
  */
 
 import 'dotenv/config';
-import { Connector, Vendor, ProviderConfigAgent } from '../src/index.js';
+import { Connector, Vendor, ProviderConfigAgent, ConnectorConfigResult } from '../src/index.js';
+
+// Type guard to check if result is a ConnectorConfigResult (not a string question)
+function isConfigResult(result: string | ConnectorConfigResult): result is ConnectorConfigResult {
+  return typeof result !== 'string' && 'name' in result && 'config' in result;
+}
 
 async function main() {
   console.log('🔌 Programmatic OAuth Provider Configuration\n');
@@ -29,15 +34,22 @@ async function main() {
       'Configure GitHub with user OAuth for a web app at http://localhost:3000/callback'
     );
 
+    if (!isConfigResult(result)) {
+      console.log('AI is asking:', result);
+      return;
+    }
+
     console.log('✅ Generated configuration:\n');
     console.log('Provider Name:', result.name);
-    console.log('Flow Type:', result.config.oauth.flow);
+    if (result.config.auth.type === 'oauth') {
+      console.log('Flow Type:', result.config.auth.flow);
+    }
     console.log('');
     console.log('Setup Instructions:');
     console.log(result.setupInstructions);
     console.log('');
     console.log('Environment Variables:');
-    result.envVariables.forEach((v) => console.log(`  ${v}`));
+    result.envVariables.forEach((v: string) => console.log(`  ${v}`));
     console.log('');
     console.log('Full Config:');
     console.log(JSON.stringify(result.config, null, 2));
@@ -64,9 +76,16 @@ async function main() {
       'Configure Microsoft Graph API with client credentials for a backend service'
     );
 
+    if (!isConfigResult(result2)) {
+      console.log('AI is asking:', result2);
+      return;
+    }
+
     console.log('✅ Generated configuration:\n');
-    console.log('Provider Name:', result2.providerName);
-    console.log('Flow Type:', result2.config.oauth.flow);
+    console.log('Provider Name:', result2.name);
+    if (result2.config.auth.type === 'oauth') {
+      console.log('Flow Type:', result2.config.auth.flow);
+    }
     console.log('');
     console.log('Full Config:');
     console.log(JSON.stringify(result2.config, null, 2));

@@ -4,7 +4,6 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { AnthropicTextProvider } from '@/infrastructure/providers/anthropic/AnthropicTextProvider.js';
 import { MessageRole } from '@/domain/entities/Message.js';
 import { ContentType } from '@/domain/entities/Content.js';
 import {
@@ -14,19 +13,26 @@ import {
 } from '@/domain/errors/AIErrors.js';
 import { StreamEventType } from '@/domain/entities/StreamEvent.js';
 
-// Mock Anthropic SDK
-const mockCreate = vi.fn();
-const mockStream = vi.fn();
-const mockAnthropic = vi.fn(() => ({
-  messages: {
-    create: mockCreate,
-    stream: mockStream,
-  },
-}));
+// Create mock functions with vi.hoisted for proper hoisting
+const { mockCreate, mockStream, mockAnthropic } = vi.hoisted(() => {
+  const mockCreate = vi.fn();
+  const mockStream = vi.fn();
+  const mockAnthropic = vi.fn(() => ({
+    messages: {
+      create: mockCreate,
+      stream: mockStream,
+    },
+  }));
+  return { mockCreate, mockStream, mockAnthropic };
+});
 
+// Mock Anthropic SDK
 vi.mock('@anthropic-ai/sdk', () => ({
   default: mockAnthropic,
 }));
+
+// Import after mocking
+import { AnthropicTextProvider } from '@/infrastructure/providers/anthropic/AnthropicTextProvider.js';
 
 describe('AnthropicTextProvider', () => {
   let provider: AnthropicTextProvider;

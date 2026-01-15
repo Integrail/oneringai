@@ -3,8 +3,7 @@
  * Tests the OpenAI provider implementation with mocked SDK
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { OpenAITextProvider } from '@/infrastructure/providers/openai/OpenAITextProvider.js';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { MessageRole } from '@/domain/entities/Message.js';
 import { ContentType } from '@/domain/entities/Content.js';
 import {
@@ -14,19 +13,26 @@ import {
 } from '@/domain/errors/AIErrors.js';
 import { StreamEventType } from '@/domain/entities/StreamEvent.js';
 
-// Mock OpenAI SDK
-const mockCreate = vi.fn();
-const mockOpenAI = vi.fn(() => ({
-  chat: {
-    completions: {
-      create: mockCreate,
+// Create mock functions with vi.hoisted for proper hoisting
+const { mockCreate, mockOpenAI } = vi.hoisted(() => {
+  const mockCreate = vi.fn();
+  const mockOpenAI = vi.fn(() => ({
+    chat: {
+      completions: {
+        create: mockCreate,
+      },
     },
-  },
-}));
+  }));
+  return { mockCreate, mockOpenAI };
+});
 
+// Mock OpenAI SDK
 vi.mock('openai', () => ({
   default: mockOpenAI,
 }));
+
+// Import after mocking
+import { OpenAITextProvider } from '@/infrastructure/providers/openai/OpenAITextProvider.js';
 
 describe('OpenAITextProvider', () => {
   let provider: OpenAITextProvider;

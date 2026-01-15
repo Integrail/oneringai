@@ -155,8 +155,8 @@ export { ProviderErrorMapper } from './infrastructure/providers/base/ProviderErr
 
 // ============ OAuth & Storage (for external APIs) ============
 export { OAuthManager, MemoryStorage, FileStorage } from './connectors/index.js';
-export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch } from './connectors/index.js';
-export type { OAuthConfig, OAuthFlow, ITokenStorage, FileStorageConfig } from './connectors/index.js';
+export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch, generateWebAPITool } from './connectors/index.js';
+export type { OAuthConfig, OAuthFlow, ITokenStorage, FileStorageConfig, StoredToken } from './connectors/index.js';
 
 // ============ Utilities ============
 export { MessageBuilder, createTextMessage, createMessageWithImages } from './utils/messageBuilder.js';
@@ -166,3 +166,7 @@ export type { ClipboardImageResult } from './utils/clipboardImage.js';
 // ============ Pre-built Tools ============
 export * as tools from './tools/index.js';
 export { createExecuteJavaScriptTool } from './tools/code/executeJavaScript.js';
+
+// ============ Built-in Agents ============
+export { ProviderConfigAgent } from './agents/index.js';
+export type { ConnectorConfigResult } from './agents/index.js';
