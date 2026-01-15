@@ -1,30 +1,969 @@
-import OpenAI from 'openai';
-import Anthropic from '@anthropic-ai/sdk';
-import { GoogleGenAI } from '@google/genai';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs2 from 'fs';
+import * as fs3 from 'fs';
 import { EventEmitter } from 'eventemitter3';
+import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenAI } from '@google/genai';
+import * as fs2 from 'fs/promises';
+import * as path2 from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
-import * as path from 'path';
 import { load } from 'cheerio';
 import * as vm from 'vm';
-import * as fs3 from 'fs/promises';
 
 var __defProp = Object.defineProperty;
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-
-// src/domain/interfaces/IDisposable.ts
-function assertNotDestroyed(obj, operation) {
-  if (obj.isDestroyed) {
-    throw new Error(`Cannot ${operation}: instance has been destroyed`);
+var ALGORITHM = "aes-256-gcm";
+var IV_LENGTH = 16;
+var SALT_LENGTH = 64;
+var TAG_LENGTH = 16;
+var KEY_LENGTH = 32;
+function encrypt(text, password) {
+  const salt = crypto.randomBytes(SALT_LENGTH);
+  const key = crypto.pbkdf2Sync(password, salt, 1e5, KEY_LENGTH, "sha512");
+  const iv = crypto.randomBytes(IV_LENGTH);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  let encrypted = cipher.update(text, "utf8", "hex");
+  encrypted += cipher.final("hex");
+  const tag = cipher.getAuthTag();
+  const result = Buffer.concat([salt, iv, tag, Buffer.from(encrypted, "hex")]);
+  return result.toString("base64");
+}
+function decrypt(encryptedData, password) {
+  const buffer = Buffer.from(encryptedData, "base64");
+  const salt = buffer.subarray(0, SALT_LENGTH);
+  const iv = buffer.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
+  const tag = buffer.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
+  const encrypted = buffer.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
+  const key = crypto.pbkdf2Sync(password, salt, 1e5, KEY_LENGTH, "sha512");
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(tag);
+  let decrypted = decipher.update(encrypted);
+  decrypted = Buffer.concat([decrypted, decipher.final()]);
+  return decrypted.toString("utf8");
+}
+function getEncryptionKey() {
+  if (process.env.OAUTH_ENCRYPTION_KEY) {
+    return process.env.OAUTH_ENCRYPTION_KEY;
   }
+  if (!global.__oauthEncryptionKey) {
+    global.__oauthEncryptionKey = crypto.randomBytes(32).toString("hex");
+    console.warn(
+      "WARNING: Using auto-generated encryption key. Tokens will not persist across restarts. Set OAUTH_ENCRYPTION_KEY environment variable for production!"
+    );
+  }
+  return global.__oauthEncryptionKey;
+}
+function generateEncryptionKey() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+// src/connectors/oauth/infrastructure/storage/MemoryStorage.ts
+var MemoryStorage = class {
+  tokens = /* @__PURE__ */ new Map();
+  // Stores encrypted tokens
+  async storeToken(key, token) {
+    const encryptionKey = getEncryptionKey();
+    const plaintext = JSON.stringify(token);
+    const encrypted = encrypt(plaintext, encryptionKey);
+    this.tokens.set(key, encrypted);
+  }
+  async getToken(key) {
+    const encrypted = this.tokens.get(key);
+    if (!encrypted) {
+      return null;
+    }
+    try {
+      const encryptionKey = getEncryptionKey();
+      const decrypted = decrypt(encrypted, encryptionKey);
+      return JSON.parse(decrypted);
+    } catch (error) {
+      console.error("Failed to decrypt token from memory:", error);
+      this.tokens.delete(key);
+      return null;
+    }
+  }
+  async deleteToken(key) {
+    this.tokens.delete(key);
+  }
+  async hasToken(key) {
+    return this.tokens.has(key);
+  }
+  /**
+   * Clear all tokens (useful for testing)
+   */
+  clearAll() {
+    this.tokens.clear();
+  }
+  /**
+   * Get number of stored tokens
+   */
+  size() {
+    return this.tokens.size;
+  }
+};
+
+// src/connectors/oauth/domain/TokenStore.ts
+var TokenStore = class {
+  storage;
+  baseStorageKey;
+  constructor(storageKey = "default", storage) {
+    this.baseStorageKey = storageKey;
+    this.storage = storage || new MemoryStorage();
+  }
+  /**
+   * Get user-scoped storage key
+   * For multi-user support, keys are scoped per user: "provider:userId"
+   * For single-user (backward compatible), userId is omitted or "default"
+   *
+   * @param userId - User identifier (optional, defaults to single-user mode)
+   * @returns Storage key scoped to user
+   */
+  getScopedKey(userId) {
+    if (!userId || userId === "default") {
+      return this.baseStorageKey;
+    }
+    return `${this.baseStorageKey}:${userId}`;
+  }
+  /**
+   * Store token (encrypted by storage layer)
+   * @param tokenResponse - Token response from OAuth provider
+   * @param userId - Optional user identifier for multi-user support
+   */
+  async storeToken(tokenResponse, userId) {
+    if (!tokenResponse.access_token) {
+      throw new Error("OAuth response missing required access_token field");
+    }
+    if (typeof tokenResponse.access_token !== "string") {
+      throw new Error("access_token must be a string");
+    }
+    if (tokenResponse.expires_in !== void 0 && tokenResponse.expires_in < 0) {
+      throw new Error("expires_in must be positive");
+    }
+    const token = {
+      access_token: tokenResponse.access_token,
+      refresh_token: tokenResponse.refresh_token,
+      expires_in: tokenResponse.expires_in || 3600,
+      token_type: tokenResponse.token_type || "Bearer",
+      scope: tokenResponse.scope,
+      obtained_at: Date.now()
+    };
+    const key = this.getScopedKey(userId);
+    await this.storage.storeToken(key, token);
+  }
+  /**
+   * Get access token
+   * @param userId - Optional user identifier for multi-user support
+   */
+  async getAccessToken(userId) {
+    const key = this.getScopedKey(userId);
+    const token = await this.storage.getToken(key);
+    if (!token) {
+      throw new Error(`No token stored for ${userId ? `user: ${userId}` : "default user"}`);
+    }
+    return token.access_token;
+  }
+  /**
+   * Get refresh token
+   * @param userId - Optional user identifier for multi-user support
+   */
+  async getRefreshToken(userId) {
+    const key = this.getScopedKey(userId);
+    const token = await this.storage.getToken(key);
+    if (!token?.refresh_token) {
+      throw new Error(`No refresh token available for ${userId ? `user: ${userId}` : "default user"}`);
+    }
+    return token.refresh_token;
+  }
+  /**
+   * Check if has refresh token
+   * @param userId - Optional user identifier for multi-user support
+   */
+  async hasRefreshToken(userId) {
+    const key = this.getScopedKey(userId);
+    const token = await this.storage.getToken(key);
+    return !!token?.refresh_token;
+  }
+  /**
+   * Check if token is valid (not expired)
+   *
+   * @param bufferSeconds - Refresh this many seconds before expiry (default: 300 = 5 min)
+   * @param userId - Optional user identifier for multi-user support
+   */
+  async isValid(bufferSeconds = 300, userId) {
+    const key = this.getScopedKey(userId);
+    const token = await this.storage.getToken(key);
+    if (!token) {
+      return false;
+    }
+    const expiresAt = token.obtained_at + token.expires_in * 1e3;
+    const bufferMs = bufferSeconds * 1e3;
+    return Date.now() < expiresAt - bufferMs;
+  }
+  /**
+   * Clear stored token
+   * @param userId - Optional user identifier for multi-user support
+   */
+  async clear(userId) {
+    const key = this.getScopedKey(userId);
+    await this.storage.deleteToken(key);
+  }
+  /**
+   * Get full token info
+   * @param userId - Optional user identifier for multi-user support
+   */
+  async getTokenInfo(userId) {
+    const key = this.getScopedKey(userId);
+    return this.storage.getToken(key);
+  }
+};
+function generatePKCE() {
+  const codeVerifier = base64URLEncode(crypto.randomBytes(32));
+  const hash = crypto.createHash("sha256").update(codeVerifier).digest();
+  const codeChallenge = base64URLEncode(hash);
+  return {
+    codeVerifier,
+    codeChallenge
+  };
+}
+function base64URLEncode(buffer) {
+  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+function generateState() {
+  return crypto.randomBytes(16).toString("hex");
+}
+
+// src/connectors/oauth/flows/AuthCodePKCE.ts
+var AuthCodePKCEFlow = class {
+  constructor(config) {
+    this.config = config;
+    const storageKey = config.storageKey || `auth_code:${config.clientId}`;
+    this.tokenStore = new TokenStore(storageKey, config.storage);
+  }
+  tokenStore;
+  // Store PKCE data per user with timestamps for cleanup
+  codeVerifiers = /* @__PURE__ */ new Map();
+  states = /* @__PURE__ */ new Map();
+  // Store refresh locks per user to prevent concurrent refresh
+  refreshLocks = /* @__PURE__ */ new Map();
+  // PKCE data TTL: 15 minutes (auth flows should complete within this time)
+  PKCE_TTL = 15 * 60 * 1e3;
+  /**
+   * Generate authorization URL for user to visit
+   * Opens browser or redirects user to this URL
+   *
+   * @param userId - User identifier for multi-user support (optional)
+   */
+  async getAuthorizationUrl(userId) {
+    if (!this.config.authorizationUrl) {
+      throw new Error("authorizationUrl is required for authorization_code flow");
+    }
+    if (!this.config.redirectUri) {
+      throw new Error("redirectUri is required for authorization_code flow");
+    }
+    this.cleanupExpiredPKCE();
+    const userKey = userId || "default";
+    const { codeVerifier, codeChallenge } = generatePKCE();
+    this.codeVerifiers.set(userKey, { verifier: codeVerifier, timestamp: Date.now() });
+    const state = generateState();
+    this.states.set(userKey, { state, timestamp: Date.now() });
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: this.config.clientId,
+      redirect_uri: this.config.redirectUri,
+      state
+    });
+    if (this.config.scope) {
+      params.append("scope", this.config.scope);
+    }
+    if (this.config.usePKCE !== false) {
+      params.append("code_challenge", codeChallenge);
+      params.append("code_challenge_method", "S256");
+    }
+    const stateWithUser = userId ? `${state}::${userId}` : state;
+    params.set("state", stateWithUser);
+    return `${this.config.authorizationUrl}?${params.toString()}`;
+  }
+  /**
+   * Exchange authorization code for access token
+   *
+   * @param code - Authorization code from callback
+   * @param state - State parameter from callback (for CSRF verification, may include userId)
+   * @param userId - User identifier (optional, can be extracted from state)
+   */
+  async exchangeCode(code, state, userId) {
+    let actualState = state;
+    let actualUserId = userId;
+    if (state.includes("::")) {
+      const parts = state.split("::");
+      actualState = parts[0];
+      actualUserId = parts[1];
+    }
+    const userKey = actualUserId || "default";
+    const stateData = this.states.get(userKey);
+    if (!stateData) {
+      throw new Error(`No PKCE state found for user ${actualUserId}. Authorization flow may have expired (15 min TTL).`);
+    }
+    const expectedState = stateData.state;
+    if (actualState !== expectedState) {
+      throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
+    }
+    if (!this.config.redirectUri) {
+      throw new Error("redirectUri is required");
+    }
+    const params = new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: this.config.redirectUri,
+      client_id: this.config.clientId
+    });
+    if (this.config.clientSecret) {
+      params.append("client_secret", this.config.clientSecret);
+    }
+    const verifierData = this.codeVerifiers.get(userKey);
+    if (this.config.usePKCE !== false && verifierData) {
+      params.append("code_verifier", verifierData.verifier);
+    }
+    const response = await fetch(this.config.tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${error}`);
+    }
+    const data = await response.json();
+    await this.tokenStore.storeToken(data, actualUserId);
+    this.codeVerifiers.delete(userKey);
+    this.states.delete(userKey);
+  }
+  /**
+   * Get valid token (auto-refreshes if needed)
+   * @param userId - User identifier for multi-user support
+   */
+  async getToken(userId) {
+    const key = userId || "default";
+    if (this.refreshLocks.has(key)) {
+      return this.refreshLocks.get(key);
+    }
+    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
+      return this.tokenStore.getAccessToken(userId);
+    }
+    if (await this.tokenStore.hasRefreshToken(userId)) {
+      const refreshPromise = this.refreshToken(userId);
+      this.refreshLocks.set(key, refreshPromise);
+      try {
+        return await refreshPromise;
+      } finally {
+        this.refreshLocks.delete(key);
+      }
+    }
+    throw new Error(`No valid token available for ${userId ? `user: ${userId}` : "default user"}. User needs to authorize (call startAuthFlow).`);
+  }
+  /**
+   * Refresh access token using refresh token
+   * @param userId - User identifier for multi-user support
+   */
+  async refreshToken(userId) {
+    const refreshToken = await this.tokenStore.getRefreshToken(userId);
+    const params = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: this.config.clientId
+    });
+    if (this.config.clientSecret) {
+      params.append("client_secret", this.config.clientSecret);
+    }
+    const response = await fetch(this.config.tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${error}`);
+    }
+    const data = await response.json();
+    await this.tokenStore.storeToken(data, userId);
+    return data.access_token;
+  }
+  /**
+   * Check if token is valid
+   * @param userId - User identifier for multi-user support
+   */
+  async isTokenValid(userId) {
+    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId);
+  }
+  /**
+   * Revoke token (if supported by provider)
+   * @param revocationUrl - Optional revocation endpoint
+   * @param userId - User identifier for multi-user support
+   */
+  async revokeToken(revocationUrl, userId) {
+    if (!revocationUrl) {
+      await this.tokenStore.clear(userId);
+      return;
+    }
+    try {
+      const token = await this.tokenStore.getAccessToken(userId);
+      await fetch(revocationUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({
+          token,
+          client_id: this.config.clientId
+        })
+      });
+    } finally {
+      await this.tokenStore.clear(userId);
+    }
+  }
+  /**
+   * Clean up expired PKCE data to prevent memory leaks
+   * Removes verifiers and states older than PKCE_TTL (15 minutes)
+   */
+  cleanupExpiredPKCE() {
+    const now = Date.now();
+    for (const [key, data] of this.codeVerifiers) {
+      if (now - data.timestamp > this.PKCE_TTL) {
+        this.codeVerifiers.delete(key);
+        this.states.delete(key);
+      }
+    }
+  }
+};
+
+// src/connectors/oauth/flows/ClientCredentials.ts
+var ClientCredentialsFlow = class {
+  constructor(config) {
+    this.config = config;
+    const storageKey = config.storageKey || `client_credentials:${config.clientId}`;
+    this.tokenStore = new TokenStore(storageKey, config.storage);
+  }
+  tokenStore;
+  /**
+   * Get token using client credentials
+   */
+  async getToken() {
+    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
+      return this.tokenStore.getAccessToken();
+    }
+    return this.requestToken();
+  }
+  /**
+   * Request a new token from the authorization server
+   */
+  async requestToken() {
+    const auth = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
+      "base64"
+    );
+    const params = new URLSearchParams({
+      grant_type: "client_credentials"
+    });
+    if (this.config.scope) {
+      params.append("scope", this.config.scope);
+    }
+    const response = await fetch(this.config.tokenUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${auth}`,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Token request failed: ${response.status} ${response.statusText} - ${error}`);
+    }
+    const data = await response.json();
+    await this.tokenStore.storeToken(data);
+    return data.access_token;
+  }
+  /**
+   * Refresh token (client credentials don't use refresh tokens)
+   * Just requests a new token
+   */
+  async refreshToken() {
+    await this.tokenStore.clear();
+    return this.requestToken();
+  }
+  /**
+   * Check if token is valid
+   */
+  async isTokenValid() {
+    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+  }
+};
+var JWTBearerFlow = class {
+  constructor(config) {
+    this.config = config;
+    const storageKey = config.storageKey || `jwt_bearer:${config.clientId}`;
+    this.tokenStore = new TokenStore(storageKey, config.storage);
+    if (config.privateKey) {
+      this.privateKey = config.privateKey;
+    } else if (config.privateKeyPath) {
+      try {
+        this.privateKey = fs3.readFileSync(config.privateKeyPath, "utf8");
+      } catch (error) {
+        throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
+      }
+    } else {
+      throw new Error("JWT Bearer flow requires privateKey or privateKeyPath");
+    }
+  }
+  tokenStore;
+  privateKey;
+  /**
+   * Generate signed JWT assertion
+   */
+  async generateJWT() {
+    const now = Math.floor(Date.now() / 1e3);
+    const alg = this.config.tokenSigningAlg || "RS256";
+    const key = await importPKCS8(this.privateKey, alg);
+    const jwt = await new SignJWT({
+      scope: this.config.scope || ""
+    }).setProtectedHeader({ alg }).setIssuer(this.config.clientId).setSubject(this.config.clientId).setAudience(this.config.audience || this.config.tokenUrl).setIssuedAt(now).setExpirationTime(now + 3600).sign(key);
+    return jwt;
+  }
+  /**
+   * Get token using JWT Bearer assertion
+   */
+  async getToken() {
+    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
+      return this.tokenStore.getAccessToken();
+    }
+    return this.requestToken();
+  }
+  /**
+   * Request token using JWT assertion
+   */
+  async requestToken() {
+    const assertion = await this.generateJWT();
+    const params = new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion
+    });
+    const response = await fetch(this.config.tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: params
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`JWT Bearer token request failed: ${response.status} ${response.statusText} - ${error}`);
+    }
+    const data = await response.json();
+    await this.tokenStore.storeToken(data);
+    return data.access_token;
+  }
+  /**
+   * Refresh token (generate new JWT and request new token)
+   */
+  async refreshToken() {
+    await this.tokenStore.clear();
+    return this.requestToken();
+  }
+  /**
+   * Check if token is valid
+   */
+  async isTokenValid() {
+    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+  }
+};
+
+// src/connectors/oauth/flows/StaticToken.ts
+var StaticTokenFlow = class {
+  constructor(config) {
+    this.config = config;
+    if (!config.staticToken) {
+      throw new Error("Static token flow requires staticToken in config");
+    }
+    this.token = config.staticToken;
+  }
+  token;
+  /**
+   * Get token (always returns the static token)
+   */
+  async getToken() {
+    return this.token;
+  }
+  /**
+   * Refresh token (no-op for static tokens)
+   */
+  async refreshToken() {
+    return this.token;
+  }
+  /**
+   * Token is always valid for static tokens
+   */
+  async isTokenValid() {
+    return true;
+  }
+  /**
+   * Update the static token
+   */
+  updateToken(newToken) {
+    this.token = newToken;
+  }
+};
+
+// src/connectors/oauth/OAuthManager.ts
+var OAuthManager = class {
+  flow;
+  constructor(config) {
+    this.validateConfig(config);
+    switch (config.flow) {
+      case "authorization_code":
+        this.flow = new AuthCodePKCEFlow(config);
+        break;
+      case "client_credentials":
+        this.flow = new ClientCredentialsFlow(config);
+        break;
+      case "jwt_bearer":
+        this.flow = new JWTBearerFlow(config);
+        break;
+      case "static_token":
+        this.flow = new StaticTokenFlow(config);
+        break;
+      default:
+        throw new Error(`Unknown OAuth flow: ${config.flow}`);
+    }
+  }
+  /**
+   * Get valid access token
+   * Automatically refreshes if expired
+   *
+   * @param userId - User identifier for multi-user support (optional)
+   */
+  async getToken(userId) {
+    return this.flow.getToken(userId);
+  }
+  /**
+   * Force refresh the token
+   *
+   * @param userId - User identifier for multi-user support (optional)
+   */
+  async refreshToken(userId) {
+    return this.flow.refreshToken(userId);
+  }
+  /**
+   * Check if current token is valid
+   *
+   * @param userId - User identifier for multi-user support (optional)
+   */
+  async isTokenValid(userId) {
+    return this.flow.isTokenValid(userId);
+  }
+  // ==================== Authorization Code Flow Methods ====================
+  /**
+   * Start authorization flow (Authorization Code only)
+   * Returns URL for user to visit
+   *
+   * @param userId - User identifier for multi-user support (optional)
+   * @returns Authorization URL for the user to visit
+   */
+  async startAuthFlow(userId) {
+    if (!(this.flow instanceof AuthCodePKCEFlow)) {
+      throw new Error("startAuthFlow() is only available for authorization_code flow");
+    }
+    return this.flow.getAuthorizationUrl(userId);
+  }
+  /**
+   * Handle OAuth callback (Authorization Code only)
+   * Call this with the callback URL after user authorizes
+   *
+   * @param callbackUrl - Full callback URL with code and state parameters
+   * @param userId - Optional user identifier (can be extracted from state if embedded)
+   */
+  async handleCallback(callbackUrl, userId) {
+    if (!(this.flow instanceof AuthCodePKCEFlow)) {
+      throw new Error("handleCallback() is only available for authorization_code flow");
+    }
+    const url = new URL(callbackUrl);
+    const code = url.searchParams.get("code");
+    const state = url.searchParams.get("state");
+    if (!code) {
+      throw new Error("Missing authorization code in callback URL");
+    }
+    if (!state) {
+      throw new Error("Missing state parameter in callback URL");
+    }
+    await this.flow.exchangeCode(code, state, userId);
+  }
+  /**
+   * Revoke token (if supported by provider)
+   *
+   * @param revocationUrl - Optional revocation endpoint URL
+   * @param userId - User identifier for multi-user support (optional)
+   */
+  async revokeToken(revocationUrl, userId) {
+    if (this.flow instanceof AuthCodePKCEFlow) {
+      await this.flow.revokeToken(revocationUrl, userId);
+    } else {
+      throw new Error("Token revocation not implemented for this flow");
+    }
+  }
+  // ==================== Validation ====================
+  validateConfig(config) {
+    if (!config.flow) {
+      throw new Error("OAuth flow is required (authorization_code, client_credentials, jwt_bearer, or static_token)");
+    }
+    if (config.flow !== "static_token") {
+      if (!config.tokenUrl) {
+        throw new Error("tokenUrl is required");
+      }
+      if (!config.clientId) {
+        throw new Error("clientId is required");
+      }
+    }
+    switch (config.flow) {
+      case "authorization_code":
+        if (!config.authorizationUrl) {
+          throw new Error("authorizationUrl is required for authorization_code flow");
+        }
+        if (!config.redirectUri) {
+          throw new Error("redirectUri is required for authorization_code flow");
+        }
+        break;
+      case "client_credentials":
+        if (!config.clientSecret) {
+          throw new Error("clientSecret is required for client_credentials flow");
+        }
+        break;
+      case "jwt_bearer":
+        if (!config.privateKey && !config.privateKeyPath) {
+          throw new Error(
+            "privateKey or privateKeyPath is required for jwt_bearer flow"
+          );
+        }
+        break;
+      case "static_token":
+        if (!config.staticToken) {
+          throw new Error("staticToken is required for static_token flow");
+        }
+        break;
+    }
+    if (config.storage && !process.env.OAUTH_ENCRYPTION_KEY) {
+      console.warn(
+        "WARNING: Using persistent storage without OAUTH_ENCRYPTION_KEY environment variable. Tokens will be encrypted with auto-generated key that changes on restart!"
+      );
+    }
+  }
+};
+
+// src/core/Connector.ts
+var Connector = class _Connector {
+  // ============ Static Registry ============
+  static registry = /* @__PURE__ */ new Map();
+  static defaultStorage = new MemoryStorage();
+  /**
+   * Create and register a new connector
+   * @param config - Must include `name` field
+   */
+  static create(config) {
+    if (!config.name || config.name.trim().length === 0) {
+      throw new Error("Connector name is required");
+    }
+    if (_Connector.registry.has(config.name)) {
+      throw new Error(`Connector '${config.name}' already exists. Use Connector.get() or choose a different name.`);
+    }
+    const connector = new _Connector(config);
+    _Connector.registry.set(config.name, connector);
+    return connector;
+  }
+  /**
+   * Get a connector by name
+   */
+  static get(name) {
+    const connector = _Connector.registry.get(name);
+    if (!connector) {
+      const available = _Connector.list().join(", ") || "none";
+      throw new Error(`Connector '${name}' not found. Available: ${available}`);
+    }
+    return connector;
+  }
+  /**
+   * Check if a connector exists
+   */
+  static has(name) {
+    return _Connector.registry.has(name);
+  }
+  /**
+   * List all registered connector names
+   */
+  static list() {
+    return Array.from(_Connector.registry.keys());
+  }
+  /**
+   * Remove a connector
+   */
+  static remove(name) {
+    const connector = _Connector.registry.get(name);
+    if (connector) {
+      connector.dispose();
+    }
+    return _Connector.registry.delete(name);
+  }
+  /**
+   * Clear all connectors (useful for testing)
+   */
+  static clear() {
+    for (const connector of _Connector.registry.values()) {
+      connector.dispose();
+    }
+    _Connector.registry.clear();
+  }
+  /**
+   * Set default token storage for OAuth connectors
+   */
+  static setDefaultStorage(storage) {
+    _Connector.defaultStorage = storage;
+  }
+  // ============ Instance ============
+  name;
+  vendor;
+  config;
+  oauthManager;
+  disposed = false;
+  constructor(config) {
+    this.name = config.name;
+    this.vendor = config.vendor;
+    this.config = config;
+    if (config.auth.type === "oauth") {
+      this.initOAuthManager(config.auth);
+    }
+  }
+  /**
+   * Get the API key (for api_key auth type)
+   */
+  getApiKey() {
+    if (this.config.auth.type !== "api_key") {
+      throw new Error(`Connector '${this.name}' does not use API key auth. Type: ${this.config.auth.type}`);
+    }
+    return this.config.auth.apiKey;
+  }
+  /**
+   * Get the current access token (for OAuth)
+   * Handles automatic refresh if needed
+   */
+  async getToken(userId) {
+    if (this.config.auth.type === "api_key") {
+      return this.config.auth.apiKey;
+    }
+    if (this.config.auth.type === "jwt") {
+      throw new Error("JWT auth getToken() not yet implemented");
+    }
+    if (!this.oauthManager) {
+      throw new Error(`OAuth manager not initialized for connector '${this.name}'`);
+    }
+    return this.oauthManager.getToken(userId);
+  }
+  /**
+   * Start OAuth authorization flow
+   * Returns the URL to redirect the user to
+   */
+  async startAuth(userId) {
+    if (!this.oauthManager) {
+      throw new Error(`Connector '${this.name}' is not an OAuth connector`);
+    }
+    return this.oauthManager.startAuthFlow(userId);
+  }
+  /**
+   * Handle OAuth callback
+   * Call this after user is redirected back from OAuth provider
+   */
+  async handleCallback(callbackUrl, userId) {
+    if (!this.oauthManager) {
+      throw new Error(`Connector '${this.name}' is not an OAuth connector`);
+    }
+    await this.oauthManager.handleCallback(callbackUrl, userId);
+  }
+  /**
+   * Check if the connector has a valid token
+   */
+  async hasValidToken(userId) {
+    try {
+      if (this.config.auth.type === "api_key") {
+        return true;
+      }
+      if (this.oauthManager) {
+        const token = await this.oauthManager.getToken(userId);
+        return !!token;
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Get vendor-specific options from config
+   */
+  getOptions() {
+    return this.config.options ?? {};
+  }
+  /**
+   * Dispose of resources
+   */
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.oauthManager = void 0;
+  }
+  // ============ Private ============
+  initOAuthManager(auth) {
+    const oauthConfig = {
+      flow: auth.flow,
+      clientId: auth.clientId,
+      clientSecret: auth.clientSecret,
+      tokenUrl: auth.tokenUrl,
+      authorizationUrl: auth.authorizationUrl,
+      redirectUri: auth.redirectUri,
+      scope: auth.scope,
+      usePKCE: auth.usePKCE,
+      privateKey: auth.privateKey,
+      privateKeyPath: auth.privateKeyPath,
+      refreshBeforeExpiry: auth.refreshBeforeExpiry,
+      storage: _Connector.defaultStorage,
+      storageKey: auth.storageKey ?? this.name
+    };
+    this.oauthManager = new OAuthManager(oauthConfig);
+  }
+};
+
+// src/core/Vendor.ts
+var Vendor = {
+  OpenAI: "openai",
+  Anthropic: "anthropic",
+  Google: "google",
+  GoogleVertex: "google-vertex",
+  Groq: "groq",
+  Together: "together",
+  Perplexity: "perplexity",
+  Grok: "grok",
+  DeepSeek: "deepseek",
+  Mistral: "mistral",
+  Ollama: "ollama",
+  Custom: "custom"
+  // OpenAI-compatible endpoint
+};
+var VENDORS = Object.values(Vendor);
+function isVendor(value) {
+  return VENDORS.includes(value);
 }
 
 // src/domain/errors/AIErrors.ts
@@ -674,53 +1613,6 @@ var OpenAITextProvider = class extends BaseTextProvider {
       throw new ProviderContextLengthError("openai", 128e3);
     }
     throw error;
-  }
-};
-
-// src/infrastructure/providers/generic/GenericOpenAIProvider.ts
-var GenericOpenAIProvider = class extends OpenAITextProvider {
-  name;
-  capabilities;
-  constructor(name, config, capabilities) {
-    super(config);
-    this.name = name;
-    if (capabilities) {
-      this.capabilities = {
-        text: capabilities.text ?? true,
-        images: capabilities.images ?? false,
-        videos: capabilities.videos ?? false,
-        audio: capabilities.audio ?? false
-      };
-    } else {
-      this.capabilities = {
-        text: true,
-        images: false,
-        // Conservative default
-        videos: false,
-        audio: false
-      };
-    }
-  }
-  /**
-   * Override model capabilities for generic providers
-   * Can be customized per provider
-   */
-  getModelCapabilities(model) {
-    const hasVision = model.toLowerCase().includes("vision") || model.toLowerCase().includes("llava") || model.toLowerCase().includes("llama-3.2-90b");
-    const isLargeContext = model.includes("128k") || model.includes("200k") || model.toLowerCase().includes("longtext");
-    return {
-      supportsTools: true,
-      // Most OpenAI-compatible APIs support tools
-      supportsVision: hasVision,
-      supportsJSON: true,
-      // Most support JSON mode
-      supportsJSONSchema: false,
-      // Conservative - not all support schema
-      maxTokens: isLargeContext ? 128e3 : 32e3,
-      // Conservative default
-      maxOutputTokens: 4096
-      // Common default
-    };
   }
 };
 
@@ -2134,1261 +3026,214 @@ var VertexAITextProvider = class extends BaseTextProvider {
     throw error;
   }
 };
-var ALGORITHM = "aes-256-gcm";
-var IV_LENGTH = 16;
-var SALT_LENGTH = 64;
-var TAG_LENGTH = 16;
-var KEY_LENGTH = 32;
-function encrypt(text, password) {
-  const salt = crypto.randomBytes(SALT_LENGTH);
-  const key = crypto.pbkdf2Sync(password, salt, 1e5, KEY_LENGTH, "sha512");
-  const iv = crypto.randomBytes(IV_LENGTH);
-  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-  let encrypted = cipher.update(text, "utf8", "hex");
-  encrypted += cipher.final("hex");
-  const tag = cipher.getAuthTag();
-  const result = Buffer.concat([salt, iv, tag, Buffer.from(encrypted, "hex")]);
-  return result.toString("base64");
-}
-function decrypt(encryptedData, password) {
-  const buffer = Buffer.from(encryptedData, "base64");
-  const salt = buffer.subarray(0, SALT_LENGTH);
-  const iv = buffer.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
-  const tag = buffer.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
-  const encrypted = buffer.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
-  const key = crypto.pbkdf2Sync(password, salt, 1e5, KEY_LENGTH, "sha512");
-  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(tag);
-  let decrypted = decipher.update(encrypted);
-  decrypted = Buffer.concat([decrypted, decipher.final()]);
-  return decrypted.toString("utf8");
-}
-function getEncryptionKey() {
-  if (process.env.OAUTH_ENCRYPTION_KEY) {
-    return process.env.OAUTH_ENCRYPTION_KEY;
+
+// src/infrastructure/providers/generic/GenericOpenAIProvider.ts
+var GenericOpenAIProvider = class extends OpenAITextProvider {
+  name;
+  capabilities;
+  constructor(name, config, capabilities) {
+    super(config);
+    this.name = name;
+    if (capabilities) {
+      this.capabilities = {
+        text: capabilities.text ?? true,
+        images: capabilities.images ?? false,
+        videos: capabilities.videos ?? false,
+        audio: capabilities.audio ?? false
+      };
+    } else {
+      this.capabilities = {
+        text: true,
+        images: false,
+        // Conservative default
+        videos: false,
+        audio: false
+      };
+    }
   }
-  if (!global.__oauthEncryptionKey) {
-    global.__oauthEncryptionKey = crypto.randomBytes(32).toString("hex");
-    console.warn(
-      "WARNING: Using auto-generated encryption key. Tokens will not persist across restarts. Set OAUTH_ENCRYPTION_KEY environment variable for production!"
+  /**
+   * Override model capabilities for generic providers
+   * Can be customized per provider
+   */
+  getModelCapabilities(model) {
+    const hasVision = model.toLowerCase().includes("vision") || model.toLowerCase().includes("llava") || model.toLowerCase().includes("llama-3.2-90b");
+    const isLargeContext = model.includes("128k") || model.includes("200k") || model.toLowerCase().includes("longtext");
+    return {
+      supportsTools: true,
+      // Most OpenAI-compatible APIs support tools
+      supportsVision: hasVision,
+      supportsJSON: true,
+      // Most support JSON mode
+      supportsJSONSchema: false,
+      // Conservative - not all support schema
+      maxTokens: isLargeContext ? 128e3 : 32e3,
+      // Conservative default
+      maxOutputTokens: 4096
+      // Common default
+    };
+  }
+};
+
+// src/core/createProvider.ts
+function createProvider(connector) {
+  const vendor = connector.vendor;
+  if (!vendor) {
+    throw new Error(
+      `Connector '${connector.name}' has no vendor specified. Set vendor to create an AI provider.`
     );
   }
-  return global.__oauthEncryptionKey;
+  const config = extractProviderConfig(connector);
+  switch (vendor) {
+    case Vendor.OpenAI:
+      return new OpenAITextProvider({
+        ...config,
+        organization: connector.getOptions().organization,
+        project: connector.getOptions().project
+      });
+    case Vendor.Anthropic:
+      return new AnthropicTextProvider({
+        ...config,
+        anthropicVersion: connector.getOptions().anthropicVersion
+      });
+    case Vendor.Google:
+      return new GoogleTextProvider(config);
+    case Vendor.GoogleVertex:
+      return new VertexAITextProvider({
+        ...config,
+        projectId: connector.getOptions().projectId || "",
+        location: connector.getOptions().location || "us-central1"
+      });
+    // OpenAI-compatible providers (use connector.name for unique identification)
+    case Vendor.Groq:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.groq.com/openai/v1"
+      });
+    case Vendor.Together:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.together.xyz/v1"
+      });
+    case Vendor.Perplexity:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.perplexity.ai"
+      });
+    case Vendor.Grok:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.x.ai/v1"
+      });
+    case Vendor.DeepSeek:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.deepseek.com/v1"
+      });
+    case Vendor.Mistral:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "https://api.mistral.ai/v1"
+      });
+    case Vendor.Ollama:
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL || "http://localhost:11434/v1"
+      });
+    case Vendor.Custom:
+      if (!config.baseURL) {
+        throw new Error(
+          `Connector '${connector.name}' with Custom vendor requires baseURL`
+        );
+      }
+      return new GenericOpenAIProvider(connector.name, {
+        ...config,
+        baseURL: config.baseURL
+      });
+    default:
+      throw new Error(`Unknown vendor: ${vendor}`);
+  }
 }
-function generateEncryptionKey() {
-  return crypto.randomBytes(32).toString("hex");
-}
-
-// src/connectors/oauth/infrastructure/storage/MemoryStorage.ts
-var MemoryStorage = class {
-  tokens = /* @__PURE__ */ new Map();
-  // Stores encrypted tokens
-  async storeToken(key, token) {
-    const encryptionKey = getEncryptionKey();
-    const plaintext = JSON.stringify(token);
-    const encrypted = encrypt(plaintext, encryptionKey);
-    this.tokens.set(key, encrypted);
+function extractProviderConfig(connector) {
+  const auth = connector.config.auth;
+  let apiKey;
+  if (auth.type === "api_key") {
+    apiKey = auth.apiKey;
+  } else if (auth.type === "oauth") {
+    throw new Error(
+      `Connector '${connector.name}' uses OAuth. Call connector.getToken() to get the access token first.`
+    );
+  } else if (auth.type === "jwt") {
+    throw new Error(
+      `Connector '${connector.name}' uses JWT auth. JWT auth for AI providers is not yet supported.`
+    );
+  } else {
+    throw new Error(`Unknown auth type for connector '${connector.name}'`);
   }
-  async getToken(key) {
-    const encrypted = this.tokens.get(key);
-    if (!encrypted) {
-      return null;
-    }
-    try {
-      const encryptionKey = getEncryptionKey();
-      const decrypted = decrypt(encrypted, encryptionKey);
-      return JSON.parse(decrypted);
-    } catch (error) {
-      console.error("Failed to decrypt token from memory:", error);
-      this.tokens.delete(key);
-      return null;
-    }
-  }
-  async deleteToken(key) {
-    this.tokens.delete(key);
-  }
-  async hasToken(key) {
-    return this.tokens.has(key);
-  }
-  /**
-   * Clear all tokens (useful for testing)
-   */
-  clearAll() {
-    this.tokens.clear();
-  }
-  /**
-   * Get number of stored tokens
-   */
-  size() {
-    return this.tokens.size;
-  }
-};
-
-// src/connectors/oauth/domain/TokenStore.ts
-var TokenStore = class {
-  storage;
-  baseStorageKey;
-  constructor(storageKey = "default", storage) {
-    this.baseStorageKey = storageKey;
-    this.storage = storage || new MemoryStorage();
-  }
-  /**
-   * Get user-scoped storage key
-   * For multi-user support, keys are scoped per user: "provider:userId"
-   * For single-user (backward compatible), userId is omitted or "default"
-   *
-   * @param userId - User identifier (optional, defaults to single-user mode)
-   * @returns Storage key scoped to user
-   */
-  getScopedKey(userId) {
-    if (!userId || userId === "default") {
-      return this.baseStorageKey;
-    }
-    return `${this.baseStorageKey}:${userId}`;
-  }
-  /**
-   * Store token (encrypted by storage layer)
-   * @param tokenResponse - Token response from OAuth provider
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async storeToken(tokenResponse, userId) {
-    if (!tokenResponse.access_token) {
-      throw new Error("OAuth response missing required access_token field");
-    }
-    if (typeof tokenResponse.access_token !== "string") {
-      throw new Error("access_token must be a string");
-    }
-    if (tokenResponse.expires_in !== void 0 && tokenResponse.expires_in < 0) {
-      throw new Error("expires_in must be positive");
-    }
-    const token = {
-      access_token: tokenResponse.access_token,
-      refresh_token: tokenResponse.refresh_token,
-      expires_in: tokenResponse.expires_in || 3600,
-      token_type: tokenResponse.token_type || "Bearer",
-      scope: tokenResponse.scope,
-      obtained_at: Date.now()
-    };
-    const key = this.getScopedKey(userId);
-    await this.storage.storeToken(key, token);
-  }
-  /**
-   * Get access token
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async getAccessToken(userId) {
-    const key = this.getScopedKey(userId);
-    const token = await this.storage.getToken(key);
-    if (!token) {
-      throw new Error(`No token stored for ${userId ? `user: ${userId}` : "default user"}`);
-    }
-    return token.access_token;
-  }
-  /**
-   * Get refresh token
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async getRefreshToken(userId) {
-    const key = this.getScopedKey(userId);
-    const token = await this.storage.getToken(key);
-    if (!token?.refresh_token) {
-      throw new Error(`No refresh token available for ${userId ? `user: ${userId}` : "default user"}`);
-    }
-    return token.refresh_token;
-  }
-  /**
-   * Check if has refresh token
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async hasRefreshToken(userId) {
-    const key = this.getScopedKey(userId);
-    const token = await this.storage.getToken(key);
-    return !!token?.refresh_token;
-  }
-  /**
-   * Check if token is valid (not expired)
-   *
-   * @param bufferSeconds - Refresh this many seconds before expiry (default: 300 = 5 min)
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async isValid(bufferSeconds = 300, userId) {
-    const key = this.getScopedKey(userId);
-    const token = await this.storage.getToken(key);
-    if (!token) {
-      return false;
-    }
-    const expiresAt = token.obtained_at + token.expires_in * 1e3;
-    const bufferMs = bufferSeconds * 1e3;
-    return Date.now() < expiresAt - bufferMs;
-  }
-  /**
-   * Clear stored token
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async clear(userId) {
-    const key = this.getScopedKey(userId);
-    await this.storage.deleteToken(key);
-  }
-  /**
-   * Get full token info
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async getTokenInfo(userId) {
-    const key = this.getScopedKey(userId);
-    return this.storage.getToken(key);
-  }
-};
-function generatePKCE() {
-  const codeVerifier = base64URLEncode(crypto.randomBytes(32));
-  const hash = crypto.createHash("sha256").update(codeVerifier).digest();
-  const codeChallenge = base64URLEncode(hash);
   return {
-    codeVerifier,
-    codeChallenge
+    apiKey,
+    baseURL: connector.config.baseURL,
+    timeout: connector.getOptions().timeout,
+    maxRetries: connector.getOptions().maxRetries
   };
 }
-function base64URLEncode(buffer) {
-  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
-}
-function generateState() {
-  return crypto.randomBytes(16).toString("hex");
-}
 
-// src/connectors/oauth/flows/AuthCodePKCE.ts
-var AuthCodePKCEFlow = class {
-  constructor(config) {
-    this.config = config;
-    const storageKey = config.storageKey || `auth_code:${config.clientId}`;
-    this.tokenStore = new TokenStore(storageKey, config.storage);
-  }
-  tokenStore;
-  // Store PKCE data per user with timestamps for cleanup
-  codeVerifiers = /* @__PURE__ */ new Map();
-  states = /* @__PURE__ */ new Map();
-  // Store refresh locks per user to prevent concurrent refresh
-  refreshLocks = /* @__PURE__ */ new Map();
-  // PKCE data TTL: 15 minutes (auth flows should complete within this time)
-  PKCE_TTL = 15 * 60 * 1e3;
+// src/capabilities/agents/ToolRegistry.ts
+var ToolRegistry = class {
+  tools = /* @__PURE__ */ new Map();
   /**
-   * Generate authorization URL for user to visit
-   * Opens browser or redirects user to this URL
-   *
-   * @param userId - User identifier for multi-user support (optional)
+   * Register a new tool
    */
-  async getAuthorizationUrl(userId) {
-    if (!this.config.authorizationUrl) {
-      throw new Error("authorizationUrl is required for authorization_code flow");
-    }
-    if (!this.config.redirectUri) {
-      throw new Error("redirectUri is required for authorization_code flow");
-    }
-    this.cleanupExpiredPKCE();
-    const userKey = userId || "default";
-    const { codeVerifier, codeChallenge } = generatePKCE();
-    this.codeVerifiers.set(userKey, { verifier: codeVerifier, timestamp: Date.now() });
-    const state = generateState();
-    this.states.set(userKey, { state, timestamp: Date.now() });
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: this.config.clientId,
-      redirect_uri: this.config.redirectUri,
-      state
-    });
-    if (this.config.scope) {
-      params.append("scope", this.config.scope);
-    }
-    if (this.config.usePKCE !== false) {
-      params.append("code_challenge", codeChallenge);
-      params.append("code_challenge_method", "S256");
-    }
-    const stateWithUser = userId ? `${state}::${userId}` : state;
-    params.set("state", stateWithUser);
-    return `${this.config.authorizationUrl}?${params.toString()}`;
+  registerTool(tool) {
+    this.tools.set(tool.definition.function.name, tool);
   }
   /**
-   * Exchange authorization code for access token
-   *
-   * @param code - Authorization code from callback
-   * @param state - State parameter from callback (for CSRF verification, may include userId)
-   * @param userId - User identifier (optional, can be extracted from state)
+   * Unregister a tool
    */
-  async exchangeCode(code, state, userId) {
-    let actualState = state;
-    let actualUserId = userId;
-    if (state.includes("::")) {
-      const parts = state.split("::");
-      actualState = parts[0];
-      actualUserId = parts[1];
-    }
-    const userKey = actualUserId || "default";
-    const stateData = this.states.get(userKey);
-    if (!stateData) {
-      throw new Error(`No PKCE state found for user ${actualUserId}. Authorization flow may have expired (15 min TTL).`);
-    }
-    const expectedState = stateData.state;
-    if (actualState !== expectedState) {
-      throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
-    }
-    if (!this.config.redirectUri) {
-      throw new Error("redirectUri is required");
-    }
-    const params = new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: this.config.redirectUri,
-      client_id: this.config.clientId
-    });
-    if (this.config.clientSecret) {
-      params.append("client_secret", this.config.clientSecret);
-    }
-    const verifierData = this.codeVerifiers.get(userKey);
-    if (this.config.usePKCE !== false && verifierData) {
-      params.append("code_verifier", verifierData.verifier);
-    }
-    const response = await fetch(this.config.tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${error}`);
-    }
-    const data = await response.json();
-    await this.tokenStore.storeToken(data, actualUserId);
-    this.codeVerifiers.delete(userKey);
-    this.states.delete(userKey);
+  unregisterTool(toolName) {
+    this.tools.delete(toolName);
   }
   /**
-   * Get valid token (auto-refreshes if needed)
-   * @param userId - User identifier for multi-user support
+   * Execute a tool function
    */
-  async getToken(userId) {
-    const key = userId || "default";
-    if (this.refreshLocks.has(key)) {
-      return this.refreshLocks.get(key);
-    }
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
-      return this.tokenStore.getAccessToken(userId);
-    }
-    if (await this.tokenStore.hasRefreshToken(userId)) {
-      const refreshPromise = this.refreshToken(userId);
-      this.refreshLocks.set(key, refreshPromise);
-      try {
-        return await refreshPromise;
-      } finally {
-        this.refreshLocks.delete(key);
-      }
-    }
-    throw new Error(`No valid token available for ${userId ? `user: ${userId}` : "default user"}. User needs to authorize (call startAuthFlow).`);
-  }
-  /**
-   * Refresh access token using refresh token
-   * @param userId - User identifier for multi-user support
-   */
-  async refreshToken(userId) {
-    const refreshToken = await this.tokenStore.getRefreshToken(userId);
-    const params = new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: this.config.clientId
-    });
-    if (this.config.clientSecret) {
-      params.append("client_secret", this.config.clientSecret);
-    }
-    const response = await fetch(this.config.tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${error}`);
-    }
-    const data = await response.json();
-    await this.tokenStore.storeToken(data, userId);
-    return data.access_token;
-  }
-  /**
-   * Check if token is valid
-   * @param userId - User identifier for multi-user support
-   */
-  async isTokenValid(userId) {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId);
-  }
-  /**
-   * Revoke token (if supported by provider)
-   * @param revocationUrl - Optional revocation endpoint
-   * @param userId - User identifier for multi-user support
-   */
-  async revokeToken(revocationUrl, userId) {
-    if (!revocationUrl) {
-      await this.tokenStore.clear(userId);
-      return;
+  async execute(toolName, args) {
+    const tool = this.tools.get(toolName);
+    if (!tool) {
+      throw new ToolNotFoundError(toolName);
     }
     try {
-      const token = await this.tokenStore.getAccessToken(userId);
-      await fetch(revocationUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({
-          token,
-          client_id: this.config.clientId
-        })
-      });
-    } finally {
-      await this.tokenStore.clear(userId);
-    }
-  }
-  /**
-   * Clean up expired PKCE data to prevent memory leaks
-   * Removes verifiers and states older than PKCE_TTL (15 minutes)
-   */
-  cleanupExpiredPKCE() {
-    const now = Date.now();
-    for (const [key, data] of this.codeVerifiers) {
-      if (now - data.timestamp > this.PKCE_TTL) {
-        this.codeVerifiers.delete(key);
-        this.states.delete(key);
-      }
-    }
-  }
-};
-
-// src/connectors/oauth/flows/ClientCredentials.ts
-var ClientCredentialsFlow = class {
-  constructor(config) {
-    this.config = config;
-    const storageKey = config.storageKey || `client_credentials:${config.clientId}`;
-    this.tokenStore = new TokenStore(storageKey, config.storage);
-  }
-  tokenStore;
-  /**
-   * Get token using client credentials
-   */
-  async getToken() {
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-      return this.tokenStore.getAccessToken();
-    }
-    return this.requestToken();
-  }
-  /**
-   * Request a new token from the authorization server
-   */
-  async requestToken() {
-    const auth = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
-      "base64"
-    );
-    const params = new URLSearchParams({
-      grant_type: "client_credentials"
-    });
-    if (this.config.scope) {
-      params.append("scope", this.config.scope);
-    }
-    const response = await fetch(this.config.tokenUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Token request failed: ${response.status} ${response.statusText} - ${error}`);
-    }
-    const data = await response.json();
-    await this.tokenStore.storeToken(data);
-    return data.access_token;
-  }
-  /**
-   * Refresh token (client credentials don't use refresh tokens)
-   * Just requests a new token
-   */
-  async refreshToken() {
-    await this.tokenStore.clear();
-    return this.requestToken();
-  }
-  /**
-   * Check if token is valid
-   */
-  async isTokenValid() {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
-  }
-};
-var JWTBearerFlow = class {
-  constructor(config) {
-    this.config = config;
-    const storageKey = config.storageKey || `jwt_bearer:${config.clientId}`;
-    this.tokenStore = new TokenStore(storageKey, config.storage);
-    if (config.privateKey) {
-      this.privateKey = config.privateKey;
-    } else if (config.privateKeyPath) {
-      try {
-        this.privateKey = fs2.readFileSync(config.privateKeyPath, "utf8");
-      } catch (error) {
-        throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
-      }
-    } else {
-      throw new Error("JWT Bearer flow requires privateKey or privateKeyPath");
-    }
-  }
-  tokenStore;
-  privateKey;
-  /**
-   * Generate signed JWT assertion
-   */
-  async generateJWT() {
-    const now = Math.floor(Date.now() / 1e3);
-    const alg = this.config.tokenSigningAlg || "RS256";
-    const key = await importPKCS8(this.privateKey, alg);
-    const jwt = await new SignJWT({
-      scope: this.config.scope || ""
-    }).setProtectedHeader({ alg }).setIssuer(this.config.clientId).setSubject(this.config.clientId).setAudience(this.config.audience || this.config.tokenUrl).setIssuedAt(now).setExpirationTime(now + 3600).sign(key);
-    return jwt;
-  }
-  /**
-   * Get token using JWT Bearer assertion
-   */
-  async getToken() {
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-      return this.tokenStore.getAccessToken();
-    }
-    return this.requestToken();
-  }
-  /**
-   * Request token using JWT assertion
-   */
-  async requestToken() {
-    const assertion = await this.generateJWT();
-    const params = new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion
-    });
-    const response = await fetch(this.config.tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`JWT Bearer token request failed: ${response.status} ${response.statusText} - ${error}`);
-    }
-    const data = await response.json();
-    await this.tokenStore.storeToken(data);
-    return data.access_token;
-  }
-  /**
-   * Refresh token (generate new JWT and request new token)
-   */
-  async refreshToken() {
-    await this.tokenStore.clear();
-    return this.requestToken();
-  }
-  /**
-   * Check if token is valid
-   */
-  async isTokenValid() {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
-  }
-};
-
-// src/connectors/oauth/flows/StaticToken.ts
-var StaticTokenFlow = class {
-  constructor(config) {
-    this.config = config;
-    if (!config.staticToken) {
-      throw new Error("Static token flow requires staticToken in config");
-    }
-    this.token = config.staticToken;
-  }
-  token;
-  /**
-   * Get token (always returns the static token)
-   */
-  async getToken() {
-    return this.token;
-  }
-  /**
-   * Refresh token (no-op for static tokens)
-   */
-  async refreshToken() {
-    return this.token;
-  }
-  /**
-   * Token is always valid for static tokens
-   */
-  async isTokenValid() {
-    return true;
-  }
-  /**
-   * Update the static token
-   */
-  updateToken(newToken) {
-    this.token = newToken;
-  }
-};
-
-// src/connectors/oauth/OAuthManager.ts
-var OAuthManager = class {
-  flow;
-  constructor(config) {
-    this.validateConfig(config);
-    switch (config.flow) {
-      case "authorization_code":
-        this.flow = new AuthCodePKCEFlow(config);
-        break;
-      case "client_credentials":
-        this.flow = new ClientCredentialsFlow(config);
-        break;
-      case "jwt_bearer":
-        this.flow = new JWTBearerFlow(config);
-        break;
-      case "static_token":
-        this.flow = new StaticTokenFlow(config);
-        break;
-      default:
-        throw new Error(`Unknown OAuth flow: ${config.flow}`);
-    }
-  }
-  /**
-   * Get valid access token
-   * Automatically refreshes if expired
-   *
-   * @param userId - User identifier for multi-user support (optional)
-   */
-  async getToken(userId) {
-    return this.flow.getToken(userId);
-  }
-  /**
-   * Force refresh the token
-   *
-   * @param userId - User identifier for multi-user support (optional)
-   */
-  async refreshToken(userId) {
-    return this.flow.refreshToken(userId);
-  }
-  /**
-   * Check if current token is valid
-   *
-   * @param userId - User identifier for multi-user support (optional)
-   */
-  async isTokenValid(userId) {
-    return this.flow.isTokenValid(userId);
-  }
-  // ==================== Authorization Code Flow Methods ====================
-  /**
-   * Start authorization flow (Authorization Code only)
-   * Returns URL for user to visit
-   *
-   * @param userId - User identifier for multi-user support (optional)
-   * @returns Authorization URL for the user to visit
-   */
-  async startAuthFlow(userId) {
-    if (!(this.flow instanceof AuthCodePKCEFlow)) {
-      throw new Error("startAuthFlow() is only available for authorization_code flow");
-    }
-    return this.flow.getAuthorizationUrl(userId);
-  }
-  /**
-   * Handle OAuth callback (Authorization Code only)
-   * Call this with the callback URL after user authorizes
-   *
-   * @param callbackUrl - Full callback URL with code and state parameters
-   * @param userId - Optional user identifier (can be extracted from state if embedded)
-   */
-  async handleCallback(callbackUrl, userId) {
-    if (!(this.flow instanceof AuthCodePKCEFlow)) {
-      throw new Error("handleCallback() is only available for authorization_code flow");
-    }
-    const url = new URL(callbackUrl);
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-    if (!code) {
-      throw new Error("Missing authorization code in callback URL");
-    }
-    if (!state) {
-      throw new Error("Missing state parameter in callback URL");
-    }
-    await this.flow.exchangeCode(code, state, userId);
-  }
-  /**
-   * Revoke token (if supported by provider)
-   *
-   * @param revocationUrl - Optional revocation endpoint URL
-   * @param userId - User identifier for multi-user support (optional)
-   */
-  async revokeToken(revocationUrl, userId) {
-    if (this.flow instanceof AuthCodePKCEFlow) {
-      await this.flow.revokeToken(revocationUrl, userId);
-    } else {
-      throw new Error("Token revocation not implemented for this flow");
-    }
-  }
-  // ==================== Validation ====================
-  validateConfig(config) {
-    if (!config.flow) {
-      throw new Error("OAuth flow is required (authorization_code, client_credentials, jwt_bearer, or static_token)");
-    }
-    if (config.flow !== "static_token") {
-      if (!config.tokenUrl) {
-        throw new Error("tokenUrl is required");
-      }
-      if (!config.clientId) {
-        throw new Error("clientId is required");
-      }
-    }
-    switch (config.flow) {
-      case "authorization_code":
-        if (!config.authorizationUrl) {
-          throw new Error("authorizationUrl is required for authorization_code flow");
-        }
-        if (!config.redirectUri) {
-          throw new Error("redirectUri is required for authorization_code flow");
-        }
-        break;
-      case "client_credentials":
-        if (!config.clientSecret) {
-          throw new Error("clientSecret is required for client_credentials flow");
-        }
-        break;
-      case "jwt_bearer":
-        if (!config.privateKey && !config.privateKeyPath) {
-          throw new Error(
-            "privateKey or privateKeyPath is required for jwt_bearer flow"
-          );
-        }
-        break;
-      case "static_token":
-        if (!config.staticToken) {
-          throw new Error("staticToken is required for static_token flow");
-        }
-        break;
-    }
-    if (config.storage && !process.env.OAUTH_ENCRYPTION_KEY) {
-      console.warn(
-        "WARNING: Using persistent storage without OAUTH_ENCRYPTION_KEY environment variable. Tokens will be encrypted with auto-generated key that changes on restart!"
+      return await tool.execute(args);
+    } catch (error) {
+      throw new ToolExecutionError(
+        toolName,
+        error.message,
+        error
       );
     }
   }
-};
-
-// src/connectors/oauth/OAuthConnector.ts
-var OAuthConnector = class {
-  constructor(name, config, oauthManager) {
-    this.name = name;
-    this.config = config;
-    this.oauthManager = oauthManager;
-  }
-  get displayName() {
-    return this.config.displayName;
-  }
-  get baseURL() {
-    return this.config.baseURL;
-  }
-  async getToken(userId) {
-    return this.oauthManager.getToken(userId);
-  }
-  async isTokenValid(userId) {
-    return this.oauthManager.isTokenValid(userId);
-  }
-  async refreshToken(userId) {
-    return this.oauthManager.refreshToken(userId);
-  }
-  async startAuthFlow(userId) {
-    return this.oauthManager.startAuthFlow(userId);
-  }
-  async handleCallback(callbackUrl, userId) {
-    return this.oauthManager.handleCallback(callbackUrl, userId);
-  }
-  async revokeToken(revocationUrl, userId) {
-    return this.oauthManager.revokeToken(revocationUrl, userId);
-  }
-  getMetadata() {
-    return {
-      apiVersion: this.config.apiVersion,
-      rateLimit: this.config.rateLimit,
-      documentation: this.config.documentation
-    };
-  }
-};
-
-// src/connectors/ConnectorRegistry.ts
-var ConnectorRegistry = class _ConnectorRegistry {
-  static instance;
-  connectors = /* @__PURE__ */ new Map();
-  constructor() {
-  }
   /**
-   * Get singleton instance
+   * Check if tool is available
    */
-  static getInstance() {
-    if (!_ConnectorRegistry.instance) {
-      _ConnectorRegistry.instance = new _ConnectorRegistry();
-    }
-    return _ConnectorRegistry.instance;
+  hasToolFunction(toolName) {
+    return this.tools.has(toolName);
   }
   /**
-   * Register a connector for external system access
-   *
-   * @param name - Unique connector identifier (e.g., 'microsoft', 'google', 'github')
-   * @param config - Connector configuration
-   *
-   * @example
-   * ```typescript
-   * connectorRegistry.register('github', {
-   *   displayName: 'GitHub API',
-   *   description: 'Access GitHub repos and user data',
-   *   baseURL: 'https://api.github.com',
-   *   auth: {
-   *     type: 'oauth',
-   *     flow: 'authorization_code',
-   *     clientId: process.env.GITHUB_CLIENT_ID!,
-   *     clientSecret: process.env.GITHUB_CLIENT_SECRET,
-   *     tokenUrl: 'https://github.com/login/oauth/access_token',
-   *     authorizationUrl: 'https://github.com/login/oauth/authorize',
-   *     scope: 'user:email repo'
-   *   }
-   * });
-   * ```
+   * Get tool definition
    */
-  register(name, config) {
-    if (!name || name.trim().length === 0) {
-      throw new Error("Connector name cannot be empty");
-    }
-    if (this.connectors.has(name)) {
-      console.warn(`Connector '${name}' is already registered. Overwriting...`);
-    }
-    const oauthManager = this.createOAuthManagerFromConnectorAuth(name, config.auth);
-    const connector = new OAuthConnector(name, config, oauthManager);
-    this.connectors.set(name, connector);
+  getToolDefinition(toolName) {
+    const tool = this.tools.get(toolName);
+    return tool?.definition;
   }
   /**
-   * Get connector by name
-   *
-   * @throws Error if connector not found
+   * List all registered tools
    */
-  get(name) {
-    const connector = this.connectors.get(name);
-    if (!connector) {
-      const available = this.listConnectorNames();
-      const availableList = available.length > 0 ? available.join(", ") : "none";
-      throw new Error(
-        `Connector '${name}' not found. Available connectors: ${availableList}`
-      );
-    }
-    return connector;
+  listTools() {
+    return Array.from(this.tools.keys());
   }
   /**
-   * Get OAuthManager for a connector (for internal use)
-   * @internal
-   */
-  getManager(name) {
-    const connector = this.get(name);
-    if (connector instanceof OAuthConnector) {
-      return connector.oauthManager;
-    }
-    throw new Error(`Connector '${name}' does not have an OAuthManager`);
-  }
-  /**
-   * Check if connector exists
-   */
-  has(name) {
-    return this.connectors.has(name);
-  }
-  /**
-   * Get all registered connector names
-   */
-  listConnectorNames() {
-    return Array.from(this.connectors.keys());
-  }
-  /**
-   * Get all registered connectors
-   */
-  listConnectors() {
-    return Array.from(this.connectors.values());
-  }
-  /**
-   * Get connector descriptions formatted for tool parameters
-   */
-  getConnectorDescriptionsForTools() {
-    const connectors = this.listConnectors();
-    if (connectors.length === 0) {
-      return "No connectors registered yet.";
-    }
-    return connectors.map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description}`).join("\n");
-  }
-  /**
-   * Get connector info (for tools and documentation)
-   */
-  getConnectorInfo() {
-    const info = {};
-    for (const [name, connector] of this.connectors) {
-      info[name] = {
-        displayName: connector.displayName,
-        description: connector.config.description,
-        baseURL: connector.baseURL
-      };
-    }
-    return info;
-  }
-  /**
-   * Unregister a connector
-   */
-  unregister(name) {
-    return this.connectors.delete(name);
-  }
-  /**
-   * Clear all connectors (useful for testing)
+   * Clear all registered tools
    */
   clear() {
-    this.connectors.clear();
-  }
-  /**
-   * Get number of registered connectors
-   */
-  size() {
-    return this.connectors.size;
-  }
-  // ==================== Internal Helpers ====================
-  /**
-   * Create OAuthManager from ConnectorAuth format
-   */
-  createOAuthManagerFromConnectorAuth(name, auth) {
-    if (auth.type === "api_key") {
-      return new OAuthManager({
-        flow: "static_token",
-        staticToken: auth.apiKey,
-        clientId: name,
-        tokenUrl: ""
-      });
-    }
-    if (auth.type === "oauth") {
-      const oauthConfig = {
-        flow: auth.flow,
-        clientId: auth.clientId,
-        clientSecret: auth.clientSecret,
-        tokenUrl: auth.tokenUrl,
-        authorizationUrl: auth.authorizationUrl,
-        redirectUri: auth.redirectUri,
-        scope: auth.scope,
-        usePKCE: auth.usePKCE,
-        privateKey: auth.privateKey,
-        privateKeyPath: auth.privateKeyPath,
-        audience: auth.audience,
-        refreshBeforeExpiry: auth.refreshBeforeExpiry,
-        storageKey: auth.storageKey
-      };
-      return new OAuthManager(oauthConfig);
-    }
-    if (auth.type === "jwt") {
-      return new OAuthManager({
-        flow: "jwt_bearer",
-        clientId: auth.clientId,
-        tokenUrl: auth.tokenUrl,
-        privateKey: auth.privateKey,
-        privateKeyPath: auth.privateKeyPath,
-        scope: auth.scope,
-        audience: auth.audience
-      });
-    }
-    throw new Error(`Unknown connector auth type: ${auth.type}`);
-  }
-};
-var connectorRegistry = ConnectorRegistry.getInstance();
-
-// src/client/ProviderRegistry.ts
-var ProviderRegistry = class {
-  configs = /* @__PURE__ */ new Map();
-  textProviders = /* @__PURE__ */ new Map();
-  imageProviders = /* @__PURE__ */ new Map();
-  // Promise locks for preventing race conditions during lazy loading
-  textProviderPromises = /* @__PURE__ */ new Map();
-  imageProviderPromises = /* @__PURE__ */ new Map();
-  _isDestroyed = false;
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  constructor(providersConfig) {
-    for (const [name, config] of Object.entries(providersConfig)) {
-      if (config) {
-        this.registerConfig(name, config);
-        this.autoCreateConnector(name, config);
-      }
-    }
-  }
-  /**
-   * Register a provider configuration
-   */
-  registerConfig(name, config) {
-    if (!config.apiKey || config.apiKey.trim().length === 0) {
-      throw new InvalidConfigError(`Provider '${name}' requires a non-empty apiKey`);
-    }
-    if (name === "openai" && !config.apiKey.startsWith("sk-")) {
-      console.warn(`[ProviderRegistry] OpenAI API key should typically start with 'sk-'`);
-    }
-    if (name === "anthropic" && !config.apiKey.startsWith("sk-ant-")) {
-      console.warn(`[ProviderRegistry] Anthropic API key should typically start with 'sk-ant-'`);
-    }
-    this.configs.set(name, config);
-  }
-  /**
-   * Auto-create connector from LLM provider credentials
-   * This allows using LLM provider credentials for API access too!
-   *
-   * Example: Google Vertex AI credentials → Google APIs connector
-   */
-  autoCreateConnector(providerName, config) {
-    try {
-      if (providerName === "openai" && config.apiKey) {
-        if (!connectorRegistry.has("openai-api")) {
-          connectorRegistry.register("openai-api", {
-            displayName: "OpenAI API",
-            description: "Access OpenAI models, completions, embeddings, and other APIs",
-            baseURL: "https://api.openai.com/v1",
-            auth: {
-              type: "api_key",
-              apiKey: config.apiKey,
-              headerName: "Authorization",
-              headerPrefix: "Bearer"
-            }
-          });
-          console.log("[AutoConnector] Created connector: openai-api");
-        }
-      }
-      if (providerName === "anthropic" && config.apiKey) {
-        if (!connectorRegistry.has("anthropic-api")) {
-          connectorRegistry.register("anthropic-api", {
-            displayName: "Anthropic API",
-            description: "Access Claude models and Anthropic APIs",
-            baseURL: "https://api.anthropic.com/v1",
-            auth: {
-              type: "api_key",
-              apiKey: config.apiKey,
-              headerName: "x-api-key",
-              headerPrefix: ""
-            }
-          });
-          console.log("[AutoConnector] Created connector: anthropic-api");
-        }
-      }
-      if (providerName === "google" && config.apiKey) {
-        if (!connectorRegistry.has("google-ai-api")) {
-          connectorRegistry.register("google-ai-api", {
-            displayName: "Google AI API",
-            description: "Access Google Gemini and other AI APIs",
-            baseURL: "https://generativelanguage.googleapis.com/v1",
-            auth: {
-              type: "api_key",
-              apiKey: config.apiKey
-            }
-          });
-          console.log("[AutoConnector] Created connector: google-ai-api");
-        }
-      }
-      if (providerName === "vertex-ai") {
-        const vertexConfig = config;
-        if (vertexConfig.projectId && !connectorRegistry.has("google-cloud-api")) {
-          console.log("[AutoConnector] Vertex AI detected - use Google Cloud SDK for API access");
-        }
-      }
-      if (config.apiKey && config.baseURL && providerName !== "openai" && providerName !== "anthropic") {
-        const connectorName = `${providerName}-api`;
-        if (!connectorRegistry.has(connectorName)) {
-          connectorRegistry.register(connectorName, {
-            displayName: `${providerName.charAt(0).toUpperCase() + providerName.slice(1)} API`,
-            description: `Access ${providerName} APIs`,
-            baseURL: config.baseURL,
-            auth: {
-              type: "api_key",
-              apiKey: config.apiKey
-            }
-          });
-          console.log(`[AutoConnector] Created connector: ${connectorName}`);
-        }
-      }
-    } catch (error) {
-      console.warn(`[AutoConnector] Failed to create connector for ${providerName}:`, error.message);
-    }
-  }
-  /**
-   * Get a text provider instance (lazy loaded and cached)
-   * Uses promise-based locking to prevent race conditions
-   */
-  async getTextProvider(name) {
-    assertNotDestroyed(this, "get text provider");
-    if (this.textProviders.has(name)) {
-      return this.textProviders.get(name);
-    }
-    const existingPromise = this.textProviderPromises.get(name);
-    if (existingPromise) {
-      return existingPromise;
-    }
-    const config = this.configs.get(name);
-    if (!config) {
-      throw new ProviderNotFoundError(name);
-    }
-    const createPromise = this.createTextProviderAsync(name, config);
-    this.textProviderPromises.set(name, createPromise);
-    try {
-      const provider = await createPromise;
-      this.textProviders.set(name, provider);
-      return provider;
-    } finally {
-      this.textProviderPromises.delete(name);
-    }
-  }
-  /**
-   * Get an image provider instance (lazy loaded and cached)
-   * Uses promise-based locking to prevent race conditions
-   */
-  async getImageProvider(name) {
-    assertNotDestroyed(this, "get image provider");
-    if (this.imageProviders.has(name)) {
-      return this.imageProviders.get(name);
-    }
-    const existingPromise = this.imageProviderPromises.get(name);
-    if (existingPromise) {
-      return existingPromise;
-    }
-    const config = this.configs.get(name);
-    if (!config) {
-      throw new ProviderNotFoundError(name);
-    }
-    const createPromise = this.createImageProviderAsync(name, config);
-    this.imageProviderPromises.set(name, createPromise);
-    try {
-      const provider = await createPromise;
-      this.imageProviders.set(name, provider);
-      return provider;
-    } finally {
-      this.imageProviderPromises.delete(name);
-    }
-  }
-  /**
-   * Async wrapper for text provider creation
-   */
-  async createTextProviderAsync(name, config) {
-    return this.createTextProvider(name, config);
-  }
-  /**
-   * Async wrapper for image provider creation
-   */
-  async createImageProviderAsync(name, config) {
-    return this.createImageProvider(name, config);
-  }
-  /**
-   * Factory method to create text provider
-   */
-  createTextProvider(name, config) {
-    switch (name) {
-      case "openai":
-        return new OpenAITextProvider(config);
-      case "anthropic":
-        return new AnthropicTextProvider(config);
-      case "google":
-      case "gemini":
-        return new GoogleTextProvider(config);
-      case "vertex-ai":
-      case "google-vertex":
-        return new VertexAITextProvider(config);
-      case "grok":
-        return new GenericOpenAIProvider(
-          "grok",
-          {
-            ...config,
-            baseURL: config.baseURL || "https://api.x.ai/v1"
-          },
-          { text: true, images: true, videos: false, audio: false }
-        );
-      case "groq":
-        return new GenericOpenAIProvider(
-          "groq",
-          {
-            ...config,
-            baseURL: config.baseURL || "https://api.groq.com/openai/v1"
-          },
-          { text: true, images: false, videos: false, audio: false }
-        );
-      case "together-ai":
-      case "together":
-        return new GenericOpenAIProvider(
-          "together-ai",
-          {
-            ...config,
-            baseURL: config.baseURL || "https://api.together.xyz/v1"
-          },
-          { text: true, images: true, videos: false, audio: false }
-        );
-      case "perplexity":
-        return new GenericOpenAIProvider(
-          "perplexity",
-          {
-            ...config,
-            baseURL: config.baseURL || "https://api.perplexity.ai"
-          },
-          { text: true, images: false, videos: false, audio: false }
-        );
-      default:
-        if ("baseURL" in config && config.baseURL) {
-          return new GenericOpenAIProvider(name, config);
-        }
-        throw new ProviderNotFoundError(name);
-    }
-  }
-  /**
-   * Factory method to create image provider
-   */
-  createImageProvider(name, _config) {
-    switch (name) {
-      case "openai":
-        throw new Error("OpenAI image provider not yet implemented");
-      case "google":
-        throw new Error("Google image provider not yet implemented");
-      default:
-        throw new ProviderNotFoundError(name);
-    }
-  }
-  /**
-   * Check if a provider is registered
-   */
-  hasProvider(name) {
-    return this.configs.has(name);
-  }
-  /**
-   * List all registered provider names
-   */
-  listProviders() {
-    return Array.from(this.configs.keys());
-  }
-  /**
-   * Get provider configuration
-   */
-  getConfig(name) {
-    return this.configs.get(name);
-  }
-  /**
-   * Destroy the registry and release all resources
-   * Safe to call multiple times (idempotent)
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    this.textProviders.clear();
-    this.imageProviders.clear();
-    this.textProviderPromises.clear();
-    this.imageProviderPromises.clear();
-    this.configs.clear();
+    this.tools.clear();
   }
 };
 
@@ -5042,23 +4887,201 @@ var AgenticLoop = class extends EventEmitter {
   }
 };
 
-// src/capabilities/agents/Agent.ts
-var Agent = class extends EventEmitter {
-  constructor(config, textProvider, toolRegistry) {
+// src/domain/interfaces/IDisposable.ts
+function assertNotDestroyed(obj, operation) {
+  if (obj.isDestroyed) {
+    throw new Error(`Cannot ${operation}: instance has been destroyed`);
+  }
+}
+
+// src/core/Agent.ts
+var Agent = class _Agent extends EventEmitter {
+  // ============ Instance Properties ============
+  name;
+  connector;
+  model;
+  config;
+  provider;
+  toolRegistry;
+  agenticLoop;
+  cleanupCallbacks = [];
+  boundListeners = /* @__PURE__ */ new Map();
+  _isDestroyed = false;
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  // ============ Static Factory ============
+  /**
+   * Create a new agent
+   *
+   * @example
+   * ```typescript
+   * const agent = Agent.create({
+   *   connector: 'openai',  // or Connector instance
+   *   model: 'gpt-4',
+   *   instructions: 'You are a helpful assistant',
+   *   tools: [myTool]
+   * });
+   * ```
+   */
+  static create(config) {
+    return new _Agent(config);
+  }
+  // ============ Constructor ============
+  constructor(config) {
     super();
+    this.connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
+    this.name = config.name ?? `agent-${Date.now()}`;
+    this.model = config.model;
     this.config = config;
-    this.toolRegistry = toolRegistry;
+    this.provider = createProvider(this.connector);
+    this.toolRegistry = new ToolRegistry();
     if (config.tools) {
       for (const tool of config.tools) {
         this.toolRegistry.registerTool(tool);
       }
     }
     this.agenticLoop = new AgenticLoop(
-      textProvider,
-      toolRegistry,
+      this.provider,
+      this.toolRegistry,
       config.hooks,
       config.errorHandling
     );
+    this.setupEventForwarding();
+  }
+  // ============ Main API ============
+  /**
+   * Run the agent with input
+   */
+  async run(input) {
+    assertNotDestroyed(this, "run agent");
+    const tools = this.config.tools?.map((t) => t.definition) || [];
+    const loopConfig = {
+      model: this.model,
+      input,
+      instructions: this.config.instructions,
+      tools,
+      temperature: this.config.temperature,
+      maxIterations: this.config.maxIterations || 10,
+      hooks: this.config.hooks,
+      historyMode: this.config.historyMode,
+      limits: this.config.limits,
+      errorHandling: this.config.errorHandling
+    };
+    return this.agenticLoop.execute(loopConfig);
+  }
+  /**
+   * Stream response from the agent
+   */
+  async *stream(input) {
+    assertNotDestroyed(this, "stream from agent");
+    const tools = this.config.tools?.map((t) => t.definition) || [];
+    const loopConfig = {
+      model: this.model,
+      input,
+      instructions: this.config.instructions,
+      tools,
+      temperature: this.config.temperature,
+      maxIterations: this.config.maxIterations || 10,
+      hooks: this.config.hooks,
+      historyMode: this.config.historyMode,
+      limits: this.config.limits,
+      errorHandling: this.config.errorHandling
+    };
+    yield* this.agenticLoop.executeStreaming(loopConfig);
+  }
+  // ============ Tool Management ============
+  /**
+   * Add a tool to the agent
+   */
+  addTool(tool) {
+    this.toolRegistry.registerTool(tool);
+    if (!this.config.tools) {
+      this.config.tools = [];
+    }
+    this.config.tools.push(tool);
+  }
+  /**
+   * Remove a tool from the agent
+   */
+  removeTool(toolName) {
+    this.toolRegistry.unregisterTool(toolName);
+    if (this.config.tools) {
+      this.config.tools = this.config.tools.filter(
+        (t) => t.definition.function.name !== toolName
+      );
+    }
+  }
+  /**
+   * List registered tools
+   */
+  listTools() {
+    return this.toolRegistry.listTools();
+  }
+  // ============ Control Methods ============
+  pause(reason) {
+    this.agenticLoop.pause(reason);
+  }
+  resume() {
+    this.agenticLoop.resume();
+  }
+  cancel(reason) {
+    this.agenticLoop.cancel(reason);
+  }
+  // ============ Introspection ============
+  getContext() {
+    return this.agenticLoop.getContext();
+  }
+  getMetrics() {
+    const context = this.agenticLoop.getContext();
+    return context?.metrics || null;
+  }
+  getSummary() {
+    const context = this.agenticLoop.getContext();
+    return context?.getSummary() || null;
+  }
+  getAuditTrail() {
+    const context = this.agenticLoop.getContext();
+    return context?.getAuditTrail() || [];
+  }
+  isRunning() {
+    return this.agenticLoop.isRunning();
+  }
+  isPaused() {
+    return this.agenticLoop.isPaused();
+  }
+  isCancelled() {
+    return this.agenticLoop.isCancelled();
+  }
+  // ============ Cleanup ============
+  onCleanup(callback) {
+    this.cleanupCallbacks.push(callback);
+  }
+  destroy() {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
+    try {
+      this.agenticLoop.cancel("Agent destroyed");
+    } catch {
+    }
+    for (const [eventName, handler] of this.boundListeners) {
+      this.agenticLoop.off(eventName, handler);
+    }
+    this.boundListeners.clear();
+    this.removeAllListeners();
+    for (const callback of this.cleanupCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        console.error("Cleanup callback error:", error);
+      }
+    }
+    this.cleanupCallbacks = [];
+  }
+  // ============ Private ============
+  setupEventForwarding() {
     const eventNames = [
       "execution:start",
       "execution:complete",
@@ -5087,547 +5110,6 @@ var Agent = class extends EventEmitter {
       this.boundListeners.set(eventName, handler);
       this.agenticLoop.on(eventName, handler);
     }
-  }
-  agenticLoop;
-  cleanupCallbacks = [];
-  boundListeners = /* @__PURE__ */ new Map();
-  _isDestroyed = false;
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Run the agent with input
-   * @throws Error if agent has been destroyed
-   */
-  async run(input) {
-    assertNotDestroyed(this, "run agent");
-    const tools = this.config.tools?.map((t) => t.definition) || [];
-    const loopConfig = {
-      model: this.config.model,
-      input,
-      instructions: this.config.instructions,
-      tools,
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations || 10,
-      hooks: this.config.hooks,
-      historyMode: this.config.historyMode,
-      limits: this.config.limits,
-      errorHandling: this.config.errorHandling
-    };
-    return this.agenticLoop.execute(loopConfig);
-  }
-  /**
-   * Stream response from the agent with real-time events
-   * Returns an async iterator of streaming events
-   * Supports full agentic loop with tool calling
-   * @throws Error if agent has been destroyed
-   */
-  async *stream(input) {
-    assertNotDestroyed(this, "stream from agent");
-    const tools = this.config.tools?.map((t) => t.definition) || [];
-    const loopConfig = {
-      model: this.config.model,
-      input,
-      instructions: this.config.instructions,
-      tools,
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations || 10,
-      hooks: this.config.hooks,
-      historyMode: this.config.historyMode,
-      limits: this.config.limits,
-      errorHandling: this.config.errorHandling
-    };
-    yield* this.agenticLoop.executeStreaming(loopConfig);
-  }
-  /**
-   * Add a tool to the agent
-   */
-  addTool(tool) {
-    this.toolRegistry.registerTool(tool);
-    if (!this.config.tools) {
-      this.config.tools = [];
-    }
-    this.config.tools.push(tool);
-  }
-  /**
-   * Remove a tool from the agent
-   */
-  removeTool(toolName) {
-    this.toolRegistry.unregisterTool(toolName);
-    if (this.config.tools) {
-      this.config.tools = this.config.tools.filter(
-        (t) => t.definition.function.name !== toolName
-      );
-    }
-  }
-  /**
-   * List registered tools
-   */
-  listTools() {
-    return this.toolRegistry.listTools();
-  }
-  // ==================== NEW: Control Methods ====================
-  /**
-   * Pause execution
-   */
-  pause(reason) {
-    this.agenticLoop.pause(reason);
-  }
-  /**
-   * Resume execution
-   */
-  resume() {
-    this.agenticLoop.resume();
-  }
-  /**
-   * Cancel execution
-   */
-  cancel(reason) {
-    this.agenticLoop.cancel(reason);
-  }
-  // ==================== NEW: Introspection Methods ====================
-  /**
-   * Get current execution context
-   */
-  getContext() {
-    return this.agenticLoop.getContext();
-  }
-  /**
-   * Get execution metrics
-   */
-  getMetrics() {
-    const context = this.agenticLoop.getContext();
-    return context?.metrics || null;
-  }
-  /**
-   * Get execution summary
-   */
-  getSummary() {
-    const context = this.agenticLoop.getContext();
-    return context?.getSummary() || null;
-  }
-  /**
-   * Get audit trail
-   */
-  getAuditTrail() {
-    const context = this.agenticLoop.getContext();
-    return context?.getAuditTrail() || [];
-  }
-  /**
-   * Check if currently running
-   */
-  isRunning() {
-    return this.agenticLoop.isRunning();
-  }
-  /**
-   * Check if paused
-   */
-  isPaused() {
-    return this.agenticLoop.isPaused();
-  }
-  /**
-   * Check if cancelled
-   */
-  isCancelled() {
-    return this.agenticLoop.isCancelled();
-  }
-  // ==================== NEW: Cleanup ====================
-  /**
-   * Register cleanup callback
-   */
-  onCleanup(callback) {
-    this.cleanupCallbacks.push(callback);
-  }
-  /**
-   * Destroy agent and cleanup resources
-   * Safe to call multiple times (idempotent)
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    try {
-      this.agenticLoop.cancel("Agent destroyed");
-    } catch {
-    }
-    for (const [eventName, handler] of this.boundListeners) {
-      this.agenticLoop.off(eventName, handler);
-    }
-    this.boundListeners.clear();
-    this.removeAllListeners();
-    for (const callback of this.cleanupCallbacks) {
-      try {
-        callback();
-      } catch (error) {
-        console.error("Cleanup callback error:", error);
-      }
-    }
-    this.cleanupCallbacks = [];
-  }
-};
-
-// src/capabilities/agents/ToolRegistry.ts
-var ToolRegistry = class {
-  tools = /* @__PURE__ */ new Map();
-  /**
-   * Register a new tool
-   */
-  registerTool(tool) {
-    this.tools.set(tool.definition.function.name, tool);
-  }
-  /**
-   * Unregister a tool
-   */
-  unregisterTool(toolName) {
-    this.tools.delete(toolName);
-  }
-  /**
-   * Execute a tool function
-   */
-  async execute(toolName, args) {
-    const tool = this.tools.get(toolName);
-    if (!tool) {
-      throw new ToolNotFoundError(toolName);
-    }
-    try {
-      return await tool.execute(args);
-    } catch (error) {
-      throw new ToolExecutionError(
-        toolName,
-        error.message,
-        error
-      );
-    }
-  }
-  /**
-   * Check if tool is available
-   */
-  hasToolFunction(toolName) {
-    return this.tools.has(toolName);
-  }
-  /**
-   * Get tool definition
-   */
-  getToolDefinition(toolName) {
-    const tool = this.tools.get(toolName);
-    return tool?.definition;
-  }
-  /**
-   * List all registered tools
-   */
-  listTools() {
-    return Array.from(this.tools.keys());
-  }
-  /**
-   * Clear all registered tools
-   */
-  clear() {
-    this.tools.clear();
-  }
-};
-
-// src/capabilities/agents/AgentManager.ts
-var AgentManager = class {
-  constructor(registry) {
-    this.registry = registry;
-    this.toolRegistry = new ToolRegistry();
-  }
-  toolRegistry;
-  agents = /* @__PURE__ */ new Set();
-  _isDestroyed = false;
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Create a new agent instance
-   * @returns Promise<Agent> - async to support race-condition-free provider loading
-   */
-  async create(config) {
-    assertNotDestroyed(this, "create agent");
-    const provider = await this.registry.getTextProvider(config.provider);
-    const agent = new Agent(config, provider, this.toolRegistry);
-    this.agents.add(agent);
-    agent.onCleanup(() => {
-      this.agents.delete(agent);
-    });
-    return agent;
-  }
-  /**
-   * Convenience method for one-off agent calls
-   */
-  async run(config) {
-    const agent = await this.create(config);
-    try {
-      return await agent.run(config.input);
-    } finally {
-      agent.destroy();
-    }
-  }
-  /**
-   * Get the number of active agents
-   */
-  getActiveAgentCount() {
-    return this.agents.size;
-  }
-  /**
-   * Destroy the manager and all managed agents
-   * Safe to call multiple times (idempotent)
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    for (const agent of this.agents) {
-      try {
-        agent.destroy();
-      } catch {
-      }
-    }
-    this.agents.clear();
-    this.toolRegistry.clear();
-  }
-};
-
-// src/capabilities/text/TextManager.ts
-var TextManager = class {
-  constructor(registry) {
-    this.registry = registry;
-  }
-  _isDestroyed = false;
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Generate text response
-   */
-  async generate(input, options) {
-    assertNotDestroyed(this, "generate text");
-    const provider = await this.registry.getTextProvider(options.provider);
-    const generateOptions = {
-      model: options.model,
-      input,
-      instructions: options.instructions,
-      temperature: options.temperature,
-      max_output_tokens: options.max_output_tokens,
-      response_format: options.response_format
-    };
-    const response = await provider.generate(generateOptions);
-    return this.extractTextFromResponse(response);
-  }
-  /**
-   * Generate structured JSON output
-   */
-  async generateJSON(input, options) {
-    assertNotDestroyed(this, "generate JSON");
-    const provider = await this.registry.getTextProvider(options.provider);
-    const generateOptions = {
-      model: options.model,
-      input,
-      instructions: options.instructions,
-      temperature: options.temperature,
-      response_format: {
-        type: "json_schema",
-        json_schema: options.schema
-      }
-    };
-    const response = await provider.generate(generateOptions);
-    const text = this.extractTextFromResponse(response);
-    return JSON.parse(text);
-  }
-  /**
-   * Get full response object (not just text)
-   */
-  async generateRaw(input, options) {
-    assertNotDestroyed(this, "generate raw response");
-    const provider = await this.registry.getTextProvider(options.provider);
-    const generateOptions = {
-      model: options.model,
-      input,
-      instructions: options.instructions,
-      temperature: options.temperature,
-      max_output_tokens: options.max_output_tokens,
-      response_format: options.response_format
-    };
-    return provider.generate(generateOptions);
-  }
-  /**
-   * Extract text from response
-   */
-  extractTextFromResponse(response) {
-    if (response.output_text) {
-      return response.output_text;
-    }
-    for (const item of response.output) {
-      if (item.type === "message" && item.role === "assistant") {
-        for (const content of item.content) {
-          if (content.type === "output_text") {
-            return content.text;
-          }
-        }
-      }
-    }
-    return "";
-  }
-  /**
-   * Destroy the manager and release resources
-   * Safe to call multiple times (idempotent)
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-  }
-};
-
-// src/capabilities/images/ImageManager.ts
-var ImageManager = class {
-  constructor(registry) {
-    this.registry = registry;
-  }
-  _isDestroyed = false;
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Generate images from text prompt
-   */
-  async generate(options) {
-    assertNotDestroyed(this, "generate image");
-    const provider = await this.registry.getImageProvider(options.model.split("/")[0] || "openai");
-    return provider.generateImage(options);
-  }
-  /**
-   * Edit an existing image
-   */
-  async edit(options) {
-    assertNotDestroyed(this, "edit image");
-    const providerName = options.model.split("/")[0] || "openai";
-    const provider = await this.registry.getImageProvider(providerName);
-    if (!provider.editImage) {
-      throw new Error(`Provider ${providerName} does not support image editing`);
-    }
-    return provider.editImage(options);
-  }
-  /**
-   * Create variations of an image
-   */
-  async createVariation(options) {
-    assertNotDestroyed(this, "create image variation");
-    const providerName = options.model.split("/")[0] || "openai";
-    const provider = await this.registry.getImageProvider(providerName);
-    if (!provider.createVariation) {
-      throw new Error(`Provider ${providerName} does not support image variations`);
-    }
-    return provider.createVariation(options);
-  }
-  /**
-   * Destroy the manager and release resources
-   * Safe to call multiple times (idempotent)
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-  }
-};
-
-// src/client/OneRingAI.ts
-var OneRingAI = class {
-  registry;
-  // Capability managers (lazy loaded)
-  _agents;
-  _text;
-  _images;
-  _isDestroyed = false;
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  constructor(config) {
-    this.registry = new ProviderRegistry(config.providers);
-  }
-  /**
-   * Access agent capability (with tool calling)
-   */
-  get agents() {
-    assertNotDestroyed(this, "access agents");
-    if (!this._agents) {
-      this._agents = new AgentManager(this.registry);
-    }
-    return this._agents;
-  }
-  /**
-   * Access simple text generation capability
-   */
-  get text() {
-    assertNotDestroyed(this, "access text");
-    if (!this._text) {
-      this._text = new TextManager(this.registry);
-    }
-    return this._text;
-  }
-  /**
-   * Access image generation capability
-   */
-  get images() {
-    assertNotDestroyed(this, "access images");
-    if (!this._images) {
-      this._images = new ImageManager(this.registry);
-    }
-    return this._images;
-  }
-  /**
-   * List all configured providers
-   */
-  listProviders() {
-    return this.registry.listProviders();
-  }
-  /**
-   * Get provider capabilities
-   * Now async to support race-condition-free provider loading
-   */
-  async getProviderCapabilities(providerName) {
-    assertNotDestroyed(this, "get provider capabilities");
-    if (!this.registry.hasProvider(providerName)) {
-      throw new ProviderNotFoundError(providerName);
-    }
-    try {
-      const provider = await this.registry.getTextProvider(providerName);
-      return provider.capabilities;
-    } catch {
-      try {
-        const provider = await this.registry.getImageProvider(providerName);
-        return provider.capabilities;
-      } catch {
-        throw new ProviderNotFoundError(providerName);
-      }
-    }
-  }
-  /**
-   * Check if a provider is configured
-   */
-  hasProvider(providerName) {
-    return this.registry.hasProvider(providerName);
-  }
-  /**
-   * Destroy the client and release all resources
-   * Safe to call multiple times (idempotent)
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    this._agents?.destroy();
-    this._text?.destroy();
-    this._images?.destroy();
-    this._agents = void 0;
-    this._text = void 0;
-    this._images = void 0;
-    this.registry.destroy();
   }
 };
 
@@ -5891,6 +5373,353 @@ var ProviderErrorMapper = class {
   }
 };
 
+// src/connectors/oauth/OAuthConnector.ts
+var OAuthConnector = class {
+  constructor(name, config, oauthManager) {
+    this.name = name;
+    this.config = config;
+    this.oauthManager = oauthManager;
+  }
+  get displayName() {
+    return this.config.displayName || this.name;
+  }
+  get baseURL() {
+    return this.config.baseURL || "";
+  }
+  async getToken(userId) {
+    return this.oauthManager.getToken(userId);
+  }
+  async isTokenValid(userId) {
+    return this.oauthManager.isTokenValid(userId);
+  }
+  async refreshToken(userId) {
+    return this.oauthManager.refreshToken(userId);
+  }
+  async startAuthFlow(userId) {
+    return this.oauthManager.startAuthFlow(userId);
+  }
+  async handleCallback(callbackUrl, userId) {
+    return this.oauthManager.handleCallback(callbackUrl, userId);
+  }
+  async revokeToken(revocationUrl, userId) {
+    return this.oauthManager.revokeToken(revocationUrl, userId);
+  }
+  getMetadata() {
+    return {
+      apiVersion: this.config.apiVersion,
+      rateLimit: this.config.rateLimit,
+      documentation: this.config.documentation
+    };
+  }
+};
+
+// src/connectors/ConnectorRegistry.ts
+var ConnectorRegistry = class _ConnectorRegistry {
+  static instance;
+  connectors = /* @__PURE__ */ new Map();
+  constructor() {
+  }
+  /**
+   * Get singleton instance
+   */
+  static getInstance() {
+    if (!_ConnectorRegistry.instance) {
+      _ConnectorRegistry.instance = new _ConnectorRegistry();
+    }
+    return _ConnectorRegistry.instance;
+  }
+  /**
+   * Register a connector for external system access
+   *
+   * @param name - Unique connector identifier (e.g., 'microsoft', 'google', 'github')
+   * @param config - Connector configuration
+   *
+   * @example
+   * ```typescript
+   * connectorRegistry.register('github', {
+   *   displayName: 'GitHub API',
+   *   description: 'Access GitHub repos and user data',
+   *   baseURL: 'https://api.github.com',
+   *   auth: {
+   *     type: 'oauth',
+   *     flow: 'authorization_code',
+   *     clientId: process.env.GITHUB_CLIENT_ID!,
+   *     clientSecret: process.env.GITHUB_CLIENT_SECRET,
+   *     tokenUrl: 'https://github.com/login/oauth/access_token',
+   *     authorizationUrl: 'https://github.com/login/oauth/authorize',
+   *     scope: 'user:email repo'
+   *   }
+   * });
+   * ```
+   */
+  register(name, config) {
+    if (!name || name.trim().length === 0) {
+      throw new Error("Connector name cannot be empty");
+    }
+    if (this.connectors.has(name)) {
+      console.warn(`Connector '${name}' is already registered. Overwriting...`);
+    }
+    const oauthManager = this.createOAuthManagerFromConnectorAuth(name, config.auth);
+    const connector = new OAuthConnector(name, config, oauthManager);
+    this.connectors.set(name, connector);
+  }
+  /**
+   * Get connector by name
+   *
+   * @throws Error if connector not found
+   */
+  get(name) {
+    const connector = this.connectors.get(name);
+    if (!connector) {
+      const available = this.listConnectorNames();
+      const availableList = available.length > 0 ? available.join(", ") : "none";
+      throw new Error(
+        `Connector '${name}' not found. Available connectors: ${availableList}`
+      );
+    }
+    return connector;
+  }
+  /**
+   * Get OAuthManager for a connector (for internal use)
+   * @internal
+   */
+  getManager(name) {
+    const connector = this.get(name);
+    if (connector instanceof OAuthConnector) {
+      return connector.oauthManager;
+    }
+    throw new Error(`Connector '${name}' does not have an OAuthManager`);
+  }
+  /**
+   * Check if connector exists
+   */
+  has(name) {
+    return this.connectors.has(name);
+  }
+  /**
+   * Get all registered connector names
+   */
+  listConnectorNames() {
+    return Array.from(this.connectors.keys());
+  }
+  /**
+   * Get all registered connectors
+   */
+  listConnectors() {
+    return Array.from(this.connectors.values());
+  }
+  /**
+   * Get connector descriptions formatted for tool parameters
+   */
+  getConnectorDescriptionsForTools() {
+    const connectors = this.listConnectors();
+    if (connectors.length === 0) {
+      return "No connectors registered yet.";
+    }
+    return connectors.map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description}`).join("\n");
+  }
+  /**
+   * Get connector info (for tools and documentation)
+   */
+  getConnectorInfo() {
+    const info = {};
+    for (const [name, connector] of this.connectors) {
+      info[name] = {
+        displayName: connector.displayName,
+        description: connector.config.description,
+        baseURL: connector.baseURL
+      };
+    }
+    return info;
+  }
+  /**
+   * Unregister a connector
+   */
+  unregister(name) {
+    return this.connectors.delete(name);
+  }
+  /**
+   * Clear all connectors (useful for testing)
+   */
+  clear() {
+    this.connectors.clear();
+  }
+  /**
+   * Get number of registered connectors
+   */
+  size() {
+    return this.connectors.size;
+  }
+  // ==================== Internal Helpers ====================
+  /**
+   * Create OAuthManager from ConnectorAuth format
+   */
+  createOAuthManagerFromConnectorAuth(name, auth) {
+    if (auth.type === "api_key") {
+      return new OAuthManager({
+        flow: "static_token",
+        staticToken: auth.apiKey,
+        clientId: name,
+        tokenUrl: ""
+      });
+    }
+    if (auth.type === "oauth") {
+      const oauthConfig = {
+        flow: auth.flow,
+        clientId: auth.clientId,
+        clientSecret: auth.clientSecret,
+        tokenUrl: auth.tokenUrl,
+        authorizationUrl: auth.authorizationUrl,
+        redirectUri: auth.redirectUri,
+        scope: auth.scope,
+        usePKCE: auth.usePKCE,
+        privateKey: auth.privateKey,
+        privateKeyPath: auth.privateKeyPath,
+        audience: auth.audience,
+        refreshBeforeExpiry: auth.refreshBeforeExpiry,
+        storageKey: auth.storageKey
+      };
+      return new OAuthManager(oauthConfig);
+    }
+    if (auth.type === "jwt") {
+      return new OAuthManager({
+        flow: "jwt_bearer",
+        clientId: auth.clientId,
+        tokenUrl: auth.tokenUrl,
+        privateKey: auth.privateKey,
+        privateKeyPath: auth.privateKeyPath,
+        scope: auth.scope,
+        audience: auth.audience
+      });
+    }
+    throw new Error(`Unknown connector auth type: ${auth.type}`);
+  }
+};
+var connectorRegistry = ConnectorRegistry.getInstance();
+var FileStorage = class {
+  directory;
+  encryptionKey;
+  constructor(config) {
+    if (!config.encryptionKey) {
+      throw new Error(
+        "FileStorage requires an encryption key. Set OAUTH_ENCRYPTION_KEY in environment or provide config.encryptionKey"
+      );
+    }
+    this.directory = config.directory;
+    this.encryptionKey = config.encryptionKey;
+    this.ensureDirectory().catch((error) => {
+      console.error("Failed to create token directory:", error);
+    });
+  }
+  async ensureDirectory() {
+    try {
+      await fs2.mkdir(this.directory, { recursive: true });
+      await fs2.chmod(this.directory, 448);
+    } catch (error) {
+    }
+  }
+  /**
+   * Get file path for a token key (hashed for security)
+   */
+  getFilePath(key) {
+    const hash = crypto.createHash("sha256").update(key).digest("hex");
+    return path2.join(this.directory, `${hash}.token`);
+  }
+  async storeToken(key, token) {
+    await this.ensureDirectory();
+    const filePath = this.getFilePath(key);
+    const plaintext = JSON.stringify(token);
+    const encrypted = encrypt(plaintext, this.encryptionKey);
+    await fs2.writeFile(filePath, encrypted, "utf8");
+    await fs2.chmod(filePath, 384);
+  }
+  async getToken(key) {
+    const filePath = this.getFilePath(key);
+    try {
+      const encrypted = await fs2.readFile(filePath, "utf8");
+      const decrypted = decrypt(encrypted, this.encryptionKey);
+      return JSON.parse(decrypted);
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return null;
+      }
+      console.error("Failed to read/decrypt token file:", error);
+      try {
+        await fs2.unlink(filePath);
+      } catch {
+      }
+      return null;
+    }
+  }
+  async deleteToken(key) {
+    const filePath = this.getFilePath(key);
+    try {
+      await fs2.unlink(filePath);
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  async hasToken(key) {
+    const filePath = this.getFilePath(key);
+    try {
+      await fs2.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * List all token keys (for debugging)
+   */
+  async listTokens() {
+    try {
+      const files = await fs2.readdir(this.directory);
+      return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
+    } catch {
+      return [];
+    }
+  }
+  /**
+   * Clear all tokens
+   */
+  async clearAll() {
+    try {
+      const files = await fs2.readdir(this.directory);
+      const tokenFiles = files.filter((f) => f.endsWith(".token"));
+      await Promise.all(
+        tokenFiles.map((f) => fs2.unlink(path2.join(this.directory, f)).catch(() => {
+        }))
+      );
+    } catch {
+    }
+  }
+};
+
+// src/connectors/authenticatedFetch.ts
+async function authenticatedFetch(url, options, authProvider, userId) {
+  const connector = connectorRegistry.get(authProvider);
+  const token = await connector.getToken(userId);
+  const authOptions = {
+    ...options,
+    headers: {
+      ...options?.headers,
+      Authorization: `Bearer ${token}`
+    }
+  };
+  return fetch(url, authOptions);
+}
+function createAuthenticatedFetch(authProvider, userId) {
+  connectorRegistry.get(authProvider);
+  return async (url, options) => {
+    return authenticatedFetch(url, options, authProvider, userId);
+  };
+}
+
+// src/connectors/index.ts
+var connectorRegistry2 = ConnectorRegistry.getInstance();
+
 // src/utils/messageBuilder.ts
 var MessageBuilder = class {
   messages = [];
@@ -6024,191 +5853,11 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
     content
   };
 }
-
-// src/agents/ProviderConfigAgent.ts
-var ProviderConfigAgent = class {
-  constructor(client) {
-    this.client = client;
-  }
-  agent = null;
-  conversationHistory = [];
-  /**
-   * Start interactive configuration session
-   * AI will ask questions and generate the connector config
-   *
-   * @param initialInput - Optional initial message (e.g., "I want to connect to GitHub")
-   * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
-   */
-  async run(initialInput) {
-    this.agent = await this.client.agents.create({
-      provider: this.getDefaultProvider(),
-      model: this.getDefaultModel(),
-      instructions: this.getSystemInstructions(),
-      temperature: 0.1,
-      // Very low temperature for consistent, focused behavior
-      maxIterations: 10
-    });
-    const builder = new MessageBuilder();
-    const startMessage = initialInput || "I want to configure an OAuth provider";
-    builder.addUserMessage(startMessage);
-    this.conversationHistory.push(...builder.build());
-    const response = await this.agent.run(this.conversationHistory);
-    this.conversationHistory.push(...response.output.filter(
-      (item) => item.type === "message" || item.type === "compaction"
-    ));
-    const responseText = response.output_text || "";
-    if (responseText.includes("===CONFIG_START===")) {
-      return this.extractConfig(responseText);
-    }
-    return responseText;
-  }
-  /**
-   * Continue conversation (for multi-turn interaction)
-   *
-   * @param userMessage - User's response
-   * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
-   */
-  async continue(userMessage) {
-    if (!this.agent) {
-      throw new Error("Agent not initialized. Call run() first.");
-    }
-    const builder = new MessageBuilder();
-    builder.addUserMessage(userMessage);
-    this.conversationHistory.push(...builder.build());
-    const response = await this.agent.run(this.conversationHistory);
-    this.conversationHistory.push(...response.output.filter(
-      (item) => item.type === "message" || item.type === "compaction"
-    ));
-    const responseText = response.output_text || "";
-    if (responseText.includes("===CONFIG_START===")) {
-      return this.extractConfig(responseText);
-    }
-    return responseText;
-  }
-  /**
-   * Get system instructions for the agent
-   */
-  getSystemInstructions() {
-    return `You are a friendly OAuth Setup Assistant. Your ONLY job is to help users connect their apps to third-party services like Microsoft, Google, GitHub, etc.
-
-YOU MUST NOT answer general questions. ONLY focus on helping set up API connections.
-
-YOUR PROCESS (use NON-TECHNICAL, FRIENDLY language):
-
-1. Ask which system they want to connect to (e.g., Microsoft, Google, GitHub, Salesforce, Slack)
-
-2. Ask about HOW they want to use it (use SIMPLE language):
-   - "Will your users log in with their [Provider] accounts?" \u2192 authorization_code
-   - "Does your app need to access [Provider] without users logging in?" \u2192 client_credentials
-   - "Is this just an API key from [Provider]?" \u2192 static_token
-
-3. Ask BUSINESS questions about what they want to do (then YOU figure out the technical scopes):
-
-   For Microsoft:
-   - "Do you need to read user profiles?" \u2192 User.Read
-   - "Do you need to read emails?" \u2192 Mail.Read
-   - "Do you need to access calendar?" \u2192 Calendars.Read
-   - "Do you need to read/write SharePoint files?" \u2192 Sites.Read.All or Sites.ReadWrite.All
-   - "Do you need to access Teams?" \u2192 Team.ReadBasic.All
-   - Combine multiple scopes if needed
-
-   For Google:
-   - "Do you need to read emails?" \u2192 https://www.googleapis.com/auth/gmail.readonly
-   - "Do you need to access Google Drive?" \u2192 https://www.googleapis.com/auth/drive
-   - "Do you need calendar access?" \u2192 https://www.googleapis.com/auth/calendar
-
-   For GitHub:
-   - "Do you need to read user info?" \u2192 user:email
-   - "Do you need to access repositories?" \u2192 repo
-   - "Do you need to read organization data?" \u2192 read:org
-
-   For Salesforce:
-   - "Do you need full access?" \u2192 full
-   - "Do you need to access/manage data?" \u2192 api
-   - "Do you need refresh tokens?" \u2192 refresh_token offline_access
-
-4. DO NOT ask about redirect URI - it will be configured in code (use "http://localhost:3000/callback" as default)
-
-5. Generate complete JSON configuration
-
-CRITICAL RULES:
-- Ask ONE simple question at a time
-- Use BUSINESS language, NOT technical OAuth terms
-- Ask "What do you want to do?" NOT "What scopes do you need?"
-- YOU translate business needs into technical scopes
-- Be friendly and conversational
-- Provide specific setup URLs (e.g., https://portal.azure.com for Microsoft, https://github.com/settings/developers for GitHub)
-- When you have all info, IMMEDIATELY output the config in this EXACT format:
-
-===CONFIG_START===
-{
-  "name": "github",
-  "config": {
-    "displayName": "GitHub API",
-    "description": "Access GitHub repositories and user data",
-    "baseURL": "https://api.github.com",
-    "auth": {
-      "type": "oauth",
-      "flow": "authorization_code",
-      "clientId": "ENV:GITHUB_CLIENT_ID",
-      "clientSecret": "ENV:GITHUB_CLIENT_SECRET",
-      "authorizationUrl": "https://github.com/login/oauth/authorize",
-      "tokenUrl": "https://github.com/login/oauth/access_token",
-      "redirectUri": "http://localhost:3000/callback",
-      "scope": "user:email repo"
-    }
-  },
-  "setupInstructions": "1. Go to https://github.com/settings/developers\\n2. Create New OAuth App\\n3. Set Authorization callback URL\\n4. Copy Client ID and Client Secret",
-  "envVariables": ["GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET"],
-  "setupUrl": "https://github.com/settings/developers"
-}
-===CONFIG_END===
-
-Use "ENV:VARIABLE_NAME" for values that should come from environment variables.
-
-REMEMBER: Keep it conversational, ask one question at a time, and only output the config when you have all necessary information.`;
-  }
-  /**
-   * Extract configuration from AI response
-   */
-  extractConfig(responseText) {
-    const configMatch = responseText.match(/===CONFIG_START===\s*([\s\S]*?)\s*===CONFIG_END===/);
-    if (!configMatch) {
-      throw new Error("No configuration found in response. The AI may need more information.");
-    }
-    try {
-      const configJson = configMatch[1].trim();
-      const config = JSON.parse(configJson);
-      return config;
-    } catch (error) {
-      throw new Error(`Failed to parse configuration JSON: ${error.message}`);
-    }
-  }
-  /**
-   * Get default provider for the agent
-   */
-  getDefaultProvider() {
-    return "openai";
-  }
-  /**
-   * Get default model
-   */
-  getDefaultModel() {
-    return "gpt-4.1";
-  }
-  /**
-   * Reset conversation
-   */
-  reset() {
-    this.conversationHistory = [];
-    this.agent = null;
-  }
-};
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs2.existsSync(filePath)) {
-      fs2.unlinkSync(filePath);
+    if (fs3.existsSync(filePath)) {
+      fs3.unlinkSync(filePath);
     }
   } catch {
   }
@@ -6237,7 +5886,7 @@ async function readClipboardImage() {
   }
 }
 async function readClipboardImageMac() {
-  const tempFile = path.join(os.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path2.join(os.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`pngpaste "${tempFile}"`);
@@ -6259,7 +5908,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs2.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs3.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -6272,18 +5921,18 @@ async function readClipboardImageMac() {
   }
 }
 async function readClipboardImageLinux() {
-  const tempFile = path.join(os.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path2.join(os.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs2.existsSync(tempFile) && fs2.statSync(tempFile).size > 0) {
+      if (fs3.existsSync(tempFile) && fs3.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs2.existsSync(tempFile) && fs2.statSync(tempFile).size > 0) {
+      if (fs3.existsSync(tempFile) && fs3.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -6297,7 +5946,7 @@ async function readClipboardImageLinux() {
   }
 }
 async function readClipboardImageWindows() {
-  const tempFile = path.join(os.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path2.join(os.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     const psScript = `
       Add-Type -AssemblyName System.Windows.Forms;
@@ -6310,7 +5959,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs2.existsSync(tempFile) && fs2.statSync(tempFile).size > 0) {
+    if (fs3.existsSync(tempFile) && fs3.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -6323,7 +5972,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs2.readFileSync(filePath);
+    const imageBuffer = fs3.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -7424,28 +7073,6 @@ function getEnvVarName(provider) {
       return "UNKNOWN_API_KEY";
   }
 }
-
-// src/connectors/authenticatedFetch.ts
-async function authenticatedFetch(url, options, authProvider, userId) {
-  const connector = connectorRegistry.get(authProvider);
-  const token = await connector.getToken(userId);
-  const authOptions = {
-    ...options,
-    headers: {
-      ...options?.headers,
-      Authorization: `Bearer ${token}`
-    }
-  };
-  return fetch(url, authOptions);
-}
-function createAuthenticatedFetch(authProvider, userId) {
-  connectorRegistry.get(authProvider);
-  return async (url, options) => {
-    return authenticatedFetch(url, options, authProvider, userId);
-  };
-}
-
-// src/tools/code/executeJavaScript.ts
 function generateDescription(registry) {
   const connectors = registry.listConnectors();
   const connectorList = connectors.length > 0 ? connectors.map((c) => `   \u2022 "${c.name}": ${c.displayName}
@@ -7633,224 +7260,7 @@ async function executeInVM(code, input, timeout, logs, registry = connectorRegis
   const result = await resultPromise;
   return result;
 }
-var FileStorage = class {
-  directory;
-  encryptionKey;
-  constructor(config) {
-    if (!config.encryptionKey) {
-      throw new Error(
-        "FileStorage requires an encryption key. Set OAUTH_ENCRYPTION_KEY in environment or provide config.encryptionKey"
-      );
-    }
-    this.directory = config.directory;
-    this.encryptionKey = config.encryptionKey;
-    this.ensureDirectory().catch((error) => {
-      console.error("Failed to create token directory:", error);
-    });
-  }
-  async ensureDirectory() {
-    try {
-      await fs3.mkdir(this.directory, { recursive: true });
-      await fs3.chmod(this.directory, 448);
-    } catch (error) {
-    }
-  }
-  /**
-   * Get file path for a token key (hashed for security)
-   */
-  getFilePath(key) {
-    const hash = crypto.createHash("sha256").update(key).digest("hex");
-    return path.join(this.directory, `${hash}.token`);
-  }
-  async storeToken(key, token) {
-    await this.ensureDirectory();
-    const filePath = this.getFilePath(key);
-    const plaintext = JSON.stringify(token);
-    const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs3.writeFile(filePath, encrypted, "utf8");
-    await fs3.chmod(filePath, 384);
-  }
-  async getToken(key) {
-    const filePath = this.getFilePath(key);
-    try {
-      const encrypted = await fs3.readFile(filePath, "utf8");
-      const decrypted = decrypt(encrypted, this.encryptionKey);
-      return JSON.parse(decrypted);
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return null;
-      }
-      console.error("Failed to read/decrypt token file:", error);
-      try {
-        await fs3.unlink(filePath);
-      } catch {
-      }
-      return null;
-    }
-  }
-  async deleteToken(key) {
-    const filePath = this.getFilePath(key);
-    try {
-      await fs3.unlink(filePath);
-    } catch (error) {
-      if (error.code !== "ENOENT") {
-        throw error;
-      }
-    }
-  }
-  async hasToken(key) {
-    const filePath = this.getFilePath(key);
-    try {
-      await fs3.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  /**
-   * List all token keys (for debugging)
-   */
-  async listTokens() {
-    try {
-      const files = await fs3.readdir(this.directory);
-      return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
-    } catch {
-      return [];
-    }
-  }
-  /**
-   * Clear all tokens
-   */
-  async clearAll() {
-    try {
-      const files = await fs3.readdir(this.directory);
-      const tokenFiles = files.filter((f) => f.endsWith(".token"));
-      await Promise.all(
-        tokenFiles.map((f) => fs3.unlink(path.join(this.directory, f)).catch(() => {
-        }))
-      );
-    } catch {
-    }
-  }
-};
 
-// src/connectors/toolGenerator.ts
-function generateWebAPITool() {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "api_request",
-        description: `Make authenticated HTTP request to any registered OAuth API.
-
-This tool automatically handles OAuth authentication for registered providers.
-
-REGISTERED PROVIDERS:
-${connectorRegistry.getConnectorDescriptionsForTools()}
-
-HOW TO USE:
-1. Choose the appropriate authProvider based on which API you need to access
-2. Provide the URL (full URL or path relative to provider's baseURL)
-3. Specify the HTTP method (GET, POST, etc.)
-4. For POST/PUT/PATCH, include the request body
-
-EXAMPLES:
-Read Microsoft emails:
-{
-  authProvider: "microsoft",
-  url: "/v1.0/me/messages",
-  method: "GET"
-}
-
-List GitHub repositories:
-{
-  authProvider: "github",
-  url: "/user/repos",
-  method: "GET"
-}
-
-Create Salesforce account:
-{
-  authProvider: "salesforce",
-  url: "/services/data/v57.0/sobjects/Account",
-  method: "POST",
-  body: { Name: "Acme Corp", Industry: "Technology" }
-}`,
-        parameters: {
-          type: "object",
-          properties: {
-            authProvider: {
-              type: "string",
-              enum: connectorRegistry.listConnectorNames(),
-              description: "Which OAuth provider to use for authentication. Choose based on the API you need to access."
-            },
-            url: {
-              type: "string",
-              description: 'URL to request. Can be full URL (https://...) or path relative to provider baseURL (e.g., "/v1.0/me")'
-            },
-            method: {
-              type: "string",
-              enum: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-              description: "HTTP method (default: GET)"
-            },
-            body: {
-              description: "Request body for POST/PUT/PATCH requests. Will be JSON-stringified automatically."
-            },
-            headers: {
-              type: "object",
-              description: "Additional headers to include. Authorization header is added automatically."
-            }
-          },
-          required: ["authProvider", "url"]
-        }
-      },
-      blocking: true,
-      timeout: 3e4
-    },
-    execute: async (args) => {
-      try {
-        const provider = connectorRegistry.get(args.authProvider);
-        const fullUrl = args.url.startsWith("http") ? args.url : `${provider.baseURL}${args.url}`;
-        const requestOptions = {
-          method: args.method || "GET",
-          headers: {
-            "Content-Type": "application/json",
-            ...args.headers
-          }
-        };
-        if (args.body && (args.method === "POST" || args.method === "PUT" || args.method === "PATCH")) {
-          requestOptions.body = JSON.stringify(args.body);
-        }
-        const response = await authenticatedFetch(fullUrl, requestOptions, args.authProvider);
-        const contentType = response.headers.get("content-type") || "";
-        let data;
-        if (contentType.includes("application/json")) {
-          data = await response.json();
-        } else {
-          data = await response.text();
-        }
-        return {
-          success: response.ok,
-          status: response.status,
-          statusText: response.statusText,
-          data
-        };
-      } catch (error) {
-        return {
-          success: false,
-          status: 0,
-          statusText: "Error",
-          data: null,
-          error: error.message
-        };
-      }
-    }
-  };
-}
-
-// src/connectors/index.ts
-var connectorRegistry2 = ConnectorRegistry.getInstance();
-
-export { AIError, Agent, AgentManager, BaseProvider, BaseTextProvider, ConnectorRegistry, ContentType, ExecutionContext, FileStorage, HookManager, ImageManager, InvalidConfigError, InvalidToolArgumentsError, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthConnector, OAuthManager, OneRingAI, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, TextManager, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, assertNotDestroyed, authenticatedFetch, connectorRegistry2 as connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, readClipboardImage, tools_exports as tools };
+export { AIError, Agent, BaseProvider, BaseTextProvider, Connector, ConnectorRegistry, ContentType, ExecutionContext, FileStorage, HookManager, InvalidConfigError, InvalidToolArgumentsError, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthManager, ProviderAuthError, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, connectorRegistry2 as connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, readClipboardImage, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

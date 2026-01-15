@@ -7,7 +7,9 @@
 
 import 'dotenv/config';
 import {
-  OneRingAI,
+  Connector,
+  Agent,
+  Vendor,
   MessageBuilder,
   createMessageWithImages,
   InputItem,
@@ -16,13 +18,11 @@ import {
 } from '../src/index.js';
 
 async function main() {
-  // Create client
-  const client = new OneRingAI({
-    providers: {
-      openai: {
-        apiKey: process.env.OPENAI_API_KEY || '',
-      },
-    },
+  // Create connector
+  Connector.create({
+    name: 'openai',
+    vendor: Vendor.OpenAI,
+    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
   });
 
   console.log('🖼️  Vision / Image Input Examples\n');
@@ -42,11 +42,13 @@ async function main() {
     [imageUrl1]
   );
 
-  const response1 = await client.text.generateRaw([input1], {
-    provider: 'openai',
+  const agent1 = Agent.create({
+    connector: 'openai',
     model: 'gpt-4o', // GPT-4 Vision model
-    max_output_tokens: 300,
+    maxOutputTokens: 300,
   });
+
+  const response1 = await agent1.run(input1);
 
   console.log('📸 Image:', imageUrl1);
   console.log('\n🤖 AI Response:');
@@ -68,11 +70,13 @@ async function main() {
     [imageUrl2, imageUrl3]
   );
 
-  const response2 = await client.text.generateRaw([input2], {
-    provider: 'openai',
+  const agent2 = Agent.create({
+    connector: 'openai',
     model: 'gpt-4o',
-    max_output_tokens: 300,
+    maxOutputTokens: 300,
   });
+
+  const response2 = await agent2.run(input2);
 
   console.log('📸 Image 1:', imageUrl2);
   console.log('📸 Image 2:', imageUrl3);
@@ -95,11 +99,13 @@ async function main() {
     ['https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Eiffel_Tower_2022_11_9.jpg/320px-Eiffel_Tower_2022_11_9.jpg']
   );
 
-  const response3 = await client.text.generateRaw(builder.build(), {
-    provider: 'openai',
+  const agent3 = Agent.create({
+    connector: 'openai',
     model: 'gpt-4o',
-    max_output_tokens: 200,
+    maxOutputTokens: 200,
   });
+
+  const response3 = await agent3.run(builder.build());
 
   console.log('📸 Image: [Eiffel Tower]');
   console.log('👤 User: What architectural style is this building?');
@@ -111,11 +117,7 @@ async function main() {
   // Second turn: Follow-up question (no image needed)
   builder.addUserMessage('When was it built?');
 
-  const response4 = await client.text.generateRaw(builder.build(), {
-    provider: 'openai',
-    model: 'gpt-4o',
-    max_output_tokens: 100,
-  });
+  const response4 = await agent3.run(builder.build());
 
   console.log('\n👤 User: When was it built?');
   console.log('\n🤖 Assistant:', response4.output_text);
@@ -153,11 +155,13 @@ async function main() {
     },
   ];
 
-  const response5 = await client.text.generateRaw(inputWithDetailControl, {
-    provider: 'openai',
+  const agent4 = Agent.create({
+    connector: 'openai',
     model: 'gpt-4o',
-    max_output_tokens: 150,
+    maxOutputTokens: 150,
   });
+
+  const response5 = await agent4.run(inputWithDetailControl);
 
   console.log('\n🤖 AI Response (low detail):');
   console.log(response5.output_text);

@@ -9,13 +9,14 @@
  */
 
 import 'dotenv/config';
-import { OneRingAI, tools } from '../src/index.js';
+import { Connector, Agent, Vendor, tools } from '../src/index.js';
 
 async function main() {
-  const client = new OneRingAI({
-    providers: {
-      openai: { apiKey: process.env.OPENAI_API_KEY || '' },
-    },
+  // Create connector
+  Connector.create({
+    name: 'openai',
+    vendor: Vendor.OpenAI,
+    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
   });
 
   console.log('🔍 Web Research Agent Demo\n');
@@ -48,8 +49,8 @@ async function main() {
     console.log('   Install with: npm install puppeteer\n');
   }
 
-  const agent = await client.agents.create({
-    provider: 'openai',
+  const agent = Agent.create({
+    connector: 'openai',
     model: 'gpt-4',
     tools: webTools,
     instructions:

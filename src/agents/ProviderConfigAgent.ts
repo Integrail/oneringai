@@ -5,8 +5,7 @@
  * Asks questions, guides setup, and generates JSON configuration
  */
 
-import { OneRingAI } from '../client/OneRingAI.js';
-import { Agent } from '../capabilities/agents/Agent.js';
+import { Agent } from '../core/Agent.js';
 import { MessageBuilder } from '../utils/messageBuilder.js';
 import { InputItem } from '../domain/entities/Message.js';
 import { ConnectorConfigResult } from '../domain/entities/Connector.js';
@@ -17,8 +16,15 @@ import { ConnectorConfigResult } from '../domain/entities/Connector.js';
 export class ProviderConfigAgent {
   private agent: Agent | null = null;
   private conversationHistory: InputItem[] = [];
+  private connectorName: string;
 
-  constructor(private client: OneRingAI) {}
+  /**
+   * Create a provider config agent
+   * @param connectorName - Name of the connector to use (must be created first with Connector.create())
+   */
+  constructor(connectorName: string = 'openai') {
+    this.connectorName = connectorName;
+  }
 
   /**
    * Start interactive configuration session
@@ -29,8 +35,8 @@ export class ProviderConfigAgent {
    */
   async run(initialInput?: string): Promise<string | ConnectorConfigResult> {
     // Create agent with specialized instructions
-    this.agent = await this.client.agents.create({
-      provider: this.getDefaultProvider(),
+    this.agent = Agent.create({
+      connector: this.connectorName,
       model: this.getDefaultModel(),
       instructions: this.getSystemInstructions(),
       temperature: 0.1, // Very low temperature for consistent, focused behavior
@@ -206,15 +212,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
     } catch (error) {
       throw new Error(`Failed to parse configuration JSON: ${(error as Error).message}`);
     }
-  }
-
-  /**
-   * Get default provider for the agent
-   */
-  private getDefaultProvider(): string {
-    // Try to find available provider from client config
-    // For now, just use a common one
-    return 'openai'; // Fallback, will be configurable
   }
 
   /**

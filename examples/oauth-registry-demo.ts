@@ -10,7 +10,9 @@
 
 import 'dotenv/config';
 import {
-  OneRingAI,
+  Connector,
+  Agent,
+  Vendor,
   connectorRegistry,
   authenticatedFetch,
   generateWebAPITool,
@@ -132,14 +134,14 @@ async function main() {
     console.log('Step 5: AI Agent with OAuth Registry');
     console.log('─────────────────────────────────\n');
 
-    const client = new OneRingAI({
-      providers: {
-        openai: { apiKey: process.env.OPENAI_API_KEY },
-      },
+    Connector.create({
+      name: 'openai',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY },
     });
 
-    const agent = await client.agents.create({
-      provider: 'openai',
+    const agent = Agent.create({
+      connector: 'openai',
       model: 'gpt-4',
       tools: [apiTool],
       instructions:

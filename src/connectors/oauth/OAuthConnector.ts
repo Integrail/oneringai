@@ -18,11 +18,11 @@ export class OAuthConnector implements IConnector {
   ) {}
 
   get displayName(): string {
-    return this.config.displayName;
+    return this.config.displayName || this.name;
   }
 
   get baseURL(): string {
-    return this.config.baseURL;
+    return this.config.baseURL || '';
   }
 
   async getToken(userId?: string): Promise<string> {

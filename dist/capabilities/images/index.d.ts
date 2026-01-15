@@ -1,33 +1,39 @@
-import { I as IDisposable, P as ProviderRegistry, a1 as ImageGenerateOptions, a4 as ImageResponse, a2 as ImageEditOptions, a3 as ImageVariationOptions } from '../../ProviderRegistry-Dykyy2Uv.js';
-
 /**
- * Image generation manager
- *
- * Implements IDisposable for proper resource cleanup
+ * Image generation provider interface
  */
 
-declare class ImageManager implements IDisposable {
-    private registry;
-    private _isDestroyed;
-    get isDestroyed(): boolean;
-    constructor(registry: ProviderRegistry);
-    /**
-     * Generate images from text prompt
-     */
-    generate(options: ImageGenerateOptions): Promise<ImageResponse>;
-    /**
-     * Edit an existing image
-     */
-    edit(options: ImageEditOptions): Promise<ImageResponse>;
-    /**
-     * Create variations of an image
-     */
-    createVariation(options: ImageVariationOptions): Promise<ImageResponse>;
-    /**
-     * Destroy the manager and release resources
-     * Safe to call multiple times (idempotent)
-     */
-    destroy(): void;
+interface ImageGenerateOptions {
+    model: string;
+    prompt: string;
+    size?: string;
+    quality?: 'standard' | 'hd';
+    style?: 'vivid' | 'natural';
+    n?: number;
+    response_format?: 'url' | 'b64_json';
+}
+interface ImageEditOptions {
+    model: string;
+    image: Buffer | string;
+    prompt: string;
+    mask?: Buffer | string;
+    size?: string;
+    n?: number;
+    response_format?: 'url' | 'b64_json';
+}
+interface ImageVariationOptions {
+    model: string;
+    image: Buffer | string;
+    n?: number;
+    size?: string;
+    response_format?: 'url' | 'b64_json';
+}
+interface ImageResponse {
+    created: number;
+    data: Array<{
+        url?: string;
+        b64_json?: string;
+        revised_prompt?: string;
+    }>;
 }
 
-export { ImageEditOptions, ImageGenerateOptions, ImageManager, ImageResponse, ImageVariationOptions };
+export type { ImageEditOptions, ImageGenerateOptions, ImageResponse, ImageVariationOptions };

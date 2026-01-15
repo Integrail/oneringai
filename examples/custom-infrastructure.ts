@@ -38,7 +38,9 @@ import {
   StoredToken,
 
   // For registration
-  OneRingAI,
+  Connector,
+  Agent,
+  Vendor,
   OAuthManager,
 } from '../src/index.js';
 

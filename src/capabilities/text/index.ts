@@ -1,6 +1,11 @@
 /**
  * Text capability exports
+ *
+ * Note: TextManager is deprecated. Use Agent for text generation.
  */
 
-export { TextManager } from './TextManager.js';
-export type { SimpleTextOptions } from './TextManager.js';
+// Types only - re-export from interfaces
+export type {
+  TextGenerateOptions,
+  ModelCapabilities,
+} from '../../domain/interfaces/ITextProvider.js';

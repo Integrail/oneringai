@@ -27,7 +27,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import clipboardy from 'clipboardy';
 import {
-  OneRingAI,
+  Connector,
+  Agent,
+  Vendor,
   InputItem,
   MessageRole,
   ContentType,
@@ -66,7 +68,6 @@ let isProcessing = false;
 let pendingImages: string[] = [];
 let selectedProvider: ProviderInfo;
 let availableProviders: ProviderInfo[];
-let client: OneRingAI;
 let streamingEnabled = true; // Default to streaming for better UX
 
 /**
@@ -225,27 +226,35 @@ async function main() {
     process.exit(1);
   }
 
-  // Build provider config
-  const providerConfig: any = {};
+  // Create connectors for all available providers
   for (const p of availableProviders) {
     if (p.name === 'vertex-ai') {
-      // Vertex AI uses different config
-      providerConfig[p.name] = {
-        projectId: (p as any).projectId,
-        location: (p as any).location,
-      };
+      Connector.create({
+        name: p.name,
+        vendor: Vendor.GoogleVertex,
+        auth: { type: 'api_key', apiKey: '' }, // Vertex uses ADC
+        options: {
+          projectId: (p as any).projectId,
+          location: (p as any).location,
+        },
+      });
     } else {
-      providerConfig[p.name] = {
-        apiKey: p.apiKey,
-        ...(p.baseURL && { baseURL: p.baseURL }),
+      const vendorMap: Record<string, Vendor> = {
+        openai: Vendor.OpenAI,
+        anthropic: Vendor.Anthropic,
+        google: Vendor.Google,
+        groq: Vendor.Groq,
+        'together-ai': Vendor.Together,
+        grok: Vendor.Grok,
       };
+      Connector.create({
+        name: p.name,
+        vendor: vendorMap[p.name] || Vendor.OpenAI,
+        auth: { type: 'api_key', apiKey: p.apiKey },
+        baseURL: p.baseURL,
+      });
     }
   }
-
-  // Create client with all available providers
-  client = new OneRingAI({
-    providers: providerConfig,
-  });
 
   // Let user select provider
   selectedProvider = await selectProvider(availableProviders);
@@ -427,8 +436,8 @@ Example endpoints:
   instructions += '\n\nIMPORTANT: When user says "run code" or "execute code", you MUST use the execute_javascript tool, not describe what code would do.';
 
   // Create agent ONCE
-  const agent = await client.agents.create({
-    provider: selectedProvider.name,
+  const agent = Agent.create({
+    connector: selectedProvider.name,
     model: selectedProvider.model,
     tools: agentTools,
     instructions,

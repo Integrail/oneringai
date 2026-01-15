@@ -1,124 +1,434 @@
-import { I as IDisposable, P as ProviderRegistry, a as InputItem, L as LLMResponse, b as ProvidersConfig, c as ProviderCapabilities, T as TokenUsage, d as ToolCall, S as StreamEvent, e as StreamEventType, f as IProvider, g as ProviderConfig, h as ITextProvider, i as TextGenerateOptions, M as ModelCapabilities, j as MessageRole, k as ToolFunction } from './ProviderRegistry-Dykyy2Uv.cjs';
-export { A as AgentResponse, a9 as AnthropicConfig, a7 as BaseProviderConfig, B as BuiltInTool, s as CompactionItem, l as Content, C as ContentType, V as ErrorEvent, F as FunctionToolDefinition, af as GenericOpenAIConfig, aa as GoogleConfig, ad as GrokConfig, ac as GroqConfig, a5 as IAsyncDisposable, a0 as IImageProvider, a2 as ImageEditOptions, a1 as ImageGenerateOptions, a4 as ImageResponse, a3 as ImageVariationOptions, n as InputImageContent, m as InputTextContent, Q as IterationCompleteEvent, J as JSONSchema, q as Message, a8 as OpenAIConfig, r as OutputItem, O as OutputTextContent, z as OutputTextDeltaEvent, D as OutputTextDoneEvent, R as ReasoningItem, U as ResponseCompleteEvent, x as ResponseCreatedEvent, y as ResponseInProgressEvent, ae as TogetherAIConfig, u as Tool, G as ToolCallArgumentsDeltaEvent, H as ToolCallArgumentsDoneEvent, E as ToolCallStartEvent, t as ToolCallState, w as ToolExecutionContext, N as ToolExecutionDoneEvent, K as ToolExecutionStartEvent, v as ToolResult, p as ToolResultContent, o as ToolUseContent, ab as VertexAIConfig, a6 as assertNotDestroyed, $ as isErrorEvent, X as isOutputTextDelta, _ as isResponseComplete, W as isStreamEvent, Y as isToolCallArgumentsDelta, Z as isToolCallArgumentsDone } from './ProviderRegistry-Dykyy2Uv.cjs';
-import { A as AgentManager } from './index-D_Z9ZbNj.cjs';
-export { h as AfterToolContext, a as Agent, b as AgentConfig, d as AgenticLoopEventName, c as AgenticLoopEvents, k as ApprovalResult, i as ApproveToolContext, n as AuditEntry, B as BeforeToolContext, E as ExecutionContext, m as ExecutionMetrics, l as HistoryMode, g as Hook, e as HookConfig, H as HookManager, f as HookName, I as IToolExecutor, M as ModifyingHook, j as ToolModification, T as ToolRegistry } from './index-D_Z9ZbNj.cjs';
-import { ImageManager } from './capabilities/images/index.cjs';
-import 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
+import { A as AgenticLoopEvents, T as ToolFunction, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, e as ITextProvider, f as TokenUsage, g as ToolCall, L as LLMResponse, h as StreamEventType, i as IProvider, P as ProviderCapabilities, j as TextGenerateOptions, M as ModelCapabilities, k as MessageRole } from './index-DYzJIe1v.cjs';
+export { a9 as AfterToolContext, a4 as AgenticLoopEventName, ac as ApprovalResult, aa as ApproveToolContext, a8 as BeforeToolContext, B as BuiltInTool, s as CompactionItem, l as Content, C as ContentType, X as ErrorEvent, F as FunctionToolDefinition, a6 as Hook, a3 as HookManager, a5 as HookName, ad as IToolExecutor, n as InputImageContent, m as InputTextContent, V as IterationCompleteEvent, J as JSONSchema, q as Message, a7 as ModifyingHook, r as OutputItem, O as OutputTextContent, z as OutputTextDeltaEvent, D as OutputTextDoneEvent, R as ReasoningItem, W as ResponseCompleteEvent, x as ResponseCreatedEvent, y as ResponseInProgressEvent, u as Tool, K as ToolCallArgumentsDeltaEvent, N as ToolCallArgumentsDoneEvent, G as ToolCallStartEvent, t as ToolCallState, w as ToolExecutionContext, U as ToolExecutionDoneEvent, Q as ToolExecutionStartEvent, ab as ToolModification, a2 as ToolRegistry, v as ToolResult, p as ToolResultContent, o as ToolUseContent, a1 as isErrorEvent, Z as isOutputTextDelta, a0 as isResponseComplete, Y as isStreamEvent, _ as isToolCallArgumentsDelta, $ as isToolCallArgumentsDone } from './index-DYzJIe1v.cjs';
 
 /**
- * Common shared types
- */
-type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
-interface Logger {
-    debug(message: string, ...args: any[]): void;
-    info(message: string, ...args: any[]): void;
-    warn(message: string, ...args: any[]): void;
-    error(message: string, ...args: any[]): void;
-}
-interface RequestMetadata {
-    requestId?: string;
-    userId?: string;
-    timestamp?: number;
-    [key: string]: any;
-}
-
-/**
- * Text generation manager - simple text generation without tools
+ * Supported AI Vendors
  *
- * Implements IDisposable for proper resource cleanup
+ * Use this enum instead of string literals for type safety.
+ * These map to specific provider implementations.
+ */
+declare const Vendor: {
+    readonly OpenAI: "openai";
+    readonly Anthropic: "anthropic";
+    readonly Google: "google";
+    readonly GoogleVertex: "google-vertex";
+    readonly Groq: "groq";
+    readonly Together: "together";
+    readonly Perplexity: "perplexity";
+    readonly Grok: "grok";
+    readonly DeepSeek: "deepseek";
+    readonly Mistral: "mistral";
+    readonly Ollama: "ollama";
+    readonly Custom: "custom";
+};
+type Vendor = (typeof Vendor)[keyof typeof Vendor];
+/**
+ * All vendor values as array (useful for validation)
+ */
+declare const VENDORS: ("openai" | "anthropic" | "google" | "google-vertex" | "groq" | "together" | "perplexity" | "grok" | "deepseek" | "mistral" | "ollama" | "custom")[];
+/**
+ * Check if a string is a valid vendor
+ */
+declare function isVendor(value: string): value is Vendor;
+
+/**
+ * Connector - Represents authenticated connection to ANY API
+ *
+ * Connectors handle authentication for:
+ * - AI providers (OpenAI, Anthropic, Google, etc.)
+ * - External APIs (GitHub, Microsoft, Salesforce, etc.)
+ *
+ * This is the SINGLE source of truth for authentication.
  */
 
-interface SimpleTextOptions {
-    provider: string;
-    model: string;
-    instructions?: string;
-    temperature?: number;
-    max_output_tokens?: number;
-    response_format?: {
-        type: 'text' | 'json_object' | 'json_schema';
-        json_schema?: any;
+/**
+ * Connector authentication configuration
+ * Supports OAuth 2.0, API keys, and JWT bearer tokens
+ */
+type ConnectorAuth = OAuthConnectorAuth | APIKeyConnectorAuth | JWTConnectorAuth;
+/**
+ * OAuth 2.0 authentication for connectors
+ * Supports multiple OAuth flows
+ */
+interface OAuthConnectorAuth {
+    type: 'oauth';
+    flow: 'authorization_code' | 'client_credentials' | 'jwt_bearer';
+    clientId: string;
+    clientSecret?: string;
+    tokenUrl: string;
+    authorizationUrl?: string;
+    redirectUri?: string;
+    scope?: string;
+    usePKCE?: boolean;
+    privateKey?: string;
+    privateKeyPath?: string;
+    issuer?: string;
+    subject?: string;
+    audience?: string;
+    refreshBeforeExpiry?: number;
+    storageKey?: string;
+}
+/**
+ * Static API key authentication
+ * For services like OpenAI, Anthropic, many SaaS APIs
+ */
+interface APIKeyConnectorAuth {
+    type: 'api_key';
+    apiKey: string;
+    headerName?: string;
+    headerPrefix?: string;
+}
+/**
+ * JWT Bearer token authentication
+ * For service accounts (Google, Salesforce)
+ */
+interface JWTConnectorAuth {
+    type: 'jwt';
+    privateKey: string;
+    privateKeyPath?: string;
+    tokenUrl: string;
+    clientId: string;
+    scope?: string;
+    issuer?: string;
+    subject?: string;
+    audience?: string;
+}
+/**
+ * Complete connector configuration
+ * Used for BOTH AI providers AND external APIs
+ */
+interface ConnectorConfig {
+    name?: string;
+    vendor?: Vendor;
+    auth: ConnectorAuth;
+    displayName?: string;
+    description?: string;
+    baseURL?: string;
+    defaultModel?: string;
+    apiVersion?: string;
+    rateLimit?: {
+        requestsPerMinute?: number;
+        requestsPerDay?: number;
+    };
+    documentation?: string;
+    tags?: string[];
+    options?: {
+        timeout?: number;
+        maxRetries?: number;
+        organization?: string;
+        project?: string;
+        anthropicVersion?: string;
+        location?: string;
+        projectId?: string;
+        [key: string]: unknown;
     };
 }
-declare class TextManager implements IDisposable {
-    private registry;
-    private _isDestroyed;
-    get isDestroyed(): boolean;
-    constructor(registry: ProviderRegistry);
+
+/**
+ * Token storage interface (Clean Architecture - Domain Layer)
+ * All implementations must encrypt tokens at rest
+ */
+interface StoredToken {
+    access_token: string;
+    refresh_token?: string;
+    expires_in: number;
+    token_type: string;
+    scope?: string;
+    obtained_at: number;
+}
+/**
+ * Token storage interface
+ * All implementations MUST encrypt tokens before storing
+ */
+interface ITokenStorage {
     /**
-     * Generate text response
+     * Store token (must be encrypted by implementation)
+     *
+     * @param key - Unique identifier for this token
+     * @param token - Token data to store
      */
-    generate(input: string | InputItem[], options: SimpleTextOptions): Promise<string>;
+    storeToken(key: string, token: StoredToken): Promise<void>;
     /**
-     * Generate structured JSON output
+     * Retrieve token (must be decrypted by implementation)
+     *
+     * @param key - Unique identifier for the token
+     * @returns Decrypted token or null if not found
      */
-    generateJSON<T = any>(input: string | InputItem[], options: SimpleTextOptions & {
-        schema: any;
-    }): Promise<T>;
+    getToken(key: string): Promise<StoredToken | null>;
     /**
-     * Get full response object (not just text)
+     * Delete token
+     *
+     * @param key - Unique identifier for the token
      */
-    generateRaw(input: string | InputItem[], options: SimpleTextOptions): Promise<LLMResponse>;
+    deleteToken(key: string): Promise<void>;
     /**
-     * Extract text from response
+     * Check if token exists
+     *
+     * @param key - Unique identifier for the token
+     * @returns True if token exists
      */
-    private extractTextFromResponse;
-    /**
-     * Destroy the manager and release resources
-     * Safe to call multiple times (idempotent)
-     */
-    destroy(): void;
+    hasToken(key: string): Promise<boolean>;
 }
 
 /**
- * Main client class - entry point for the library
+ * Connector - The single source of truth for authentication
  *
- * Implements IDisposable for proper resource cleanup
+ * Manages authenticated connections to:
+ * - AI providers (OpenAI, Anthropic, Google, etc.)
+ * - External APIs (GitHub, Salesforce, etc.)
  */
 
-interface OneRingAIConfig {
-    providers: ProvidersConfig;
-    defaultProvider?: string;
-    logLevel?: LogLevel;
+/**
+ * Connector class - represents a single authenticated connection
+ */
+declare class Connector {
+    private static registry;
+    private static defaultStorage;
+    /**
+     * Create and register a new connector
+     * @param config - Must include `name` field
+     */
+    static create(config: ConnectorConfig & {
+        name: string;
+    }): Connector;
+    /**
+     * Get a connector by name
+     */
+    static get(name: string): Connector;
+    /**
+     * Check if a connector exists
+     */
+    static has(name: string): boolean;
+    /**
+     * List all registered connector names
+     */
+    static list(): string[];
+    /**
+     * Remove a connector
+     */
+    static remove(name: string): boolean;
+    /**
+     * Clear all connectors (useful for testing)
+     */
+    static clear(): void;
+    /**
+     * Set default token storage for OAuth connectors
+     */
+    static setDefaultStorage(storage: ITokenStorage): void;
+    readonly name: string;
+    readonly vendor?: Vendor;
+    readonly config: ConnectorConfig;
+    private oauthManager?;
+    private disposed;
+    private constructor();
+    /**
+     * Get the API key (for api_key auth type)
+     */
+    getApiKey(): string;
+    /**
+     * Get the current access token (for OAuth)
+     * Handles automatic refresh if needed
+     */
+    getToken(userId?: string): Promise<string>;
+    /**
+     * Start OAuth authorization flow
+     * Returns the URL to redirect the user to
+     */
+    startAuth(userId?: string): Promise<string>;
+    /**
+     * Handle OAuth callback
+     * Call this after user is redirected back from OAuth provider
+     */
+    handleCallback(callbackUrl: string, userId?: string): Promise<void>;
+    /**
+     * Check if the connector has a valid token
+     */
+    hasValidToken(userId?: string): Promise<boolean>;
+    /**
+     * Get vendor-specific options from config
+     */
+    getOptions(): Record<string, unknown>;
+    /**
+     * Dispose of resources
+     */
+    dispose(): void;
+    private initOAuthManager;
 }
-declare class OneRingAI implements IDisposable {
-    private registry;
-    private _agents?;
-    private _text?;
-    private _images?;
-    private _isDestroyed;
-    get isDestroyed(): boolean;
-    constructor(config: OneRingAIConfig);
+
+/**
+ * Interface for objects that manage resources and need explicit cleanup.
+ *
+ * Implementing classes should release all resources (event listeners, timers,
+ * connections, etc.) when destroy() is called. After destruction, the instance
+ * should not be used.
+ */
+interface IDisposable {
     /**
-     * Access agent capability (with tool calling)
-     */
-    get agents(): AgentManager;
-    /**
-     * Access simple text generation capability
-     */
-    get text(): TextManager;
-    /**
-     * Access image generation capability
-     */
-    get images(): ImageManager;
-    /**
-     * List all configured providers
-     */
-    listProviders(): string[];
-    /**
-     * Get provider capabilities
-     * Now async to support race-condition-free provider loading
-     */
-    getProviderCapabilities(providerName: string): Promise<ProviderCapabilities>;
-    /**
-     * Check if a provider is configured
-     */
-    hasProvider(providerName: string): boolean;
-    /**
-     * Destroy the client and release all resources
-     * Safe to call multiple times (idempotent)
+     * Releases all resources held by this instance.
+     *
+     * After calling destroy():
+     * - All event listeners should be removed
+     * - All timers/intervals should be cleared
+     * - All internal state should be cleaned up
+     * - The instance should not be reused
+     *
+     * Multiple calls to destroy() should be safe (idempotent).
      */
     destroy(): void;
+    /**
+     * Returns true if destroy() has been called.
+     * Methods should check this before performing operations.
+     */
+    readonly isDestroyed: boolean;
 }
+/**
+ * Async version of IDisposable for resources requiring async cleanup.
+ */
+interface IAsyncDisposable {
+    /**
+     * Asynchronously releases all resources held by this instance.
+     */
+    destroy(): Promise<void>;
+    /**
+     * Returns true if destroy() has been called.
+     */
+    readonly isDestroyed: boolean;
+}
+/**
+ * Helper to check if an object is destroyed and throw if so.
+ * @param obj - The disposable object to check
+ * @param operation - Name of the operation being attempted
+ */
+declare function assertNotDestroyed(obj: IDisposable | IAsyncDisposable, operation: string): void;
+
+/**
+ * Agent configuration - new simplified interface
+ */
+interface AgentConfig {
+    connector: string | Connector;
+    model: string;
+    name?: string;
+    instructions?: string;
+    tools?: ToolFunction[];
+    temperature?: number;
+    maxIterations?: number;
+    hooks?: HookConfig;
+    historyMode?: HistoryMode;
+    limits?: {
+        maxExecutionTime?: number;
+        maxToolCalls?: number;
+        maxContextSize?: number;
+        maxInputMessages?: number;
+    };
+    errorHandling?: {
+        hookFailureMode?: 'fail' | 'warn' | 'ignore';
+        toolFailureMode?: 'fail' | 'continue';
+        maxConsecutiveErrors?: number;
+    };
+}
+/**
+ * Agent class - represents an AI assistant with tool calling capabilities
+ */
+declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposable {
+    readonly name: string;
+    readonly connector: Connector;
+    readonly model: string;
+    private config;
+    private provider;
+    private toolRegistry;
+    private agenticLoop;
+    private cleanupCallbacks;
+    private boundListeners;
+    private _isDestroyed;
+    get isDestroyed(): boolean;
+    /**
+     * Create a new agent
+     *
+     * @example
+     * ```typescript
+     * const agent = Agent.create({
+     *   connector: 'openai',  // or Connector instance
+     *   model: 'gpt-4',
+     *   instructions: 'You are a helpful assistant',
+     *   tools: [myTool]
+     * });
+     * ```
+     */
+    static create(config: AgentConfig): Agent;
+    private constructor();
+    /**
+     * Run the agent with input
+     */
+    run(input: string | InputItem[]): Promise<AgentResponse>;
+    /**
+     * Stream response from the agent
+     */
+    stream(input: string | InputItem[]): AsyncIterableIterator<StreamEvent>;
+    /**
+     * Add a tool to the agent
+     */
+    addTool(tool: ToolFunction): void;
+    /**
+     * Remove a tool from the agent
+     */
+    removeTool(toolName: string): void;
+    /**
+     * List registered tools
+     */
+    listTools(): string[];
+    pause(reason?: string): void;
+    resume(): void;
+    cancel(reason?: string): void;
+    getContext(): ExecutionContext | null;
+    getMetrics(): ExecutionMetrics | null;
+    getSummary(): {
+        executionId: string;
+        startTime: Date;
+        currentIteration: number;
+        paused: boolean;
+        cancelled: boolean;
+        metrics: {
+            totalDuration: number;
+            llmDuration: number;
+            toolDuration: number;
+            hookDuration: number;
+            iterationCount: number;
+            toolCallCount: number;
+            toolSuccessCount: number;
+            toolFailureCount: number;
+            toolTimeoutCount: number;
+            inputTokens: number;
+            outputTokens: number;
+            totalTokens: number;
+            errors: Array<{
+                type: string;
+                message: string;
+                timestamp: Date;
+            }>;
+        };
+        totalDuration: number;
+    } | null;
+    getAuditTrail(): readonly AuditEntry[];
+    isRunning(): boolean;
+    isPaused(): boolean;
+    isCancelled(): boolean;
+    onCleanup(callback: () => void): void;
+    destroy(): void;
+    private setupEventForwarding;
+}
+
+/**
+ * Provider Factory - creates the right provider from a Connector
+ *
+ * This is the bridge between Connectors and provider implementations.
+ * It extracts credentials from the connector and instantiates the appropriate SDK.
+ */
+
+/**
+ * Create a text provider from a connector
+ */
+declare function createProvider(connector: Connector): ITextProvider;
 
 /**
  * StreamState - Accumulates streaming events to reconstruct complete response
@@ -399,6 +709,46 @@ declare class ProviderError extends AIError {
 }
 
 /**
+ * Provider configuration types
+ */
+interface BaseProviderConfig {
+    apiKey: string;
+    baseURL?: string;
+    organization?: string;
+    timeout?: number;
+    maxRetries?: number;
+}
+interface OpenAIConfig extends BaseProviderConfig {
+    organization?: string;
+    project?: string;
+}
+interface AnthropicConfig extends BaseProviderConfig {
+    anthropicVersion?: string;
+}
+interface GoogleConfig extends BaseProviderConfig {
+    apiKey: string;
+}
+interface VertexAIConfig extends BaseProviderConfig {
+    projectId: string;
+    location: string;
+    credentials?: any;
+}
+interface GroqConfig extends BaseProviderConfig {
+    baseURL?: string;
+}
+interface GrokConfig extends BaseProviderConfig {
+    baseURL?: string;
+}
+interface TogetherAIConfig extends BaseProviderConfig {
+    baseURL?: string;
+}
+interface GenericOpenAIConfig extends BaseProviderConfig {
+    baseURL: string;
+    providerName?: string;
+}
+type ProviderConfig = OpenAIConfig | AnthropicConfig | GoogleConfig | VertexAIConfig | GroqConfig | GrokConfig | TogetherAIConfig | GenericOpenAIConfig | BaseProviderConfig;
+
+/**
  * Base provider class with common functionality
  */
 
@@ -488,356 +838,6 @@ declare class ProviderErrorMapper {
      * Extract retry-after value from error headers or body
      */
     private static extractRetryAfter;
-}
-
-/**
- * Connector - Represents authenticated connection to external systems
- *
- * Connectors handle authentication and API access to third-party services
- * (GitHub, Microsoft, Salesforce, etc.)
- *
- * This is DIFFERENT from Providers (OpenAI, Anthropic) which provide AI capabilities.
- */
-/**
- * Connector authentication configuration
- * Supports OAuth 2.0, API keys, and JWT bearer tokens
- */
-type ConnectorAuth = OAuthConnectorAuth | APIKeyConnectorAuth | JWTConnectorAuth;
-/**
- * OAuth 2.0 authentication for connectors
- * Supports multiple OAuth flows
- */
-interface OAuthConnectorAuth {
-    type: 'oauth';
-    flow: 'authorization_code' | 'client_credentials' | 'jwt_bearer';
-    clientId: string;
-    clientSecret?: string;
-    tokenUrl: string;
-    authorizationUrl?: string;
-    redirectUri?: string;
-    scope?: string;
-    usePKCE?: boolean;
-    privateKey?: string;
-    privateKeyPath?: string;
-    issuer?: string;
-    subject?: string;
-    audience?: string;
-    refreshBeforeExpiry?: number;
-    storageKey?: string;
-}
-/**
- * Static API key authentication
- * For services like OpenAI, Anthropic, many SaaS APIs
- */
-interface APIKeyConnectorAuth {
-    type: 'api_key';
-    apiKey: string;
-    headerName?: string;
-    headerPrefix?: string;
-}
-/**
- * JWT Bearer token authentication
- * For service accounts (Google, Salesforce)
- */
-interface JWTConnectorAuth {
-    type: 'jwt';
-    privateKey: string;
-    privateKeyPath?: string;
-    tokenUrl: string;
-    clientId: string;
-    scope?: string;
-    issuer?: string;
-    subject?: string;
-    audience?: string;
-}
-/**
- * Complete connector configuration
- * Used to register external system connections
- */
-interface ConnectorConfig {
-    displayName: string;
-    description: string;
-    baseURL: string;
-    auth: ConnectorAuth;
-    apiVersion?: string;
-    rateLimit?: {
-        requestsPerMinute?: number;
-        requestsPerDay?: number;
-    };
-    documentation?: string;
-    tags?: string[];
-}
-/**
- * Result from ProviderConfigAgent
- * Includes setup instructions and environment variables
- */
-interface ConnectorConfigResult {
-    name: string;
-    config: ConnectorConfig;
-    setupInstructions: string;
-    envVariables: string[];
-    setupUrl?: string;
-}
-
-/**
- * Provider Config Agent
- *
- * AI-powered agent that helps users configure OAuth providers
- * Asks questions, guides setup, and generates JSON configuration
- */
-
-/**
- * Built-in agent for generating OAuth provider configurations
- */
-declare class ProviderConfigAgent {
-    private client;
-    private agent;
-    private conversationHistory;
-    constructor(client: OneRingAI);
-    /**
-     * Start interactive configuration session
-     * AI will ask questions and generate the connector config
-     *
-     * @param initialInput - Optional initial message (e.g., "I want to connect to GitHub")
-     * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
-     */
-    run(initialInput?: string): Promise<string | ConnectorConfigResult>;
-    /**
-     * Continue conversation (for multi-turn interaction)
-     *
-     * @param userMessage - User's response
-     * @returns Promise<string | ConnectorConfigResult> - Either next question or final config
-     */
-    continue(userMessage: string): Promise<string | ConnectorConfigResult>;
-    /**
-     * Get system instructions for the agent
-     */
-    private getSystemInstructions;
-    /**
-     * Extract configuration from AI response
-     */
-    private extractConfig;
-    /**
-     * Get default provider for the agent
-     */
-    private getDefaultProvider;
-    /**
-     * Get default model
-     */
-    private getDefaultModel;
-    /**
-     * Reset conversation
-     */
-    reset(): void;
-}
-
-/**
- * Message builder utilities for constructing complex inputs
- */
-
-declare class MessageBuilder {
-    private messages;
-    /**
-     * Add a user text message
-     */
-    addUserMessage(text: string): this;
-    /**
-     * Add a user message with text and images
-     */
-    addUserMessageWithImages(text: string, imageUrls: string[]): this;
-    /**
-     * Add an assistant message (for conversation history)
-     */
-    addAssistantMessage(text: string): this;
-    /**
-     * Add a system/developer message
-     */
-    addDeveloperMessage(text: string): this;
-    /**
-     * Build and return the messages array
-     */
-    build(): InputItem[];
-    /**
-     * Clear all messages
-     */
-    clear(): this;
-    /**
-     * Get the current message count
-     */
-    count(): number;
-}
-/**
- * Helper function to create a simple text message
- */
-declare function createTextMessage(text: string, role?: MessageRole): InputItem;
-/**
- * Helper function to create a message with images
- */
-declare function createMessageWithImages(text: string, imageUrls: string[], role?: MessageRole): InputItem;
-
-/**
- * Clipboard image utilities
- * Reads images from clipboard (supports Mac, Linux, Windows)
- */
-interface ClipboardImageResult {
-    success: boolean;
-    dataUri?: string;
-    error?: string;
-    format?: string;
-}
-/**
- * Read image from clipboard and convert to data URI
- */
-declare function readClipboardImage(): Promise<ClipboardImageResult>;
-/**
- * Check if clipboard contains an image (quick check)
- */
-declare function hasClipboardImage(): Promise<boolean>;
-
-/**
- * JSON Manipulation Tool
- *
- * Allows AI agents to manipulate JSON objects using dot notation paths.
- * Supports delete, add, and replace operations at any depth.
- */
-
-interface JsonManipulateArgs {
-    operation: 'delete' | 'add' | 'replace';
-    path: string;
-    value?: any;
-    object: any;
-}
-interface JsonManipulateResult {
-    success: boolean;
-    result: any | null;
-    message?: string;
-    error?: string;
-}
-declare const jsonManipulator: ToolFunction<JsonManipulateArgs, JsonManipulateResult>;
-
-/**
- * Web Fetch Tool - Simple HTTP fetch with content quality detection
- */
-
-interface WebFetchArgs {
-    url: string;
-    userAgent?: string;
-    timeout?: number;
-}
-interface WebFetchResult {
-    success: boolean;
-    url: string;
-    title: string;
-    content: string;
-    html: string;
-    contentType: 'html' | 'json' | 'text' | 'error';
-    qualityScore: number;
-    requiresJS: boolean;
-    suggestedAction?: string;
-    issues?: string[];
-    error?: string;
-}
-declare const webFetch: ToolFunction<WebFetchArgs, WebFetchResult>;
-
-/**
- * Web Fetch with JavaScript - Uses Puppeteer for JS-rendered sites
- * Optional tool - requires puppeteer to be installed
- */
-
-interface WebFetchJSArgs {
-    url: string;
-    waitForSelector?: string;
-    timeout?: number;
-    takeScreenshot?: boolean;
-}
-interface WebFetchJSResult {
-    success: boolean;
-    url: string;
-    title: string;
-    content: string;
-    html: string;
-    screenshot?: string;
-    loadTime: number;
-    error?: string;
-    suggestion?: string;
-}
-declare const webFetchJS: ToolFunction<WebFetchJSArgs, WebFetchJSResult>;
-
-/**
- * Serper.dev search provider
- * Fast Google search results via API
- */
-interface SearchResult {
-    title: string;
-    url: string;
-    snippet: string;
-    position: number;
-}
-
-/**
- * Web Search Tool - Multi-provider web search
- * Supports Serper.dev (default), Brave, and Tavily
- */
-
-interface WebSearchArgs {
-    query: string;
-    numResults?: number;
-    provider?: 'serper' | 'brave' | 'tavily';
-}
-interface WebSearchResult {
-    success: boolean;
-    query: string;
-    provider: string;
-    results: SearchResult[];
-    count: number;
-    error?: string;
-}
-declare const webSearch: ToolFunction<WebSearchArgs, WebSearchResult>;
-
-/**
- * Token storage interface (Clean Architecture - Domain Layer)
- * All implementations must encrypt tokens at rest
- */
-interface StoredToken {
-    access_token: string;
-    refresh_token?: string;
-    expires_in: number;
-    token_type: string;
-    scope?: string;
-    obtained_at: number;
-}
-/**
- * Token storage interface
- * All implementations MUST encrypt tokens before storing
- */
-interface ITokenStorage {
-    /**
-     * Store token (must be encrypted by implementation)
-     *
-     * @param key - Unique identifier for this token
-     * @param token - Token data to store
-     */
-    storeToken(key: string, token: StoredToken): Promise<void>;
-    /**
-     * Retrieve token (must be decrypted by implementation)
-     *
-     * @param key - Unique identifier for the token
-     * @returns Decrypted token or null if not found
-     */
-    getToken(key: string): Promise<StoredToken | null>;
-    /**
-     * Delete token
-     *
-     * @param key - Unique identifier for the token
-     */
-    deleteToken(key: string): Promise<void>;
-    /**
-     * Check if token exists
-     *
-     * @param key - Unique identifier for the token
-     * @returns True if token exists
-     */
-    hasToken(key: string): Promise<boolean>;
 }
 
 /**
@@ -1111,95 +1111,6 @@ declare class ConnectorRegistry {
 }
 
 /**
- * JavaScript Execution Tool
- * Executes JavaScript in a sandboxed VM with connector integration
- * Connectors provide authenticated access to external APIs (GitHub, Microsoft, etc.)
- */
-
-interface ExecuteJSArgs {
-    code: string;
-    input?: any;
-    timeout?: number;
-}
-interface ExecuteJSResult {
-    success: boolean;
-    result: any;
-    logs: string[];
-    error?: string;
-    executionTime: number;
-}
-/**
- * Create an execute_javascript tool with the current connector registry state
- * Use this factory when you need the tool to reflect currently registered connectors
- *
- * @param registry - ConnectorRegistry instance (defaults to global connectorRegistry)
- */
-declare function createExecuteJavaScriptTool(registry?: ConnectorRegistry): ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
-/**
- * Default executeJavaScript tool (uses global connectorRegistry)
- * NOTE: The description is generated at module load time. If you register
- * connectors after importing this, use createExecuteJavaScriptTool() instead.
- */
-declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
-
-/**
- * Pre-built tools for agents
- *
- * Import and use with your agents:
- *
- * ```typescript
- * import { tools } from '@oneringai/agents';
- *
- * const agent = client.agents.create({
- *   provider: 'openai',
- *   model: 'gpt-4',
- *   tools: [tools.jsonManipulator, tools.webSearch, tools.webFetch]
- * });
- * ```
- */
-
-declare const index_createExecuteJavaScriptTool: typeof createExecuteJavaScriptTool;
-declare const index_executeJavaScript: typeof executeJavaScript;
-declare const index_jsonManipulator: typeof jsonManipulator;
-declare const index_webFetch: typeof webFetch;
-declare const index_webFetchJS: typeof webFetchJS;
-declare const index_webSearch: typeof webSearch;
-declare namespace index {
-  export { index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_executeJavaScript as executeJavaScript, index_jsonManipulator as jsonManipulator, index_webFetch as webFetch, index_webFetchJS as webFetchJS, index_webSearch as webSearch };
-}
-
-/**
- * OAuthConnector - Concrete implementation of IConnector
- * Wraps OAuthManager to provide the IConnector interface
- */
-
-/**
- * Connector implementation using OAuth 2.0 for authentication
- */
-declare class OAuthConnector implements IConnector {
-    readonly name: string;
-    readonly config: ConnectorConfig;
-    private readonly oauthManager;
-    constructor(name: string, config: ConnectorConfig, oauthManager: OAuthManager);
-    get displayName(): string;
-    get baseURL(): string;
-    getToken(userId?: string): Promise<string>;
-    isTokenValid(userId?: string): Promise<boolean>;
-    refreshToken(userId?: string): Promise<string>;
-    startAuthFlow(userId?: string): Promise<string>;
-    handleCallback(callbackUrl: string, userId?: string): Promise<void>;
-    revokeToken(revocationUrl?: string, userId?: string): Promise<void>;
-    getMetadata(): {
-        apiVersion: string | undefined;
-        rateLimit: {
-            requestsPerMinute?: number;
-            requestsPerDay?: number;
-        } | undefined;
-        documentation: string | undefined;
-    };
-}
-
-/**
  * In-memory token storage (default)
  * Tokens are encrypted in memory using AES-256-GCM
  */
@@ -1336,34 +1247,6 @@ declare function authenticatedFetch(url: string | URL, options: RequestInit | un
 declare function createAuthenticatedFetch(authProvider: string, userId?: string): (url: string | URL, options?: RequestInit) => Promise<Response>;
 
 /**
- * OAuth Tool Generator - Auto-generate tools for registered OAuth providers
- */
-
-interface APIRequestArgs {
-    authProvider: string;
-    url: string;
-    method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-    body?: any;
-    headers?: Record<string, string>;
-}
-interface APIRequestResult {
-    success: boolean;
-    status: number;
-    statusText: string;
-    data: any;
-    error?: string;
-}
-/**
- * Generate a universal API request tool for all registered OAuth providers
- *
- * This tool allows the AI agent to make authenticated requests to any registered API.
- * The tool description is dynamically generated based on registered providers.
- *
- * @returns ToolFunction that can call any registered OAuth API
- */
-declare function generateWebAPITool(): ToolFunction<APIRequestArgs, APIRequestResult>;
-
-/**
  * Generate a secure random encryption key
  * Use this to generate OAUTH_ENCRYPTION_KEY for your .env file
  */
@@ -1384,4 +1267,225 @@ declare function generateEncryptionKey(): string;
 
 declare const connectorRegistry: ConnectorRegistry;
 
-export { AIError, type APIKeyConnectorAuth, AgentManager, BaseProvider, BaseTextProvider, type ClipboardImageResult, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, type ConnectorRegistrationConfig, ConnectorRegistry, FileStorage, type FileStorageConfig, type IConnector, IDisposable, IProvider, ITextProvider, type ITokenStorage, ImageManager, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, type LogLevel, type Logger, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, OAuthConnector, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, OneRingAI, type OneRingAIConfig, ProviderAuthError, ProviderCapabilities, ProviderConfig, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, ProvidersConfig, type RequestMetadata, type SimpleTextOptions, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, TextManager, ToolCall, type ToolCallBuffer, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, authenticatedFetch, connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createTextMessage, generateEncryptionKey, generateWebAPITool, hasClipboardImage, readClipboardImage, index as tools };
+/**
+ * Message builder utilities for constructing complex inputs
+ */
+
+declare class MessageBuilder {
+    private messages;
+    /**
+     * Add a user text message
+     */
+    addUserMessage(text: string): this;
+    /**
+     * Add a user message with text and images
+     */
+    addUserMessageWithImages(text: string, imageUrls: string[]): this;
+    /**
+     * Add an assistant message (for conversation history)
+     */
+    addAssistantMessage(text: string): this;
+    /**
+     * Add a system/developer message
+     */
+    addDeveloperMessage(text: string): this;
+    /**
+     * Build and return the messages array
+     */
+    build(): InputItem[];
+    /**
+     * Clear all messages
+     */
+    clear(): this;
+    /**
+     * Get the current message count
+     */
+    count(): number;
+}
+/**
+ * Helper function to create a simple text message
+ */
+declare function createTextMessage(text: string, role?: MessageRole): InputItem;
+/**
+ * Helper function to create a message with images
+ */
+declare function createMessageWithImages(text: string, imageUrls: string[], role?: MessageRole): InputItem;
+
+/**
+ * Clipboard image utilities
+ * Reads images from clipboard (supports Mac, Linux, Windows)
+ */
+interface ClipboardImageResult {
+    success: boolean;
+    dataUri?: string;
+    error?: string;
+    format?: string;
+}
+/**
+ * Read image from clipboard and convert to data URI
+ */
+declare function readClipboardImage(): Promise<ClipboardImageResult>;
+/**
+ * Check if clipboard contains an image (quick check)
+ */
+declare function hasClipboardImage(): Promise<boolean>;
+
+/**
+ * JSON Manipulation Tool
+ *
+ * Allows AI agents to manipulate JSON objects using dot notation paths.
+ * Supports delete, add, and replace operations at any depth.
+ */
+
+interface JsonManipulateArgs {
+    operation: 'delete' | 'add' | 'replace';
+    path: string;
+    value?: any;
+    object: any;
+}
+interface JsonManipulateResult {
+    success: boolean;
+    result: any | null;
+    message?: string;
+    error?: string;
+}
+declare const jsonManipulator: ToolFunction<JsonManipulateArgs, JsonManipulateResult>;
+
+/**
+ * Web Fetch Tool - Simple HTTP fetch with content quality detection
+ */
+
+interface WebFetchArgs {
+    url: string;
+    userAgent?: string;
+    timeout?: number;
+}
+interface WebFetchResult {
+    success: boolean;
+    url: string;
+    title: string;
+    content: string;
+    html: string;
+    contentType: 'html' | 'json' | 'text' | 'error';
+    qualityScore: number;
+    requiresJS: boolean;
+    suggestedAction?: string;
+    issues?: string[];
+    error?: string;
+}
+declare const webFetch: ToolFunction<WebFetchArgs, WebFetchResult>;
+
+/**
+ * Web Fetch with JavaScript - Uses Puppeteer for JS-rendered sites
+ * Optional tool - requires puppeteer to be installed
+ */
+
+interface WebFetchJSArgs {
+    url: string;
+    waitForSelector?: string;
+    timeout?: number;
+    takeScreenshot?: boolean;
+}
+interface WebFetchJSResult {
+    success: boolean;
+    url: string;
+    title: string;
+    content: string;
+    html: string;
+    screenshot?: string;
+    loadTime: number;
+    error?: string;
+    suggestion?: string;
+}
+declare const webFetchJS: ToolFunction<WebFetchJSArgs, WebFetchJSResult>;
+
+/**
+ * Serper.dev search provider
+ * Fast Google search results via API
+ */
+interface SearchResult {
+    title: string;
+    url: string;
+    snippet: string;
+    position: number;
+}
+
+/**
+ * Web Search Tool - Multi-provider web search
+ * Supports Serper.dev (default), Brave, and Tavily
+ */
+
+interface WebSearchArgs {
+    query: string;
+    numResults?: number;
+    provider?: 'serper' | 'brave' | 'tavily';
+}
+interface WebSearchResult {
+    success: boolean;
+    query: string;
+    provider: string;
+    results: SearchResult[];
+    count: number;
+    error?: string;
+}
+declare const webSearch: ToolFunction<WebSearchArgs, WebSearchResult>;
+
+/**
+ * JavaScript Execution Tool
+ * Executes JavaScript in a sandboxed VM with connector integration
+ * Connectors provide authenticated access to external APIs (GitHub, Microsoft, etc.)
+ */
+
+interface ExecuteJSArgs {
+    code: string;
+    input?: any;
+    timeout?: number;
+}
+interface ExecuteJSResult {
+    success: boolean;
+    result: any;
+    logs: string[];
+    error?: string;
+    executionTime: number;
+}
+/**
+ * Create an execute_javascript tool with the current connector registry state
+ * Use this factory when you need the tool to reflect currently registered connectors
+ *
+ * @param registry - ConnectorRegistry instance (defaults to global connectorRegistry)
+ */
+declare function createExecuteJavaScriptTool(registry?: ConnectorRegistry): ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
+/**
+ * Default executeJavaScript tool (uses global connectorRegistry)
+ * NOTE: The description is generated at module load time. If you register
+ * connectors after importing this, use createExecuteJavaScriptTool() instead.
+ */
+declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
+
+/**
+ * Pre-built tools for agents
+ *
+ * Import and use with your agents:
+ *
+ * ```typescript
+ * import { tools } from '@oneringai/agents';
+ *
+ * const agent = client.agents.create({
+ *   provider: 'openai',
+ *   model: 'gpt-4',
+ *   tools: [tools.jsonManipulator, tools.webSearch, tools.webFetch]
+ * });
+ * ```
+ */
+
+declare const index_createExecuteJavaScriptTool: typeof createExecuteJavaScriptTool;
+declare const index_executeJavaScript: typeof executeJavaScript;
+declare const index_jsonManipulator: typeof jsonManipulator;
+declare const index_webFetch: typeof webFetch;
+declare const index_webFetchJS: typeof webFetchJS;
+declare const index_webSearch: typeof webSearch;
+declare namespace index {
+  export { index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_executeJavaScript as executeJavaScript, index_jsonManipulator as jsonManipulator, index_webFetch as webFetch, index_webFetchJS as webFetchJS, index_webSearch as webSearch };
+}
+
+export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig, AgentResponse, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, ConnectorRegistry, ExecutionContext, ExecutionMetrics, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAsyncDisposable, type IDisposable, IProvider, ITextProvider, type ITokenStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, ProviderAuthError, ProviderCapabilities, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, connectorRegistry, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, hasClipboardImage, isVendor, readClipboardImage, index as tools };

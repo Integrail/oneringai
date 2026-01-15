@@ -1,14 +1,7 @@
 'use strict';
 
-var eventemitter3 = require('eventemitter3');
 var crypto = require('crypto');
-
-// src/domain/interfaces/IDisposable.ts
-function assertNotDestroyed(obj, operation) {
-  if (obj.isDestroyed) {
-    throw new Error(`Cannot ${operation}: instance has been destroyed`);
-  }
-}
+var eventemitter3 = require('eventemitter3');
 
 // src/domain/errors/AIErrors.ts
 var AIError = class _AIError extends Error {
@@ -55,6 +48,66 @@ var ToolNotFoundError = class _ToolNotFoundError extends AIError {
     );
     this.name = "ToolNotFoundError";
     Object.setPrototypeOf(this, _ToolNotFoundError.prototype);
+  }
+};
+
+// src/capabilities/agents/ToolRegistry.ts
+var ToolRegistry = class {
+  tools = /* @__PURE__ */ new Map();
+  /**
+   * Register a new tool
+   */
+  registerTool(tool) {
+    this.tools.set(tool.definition.function.name, tool);
+  }
+  /**
+   * Unregister a tool
+   */
+  unregisterTool(toolName) {
+    this.tools.delete(toolName);
+  }
+  /**
+   * Execute a tool function
+   */
+  async execute(toolName, args) {
+    const tool = this.tools.get(toolName);
+    if (!tool) {
+      throw new ToolNotFoundError(toolName);
+    }
+    try {
+      return await tool.execute(args);
+    } catch (error) {
+      throw new ToolExecutionError(
+        toolName,
+        error.message,
+        error
+      );
+    }
+  }
+  /**
+   * Check if tool is available
+   */
+  hasToolFunction(toolName) {
+    return this.tools.has(toolName);
+  }
+  /**
+   * Get tool definition
+   */
+  getToolDefinition(toolName) {
+    const tool = this.tools.get(toolName);
+    return tool?.definition;
+  }
+  /**
+   * List all registered tools
+   */
+  listTools() {
+    return Array.from(this.tools.keys());
+  }
+  /**
+   * Clear all registered tools
+   */
+  clear() {
+    this.tools.clear();
   }
 };
 
@@ -1703,356 +1756,6 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
   }
 };
 
-// src/capabilities/agents/Agent.ts
-var Agent = class extends eventemitter3.EventEmitter {
-  constructor(config, textProvider, toolRegistry) {
-    super();
-    this.config = config;
-    this.toolRegistry = toolRegistry;
-    if (config.tools) {
-      for (const tool of config.tools) {
-        this.toolRegistry.registerTool(tool);
-      }
-    }
-    this.agenticLoop = new AgenticLoop(
-      textProvider,
-      toolRegistry,
-      config.hooks,
-      config.errorHandling
-    );
-    const eventNames = [
-      "execution:start",
-      "execution:complete",
-      "execution:error",
-      "execution:paused",
-      "execution:resumed",
-      "execution:cancelled",
-      "iteration:start",
-      "iteration:complete",
-      "llm:request",
-      "llm:response",
-      "llm:error",
-      "tool:detected",
-      "tool:start",
-      "tool:complete",
-      "tool:error",
-      "tool:timeout",
-      "hook:error"
-    ];
-    for (const eventName of eventNames) {
-      const handler = (data) => {
-        if (!this._isDestroyed) {
-          this.emit(eventName, data);
-        }
-      };
-      this.boundListeners.set(eventName, handler);
-      this.agenticLoop.on(eventName, handler);
-    }
-  }
-  agenticLoop;
-  cleanupCallbacks = [];
-  boundListeners = /* @__PURE__ */ new Map();
-  _isDestroyed = false;
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Run the agent with input
-   * @throws Error if agent has been destroyed
-   */
-  async run(input) {
-    assertNotDestroyed(this, "run agent");
-    const tools = this.config.tools?.map((t) => t.definition) || [];
-    const loopConfig = {
-      model: this.config.model,
-      input,
-      instructions: this.config.instructions,
-      tools,
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations || 10,
-      hooks: this.config.hooks,
-      historyMode: this.config.historyMode,
-      limits: this.config.limits,
-      errorHandling: this.config.errorHandling
-    };
-    return this.agenticLoop.execute(loopConfig);
-  }
-  /**
-   * Stream response from the agent with real-time events
-   * Returns an async iterator of streaming events
-   * Supports full agentic loop with tool calling
-   * @throws Error if agent has been destroyed
-   */
-  async *stream(input) {
-    assertNotDestroyed(this, "stream from agent");
-    const tools = this.config.tools?.map((t) => t.definition) || [];
-    const loopConfig = {
-      model: this.config.model,
-      input,
-      instructions: this.config.instructions,
-      tools,
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations || 10,
-      hooks: this.config.hooks,
-      historyMode: this.config.historyMode,
-      limits: this.config.limits,
-      errorHandling: this.config.errorHandling
-    };
-    yield* this.agenticLoop.executeStreaming(loopConfig);
-  }
-  /**
-   * Add a tool to the agent
-   */
-  addTool(tool) {
-    this.toolRegistry.registerTool(tool);
-    if (!this.config.tools) {
-      this.config.tools = [];
-    }
-    this.config.tools.push(tool);
-  }
-  /**
-   * Remove a tool from the agent
-   */
-  removeTool(toolName) {
-    this.toolRegistry.unregisterTool(toolName);
-    if (this.config.tools) {
-      this.config.tools = this.config.tools.filter(
-        (t) => t.definition.function.name !== toolName
-      );
-    }
-  }
-  /**
-   * List registered tools
-   */
-  listTools() {
-    return this.toolRegistry.listTools();
-  }
-  // ==================== NEW: Control Methods ====================
-  /**
-   * Pause execution
-   */
-  pause(reason) {
-    this.agenticLoop.pause(reason);
-  }
-  /**
-   * Resume execution
-   */
-  resume() {
-    this.agenticLoop.resume();
-  }
-  /**
-   * Cancel execution
-   */
-  cancel(reason) {
-    this.agenticLoop.cancel(reason);
-  }
-  // ==================== NEW: Introspection Methods ====================
-  /**
-   * Get current execution context
-   */
-  getContext() {
-    return this.agenticLoop.getContext();
-  }
-  /**
-   * Get execution metrics
-   */
-  getMetrics() {
-    const context = this.agenticLoop.getContext();
-    return context?.metrics || null;
-  }
-  /**
-   * Get execution summary
-   */
-  getSummary() {
-    const context = this.agenticLoop.getContext();
-    return context?.getSummary() || null;
-  }
-  /**
-   * Get audit trail
-   */
-  getAuditTrail() {
-    const context = this.agenticLoop.getContext();
-    return context?.getAuditTrail() || [];
-  }
-  /**
-   * Check if currently running
-   */
-  isRunning() {
-    return this.agenticLoop.isRunning();
-  }
-  /**
-   * Check if paused
-   */
-  isPaused() {
-    return this.agenticLoop.isPaused();
-  }
-  /**
-   * Check if cancelled
-   */
-  isCancelled() {
-    return this.agenticLoop.isCancelled();
-  }
-  // ==================== NEW: Cleanup ====================
-  /**
-   * Register cleanup callback
-   */
-  onCleanup(callback) {
-    this.cleanupCallbacks.push(callback);
-  }
-  /**
-   * Destroy agent and cleanup resources
-   * Safe to call multiple times (idempotent)
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    try {
-      this.agenticLoop.cancel("Agent destroyed");
-    } catch {
-    }
-    for (const [eventName, handler] of this.boundListeners) {
-      this.agenticLoop.off(eventName, handler);
-    }
-    this.boundListeners.clear();
-    this.removeAllListeners();
-    for (const callback of this.cleanupCallbacks) {
-      try {
-        callback();
-      } catch (error) {
-        console.error("Cleanup callback error:", error);
-      }
-    }
-    this.cleanupCallbacks = [];
-  }
-};
-
-// src/capabilities/agents/ToolRegistry.ts
-var ToolRegistry = class {
-  tools = /* @__PURE__ */ new Map();
-  /**
-   * Register a new tool
-   */
-  registerTool(tool) {
-    this.tools.set(tool.definition.function.name, tool);
-  }
-  /**
-   * Unregister a tool
-   */
-  unregisterTool(toolName) {
-    this.tools.delete(toolName);
-  }
-  /**
-   * Execute a tool function
-   */
-  async execute(toolName, args) {
-    const tool = this.tools.get(toolName);
-    if (!tool) {
-      throw new ToolNotFoundError(toolName);
-    }
-    try {
-      return await tool.execute(args);
-    } catch (error) {
-      throw new ToolExecutionError(
-        toolName,
-        error.message,
-        error
-      );
-    }
-  }
-  /**
-   * Check if tool is available
-   */
-  hasToolFunction(toolName) {
-    return this.tools.has(toolName);
-  }
-  /**
-   * Get tool definition
-   */
-  getToolDefinition(toolName) {
-    const tool = this.tools.get(toolName);
-    return tool?.definition;
-  }
-  /**
-   * List all registered tools
-   */
-  listTools() {
-    return Array.from(this.tools.keys());
-  }
-  /**
-   * Clear all registered tools
-   */
-  clear() {
-    this.tools.clear();
-  }
-};
-
-// src/capabilities/agents/AgentManager.ts
-var AgentManager = class {
-  constructor(registry) {
-    this.registry = registry;
-    this.toolRegistry = new ToolRegistry();
-  }
-  toolRegistry;
-  agents = /* @__PURE__ */ new Set();
-  _isDestroyed = false;
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Create a new agent instance
-   * @returns Promise<Agent> - async to support race-condition-free provider loading
-   */
-  async create(config) {
-    assertNotDestroyed(this, "create agent");
-    const provider = await this.registry.getTextProvider(config.provider);
-    const agent = new Agent(config, provider, this.toolRegistry);
-    this.agents.add(agent);
-    agent.onCleanup(() => {
-      this.agents.delete(agent);
-    });
-    return agent;
-  }
-  /**
-   * Convenience method for one-off agent calls
-   */
-  async run(config) {
-    const agent = await this.create(config);
-    try {
-      return await agent.run(config.input);
-    } finally {
-      agent.destroy();
-    }
-  }
-  /**
-   * Get the number of active agents
-   */
-  getActiveAgentCount() {
-    return this.agents.size;
-  }
-  /**
-   * Destroy the manager and all managed agents
-   * Safe to call multiple times (idempotent)
-   */
-  destroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    for (const agent of this.agents) {
-      try {
-        agent.destroy();
-      } catch {
-      }
-    }
-    this.agents.clear();
-    this.toolRegistry.clear();
-  }
-};
-
-exports.Agent = Agent;
-exports.AgentManager = AgentManager;
 exports.AgenticLoop = AgenticLoop;
 exports.ExecutionContext = ExecutionContext;
 exports.HookManager = HookManager;

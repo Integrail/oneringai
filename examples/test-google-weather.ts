@@ -2,7 +2,7 @@
  * Test Google with weather tool
  */
 
-import { OneRingAI, ToolFunction } from '../src/index.js';
+import { Connector, Agent, Vendor, ToolFunction } from '../src/index.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -37,14 +37,14 @@ const weatherTool: ToolFunction = {
 };
 
 async function main() {
-  const client = new OneRingAI({
-    providers: {
-      google: { apiKey: process.env.GOOGLE_API_KEY! },
-    },
+  Connector.create({
+    name: 'google',
+    vendor: Vendor.Google,
+    auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
   });
 
-  const agent = await client.agents.create({
-    provider: 'google',
+  const agent = Agent.create({
+    connector: 'google',
     model: 'gemini-1.5-pro', // Use 1.5 Pro which has better function calling
     instructions: 'You are a helpful weather assistant. Use the get_weather tool to fetch weather information.',
     tools: [weatherTool],
@@ -63,8 +63,8 @@ async function main() {
   // Now test with specific tool choice
   console.log('\n\n=== Testing with specific tool choice ===\n');
 
-  const agent2 = await client.agents.create({
-    provider: 'google',
+  const agent2 = Agent.create({
+    connector: 'google',
     model: 'gemini-2.0-flash',
     instructions: 'You MUST use tools when available. Use the get_weather tool for weather queries.',
     tools: [weatherTool],

@@ -5,21 +5,21 @@
  */
 
 import 'dotenv/config';
-import { OneRingAI, ProviderConfigAgent, connectorRegistry } from '../src/index.js';
+import { Connector, Vendor, ProviderConfigAgent, connectorRegistry } from '../src/index.js';
 
 async function main() {
   console.log('🔌 Programmatic OAuth Provider Configuration\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
-  // Initialize client
-  const client = new OneRingAI({
-    providers: {
-      openai: { apiKey: process.env.OPENAI_API_KEY! },
-    },
+  // Create connector
+  Connector.create({
+    name: 'openai',
+    vendor: Vendor.OpenAI,
+    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
   });
 
   // Create config agent
-  const configAgent = new ProviderConfigAgent(client);
+  const configAgent = new ProviderConfigAgent('openai');
 
   // Example 1: Generate GitHub user OAuth config
   console.log('Example 1: GitHub User OAuth (Authorization Code)\n');

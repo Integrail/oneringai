@@ -10,7 +10,7 @@
  */
 
 import 'dotenv/config';
-import { OneRingAI, tools, ToolFunction } from '../src/index.js';
+import { Connector, Agent, Vendor, tools } from '../src/index.js';
 
 // Simple in-memory cache
 const cache = new Map<string, any>();
@@ -27,18 +27,19 @@ async function askForApproval(toolName: string, args: any): Promise<boolean> {
 }
 
 async function main() {
-  const client = new OneRingAI({
-    providers: {
-      openai: { apiKey: process.env.OPENAI_API_KEY || '' },
-    },
+  // Create connector
+  Connector.create({
+    name: 'openai',
+    vendor: Vendor.OpenAI,
+    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
   });
 
   console.log('🔧 Agent with Hooks Demo\n');
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
   // Create agent with hooks
-  const agent = await client.agents.create({
-    provider: 'openai',
+  const agent = Agent.create({
+    connector: 'openai',
     model: 'gpt-4',
     tools: [tools.jsonManipulator],
     instructions: 'You are a JSON manipulation assistant.',

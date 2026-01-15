@@ -10,7 +10,9 @@ import {
   connectorRegistry,
   authenticatedFetch,
   generateWebAPITool,
-  OneRingAI,
+  Connector,
+  Agent,
+  Vendor,
 } from '../src/index.js';
 
 async function main() {
@@ -157,14 +159,14 @@ async function main() {
     console.log('Using with AI Agent');
     console.log('─────────────────────────────────\n');
 
-    const client = new OneRingAI({
-      providers: {
-        openai: { apiKey: process.env.OPENAI_API_KEY },
-      },
+    Connector.create({
+      name: 'openai',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY },
     });
 
-    const agent = await client.agents.create({
-      provider: 'openai',
+    const agent = Agent.create({
+      connector: 'openai',
       model: 'gpt-4',
       tools: [apiTool],
       instructions: `You have access to multiple APIs through the api_request tool.

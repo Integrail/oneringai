@@ -2,20 +2,20 @@
  * Test Anthropic streaming usage tracking
  */
 
-import { OneRingAI, StreamEventType, StreamHelpers } from '../src/index.js';
+import { Connector, Agent, Vendor, StreamEventType, StreamHelpers } from '../src/index.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
 async function main() {
-  const client = new OneRingAI({
-    providers: {
-      anthropic: { apiKey: process.env.ANTHROPIC_API_KEY! },
-    },
+  Connector.create({
+    name: 'anthropic',
+    vendor: Vendor.Anthropic,
+    auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY! },
   });
 
-  const agent = await client.agents.create({
-    provider: 'anthropic',
+  const agent = Agent.create({
+    connector: 'anthropic',
     model: 'claude-sonnet-4-5-20250929',
     instructions: 'Be concise.',
   });

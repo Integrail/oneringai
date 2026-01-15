@@ -1,9 +1,14 @@
 /**
  * Basic agent example with tool calling
+ *
+ * Demonstrates the new Connector-First API:
+ * 1. Create a Connector with credentials
+ * 2. Create an Agent from the connector
+ * 3. Run the agent with tools
  */
 
 import 'dotenv/config';
-import { OneRingAI, ToolFunction } from '../src/index.js';
+import { Connector, Agent, Vendor, ToolFunction } from '../src/index.js';
 
 // Create a weather tool
 const weatherTool: ToolFunction = {
@@ -28,7 +33,7 @@ const weatherTool: ToolFunction = {
         required: ['location'],
       },
     },
-    blocking: true, // Wait for result before continuing
+    blocking: true,
   },
   execute: async (args: { location: string; units?: string }) => {
     console.log(`\n🌤️  Fetching weather for ${args.location}...`);
@@ -87,20 +92,18 @@ const calculatorTool: ToolFunction = {
 };
 
 async function main() {
-  // Create client
-  const client = new OneRingAI({
-    providers: {
-      openai: {
-        apiKey: process.env.OPENAI_API_KEY || '',
-      },
-    },
+  // Create connector with credentials
+  Connector.create({
+    name: 'openai',
+    vendor: Vendor.OpenAI,
+    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
   });
 
   console.log('🤖 Creating agent with tools...\n');
 
-  // Create agent with tools
-  const agent = await client.agents.create({
-    provider: 'openai',
+  // Create agent from connector
+  const agent = Agent.create({
+    connector: 'openai',
     model: 'gpt-4',
     tools: [weatherTool, calculatorTool],
     instructions: 'You are a helpful assistant that can check weather and perform calculations. Be concise.',

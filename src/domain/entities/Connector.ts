@@ -1,11 +1,14 @@
 /**
- * Connector - Represents authenticated connection to external systems
+ * Connector - Represents authenticated connection to ANY API
  *
- * Connectors handle authentication and API access to third-party services
- * (GitHub, Microsoft, Salesforce, etc.)
+ * Connectors handle authentication for:
+ * - AI providers (OpenAI, Anthropic, Google, etc.)
+ * - External APIs (GitHub, Microsoft, Salesforce, etc.)
  *
- * This is DIFFERENT from Providers (OpenAI, Anthropic) which provide AI capabilities.
+ * This is the SINGLE source of truth for authentication.
  */
+
+import type { Vendor } from '../../core/Vendor.js';
 
 /**
  * Connector authentication configuration
@@ -76,25 +79,49 @@ export interface JWTConnectorAuth {
 
 /**
  * Complete connector configuration
- * Used to register external system connections
+ * Used for BOTH AI providers AND external APIs
  */
 export interface ConnectorConfig {
-  // Identity
-  displayName: string; // Human-readable name (e.g., "GitHub API")
-  description: string; // What this connector provides access to
-  baseURL: string; // API base URL
+  // Unique identifier (required for AI providers via Connector.create())
+  // For old ConnectorRegistry API, name is passed separately
+  name?: string; // e.g., 'openai-main', 'openai-backup', 'github-user'
+
+  // For AI providers: specify vendor (auto-selects SDK)
+  vendor?: Vendor; // e.g., Vendor.OpenAI, Vendor.Anthropic
 
   // Authentication
   auth: ConnectorAuth;
 
+  // Optional identity
+  displayName?: string; // Human-readable name
+  description?: string; // What this connector provides
+
+  // Optional: Override default baseURL (required for Custom vendor)
+  baseURL?: string;
+
+  // Optional: Default model for AI providers
+  defaultModel?: string;
+
   // Optional metadata
-  apiVersion?: string; // API version (e.g., "v1", "2024-01-01")
+  apiVersion?: string;
   rateLimit?: {
     requestsPerMinute?: number;
     requestsPerDay?: number;
   };
-  documentation?: string; // URL to API documentation
-  tags?: string[]; // Categorization tags
+  documentation?: string;
+  tags?: string[];
+
+  // Vendor-specific options
+  options?: {
+    timeout?: number;
+    maxRetries?: number;
+    organization?: string; // OpenAI
+    project?: string; // OpenAI
+    anthropicVersion?: string;
+    location?: string; // Google Vertex
+    projectId?: string; // Google Vertex
+    [key: string]: unknown;
+  };
 }
 
 /**

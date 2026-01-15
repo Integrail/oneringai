@@ -9,7 +9,7 @@
 
 import 'dotenv/config';
 import * as readline from 'readline';
-import { OneRingAI } from '../src/index.js';
+import { Connector, Vendor } from '../src/index.js';
 import { ProviderConfigAgent } from '../src/agents/index.js';
 import * as fs from 'fs';
 
@@ -37,19 +37,26 @@ async function main() {
     process.exit(1);
   }
 
-  // Initialize client
-  const providers: any = {};
+  // Create connector
+  let connectorName = 'openai';
   if (process.env.OPENAI_API_KEY) {
-    providers.openai = { apiKey: process.env.OPENAI_API_KEY };
+    Connector.create({
+      name: 'openai',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY },
+    });
+    connectorName = 'openai';
+  } else if (process.env.ANTHROPIC_API_KEY) {
+    Connector.create({
+      name: 'anthropic',
+      vendor: Vendor.Anthropic,
+      auth: { type: 'api_key', apiKey: process.env.ANTHROPIC_API_KEY },
+    });
+    connectorName = 'anthropic';
   }
-  if (process.env.ANTHROPIC_API_KEY) {
-    providers.anthropic = { apiKey: process.env.ANTHROPIC_API_KEY };
-  }
-
-  const client = new OneRingAI({ providers });
 
   // Create provider config agent
-  const configAgent = new ProviderConfigAgent(client);
+  const configAgent = new ProviderConfigAgent(connectorName);
 
   console.log('🤖 Assistant: Hello! I\'ll help you configure an OAuth provider.');
   console.log('             Which system would you like to connect to?');

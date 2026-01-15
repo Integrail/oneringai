@@ -1,5 +1,417 @@
-import { d as ToolCall, v as ToolResult, i as TextGenerateOptions, A as AgentResponse, u as Tool, k as ToolFunction, a as InputItem, h as ITextProvider, S as StreamEvent, I as IDisposable, P as ProviderRegistry } from './ProviderRegistry-Dykyy2Uv.cjs';
 import { EventEmitter } from 'eventemitter3';
+
+/**
+ * Content types based on OpenAI Responses API format
+ */
+declare enum ContentType {
+    INPUT_TEXT = "input_text",
+    INPUT_IMAGE_URL = "input_image_url",
+    INPUT_FILE = "input_file",
+    OUTPUT_TEXT = "output_text",
+    TOOL_USE = "tool_use",
+    TOOL_RESULT = "tool_result"
+}
+interface BaseContent {
+    type: ContentType;
+}
+interface InputTextContent extends BaseContent {
+    type: ContentType.INPUT_TEXT;
+    text: string;
+}
+interface InputImageContent extends BaseContent {
+    type: ContentType.INPUT_IMAGE_URL;
+    image_url: {
+        url: string;
+        detail?: 'auto' | 'low' | 'high';
+    };
+}
+interface InputFileContent extends BaseContent {
+    type: ContentType.INPUT_FILE;
+    file_id: string;
+}
+interface OutputTextContent extends BaseContent {
+    type: ContentType.OUTPUT_TEXT;
+    text: string;
+    annotations?: any[];
+}
+interface ToolUseContent extends BaseContent {
+    type: ContentType.TOOL_USE;
+    id: string;
+    name: string;
+    arguments: string;
+}
+interface ToolResultContent extends BaseContent {
+    type: ContentType.TOOL_RESULT;
+    tool_use_id: string;
+    content: string | any;
+    error?: string;
+}
+type Content = InputTextContent | InputImageContent | InputFileContent | OutputTextContent | ToolUseContent | ToolResultContent;
+
+/**
+ * Message entity based on OpenAI Responses API format
+ */
+
+declare enum MessageRole {
+    USER = "user",
+    ASSISTANT = "assistant",
+    DEVELOPER = "developer"
+}
+interface Message {
+    type: 'message';
+    id?: string;
+    role: MessageRole;
+    content: Content[];
+}
+interface CompactionItem {
+    type: 'compaction';
+    id: string;
+    encrypted_content: string;
+}
+interface ReasoningItem {
+    type: 'reasoning';
+    id: string;
+    effort?: 'low' | 'medium' | 'high';
+    summary?: string;
+    encrypted_content?: string;
+}
+type InputItem = Message | CompactionItem;
+type OutputItem = Message | CompactionItem | ReasoningItem;
+
+/**
+ * LLM Response entity based on OpenAI Responses API format
+ */
+
+/**
+ * Token usage statistics
+ */
+interface TokenUsage {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    output_tokens_details?: {
+        reasoning_tokens: number;
+    };
+}
+interface LLMResponse {
+    id: string;
+    object: 'response';
+    created_at: number;
+    status: 'completed' | 'failed' | 'in_progress' | 'cancelled' | 'queued' | 'incomplete';
+    model: string;
+    output: OutputItem[];
+    output_text?: string;
+    usage: TokenUsage;
+    error?: {
+        type: string;
+        message: string;
+    };
+    metadata?: Record<string, string>;
+}
+type AgentResponse = LLMResponse;
+
+/**
+ * Base provider interface
+ */
+interface ProviderCapabilities {
+    text: boolean;
+    images: boolean;
+    videos: boolean;
+    audio: boolean;
+}
+interface IProvider {
+    readonly name: string;
+    readonly capabilities: ProviderCapabilities;
+    /**
+     * Validate that the provider configuration is correct
+     */
+    validateConfig(): Promise<boolean>;
+}
+
+/**
+ * Tool entities with blocking/non-blocking execution support
+ */
+interface JSONSchema {
+    type: string;
+    properties?: Record<string, any>;
+    required?: string[];
+    [key: string]: any;
+}
+interface FunctionToolDefinition {
+    type: 'function';
+    function: {
+        name: string;
+        description?: string;
+        parameters?: JSONSchema;
+        strict?: boolean;
+    };
+    blocking?: boolean;
+    timeout?: number;
+}
+interface BuiltInTool {
+    type: 'web_search' | 'file_search' | 'computer_use' | 'code_interpreter';
+    blocking?: boolean;
+}
+type Tool = FunctionToolDefinition | BuiltInTool;
+declare enum ToolCallState {
+    PENDING = "pending",// Tool call identified, not yet executed
+    EXECUTING = "executing",// Currently executing
+    COMPLETED = "completed",// Successfully completed
+    FAILED = "failed",// Execution failed
+    TIMEOUT = "timeout"
+}
+interface ToolCall {
+    id: string;
+    type: 'function';
+    function: {
+        name: string;
+        arguments: string;
+    };
+    blocking: boolean;
+    state: ToolCallState;
+    startTime?: Date;
+    endTime?: Date;
+    error?: string;
+}
+interface ToolResult {
+    tool_use_id: string;
+    content: any;
+    error?: string;
+    executionTime?: number;
+    state: ToolCallState;
+}
+/**
+ * Tool execution context - tracks all tool calls in a generation
+ */
+interface ToolExecutionContext {
+    executionId: string;
+    toolCalls: Map<string, ToolCall>;
+    pendingNonBlocking: Set<string>;
+    completedResults: Map<string, ToolResult>;
+}
+/**
+ * User-provided tool function
+ */
+interface ToolFunction<TArgs = any, TResult = any> {
+    definition: FunctionToolDefinition;
+    execute: (args: TArgs) => Promise<TResult>;
+}
+
+/**
+ * Streaming event types for real-time LLM responses
+ * Based on OpenAI Responses API event format as the internal standard
+ */
+
+/**
+ * Stream event type enum
+ */
+declare enum StreamEventType {
+    RESPONSE_CREATED = "response.created",
+    RESPONSE_IN_PROGRESS = "response.in_progress",
+    OUTPUT_TEXT_DELTA = "response.output_text.delta",
+    OUTPUT_TEXT_DONE = "response.output_text.done",
+    TOOL_CALL_START = "response.tool_call.start",
+    TOOL_CALL_ARGUMENTS_DELTA = "response.tool_call_arguments.delta",
+    TOOL_CALL_ARGUMENTS_DONE = "response.tool_call_arguments.done",
+    TOOL_EXECUTION_START = "response.tool_execution.start",
+    TOOL_EXECUTION_DONE = "response.tool_execution.done",
+    ITERATION_COMPLETE = "response.iteration.complete",
+    RESPONSE_COMPLETE = "response.complete",
+    ERROR = "response.error"
+}
+/**
+ * Base interface for all stream events
+ */
+interface BaseStreamEvent {
+    type: StreamEventType;
+    response_id: string;
+}
+/**
+ * Response created - first event in stream
+ */
+interface ResponseCreatedEvent extends BaseStreamEvent {
+    type: StreamEventType.RESPONSE_CREATED;
+    model: string;
+    created_at: number;
+}
+/**
+ * Response in progress
+ */
+interface ResponseInProgressEvent extends BaseStreamEvent {
+    type: StreamEventType.RESPONSE_IN_PROGRESS;
+}
+/**
+ * Text delta - incremental text output
+ */
+interface OutputTextDeltaEvent extends BaseStreamEvent {
+    type: StreamEventType.OUTPUT_TEXT_DELTA;
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    delta: string;
+    sequence_number: number;
+}
+/**
+ * Text output complete for this item
+ */
+interface OutputTextDoneEvent extends BaseStreamEvent {
+    type: StreamEventType.OUTPUT_TEXT_DONE;
+    item_id: string;
+    output_index: number;
+    text: string;
+}
+/**
+ * Tool call detected and starting
+ */
+interface ToolCallStartEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_CALL_START;
+    item_id: string;
+    tool_call_id: string;
+    tool_name: string;
+}
+/**
+ * Tool call arguments delta - incremental JSON
+ */
+interface ToolCallArgumentsDeltaEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_CALL_ARGUMENTS_DELTA;
+    item_id: string;
+    tool_call_id: string;
+    tool_name: string;
+    delta: string;
+    sequence_number: number;
+}
+/**
+ * Tool call arguments complete
+ */
+interface ToolCallArgumentsDoneEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_CALL_ARGUMENTS_DONE;
+    tool_call_id: string;
+    tool_name: string;
+    arguments: string;
+    incomplete?: boolean;
+}
+/**
+ * Tool execution starting
+ */
+interface ToolExecutionStartEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_EXECUTION_START;
+    tool_call_id: string;
+    tool_name: string;
+    arguments: any;
+}
+/**
+ * Tool execution complete
+ */
+interface ToolExecutionDoneEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_EXECUTION_DONE;
+    tool_call_id: string;
+    tool_name: string;
+    result: any;
+    execution_time_ms: number;
+    error?: string;
+}
+/**
+ * Iteration complete - end of agentic loop iteration
+ */
+interface IterationCompleteEvent$1 extends BaseStreamEvent {
+    type: StreamEventType.ITERATION_COMPLETE;
+    iteration: number;
+    tool_calls_count: number;
+    has_more_iterations: boolean;
+}
+/**
+ * Response complete - final event
+ */
+interface ResponseCompleteEvent extends BaseStreamEvent {
+    type: StreamEventType.RESPONSE_COMPLETE;
+    status: 'completed' | 'incomplete' | 'failed';
+    usage: TokenUsage;
+    iterations: number;
+    duration_ms?: number;
+}
+/**
+ * Error event
+ */
+interface ErrorEvent extends BaseStreamEvent {
+    type: StreamEventType.ERROR;
+    error: {
+        type: string;
+        message: string;
+        code?: string;
+    };
+    recoverable: boolean;
+}
+/**
+ * Union type of all stream events
+ * Discriminated by 'type' field for type narrowing
+ */
+type StreamEvent = ResponseCreatedEvent | ResponseInProgressEvent | OutputTextDeltaEvent | OutputTextDoneEvent | ToolCallStartEvent | ToolCallArgumentsDeltaEvent | ToolCallArgumentsDoneEvent | ToolExecutionStartEvent | ToolExecutionDoneEvent | IterationCompleteEvent$1 | ResponseCompleteEvent | ErrorEvent;
+/**
+ * Type guard to check if event is a specific type
+ */
+declare function isStreamEvent<T extends StreamEvent>(event: StreamEvent, type: StreamEventType): event is T;
+/**
+ * Type guards for specific events
+ */
+declare function isOutputTextDelta(event: StreamEvent): event is OutputTextDeltaEvent;
+declare function isToolCallArgumentsDelta(event: StreamEvent): event is ToolCallArgumentsDeltaEvent;
+declare function isToolCallArgumentsDone(event: StreamEvent): event is ToolCallArgumentsDoneEvent;
+declare function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent;
+declare function isErrorEvent(event: StreamEvent): event is ErrorEvent;
+
+/**
+ * Text generation provider interface
+ */
+
+interface TextGenerateOptions {
+    model: string;
+    input: string | InputItem[];
+    instructions?: string;
+    tools?: Tool[];
+    tool_choice?: 'auto' | 'required' | {
+        type: 'function';
+        function: {
+            name: string;
+        };
+    };
+    temperature?: number;
+    max_output_tokens?: number;
+    response_format?: {
+        type: 'text' | 'json_object' | 'json_schema';
+        json_schema?: any;
+    };
+    parallel_tool_calls?: boolean;
+    previous_response_id?: string;
+    metadata?: Record<string, string>;
+}
+interface ModelCapabilities {
+    supportsTools: boolean;
+    supportsVision: boolean;
+    supportsJSON: boolean;
+    supportsJSONSchema: boolean;
+    maxTokens: number;
+    maxInputTokens?: number;
+    maxOutputTokens?: number;
+}
+interface ITextProvider extends IProvider {
+    /**
+     * Generate text response
+     */
+    generate(options: TextGenerateOptions): Promise<LLMResponse>;
+    /**
+     * Stream text response with real-time events
+     * Returns an async iterator of streaming events
+     */
+    streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent>;
+    /**
+     * Get model capabilities
+     */
+    getModelCapabilities(model: string): ModelCapabilities;
+    /**
+     * List available models
+     */
+    listModels?(): Promise<string[]>;
+}
 
 /**
  * Execution context - tracks state, metrics, and history for agent execution
@@ -180,42 +592,6 @@ interface IToolExecutor {
      * List all registered tools
      */
     listTools(): string[];
-}
-
-/**
- * Tool registry - manages tool registration and execution
- */
-
-declare class ToolRegistry implements IToolExecutor {
-    private tools;
-    /**
-     * Register a new tool
-     */
-    registerTool(tool: ToolFunction): void;
-    /**
-     * Unregister a tool
-     */
-    unregisterTool(toolName: string): void;
-    /**
-     * Execute a tool function
-     */
-    execute(toolName: string, args: any): Promise<any>;
-    /**
-     * Check if tool is available
-     */
-    hasToolFunction(toolName: string): boolean;
-    /**
-     * Get tool definition
-     */
-    getToolDefinition(toolName: string): Tool | undefined;
-    /**
-     * List all registered tools
-     */
-    listTools(): string[];
-    /**
-     * Clear all registered tools
-     */
-    clear(): void;
 }
 
 /**
@@ -622,171 +998,40 @@ interface HookSignatures {
     };
 }
 
-interface AgentConfig {
-    provider: string;
-    model: string;
-    instructions?: string;
-    tools?: ToolFunction[];
-    temperature?: number;
-    maxIterations?: number;
-    hooks?: HookConfig;
-    historyMode?: HistoryMode;
-    limits?: {
-        maxExecutionTime?: number;
-        maxToolCalls?: number;
-        maxContextSize?: number;
-        /** Maximum number of input messages to keep (prevents unbounded context growth) */
-        maxInputMessages?: number;
-    };
-    errorHandling?: {
-        hookFailureMode?: 'fail' | 'warn' | 'ignore';
-        toolFailureMode?: 'fail' | 'continue';
-        maxConsecutiveErrors?: number;
-    };
-}
-declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposable {
-    private config;
-    private toolRegistry;
-    private agenticLoop;
-    private cleanupCallbacks;
-    private boundListeners;
-    private _isDestroyed;
-    get isDestroyed(): boolean;
-    constructor(config: AgentConfig, textProvider: ITextProvider, toolRegistry: ToolRegistry);
+/**
+ * Tool registry - manages tool registration and execution
+ */
+
+declare class ToolRegistry implements IToolExecutor {
+    private tools;
     /**
-     * Run the agent with input
-     * @throws Error if agent has been destroyed
+     * Register a new tool
      */
-    run(input: string | InputItem[]): Promise<AgentResponse>;
+    registerTool(tool: ToolFunction): void;
     /**
-     * Stream response from the agent with real-time events
-     * Returns an async iterator of streaming events
-     * Supports full agentic loop with tool calling
-     * @throws Error if agent has been destroyed
+     * Unregister a tool
      */
-    stream(input: string | InputItem[]): AsyncIterableIterator<StreamEvent>;
+    unregisterTool(toolName: string): void;
     /**
-     * Add a tool to the agent
+     * Execute a tool function
      */
-    addTool(tool: ToolFunction): void;
+    execute(toolName: string, args: any): Promise<any>;
     /**
-     * Remove a tool from the agent
+     * Check if tool is available
      */
-    removeTool(toolName: string): void;
+    hasToolFunction(toolName: string): boolean;
     /**
-     * List registered tools
+     * Get tool definition
+     */
+    getToolDefinition(toolName: string): Tool | undefined;
+    /**
+     * List all registered tools
      */
     listTools(): string[];
     /**
-     * Pause execution
+     * Clear all registered tools
      */
-    pause(reason?: string): void;
-    /**
-     * Resume execution
-     */
-    resume(): void;
-    /**
-     * Cancel execution
-     */
-    cancel(reason?: string): void;
-    /**
-     * Get current execution context
-     */
-    getContext(): ExecutionContext | null;
-    /**
-     * Get execution metrics
-     */
-    getMetrics(): ExecutionMetrics | null;
-    /**
-     * Get execution summary
-     */
-    getSummary(): {
-        executionId: string;
-        startTime: Date;
-        currentIteration: number;
-        paused: boolean;
-        cancelled: boolean;
-        metrics: {
-            totalDuration: number;
-            llmDuration: number;
-            toolDuration: number;
-            hookDuration: number;
-            iterationCount: number;
-            toolCallCount: number;
-            toolSuccessCount: number;
-            toolFailureCount: number;
-            toolTimeoutCount: number;
-            inputTokens: number;
-            outputTokens: number;
-            totalTokens: number;
-            errors: Array<{
-                type: string;
-                message: string;
-                timestamp: Date;
-            }>;
-        };
-        totalDuration: number;
-    } | null;
-    /**
-     * Get audit trail
-     */
-    getAuditTrail(): readonly AuditEntry[];
-    /**
-     * Check if currently running
-     */
-    isRunning(): boolean;
-    /**
-     * Check if paused
-     */
-    isPaused(): boolean;
-    /**
-     * Check if cancelled
-     */
-    isCancelled(): boolean;
-    /**
-     * Register cleanup callback
-     */
-    onCleanup(callback: () => void): void;
-    /**
-     * Destroy agent and cleanup resources
-     * Safe to call multiple times (idempotent)
-     */
-    destroy(): void;
-}
-
-/**
- * Agent manager - creates and manages agents with tool calling
- *
- * Implements IDisposable for proper resource cleanup
- */
-
-declare class AgentManager implements IDisposable {
-    private registry;
-    private toolRegistry;
-    private agents;
-    private _isDestroyed;
-    get isDestroyed(): boolean;
-    constructor(registry: ProviderRegistry);
-    /**
-     * Create a new agent instance
-     * @returns Promise<Agent> - async to support race-condition-free provider loading
-     */
-    create(config: AgentConfig): Promise<Agent>;
-    /**
-     * Convenience method for one-off agent calls
-     */
-    run(config: AgentConfig & {
-        input: string | any[];
-    }): Promise<any>;
-    /**
-     * Get the number of active agents
-     */
-    getActiveAgentCount(): number;
-    /**
-     * Destroy the manager and all managed agents
-     * Safe to call multiple times (idempotent)
-     */
-    destroy(): void;
+    clear(): void;
 }
 
 /**
@@ -855,4 +1100,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { AgentManager as A, type BeforeToolContext as B, ExecutionContext as E, HookManager as H, type IToolExecutor as I, type LLMRequestEvent as L, type ModifyingHook as M, ToolRegistry as T, Agent as a, type AgentConfig as b, type AgenticLoopEvents as c, type AgenticLoopEventName as d, type HookConfig as e, type HookName as f, type Hook as g, type AfterToolContext as h, type ApproveToolContext as i, type ToolModification as j, type ApprovalResult as k, type HistoryMode as l, type ExecutionMetrics as m, type AuditEntry as n, AgenticLoop as o, type AgenticLoopConfig as p, type ExecutionStartEvent as q, type ExecutionCompleteEvent as r, type ToolStartEvent as s, type ToolCompleteEvent as t, type LLMResponseEvent as u };
+export { isToolCallArgumentsDone as $, type AgenticLoopEvents as A, type BuiltInTool as B, ContentType as C, type OutputTextDoneEvent as D, ExecutionContext as E, type FunctionToolDefinition as F, type ToolCallStartEvent as G, type HookConfig as H, type InputItem as I, type JSONSchema as J, type ToolCallArgumentsDeltaEvent as K, type LLMResponse as L, type ModelCapabilities as M, type ToolCallArgumentsDoneEvent as N, type OutputTextContent as O, type ProviderCapabilities as P, type ToolExecutionStartEvent as Q, type ReasoningItem as R, type StreamEvent as S, type ToolFunction as T, type ToolExecutionDoneEvent as U, type IterationCompleteEvent$1 as V, type ResponseCompleteEvent as W, type ErrorEvent as X, isStreamEvent as Y, isOutputTextDelta as Z, isToolCallArgumentsDelta as _, type HistoryMode as a, isResponseComplete as a0, isErrorEvent as a1, ToolRegistry as a2, HookManager as a3, type AgenticLoopEventName as a4, type HookName as a5, type Hook as a6, type ModifyingHook as a7, type BeforeToolContext as a8, type AfterToolContext as a9, type ApproveToolContext as aa, type ToolModification as ab, type ApprovalResult as ac, type IToolExecutor as ad, AgenticLoop as ae, type AgenticLoopConfig as af, type ExecutionStartEvent as ag, type ExecutionCompleteEvent as ah, type ToolStartEvent as ai, type ToolCompleteEvent as aj, type LLMRequestEvent as ak, type LLMResponseEvent as al, type AgentResponse as b, type ExecutionMetrics as c, type AuditEntry as d, type ITextProvider as e, type TokenUsage as f, type ToolCall as g, StreamEventType as h, type IProvider as i, type TextGenerateOptions as j, MessageRole as k, type Content as l, type InputTextContent as m, type InputImageContent as n, type ToolUseContent as o, type ToolResultContent as p, type Message as q, type OutputItem as r, type CompactionItem as s, ToolCallState as t, type Tool as u, type ToolResult as v, type ToolExecutionContext as w, type ResponseCreatedEvent as x, type ResponseInProgressEvent as y, type OutputTextDeltaEvent as z };

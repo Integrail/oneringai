@@ -2,22 +2,22 @@
  * Debug: Test Google tool calling
  */
 
-import { OneRingAI, tools } from '../src/index.js';
+import { Connector, Agent, Vendor, tools } from '../src/index.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
 async function main() {
-  const client = new OneRingAI({
-    providers: {
-      google: { apiKey: process.env.GOOGLE_API_KEY! },
-    },
+  Connector.create({
+    name: 'google',
+    vendor: Vendor.Google,
+    auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
   });
 
   console.log('Testing Google tool calling...\n');
 
-  const agent = await client.agents.create({
-    provider: 'google',
+  const agent = Agent.create({
+    connector: 'google',
     model: 'gemini-2.0-flash',
     instructions: 'You are a helpful assistant. When asked to run code or execute JavaScript, you MUST use the execute_javascript tool. Do not write example code - actually execute it using the tool.',
     tools: [tools.executeJavaScript],

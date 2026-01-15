@@ -2,22 +2,22 @@
  * Test Google streaming with tools
  */
 
-import { OneRingAI, tools, isOutputTextDelta, StreamEventType } from '../src/index.js';
+import { Connector, Agent, Vendor, tools, isOutputTextDelta, StreamEventType } from '../src/index.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
 async function main() {
-  const client = new OneRingAI({
-    providers: {
-      google: { apiKey: process.env.GOOGLE_API_KEY! },
-    },
+  Connector.create({
+    name: 'google',
+    vendor: Vendor.Google,
+    auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
   });
 
   console.log('=== Testing Google Streaming with Tools ===\n');
 
-  const agent = await client.agents.create({
-    provider: 'google',
+  const agent = Agent.create({
+    connector: 'google',
     model: 'gemini-2.0-flash-exp',
     instructions: 'Use the execute_javascript tool when asked to run code.',
     tools: [tools.executeJavaScript],

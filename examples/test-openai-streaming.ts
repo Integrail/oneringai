@@ -2,20 +2,20 @@
  * Test OpenAI streaming usage tracking
  */
 
-import { OneRingAI, StreamEventType } from '../src/index.js';
+import { Connector, Agent, Vendor, StreamEventType } from '../src/index.js';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
 
 async function main() {
-  const client = new OneRingAI({
-    providers: {
-      openai: { apiKey: process.env.OPENAI_API_KEY! },
-    },
+  Connector.create({
+    name: 'openai',
+    vendor: Vendor.OpenAI,
+    auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
   });
 
-  const agent = await client.agents.create({
-    provider: 'openai',
+  const agent = Agent.create({
+    connector: 'openai',
     model: 'gpt-4o-mini',
     instructions: 'Be concise.',
   });
