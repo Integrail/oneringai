@@ -1298,6 +1298,268 @@ declare function generateWebAPITool(): ToolFunction<APIRequestArgs, APIRequestRe
 declare function generateEncryptionKey(): string;
 
 /**
+ * ConnectorConfig Storage Interface (Clean Architecture - Domain Layer)
+ *
+ * Defines the contract for storing and retrieving ConnectorConfig objects.
+ * Storage implementations do NOT handle encryption - that's done by ConnectorConfigStore.
+ */
+
+/**
+ * Wrapper for stored connector configuration with metadata
+ */
+interface StoredConnectorConfig {
+    /** The connector configuration (may contain encrypted fields) */
+    config: ConnectorConfig;
+    /** Timestamp when the config was first stored */
+    createdAt: number;
+    /** Timestamp when the config was last updated */
+    updatedAt: number;
+    /** Schema version for future migrations */
+    version: number;
+}
+/**
+ * Storage interface for ConnectorConfig persistence
+ *
+ * Implementations should:
+ * - Store data as-is (encryption is handled by ConnectorConfigStore)
+ * - Use appropriate file permissions for file-based storage
+ * - Hash names for filenames to prevent enumeration attacks
+ */
+interface IConnectorConfigStorage {
+    /**
+     * Save a connector configuration
+     *
+     * @param name - Unique identifier for this connector
+     * @param stored - The stored config with metadata
+     */
+    save(name: string, stored: StoredConnectorConfig): Promise<void>;
+    /**
+     * Retrieve a connector configuration by name
+     *
+     * @param name - Unique identifier for the connector
+     * @returns The stored config or null if not found
+     */
+    get(name: string): Promise<StoredConnectorConfig | null>;
+    /**
+     * Delete a connector configuration
+     *
+     * @param name - Unique identifier for the connector
+     * @returns True if deleted, false if not found
+     */
+    delete(name: string): Promise<boolean>;
+    /**
+     * Check if a connector configuration exists
+     *
+     * @param name - Unique identifier for the connector
+     * @returns True if exists
+     */
+    has(name: string): Promise<boolean>;
+    /**
+     * List all connector names
+     *
+     * @returns Array of connector names
+     */
+    list(): Promise<string[]>;
+    /**
+     * Get all stored connector configurations
+     *
+     * @returns Array of all stored configs
+     */
+    listAll(): Promise<StoredConnectorConfig[]>;
+}
+/** Current schema version */
+declare const CONNECTOR_CONFIG_VERSION = 1;
+
+/**
+ * ConnectorConfigStore - Domain service for storing ConnectorConfig with encryption
+ *
+ * Handles encryption/decryption of sensitive fields uniformly,
+ * regardless of which storage backend is used.
+ */
+
+/**
+ * ConnectorConfigStore - manages connector configs with automatic encryption
+ *
+ * Usage:
+ * ```typescript
+ * const storage = new MemoryConnectorStorage();
+ * const store = new ConnectorConfigStore(storage, process.env.ENCRYPTION_KEY!);
+ *
+ * await store.save('openai', { auth: { type: 'api_key', apiKey: 'sk-xxx' } });
+ * const config = await store.get('openai'); // apiKey is decrypted
+ * ```
+ */
+declare class ConnectorConfigStore {
+    private storage;
+    private encryptionKey;
+    constructor(storage: IConnectorConfigStorage, encryptionKey: string);
+    /**
+     * Save a connector configuration (secrets are encrypted automatically)
+     *
+     * @param name - Unique identifier for this connector
+     * @param config - The connector configuration
+     */
+    save(name: string, config: ConnectorConfig): Promise<void>;
+    /**
+     * Retrieve a connector configuration (secrets are decrypted automatically)
+     *
+     * @param name - Unique identifier for the connector
+     * @returns The decrypted config or null if not found
+     */
+    get(name: string): Promise<ConnectorConfig | null>;
+    /**
+     * Delete a connector configuration
+     *
+     * @param name - Unique identifier for the connector
+     * @returns True if deleted, false if not found
+     */
+    delete(name: string): Promise<boolean>;
+    /**
+     * Check if a connector configuration exists
+     *
+     * @param name - Unique identifier for the connector
+     * @returns True if exists
+     */
+    has(name: string): Promise<boolean>;
+    /**
+     * List all connector names
+     *
+     * @returns Array of connector names
+     */
+    list(): Promise<string[]>;
+    /**
+     * Get all connector configurations (secrets are decrypted automatically)
+     *
+     * @returns Array of decrypted configs
+     */
+    listAll(): Promise<ConnectorConfig[]>;
+    /**
+     * Get stored metadata for a connector
+     *
+     * @param name - Unique identifier for the connector
+     * @returns Metadata (createdAt, updatedAt, version) or null
+     */
+    getMetadata(name: string): Promise<{
+        createdAt: number;
+        updatedAt: number;
+        version: number;
+    } | null>;
+    /**
+     * Encrypt sensitive fields in a ConnectorConfig
+     * Fields encrypted: apiKey, clientSecret, privateKey
+     */
+    private encryptSecrets;
+    /**
+     * Decrypt sensitive fields in a ConnectorConfig
+     */
+    private decryptSecrets;
+    /**
+     * Encrypt secrets in ConnectorAuth based on auth type
+     */
+    private encryptAuthSecrets;
+    /**
+     * Decrypt secrets in ConnectorAuth based on auth type
+     */
+    private decryptAuthSecrets;
+    /**
+     * Encrypt a single value if not already encrypted
+     */
+    private encryptValue;
+    /**
+     * Decrypt a single value if encrypted
+     */
+    private decryptValue;
+    /**
+     * Check if a value is encrypted (has the $ENC$: prefix)
+     */
+    private isEncrypted;
+}
+
+/**
+ * In-memory storage for ConnectorConfig
+ *
+ * Simple Map-based storage. No encryption logic here -
+ * encryption is handled by ConnectorConfigStore.
+ *
+ * Useful for:
+ * - Testing
+ * - Short-lived processes
+ * - Development
+ *
+ * Note: Data is lost when process exits.
+ */
+
+declare class MemoryConnectorStorage implements IConnectorConfigStorage {
+    private configs;
+    save(name: string, stored: StoredConnectorConfig): Promise<void>;
+    get(name: string): Promise<StoredConnectorConfig | null>;
+    delete(name: string): Promise<boolean>;
+    has(name: string): Promise<boolean>;
+    list(): Promise<string[]>;
+    listAll(): Promise<StoredConnectorConfig[]>;
+    /**
+     * Clear all stored configs (useful for testing)
+     */
+    clear(): void;
+    /**
+     * Get the number of stored configs
+     */
+    size(): number;
+}
+
+/**
+ * File-based storage for ConnectorConfig
+ *
+ * Stores each connector config as a JSON file with restrictive permissions.
+ * No encryption logic here - encryption is handled by ConnectorConfigStore.
+ *
+ * File structure:
+ * - {directory}/{hash}.connector.json - individual connector files
+ * - {directory}/_index.json - maps hashes to names for list()
+ */
+
+interface FileConnectorStorageConfig {
+    /** Directory to store connector files */
+    directory: string;
+}
+declare class FileConnectorStorage implements IConnectorConfigStorage {
+    private directory;
+    private indexPath;
+    private initialized;
+    constructor(config: FileConnectorStorageConfig);
+    save(name: string, stored: StoredConnectorConfig): Promise<void>;
+    get(name: string): Promise<StoredConnectorConfig | null>;
+    delete(name: string): Promise<boolean>;
+    has(name: string): Promise<boolean>;
+    list(): Promise<string[]>;
+    listAll(): Promise<StoredConnectorConfig[]>;
+    /**
+     * Clear all stored configs (useful for testing)
+     */
+    clear(): Promise<void>;
+    /**
+     * Get file path for a connector (hashed for security)
+     */
+    private getFilePath;
+    /**
+     * Hash connector name to prevent enumeration
+     */
+    private hashName;
+    /**
+     * Ensure storage directory exists with proper permissions
+     */
+    private ensureDirectory;
+    /**
+     * Load the index file
+     */
+    private loadIndex;
+    /**
+     * Update the index file
+     */
+    private updateIndex;
+}
+
+/**
  * Message builder utilities for constructing complex inputs
  */
 
@@ -1568,4 +1830,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig, AgentResponse, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ExecutionContext, ExecutionMetrics, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAsyncDisposable, type IDisposable, type ILLMDescription, IProvider, ITextProvider, type ITokenStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, MODEL_REGISTRY, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, calculateCost, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, readClipboardImage, index as tools };
+export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig, AgentResponse, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, ExecutionContext, ExecutionMetrics, FileConnectorStorage, type FileConnectorStorageConfig, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAsyncDisposable, type IConnectorConfigStorage, type IDisposable, type ILLMDescription, IProvider, ITextProvider, type ITokenStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, MODEL_REGISTRY, MemoryConnectorStorage, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, calculateCost, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, readClipboardImage, index as tools };

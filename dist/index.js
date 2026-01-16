@@ -1,12 +1,12 @@
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs3 from 'fs';
+import * as fs4 from 'fs';
 import { EventEmitter } from 'eventemitter3';
 import OpenAI from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
-import * as fs2 from 'fs/promises';
+import * as fs3 from 'fs/promises';
 import * as path2 from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -516,7 +516,7 @@ var JWTBearerFlow = class {
       this.privateKey = config.privateKey;
     } else if (config.privateKeyPath) {
       try {
-        this.privateKey = fs3.readFileSync(config.privateKeyPath, "utf8");
+        this.privateKey = fs4.readFileSync(config.privateKeyPath, "utf8");
       } catch (error) {
         throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
       }
@@ -6431,8 +6431,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs2.mkdir(this.directory, { recursive: true });
-      await fs2.chmod(this.directory, 448);
+      await fs3.mkdir(this.directory, { recursive: true });
+      await fs3.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -6448,13 +6448,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs2.writeFile(filePath, encrypted, "utf8");
-    await fs2.chmod(filePath, 384);
+    await fs3.writeFile(filePath, encrypted, "utf8");
+    await fs3.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs2.readFile(filePath, "utf8");
+      const encrypted = await fs3.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -6463,7 +6463,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs2.unlink(filePath);
+        await fs3.unlink(filePath);
       } catch {
       }
       return null;
@@ -6472,7 +6472,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs2.unlink(filePath);
+      await fs3.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -6482,7 +6482,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs2.access(filePath);
+      await fs3.access(filePath);
       return true;
     } catch {
       return false;
@@ -6493,7 +6493,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs2.readdir(this.directory);
+      const files = await fs3.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -6504,10 +6504,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs2.readdir(this.directory);
+      const files = await fs3.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs2.unlink(path2.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs3.unlink(path2.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -6649,6 +6649,390 @@ Create Salesforce account:
   };
 }
 
+// src/domain/interfaces/IConnectorConfigStorage.ts
+var CONNECTOR_CONFIG_VERSION = 1;
+
+// src/connectors/storage/ConnectorConfigStore.ts
+var ENCRYPTED_PREFIX = "$ENC$:";
+var ConnectorConfigStore = class {
+  constructor(storage, encryptionKey) {
+    this.storage = storage;
+    this.encryptionKey = encryptionKey;
+    if (!encryptionKey || encryptionKey.length < 16) {
+      throw new Error(
+        "ConnectorConfigStore requires an encryption key of at least 16 characters"
+      );
+    }
+  }
+  /**
+   * Save a connector configuration (secrets are encrypted automatically)
+   *
+   * @param name - Unique identifier for this connector
+   * @param config - The connector configuration
+   */
+  async save(name, config) {
+    if (!name || name.trim().length === 0) {
+      throw new Error("Connector name is required");
+    }
+    const existing = await this.storage.get(name);
+    const now = Date.now();
+    const encryptedConfig = this.encryptSecrets(config);
+    const stored = {
+      config: { ...encryptedConfig, name },
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+      version: CONNECTOR_CONFIG_VERSION
+    };
+    await this.storage.save(name, stored);
+  }
+  /**
+   * Retrieve a connector configuration (secrets are decrypted automatically)
+   *
+   * @param name - Unique identifier for the connector
+   * @returns The decrypted config or null if not found
+   */
+  async get(name) {
+    const stored = await this.storage.get(name);
+    if (!stored) {
+      return null;
+    }
+    return this.decryptSecrets(stored.config);
+  }
+  /**
+   * Delete a connector configuration
+   *
+   * @param name - Unique identifier for the connector
+   * @returns True if deleted, false if not found
+   */
+  async delete(name) {
+    return this.storage.delete(name);
+  }
+  /**
+   * Check if a connector configuration exists
+   *
+   * @param name - Unique identifier for the connector
+   * @returns True if exists
+   */
+  async has(name) {
+    return this.storage.has(name);
+  }
+  /**
+   * List all connector names
+   *
+   * @returns Array of connector names
+   */
+  async list() {
+    return this.storage.list();
+  }
+  /**
+   * Get all connector configurations (secrets are decrypted automatically)
+   *
+   * @returns Array of decrypted configs
+   */
+  async listAll() {
+    const stored = await this.storage.listAll();
+    return stored.map((s) => this.decryptSecrets(s.config));
+  }
+  /**
+   * Get stored metadata for a connector
+   *
+   * @param name - Unique identifier for the connector
+   * @returns Metadata (createdAt, updatedAt, version) or null
+   */
+  async getMetadata(name) {
+    const stored = await this.storage.get(name);
+    if (!stored) {
+      return null;
+    }
+    return {
+      createdAt: stored.createdAt,
+      updatedAt: stored.updatedAt,
+      version: stored.version
+    };
+  }
+  // ============ Encryption Helpers ============
+  /**
+   * Encrypt sensitive fields in a ConnectorConfig
+   * Fields encrypted: apiKey, clientSecret, privateKey
+   */
+  encryptSecrets(config) {
+    const result = { ...config };
+    if (result.auth) {
+      result.auth = this.encryptAuthSecrets(result.auth);
+    }
+    return result;
+  }
+  /**
+   * Decrypt sensitive fields in a ConnectorConfig
+   */
+  decryptSecrets(config) {
+    const result = { ...config };
+    if (result.auth) {
+      result.auth = this.decryptAuthSecrets(result.auth);
+    }
+    return result;
+  }
+  /**
+   * Encrypt secrets in ConnectorAuth based on auth type
+   */
+  encryptAuthSecrets(auth) {
+    switch (auth.type) {
+      case "api_key":
+        return {
+          ...auth,
+          apiKey: this.encryptValue(auth.apiKey)
+        };
+      case "oauth":
+        return {
+          ...auth,
+          clientSecret: auth.clientSecret ? this.encryptValue(auth.clientSecret) : void 0,
+          privateKey: auth.privateKey ? this.encryptValue(auth.privateKey) : void 0
+        };
+      case "jwt":
+        return {
+          ...auth,
+          privateKey: this.encryptValue(auth.privateKey)
+        };
+      default:
+        return auth;
+    }
+  }
+  /**
+   * Decrypt secrets in ConnectorAuth based on auth type
+   */
+  decryptAuthSecrets(auth) {
+    switch (auth.type) {
+      case "api_key":
+        return {
+          ...auth,
+          apiKey: this.decryptValue(auth.apiKey)
+        };
+      case "oauth":
+        return {
+          ...auth,
+          clientSecret: auth.clientSecret ? this.decryptValue(auth.clientSecret) : void 0,
+          privateKey: auth.privateKey ? this.decryptValue(auth.privateKey) : void 0
+        };
+      case "jwt":
+        return {
+          ...auth,
+          privateKey: this.decryptValue(auth.privateKey)
+        };
+      default:
+        return auth;
+    }
+  }
+  /**
+   * Encrypt a single value if not already encrypted
+   */
+  encryptValue(value) {
+    if (this.isEncrypted(value)) {
+      return value;
+    }
+    const encrypted = encrypt(value, this.encryptionKey);
+    return `${ENCRYPTED_PREFIX}${encrypted}`;
+  }
+  /**
+   * Decrypt a single value if encrypted
+   */
+  decryptValue(value) {
+    if (!this.isEncrypted(value)) {
+      return value;
+    }
+    const encryptedData = value.slice(ENCRYPTED_PREFIX.length);
+    return decrypt(encryptedData, this.encryptionKey);
+  }
+  /**
+   * Check if a value is encrypted (has the $ENC$: prefix)
+   */
+  isEncrypted(value) {
+    return value.startsWith(ENCRYPTED_PREFIX);
+  }
+};
+
+// src/connectors/storage/MemoryConnectorStorage.ts
+var MemoryConnectorStorage = class {
+  configs = /* @__PURE__ */ new Map();
+  async save(name, stored) {
+    this.configs.set(name, JSON.parse(JSON.stringify(stored)));
+  }
+  async get(name) {
+    const stored = this.configs.get(name);
+    if (!stored) {
+      return null;
+    }
+    return JSON.parse(JSON.stringify(stored));
+  }
+  async delete(name) {
+    return this.configs.delete(name);
+  }
+  async has(name) {
+    return this.configs.has(name);
+  }
+  async list() {
+    return Array.from(this.configs.keys());
+  }
+  async listAll() {
+    return Array.from(this.configs.values()).map(
+      (stored) => JSON.parse(JSON.stringify(stored))
+    );
+  }
+  /**
+   * Clear all stored configs (useful for testing)
+   */
+  clear() {
+    this.configs.clear();
+  }
+  /**
+   * Get the number of stored configs
+   */
+  size() {
+    return this.configs.size;
+  }
+};
+var FileConnectorStorage = class {
+  directory;
+  indexPath;
+  initialized = false;
+  constructor(config) {
+    if (!config.directory) {
+      throw new Error("FileConnectorStorage requires a directory path");
+    }
+    this.directory = config.directory;
+    this.indexPath = path2.join(this.directory, "_index.json");
+  }
+  async save(name, stored) {
+    await this.ensureDirectory();
+    const filePath = this.getFilePath(name);
+    const json = JSON.stringify(stored, null, 2);
+    await fs3.writeFile(filePath, json, "utf8");
+    await fs3.chmod(filePath, 384);
+    await this.updateIndex(name, "add");
+  }
+  async get(name) {
+    const filePath = this.getFilePath(name);
+    try {
+      const json = await fs3.readFile(filePath, "utf8");
+      return JSON.parse(json);
+    } catch (error) {
+      const err = error;
+      if (err.code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+  }
+  async delete(name) {
+    const filePath = this.getFilePath(name);
+    try {
+      await fs3.unlink(filePath);
+      await this.updateIndex(name, "remove");
+      return true;
+    } catch (error) {
+      const err = error;
+      if (err.code === "ENOENT") {
+        return false;
+      }
+      throw error;
+    }
+  }
+  async has(name) {
+    const filePath = this.getFilePath(name);
+    try {
+      await fs3.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async list() {
+    const index = await this.loadIndex();
+    return Object.values(index.connectors);
+  }
+  async listAll() {
+    const names = await this.list();
+    const results = [];
+    for (const name of names) {
+      const stored = await this.get(name);
+      if (stored) {
+        results.push(stored);
+      }
+    }
+    return results;
+  }
+  /**
+   * Clear all stored configs (useful for testing)
+   */
+  async clear() {
+    try {
+      const files = await fs3.readdir(this.directory);
+      const connectorFiles = files.filter(
+        (f) => f.endsWith(".connector.json") || f === "_index.json"
+      );
+      await Promise.all(
+        connectorFiles.map(
+          (f) => fs3.unlink(path2.join(this.directory, f)).catch(() => {
+          })
+        )
+      );
+    } catch {
+    }
+  }
+  // ============ Private Helpers ============
+  /**
+   * Get file path for a connector (hashed for security)
+   */
+  getFilePath(name) {
+    const hash = this.hashName(name);
+    return path2.join(this.directory, `${hash}.connector.json`);
+  }
+  /**
+   * Hash connector name to prevent enumeration
+   */
+  hashName(name) {
+    return crypto.createHash("sha256").update(name).digest("hex").slice(0, 16);
+  }
+  /**
+   * Ensure storage directory exists with proper permissions
+   */
+  async ensureDirectory() {
+    if (this.initialized) return;
+    try {
+      await fs3.mkdir(this.directory, { recursive: true });
+      await fs3.chmod(this.directory, 448);
+      this.initialized = true;
+    } catch {
+      this.initialized = true;
+    }
+  }
+  /**
+   * Load the index file
+   */
+  async loadIndex() {
+    try {
+      const json = await fs3.readFile(this.indexPath, "utf8");
+      return JSON.parse(json);
+    } catch {
+      return { connectors: {} };
+    }
+  }
+  /**
+   * Update the index file
+   */
+  async updateIndex(name, action) {
+    const index = await this.loadIndex();
+    const hash = this.hashName(name);
+    if (action === "add") {
+      index.connectors[hash] = name;
+    } else {
+      delete index.connectors[hash];
+    }
+    const json = JSON.stringify(index, null, 2);
+    await fs3.writeFile(this.indexPath, json, "utf8");
+    await fs3.chmod(this.indexPath, 384);
+  }
+};
+
 // src/utils/messageBuilder.ts
 var MessageBuilder = class {
   messages = [];
@@ -6785,8 +7169,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs3.existsSync(filePath)) {
-      fs3.unlinkSync(filePath);
+    if (fs4.existsSync(filePath)) {
+      fs4.unlinkSync(filePath);
     }
   } catch {
   }
@@ -6837,7 +7221,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs3.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs4.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -6854,14 +7238,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs3.existsSync(tempFile) && fs3.statSync(tempFile).size > 0) {
+      if (fs4.existsSync(tempFile) && fs4.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs3.existsSync(tempFile) && fs3.statSync(tempFile).size > 0) {
+      if (fs4.existsSync(tempFile) && fs4.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -6888,7 +7272,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs3.existsSync(tempFile) && fs3.statSync(tempFile).size > 0) {
+    if (fs4.existsSync(tempFile) && fs4.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -6901,7 +7285,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs3.readFileSync(filePath);
+    const imageBuffer = fs4.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -6972,19 +7356,19 @@ __export(tools_exports, {
 });
 
 // src/tools/json/pathUtils.ts
-function parsePath(path3) {
-  if (path3 === "" || path3 === "$") {
+function parsePath(path4) {
+  if (path4 === "" || path4 === "$") {
     return [];
   }
-  const keys = path3.split(".");
+  const keys = path4.split(".");
   const filtered = keys.filter((p) => p.length > 0);
   if (filtered.length !== keys.length) {
-    throw new Error(`Invalid path format: ${path3} (consecutive dots not allowed)`);
+    throw new Error(`Invalid path format: ${path4} (consecutive dots not allowed)`);
   }
   return filtered;
 }
-function getValueAtPath(obj, path3) {
-  const keys = parsePath(path3);
+function getValueAtPath(obj, path4) {
+  const keys = parsePath(path4);
   let current = obj;
   for (const key of keys) {
     if (current === null || current === void 0) {
@@ -6994,8 +7378,8 @@ function getValueAtPath(obj, path3) {
   }
   return current;
 }
-function setValueAtPath(obj, path3, value) {
-  const keys = parsePath(path3);
+function setValueAtPath(obj, path4, value) {
+  const keys = parsePath(path4);
   if (keys.length === 0) {
     throw new Error("Cannot set root object - path must not be empty");
   }
@@ -7024,8 +7408,8 @@ function setValueAtPath(obj, path3, value) {
   }
   return true;
 }
-function deleteAtPath(obj, path3) {
-  const keys = parsePath(path3);
+function deleteAtPath(obj, path4) {
+  const keys = parsePath(path4);
   if (keys.length === 0) {
     throw new Error("Cannot delete root object - path must not be empty");
   }
@@ -7055,9 +7439,9 @@ function deleteAtPath(obj, path3) {
   }
   return true;
 }
-function pathExists(obj, path3) {
+function pathExists(obj, path4) {
   try {
-    const value = getValueAtPath(obj, path3);
+    const value = getValueAtPath(obj, path4);
     return value !== void 0;
   } catch {
     return false;
@@ -8369,6 +8753,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AIError, Agent, BaseProvider, BaseTextProvider, Connector, ContentType, ExecutionContext, FileStorage, HookManager, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, MODEL_REGISTRY, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthManager, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, calculateCost, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, readClipboardImage, tools_exports as tools };
+export { AIError, Agent, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, Connector, ConnectorConfigStore, ContentType, ExecutionContext, FileConnectorStorage, FileStorage, HookManager, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, MODEL_REGISTRY, MemoryConnectorStorage, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthManager, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, VENDORS, Vendor, assertNotDestroyed, authenticatedFetch, calculateCost, createAuthenticatedFetch, createExecuteJavaScriptTool, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, readClipboardImage, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map
