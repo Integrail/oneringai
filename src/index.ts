@@ -169,6 +169,19 @@ export { OAuthManager, MemoryStorage, FileStorage } from './connectors/index.js'
 export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch, generateWebAPITool } from './connectors/index.js';
 export type { OAuthConfig, OAuthFlow, ITokenStorage, FileStorageConfig, StoredToken } from './connectors/index.js';
 
+// ConnectorConfig storage (persistent connector configs with encryption)
+export {
+  ConnectorConfigStore,
+  MemoryConnectorStorage,
+  FileConnectorStorage,
+  CONNECTOR_CONFIG_VERSION,
+} from './connectors/index.js';
+export type {
+  IConnectorConfigStorage,
+  StoredConnectorConfig,
+  FileConnectorStorageConfig,
+} from './connectors/index.js';
+
 // ============ Utilities ============
 export { MessageBuilder, createTextMessage, createMessageWithImages } from './utils/messageBuilder.js';
 export { readClipboardImage, hasClipboardImage } from './utils/clipboardImage.js';

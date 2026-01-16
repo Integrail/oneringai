@@ -36,3 +36,16 @@ export { generateWebAPITool } from './toolGenerator.js';
 // OAuth utilities (for advanced users)
 export { generatePKCE, generateState } from './oauth/utils/pkce.js';
 export { encrypt, decrypt, generateEncryptionKey } from './oauth/utils/encryption.js';
+
+// ConnectorConfig storage (for persistent connector configs)
+export {
+  ConnectorConfigStore,
+  MemoryConnectorStorage,
+  FileConnectorStorage,
+  CONNECTOR_CONFIG_VERSION,
+} from './storage/index.js';
+export type {
+  IConnectorConfigStorage,
+  StoredConnectorConfig,
+  FileConnectorStorageConfig,
+} from './storage/index.js';
