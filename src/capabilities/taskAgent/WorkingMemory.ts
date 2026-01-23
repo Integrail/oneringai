@@ -5,12 +5,12 @@
 import EventEmitter from 'eventemitter3';
 import { IMemoryStorage } from '../../domain/interfaces/IMemoryStorage.js';
 import { WorkingMemoryAccess } from '../../domain/interfaces/IToolContext.js';
-import {
+import type {
   MemoryIndex,
   MemoryScope,
   WorkingMemoryConfig,
-  DEFAULT_MEMORY_CONFIG,
 } from '../../domain/entities/Memory.js';
+import { DEFAULT_MEMORY_CONFIG } from '../../domain/entities/Memory.js';
 
 export interface WorkingMemoryEvents {
   stored: { key: string; description: string };
@@ -267,4 +267,5 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> {
   }
 }
 
-export { WorkingMemoryConfig, DEFAULT_MEMORY_CONFIG };
+export type { WorkingMemoryConfig };
+export { DEFAULT_MEMORY_CONFIG };

@@ -1913,22 +1913,25 @@ function setMetricsCollector(collector) {
 var BaseTextProvider = class extends BaseProvider {
   circuitBreaker;
   logger;
+  _isObservabilityInitialized = false;
   constructor(config) {
     super(config);
-    this.circuitBreaker = new CircuitBreaker(
-      "provider:temp",
-      config.circuitBreaker || DEFAULT_CIRCUIT_BREAKER_CONFIG
-    );
     this.logger = logger.child({
-      component: "Provider"
+      component: "Provider",
+      provider: "unknown"
     });
   }
   /**
-   * Initialize circuit breaker and logger after subclass sets name
-   * Subclasses should call this in their constructor
+   * Auto-initialize observability on first use (lazy initialization)
+   * This is called automatically by executeWithCircuitBreaker()
+   * @internal
    */
-  initializeObservability(providerName) {
-    const cbConfig = this.circuitBreaker.getConfig();
+  ensureObservabilityInitialized() {
+    if (this._isObservabilityInitialized) {
+      return;
+    }
+    const providerName = this.name || "unknown";
+    const cbConfig = this.config.circuitBreaker || DEFAULT_CIRCUIT_BREAKER_CONFIG;
     this.circuitBreaker = new CircuitBreaker(
       `provider:${providerName}`,
       cbConfig
@@ -1951,11 +1954,21 @@ var BaseTextProvider = class extends BaseProvider {
         provider: providerName
       });
     });
+    this._isObservabilityInitialized = true;
+  }
+  /**
+   * DEPRECATED: No longer needed, kept for backward compatibility
+   * Observability is now auto-initialized on first use
+   * @deprecated Initialization happens automatically
+   */
+  initializeObservability(_providerName) {
+    this.ensureObservabilityInitialized();
   }
   /**
    * Execute with circuit breaker protection (helper for subclasses)
    */
   async executeWithCircuitBreaker(operation, model) {
+    this.ensureObservabilityInitialized();
     const startTime = Date.now();
     const operationName = "llm.generate";
     this.logger.debug({
@@ -1967,6 +1980,9 @@ var BaseTextProvider = class extends BaseProvider {
       model: model || "unknown"
     });
     try {
+      if (!this.circuitBreaker) {
+        return await operation();
+      }
       const result = await this.circuitBreaker.execute(operation);
       const duration = Date.now() - startTime;
       this.logger.info({
@@ -2004,6 +2020,9 @@ var BaseTextProvider = class extends BaseProvider {
    * Get circuit breaker metrics
    */
   getCircuitBreakerMetrics() {
+    if (!this.circuitBreaker) {
+      return null;
+    }
     return this.circuitBreaker.getMetrics();
   }
   /**
@@ -2084,7 +2103,6 @@ var OpenAITextProvider = class extends BaseTextProvider {
   client;
   constructor(config) {
     super(config);
-    this.initializeObservability(this.name);
     this.client = new OpenAI__default.default({
       apiKey: this.getApiKey(),
       baseURL: this.getBaseURL(),
@@ -2891,7 +2909,6 @@ var AnthropicTextProvider = class extends BaseTextProvider {
   streamConverter;
   constructor(config) {
     super(config);
-    this.initializeObservability(this.name);
     this.client = new Anthropic__default.default({
       apiKey: this.getApiKey(),
       baseURL: this.getBaseURL(),
@@ -3615,7 +3632,6 @@ var GoogleTextProvider = class extends BaseTextProvider {
   streamConverter;
   constructor(config) {
     super(config);
-    this.initializeObservability(this.name);
     this.client = new genai.GoogleGenAI({
       apiKey: this.getApiKey()
     });

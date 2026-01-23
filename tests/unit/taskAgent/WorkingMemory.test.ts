@@ -7,7 +7,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { WorkingMemory } from '@/capabilities/taskAgent/WorkingMemory.js';
 import { IMemoryStorage } from '@/domain/interfaces/IMemoryStorage.js';
 import { InMemoryStorage } from '@/infrastructure/storage/InMemoryStorage.js';
-import { WorkingMemoryConfig, DEFAULT_MEMORY_CONFIG } from '@/domain/entities/Memory.js';
+import type { WorkingMemoryConfig } from '@/domain/entities/Memory.js';
+import { DEFAULT_MEMORY_CONFIG } from '@/domain/entities/Memory.js';
 
 describe('WorkingMemory', () => {
   let storage: IMemoryStorage;

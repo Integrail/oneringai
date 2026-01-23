@@ -2525,14 +2525,22 @@ declare class FrameworkLogger {
 declare const logger: FrameworkLogger;
 
 declare abstract class BaseTextProvider extends BaseProvider implements ITextProvider {
-    protected circuitBreaker: CircuitBreaker;
+    protected circuitBreaker?: CircuitBreaker;
     protected logger: FrameworkLogger;
+    private _isObservabilityInitialized;
     constructor(config: any);
     /**
-     * Initialize circuit breaker and logger after subclass sets name
-     * Subclasses should call this in their constructor
+     * Auto-initialize observability on first use (lazy initialization)
+     * This is called automatically by executeWithCircuitBreaker()
+     * @internal
      */
-    protected initializeObservability(providerName: string): void;
+    private ensureObservabilityInitialized;
+    /**
+     * DEPRECATED: No longer needed, kept for backward compatibility
+     * Observability is now auto-initialized on first use
+     * @deprecated Initialization happens automatically
+     */
+    protected initializeObservability(_providerName: string): void;
     abstract generate(options: TextGenerateOptions): Promise<LLMResponse>;
     abstract streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent>;
     abstract getModelCapabilities(model: string): ModelCapabilities;
@@ -2543,7 +2551,7 @@ declare abstract class BaseTextProvider extends BaseProvider implements ITextPro
     /**
      * Get circuit breaker metrics
      */
-    getCircuitBreakerMetrics(): CircuitBreakerMetrics;
+    getCircuitBreakerMetrics(): CircuitBreakerMetrics | null;
     /**
      * Normalize input to string (helper for providers that don't support complex input)
      */
