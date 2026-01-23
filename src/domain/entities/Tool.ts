@@ -69,9 +69,40 @@ export interface ToolExecutionContext {
 }
 
 /**
+ * Tool context - passed to tools during execution (optional, for TaskAgent)
+ */
+export interface ToolContext {
+  agentId: string;
+  taskId?: string;
+  memory?: any; // WorkingMemoryAccess, but avoiding circular dependency
+  signal?: AbortSignal;
+}
+
+/**
+ * Output handling hints for context management
+ */
+export interface ToolOutputHints {
+  expectedSize?: 'small' | 'medium' | 'large' | 'variable';
+  summarize?: (output: unknown) => string;
+}
+
+/**
+ * Idempotency configuration for tool caching
+ */
+export interface ToolIdempotency {
+  safe: boolean;
+  keyFn?: (args: Record<string, unknown>) => string;
+  ttlMs?: number;
+}
+
+/**
  * User-provided tool function
  */
 export interface ToolFunction<TArgs = any, TResult = any> {
   definition: FunctionToolDefinition;
-  execute: (args: TArgs) => Promise<TResult>;
+  execute: (args: TArgs, context?: ToolContext) => Promise<TResult>;
+
+  // Extended fields for TaskAgent (optional, backward compatible)
+  idempotency?: ToolIdempotency;
+  output?: ToolOutputHints;
 }

@@ -30,6 +30,70 @@
 export { Connector, Agent, Vendor, VENDORS, isVendor, createProvider } from './core/index.js';
 export type { AgentConfig } from './core/index.js';
 
+// ============ Task-Based Agents ============
+export { TaskAgent, WorkingMemory, ContextManager, IdempotencyCache, createMemoryTools } from './capabilities/taskAgent/index.js';
+export type {
+  TaskAgentConfig,
+  TaskAgentHooks,
+  AgentHandle,
+  PlanResult,
+  PlanUpdates,
+  TaskContext,
+  TaskResult,
+  ErrorContext,
+  WorkingMemoryEvents,
+  ContextManagerConfig,
+  ContextComponents,
+  ContextBudget,
+  CompactionStrategy,
+  IdempotencyCacheConfig,
+  CacheStats,
+} from './capabilities/taskAgent/index.js';
+
+// Task & Plan Entities
+export type {
+  Task,
+  TaskInput,
+  TaskStatus,
+  TaskCondition,
+  TaskExecution,
+  ExternalDependency,
+  Plan,
+  PlanInput,
+  PlanStatus,
+  PlanConcurrency,
+} from './domain/entities/Task.js';
+
+// Memory Entities
+export type {
+  MemoryEntry,
+  MemoryIndex,
+  MemoryIndexEntry,
+  MemoryScope,
+  WorkingMemoryConfig,
+} from './domain/entities/Memory.js';
+export { DEFAULT_MEMORY_CONFIG } from './domain/entities/Memory.js';
+
+// Agent State
+export type {
+  AgentState,
+  AgentStatus,
+  AgentConfig as TaskAgentStateConfig,
+  ConversationMessage,
+  AgentMetrics,
+} from './domain/entities/AgentState.js';
+
+// Storage Interfaces
+export type { IMemoryStorage } from './domain/interfaces/IMemoryStorage.js';
+export type { IPlanStorage } from './domain/interfaces/IPlanStorage.js';
+export type { IAgentStateStorage } from './domain/interfaces/IAgentStateStorage.js';
+export { createAgentStorage } from './infrastructure/storage/index.js';
+export type { IAgentStorage } from './infrastructure/storage/InMemoryStorage.js';
+export { InMemoryStorage, InMemoryPlanStorage, InMemoryAgentStateStorage } from './infrastructure/storage/index.js';
+
+// Tool Context
+export type { ToolContext as TaskToolContext, WorkingMemoryAccess } from './domain/interfaces/IToolContext.js';
+
 // ============ Domain Types ============
 
 // Content

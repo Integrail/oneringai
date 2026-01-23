@@ -190,11 +190,37 @@ interface ToolExecutionContext {
     completedResults: Map<string, ToolResult>;
 }
 /**
+ * Tool context - passed to tools during execution (optional, for TaskAgent)
+ */
+interface ToolContext {
+    agentId: string;
+    taskId?: string;
+    memory?: any;
+    signal?: AbortSignal;
+}
+/**
+ * Output handling hints for context management
+ */
+interface ToolOutputHints {
+    expectedSize?: 'small' | 'medium' | 'large' | 'variable';
+    summarize?: (output: unknown) => string;
+}
+/**
+ * Idempotency configuration for tool caching
+ */
+interface ToolIdempotency {
+    safe: boolean;
+    keyFn?: (args: Record<string, unknown>) => string;
+    ttlMs?: number;
+}
+/**
  * User-provided tool function
  */
 interface ToolFunction<TArgs = any, TResult = any> {
     definition: FunctionToolDefinition;
-    execute: (args: TArgs) => Promise<TResult>;
+    execute: (args: TArgs, context?: ToolContext) => Promise<TResult>;
+    idempotency?: ToolIdempotency;
+    output?: ToolOutputHints;
 }
 
 /**
