@@ -1079,6 +1079,569 @@ declare class WorkingMemory extends EventEmitter$1<WorkingMemoryEvents> {
 }
 
 /**
+ * ContextManager - manages context window size and compaction
+ */
+
+/**
+ * Context manager configuration
+ */
+interface ContextManagerConfig {
+    /** Model's max context tokens */
+    maxContextTokens: number;
+    /** Trigger compaction at this % of max */
+    compactionThreshold: number;
+    /** Hard limit - must compact before LLM call */
+    hardLimit: number;
+    /** Reserve space for response */
+    responseReserve: number;
+    /** Token estimator method */
+    tokenEstimator: 'approximate' | 'tiktoken';
+}
+/**
+ * Compaction strategy configuration
+ */
+interface CompactionStrategy {
+    /** Priority order for compaction */
+    priority: Array<'toolOutputs' | 'history' | 'memory'>;
+    /** Strategy for history compaction */
+    historyStrategy: 'summarize' | 'truncate' | 'sliding-window';
+    /** Strategy for memory eviction */
+    memoryStrategy: 'lru' | 'largest-first' | 'oldest-first';
+    /** Max tokens for tool outputs */
+    toolOutputMaxSize: number;
+}
+/**
+ * Context components that make up the full context
+ */
+interface ContextComponents {
+    systemPrompt: string;
+    instructions: string;
+    memoryIndex: string;
+    conversationHistory: Array<{
+        role: string;
+        content: string;
+    }>;
+    currentInput: string;
+}
+/**
+ * Context budget breakdown
+ */
+interface ContextBudget {
+    total: number;
+    reserved: number;
+    used: number;
+    available: number;
+    utilizationPercent: number;
+    status: 'ok' | 'warning' | 'critical';
+    breakdown: {
+        systemPrompt: number;
+        instructions: number;
+        memoryIndex: number;
+        conversationHistory: number;
+        currentInput: number;
+    };
+}
+/**
+ * Prepared context result
+ */
+interface PreparedContext {
+    components: ContextComponents;
+    budget: ContextBudget;
+    compacted: boolean;
+    compactionLog?: string[];
+}
+/**
+ * Memory manager interface (for compaction)
+ */
+interface IMemoryManager {
+    evictLRU(count: number): Promise<string[]>;
+    formatIndex?(): Promise<string>;
+    getIndex?(): Promise<{
+        entries: any[];
+    }>;
+}
+/**
+ * History manager interface (for compaction)
+ */
+interface IHistoryManager {
+    summarize(): Promise<void>;
+    truncate?(messages: any[], limit: number): Promise<any[]>;
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_CONTEXT_CONFIG: ContextManagerConfig;
+/**
+ * Default compaction strategy
+ */
+declare const DEFAULT_COMPACTION_STRATEGY: CompactionStrategy;
+interface ContextManagerEvents {
+    compacting: {
+        reason: string;
+    };
+    compacted: {
+        log: string[];
+    };
+}
+/**
+ * ContextManager handles context window management.
+ *
+ * Features:
+ * - Token estimation (approximate or tiktoken)
+ * - Proactive compaction before overflow
+ * - Configurable compaction strategies
+ * - Tool output truncation
+ */
+declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
+    private config;
+    private strategy;
+    constructor(config?: ContextManagerConfig, strategy?: CompactionStrategy);
+    /**
+     * Estimate token count for text
+     */
+    estimateTokens(text: string): number;
+    /**
+     * Estimate budget for context components
+     */
+    estimateBudget(components: ContextComponents): ContextBudget;
+    /**
+     * Prepare context, compacting if necessary
+     */
+    prepareContext(components: ContextComponents, memory: IMemoryManager, history: IHistoryManager): Promise<PreparedContext>;
+    /**
+     * Truncate tool outputs in conversation history
+     */
+    private truncateToolOutputsInHistory;
+    /**
+     * Truncate tool output to fit within limit
+     */
+    truncateToolOutput(output: unknown, maxTokens: number): unknown;
+    /**
+     * Create summary of large output
+     */
+    createOutputSummary(output: unknown, maxTokens: number): string;
+    /**
+     * Check if output should be auto-stored in memory
+     */
+    shouldAutoStore(output: unknown, threshold: number): boolean;
+    /**
+     * Update configuration
+     */
+    updateConfig(updates: Partial<ContextManagerConfig>): void;
+}
+
+/**
+ * IdempotencyCache - caches tool call results for deduplication
+ */
+
+/**
+ * Cache configuration
+ */
+interface IdempotencyCacheConfig {
+    /** Default TTL for cached entries */
+    defaultTtlMs: number;
+    /** Max entries before eviction */
+    maxEntries: number;
+}
+/**
+ * Cache statistics
+ */
+interface CacheStats {
+    entries: number;
+    hits: number;
+    misses: number;
+    hitRate: number;
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_IDEMPOTENCY_CONFIG: IdempotencyCacheConfig;
+/**
+ * IdempotencyCache handles tool call result caching.
+ *
+ * Features:
+ * - Cache based on tool name + args
+ * - Custom key generation per tool
+ * - TTL-based expiration
+ * - Max entries eviction
+ */
+declare class IdempotencyCache {
+    private config;
+    private cache;
+    private hits;
+    private misses;
+    constructor(config?: IdempotencyCacheConfig);
+    /**
+     * Get cached result for tool call
+     */
+    get(tool: ToolFunction, args: Record<string, unknown>): Promise<unknown>;
+    /**
+     * Cache result for tool call
+     */
+    set(tool: ToolFunction, args: Record<string, unknown>, result: unknown): Promise<void>;
+    /**
+     * Check if tool call is cached
+     */
+    has(tool: ToolFunction, args: Record<string, unknown>): Promise<boolean>;
+    /**
+     * Invalidate cached result
+     */
+    invalidate(tool: ToolFunction, args: Record<string, unknown>): Promise<void>;
+    /**
+     * Invalidate all cached results for a tool
+     */
+    invalidateTool(tool: ToolFunction): Promise<void>;
+    /**
+     * Clear all cached results
+     */
+    clear(): Promise<void>;
+    /**
+     * Get cache statistics
+     */
+    getStats(): CacheStats;
+    /**
+     * Generate cache key for tool + args
+     */
+    generateKey(tool: ToolFunction, args: Record<string, unknown>): string;
+    /**
+     * Simple hash function for objects
+     */
+    private hashObject;
+}
+
+/**
+ * HistoryManager - manages conversation history with compaction
+ */
+
+interface HistoryManagerConfig {
+    /** Max messages to keep in full detail */
+    maxDetailedMessages: number;
+    /** Strategy for older messages */
+    compressionStrategy: 'summarize' | 'truncate' | 'drop';
+    /** For summarize: how many messages per summary */
+    summarizeBatchSize: number;
+    /** Max total tokens for history (estimated) */
+    maxHistoryTokens?: number;
+    /** Keep all tool calls/results or summarize them too */
+    preserveToolCalls: boolean;
+}
+declare const DEFAULT_HISTORY_CONFIG: HistoryManagerConfig;
+/**
+ * Manages conversation history with automatic compaction
+ */
+declare class HistoryManager {
+    private messages;
+    private summaries;
+    private config;
+    constructor(config?: HistoryManagerConfig);
+    /**
+     * Add a message to history
+     */
+    addMessage(role: 'user' | 'assistant' | 'system', content: string): void;
+    /**
+     * Get all messages (including summaries as system messages)
+     */
+    getMessages(): ConversationMessage[];
+    /**
+     * Get recent messages only (no summaries)
+     */
+    getRecentMessages(): ConversationMessage[];
+    /**
+     * Compact history (summarize or truncate old messages)
+     */
+    private compact;
+    /**
+     * Summarize history (requires LLM - placeholder)
+     */
+    summarize(): Promise<void>;
+    /**
+     * Truncate messages to a limit
+     */
+    truncate(messages: ConversationMessage[], limit: number): Promise<ConversationMessage[]>;
+    /**
+     * Clear all history
+     */
+    clear(): void;
+    /**
+     * Get total message count
+     */
+    getMessageCount(): number;
+    /**
+     * Get history state for persistence
+     */
+    getState(): {
+        messages: ConversationMessage[];
+        summaries: Array<{
+            content: string;
+            coversMessages: number;
+            timestamp: number;
+        }>;
+    };
+    /**
+     * Restore history from state
+     */
+    restoreState(state: {
+        messages: ConversationMessage[];
+        summaries: Array<{
+            content: string;
+            coversMessages: number;
+            timestamp: number;
+        }>;
+    }): void;
+}
+
+/**
+ * ExternalDependencyHandler - handles external dependencies
+ */
+
+interface ExternalDependencyEvents {
+    'webhook:received': {
+        webhookId: string;
+        data: unknown;
+    };
+    'poll:success': {
+        taskId: string;
+        data: unknown;
+    };
+    'poll:timeout': {
+        taskId: string;
+    };
+    'scheduled:triggered': {
+        taskId: string;
+    };
+    'manual:completed': {
+        taskId: string;
+        data: unknown;
+    };
+}
+/**
+ * Handles external task dependencies
+ */
+declare class ExternalDependencyHandler extends EventEmitter$1<ExternalDependencyEvents> {
+    private activePolls;
+    private activeScheduled;
+    private tools;
+    constructor(tools?: ToolFunction[]);
+    /**
+     * Start handling a task's external dependency
+     */
+    startWaiting(task: Task): Promise<void>;
+    /**
+     * Stop waiting on a task's external dependency
+     */
+    stopWaiting(task: Task): void;
+    /**
+     * Trigger a webhook
+     */
+    triggerWebhook(webhookId: string, data: unknown): Promise<void>;
+    /**
+     * Complete a manual task
+     */
+    completeManual(taskId: string, data: unknown): Promise<void>;
+    /**
+     * Start polling for a task
+     */
+    private startPolling;
+    /**
+     * Schedule a task to trigger at a specific time
+     */
+    private scheduleTask;
+    /**
+     * Cleanup all active dependencies
+     */
+    cleanup(): void;
+    /**
+     * Update available tools
+     */
+    updateTools(tools: ToolFunction[]): void;
+}
+
+/**
+ * CheckpointManager - manages agent state checkpointing
+ */
+
+interface CheckpointStrategy {
+    /** Checkpoint after every N tool calls */
+    afterToolCalls?: number;
+    /** Checkpoint after every N LLM calls */
+    afterLLMCalls?: number;
+    /** Checkpoint on time interval */
+    intervalMs?: number;
+    /** Always checkpoint before external wait */
+    beforeExternalWait: boolean;
+    /** Checkpoint mode */
+    mode: 'sync' | 'async';
+}
+declare const DEFAULT_CHECKPOINT_STRATEGY: CheckpointStrategy;
+/**
+ * Manages state checkpointing for persistence and recovery
+ */
+declare class CheckpointManager {
+    private storage;
+    private strategy;
+    private toolCallsSinceCheckpoint;
+    private llmCallsSinceCheckpoint;
+    private intervalTimer?;
+    private pendingCheckpoints;
+    constructor(storage: IAgentStorage, strategy?: CheckpointStrategy);
+    /**
+     * Record a tool call (may trigger checkpoint)
+     */
+    onToolCall(state: AgentState): Promise<void>;
+    /**
+     * Record an LLM call (may trigger checkpoint)
+     */
+    onLLMCall(state: AgentState): Promise<void>;
+    /**
+     * Force a checkpoint
+     */
+    checkpoint(state: AgentState, reason: string): Promise<void>;
+    /**
+     * Perform the actual checkpoint
+     */
+    private doCheckpoint;
+    /**
+     * Check if interval-based checkpoint is needed
+     */
+    private checkIntervalCheckpoint;
+    /**
+     * Wait for all pending checkpoints to complete
+     */
+    flush(): Promise<void>;
+    /**
+     * Cleanup resources
+     */
+    cleanup(): void;
+}
+
+/**
+ * PlanExecutor - executes plans with LLM integration
+ */
+
+interface PlanExecutorConfig {
+    maxIterations: number;
+    taskTimeout?: number;
+}
+interface PlanExecutorEvents {
+    'task:start': {
+        task: Task;
+    };
+    'task:complete': {
+        task: Task;
+        result: any;
+    };
+    'task:failed': {
+        task: Task;
+        error: Error;
+    };
+    'task:skipped': {
+        task: Task;
+        reason: string;
+    };
+    'task:waiting_external': {
+        task: Task;
+    };
+    'llm:call': {
+        iteration: number;
+    };
+    'tool:call': {
+        toolName: string;
+        args: any;
+    };
+    'tool:result': {
+        toolName: string;
+        result: any;
+    };
+}
+interface PlanExecutionResult {
+    status: 'completed' | 'failed' | 'suspended';
+    completedTasks: number;
+    failedTasks: number;
+    skippedTasks: number;
+    error?: Error;
+    metrics: {
+        totalLLMCalls: number;
+        totalToolCalls: number;
+        totalTokensUsed: number;
+        totalCost: number;
+    };
+}
+/**
+ * Executes a plan using LLM and tools
+ */
+declare class PlanExecutor extends EventEmitter$1<PlanExecutorEvents> {
+    private agent;
+    private memory;
+    private contextManager;
+    private idempotencyCache;
+    private historyManager;
+    private externalHandler;
+    private checkpointManager;
+    private hooks;
+    private config;
+    private abortController;
+    private currentMetrics;
+    private currentState;
+    constructor(agent: Agent, memory: WorkingMemory, contextManager: ContextManager, idempotencyCache: IdempotencyCache, historyManager: HistoryManager, externalHandler: ExternalDependencyHandler, checkpointManager: CheckpointManager, hooks: TaskAgentHooks | undefined, config: PlanExecutorConfig);
+    /**
+     * Execute a plan
+     */
+    execute(plan: Plan, state: AgentState): Promise<PlanExecutionResult>;
+    /**
+     * Execute a single task
+     */
+    private executeTask;
+    /**
+     * Build system prompt for task execution
+     */
+    private buildSystemPrompt;
+    /**
+     * Build prompt for a specific task
+     */
+    private buildTaskPrompt;
+    /**
+     * Check if plan is complete
+     */
+    private isPlanComplete;
+    /**
+     * Check if plan is suspended (waiting on external)
+     */
+    private isPlanSuspended;
+    /**
+     * Cancel execution
+     */
+    cancel(): void;
+    /**
+     * Cleanup resources
+     */
+    cleanup(): void;
+    /**
+     * Get idempotency cache (for future tool execution integration)
+     *
+     * TODO: Full IdempotencyCache Integration
+     * ----------------------------------------
+     * To fully integrate idempotency caching:
+     *
+     * Option 1: Wrap Agent.run() with tool interception
+     * - Intercept tool calls before Agent.run()
+     * - Check cache with: await this.idempotencyCache.get(tool, args)
+     * - If cached, inject result into LLM context
+     * - After execution: await this.idempotencyCache.set(tool, args, result)
+     *
+     * Option 2: Modify Agent class to accept IdempotencyCache
+     * - Pass idempotencyCache to Agent constructor
+     * - Agent integrates with ToolExecutor
+     * - Automatic caching for all tool calls
+     *
+     * Option 3: Create ToolContext wrapper
+     * - Wrap tools with context (agentId, taskId, memory)
+     * - Cache-aware tool execution
+     * - Auto-store large outputs in memory
+     */
+    getIdempotencyCache(): IdempotencyCache;
+}
+
+/**
  * TaskAgent - autonomous task-based agent
  */
 
@@ -1235,17 +1798,31 @@ declare class TaskAgent extends EventEmitter$1<TaskAgentEvents> {
     protected memory: WorkingMemory;
     protected hooks?: TaskAgentHooks;
     protected executionPromise?: Promise<PlanResult>;
-    protected constructor(id: string, state: AgentState, storage: IAgentStorage, memory: WorkingMemory, hooks?: TaskAgentHooks);
+    protected agent?: Agent;
+    protected contextManager?: ContextManager;
+    protected idempotencyCache?: IdempotencyCache;
+    protected historyManager?: HistoryManager;
+    protected externalHandler?: ExternalDependencyHandler;
+    protected planExecutor?: PlanExecutor;
+    protected checkpointManager?: CheckpointManager;
+    protected tools: ToolFunction[];
+    protected config: TaskAgentConfig;
+    protected constructor(id: string, state: AgentState, storage: IAgentStorage, memory: WorkingMemory, config: TaskAgentConfig, hooks?: TaskAgentHooks);
     /**
      * Create a new TaskAgent
      */
     static create(config: TaskAgentConfig): TaskAgent;
+    /**
+     * Initialize internal components
+     */
+    private initializeComponents;
     /**
      * Resume an existing agent from storage
      */
     static resume(agentId: string, options: {
         storage: IAgentStorage;
         tools?: ToolFunction[];
+        hooks?: TaskAgentHooks;
     }): Promise<TaskAgent>;
     /**
      * Start executing a plan
@@ -1291,225 +1868,10 @@ declare class TaskAgent extends EventEmitter$1<TaskAgentEvents> {
      * Execute the plan (internal)
      */
     protected executePlan(): Promise<PlanResult>;
-}
-
-/**
- * ContextManager - manages context window size and compaction
- */
-
-/**
- * Context manager configuration
- */
-interface ContextManagerConfig {
-    /** Model's max context tokens */
-    maxContextTokens: number;
-    /** Trigger compaction at this % of max */
-    compactionThreshold: number;
-    /** Hard limit - must compact before LLM call */
-    hardLimit: number;
-    /** Reserve space for response */
-    responseReserve: number;
-    /** Token estimator method */
-    tokenEstimator: 'approximate' | 'tiktoken';
-}
-/**
- * Compaction strategy configuration
- */
-interface CompactionStrategy {
-    /** Priority order for compaction */
-    priority: Array<'toolOutputs' | 'history' | 'memory'>;
-    /** Strategy for history compaction */
-    historyStrategy: 'summarize' | 'truncate' | 'sliding-window';
-    /** Strategy for memory eviction */
-    memoryStrategy: 'lru' | 'largest-first' | 'oldest-first';
-    /** Max tokens for tool outputs */
-    toolOutputMaxSize: number;
-}
-/**
- * Context components that make up the full context
- */
-interface ContextComponents {
-    systemPrompt: string;
-    instructions: string;
-    memoryIndex: string;
-    conversationHistory: Array<{
-        role: string;
-        content: string;
-    }>;
-    currentInput: string;
-}
-/**
- * Context budget breakdown
- */
-interface ContextBudget {
-    total: number;
-    reserved: number;
-    used: number;
-    available: number;
-    utilizationPercent: number;
-    status: 'ok' | 'warning' | 'critical';
-    breakdown: {
-        systemPrompt: number;
-        instructions: number;
-        memoryIndex: number;
-        conversationHistory: number;
-        currentInput: number;
-    };
-}
-/**
- * Prepared context result
- */
-interface PreparedContext {
-    components: ContextComponents;
-    budget: ContextBudget;
-    compacted: boolean;
-    compactionLog?: string[];
-}
-/**
- * Memory manager interface (for compaction)
- */
-interface IMemoryManager {
-    evictLRU(count: number): Promise<string[]>;
-    formatIndex?(): Promise<string>;
-    getIndex?(): Promise<{
-        entries: any[];
-    }>;
-}
-/**
- * History manager interface (for compaction)
- */
-interface IHistoryManager {
-    summarize(): Promise<void>;
-    truncate?(messages: any[], limit: number): Promise<any[]>;
-}
-interface ContextManagerEvents {
-    compacting: {
-        reason: string;
-    };
-    compacted: {
-        log: string[];
-    };
-}
-/**
- * ContextManager handles context window management.
- *
- * Features:
- * - Token estimation (approximate or tiktoken)
- * - Proactive compaction before overflow
- * - Configurable compaction strategies
- * - Tool output truncation
- */
-declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
-    private config;
-    private strategy;
-    constructor(config?: ContextManagerConfig, strategy?: CompactionStrategy);
     /**
-     * Estimate token count for text
+     * Cleanup resources
      */
-    estimateTokens(text: string): number;
-    /**
-     * Estimate budget for context components
-     */
-    estimateBudget(components: ContextComponents): ContextBudget;
-    /**
-     * Prepare context, compacting if necessary
-     */
-    prepareContext(components: ContextComponents, memory: IMemoryManager, history: IHistoryManager): Promise<PreparedContext>;
-    /**
-     * Truncate tool outputs in conversation history
-     */
-    private truncateToolOutputsInHistory;
-    /**
-     * Truncate tool output to fit within limit
-     */
-    truncateToolOutput(output: unknown, maxTokens: number): unknown;
-    /**
-     * Create summary of large output
-     */
-    createOutputSummary(output: unknown, maxTokens: number): string;
-    /**
-     * Check if output should be auto-stored in memory
-     */
-    shouldAutoStore(output: unknown, threshold: number): boolean;
-    /**
-     * Update configuration
-     */
-    updateConfig(updates: Partial<ContextManagerConfig>): void;
-}
-
-/**
- * IdempotencyCache - caches tool call results for deduplication
- */
-
-/**
- * Cache configuration
- */
-interface IdempotencyCacheConfig {
-    /** Default TTL for cached entries */
-    defaultTtlMs: number;
-    /** Max entries before eviction */
-    maxEntries: number;
-}
-/**
- * Cache statistics
- */
-interface CacheStats {
-    entries: number;
-    hits: number;
-    misses: number;
-    hitRate: number;
-}
-/**
- * IdempotencyCache handles tool call result caching.
- *
- * Features:
- * - Cache based on tool name + args
- * - Custom key generation per tool
- * - TTL-based expiration
- * - Max entries eviction
- */
-declare class IdempotencyCache {
-    private config;
-    private cache;
-    private hits;
-    private misses;
-    constructor(config?: IdempotencyCacheConfig);
-    /**
-     * Get cached result for tool call
-     */
-    get(tool: ToolFunction, args: Record<string, unknown>): Promise<unknown>;
-    /**
-     * Cache result for tool call
-     */
-    set(tool: ToolFunction, args: Record<string, unknown>, result: unknown): Promise<void>;
-    /**
-     * Check if tool call is cached
-     */
-    has(tool: ToolFunction, args: Record<string, unknown>): Promise<boolean>;
-    /**
-     * Invalidate cached result
-     */
-    invalidate(tool: ToolFunction, args: Record<string, unknown>): Promise<void>;
-    /**
-     * Invalidate all cached results for a tool
-     */
-    invalidateTool(tool: ToolFunction): Promise<void>;
-    /**
-     * Clear all cached results
-     */
-    clear(): Promise<void>;
-    /**
-     * Get cache statistics
-     */
-    getStats(): CacheStats;
-    /**
-     * Generate cache key for tool + args
-     */
-    generateKey(tool: ToolFunction, args: Record<string, unknown>): string;
-    /**
-     * Simple hash function for objects
-     */
-    private hashObject;
+    destroy(): void;
 }
 
 /**
@@ -2864,4 +3226,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, AgentResponse, type AgentState, type AgentStatus, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, type ClipboardImageResult, type CompactionStrategy, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, type ContextBudget, type ContextComponents, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExternalDependency, FileConnectorStorage, type FileConnectorStorageConfig, FileStorage, type FileStorageConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IConnectorConfigStorage, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, ITextProvider, type ITokenStorage, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type Plan, type PlanConcurrency, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, type Task, TaskAgent, type TaskAgentConfig, type TaskAgentHooks, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, assertNotDestroyed, authenticatedFetch, calculateCost, createAgentStorage, createAuthenticatedFetch, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, readClipboardImage, index as tools };
+export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, AgentResponse, type AgentState, type AgentStatus, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, type ClipboardImageResult, type CompactionStrategy, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, type ContextBudget, type ContextComponents, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_COMPACTION_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileStorage, type FileStorageConfig, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IConnectorConfigStorage, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, ITextProvider, type ITokenStorage, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type Plan, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, type Task, TaskAgent, type TaskAgentConfig, type TaskAgentHooks, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, assertNotDestroyed, authenticatedFetch, calculateCost, createAgentStorage, createAuthenticatedFetch, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, readClipboardImage, index as tools };

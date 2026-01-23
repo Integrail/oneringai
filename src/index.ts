@@ -31,7 +31,17 @@ export { Connector, Agent, Vendor, VENDORS, isVendor, createProvider } from './c
 export type { AgentConfig } from './core/index.js';
 
 // ============ Task-Based Agents ============
-export { TaskAgent, WorkingMemory, ContextManager, IdempotencyCache, createMemoryTools } from './capabilities/taskAgent/index.js';
+export {
+  TaskAgent,
+  WorkingMemory,
+  ContextManager,
+  IdempotencyCache,
+  HistoryManager,
+  ExternalDependencyHandler,
+  PlanExecutor,
+  CheckpointManager,
+  createMemoryTools,
+} from './capabilities/taskAgent/index.js';
 export type {
   TaskAgentConfig,
   TaskAgentHooks,
@@ -48,7 +58,14 @@ export type {
   CompactionStrategy,
   IdempotencyCacheConfig,
   CacheStats,
+  HistoryManagerConfig,
+  ExternalDependencyEvents,
+  PlanExecutorConfig,
+  PlanExecutorEvents,
+  PlanExecutionResult,
+  CheckpointStrategy,
 } from './capabilities/taskAgent/index.js';
+export { DEFAULT_CONTEXT_CONFIG, DEFAULT_COMPACTION_STRATEGY, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY } from './capabilities/taskAgent/index.js';
 
 // Task & Plan Entities
 export type {

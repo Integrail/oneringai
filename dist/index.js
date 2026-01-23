@@ -5461,6 +5461,94 @@ function createPlan(input) {
     metadata: input.metadata
   };
 }
+function canTaskExecute(task, allTasks) {
+  if (task.status !== "pending") {
+    return false;
+  }
+  if (task.dependsOn.length > 0) {
+    for (const depId of task.dependsOn) {
+      const depTask = allTasks.find((t) => t.id === depId);
+      if (!depTask || depTask.status !== "completed") {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+function getNextExecutableTasks(plan) {
+  const executable = plan.tasks.filter((task) => canTaskExecute(task, plan.tasks));
+  if (executable.length === 0) {
+    return [];
+  }
+  if (!plan.concurrency) {
+    return [executable[0]];
+  }
+  const runningCount = plan.tasks.filter((t) => t.status === "in_progress").length;
+  const availableSlots = plan.concurrency.maxParallelTasks - runningCount;
+  if (availableSlots <= 0) {
+    return [];
+  }
+  const parallelTasks = executable.filter((task) => task.execution?.parallel === true);
+  if (parallelTasks.length === 0) {
+    return [executable[0]];
+  }
+  let sortedTasks = [...parallelTasks];
+  if (plan.concurrency.strategy === "priority") {
+    sortedTasks.sort((a, b) => (b.execution?.priority ?? 0) - (a.execution?.priority ?? 0));
+  }
+  return sortedTasks.slice(0, availableSlots);
+}
+async function evaluateCondition(condition, memory) {
+  const value = await memory.get(condition.memoryKey);
+  switch (condition.operator) {
+    case "exists":
+      return value !== void 0;
+    case "not_exists":
+      return value === void 0;
+    case "equals":
+      return value === condition.value;
+    case "contains":
+      if (Array.isArray(value)) {
+        return value.includes(condition.value);
+      }
+      if (typeof value === "string" && typeof condition.value === "string") {
+        return value.includes(condition.value);
+      }
+      return false;
+    case "truthy":
+      return !!value;
+    case "greater_than":
+      if (typeof value === "number" && typeof condition.value === "number") {
+        return value > condition.value;
+      }
+      return false;
+    case "less_than":
+      if (typeof value === "number" && typeof condition.value === "number") {
+        return value < condition.value;
+      }
+      return false;
+    default:
+      return false;
+  }
+}
+function updateTaskStatus(task, status) {
+  const now = Date.now();
+  const updated = {
+    ...task,
+    status,
+    lastUpdatedAt: now
+  };
+  if (status === "in_progress") {
+    if (!updated.startedAt) {
+      updated.startedAt = now;
+    }
+    updated.attempts += 1;
+  }
+  if ((status === "completed" || status === "failed") && !updated.completedAt) {
+    updated.completedAt = now;
+  }
+  return updated;
+}
 
 // src/domain/entities/AgentState.ts
 function createAgentState(id, config, plan) {
@@ -5500,6 +5588,9 @@ function updateAgentStatus(state, status) {
   }
   return updated;
 }
+
+// src/capabilities/taskAgent/TaskAgent.ts
+init_Memory();
 
 // src/infrastructure/storage/InMemoryStorage.ts
 var InMemoryStorage = class {
@@ -5810,224 +5901,6 @@ var WorkingMemory = class extends EventEmitter3 {
    */
   getLimit() {
     return this.config.maxSizeBytes ?? 512 * 1024;
-  }
-};
-
-// src/capabilities/taskAgent/TaskAgent.ts
-var TaskAgent = class _TaskAgent extends EventEmitter3 {
-  id;
-  state;
-  storage;
-  memory;
-  hooks;
-  executionPromise;
-  constructor(id, state, storage, memory, hooks) {
-    super();
-    this.id = id;
-    this.state = state;
-    this.storage = storage;
-    this.memory = memory;
-    this.hooks = hooks;
-    memory.on("stored", (data) => this.emit("memory:stored", data));
-    memory.on("limit_warning", (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent }));
-  }
-  /**
-   * Create a new TaskAgent
-   */
-  static create(config) {
-    const connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
-    if (!connector) {
-      throw new Error(`Connector "${config.connector}" not found`);
-    }
-    const storage = config.storage ?? createAgentStorage({});
-    const memory = new WorkingMemory(storage.memory, config.memoryConfig);
-    const id = `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const emptyPlan = createPlan({ goal: "", tasks: [] });
-    const agentConfig = {
-      connectorName: typeof config.connector === "string" ? config.connector : connector.name,
-      model: config.model,
-      temperature: config.temperature,
-      maxIterations: config.maxIterations,
-      toolNames: (config.tools ?? []).map((t) => t.definition.function.name)
-    };
-    const state = createAgentState(id, agentConfig, emptyPlan);
-    return new _TaskAgent(id, state, storage, memory, config.hooks);
-  }
-  /**
-   * Resume an existing agent from storage
-   */
-  static async resume(agentId, options) {
-    const state = await options.storage.agent.load(agentId);
-    if (!state) {
-      throw new Error(`Agent ${agentId} not found in storage`);
-    }
-    const { DEFAULT_MEMORY_CONFIG: DEFAULT_MEMORY_CONFIG2 } = await Promise.resolve().then(() => (init_Memory(), Memory_exports));
-    const memory = new WorkingMemory(options.storage.memory, DEFAULT_MEMORY_CONFIG2);
-    return new _TaskAgent(agentId, state, options.storage, memory, void 0);
-  }
-  /**
-   * Start executing a plan
-   */
-  async start(planInput) {
-    const plan = createPlan(planInput);
-    this.state.plan = plan;
-    this.state = updateAgentStatus(this.state, "running");
-    if (this.hooks?.onStart) {
-      await this.hooks.onStart(this, plan);
-    }
-    this.executionPromise = this.executePlan().then(async (result) => {
-      if (this.hooks?.onComplete) {
-        await this.hooks.onComplete(result);
-      }
-      return result;
-    }).catch(async (error) => {
-      if (this.hooks?.onError) {
-        await this.hooks.onError(error, { error, phase: "execution" });
-      }
-      throw error;
-    });
-    await this.executionPromise.catch(() => {
-    });
-    return {
-      agentId: this.id,
-      planId: plan.id,
-      wait: async () => {
-        if (!this.executionPromise) {
-          throw new Error("No execution in progress");
-        }
-        return this.executionPromise;
-      },
-      status: () => this.state.status
-    };
-  }
-  /**
-   * Pause execution
-   */
-  async pause() {
-    this.state = updateAgentStatus(this.state, "suspended");
-    this.state.plan.status = "suspended";
-    this.emit("agent:suspended", { reason: "manual_pause" });
-  }
-  /**
-   * Resume execution after pause
-   */
-  async resume() {
-    this.state = updateAgentStatus(this.state, "running");
-    this.state.plan.status = "running";
-    this.emit("agent:resumed", {});
-    await this.executePlan();
-  }
-  /**
-   * Cancel execution
-   */
-  async cancel() {
-    this.state = updateAgentStatus(this.state, "cancelled");
-    this.state.plan.status = "cancelled";
-  }
-  /**
-   * Trigger external dependency completion
-   */
-  async triggerExternal(webhookId, data) {
-    const plan = this.state.plan;
-    if (!plan) {
-      throw new Error("No plan running");
-    }
-    const task = plan.tasks.find((t) => t.externalDependency?.webhookId === webhookId);
-    if (!task || !task.externalDependency) {
-      throw new Error(`Task waiting on webhook ${webhookId} not found`);
-    }
-    task.externalDependency.state = "received";
-    task.externalDependency.receivedData = data;
-    task.externalDependency.receivedAt = Date.now();
-    await this.resume();
-  }
-  /**
-   * Manually complete a task
-   */
-  async completeTaskManually(taskId, result) {
-    const plan = this.state.plan;
-    if (!plan) {
-      throw new Error("No plan running");
-    }
-    const task = plan.tasks.find((t) => t.id === taskId);
-    if (!task || !task.externalDependency) {
-      throw new Error(`Task ${taskId} not found or not waiting on manual input`);
-    }
-    task.externalDependency.state = "received";
-    task.externalDependency.receivedData = result;
-    task.externalDependency.receivedAt = Date.now();
-  }
-  /**
-   * Update the plan
-   */
-  async updatePlan(updates) {
-    const plan = this.state.plan;
-    if (!plan) {
-      throw new Error("No plan running");
-    }
-    if (!plan.allowDynamicTasks && (updates.addTasks || updates.removeTasks)) {
-      throw new Error("Dynamic tasks are disabled for this plan");
-    }
-    if (updates.addTasks) {
-      for (const taskInput of updates.addTasks) {
-        const task = createTask(taskInput);
-        plan.tasks.push(task);
-      }
-    }
-    if (updates.updateTasks) {
-      for (const update of updates.updateTasks) {
-        const task = plan.tasks.find((t) => t.id === update.id);
-        if (task) {
-          Object.assign(task, update);
-        }
-      }
-    }
-    if (updates.removeTasks) {
-      plan.tasks = plan.tasks.filter((t) => !updates.removeTasks.includes(t.id));
-    }
-    plan.lastUpdatedAt = Date.now();
-    this.emit("plan:updated", { plan });
-  }
-  /**
-   * Get current agent state
-   */
-  getState() {
-    return this.state;
-  }
-  /**
-   * Get current plan
-   */
-  getPlan() {
-    if (!this.state.plan || !this.state.plan.goal) {
-      throw new Error("No plan started");
-    }
-    return this.state.plan;
-  }
-  /**
-   * Get working memory
-   */
-  getMemory() {
-    return this.memory;
-  }
-  /**
-   * Execute the plan (internal)
-   */
-  async executePlan() {
-    const plan = this.state.plan;
-    const completedTasks = plan.tasks.filter((t) => t.status === "completed").length;
-    const failedTasks = plan.tasks.filter((t) => t.status === "failed").length;
-    const skippedTasks = plan.tasks.filter((t) => t.status === "skipped").length;
-    const result = {
-      status: "completed",
-      metrics: {
-        totalTasks: plan.tasks.length,
-        completedTasks,
-        failedTasks,
-        skippedTasks
-      }
-    };
-    this.emit("agent:completed", { result });
-    return result;
   }
 };
 var DEFAULT_CONTEXT_CONFIG = {
@@ -6401,146 +6274,236 @@ var IdempotencyCache = class {
   }
 };
 
-// src/capabilities/taskAgent/memoryTools.ts
-var memoryStoreDefinition = {
-  type: "function",
-  function: {
-    name: "memory_store",
-    description: "Store data in working memory for later use. Use this to save important information from tool outputs.",
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: 'Namespaced key (e.g., "user.profile", "order.items")'
-        },
-        description: {
-          type: "string",
-          description: "Brief description of what this data contains (max 150 chars)"
-        },
-        value: {
-          description: "The data to store (can be any JSON value)"
-        }
-      },
-      required: ["key", "description", "value"]
+// src/capabilities/taskAgent/HistoryManager.ts
+var DEFAULT_HISTORY_CONFIG = {
+  maxDetailedMessages: 20,
+  compressionStrategy: "summarize",
+  summarizeBatchSize: 10,
+  preserveToolCalls: true
+};
+var HistoryManager = class {
+  messages = [];
+  summaries = [];
+  config;
+  constructor(config = DEFAULT_HISTORY_CONFIG) {
+    this.config = config;
+  }
+  /**
+   * Add a message to history
+   */
+  addMessage(role, content) {
+    this.messages.push({
+      role,
+      content,
+      timestamp: Date.now()
+    });
+    if (this.messages.length > this.config.maxDetailedMessages) {
+      this.compact();
     }
   }
-};
-var memoryRetrieveDefinition = {
-  type: "function",
-  function: {
-    name: "memory_retrieve",
-    description: "Retrieve full data from working memory by key. Use when you need the complete data, not just the description.",
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: "The key to retrieve"
-        }
-      },
-      required: ["key"]
+  /**
+   * Get all messages (including summaries as system messages)
+   */
+  getMessages() {
+    const result = [];
+    for (const summary of this.summaries) {
+      result.push({
+        role: "system",
+        content: `[Summary of previous conversation]
+${summary.content}`,
+        timestamp: summary.timestamp
+      });
+    }
+    result.push(...this.messages);
+    return result;
+  }
+  /**
+   * Get recent messages only (no summaries)
+   */
+  getRecentMessages() {
+    return [...this.messages];
+  }
+  /**
+   * Compact history (summarize or truncate old messages)
+   */
+  compact() {
+    if (this.config.compressionStrategy === "truncate") {
+      const toRemove = this.messages.length - this.config.maxDetailedMessages;
+      this.messages = this.messages.slice(toRemove);
+    } else if (this.config.compressionStrategy === "drop") {
+      const toKeep = this.config.maxDetailedMessages;
+      this.messages = this.messages.slice(-toKeep);
     }
   }
-};
-var memoryDeleteDefinition = {
-  type: "function",
-  function: {
-    name: "memory_delete",
-    description: "Delete data from working memory to free up space.",
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: "The key to delete"
-        }
-      },
-      required: ["key"]
-    }
+  /**
+   * Summarize history (requires LLM - placeholder)
+   */
+  async summarize() {
+    this.compact();
+  }
+  /**
+   * Truncate messages to a limit
+   */
+  async truncate(messages, limit) {
+    return messages.slice(-limit);
+  }
+  /**
+   * Clear all history
+   */
+  clear() {
+    this.messages = [];
+    this.summaries = [];
+  }
+  /**
+   * Get total message count
+   */
+  getMessageCount() {
+    return this.messages.length;
+  }
+  /**
+   * Get history state for persistence
+   */
+  getState() {
+    return {
+      messages: [...this.messages],
+      summaries: [...this.summaries]
+    };
+  }
+  /**
+   * Restore history from state
+   */
+  restoreState(state) {
+    this.messages = [...state.messages];
+    this.summaries = [...state.summaries];
   }
 };
-var memoryListDefinition = {
-  type: "function",
-  function: {
-    name: "memory_list",
-    description: "List all keys and their descriptions in working memory.",
-    parameters: {
-      type: "object",
-      properties: {},
-      required: []
+var ExternalDependencyHandler = class extends EventEmitter3 {
+  activePolls = /* @__PURE__ */ new Map();
+  activeScheduled = /* @__PURE__ */ new Map();
+  tools;
+  constructor(tools = []) {
+    super();
+    this.tools = new Map(tools.map((t) => [t.definition.function.name, t]));
+  }
+  /**
+   * Start handling a task's external dependency
+   */
+  async startWaiting(task) {
+    if (!task.externalDependency) {
+      return;
+    }
+    const dep = task.externalDependency;
+    switch (dep.type) {
+      case "webhook":
+        break;
+      case "poll":
+        this.startPolling(task);
+        break;
+      case "scheduled":
+        this.scheduleTask(task);
+        break;
     }
   }
-};
-function createMemoryTools() {
-  return [
-    // memory_store
-    {
-      definition: memoryStoreDefinition,
-      execute: async (args, context) => {
-        if (!context || !context.memory) {
-          return { error: "Memory tools require TaskAgent context" };
-        }
-        try {
-          await context.memory.set(
-            args.key,
-            args.description,
-            args.value
-          );
-          return { success: true, key: args.key };
-        } catch (error) {
-          return { error: error instanceof Error ? error.message : String(error) };
-        }
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "small" }
-    },
-    // memory_retrieve
-    {
-      definition: memoryRetrieveDefinition,
-      execute: async (args, context) => {
-        if (!context || !context.memory) {
-          return { error: "Memory tools require TaskAgent context" };
-        }
-        const value = await context.memory.get(args.key);
-        if (value === void 0) {
-          return { error: `Key "${args.key}" not found in memory` };
-        }
-        return value;
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "variable" }
-    },
-    // memory_delete
-    {
-      definition: memoryDeleteDefinition,
-      execute: async (args, context) => {
-        if (!context || !context.memory) {
-          return { error: "Memory tools require TaskAgent context" };
-        }
-        await context.memory.delete(args.key);
-        return { success: true, deleted: args.key };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "small" }
-    },
-    // memory_list
-    {
-      definition: memoryListDefinition,
-      execute: async (_args, context) => {
-        if (!context || !context.memory) {
-          return { error: "Memory tools require TaskAgent context" };
-        }
-        return await context.memory.list();
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "small" }
+  /**
+   * Stop waiting on a task's external dependency
+   */
+  stopWaiting(task) {
+    if (!task.externalDependency) {
+      return;
     }
-  ];
-}
-
-// src/index.ts
-init_Memory();
+    const pollTimer = this.activePolls.get(task.id);
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      this.activePolls.delete(task.id);
+    }
+    const scheduleTimer = this.activeScheduled.get(task.id);
+    if (scheduleTimer) {
+      clearTimeout(scheduleTimer);
+      this.activeScheduled.delete(task.id);
+    }
+  }
+  /**
+   * Trigger a webhook
+   */
+  async triggerWebhook(webhookId, data) {
+    this.emit("webhook:received", { webhookId, data });
+  }
+  /**
+   * Complete a manual task
+   */
+  async completeManual(taskId, data) {
+    this.emit("manual:completed", { taskId, data });
+  }
+  /**
+   * Start polling for a task
+   */
+  startPolling(task) {
+    const dep = task.externalDependency;
+    const pollConfig = dep.pollConfig;
+    let attempts = 0;
+    const poll = async () => {
+      attempts++;
+      try {
+        const tool = this.tools.get(pollConfig.toolName);
+        if (!tool) {
+          console.error(`Poll tool ${pollConfig.toolName} not found`);
+          return;
+        }
+        const result = await tool.execute(pollConfig.toolArgs);
+        if (result) {
+          this.emit("poll:success", { taskId: task.id, data: result });
+          this.stopWaiting(task);
+          return;
+        }
+        if (attempts >= pollConfig.maxAttempts) {
+          this.emit("poll:timeout", { taskId: task.id });
+          this.stopWaiting(task);
+        }
+      } catch (error) {
+        console.error(`Poll error for task ${task.id}:`, error);
+      }
+    };
+    const timer = setInterval(poll, pollConfig.intervalMs);
+    this.activePolls.set(task.id, timer);
+    poll();
+  }
+  /**
+   * Schedule a task to trigger at a specific time
+   */
+  scheduleTask(task) {
+    const dep = task.externalDependency;
+    const scheduledAt = dep.scheduledAt;
+    const delay = scheduledAt - Date.now();
+    if (delay <= 0) {
+      this.emit("scheduled:triggered", { taskId: task.id });
+      return;
+    }
+    const timer = setTimeout(() => {
+      this.emit("scheduled:triggered", { taskId: task.id });
+      this.activeScheduled.delete(task.id);
+    }, delay);
+    this.activeScheduled.set(task.id, timer);
+  }
+  /**
+   * Cleanup all active dependencies
+   */
+  cleanup() {
+    for (const timer of this.activePolls.values()) {
+      clearInterval(timer);
+    }
+    this.activePolls.clear();
+    for (const timer of this.activeScheduled.values()) {
+      clearTimeout(timer);
+    }
+    this.activeScheduled.clear();
+  }
+  /**
+   * Update available tools
+   */
+  updateTools(tools) {
+    this.tools = new Map(tools.map((t) => [t.definition.function.name, t]));
+  }
+};
 
 // src/domain/entities/Model.ts
 var LLM_MODELS = {
@@ -7401,6 +7364,892 @@ function calculateCost(model, inputTokens, outputTokens, options) {
   const outputCost = outputTokens / 1e6 * outputCPM;
   return inputCost + outputCost;
 }
+
+// src/capabilities/taskAgent/PlanExecutor.ts
+var PlanExecutor = class extends EventEmitter3 {
+  agent;
+  memory;
+  contextManager;
+  idempotencyCache;
+  // TODO: Integrate in tool execution (Task #4)
+  historyManager;
+  externalHandler;
+  checkpointManager;
+  hooks;
+  config;
+  abortController;
+  // Current execution metrics
+  currentMetrics = {
+    totalLLMCalls: 0,
+    totalToolCalls: 0,
+    totalTokensUsed: 0,
+    totalCost: 0
+  };
+  // Reference to current agent state (for checkpointing)
+  currentState = null;
+  constructor(agent, memory, contextManager, idempotencyCache, historyManager, externalHandler, checkpointManager, hooks, config) {
+    super();
+    this.agent = agent;
+    this.memory = memory;
+    this.contextManager = contextManager;
+    this.idempotencyCache = idempotencyCache;
+    this.historyManager = historyManager;
+    this.externalHandler = externalHandler;
+    this.checkpointManager = checkpointManager;
+    this.hooks = hooks;
+    this.config = config;
+    this.abortController = new AbortController();
+  }
+  /**
+   * Execute a plan
+   */
+  async execute(plan, state) {
+    this.currentState = state;
+    this.currentMetrics = {
+      totalLLMCalls: 0,
+      totalToolCalls: 0,
+      totalTokensUsed: 0,
+      totalCost: 0
+    };
+    let iteration = 0;
+    while (iteration < this.config.maxIterations) {
+      iteration++;
+      if (this.isPlanComplete(plan)) {
+        break;
+      }
+      if (this.isPlanSuspended(plan)) {
+        return {
+          status: "suspended",
+          completedTasks: plan.tasks.filter((t) => t.status === "completed").length,
+          failedTasks: plan.tasks.filter((t) => t.status === "failed").length,
+          skippedTasks: plan.tasks.filter((t) => t.status === "skipped").length,
+          metrics: this.currentMetrics
+        };
+      }
+      const nextTasks = getNextExecutableTasks(plan);
+      if (nextTasks.length === 0) {
+        break;
+      }
+      await Promise.all(
+        nextTasks.map((task) => this.executeTask(plan, task))
+      );
+    }
+    const hasFailures = plan.tasks.some((t) => t.status === "failed");
+    const allComplete = plan.tasks.every(
+      (t) => ["completed", "skipped", "failed"].includes(t.status)
+    );
+    return {
+      status: hasFailures ? "failed" : allComplete ? "completed" : "suspended",
+      completedTasks: plan.tasks.filter((t) => t.status === "completed").length,
+      failedTasks: plan.tasks.filter((t) => t.status === "failed").length,
+      skippedTasks: plan.tasks.filter((t) => t.status === "skipped").length,
+      metrics: this.currentMetrics
+    };
+  }
+  /**
+   * Execute a single task
+   */
+  async executeTask(plan, task) {
+    if (task.condition) {
+      const conditionMet = await evaluateCondition(task.condition, {
+        get: (key) => this.memory.retrieve(key)
+      });
+      if (!conditionMet) {
+        if (task.condition.onFalse === "skip") {
+          task.status = "skipped";
+          this.emit("task:skipped", { task, reason: "condition_not_met" });
+          return;
+        } else if (task.condition.onFalse === "fail") {
+          task.status = "failed";
+          task.result = { success: false, error: "Condition not met" };
+          this.emit("task:failed", { task, error: new Error("Condition not met") });
+          return;
+        }
+        return;
+      }
+    }
+    if (this.hooks?.beforeTask) {
+      const taskContext = {
+        taskId: task.id,
+        taskName: task.name,
+        attempt: task.attempts + 1
+      };
+      const hookResult = await this.hooks.beforeTask(task, taskContext);
+      if (hookResult === "skip") {
+        task.status = "skipped";
+        this.emit("task:skipped", { task, reason: "hook_skip" });
+        return;
+      }
+    }
+    const updatedTask = updateTaskStatus(task, "in_progress");
+    Object.assign(task, updatedTask);
+    this.emit("task:start", { task });
+    try {
+      const taskPrompt = this.buildTaskPrompt(plan, task);
+      await this.contextManager.prepareContext(
+        {
+          systemPrompt: this.buildSystemPrompt(plan),
+          instructions: "",
+          memoryIndex: await this.memory.formatIndex(),
+          conversationHistory: this.historyManager.getRecentMessages().map((m) => ({
+            role: m.role,
+            content: m.content
+          })),
+          currentInput: taskPrompt
+        },
+        this.memory,
+        this.historyManager
+      );
+      this.historyManager.addMessage("user", taskPrompt);
+      this.emit("llm:call", { iteration: task.attempts });
+      let messages = [{ role: "user", content: taskPrompt }];
+      if (this.hooks?.beforeLLMCall) {
+        messages = await this.hooks.beforeLLMCall(messages, {
+          model: this.agent.model,
+          temperature: 0.7
+          // Default temperature
+        });
+      }
+      const response = await this.agent.run(taskPrompt);
+      if (response.usage) {
+        this.currentMetrics.totalLLMCalls++;
+        this.currentMetrics.totalTokensUsed += response.usage.total_tokens || 0;
+        if (this.agent.model && response.usage.input_tokens && response.usage.output_tokens) {
+          const cost = calculateCost(this.agent.model, response.usage.input_tokens, response.usage.output_tokens);
+          if (cost !== null) {
+            this.currentMetrics.totalCost += cost;
+          }
+        }
+      }
+      if (this.hooks?.afterLLMCall) {
+        await this.hooks.afterLLMCall(response);
+      }
+      if (this.currentState) {
+        await this.checkpointManager.onLLMCall(this.currentState);
+      }
+      this.historyManager.addMessage("assistant", response.output_text || "");
+      const completedTask = updateTaskStatus(task, "completed");
+      completedTask.result = {
+        success: true,
+        output: response.output_text
+      };
+      Object.assign(task, completedTask);
+      this.emit("task:complete", { task, result: response });
+      if (this.hooks?.afterTask) {
+        await this.hooks.afterTask(task, {
+          success: true,
+          output: response.output_text
+        });
+      }
+      if (task.externalDependency) {
+        task.status = "waiting_external";
+        if (this.currentState) {
+          await this.checkpointManager.checkpoint(this.currentState, "before_external_wait");
+        }
+        await this.externalHandler.startWaiting(task);
+        this.emit("task:waiting_external", { task });
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      let errorAction = "retry";
+      if (this.hooks?.onError) {
+        const errorContext = {
+          task,
+          error: err,
+          phase: "execution"
+        };
+        errorAction = await this.hooks.onError(err, errorContext);
+      }
+      if (errorAction === "skip") {
+        task.status = "skipped";
+        this.emit("task:skipped", { task, reason: "error_hook_skip" });
+        return;
+      } else if (errorAction === "fail") {
+        const failedTask = updateTaskStatus(task, "failed");
+        failedTask.result = {
+          success: false,
+          error: err.message
+        };
+        Object.assign(task, failedTask);
+        this.emit("task:failed", { task, error: err });
+        return;
+      }
+      if (task.attempts < task.maxAttempts) {
+        const retryTask = updateTaskStatus(task, "pending");
+        Object.assign(task, retryTask);
+      } else {
+        const failedTask = updateTaskStatus(task, "failed");
+        failedTask.result = {
+          success: false,
+          error: err.message
+        };
+        Object.assign(task, failedTask);
+        this.emit("task:failed", { task, error: err });
+      }
+    }
+  }
+  /**
+   * Build system prompt for task execution
+   */
+  buildSystemPrompt(plan) {
+    return `You are an autonomous agent executing a plan.
+
+**Goal:** ${plan.goal}
+${plan.context ? `**Context:** ${plan.context}
+` : ""}
+**Your Role:** Execute tasks step by step using the available tools. Use working memory to store and retrieve information between tasks.
+
+**Important Instructions:**
+1. When you complete a task successfully, acknowledge it clearly
+2. Use memory_store to save important data for future tasks
+3. Use memory_retrieve to access previously stored data
+4. If a task requires information from a previous task, retrieve it from memory
+5. Be systematic and thorough in completing each task`;
+  }
+  /**
+   * Build prompt for a specific task
+   */
+  buildTaskPrompt(plan, task) {
+    const prompt = [];
+    prompt.push(`## Current Task: ${task.name}`);
+    prompt.push("");
+    prompt.push(`**Description:** ${task.description}`);
+    if (task.expectedOutput) {
+      prompt.push(`**Expected Output:** ${task.expectedOutput}`);
+    }
+    if (task.dependsOn.length > 0) {
+      const deps = plan.tasks.filter((t) => task.dependsOn.includes(t.id)).map((t) => t.name);
+      prompt.push(`**Dependencies Completed:** ${deps.join(", ")}`);
+    }
+    prompt.push("");
+    prompt.push("Please complete this task using the available tools.");
+    return prompt.join("\n");
+  }
+  /**
+   * Check if plan is complete
+   */
+  isPlanComplete(plan) {
+    return plan.tasks.every((t) => ["completed", "skipped", "failed"].includes(t.status));
+  }
+  /**
+   * Check if plan is suspended (waiting on external)
+   */
+  isPlanSuspended(plan) {
+    return plan.tasks.some((t) => t.status === "waiting_external");
+  }
+  /**
+   * Cancel execution
+   */
+  cancel() {
+    this.abortController.abort();
+  }
+  /**
+   * Cleanup resources
+   */
+  cleanup() {
+    this.abortController.abort();
+  }
+  /**
+   * Get idempotency cache (for future tool execution integration)
+   *
+   * TODO: Full IdempotencyCache Integration
+   * ----------------------------------------
+   * To fully integrate idempotency caching:
+   *
+   * Option 1: Wrap Agent.run() with tool interception
+   * - Intercept tool calls before Agent.run()
+   * - Check cache with: await this.idempotencyCache.get(tool, args)
+   * - If cached, inject result into LLM context
+   * - After execution: await this.idempotencyCache.set(tool, args, result)
+   *
+   * Option 2: Modify Agent class to accept IdempotencyCache
+   * - Pass idempotencyCache to Agent constructor
+   * - Agent integrates with ToolExecutor
+   * - Automatic caching for all tool calls
+   *
+   * Option 3: Create ToolContext wrapper
+   * - Wrap tools with context (agentId, taskId, memory)
+   * - Cache-aware tool execution
+   * - Auto-store large outputs in memory
+   */
+  getIdempotencyCache() {
+    return this.idempotencyCache;
+  }
+};
+
+// src/capabilities/taskAgent/CheckpointManager.ts
+var DEFAULT_CHECKPOINT_STRATEGY = {
+  afterToolCalls: 1,
+  afterLLMCalls: 1,
+  intervalMs: 3e4,
+  // 30 seconds
+  beforeExternalWait: true,
+  mode: "async"
+};
+var CheckpointManager = class {
+  storage;
+  strategy;
+  toolCallsSinceCheckpoint = 0;
+  llmCallsSinceCheckpoint = 0;
+  intervalTimer;
+  pendingCheckpoints = /* @__PURE__ */ new Set();
+  constructor(storage, strategy = DEFAULT_CHECKPOINT_STRATEGY) {
+    this.storage = storage;
+    this.strategy = strategy;
+    if (this.strategy.intervalMs) {
+      this.intervalTimer = setInterval(() => {
+        this.checkIntervalCheckpoint();
+      }, this.strategy.intervalMs);
+    }
+  }
+  /**
+   * Record a tool call (may trigger checkpoint)
+   */
+  async onToolCall(state) {
+    this.toolCallsSinceCheckpoint++;
+    if (this.strategy.afterToolCalls && this.toolCallsSinceCheckpoint >= this.strategy.afterToolCalls) {
+      await this.checkpoint(state, "tool_calls");
+    }
+  }
+  /**
+   * Record an LLM call (may trigger checkpoint)
+   */
+  async onLLMCall(state) {
+    this.llmCallsSinceCheckpoint++;
+    if (this.strategy.afterLLMCalls && this.llmCallsSinceCheckpoint >= this.strategy.afterLLMCalls) {
+      await this.checkpoint(state, "llm_calls");
+    }
+  }
+  /**
+   * Force a checkpoint
+   */
+  async checkpoint(state, reason) {
+    const checkpointPromise = this.doCheckpoint(state, reason);
+    if (this.strategy.mode === "sync") {
+      await checkpointPromise;
+    } else {
+      this.pendingCheckpoints.add(checkpointPromise);
+      checkpointPromise.finally(() => {
+        this.pendingCheckpoints.delete(checkpointPromise);
+      });
+    }
+  }
+  /**
+   * Perform the actual checkpoint
+   */
+  async doCheckpoint(state, _reason) {
+    try {
+      await this.storage.agent.save(state);
+      await this.storage.plan.savePlan(state.plan);
+      this.toolCallsSinceCheckpoint = 0;
+      this.llmCallsSinceCheckpoint = 0;
+    } catch (error) {
+      console.error(`Checkpoint failed (${_reason}):`, error);
+    }
+  }
+  /**
+   * Check if interval-based checkpoint is needed
+   */
+  checkIntervalCheckpoint() {
+  }
+  /**
+   * Wait for all pending checkpoints to complete
+   */
+  async flush() {
+    await Promise.all(Array.from(this.pendingCheckpoints));
+  }
+  /**
+   * Cleanup resources
+   */
+  cleanup() {
+    if (this.intervalTimer) {
+      clearInterval(this.intervalTimer);
+    }
+  }
+};
+
+// src/capabilities/taskAgent/memoryTools.ts
+var memoryStoreDefinition = {
+  type: "function",
+  function: {
+    name: "memory_store",
+    description: "Store data in working memory for later use. Use this to save important information from tool outputs.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: 'Namespaced key (e.g., "user.profile", "order.items")'
+        },
+        description: {
+          type: "string",
+          description: "Brief description of what this data contains (max 150 chars)"
+        },
+        value: {
+          description: "The data to store (can be any JSON value)"
+        }
+      },
+      required: ["key", "description", "value"]
+    }
+  }
+};
+var memoryRetrieveDefinition = {
+  type: "function",
+  function: {
+    name: "memory_retrieve",
+    description: "Retrieve full data from working memory by key. Use when you need the complete data, not just the description.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to retrieve"
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var memoryDeleteDefinition = {
+  type: "function",
+  function: {
+    name: "memory_delete",
+    description: "Delete data from working memory to free up space.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to delete"
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var memoryListDefinition = {
+  type: "function",
+  function: {
+    name: "memory_list",
+    description: "List all keys and their descriptions in working memory.",
+    parameters: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  }
+};
+function createMemoryTools() {
+  return [
+    // memory_store
+    {
+      definition: memoryStoreDefinition,
+      execute: async (args, context) => {
+        if (!context || !context.memory) {
+          return { error: "Memory tools require TaskAgent context" };
+        }
+        try {
+          await context.memory.set(
+            args.key,
+            args.description,
+            args.value
+          );
+          return { success: true, key: args.key };
+        } catch (error) {
+          return { error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      idempotency: { safe: true },
+      output: { expectedSize: "small" }
+    },
+    // memory_retrieve
+    {
+      definition: memoryRetrieveDefinition,
+      execute: async (args, context) => {
+        if (!context || !context.memory) {
+          return { error: "Memory tools require TaskAgent context" };
+        }
+        const value = await context.memory.get(args.key);
+        if (value === void 0) {
+          return { error: `Key "${args.key}" not found in memory` };
+        }
+        return value;
+      },
+      idempotency: { safe: true },
+      output: { expectedSize: "variable" }
+    },
+    // memory_delete
+    {
+      definition: memoryDeleteDefinition,
+      execute: async (args, context) => {
+        if (!context || !context.memory) {
+          return { error: "Memory tools require TaskAgent context" };
+        }
+        await context.memory.delete(args.key);
+        return { success: true, deleted: args.key };
+      },
+      idempotency: { safe: true },
+      output: { expectedSize: "small" }
+    },
+    // memory_list
+    {
+      definition: memoryListDefinition,
+      execute: async (_args, context) => {
+        if (!context || !context.memory) {
+          return { error: "Memory tools require TaskAgent context" };
+        }
+        return await context.memory.list();
+      },
+      idempotency: { safe: true },
+      output: { expectedSize: "small" }
+    }
+  ];
+}
+
+// src/capabilities/taskAgent/TaskAgent.ts
+var TaskAgent = class _TaskAgent extends EventEmitter3 {
+  id;
+  state;
+  storage;
+  memory;
+  hooks;
+  executionPromise;
+  // Internal components
+  agent;
+  contextManager;
+  idempotencyCache;
+  historyManager;
+  externalHandler;
+  planExecutor;
+  checkpointManager;
+  tools = [];
+  config;
+  constructor(id, state, storage, memory, config, hooks) {
+    super();
+    this.id = id;
+    this.state = state;
+    this.storage = storage;
+    this.memory = memory;
+    this.config = config;
+    this.hooks = hooks;
+    memory.on("stored", (data) => this.emit("memory:stored", data));
+    memory.on("limit_warning", (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent }));
+  }
+  /**
+   * Create a new TaskAgent
+   */
+  static create(config) {
+    const connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
+    if (!connector) {
+      throw new Error(`Connector "${config.connector}" not found`);
+    }
+    const storage = config.storage ?? createAgentStorage({});
+    const memoryConfig = config.memoryConfig ?? DEFAULT_MEMORY_CONFIG;
+    const memory = new WorkingMemory(storage.memory, memoryConfig);
+    const id = `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const emptyPlan = createPlan({ goal: "", tasks: [] });
+    const agentConfig = {
+      connectorName: typeof config.connector === "string" ? config.connector : connector.name,
+      model: config.model,
+      temperature: config.temperature,
+      maxIterations: config.maxIterations,
+      toolNames: (config.tools ?? []).map((t) => t.definition.function.name)
+    };
+    const state = createAgentState(id, agentConfig, emptyPlan);
+    const taskAgent = new _TaskAgent(id, state, storage, memory, config, config.hooks);
+    taskAgent.initializeComponents(config);
+    return taskAgent;
+  }
+  /**
+   * Initialize internal components
+   */
+  initializeComponents(config) {
+    const memoryTools = createMemoryTools();
+    this.tools = [...config.tools ?? [], ...memoryTools];
+    this.agent = Agent.create({
+      connector: config.connector,
+      model: config.model,
+      tools: this.tools,
+      instructions: config.instructions,
+      temperature: config.temperature,
+      maxIterations: config.maxIterations ?? 10
+    });
+    const modelInfo = getModelInfo(config.model);
+    const contextTokens = modelInfo?.features.input.tokens ?? 128e3;
+    this.contextManager = new ContextManager(
+      {
+        ...DEFAULT_CONTEXT_CONFIG,
+        maxContextTokens: contextTokens
+      },
+      DEFAULT_COMPACTION_STRATEGY
+    );
+    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
+    this.historyManager = new HistoryManager(DEFAULT_HISTORY_CONFIG);
+    this.externalHandler = new ExternalDependencyHandler(this.tools);
+    this.checkpointManager = new CheckpointManager(this.storage, DEFAULT_CHECKPOINT_STRATEGY);
+    this.planExecutor = new PlanExecutor(
+      this.agent,
+      this.memory,
+      this.contextManager,
+      this.idempotencyCache,
+      this.historyManager,
+      this.externalHandler,
+      this.checkpointManager,
+      this.hooks,
+      {
+        maxIterations: config.maxIterations ?? 100
+      }
+    );
+    this.planExecutor.on("task:start", (data) => this.emit("task:start", data));
+    this.planExecutor.on("task:complete", (data) => {
+      this.emit("task:complete", { task: data.task, result: { success: true, output: data.result } });
+      if (this.hooks?.afterTask) {
+        this.hooks.afterTask(data.task, { success: true, output: data.result });
+      }
+    });
+    this.planExecutor.on("task:failed", (data) => this.emit("task:failed", data));
+    this.planExecutor.on("task:skipped", (data) => this.emit("task:failed", { task: data.task, error: new Error(data.reason) }));
+    this.planExecutor.on("task:waiting_external", (data) => this.emit("task:waiting", { task: data.task, dependency: data.task.externalDependency }));
+  }
+  /**
+   * Resume an existing agent from storage
+   */
+  static async resume(agentId, options) {
+    const state = await options.storage.agent.load(agentId);
+    if (!state) {
+      throw new Error(`Agent ${agentId} not found in storage`);
+    }
+    const config = {
+      connector: state.config.connectorName,
+      model: state.config.model,
+      tools: options.tools ?? [],
+      temperature: state.config.temperature,
+      maxIterations: state.config.maxIterations,
+      storage: options.storage,
+      hooks: options.hooks
+    };
+    const memory = new WorkingMemory(options.storage.memory, DEFAULT_MEMORY_CONFIG);
+    const taskAgent = new _TaskAgent(agentId, state, options.storage, memory, config, options.hooks);
+    taskAgent.initializeComponents(config);
+    return taskAgent;
+  }
+  /**
+   * Start executing a plan
+   */
+  async start(planInput) {
+    const plan = createPlan(planInput);
+    this.state.plan = plan;
+    this.state = updateAgentStatus(this.state, "running");
+    if (this.hooks?.onStart) {
+      await this.hooks.onStart(this, plan);
+    }
+    this.executionPromise = this.executePlan().then(async (result) => {
+      if (this.hooks?.onComplete) {
+        await this.hooks.onComplete(result);
+      }
+      return result;
+    }).catch(async (error) => {
+      if (this.hooks?.onError) {
+        await this.hooks.onError(error, { error, phase: "execution" });
+      }
+      throw error;
+    });
+    await this.executionPromise.catch(() => {
+    });
+    return {
+      agentId: this.id,
+      planId: plan.id,
+      wait: async () => {
+        if (!this.executionPromise) {
+          throw new Error("No execution in progress");
+        }
+        return this.executionPromise;
+      },
+      status: () => this.state.status
+    };
+  }
+  /**
+   * Pause execution
+   */
+  async pause() {
+    this.state = updateAgentStatus(this.state, "suspended");
+    this.state.plan.status = "suspended";
+    this.emit("agent:suspended", { reason: "manual_pause" });
+  }
+  /**
+   * Resume execution after pause
+   */
+  async resume() {
+    this.state = updateAgentStatus(this.state, "running");
+    this.state.plan.status = "running";
+    this.emit("agent:resumed", {});
+    await this.executePlan();
+  }
+  /**
+   * Cancel execution
+   */
+  async cancel() {
+    this.state = updateAgentStatus(this.state, "cancelled");
+    this.state.plan.status = "cancelled";
+  }
+  /**
+   * Trigger external dependency completion
+   */
+  async triggerExternal(webhookId, data) {
+    const plan = this.state.plan;
+    if (!plan) {
+      throw new Error("No plan running");
+    }
+    const task = plan.tasks.find((t) => t.externalDependency?.webhookId === webhookId);
+    if (!task || !task.externalDependency) {
+      throw new Error(`Task waiting on webhook ${webhookId} not found`);
+    }
+    task.externalDependency.state = "received";
+    task.externalDependency.receivedData = data;
+    task.externalDependency.receivedAt = Date.now();
+    await this.resume();
+  }
+  /**
+   * Manually complete a task
+   */
+  async completeTaskManually(taskId, result) {
+    const plan = this.state.plan;
+    if (!plan) {
+      throw new Error("No plan running");
+    }
+    const task = plan.tasks.find((t) => t.id === taskId);
+    if (!task || !task.externalDependency) {
+      throw new Error(`Task ${taskId} not found or not waiting on manual input`);
+    }
+    task.externalDependency.state = "received";
+    task.externalDependency.receivedData = result;
+    task.externalDependency.receivedAt = Date.now();
+  }
+  /**
+   * Update the plan
+   */
+  async updatePlan(updates) {
+    const plan = this.state.plan;
+    if (!plan) {
+      throw new Error("No plan running");
+    }
+    if (!plan.allowDynamicTasks && (updates.addTasks || updates.removeTasks)) {
+      throw new Error("Dynamic tasks are disabled for this plan");
+    }
+    if (updates.addTasks) {
+      for (const taskInput of updates.addTasks) {
+        const task = createTask(taskInput);
+        plan.tasks.push(task);
+      }
+    }
+    if (updates.updateTasks) {
+      for (const update of updates.updateTasks) {
+        const task = plan.tasks.find((t) => t.id === update.id);
+        if (task) {
+          Object.assign(task, update);
+        }
+      }
+    }
+    if (updates.removeTasks) {
+      plan.tasks = plan.tasks.filter((t) => !updates.removeTasks.includes(t.id));
+    }
+    plan.lastUpdatedAt = Date.now();
+    this.emit("plan:updated", { plan });
+  }
+  /**
+   * Get current agent state
+   */
+  getState() {
+    return this.state;
+  }
+  /**
+   * Get current plan
+   */
+  getPlan() {
+    if (!this.state.plan || !this.state.plan.goal) {
+      throw new Error("No plan started");
+    }
+    return this.state.plan;
+  }
+  /**
+   * Get working memory
+   */
+  getMemory() {
+    return this.memory;
+  }
+  /**
+   * Execute the plan (internal)
+   */
+  async executePlan() {
+    const plan = this.state.plan;
+    if (!this.planExecutor) {
+      throw new Error("Plan executor not initialized");
+    }
+    try {
+      const execResult = await this.planExecutor.execute(plan, this.state);
+      if (execResult.metrics) {
+        this.state.metrics.totalLLMCalls += execResult.metrics.totalLLMCalls;
+        this.state.metrics.totalToolCalls += execResult.metrics.totalToolCalls;
+        this.state.metrics.totalTokensUsed += execResult.metrics.totalTokensUsed;
+        this.state.metrics.totalCost += execResult.metrics.totalCost;
+      }
+      if (execResult.status === "completed") {
+        this.state = updateAgentStatus(this.state, "completed");
+        plan.status = "completed";
+      } else if (execResult.status === "failed") {
+        this.state = updateAgentStatus(this.state, "failed");
+        plan.status = "failed";
+      } else if (execResult.status === "suspended") {
+        this.state = updateAgentStatus(this.state, "suspended");
+        plan.status = "suspended";
+      }
+      await this.checkpointManager?.checkpoint(this.state, "execution_complete");
+      const result = {
+        status: execResult.status === "suspended" ? "completed" : execResult.status,
+        metrics: {
+          totalTasks: plan.tasks.length,
+          completedTasks: execResult.completedTasks,
+          failedTasks: execResult.failedTasks,
+          skippedTasks: execResult.skippedTasks
+        }
+      };
+      this.emit("agent:completed", { result });
+      return result;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.state = updateAgentStatus(this.state, "failed");
+      plan.status = "failed";
+      try {
+        await this.checkpointManager?.checkpoint(this.state, "execution_failed");
+      } catch {
+      }
+      const result = {
+        status: "failed",
+        error: err.message,
+        metrics: {
+          totalTasks: plan.tasks.length,
+          completedTasks: plan.tasks.filter((t) => t.status === "completed").length,
+          failedTasks: plan.tasks.filter((t) => t.status === "failed").length,
+          skippedTasks: plan.tasks.filter((t) => t.status === "skipped").length
+        }
+      };
+      this.emit("agent:completed", { result });
+      throw err;
+    }
+  }
+  /**
+   * Cleanup resources
+   */
+  destroy() {
+    this.externalHandler?.cleanup();
+    this.checkpointManager?.cleanup();
+    this.planExecutor?.cleanup();
+    this.agent?.destroy();
+  }
+};
+
+// src/index.ts
+init_Memory();
 
 // src/capabilities/agents/StreamHelpers.ts
 var StreamHelpers = class {
@@ -10000,6 +10849,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
   }
 };
 
-export { AIError, Agent, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, Connector, ConnectorConfigStore, ContentType, ContextManager, DEFAULT_MEMORY_CONFIG, ExecutionContext, FileConnectorStorage, FileStorage, HookManager, IdempotencyCache, InMemoryAgentStateStorage, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, MODEL_REGISTRY, MemoryConnectorStorage, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthManager, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, TaskAgent, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, VENDORS, Vendor, WorkingMemory, assertNotDestroyed, authenticatedFetch, calculateCost, createAgentStorage, createAuthenticatedFetch, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, readClipboardImage, tools_exports as tools };
+export { AIError, Agent, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, Connector, ConnectorConfigStore, ContentType, ContextManager, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_COMPACTION_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileStorage, HistoryManager, HookManager, IdempotencyCache, InMemoryAgentStateStorage, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, MODEL_REGISTRY, MemoryConnectorStorage, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, OAuthManager, PlanExecutor, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, StreamEventType, StreamHelpers, StreamState, TaskAgent, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, VENDORS, Vendor, WorkingMemory, assertNotDestroyed, authenticatedFetch, calculateCost, createAgentStorage, createAuthenticatedFetch, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, readClipboardImage, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

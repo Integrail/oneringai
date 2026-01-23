@@ -4,12 +4,21 @@
 
 import EventEmitter from 'eventemitter3';
 import { Connector } from '../../core/Connector.js';
+import { Agent } from '../../core/Agent.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import { Plan, PlanInput, Task, TaskInput, createPlan, createTask } from '../../domain/entities/Task.js';
 import { AgentState, AgentStatus, createAgentState, updateAgentStatus } from '../../domain/entities/AgentState.js';
-import { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
+import { WorkingMemoryConfig, DEFAULT_MEMORY_CONFIG } from '../../domain/entities/Memory.js';
 import { IAgentStorage, createAgentStorage } from '../../infrastructure/storage/InMemoryStorage.js';
 import { WorkingMemory } from './WorkingMemory.js';
+import { ContextManager, DEFAULT_CONTEXT_CONFIG, DEFAULT_COMPACTION_STRATEGY } from './ContextManager.js';
+import { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
+import { HistoryManager, DEFAULT_HISTORY_CONFIG } from './HistoryManager.js';
+import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
+import { PlanExecutor } from './PlanExecutor.js';
+import { CheckpointManager, DEFAULT_CHECKPOINT_STRATEGY } from './CheckpointManager.js';
+import { createMemoryTools } from './memoryTools.js';
+import { getModelInfo } from '../../domain/entities/Model.js';
 
 /**
  * TaskAgent hooks for customization
@@ -163,11 +172,23 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
   protected hooks?: TaskAgentHooks;
   protected executionPromise?: Promise<PlanResult>;
 
+  // Internal components
+  protected agent?: Agent;
+  protected contextManager?: ContextManager;
+  protected idempotencyCache?: IdempotencyCache;
+  protected historyManager?: HistoryManager;
+  protected externalHandler?: ExternalDependencyHandler;
+  protected planExecutor?: PlanExecutor;
+  protected checkpointManager?: CheckpointManager;
+  protected tools: ToolFunction[] = [];
+  protected config: TaskAgentConfig;
+
   protected constructor(
     id: string,
     state: AgentState,
     storage: IAgentStorage,
     memory: WorkingMemory,
+    config: TaskAgentConfig,
     hooks?: TaskAgentHooks
   ) {
     super();
@@ -175,6 +196,7 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     this.state = state;
     this.storage = storage;
     this.memory = memory;
+    this.config = config;
     this.hooks = hooks;
 
     // Forward memory events to agent
@@ -198,12 +220,11 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     const storage = config.storage ?? createAgentStorage({});
 
     // Create working memory
-    const memory = new WorkingMemory(storage.memory, config.memoryConfig);
+    const memoryConfig = config.memoryConfig ?? DEFAULT_MEMORY_CONFIG;
+    const memory = new WorkingMemory(storage.memory, memoryConfig);
 
     // Generate agent ID
     const id = `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-    // Create agent config for state
 
     // Create empty initial plan (will be set on start)
     const emptyPlan = createPlan({ goal: '', tasks: [] });
@@ -218,7 +239,84 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
 
     const state = createAgentState(id, agentConfig, emptyPlan);
 
-    return new TaskAgent(id, state, storage, memory, config.hooks);
+    const taskAgent = new TaskAgent(id, state, storage, memory, config, config.hooks);
+
+    // Initialize components
+    taskAgent.initializeComponents(config);
+
+    return taskAgent;
+  }
+
+  /**
+   * Initialize internal components
+   */
+  private initializeComponents(config: TaskAgentConfig): void {
+    // Combine user tools with memory tools
+    const memoryTools = createMemoryTools();
+    this.tools = [...(config.tools ?? []), ...memoryTools];
+
+    // Create base Agent for LLM calls
+    this.agent = Agent.create({
+      connector: config.connector,
+      model: config.model,
+      tools: this.tools,
+      instructions: config.instructions,
+      temperature: config.temperature,
+      maxIterations: config.maxIterations ?? 10,
+    });
+
+    // Calculate context limit from model
+    const modelInfo = getModelInfo(config.model);
+    const contextTokens = modelInfo?.features.input.tokens ?? 128000;
+
+    // Create context manager
+    this.contextManager = new ContextManager(
+      {
+        ...DEFAULT_CONTEXT_CONFIG,
+        maxContextTokens: contextTokens,
+      },
+      DEFAULT_COMPACTION_STRATEGY
+    );
+
+    // Create idempotency cache
+    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
+
+    // Create history manager
+    this.historyManager = new HistoryManager(DEFAULT_HISTORY_CONFIG);
+
+    // Create external dependency handler
+    this.externalHandler = new ExternalDependencyHandler(this.tools);
+
+    // Create checkpoint manager
+    this.checkpointManager = new CheckpointManager(this.storage, DEFAULT_CHECKPOINT_STRATEGY);
+
+    // Create plan executor
+    this.planExecutor = new PlanExecutor(
+      this.agent,
+      this.memory,
+      this.contextManager,
+      this.idempotencyCache,
+      this.historyManager,
+      this.externalHandler,
+      this.checkpointManager,
+      this.hooks,
+      {
+        maxIterations: config.maxIterations ?? 100,
+      }
+    );
+
+    // Forward events from plan executor to task agent
+    this.planExecutor.on('task:start', (data) => this.emit('task:start', data));
+    this.planExecutor.on('task:complete', (data) => {
+      this.emit('task:complete', { task: data.task, result: { success: true, output: data.result } });
+      // Call afterTask hook
+      if (this.hooks?.afterTask) {
+        this.hooks.afterTask(data.task, { success: true, output: data.result });
+      }
+    });
+    this.planExecutor.on('task:failed', (data) => this.emit('task:failed', data));
+    this.planExecutor.on('task:skipped', (data) => this.emit('task:failed', { task: data.task, error: new Error(data.reason) }));
+    this.planExecutor.on('task:waiting_external', (data) => this.emit('task:waiting', { task: data.task, dependency: data.task.externalDependency }));
   }
 
   /**
@@ -226,18 +324,33 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
    */
   static async resume(
     agentId: string,
-    options: { storage: IAgentStorage; tools?: ToolFunction[] }
+    options: { storage: IAgentStorage; tools?: ToolFunction[]; hooks?: TaskAgentHooks }
   ): Promise<TaskAgent> {
     const state = await options.storage.agent.load(agentId);
     if (!state) {
       throw new Error(`Agent ${agentId} not found in storage`);
     }
 
+    // Recreate config from state
+    const config: TaskAgentConfig = {
+      connector: state.config.connectorName,
+      model: state.config.model,
+      tools: options.tools ?? [],
+      temperature: state.config.temperature,
+      maxIterations: state.config.maxIterations,
+      storage: options.storage,
+      hooks: options.hooks,
+    };
+
     // Create working memory from stored state
-    const { DEFAULT_MEMORY_CONFIG } = await import('../../domain/entities/Memory.js');
     const memory = new WorkingMemory(options.storage.memory, DEFAULT_MEMORY_CONFIG);
 
-    return new TaskAgent(agentId, state, options.storage, memory, undefined);
+    const taskAgent = new TaskAgent(agentId, state, options.storage, memory, config, options.hooks);
+
+    // Initialize components
+    taskAgent.initializeComponents(config);
+
+    return taskAgent;
   }
 
   /**
@@ -438,23 +551,88 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
   protected async executePlan(): Promise<PlanResult> {
     const plan = this.state.plan;
 
-    // Basic execution loop (simplified for initial implementation)
-    const completedTasks = plan.tasks.filter((t) => t.status === 'completed').length;
-    const failedTasks = plan.tasks.filter((t) => t.status === 'failed').length;
-    const skippedTasks = plan.tasks.filter((t) => t.status === 'skipped').length;
+    if (!this.planExecutor) {
+      throw new Error('Plan executor not initialized');
+    }
 
-    const result: PlanResult = {
-      status: 'completed',
-      metrics: {
-        totalTasks: plan.tasks.length,
-        completedTasks,
-        failedTasks,
-        skippedTasks,
-      },
-    };
+    try {
+      // Execute the plan
+      const execResult = await this.planExecutor.execute(plan, this.state);
 
-    this.emit('agent:completed', { result });
+      // Update metrics from execution
+      if (execResult.metrics) {
+        this.state.metrics.totalLLMCalls += execResult.metrics.totalLLMCalls;
+        this.state.metrics.totalToolCalls += execResult.metrics.totalToolCalls;
+        this.state.metrics.totalTokensUsed += execResult.metrics.totalTokensUsed;
+        this.state.metrics.totalCost += execResult.metrics.totalCost;
+      }
 
-    return result;
+      // Update agent state
+      if (execResult.status === 'completed') {
+        this.state = updateAgentStatus(this.state, 'completed');
+        plan.status = 'completed';
+      } else if (execResult.status === 'failed') {
+        this.state = updateAgentStatus(this.state, 'failed');
+        plan.status = 'failed';
+      } else if (execResult.status === 'suspended') {
+        this.state = updateAgentStatus(this.state, 'suspended');
+        plan.status = 'suspended';
+      }
+
+      // Final checkpoint
+      await this.checkpointManager?.checkpoint(this.state, 'execution_complete');
+
+      const result: PlanResult = {
+        status: execResult.status === 'suspended' ? 'completed' : execResult.status,
+        metrics: {
+          totalTasks: plan.tasks.length,
+          completedTasks: execResult.completedTasks,
+          failedTasks: execResult.failedTasks,
+          skippedTasks: execResult.skippedTasks,
+        },
+      };
+
+      this.emit('agent:completed', { result });
+
+      return result;
+    } catch (error) {
+      // Handle execution error
+      const err = error instanceof Error ? error : new Error(String(error));
+
+      this.state = updateAgentStatus(this.state, 'failed');
+      plan.status = 'failed';
+
+      // Try to checkpoint the failure
+      try {
+        await this.checkpointManager?.checkpoint(this.state, 'execution_failed');
+      } catch {
+        // Ignore checkpoint errors during failure handling
+      }
+
+      const result: PlanResult = {
+        status: 'failed',
+        error: err.message,
+        metrics: {
+          totalTasks: plan.tasks.length,
+          completedTasks: plan.tasks.filter((t) => t.status === 'completed').length,
+          failedTasks: plan.tasks.filter((t) => t.status === 'failed').length,
+          skippedTasks: plan.tasks.filter((t) => t.status === 'skipped').length,
+        },
+      };
+
+      this.emit('agent:completed', { result });
+
+      throw err;
+    }
+  }
+
+  /**
+   * Cleanup resources
+   */
+  destroy(): void {
+    this.externalHandler?.cleanup();
+    this.checkpointManager?.cleanup();
+    this.planExecutor?.cleanup();
+    this.agent?.destroy();
   }
 }

@@ -409,21 +409,32 @@ const agent = TaskAgent.create({
 - ✅ Context manager with auto-compaction
 - ✅ Idempotency cache for tools
 - ✅ Memory tools (store, retrieve, delete, list)
-- ✅ Basic TaskAgent orchestration
-- 🚧 Full execution loop with LLM integration (in progress)
-- 🚧 External dependency polling (in progress)
-- 🚧 Conversation history summarization (in progress)
+- ✅ **Full TaskAgent orchestration**
+- ✅ **PlanExecutor with LLM integration**
+- ✅ **ExternalDependencyHandler** (webhooks, polling, scheduled, manual)
+- ✅ **HistoryManager** with conversation tracking
+- ✅ **CheckpointManager** for state persistence
+- ✅ **Complete execution loop** - Full agentic loop with LLM calls
 - 🚧 File-based & Redis storage adapters (planned)
 - 🚧 OpenTelemetry observability (planned)
 
+## How to Run
+
+```bash
+# Run basic example
+npm run example:task-agent
+
+# Run full demo with all features
+npm run example:task-agent-demo
+```
+
 ## Next Steps
 
-1. **Complete ExecutionLoop** - Full agentic loop with actual LLM calls
-2. **External Dependency Handlers** - Webhook server, polling mechanism, scheduled tasks
-3. **History Summarization** - LLM-based conversation compaction
-4. **Storage Adapters** - File, Redis, Postgres implementations
-5. **Observability** - OpenTelemetry tracing, metrics, cost tracking
-6. **Documentation** - API docs, architecture guide, migration guide
+1. **Storage Adapters** - File, Redis, Postgres implementations for production
+2. **Advanced Execution** - Sub-plans, loops, branching logic
+3. **Observability** - OpenTelemetry tracing, metrics dashboards
+4. **Performance** - Optimize for high-throughput scenarios
+5. **Documentation** - API docs, architecture guide, migration guide
 
 ## Files Added
 

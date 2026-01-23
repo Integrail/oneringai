@@ -56,7 +56,9 @@
     "example:oauth-multi-user": "tsx examples/oauth-multi-user.ts",
     "example:oauth-multi-user-fetch": "tsx examples/oauth-multi-user-fetch.ts",
     "example:custom-infrastructure": "tsx examples/custom-infrastructure.ts",
-    "example:provider-config": "tsx examples/provider-config-generator.ts"
+    "example:provider-config": "tsx examples/provider-config-generator.ts",
+    "example:task-agent": "tsx examples/task-agent-basic.ts",
+    "example:task-agent-demo": "tsx examples/task-agent-demo.ts"
   },
   "keywords": [
     "ai",
