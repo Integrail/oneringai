@@ -32,6 +32,7 @@ export class AnthropicTextProvider extends BaseTextProvider {
 
   constructor(config: AnthropicConfig) {
     super(config);
+
     this.client = new Anthropic({
       apiKey: this.getApiKey(),
       baseURL: this.getBaseURL(),
@@ -45,22 +46,24 @@ export class AnthropicTextProvider extends BaseTextProvider {
    * Generate response using Anthropic Messages API
    */
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
-    try {
-      // Convert our format → Anthropic Messages API format
-      const anthropicRequest = this.converter.convertRequest(options);
+    return this.executeWithCircuitBreaker(async () => {
+      try {
+        // Convert our format → Anthropic Messages API format
+        const anthropicRequest = this.converter.convertRequest(options);
 
-      // Call Anthropic API (not stream)
-      const anthropicResponse = await this.client.messages.create({
-        ...anthropicRequest,
-        stream: false,
-      });
+        // Call Anthropic API (not stream)
+        const anthropicResponse = await this.client.messages.create({
+          ...anthropicRequest,
+          stream: false,
+        });
 
-      // Convert Anthropic response → our format
-      return this.converter.convertResponse(anthropicResponse);
-    } catch (error: any) {
-      this.handleError(error);
-      throw error; // TypeScript needs this
-    }
+        // Convert Anthropic response → our format
+        return this.converter.convertResponse(anthropicResponse);
+      } catch (error: any) {
+        this.handleError(error);
+        throw error; // TypeScript needs this
+      }
+    }, options.model);
   }
 
   /**

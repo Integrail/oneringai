@@ -29,6 +29,7 @@ export class OpenAITextProvider extends BaseTextProvider {
 
   constructor(config: OpenAIConfig) {
     super(config);
+
     this.client = new OpenAI({
       apiKey: this.getApiKey(),
       baseURL: this.getBaseURL(),
@@ -42,23 +43,26 @@ export class OpenAITextProvider extends BaseTextProvider {
    * Generate response using OpenAI Responses API
    */
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
-    try {
-      // OpenAI Responses API format matches our internal format!
-      const response = await this.client.chat.completions.create({
-        model: options.model,
-        messages: this.convertInput(options.input, options.instructions),
-        tools: options.tools as any,
-        tool_choice: options.tool_choice as any,
-        temperature: options.temperature,
-        max_tokens: options.max_output_tokens,
-        response_format: options.response_format as any,
-      });
+    // Execute with circuit breaker protection and observability
+    return this.executeWithCircuitBreaker(async () => {
+      try {
+        // OpenAI Responses API format matches our internal format!
+        const response = await this.client.chat.completions.create({
+          model: options.model,
+          messages: this.convertInput(options.input, options.instructions),
+          tools: options.tools as any,
+          tool_choice: options.tool_choice as any,
+          temperature: options.temperature,
+          max_tokens: options.max_output_tokens,
+          response_format: options.response_format as any,
+        });
 
-      return this.convertResponse(response);
-    } catch (error: any) {
-      this.handleError(error);
-      throw error; // TypeScript needs this
-    }
+        return this.convertResponse(response);
+      } catch (error: any) {
+        this.handleError(error);
+        throw error; // TypeScript needs this
+      }
+    }, options.model);
   }
 
   /**

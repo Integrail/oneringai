@@ -19,6 +19,8 @@ import { HookConfig } from '../capabilities/agents/types/HookTypes.js';
 import { AgenticLoopEvents } from '../capabilities/agents/types/EventTypes.js';
 import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import { ITextProvider } from '../domain/interfaces/ITextProvider.js';
+import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
+import { metrics } from '../infrastructure/observability/Metrics.js';
 
 /**
  * Agent configuration - new simplified interface
@@ -70,6 +72,7 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
   private cleanupCallbacks: Array<() => void> = [];
   private boundListeners: Map<keyof AgenticLoopEvents, (...args: any[]) => void> = new Map();
   private _isDestroyed = false;
+  private logger: FrameworkLogger;
 
   get isDestroyed(): boolean {
     return this._isDestroyed;
@@ -109,6 +112,20 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     this.model = config.model;
     this.config = config;
 
+    // Create logger with agent context
+    this.logger = logger.child({
+      component: 'Agent',
+      agentName: this.name,
+      model: this.model,
+      connector: this.connector.name,
+    });
+
+    this.logger.debug({ config }, 'Agent created');
+    metrics.increment('agent.created', 1, {
+      model: this.model,
+      connector: this.connector.name,
+    });
+
     // Create provider from connector
     this.provider = createProvider(this.connector);
 
@@ -140,22 +157,74 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
   async run(input: string | InputItem[]): Promise<AgentResponse> {
     assertNotDestroyed(this, 'run agent');
 
-    const tools = this.config.tools?.map((t) => t.definition) || [];
+    const inputPreview = typeof input === 'string'
+      ? input.substring(0, 100)
+      : `${input.length} messages`;
 
-    const loopConfig: AgenticLoopConfig = {
+    this.logger.info({
+      inputPreview,
+      toolCount: this.config.tools?.length || 0,
+    }, 'Agent run started');
+
+    metrics.increment('agent.run.started', 1, {
       model: this.model,
-      input,
-      instructions: this.config.instructions,
-      tools,
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations || 10,
-      hooks: this.config.hooks,
-      historyMode: this.config.historyMode,
-      limits: this.config.limits,
-      errorHandling: this.config.errorHandling,
-    };
+      connector: this.connector.name,
+    });
 
-    return this.agenticLoop.execute(loopConfig);
+    const startTime = Date.now();
+
+    try {
+      const tools = this.config.tools?.map((t) => t.definition) || [];
+
+      const loopConfig: AgenticLoopConfig = {
+        model: this.model,
+        input,
+        instructions: this.config.instructions,
+        tools,
+        temperature: this.config.temperature,
+        maxIterations: this.config.maxIterations || 10,
+        hooks: this.config.hooks,
+        historyMode: this.config.historyMode,
+        limits: this.config.limits,
+        errorHandling: this.config.errorHandling,
+      };
+
+      const response = await this.agenticLoop.execute(loopConfig);
+
+      const duration = Date.now() - startTime;
+
+      this.logger.info({
+        duration,
+      }, 'Agent run completed');
+
+      metrics.timing('agent.run.duration', duration, {
+        model: this.model,
+        connector: this.connector.name,
+      });
+
+      metrics.increment('agent.run.completed', 1, {
+        model: this.model,
+        connector: this.connector.name,
+        status: 'success',
+      });
+
+      return response;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      this.logger.error({
+        error: (error as Error).message,
+        duration,
+      }, 'Agent run failed');
+
+      metrics.increment('agent.run.completed', 1, {
+        model: this.model,
+        connector: this.connector.name,
+        status: 'error',
+      });
+
+      throw error;
+    }
   }
 
   /**
@@ -164,22 +233,70 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
   async *stream(input: string | InputItem[]): AsyncIterableIterator<StreamEvent> {
     assertNotDestroyed(this, 'stream from agent');
 
-    const tools = this.config.tools?.map((t) => t.definition) || [];
+    const inputPreview = typeof input === 'string'
+      ? input.substring(0, 100)
+      : `${input.length} messages`;
 
-    const loopConfig: AgenticLoopConfig = {
+    this.logger.info({
+      inputPreview,
+      toolCount: this.config.tools?.length || 0,
+    }, 'Agent stream started');
+
+    metrics.increment('agent.stream.started', 1, {
       model: this.model,
-      input,
-      instructions: this.config.instructions,
-      tools,
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations || 10,
-      hooks: this.config.hooks,
-      historyMode: this.config.historyMode,
-      limits: this.config.limits,
-      errorHandling: this.config.errorHandling,
-    };
+      connector: this.connector.name,
+    });
 
-    yield* this.agenticLoop.executeStreaming(loopConfig);
+    const startTime = Date.now();
+
+    try {
+      const tools = this.config.tools?.map((t) => t.definition) || [];
+
+      const loopConfig: AgenticLoopConfig = {
+        model: this.model,
+        input,
+        instructions: this.config.instructions,
+        tools,
+        temperature: this.config.temperature,
+        maxIterations: this.config.maxIterations || 10,
+        hooks: this.config.hooks,
+        historyMode: this.config.historyMode,
+        limits: this.config.limits,
+        errorHandling: this.config.errorHandling,
+      };
+
+      yield* this.agenticLoop.executeStreaming(loopConfig);
+
+      const duration = Date.now() - startTime;
+
+      this.logger.info({ duration }, 'Agent stream completed');
+
+      metrics.timing('agent.stream.duration', duration, {
+        model: this.model,
+        connector: this.connector.name,
+      });
+
+      metrics.increment('agent.stream.completed', 1, {
+        model: this.model,
+        connector: this.connector.name,
+        status: 'success',
+      });
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      this.logger.error({
+        error: (error as Error).message,
+        duration,
+      }, 'Agent stream failed');
+
+      metrics.increment('agent.stream.completed', 1, {
+        model: this.model,
+        connector: this.connector.name,
+        status: 'error',
+      });
+
+      throw error;
+    }
   }
 
   // ============ Tool Management ============
@@ -288,6 +405,38 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     return context?.getAuditTrail() || [];
   }
 
+  /**
+   * Get circuit breaker metrics for LLM provider
+   */
+  getProviderCircuitBreakerMetrics() {
+    if ('getCircuitBreakerMetrics' in this.provider) {
+      return (this.provider as any).getCircuitBreakerMetrics();
+    }
+    return null;
+  }
+
+  /**
+   * Get circuit breaker states for all tools
+   */
+  getToolCircuitBreakerStates() {
+    return this.toolRegistry.getCircuitBreakerStates();
+  }
+
+  /**
+   * Get circuit breaker metrics for a specific tool
+   */
+  getToolCircuitBreakerMetrics(toolName: string) {
+    return this.toolRegistry.getToolCircuitBreakerMetrics(toolName);
+  }
+
+  /**
+   * Manually reset a tool's circuit breaker
+   */
+  resetToolCircuitBreaker(toolName: string): void {
+    this.toolRegistry.resetToolCircuitBreaker(toolName);
+    this.logger.info({ toolName }, 'Tool circuit breaker reset by user');
+  }
+
   isRunning(): boolean {
     return this.agenticLoop.isRunning();
   }
@@ -312,6 +461,8 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     }
     this._isDestroyed = true;
 
+    this.logger.debug('Agent destroy started');
+
     try {
       this.agenticLoop.cancel('Agent destroyed');
     } catch {
@@ -330,10 +481,17 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
       try {
         callback();
       } catch (error) {
-        console.error('Cleanup callback error:', error);
+        this.logger.error({ error: (error as Error).message }, 'Cleanup callback error');
       }
     }
     this.cleanupCallbacks = [];
+
+    metrics.increment('agent.destroyed', 1, {
+      model: this.model,
+      connector: this.connector.name,
+    });
+
+    this.logger.debug('Agent destroyed');
   }
 
   // ============ Private ============

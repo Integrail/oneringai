@@ -1,6 +1,6 @@
 import EventEmitter$1, { EventEmitter } from 'eventemitter3';
-import { A as AgenticLoopEvents, T as ToolFunction, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, e as ITextProvider, f as TokenUsage, g as ToolCall, L as LLMResponse, h as StreamEventType, i as IProvider, P as ProviderCapabilities, j as TextGenerateOptions, M as ModelCapabilities, k as MessageRole } from './index-E7FELYjr.js';
-export { a9 as AfterToolContext, a4 as AgenticLoopEventName, ac as ApprovalResult, aa as ApproveToolContext, a8 as BeforeToolContext, B as BuiltInTool, s as CompactionItem, l as Content, C as ContentType, X as ErrorEvent, F as FunctionToolDefinition, a6 as Hook, a3 as HookManager, a5 as HookName, ad as IToolExecutor, n as InputImageContent, m as InputTextContent, V as IterationCompleteEvent, J as JSONSchema, q as Message, a7 as ModifyingHook, r as OutputItem, O as OutputTextContent, z as OutputTextDeltaEvent, D as OutputTextDoneEvent, R as ReasoningItem, W as ResponseCompleteEvent, x as ResponseCreatedEvent, y as ResponseInProgressEvent, u as Tool, K as ToolCallArgumentsDeltaEvent, N as ToolCallArgumentsDoneEvent, G as ToolCallStartEvent, t as ToolCallState, w as ToolExecutionContext, U as ToolExecutionDoneEvent, Q as ToolExecutionStartEvent, ab as ToolModification, a2 as ToolRegistry, v as ToolResult, p as ToolResultContent, o as ToolUseContent, a1 as isErrorEvent, Z as isOutputTextDelta, a0 as isResponseComplete, Y as isStreamEvent, _ as isToolCallArgumentsDelta, $ as isToolCallArgumentsDone } from './index-E7FELYjr.js';
+import { A as AgenticLoopEvents, T as ToolFunction, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as TokenUsage, h as ToolCall, L as LLMResponse, i as StreamEventType, j as IProvider, P as ProviderCapabilities, k as CircuitBreaker, l as TextGenerateOptions, M as ModelCapabilities, m as MessageRole } from './index-BElN4ALe.js';
+export { ac as AfterToolContext, a7 as AgenticLoopEventName, af as ApprovalResult, ad as ApproveToolContext, ab as BeforeToolContext, B as BuiltInTool, ai as CircuitBreakerConfig, aj as CircuitBreakerEvents, ah as CircuitOpenError, v as CompactionItem, o as Content, n as ContentType, ak as DEFAULT_CIRCUIT_BREAKER_CONFIG, _ as ErrorEvent, F as FunctionToolDefinition, a9 as Hook, a6 as HookManager, a8 as HookName, ag as IToolExecutor, q as InputImageContent, p as InputTextContent, Y as IterationCompleteEvent, J as JSONSchema, t as Message, aa as ModifyingHook, u as OutputItem, O as OutputTextContent, K as OutputTextDeltaEvent, N as OutputTextDoneEvent, R as ReasoningItem, Z as ResponseCompleteEvent, D as ResponseCreatedEvent, G as ResponseInProgressEvent, x as Tool, U as ToolCallArgumentsDeltaEvent, V as ToolCallArgumentsDoneEvent, Q as ToolCallStartEvent, w as ToolCallState, z as ToolExecutionContext, X as ToolExecutionDoneEvent, W as ToolExecutionStartEvent, ae as ToolModification, a5 as ToolRegistry, y as ToolResult, s as ToolResultContent, r as ToolUseContent, a4 as isErrorEvent, a0 as isOutputTextDelta, a3 as isResponseComplete, $ as isStreamEvent, a1 as isToolCallArgumentsDelta, a2 as isToolCallArgumentsDone } from './index-BElN4ALe.js';
 
 /**
  * Supported AI Vendors
@@ -382,6 +382,7 @@ declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposab
     private cleanupCallbacks;
     private boundListeners;
     private _isDestroyed;
+    private logger;
     get isDestroyed(): boolean;
     /**
      * Create a new agent
@@ -467,6 +468,22 @@ declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposab
         totalDuration: number;
     } | null;
     getAuditTrail(): readonly AuditEntry[];
+    /**
+     * Get circuit breaker metrics for LLM provider
+     */
+    getProviderCircuitBreakerMetrics(): any;
+    /**
+     * Get circuit breaker states for all tools
+     */
+    getToolCircuitBreakerStates(): Map<string, CircuitState>;
+    /**
+     * Get circuit breaker metrics for a specific tool
+     */
+    getToolCircuitBreakerMetrics(toolName: string): CircuitBreakerMetrics | undefined;
+    /**
+     * Manually reset a tool's circuit breaker
+     */
+    resetToolCircuitBreaker(toolName: string): void;
     isRunning(): boolean;
     isPaused(): boolean;
     isCancelled(): boolean;
@@ -959,126 +976,6 @@ declare function createAgentStorage(options?: {
 }): IAgentStorage;
 
 /**
- * Tool context interface - passed to tools during execution
- */
-/**
- * Limited memory access for tools
- */
-interface WorkingMemoryAccess {
-    get(key: string): Promise<unknown>;
-    set(key: string, description: string, value: unknown): Promise<void>;
-    delete(key: string): Promise<void>;
-    has(key: string): Promise<boolean>;
-    list(): Promise<Array<{
-        key: string;
-        description: string;
-    }>>;
-}
-/**
- * Context passed to tool execute function
- */
-interface ToolContext {
-    /** Agent ID (for logging/tracing) */
-    agentId: string;
-    /** Task ID (if running in TaskAgent) */
-    taskId?: string;
-    /** Working memory access (if running in TaskAgent) */
-    memory?: WorkingMemoryAccess;
-    /** Abort signal for cancellation */
-    signal?: AbortSignal;
-}
-
-/**
- * WorkingMemory class - manages indexed working memory for TaskAgent
- */
-
-interface WorkingMemoryEvents {
-    stored: {
-        key: string;
-        description: string;
-    };
-    retrieved: {
-        key: string;
-    };
-    deleted: {
-        key: string;
-    };
-    limit_warning: {
-        utilizationPercent: number;
-    };
-}
-/**
- * WorkingMemory manages the agent's indexed working memory.
- *
- * Features:
- * - Store/retrieve with descriptions for index
- * - Scoped memory (task vs persistent)
- * - LRU eviction when approaching limits
- * - Event emission for monitoring
- */
-declare class WorkingMemory extends EventEmitter$1<WorkingMemoryEvents> {
-    private storage;
-    private config;
-    constructor(storage: IMemoryStorage, config?: WorkingMemoryConfig);
-    /**
-     * Store a value in working memory
-     */
-    store(key: string, description: string, value: unknown, scope?: MemoryScope): Promise<void>;
-    /**
-     * Retrieve a value from working memory
-     */
-    retrieve(key: string): Promise<unknown>;
-    /**
-     * Retrieve multiple values
-     */
-    retrieveMany(keys: string[]): Promise<Record<string, unknown>>;
-    /**
-     * Delete a value from working memory
-     */
-    delete(key: string): Promise<void>;
-    /**
-     * Check if key exists
-     */
-    has(key: string): Promise<boolean>;
-    /**
-     * Promote a task-scoped entry to persistent
-     */
-    persist(key: string): Promise<void>;
-    /**
-     * Clear all entries of a specific scope
-     */
-    clearScope(scope: MemoryScope): Promise<void>;
-    /**
-     * Clear all entries
-     */
-    clear(): Promise<void>;
-    /**
-     * Get memory index
-     */
-    getIndex(): Promise<MemoryIndex>;
-    /**
-     * Format index for context injection
-     */
-    formatIndex(): Promise<string>;
-    /**
-     * Evict least recently used entries
-     */
-    evictLRU(count: number): Promise<string[]>;
-    /**
-     * Evict largest entries first
-     */
-    evictBySize(count: number): Promise<string[]>;
-    /**
-     * Get limited memory access for tools
-     */
-    getAccess(): WorkingMemoryAccess;
-    /**
-     * Get the configured memory limit
-     */
-    getLimit(): number;
-}
-
-/**
  * ContextManager - manages context window size and compaction
  */
 
@@ -1195,6 +1092,7 @@ interface ContextManagerEvents {
 declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
     private config;
     private strategy;
+    private lastBudget?;
     constructor(config?: ContextManagerConfig, strategy?: CompactionStrategy);
     /**
      * Estimate token count for text
@@ -1224,6 +1122,18 @@ declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
      * Check if output should be auto-stored in memory
      */
     shouldAutoStore(output: unknown, threshold: number): boolean;
+    /**
+     * Get current context budget
+     */
+    getCurrentBudget(): ContextBudget | null;
+    /**
+     * Get current configuration
+     */
+    getConfig(): ContextManagerConfig;
+    /**
+     * Get current compaction strategy
+     */
+    getStrategy(): CompactionStrategy;
     /**
      * Update configuration
      */
@@ -1270,6 +1180,7 @@ declare class IdempotencyCache {
     private cache;
     private hits;
     private misses;
+    private cleanupInterval?;
     constructor(config?: IdempotencyCacheConfig);
     /**
      * Get cached result for tool call
@@ -1292,6 +1203,10 @@ declare class IdempotencyCache {
      */
     invalidateTool(tool: ToolFunction): Promise<void>;
     /**
+     * Prune expired entries from cache
+     */
+    pruneExpired(): number;
+    /**
      * Clear all cached results
      */
     clear(): Promise<void>;
@@ -1307,6 +1222,131 @@ declare class IdempotencyCache {
      * Simple hash function for objects
      */
     private hashObject;
+}
+
+/**
+ * Tool context interface - passed to tools during execution
+ */
+
+/**
+ * Limited memory access for tools
+ */
+interface WorkingMemoryAccess {
+    get(key: string): Promise<unknown>;
+    set(key: string, description: string, value: unknown): Promise<void>;
+    delete(key: string): Promise<void>;
+    has(key: string): Promise<boolean>;
+    list(): Promise<Array<{
+        key: string;
+        description: string;
+    }>>;
+}
+/**
+ * Context passed to tool execute function
+ */
+interface ToolContext {
+    /** Agent ID (for logging/tracing) */
+    agentId: string;
+    /** Task ID (if running in TaskAgent) */
+    taskId?: string;
+    /** Working memory access (if running in TaskAgent) */
+    memory?: WorkingMemoryAccess;
+    /** Context manager (if running in TaskAgent) */
+    contextManager?: ContextManager;
+    /** Idempotency cache (if running in TaskAgent) */
+    idempotencyCache?: IdempotencyCache;
+    /** Abort signal for cancellation */
+    signal?: AbortSignal;
+}
+
+/**
+ * WorkingMemory class - manages indexed working memory for TaskAgent
+ */
+
+interface WorkingMemoryEvents {
+    stored: {
+        key: string;
+        description: string;
+    };
+    retrieved: {
+        key: string;
+    };
+    deleted: {
+        key: string;
+    };
+    limit_warning: {
+        utilizationPercent: number;
+    };
+}
+/**
+ * WorkingMemory manages the agent's indexed working memory.
+ *
+ * Features:
+ * - Store/retrieve with descriptions for index
+ * - Scoped memory (task vs persistent)
+ * - LRU eviction when approaching limits
+ * - Event emission for monitoring
+ */
+declare class WorkingMemory extends EventEmitter$1<WorkingMemoryEvents> {
+    private storage;
+    private config;
+    constructor(storage: IMemoryStorage, config?: WorkingMemoryConfig);
+    /**
+     * Store a value in working memory
+     */
+    store(key: string, description: string, value: unknown, scope?: MemoryScope): Promise<void>;
+    /**
+     * Retrieve a value from working memory
+     */
+    retrieve(key: string): Promise<unknown>;
+    /**
+     * Retrieve multiple values
+     */
+    retrieveMany(keys: string[]): Promise<Record<string, unknown>>;
+    /**
+     * Delete a value from working memory
+     */
+    delete(key: string): Promise<void>;
+    /**
+     * Check if key exists
+     */
+    has(key: string): Promise<boolean>;
+    /**
+     * Promote a task-scoped entry to persistent
+     */
+    persist(key: string): Promise<void>;
+    /**
+     * Clear all entries of a specific scope
+     */
+    clearScope(scope: MemoryScope): Promise<void>;
+    /**
+     * Clear all entries
+     */
+    clear(): Promise<void>;
+    /**
+     * Get memory index
+     */
+    getIndex(): Promise<MemoryIndex>;
+    /**
+     * Format index for context injection
+     */
+    formatIndex(): Promise<string>;
+    /**
+     * Evict least recently used entries
+     */
+    evictLRU(count: number): Promise<string[]>;
+    /**
+     * Evict largest entries first
+     */
+    evictBySize(count: number): Promise<string[]>;
+    /**
+     * Get limited memory access for tools
+     */
+    getAccess(): WorkingMemoryAccess;
+    /**
+     * Get the configured memory limit
+     */
+    getLimit(): number;
 }
 
 /**
@@ -1483,7 +1523,12 @@ declare class CheckpointManager {
     private llmCallsSinceCheckpoint;
     private intervalTimer?;
     private pendingCheckpoints;
+    private currentState;
     constructor(storage: IAgentStorage, strategy?: CheckpointStrategy);
+    /**
+     * Set the current agent state (for interval checkpointing)
+     */
+    setCurrentState(state: AgentState): void;
     /**
      * Record a tool call (may trigger checkpoint)
      */
@@ -1511,7 +1556,7 @@ declare class CheckpointManager {
     /**
      * Cleanup resources
      */
-    cleanup(): void;
+    cleanup(): Promise<void>;
 }
 
 /**
@@ -1616,27 +1661,7 @@ declare class PlanExecutor extends EventEmitter$1<PlanExecutorEvents> {
      */
     cleanup(): void;
     /**
-     * Get idempotency cache (for future tool execution integration)
-     *
-     * TODO: Full IdempotencyCache Integration
-     * ----------------------------------------
-     * To fully integrate idempotency caching:
-     *
-     * Option 1: Wrap Agent.run() with tool interception
-     * - Intercept tool calls before Agent.run()
-     * - Check cache with: await this.idempotencyCache.get(tool, args)
-     * - If cached, inject result into LLM context
-     * - After execution: await this.idempotencyCache.set(tool, args, result)
-     *
-     * Option 2: Modify Agent class to accept IdempotencyCache
-     * - Pass idempotencyCache to Agent constructor
-     * - Agent integrates with ToolExecutor
-     * - Automatic caching for all tool calls
-     *
-     * Option 3: Create ToolContext wrapper
-     * - Wrap tools with context (agentId, taskId, memory)
-     * - Cache-aware tool execution
-     * - Auto-store large outputs in memory
+     * Get idempotency cache
      */
     getIdempotencyCache(): IdempotencyCache;
 }
@@ -1807,11 +1832,16 @@ declare class TaskAgent extends EventEmitter$1<TaskAgentEvents> {
     protected checkpointManager?: CheckpointManager;
     protected tools: ToolFunction[];
     protected config: TaskAgentConfig;
+    private eventCleanupFunctions;
     protected constructor(id: string, state: AgentState, storage: IAgentStorage, memory: WorkingMemory, config: TaskAgentConfig, hooks?: TaskAgentHooks);
     /**
      * Create a new TaskAgent
      */
     static create(config: TaskAgentConfig): TaskAgent;
+    /**
+     * Wrap a tool with idempotency cache and enhanced context
+     */
+    private wrapToolWithCache;
     /**
      * Initialize internal components
      */
@@ -1871,7 +1901,7 @@ declare class TaskAgent extends EventEmitter$1<TaskAgentEvents> {
     /**
      * Cleanup resources
      */
-    destroy(): void;
+    destroy(): Promise<void>;
 }
 
 /**
@@ -2397,13 +2427,123 @@ declare abstract class BaseProvider implements IProvider {
 }
 
 /**
- * Base text provider with common text generation functionality
+ * Structured logging infrastructure
+ *
+ * Provides framework-wide structured logging with context propagation.
+ * Supports console output (default) with optional pino integration.
  */
+/**
+ * Log level
+ */
+type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent';
+/**
+ * Logger configuration
+ */
+interface LoggerConfig {
+    /** Log level */
+    level?: LogLevel;
+    /** Pretty print for development */
+    pretty?: boolean;
+    /** Base context added to all logs */
+    context?: Record<string, any>;
+    /** Custom destination (default: console) */
+    destination?: 'console' | 'stdout' | 'stderr';
+}
+/**
+ * Log entry
+ */
+interface LogEntry {
+    level: LogLevel;
+    time: number;
+    msg: string;
+    [key: string]: any;
+}
+/**
+ * Framework logger
+ */
+declare class FrameworkLogger {
+    private config;
+    private context;
+    private levelValue;
+    constructor(config?: LoggerConfig);
+    /**
+     * Create child logger with additional context
+     */
+    child(context: Record<string, any>): FrameworkLogger;
+    /**
+     * Trace log
+     */
+    trace(obj: Record<string, any> | string, msg?: string): void;
+    /**
+     * Debug log
+     */
+    debug(obj: Record<string, any> | string, msg?: string): void;
+    /**
+     * Info log
+     */
+    info(obj: Record<string, any> | string, msg?: string): void;
+    /**
+     * Warn log
+     */
+    warn(obj: Record<string, any> | string, msg?: string): void;
+    /**
+     * Error log
+     */
+    error(obj: Record<string, any> | string, msg?: string): void;
+    /**
+     * Internal log method
+     */
+    private log;
+    /**
+     * Output log entry
+     */
+    private output;
+    /**
+     * Pretty print for development
+     */
+    private prettyPrint;
+    /**
+     * JSON print for production
+     */
+    private jsonPrint;
+    /**
+     * Update configuration
+     */
+    updateConfig(config: Partial<LoggerConfig>): void;
+    /**
+     * Get current log level
+     */
+    getLevel(): LogLevel;
+    /**
+     * Check if level is enabled
+     */
+    isLevelEnabled(level: LogLevel): boolean;
+}
+/**
+ * Global logger singleton
+ */
+declare const logger: FrameworkLogger;
 
 declare abstract class BaseTextProvider extends BaseProvider implements ITextProvider {
+    protected circuitBreaker: CircuitBreaker;
+    protected logger: FrameworkLogger;
+    constructor(config: any);
+    /**
+     * Initialize circuit breaker and logger after subclass sets name
+     * Subclasses should call this in their constructor
+     */
+    protected initializeObservability(providerName: string): void;
     abstract generate(options: TextGenerateOptions): Promise<LLMResponse>;
     abstract streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent>;
     abstract getModelCapabilities(model: string): ModelCapabilities;
+    /**
+     * Execute with circuit breaker protection (helper for subclasses)
+     */
+    protected executeWithCircuitBreaker<TResult>(operation: () => Promise<TResult>, model?: string): Promise<TResult>;
+    /**
+     * Get circuit breaker metrics
+     */
+    getCircuitBreakerMetrics(): CircuitBreakerMetrics;
     /**
      * Normalize input to string (helper for providers that don't support complex input)
      */
@@ -2956,6 +3096,175 @@ declare class FileConnectorStorage implements IConnectorConfigStorage {
 }
 
 /**
+ * Backoff strategies for retry logic
+ */
+/**
+ * Backoff strategy type
+ */
+type BackoffStrategyType = 'exponential' | 'linear' | 'constant';
+/**
+ * Backoff configuration
+ */
+interface BackoffConfig {
+    /** Strategy type */
+    strategy: BackoffStrategyType;
+    /** Initial delay in ms */
+    initialDelayMs: number;
+    /** Maximum delay in ms */
+    maxDelayMs: number;
+    /** Multiplier for exponential (default: 2) */
+    multiplier?: number;
+    /** Increment for linear (default: 1000ms) */
+    incrementMs?: number;
+    /** Add random jitter to prevent thundering herd */
+    jitter?: boolean;
+    /** Jitter factor (0-1, default: 0.1 = ±10%) */
+    jitterFactor?: number;
+    /** Classify errors - return true if error should be retried */
+    isRetryable?: (error: Error) => boolean;
+}
+/**
+ * Default backoff configuration
+ */
+declare const DEFAULT_BACKOFF_CONFIG: BackoffConfig;
+/**
+ * Calculate backoff delay for given attempt
+ */
+declare function calculateBackoff(attempt: number, config?: BackoffConfig): number;
+/**
+ * Add random jitter to a delay
+ *
+ * @param delay - Base delay in ms
+ * @param factor - Jitter factor (0-1), default 0.1 = ±10%
+ * @returns delay with jitter applied
+ */
+declare function addJitter(delay: number, factor?: number): number;
+/**
+ * Wait for backoff delay
+ */
+declare function backoffWait(attempt: number, config?: BackoffConfig): Promise<number>;
+/**
+ * Backoff iterator - generates delays for each attempt
+ */
+declare function backoffSequence(config?: BackoffConfig, maxAttempts?: number): Generator<number, void, unknown>;
+/**
+ * Retry with backoff
+ *
+ * @param fn - Function to execute
+ * @param config - Backoff configuration
+ * @param maxAttempts - Max retry attempts (default: unlimited)
+ * @returns Result of fn()
+ */
+declare function retryWithBackoff<T>(fn: () => Promise<T>, config?: BackoffConfig, maxAttempts?: number): Promise<T>;
+
+/**
+ * Metrics collection infrastructure
+ *
+ * Pluggable metrics system with support for various backends.
+ */
+/**
+ * Metric tags
+ */
+type MetricTags = Record<string, string | number | boolean>;
+/**
+ * Metrics collector interface
+ */
+interface MetricsCollector {
+    /**
+     * Increment a counter
+     */
+    increment(metric: string, value?: number, tags?: MetricTags): void;
+    /**
+     * Set a gauge value
+     */
+    gauge(metric: string, value: number, tags?: MetricTags): void;
+    /**
+     * Record a timing/duration
+     */
+    timing(metric: string, duration: number, tags?: MetricTags): void;
+    /**
+     * Record a histogram value
+     */
+    histogram(metric: string, value: number, tags?: MetricTags): void;
+}
+/**
+ * No-op metrics collector (default - zero overhead)
+ */
+declare class NoOpMetrics implements MetricsCollector {
+    increment(): void;
+    gauge(): void;
+    timing(): void;
+    histogram(): void;
+}
+/**
+ * Console metrics collector (development/debugging)
+ */
+declare class ConsoleMetrics implements MetricsCollector {
+    private prefix;
+    constructor(prefix?: string);
+    increment(metric: string, value?: number, tags?: MetricTags): void;
+    gauge(metric: string, value: number, tags?: MetricTags): void;
+    timing(metric: string, duration: number, tags?: MetricTags): void;
+    histogram(metric: string, value: number, tags?: MetricTags): void;
+    private log;
+}
+/**
+ * In-memory metrics aggregator (testing/development)
+ */
+declare class InMemoryMetrics implements MetricsCollector {
+    private counters;
+    private gauges;
+    private timings;
+    private histograms;
+    increment(metric: string, value?: number, tags?: MetricTags): void;
+    gauge(metric: string, value: number, tags?: MetricTags): void;
+    timing(metric: string, duration: number, tags?: MetricTags): void;
+    histogram(metric: string, value: number, tags?: MetricTags): void;
+    private makeKey;
+    /**
+     * Get all metrics (for testing)
+     */
+    getMetrics(): {
+        counters: Map<string, number>;
+        gauges: Map<string, number>;
+        timings: Map<string, number[]>;
+        histograms: Map<string, number[]>;
+    };
+    /**
+     * Clear all metrics
+     */
+    clear(): void;
+    /**
+     * Get summary statistics for timings
+     */
+    getTimingStats(metric: string, tags?: MetricTags): {
+        count: number;
+        min: number;
+        max: number;
+        mean: number;
+        p50: number;
+        p95: number;
+        p99: number;
+    } | null;
+}
+/**
+ * Metrics collector type
+ */
+type MetricsCollectorType = 'noop' | 'console' | 'inmemory';
+/**
+ * Create metrics collector from type
+ */
+declare function createMetricsCollector(type?: MetricsCollectorType, prefix?: string): MetricsCollector;
+/**
+ * Global metrics singleton
+ */
+declare const metrics: MetricsCollector;
+/**
+ * Update global metrics collector
+ */
+declare function setMetricsCollector(collector: MetricsCollector): void;
+
+/**
  * Message builder utilities for constructing complex inputs
  */
 
@@ -3226,4 +3535,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, AgentResponse, type AgentState, type AgentStatus, AgenticLoopEvents, AuditEntry, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, type ClipboardImageResult, type CompactionStrategy, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, type ContextBudget, type ContextComponents, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_COMPACTION_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileStorage, type FileStorageConfig, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IConnectorConfigStorage, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, ITextProvider, type ITokenStorage, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, ModelCapabilities, ModelNotSupportedError, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type Plan, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, type Task, TaskAgent, type TaskAgentConfig, type TaskAgentHooks, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, assertNotDestroyed, authenticatedFetch, calculateCost, createAgentStorage, createAuthenticatedFetch, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, readClipboardImage, index as tools };
+export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, AgentResponse, type AgentState, type AgentStatus, AgenticLoopEvents, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, type CompactionStrategy, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, type ContextComponents, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_COMPACTION_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IConnectorConfigStorage, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, ITextProvider, type ITokenStorage, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, type LogEntry, type LogLevel, type LoggerConfig, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type Plan, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, type Task, TaskAgent, type TaskAgentConfig, type TaskAgentHooks, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, createAgentStorage, createAuthenticatedFetch, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };

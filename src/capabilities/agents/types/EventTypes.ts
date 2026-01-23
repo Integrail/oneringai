@@ -125,6 +125,28 @@ export interface HookErrorEvent {
   timestamp: Date;
 }
 
+export interface CircuitOpenedEvent {
+  executionId: string;
+  breakerName: string;
+  failureCount: number;
+  lastError: string;
+  nextRetryTime: number;
+  timestamp: Date;
+}
+
+export interface CircuitHalfOpenEvent {
+  executionId: string;
+  breakerName: string;
+  timestamp: Date;
+}
+
+export interface CircuitClosedEvent {
+  executionId: string;
+  breakerName: string;
+  successCount: number;
+  timestamp: Date;
+}
+
 /**
  * Map of all event names to their payload types
  */
@@ -150,6 +172,10 @@ export interface AgenticLoopEvents {
   'tool:timeout': ToolTimeoutEvent;
 
   'hook:error': HookErrorEvent;
+
+  'circuit:opened': CircuitOpenedEvent;
+  'circuit:half-open': CircuitHalfOpenEvent;
+  'circuit:closed': CircuitClosedEvent;
 }
 
 export type AgenticLoopEventName = keyof AgenticLoopEvents;

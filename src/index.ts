@@ -263,6 +263,39 @@ export type {
   FileConnectorStorageConfig,
 } from './connectors/index.js';
 
+// ============ Resilience & Observability (Phase 3) ============
+export { CircuitBreaker, CircuitOpenError } from './infrastructure/resilience/index.js';
+export type {
+  CircuitState,
+  CircuitBreakerConfig,
+  CircuitBreakerMetrics,
+  CircuitBreakerEvents,
+} from './infrastructure/resilience/index.js';
+export { DEFAULT_CIRCUIT_BREAKER_CONFIG } from './infrastructure/resilience/index.js';
+
+export {
+  calculateBackoff,
+  addJitter,
+  backoffWait,
+  backoffSequence,
+  retryWithBackoff,
+} from './infrastructure/resilience/index.js';
+export type { BackoffConfig, BackoffStrategyType } from './infrastructure/resilience/index.js';
+export { DEFAULT_BACKOFF_CONFIG } from './infrastructure/resilience/index.js';
+
+export { FrameworkLogger, logger } from './infrastructure/observability/index.js';
+export type { LogLevel, LoggerConfig, LogEntry } from './infrastructure/observability/index.js';
+
+export {
+  NoOpMetrics,
+  ConsoleMetrics,
+  InMemoryMetrics,
+  createMetricsCollector,
+  metrics,
+  setMetricsCollector,
+} from './infrastructure/observability/index.js';
+export type { MetricsCollector, MetricTags, MetricsCollectorType } from './infrastructure/observability/index.js';
+
 // ============ Utilities ============
 export { MessageBuilder, createTextMessage, createMessageWithImages } from './utils/messageBuilder.js';
 export { readClipboardImage, hasClipboardImage } from './utils/clipboardImage.js';

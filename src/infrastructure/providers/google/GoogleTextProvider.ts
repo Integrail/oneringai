@@ -32,6 +32,7 @@ export class GoogleTextProvider extends BaseTextProvider {
 
   constructor(config: GoogleConfig) {
     super(config);
+
     // New SDK uses object config
     this.client = new GoogleGenAI({
       apiKey: this.getApiKey(),
@@ -44,56 +45,58 @@ export class GoogleTextProvider extends BaseTextProvider {
    * Generate response using Google Gemini API
    */
   async generate(options: TextGenerateOptions): Promise<LLMResponse> {
-    try {
-      // Convert our format → Google format
-      const googleRequest = await this.converter.convertRequest(options);
+    return this.executeWithCircuitBreaker(async () => {
+      try {
+        // Convert our format → Google format
+        const googleRequest = await this.converter.convertRequest(options);
 
-      // Debug logging
-      if (process.env.DEBUG_GOOGLE) {
-        console.error('[DEBUG] Google Request:', JSON.stringify({
+        // Debug logging
+        if (process.env.DEBUG_GOOGLE) {
+          console.error('[DEBUG] Google Request:', JSON.stringify({
+            model: options.model,
+            tools: googleRequest.tools,
+            toolConfig: googleRequest.toolConfig,
+            contents: googleRequest.contents?.slice(0, 1), // First message only
+          }, null, 2));
+        }
+
+        // Call Google API using new SDK structure
+        // Note: contents goes at top level, generation config properties go directly in config
+        const result = await this.client.models.generateContent({
           model: options.model,
-          tools: googleRequest.tools,
-          toolConfig: googleRequest.toolConfig,
-          contents: googleRequest.contents?.slice(0, 1), // First message only
-        }, null, 2));
+          contents: googleRequest.contents,
+          config: {
+            systemInstruction: googleRequest.systemInstruction,
+            tools: googleRequest.tools,
+            toolConfig: googleRequest.toolConfig,
+            ...googleRequest.generationConfig,
+          },
+        });
+
+        // Debug logging for response
+        if (process.env.DEBUG_GOOGLE) {
+          console.error('[DEBUG] Google Response:', JSON.stringify({
+            candidates: result.candidates?.map((c: any) => ({
+              finishReason: c.finishReason,
+              content: c.content,
+            })),
+            usageMetadata: result.usageMetadata,
+          }, null, 2));
+        }
+
+        // Convert Google response → our format
+        const response = this.converter.convertResponse(result);
+
+        return response;
+      } catch (error: any) {
+        this.handleError(error);
+        throw error; // TypeScript needs this
+      } finally {
+        // ALWAYS clear converter mappings to prevent memory leaks
+        // Use finally block to ensure cleanup even on exception
+        this.converter.clearMappings();
       }
-
-      // Call Google API using new SDK structure
-      // Note: contents goes at top level, generation config properties go directly in config
-      const result = await this.client.models.generateContent({
-        model: options.model,
-        contents: googleRequest.contents,
-        config: {
-          systemInstruction: googleRequest.systemInstruction,
-          tools: googleRequest.tools,
-          toolConfig: googleRequest.toolConfig,
-          ...googleRequest.generationConfig,
-        },
-      });
-
-      // Debug logging for response
-      if (process.env.DEBUG_GOOGLE) {
-        console.error('[DEBUG] Google Response:', JSON.stringify({
-          candidates: result.candidates?.map((c: any) => ({
-            finishReason: c.finishReason,
-            content: c.content,
-          })),
-          usageMetadata: result.usageMetadata,
-        }, null, 2));
-      }
-
-      // Convert Google response → our format
-      const response = this.converter.convertResponse(result);
-
-      return response;
-    } catch (error: any) {
-      this.handleError(error);
-      throw error; // TypeScript needs this
-    } finally {
-      // ALWAYS clear converter mappings to prevent memory leaks
-      // Use finally block to ensure cleanup even on exception
-      this.converter.clearMappings();
-    }
+    }, options.model);
   }
 
   /**

@@ -3,7 +3,7 @@
 var crypto = require('crypto');
 var jose = require('jose');
 var fs4 = require('fs');
-var EventEmitter3 = require('eventemitter3');
+var EventEmitter = require('eventemitter3');
 var OpenAI = require('openai');
 var Anthropic = require('@anthropic-ai/sdk');
 var genai = require('@google/genai');
@@ -37,7 +37,7 @@ function _interopNamespace(e) {
 
 var crypto__namespace = /*#__PURE__*/_interopNamespace(crypto);
 var fs4__namespace = /*#__PURE__*/_interopNamespace(fs4);
-var EventEmitter3__default = /*#__PURE__*/_interopDefault(EventEmitter3);
+var EventEmitter__default = /*#__PURE__*/_interopDefault(EventEmitter);
 var OpenAI__default = /*#__PURE__*/_interopDefault(OpenAI);
 var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
 var fs3__namespace = /*#__PURE__*/_interopNamespace(fs3);
@@ -1386,9 +1386,626 @@ var BaseProvider = class {
     return this.config.maxRetries || 3;
   }
 };
+var DEFAULT_CIRCUIT_BREAKER_CONFIG = {
+  failureThreshold: 5,
+  successThreshold: 2,
+  resetTimeoutMs: 3e4,
+  // 30 seconds
+  windowMs: 6e4,
+  // 1 minute
+  isRetryable: () => true
+  // All errors count by default
+};
+var CircuitOpenError = class extends Error {
+  constructor(breakerName, nextRetryTime, failureCount, lastError) {
+    const retryInSeconds = Math.ceil((nextRetryTime - Date.now()) / 1e3);
+    super(
+      `Circuit breaker '${breakerName}' is OPEN. Retry in ${retryInSeconds}s. (${failureCount} recent failures, last: ${lastError})`
+    );
+    this.breakerName = breakerName;
+    this.nextRetryTime = nextRetryTime;
+    this.failureCount = failureCount;
+    this.lastError = lastError;
+    this.name = "CircuitOpenError";
+  }
+};
+var CircuitBreaker = class extends EventEmitter__default.default {
+  constructor(name, config = {}) {
+    super();
+    this.name = name;
+    this.config = { ...DEFAULT_CIRCUIT_BREAKER_CONFIG, ...config };
+    this.lastStateChange = Date.now();
+  }
+  state = "closed";
+  config;
+  // Failure tracking
+  failures = [];
+  lastError = "";
+  // Success tracking
+  consecutiveSuccesses = 0;
+  // Timing
+  openedAt;
+  lastStateChange;
+  // Metrics
+  totalRequests = 0;
+  successCount = 0;
+  failureCount = 0;
+  rejectedCount = 0;
+  lastFailureTime;
+  lastSuccessTime;
+  /**
+   * Execute function with circuit breaker protection
+   */
+  async execute(fn) {
+    this.totalRequests++;
+    const now = Date.now();
+    switch (this.state) {
+      case "open":
+        if (this.openedAt && now - this.openedAt >= this.config.resetTimeoutMs) {
+          this.transitionTo("half-open");
+        } else {
+          this.rejectedCount++;
+          const nextRetry = (this.openedAt || now) + this.config.resetTimeoutMs;
+          throw new CircuitOpenError(this.name, nextRetry, this.failures.length, this.lastError);
+        }
+        break;
+    }
+    try {
+      const result = await fn();
+      this.recordSuccess();
+      return result;
+    } catch (error) {
+      this.recordFailure(error);
+      throw error;
+    }
+  }
+  /**
+   * Record successful execution
+   */
+  recordSuccess() {
+    this.successCount++;
+    this.lastSuccessTime = Date.now();
+    this.consecutiveSuccesses++;
+    if (this.state === "half-open") {
+      if (this.consecutiveSuccesses >= this.config.successThreshold) {
+        this.transitionTo("closed");
+      }
+    } else if (this.state === "closed") {
+      this.pruneOldFailures();
+    }
+  }
+  /**
+   * Record failed execution
+   */
+  recordFailure(error) {
+    if (this.config.isRetryable && !this.config.isRetryable(error)) {
+      return;
+    }
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    this.lastError = error.message;
+    this.consecutiveSuccesses = 0;
+    this.failures.push({
+      timestamp: Date.now(),
+      error: error.message
+    });
+    this.pruneOldFailures();
+    if (this.state === "half-open") {
+      this.transitionTo("open");
+    } else if (this.state === "closed") {
+      if (this.failures.length >= this.config.failureThreshold) {
+        this.transitionTo("open");
+      }
+    }
+  }
+  /**
+   * Transition to new state
+   */
+  transitionTo(newState) {
+    this.state = newState;
+    this.lastStateChange = Date.now();
+    switch (newState) {
+      case "open":
+        this.openedAt = Date.now();
+        this.emit("opened", {
+          name: this.name,
+          failureCount: this.failures.length,
+          lastError: this.lastError,
+          nextRetryTime: this.openedAt + this.config.resetTimeoutMs
+        });
+        break;
+      case "half-open":
+        this.emit("half-open", {
+          name: this.name,
+          timestamp: Date.now()
+        });
+        break;
+      case "closed":
+        this.failures = [];
+        this.consecutiveSuccesses = 0;
+        this.openedAt = void 0;
+        this.emit("closed", {
+          name: this.name,
+          successCount: this.consecutiveSuccesses,
+          timestamp: Date.now()
+        });
+        break;
+    }
+  }
+  /**
+   * Remove failures outside the time window
+   */
+  pruneOldFailures() {
+    const now = Date.now();
+    const cutoff = now - this.config.windowMs;
+    this.failures = this.failures.filter((f) => f.timestamp > cutoff);
+  }
+  /**
+   * Get current state
+   */
+  getState() {
+    return this.state;
+  }
+  /**
+   * Get current metrics
+   */
+  getMetrics() {
+    this.pruneOldFailures();
+    const total = this.successCount + this.failureCount;
+    const failureRate = total > 0 ? this.failureCount / total : 0;
+    const successRate = total > 0 ? this.successCount / total : 0;
+    return {
+      name: this.name,
+      state: this.state,
+      totalRequests: this.totalRequests,
+      successCount: this.successCount,
+      failureCount: this.failureCount,
+      rejectedCount: this.rejectedCount,
+      recentFailures: this.failures.length,
+      consecutiveSuccesses: this.consecutiveSuccesses,
+      lastFailureTime: this.lastFailureTime,
+      lastSuccessTime: this.lastSuccessTime,
+      lastStateChange: this.lastStateChange,
+      nextRetryTime: this.openedAt ? this.openedAt + this.config.resetTimeoutMs : void 0,
+      failureRate,
+      successRate
+    };
+  }
+  /**
+   * Manually reset circuit breaker (force close)
+   */
+  reset() {
+    this.transitionTo("closed");
+    this.totalRequests = 0;
+    this.successCount = 0;
+    this.failureCount = 0;
+    this.rejectedCount = 0;
+    this.lastFailureTime = void 0;
+    this.lastSuccessTime = void 0;
+  }
+  /**
+   * Check if circuit is allowing requests
+   */
+  isOpen() {
+    if (this.state === "open" && this.openedAt) {
+      const now = Date.now();
+      if (now - this.openedAt >= this.config.resetTimeoutMs) {
+        this.transitionTo("half-open");
+        return false;
+      }
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Get configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+};
+
+// src/infrastructure/observability/Logger.ts
+var LOG_LEVEL_VALUES = {
+  trace: 10,
+  debug: 20,
+  info: 30,
+  warn: 40,
+  error: 50,
+  silent: 100
+};
+var FrameworkLogger = class _FrameworkLogger {
+  config;
+  context;
+  levelValue;
+  constructor(config = {}) {
+    this.config = {
+      level: config.level || process.env.LOG_LEVEL || "info",
+      pretty: config.pretty ?? process.env.NODE_ENV === "development",
+      destination: config.destination || "console",
+      context: config.context || {}
+    };
+    this.context = this.config.context || {};
+    this.levelValue = LOG_LEVEL_VALUES[this.config.level || "info"];
+  }
+  /**
+   * Create child logger with additional context
+   */
+  child(context) {
+    return new _FrameworkLogger({
+      ...this.config,
+      context: { ...this.context, ...context }
+    });
+  }
+  /**
+   * Trace log
+   */
+  trace(obj, msg) {
+    this.log("trace", obj, msg);
+  }
+  /**
+   * Debug log
+   */
+  debug(obj, msg) {
+    this.log("debug", obj, msg);
+  }
+  /**
+   * Info log
+   */
+  info(obj, msg) {
+    this.log("info", obj, msg);
+  }
+  /**
+   * Warn log
+   */
+  warn(obj, msg) {
+    this.log("warn", obj, msg);
+  }
+  /**
+   * Error log
+   */
+  error(obj, msg) {
+    this.log("error", obj, msg);
+  }
+  /**
+   * Internal log method
+   */
+  log(level, obj, msg) {
+    if (LOG_LEVEL_VALUES[level] < this.levelValue) {
+      return;
+    }
+    let data;
+    let message;
+    if (typeof obj === "string") {
+      message = obj;
+      data = {};
+    } else {
+      message = msg || "";
+      data = obj;
+    }
+    const entry = {
+      level,
+      time: Date.now(),
+      ...this.context,
+      ...data,
+      msg: message
+    };
+    this.output(entry);
+  }
+  /**
+   * Output log entry
+   */
+  output(entry) {
+    if (this.config.pretty) {
+      this.prettyPrint(entry);
+    } else {
+      this.jsonPrint(entry);
+    }
+  }
+  /**
+   * Pretty print for development
+   */
+  prettyPrint(entry) {
+    const levelColors = {
+      trace: "\x1B[90m",
+      // Gray
+      debug: "\x1B[36m",
+      // Cyan
+      info: "\x1B[32m",
+      // Green
+      warn: "\x1B[33m",
+      // Yellow
+      error: "\x1B[31m",
+      // Red
+      silent: ""
+    };
+    const reset = "\x1B[0m";
+    const color = levelColors[entry.level] || "";
+    const time = new Date(entry.time).toISOString().substring(11, 23);
+    const levelStr = entry.level.toUpperCase().padEnd(5);
+    const contextParts = [];
+    for (const [key, value] of Object.entries(entry)) {
+      if (key !== "level" && key !== "time" && key !== "msg") {
+        contextParts.push(`${key}=${JSON.stringify(value)}`);
+      }
+    }
+    const context = contextParts.length > 0 ? ` ${contextParts.join(" ")}` : "";
+    const output = `${color}[${time}] ${levelStr}${reset} ${entry.msg}${context}`;
+    switch (entry.level) {
+      case "error":
+      case "warn":
+        console.error(output);
+        break;
+      default:
+        console.log(output);
+    }
+  }
+  /**
+   * JSON print for production
+   */
+  jsonPrint(entry) {
+    const json = JSON.stringify(entry);
+    switch (this.config.destination) {
+      case "stderr":
+        console.error(json);
+        break;
+      default:
+        console.log(json);
+    }
+  }
+  /**
+   * Update configuration
+   */
+  updateConfig(config) {
+    this.config = { ...this.config, ...config };
+    if (config.level) {
+      this.levelValue = LOG_LEVEL_VALUES[config.level];
+    }
+    if (config.context) {
+      this.context = { ...this.context, ...config.context };
+    }
+  }
+  /**
+   * Get current log level
+   */
+  getLevel() {
+    return this.config.level || "info";
+  }
+  /**
+   * Check if level is enabled
+   */
+  isLevelEnabled(level) {
+    return LOG_LEVEL_VALUES[level] >= this.levelValue;
+  }
+};
+var logger = new FrameworkLogger({
+  level: process.env.LOG_LEVEL || "info",
+  pretty: process.env.NODE_ENV === "development"
+});
+
+// src/infrastructure/observability/Metrics.ts
+var NoOpMetrics = class {
+  increment() {
+  }
+  gauge() {
+  }
+  timing() {
+  }
+  histogram() {
+  }
+};
+var ConsoleMetrics = class {
+  prefix;
+  constructor(prefix = "oneringai") {
+    this.prefix = prefix;
+  }
+  increment(metric, value = 1, tags) {
+    this.log("COUNTER", metric, value, tags);
+  }
+  gauge(metric, value, tags) {
+    this.log("GAUGE", metric, value, tags);
+  }
+  timing(metric, duration, tags) {
+    this.log("TIMING", metric, `${duration}ms`, tags);
+  }
+  histogram(metric, value, tags) {
+    this.log("HISTOGRAM", metric, value, tags);
+  }
+  log(type, metric, value, tags) {
+    const fullMetric = `${this.prefix}.${metric}`;
+    const tagsStr = tags ? ` ${JSON.stringify(tags)}` : "";
+    console.log(`[METRIC:${type}] ${fullMetric}=${value}${tagsStr}`);
+  }
+};
+var InMemoryMetrics = class {
+  counters = /* @__PURE__ */ new Map();
+  gauges = /* @__PURE__ */ new Map();
+  timings = /* @__PURE__ */ new Map();
+  histograms = /* @__PURE__ */ new Map();
+  increment(metric, value = 1, tags) {
+    const key = this.makeKey(metric, tags);
+    this.counters.set(key, (this.counters.get(key) || 0) + value);
+  }
+  gauge(metric, value, tags) {
+    const key = this.makeKey(metric, tags);
+    this.gauges.set(key, value);
+  }
+  timing(metric, duration, tags) {
+    const key = this.makeKey(metric, tags);
+    const timings = this.timings.get(key) || [];
+    timings.push(duration);
+    this.timings.set(key, timings);
+  }
+  histogram(metric, value, tags) {
+    const key = this.makeKey(metric, tags);
+    const values = this.histograms.get(key) || [];
+    values.push(value);
+    this.histograms.set(key, values);
+  }
+  makeKey(metric, tags) {
+    if (!tags) return metric;
+    const tagStr = Object.entries(tags).map(([k, v]) => `${k}:${v}`).sort().join(",");
+    return `${metric}{${tagStr}}`;
+  }
+  /**
+   * Get all metrics (for testing)
+   */
+  getMetrics() {
+    return {
+      counters: new Map(this.counters),
+      gauges: new Map(this.gauges),
+      timings: new Map(this.timings),
+      histograms: new Map(this.histograms)
+    };
+  }
+  /**
+   * Clear all metrics
+   */
+  clear() {
+    this.counters.clear();
+    this.gauges.clear();
+    this.timings.clear();
+    this.histograms.clear();
+  }
+  /**
+   * Get summary statistics for timings
+   */
+  getTimingStats(metric, tags) {
+    const key = this.makeKey(metric, tags);
+    const timings = this.timings.get(key);
+    if (!timings || timings.length === 0) {
+      return null;
+    }
+    const sorted = [...timings].sort((a, b) => a - b);
+    const count = sorted.length;
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    return {
+      count,
+      min: sorted[0] ?? 0,
+      max: sorted[count - 1] ?? 0,
+      mean: sum / count,
+      p50: sorted[Math.floor(count * 0.5)] ?? 0,
+      p95: sorted[Math.floor(count * 0.95)] ?? 0,
+      p99: sorted[Math.floor(count * 0.99)] ?? 0
+    };
+  }
+};
+function createMetricsCollector(type, prefix) {
+  const collectorType = type || process.env.METRICS_COLLECTOR || "noop";
+  switch (collectorType) {
+    case "console":
+      return new ConsoleMetrics(prefix);
+    case "inmemory":
+      return new InMemoryMetrics();
+    default:
+      return new NoOpMetrics();
+  }
+}
+var metrics = createMetricsCollector(
+  void 0,
+  process.env.METRICS_PREFIX || "oneringai"
+);
+function setMetricsCollector(collector) {
+  Object.assign(metrics, collector);
+}
 
 // src/infrastructure/providers/base/BaseTextProvider.ts
 var BaseTextProvider = class extends BaseProvider {
+  circuitBreaker;
+  logger;
+  constructor(config) {
+    super(config);
+    this.circuitBreaker = new CircuitBreaker(
+      "provider:temp",
+      config.circuitBreaker || DEFAULT_CIRCUIT_BREAKER_CONFIG
+    );
+    this.logger = logger.child({
+      component: "Provider"
+    });
+  }
+  /**
+   * Initialize circuit breaker and logger after subclass sets name
+   * Subclasses should call this in their constructor
+   */
+  initializeObservability(providerName) {
+    const cbConfig = this.circuitBreaker.getConfig();
+    this.circuitBreaker = new CircuitBreaker(
+      `provider:${providerName}`,
+      cbConfig
+    );
+    this.logger = logger.child({
+      component: "Provider",
+      provider: providerName
+    });
+    this.circuitBreaker.on("opened", (data) => {
+      this.logger.warn(data, "Circuit breaker opened");
+      metrics.increment("circuit_breaker.opened", 1, {
+        breaker: data.name,
+        provider: providerName
+      });
+    });
+    this.circuitBreaker.on("closed", (data) => {
+      this.logger.info(data, "Circuit breaker closed");
+      metrics.increment("circuit_breaker.closed", 1, {
+        breaker: data.name,
+        provider: providerName
+      });
+    });
+  }
+  /**
+   * Execute with circuit breaker protection (helper for subclasses)
+   */
+  async executeWithCircuitBreaker(operation, model) {
+    const startTime = Date.now();
+    const operationName = "llm.generate";
+    this.logger.debug({
+      operation: operationName,
+      model
+    }, "LLM call started");
+    metrics.increment("provider.llm.request", 1, {
+      provider: this.name,
+      model: model || "unknown"
+    });
+    try {
+      const result = await this.circuitBreaker.execute(operation);
+      const duration = Date.now() - startTime;
+      this.logger.info({
+        operation: operationName,
+        model,
+        duration
+      }, "LLM call completed");
+      metrics.timing("provider.llm.latency", duration, {
+        provider: this.name,
+        model: model || "unknown"
+      });
+      metrics.increment("provider.llm.response", 1, {
+        provider: this.name,
+        model: model || "unknown",
+        status: "success"
+      });
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error({
+        operation: operationName,
+        model,
+        error: error.message,
+        duration
+      }, "LLM call failed");
+      metrics.increment("provider.llm.error", 1, {
+        provider: this.name,
+        model: model || "unknown",
+        error: error.name
+      });
+      throw error;
+    }
+  }
+  /**
+   * Get circuit breaker metrics
+   */
+  getCircuitBreakerMetrics() {
+    return this.circuitBreaker.getMetrics();
+  }
   /**
    * Normalize input to string (helper for providers that don't support complex input)
    */
@@ -1467,6 +2084,7 @@ var OpenAITextProvider = class extends BaseTextProvider {
   client;
   constructor(config) {
     super(config);
+    this.initializeObservability(this.name);
     this.client = new OpenAI__default.default({
       apiKey: this.getApiKey(),
       baseURL: this.getBaseURL(),
@@ -1479,21 +2097,23 @@ var OpenAITextProvider = class extends BaseTextProvider {
    * Generate response using OpenAI Responses API
    */
   async generate(options) {
-    try {
-      const response = await this.client.chat.completions.create({
-        model: options.model,
-        messages: this.convertInput(options.input, options.instructions),
-        tools: options.tools,
-        tool_choice: options.tool_choice,
-        temperature: options.temperature,
-        max_tokens: options.max_output_tokens,
-        response_format: options.response_format
-      });
-      return this.convertResponse(response);
-    } catch (error) {
-      this.handleError(error);
-      throw error;
-    }
+    return this.executeWithCircuitBreaker(async () => {
+      try {
+        const response = await this.client.chat.completions.create({
+          model: options.model,
+          messages: this.convertInput(options.input, options.instructions),
+          tools: options.tools,
+          tool_choice: options.tool_choice,
+          temperature: options.temperature,
+          max_tokens: options.max_output_tokens,
+          response_format: options.response_format
+        });
+        return this.convertResponse(response);
+      } catch (error) {
+        this.handleError(error);
+        throw error;
+      }
+    }, options.model);
   }
   /**
    * Stream response using OpenAI Streaming API
@@ -2271,6 +2891,7 @@ var AnthropicTextProvider = class extends BaseTextProvider {
   streamConverter;
   constructor(config) {
     super(config);
+    this.initializeObservability(this.name);
     this.client = new Anthropic__default.default({
       apiKey: this.getApiKey(),
       baseURL: this.getBaseURL(),
@@ -2283,17 +2904,19 @@ var AnthropicTextProvider = class extends BaseTextProvider {
    * Generate response using Anthropic Messages API
    */
   async generate(options) {
-    try {
-      const anthropicRequest = this.converter.convertRequest(options);
-      const anthropicResponse = await this.client.messages.create({
-        ...anthropicRequest,
-        stream: false
-      });
-      return this.converter.convertResponse(anthropicResponse);
-    } catch (error) {
-      this.handleError(error);
-      throw error;
-    }
+    return this.executeWithCircuitBreaker(async () => {
+      try {
+        const anthropicRequest = this.converter.convertRequest(options);
+        const anthropicResponse = await this.client.messages.create({
+          ...anthropicRequest,
+          stream: false
+        });
+        return this.converter.convertResponse(anthropicResponse);
+      } catch (error) {
+        this.handleError(error);
+        throw error;
+      }
+    }, options.model);
   }
   /**
    * Stream response using Anthropic Messages API
@@ -2992,6 +3615,7 @@ var GoogleTextProvider = class extends BaseTextProvider {
   streamConverter;
   constructor(config) {
     super(config);
+    this.initializeObservability(this.name);
     this.client = new genai.GoogleGenAI({
       apiKey: this.getApiKey()
     });
@@ -3002,44 +3626,46 @@ var GoogleTextProvider = class extends BaseTextProvider {
    * Generate response using Google Gemini API
    */
   async generate(options) {
-    try {
-      const googleRequest = await this.converter.convertRequest(options);
-      if (process.env.DEBUG_GOOGLE) {
-        console.error("[DEBUG] Google Request:", JSON.stringify({
-          model: options.model,
-          tools: googleRequest.tools,
-          toolConfig: googleRequest.toolConfig,
-          contents: googleRequest.contents?.slice(0, 1)
-          // First message only
-        }, null, 2));
-      }
-      const result = await this.client.models.generateContent({
-        model: options.model,
-        contents: googleRequest.contents,
-        config: {
-          systemInstruction: googleRequest.systemInstruction,
-          tools: googleRequest.tools,
-          toolConfig: googleRequest.toolConfig,
-          ...googleRequest.generationConfig
+    return this.executeWithCircuitBreaker(async () => {
+      try {
+        const googleRequest = await this.converter.convertRequest(options);
+        if (process.env.DEBUG_GOOGLE) {
+          console.error("[DEBUG] Google Request:", JSON.stringify({
+            model: options.model,
+            tools: googleRequest.tools,
+            toolConfig: googleRequest.toolConfig,
+            contents: googleRequest.contents?.slice(0, 1)
+            // First message only
+          }, null, 2));
         }
-      });
-      if (process.env.DEBUG_GOOGLE) {
-        console.error("[DEBUG] Google Response:", JSON.stringify({
-          candidates: result.candidates?.map((c) => ({
-            finishReason: c.finishReason,
-            content: c.content
-          })),
-          usageMetadata: result.usageMetadata
-        }, null, 2));
+        const result = await this.client.models.generateContent({
+          model: options.model,
+          contents: googleRequest.contents,
+          config: {
+            systemInstruction: googleRequest.systemInstruction,
+            tools: googleRequest.tools,
+            toolConfig: googleRequest.toolConfig,
+            ...googleRequest.generationConfig
+          }
+        });
+        if (process.env.DEBUG_GOOGLE) {
+          console.error("[DEBUG] Google Response:", JSON.stringify({
+            candidates: result.candidates?.map((c) => ({
+              finishReason: c.finishReason,
+              content: c.content
+            })),
+            usageMetadata: result.usageMetadata
+          }, null, 2));
+        }
+        const response = this.converter.convertResponse(result);
+        return response;
+      } catch (error) {
+        this.handleError(error);
+        throw error;
+      } finally {
+        this.converter.clearMappings();
       }
-      const response = this.converter.convertResponse(result);
-      return response;
-    } catch (error) {
-      this.handleError(error);
-      throw error;
-    } finally {
-      this.converter.clearMappings();
-    }
+    }, options.model);
   }
   /**
    * Stream response using Google Gemini API
@@ -3382,6 +4008,11 @@ function extractProviderConfig(connector) {
 // src/capabilities/agents/ToolRegistry.ts
 var ToolRegistry = class {
   tools = /* @__PURE__ */ new Map();
+  circuitBreakers = /* @__PURE__ */ new Map();
+  logger;
+  constructor() {
+    this.logger = logger.child({ component: "ToolRegistry" });
+  }
   /**
    * Register a new tool
    */
@@ -3395,6 +4026,39 @@ var ToolRegistry = class {
     this.tools.delete(toolName);
   }
   /**
+   * Get or create circuit breaker for a tool
+   */
+  getCircuitBreaker(toolName, tool) {
+    let breaker = this.circuitBreakers.get(toolName);
+    if (!breaker) {
+      const config = tool.circuitBreaker || {
+        failureThreshold: 3,
+        successThreshold: 2,
+        resetTimeoutMs: 6e4,
+        // 1 minute
+        windowMs: 3e5
+        // 5 minutes
+      };
+      breaker = new CircuitBreaker(`tool:${toolName}`, config);
+      breaker.on("opened", (data) => {
+        this.logger.warn(data, `Circuit breaker opened for tool: ${toolName}`);
+        metrics.increment("circuit_breaker.opened", 1, {
+          breaker: data.name,
+          tool: toolName
+        });
+      });
+      breaker.on("closed", (data) => {
+        this.logger.info(data, `Circuit breaker closed for tool: ${toolName}`);
+        metrics.increment("circuit_breaker.closed", 1, {
+          breaker: data.name,
+          tool: toolName
+        });
+      });
+      this.circuitBreakers.set(toolName, breaker);
+    }
+    return breaker;
+  }
+  /**
    * Execute a tool function
    */
   async execute(toolName, args) {
@@ -3402,9 +4066,30 @@ var ToolRegistry = class {
     if (!tool) {
       throw new ToolNotFoundError(toolName);
     }
+    const breaker = this.getCircuitBreaker(toolName, tool);
+    this.logger.debug({ toolName, args }, "Tool execution started");
+    const startTime = Date.now();
+    metrics.increment("tool.executed", 1, { tool: toolName });
     try {
-      return await tool.execute(args);
+      const result = await breaker.execute(async () => {
+        return await tool.execute(args);
+      });
+      const duration = Date.now() - startTime;
+      this.logger.debug({ toolName, duration }, "Tool execution completed");
+      metrics.timing("tool.duration", duration, { tool: toolName });
+      metrics.increment("tool.success", 1, { tool: toolName });
+      return result;
     } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error({
+        toolName,
+        error: error.message,
+        duration
+      }, "Tool execution failed");
+      metrics.increment("tool.failed", 1, {
+        tool: toolName,
+        error: error.name
+      });
       throw new ToolExecutionError(
         toolName,
         error.message,
@@ -3436,6 +4121,34 @@ var ToolRegistry = class {
    */
   clear() {
     this.tools.clear();
+    this.circuitBreakers.clear();
+  }
+  /**
+   * Get circuit breaker states for all tools
+   */
+  getCircuitBreakerStates() {
+    const states = /* @__PURE__ */ new Map();
+    for (const [toolName, breaker] of this.circuitBreakers.entries()) {
+      states.set(toolName, breaker.getState());
+    }
+    return states;
+  }
+  /**
+   * Get circuit breaker metrics for a specific tool
+   */
+  getToolCircuitBreakerMetrics(toolName) {
+    const breaker = this.circuitBreakers.get(toolName);
+    return breaker?.getMetrics();
+  }
+  /**
+   * Manually reset a tool's circuit breaker
+   */
+  resetToolCircuitBreaker(toolName) {
+    const breaker = this.circuitBreakers.get(toolName);
+    if (breaker) {
+      breaker.reset();
+      this.logger.info({ toolName }, "Tool circuit breaker manually reset");
+    }
   }
 };
 
@@ -4117,7 +4830,7 @@ var StreamState = class {
 };
 
 // src/capabilities/agents/AgenticLoop.ts
-var AgenticLoop = class extends EventEmitter3.EventEmitter {
+var AgenticLoop = class extends EventEmitter.EventEmitter {
   constructor(provider, toolExecutor, hookConfig, errorHandling) {
     super();
     this.provider = provider;
@@ -5184,7 +5897,7 @@ function assertNotDestroyed(obj, operation) {
 }
 
 // src/core/Agent.ts
-var Agent = class _Agent extends EventEmitter3.EventEmitter {
+var Agent = class _Agent extends EventEmitter.EventEmitter {
   // ============ Instance Properties ============
   name;
   connector;
@@ -5196,6 +5909,7 @@ var Agent = class _Agent extends EventEmitter3.EventEmitter {
   cleanupCallbacks = [];
   boundListeners = /* @__PURE__ */ new Map();
   _isDestroyed = false;
+  logger;
   get isDestroyed() {
     return this._isDestroyed;
   }
@@ -5223,6 +5937,17 @@ var Agent = class _Agent extends EventEmitter3.EventEmitter {
     this.name = config.name ?? `agent-${Date.now()}`;
     this.model = config.model;
     this.config = config;
+    this.logger = logger.child({
+      component: "Agent",
+      agentName: this.name,
+      model: this.model,
+      connector: this.connector.name
+    });
+    this.logger.debug({ config }, "Agent created");
+    metrics.increment("agent.created", 1, {
+      model: this.model,
+      connector: this.connector.name
+    });
     this.provider = createProvider(this.connector);
     this.toolRegistry = new ToolRegistry();
     if (config.tools) {
@@ -5244,40 +5969,113 @@ var Agent = class _Agent extends EventEmitter3.EventEmitter {
    */
   async run(input) {
     assertNotDestroyed(this, "run agent");
-    const tools = this.config.tools?.map((t) => t.definition) || [];
-    const loopConfig = {
+    const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
+    this.logger.info({
+      inputPreview,
+      toolCount: this.config.tools?.length || 0
+    }, "Agent run started");
+    metrics.increment("agent.run.started", 1, {
       model: this.model,
-      input,
-      instructions: this.config.instructions,
-      tools,
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations || 10,
-      hooks: this.config.hooks,
-      historyMode: this.config.historyMode,
-      limits: this.config.limits,
-      errorHandling: this.config.errorHandling
-    };
-    return this.agenticLoop.execute(loopConfig);
+      connector: this.connector.name
+    });
+    const startTime = Date.now();
+    try {
+      const tools = this.config.tools?.map((t) => t.definition) || [];
+      const loopConfig = {
+        model: this.model,
+        input,
+        instructions: this.config.instructions,
+        tools,
+        temperature: this.config.temperature,
+        maxIterations: this.config.maxIterations || 10,
+        hooks: this.config.hooks,
+        historyMode: this.config.historyMode,
+        limits: this.config.limits,
+        errorHandling: this.config.errorHandling
+      };
+      const response = await this.agenticLoop.execute(loopConfig);
+      const duration = Date.now() - startTime;
+      this.logger.info({
+        duration
+      }, "Agent run completed");
+      metrics.timing("agent.run.duration", duration, {
+        model: this.model,
+        connector: this.connector.name
+      });
+      metrics.increment("agent.run.completed", 1, {
+        model: this.model,
+        connector: this.connector.name,
+        status: "success"
+      });
+      return response;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error({
+        error: error.message,
+        duration
+      }, "Agent run failed");
+      metrics.increment("agent.run.completed", 1, {
+        model: this.model,
+        connector: this.connector.name,
+        status: "error"
+      });
+      throw error;
+    }
   }
   /**
    * Stream response from the agent
    */
   async *stream(input) {
     assertNotDestroyed(this, "stream from agent");
-    const tools = this.config.tools?.map((t) => t.definition) || [];
-    const loopConfig = {
+    const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
+    this.logger.info({
+      inputPreview,
+      toolCount: this.config.tools?.length || 0
+    }, "Agent stream started");
+    metrics.increment("agent.stream.started", 1, {
       model: this.model,
-      input,
-      instructions: this.config.instructions,
-      tools,
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations || 10,
-      hooks: this.config.hooks,
-      historyMode: this.config.historyMode,
-      limits: this.config.limits,
-      errorHandling: this.config.errorHandling
-    };
-    yield* this.agenticLoop.executeStreaming(loopConfig);
+      connector: this.connector.name
+    });
+    const startTime = Date.now();
+    try {
+      const tools = this.config.tools?.map((t) => t.definition) || [];
+      const loopConfig = {
+        model: this.model,
+        input,
+        instructions: this.config.instructions,
+        tools,
+        temperature: this.config.temperature,
+        maxIterations: this.config.maxIterations || 10,
+        hooks: this.config.hooks,
+        historyMode: this.config.historyMode,
+        limits: this.config.limits,
+        errorHandling: this.config.errorHandling
+      };
+      yield* this.agenticLoop.executeStreaming(loopConfig);
+      const duration = Date.now() - startTime;
+      this.logger.info({ duration }, "Agent stream completed");
+      metrics.timing("agent.stream.duration", duration, {
+        model: this.model,
+        connector: this.connector.name
+      });
+      metrics.increment("agent.stream.completed", 1, {
+        model: this.model,
+        connector: this.connector.name,
+        status: "success"
+      });
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error({
+        error: error.message,
+        duration
+      }, "Agent stream failed");
+      metrics.increment("agent.stream.completed", 1, {
+        model: this.model,
+        connector: this.connector.name,
+        status: "error"
+      });
+      throw error;
+    }
   }
   // ============ Tool Management ============
   /**
@@ -5365,6 +6163,34 @@ var Agent = class _Agent extends EventEmitter3.EventEmitter {
     const context = this.agenticLoop.getContext();
     return context?.getAuditTrail() || [];
   }
+  /**
+   * Get circuit breaker metrics for LLM provider
+   */
+  getProviderCircuitBreakerMetrics() {
+    if ("getCircuitBreakerMetrics" in this.provider) {
+      return this.provider.getCircuitBreakerMetrics();
+    }
+    return null;
+  }
+  /**
+   * Get circuit breaker states for all tools
+   */
+  getToolCircuitBreakerStates() {
+    return this.toolRegistry.getCircuitBreakerStates();
+  }
+  /**
+   * Get circuit breaker metrics for a specific tool
+   */
+  getToolCircuitBreakerMetrics(toolName) {
+    return this.toolRegistry.getToolCircuitBreakerMetrics(toolName);
+  }
+  /**
+   * Manually reset a tool's circuit breaker
+   */
+  resetToolCircuitBreaker(toolName) {
+    this.toolRegistry.resetToolCircuitBreaker(toolName);
+    this.logger.info({ toolName }, "Tool circuit breaker reset by user");
+  }
   isRunning() {
     return this.agenticLoop.isRunning();
   }
@@ -5383,6 +6209,7 @@ var Agent = class _Agent extends EventEmitter3.EventEmitter {
       return;
     }
     this._isDestroyed = true;
+    this.logger.debug("Agent destroy started");
     try {
       this.agenticLoop.cancel("Agent destroyed");
     } catch {
@@ -5396,10 +6223,15 @@ var Agent = class _Agent extends EventEmitter3.EventEmitter {
       try {
         callback();
       } catch (error) {
-        console.error("Cleanup callback error:", error);
+        this.logger.error({ error: error.message }, "Cleanup callback error");
       }
     }
     this.cleanupCallbacks = [];
+    metrics.increment("agent.destroyed", 1, {
+      model: this.model,
+      connector: this.connector.name
+    });
+    this.logger.debug("Agent destroyed");
   }
   // ============ Private ============
   setupEventForwarding() {
@@ -5754,7 +6586,7 @@ function createAgentStorage(options = {}) {
 
 // src/capabilities/taskAgent/WorkingMemory.ts
 init_Memory();
-var WorkingMemory = class extends EventEmitter3__default.default {
+var WorkingMemory = class extends EventEmitter__default.default {
   storage;
   config;
   constructor(storage, config = exports.DEFAULT_MEMORY_CONFIG) {
@@ -5947,9 +6779,10 @@ var DEFAULT_COMPACTION_STRATEGY = {
   memoryStrategy: "lru",
   toolOutputMaxSize: 4e3
 };
-var ContextManager = class extends EventEmitter3__default.default {
+var ContextManager = class extends EventEmitter__default.default {
   config;
   strategy;
+  lastBudget;
   constructor(config = DEFAULT_CONTEXT_CONFIG, strategy = DEFAULT_COMPACTION_STRATEGY) {
     super();
     this.config = config;
@@ -6011,6 +6844,7 @@ var ContextManager = class extends EventEmitter3__default.default {
   async prepareContext(components, memory, history) {
     let current = { ...components };
     let budget = this.estimateBudget(current);
+    this.lastBudget = budget;
     if (budget.status === "ok") {
       return { components: current, budget, compacted: false };
     }
@@ -6150,6 +6984,24 @@ var ContextManager = class extends EventEmitter3__default.default {
     return tokens > threshold;
   }
   /**
+   * Get current context budget
+   */
+  getCurrentBudget() {
+    return this.lastBudget ?? null;
+  }
+  /**
+   * Get current configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+  /**
+   * Get current compaction strategy
+   */
+  getStrategy() {
+    return { ...this.strategy };
+  }
+  /**
    * Update configuration
    */
   updateConfig(updates) {
@@ -6168,8 +7020,12 @@ var IdempotencyCache = class {
   cache = /* @__PURE__ */ new Map();
   hits = 0;
   misses = 0;
+  cleanupInterval;
   constructor(config = DEFAULT_IDEMPOTENCY_CONFIG) {
     this.config = config;
+    this.cleanupInterval = setInterval(() => {
+      this.pruneExpired();
+    }, 3e5);
   }
   /**
    * Get cached result for tool call
@@ -6255,9 +7111,27 @@ var IdempotencyCache = class {
     }
   }
   /**
+   * Prune expired entries from cache
+   */
+  pruneExpired() {
+    const now = Date.now();
+    const toDelete = [];
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiresAt) {
+        toDelete.push(key);
+      }
+    }
+    toDelete.forEach((key) => this.cache.delete(key));
+    return toDelete.length;
+  }
+  /**
    * Clear all cached results
    */
   async clear() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = void 0;
+    }
     this.cache.clear();
     this.hits = 0;
     this.misses = 0;
@@ -6408,7 +7282,7 @@ ${summary.content}`,
     this.summaries = [...state.summaries];
   }
 };
-var ExternalDependencyHandler = class extends EventEmitter3__default.default {
+var ExternalDependencyHandler = class extends EventEmitter__default.default {
   activePolls = /* @__PURE__ */ new Map();
   activeScheduled = /* @__PURE__ */ new Map();
   tools;
@@ -7397,7 +8271,7 @@ function calculateCost(model, inputTokens, outputTokens, options) {
 }
 
 // src/capabilities/taskAgent/PlanExecutor.ts
-var PlanExecutor = class extends EventEmitter3__default.default {
+var PlanExecutor = class extends EventEmitter__default.default {
   agent;
   memory;
   contextManager;
@@ -7436,6 +8310,7 @@ var PlanExecutor = class extends EventEmitter3__default.default {
    */
   async execute(plan, state) {
     this.currentState = state;
+    this.checkpointManager.setCurrentState(state);
     this.currentMetrics = {
       totalLLMCalls: 0,
       totalToolCalls: 0,
@@ -7681,27 +8556,7 @@ ${plan.context ? `**Context:** ${plan.context}
     this.abortController.abort();
   }
   /**
-   * Get idempotency cache (for future tool execution integration)
-   *
-   * TODO: Full IdempotencyCache Integration
-   * ----------------------------------------
-   * To fully integrate idempotency caching:
-   *
-   * Option 1: Wrap Agent.run() with tool interception
-   * - Intercept tool calls before Agent.run()
-   * - Check cache with: await this.idempotencyCache.get(tool, args)
-   * - If cached, inject result into LLM context
-   * - After execution: await this.idempotencyCache.set(tool, args, result)
-   *
-   * Option 2: Modify Agent class to accept IdempotencyCache
-   * - Pass idempotencyCache to Agent constructor
-   * - Agent integrates with ToolExecutor
-   * - Automatic caching for all tool calls
-   *
-   * Option 3: Create ToolContext wrapper
-   * - Wrap tools with context (agentId, taskId, memory)
-   * - Cache-aware tool execution
-   * - Auto-store large outputs in memory
+   * Get idempotency cache
    */
   getIdempotencyCache() {
     return this.idempotencyCache;
@@ -7724,6 +8579,7 @@ var CheckpointManager = class {
   llmCallsSinceCheckpoint = 0;
   intervalTimer;
   pendingCheckpoints = /* @__PURE__ */ new Set();
+  currentState = null;
   constructor(storage, strategy = DEFAULT_CHECKPOINT_STRATEGY) {
     this.storage = storage;
     this.strategy = strategy;
@@ -7732,6 +8588,12 @@ var CheckpointManager = class {
         this.checkIntervalCheckpoint();
       }, this.strategy.intervalMs);
     }
+  }
+  /**
+   * Set the current agent state (for interval checkpointing)
+   */
+  setCurrentState(state) {
+    this.currentState = state;
   }
   /**
    * Record a tool call (may trigger checkpoint)
@@ -7782,6 +8644,9 @@ var CheckpointManager = class {
    * Check if interval-based checkpoint is needed
    */
   checkIntervalCheckpoint() {
+    if (this.currentState) {
+      this.checkpoint(this.currentState, "interval");
+    }
   }
   /**
    * Wait for all pending checkpoints to complete
@@ -7792,10 +8657,11 @@ var CheckpointManager = class {
   /**
    * Cleanup resources
    */
-  cleanup() {
+  async cleanup() {
     if (this.intervalTimer) {
       clearInterval(this.intervalTimer);
     }
+    await this.flush();
   }
 };
 
@@ -7937,8 +8803,206 @@ function createMemoryTools() {
   ];
 }
 
+// src/capabilities/taskAgent/contextTools.ts
+function createContextTools() {
+  return [
+    createContextInspectTool(),
+    createContextBreakdownTool(),
+    createCacheStatsTool(),
+    createMemoryStatsTool()
+  ];
+}
+function createContextInspectTool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "context_inspect",
+        description: "Get detailed breakdown of current context budget and utilization. Shows total tokens, used tokens, available tokens, utilization percentage, and status (ok/warning/critical).",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    execute: async (_args, context) => {
+      if (!context?.contextManager) {
+        return {
+          error: "Context manager not available",
+          message: "This tool is only available within TaskAgent execution"
+        };
+      }
+      const budget = context.contextManager.getCurrentBudget();
+      if (!budget) {
+        return {
+          error: "No context budget available",
+          message: "Context has not been prepared yet"
+        };
+      }
+      return {
+        total_tokens: budget.total,
+        reserved_tokens: budget.reserved,
+        used_tokens: budget.used,
+        available_tokens: budget.available,
+        utilization_percent: Math.round(budget.utilizationPercent * 10) / 10,
+        status: budget.status,
+        warning: budget.status === "warning" ? "Context approaching limit - automatic compaction may trigger" : budget.status === "critical" ? "Context at critical level - compaction will trigger" : null
+      };
+    },
+    idempotency: {
+      safe: true
+      // Read-only operation
+    }
+  };
+}
+function createContextBreakdownTool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "context_breakdown",
+        description: "Get detailed token breakdown by component (system prompt, instructions, memory index, conversation history, current input). Useful for understanding what is consuming context space.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    execute: async (_args, context) => {
+      if (!context?.contextManager) {
+        return {
+          error: "Context manager not available",
+          message: "This tool is only available within TaskAgent execution"
+        };
+      }
+      const budget = context.contextManager.getCurrentBudget();
+      if (!budget) {
+        return {
+          error: "No context budget available",
+          message: "Context has not been prepared yet"
+        };
+      }
+      return {
+        total_used: budget.used,
+        breakdown: budget.breakdown,
+        components: [
+          {
+            name: "system_prompt",
+            tokens: budget.breakdown.systemPrompt,
+            percent: Math.round(budget.breakdown.systemPrompt / budget.used * 1e3) / 10
+          },
+          {
+            name: "instructions",
+            tokens: budget.breakdown.instructions,
+            percent: Math.round(budget.breakdown.instructions / budget.used * 1e3) / 10
+          },
+          {
+            name: "memory_index",
+            tokens: budget.breakdown.memoryIndex,
+            percent: Math.round(budget.breakdown.memoryIndex / budget.used * 1e3) / 10
+          },
+          {
+            name: "conversation_history",
+            tokens: budget.breakdown.conversationHistory,
+            percent: Math.round(budget.breakdown.conversationHistory / budget.used * 1e3) / 10
+          },
+          {
+            name: "current_input",
+            tokens: budget.breakdown.currentInput,
+            percent: Math.round(budget.breakdown.currentInput / budget.used * 1e3) / 10
+          }
+        ]
+      };
+    },
+    idempotency: {
+      safe: true
+      // Read-only operation
+    }
+  };
+}
+function createCacheStatsTool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "cache_stats",
+        description: "Get statistics about the tool call idempotency cache. Shows number of cached entries, cache hits, cache misses, and hit rate. Useful for understanding cache effectiveness.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    execute: async (_args, context) => {
+      if (!context?.idempotencyCache) {
+        return {
+          error: "Idempotency cache not available",
+          message: "This tool is only available within TaskAgent execution"
+        };
+      }
+      const stats = context.idempotencyCache.getStats();
+      return {
+        entries: stats.entries,
+        hits: stats.hits,
+        misses: stats.misses,
+        hit_rate: Math.round(stats.hitRate * 1e3) / 10,
+        hit_rate_percent: `${Math.round(stats.hitRate * 100)}%`,
+        effectiveness: stats.hitRate > 0.5 ? "high" : stats.hitRate > 0.2 ? "medium" : stats.hitRate > 0 ? "low" : "none"
+      };
+    },
+    idempotency: {
+      safe: true
+      // Read-only operation
+    }
+  };
+}
+function createMemoryStatsTool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "memory_stats",
+        description: "Get detailed working memory utilization statistics. Shows total size, utilization percentage, number of entries, and breakdown by scope (persistent vs task-scoped).",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    execute: async (_args, context) => {
+      if (!context?.memory) {
+        return {
+          error: "Working memory not available",
+          message: "This tool is only available within TaskAgent execution"
+        };
+      }
+      const index = await context.memory.list();
+      return {
+        entry_count: index.length,
+        entries_by_scope: {
+          total: index.length
+          // Note: scope information not available through WorkingMemoryAccess interface
+          // Would need to extend the interface or use a different approach
+        },
+        entries: index.map((entry) => ({
+          key: entry.key,
+          description: entry.description
+        }))
+      };
+    },
+    idempotency: {
+      safe: true
+      // Read-only operation
+    }
+  };
+}
+
 // src/capabilities/taskAgent/TaskAgent.ts
-var TaskAgent = class _TaskAgent extends EventEmitter3__default.default {
+var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
   id;
   state;
   storage;
@@ -7955,6 +9019,8 @@ var TaskAgent = class _TaskAgent extends EventEmitter3__default.default {
   checkpointManager;
   tools = [];
   config;
+  // Event listener cleanup tracking
+  eventCleanupFunctions = [];
   constructor(id, state, storage, memory, config, hooks) {
     super();
     this.id = id;
@@ -7963,8 +9029,12 @@ var TaskAgent = class _TaskAgent extends EventEmitter3__default.default {
     this.memory = memory;
     this.config = config;
     this.hooks = hooks;
-    memory.on("stored", (data) => this.emit("memory:stored", data));
-    memory.on("limit_warning", (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent }));
+    const storedHandler = (data) => this.emit("memory:stored", data);
+    const limitWarningHandler = (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent });
+    memory.on("stored", storedHandler);
+    memory.on("limit_warning", limitWarningHandler);
+    this.eventCleanupFunctions.push(() => memory.off("stored", storedHandler));
+    this.eventCleanupFunctions.push(() => memory.off("limit_warning", limitWarningHandler));
   }
   /**
    * Create a new TaskAgent
@@ -7992,15 +9062,43 @@ var TaskAgent = class _TaskAgent extends EventEmitter3__default.default {
     return taskAgent;
   }
   /**
+   * Wrap a tool with idempotency cache and enhanced context
+   */
+  wrapToolWithCache(tool) {
+    return {
+      ...tool,
+      execute: async (args, context) => {
+        const enhancedContext = {
+          ...context,
+          contextManager: this.contextManager,
+          idempotencyCache: this.idempotencyCache
+        };
+        if (!this.idempotencyCache) {
+          return tool.execute(args, enhancedContext);
+        }
+        const cached = await this.idempotencyCache.get(tool, args);
+        if (cached !== void 0) {
+          return cached;
+        }
+        const result = await tool.execute(args, enhancedContext);
+        await this.idempotencyCache.set(tool, args, result);
+        return result;
+      }
+    };
+  }
+  /**
    * Initialize internal components
    */
   initializeComponents(config) {
     const memoryTools = createMemoryTools();
-    this.tools = [...config.tools ?? [], ...memoryTools];
+    const contextTools = createContextTools();
+    this.tools = [...config.tools ?? [], ...memoryTools, ...contextTools];
+    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
+    const cachedTools = this.tools.map((tool) => this.wrapToolWithCache(tool));
     this.agent = Agent.create({
       connector: config.connector,
       model: config.model,
-      tools: this.tools,
+      tools: cachedTools,
       instructions: config.instructions,
       temperature: config.temperature,
       maxIterations: config.maxIterations ?? 10
@@ -8014,7 +9112,6 @@ var TaskAgent = class _TaskAgent extends EventEmitter3__default.default {
       },
       DEFAULT_COMPACTION_STRATEGY
     );
-    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
     this.historyManager = new HistoryManager(DEFAULT_HISTORY_CONFIG);
     this.externalHandler = new ExternalDependencyHandler(this.tools);
     this.checkpointManager = new CheckpointManager(this.storage, DEFAULT_CHECKPOINT_STRATEGY);
@@ -8031,16 +9128,26 @@ var TaskAgent = class _TaskAgent extends EventEmitter3__default.default {
         maxIterations: config.maxIterations ?? 100
       }
     );
-    this.planExecutor.on("task:start", (data) => this.emit("task:start", data));
-    this.planExecutor.on("task:complete", (data) => {
+    const taskStartHandler = (data) => this.emit("task:start", data);
+    const taskCompleteHandler = (data) => {
       this.emit("task:complete", { task: data.task, result: { success: true, output: data.result } });
       if (this.hooks?.afterTask) {
         this.hooks.afterTask(data.task, { success: true, output: data.result });
       }
-    });
-    this.planExecutor.on("task:failed", (data) => this.emit("task:failed", data));
-    this.planExecutor.on("task:skipped", (data) => this.emit("task:failed", { task: data.task, error: new Error(data.reason) }));
-    this.planExecutor.on("task:waiting_external", (data) => this.emit("task:waiting", { task: data.task, dependency: data.task.externalDependency }));
+    };
+    const taskFailedHandler = (data) => this.emit("task:failed", data);
+    const taskSkippedHandler = (data) => this.emit("task:failed", { task: data.task, error: new Error(data.reason) });
+    const taskWaitingExternalHandler = (data) => this.emit("task:waiting", { task: data.task, dependency: data.task.externalDependency });
+    this.planExecutor.on("task:start", taskStartHandler);
+    this.planExecutor.on("task:complete", taskCompleteHandler);
+    this.planExecutor.on("task:failed", taskFailedHandler);
+    this.planExecutor.on("task:skipped", taskSkippedHandler);
+    this.planExecutor.on("task:waiting_external", taskWaitingExternalHandler);
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:start", taskStartHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:complete", taskCompleteHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:failed", taskFailedHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:skipped", taskSkippedHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:waiting_external", taskWaitingExternalHandler));
   }
   /**
    * Resume an existing agent from storage
@@ -8271,9 +9378,11 @@ var TaskAgent = class _TaskAgent extends EventEmitter3__default.default {
   /**
    * Cleanup resources
    */
-  destroy() {
+  async destroy() {
+    this.eventCleanupFunctions.forEach((cleanup) => cleanup());
+    this.eventCleanupFunctions = [];
     this.externalHandler?.cleanup();
-    this.checkpointManager?.cleanup();
+    await this.checkpointManager?.cleanup();
     this.planExecutor?.cleanup();
     this.agent?.destroy();
   }
@@ -9159,6 +10268,78 @@ var FileConnectorStorage = class {
     await fs3__namespace.chmod(this.indexPath, 384);
   }
 };
+
+// src/infrastructure/resilience/BackoffStrategy.ts
+var DEFAULT_BACKOFF_CONFIG = {
+  strategy: "exponential",
+  initialDelayMs: 1e3,
+  // 1 second
+  maxDelayMs: 3e4,
+  // 30 seconds
+  multiplier: 2,
+  jitter: true,
+  jitterFactor: 0.1
+};
+function calculateBackoff(attempt, config = DEFAULT_BACKOFF_CONFIG) {
+  let delay;
+  switch (config.strategy) {
+    case "exponential":
+      delay = config.initialDelayMs * Math.pow(config.multiplier || 2, attempt - 1);
+      break;
+    case "linear":
+      delay = config.initialDelayMs + (config.incrementMs || 1e3) * (attempt - 1);
+      break;
+    case "constant":
+      delay = config.initialDelayMs;
+      break;
+    default:
+      delay = config.initialDelayMs;
+  }
+  delay = Math.min(delay, config.maxDelayMs);
+  if (config.jitter) {
+    delay = addJitter(delay, config.jitterFactor || 0.1);
+  }
+  return Math.floor(delay);
+}
+function addJitter(delay, factor = 0.1) {
+  const jitterRange = delay * factor;
+  const jitter = (Math.random() * 2 - 1) * jitterRange;
+  return delay + jitter;
+}
+async function backoffWait(attempt, config = DEFAULT_BACKOFF_CONFIG) {
+  const delay = calculateBackoff(attempt, config);
+  await new Promise((resolve) => setTimeout(resolve, delay));
+  return delay;
+}
+function* backoffSequence(config = DEFAULT_BACKOFF_CONFIG, maxAttempts) {
+  let attempt = 1;
+  while (true) {
+    if (maxAttempts && attempt > maxAttempts) {
+      return;
+    }
+    yield calculateBackoff(attempt, config);
+    attempt++;
+  }
+}
+async function retryWithBackoff(fn, config = DEFAULT_BACKOFF_CONFIG, maxAttempts) {
+  let attempt = 0;
+  let lastError;
+  while (true) {
+    attempt++;
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (config.isRetryable && !config.isRetryable(lastError)) {
+        throw lastError;
+      }
+      if (maxAttempts && attempt >= maxAttempts) {
+        throw lastError;
+      }
+      await backoffWait(attempt, config);
+    }
+  }
+}
 
 // src/utils/messageBuilder.ts
 var MessageBuilder = class {
@@ -10886,11 +12067,16 @@ exports.BaseProvider = BaseProvider;
 exports.BaseTextProvider = BaseTextProvider;
 exports.CONNECTOR_CONFIG_VERSION = CONNECTOR_CONFIG_VERSION;
 exports.CheckpointManager = CheckpointManager;
+exports.CircuitBreaker = CircuitBreaker;
+exports.CircuitOpenError = CircuitOpenError;
 exports.Connector = Connector;
 exports.ConnectorConfigStore = ConnectorConfigStore;
+exports.ConsoleMetrics = ConsoleMetrics;
 exports.ContentType = ContentType;
 exports.ContextManager = ContextManager;
+exports.DEFAULT_BACKOFF_CONFIG = DEFAULT_BACKOFF_CONFIG;
 exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
+exports.DEFAULT_CIRCUIT_BREAKER_CONFIG = DEFAULT_CIRCUIT_BREAKER_CONFIG;
 exports.DEFAULT_COMPACTION_STRATEGY = DEFAULT_COMPACTION_STRATEGY;
 exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG;
 exports.DEFAULT_HISTORY_CONFIG = DEFAULT_HISTORY_CONFIG;
@@ -10899,10 +12085,12 @@ exports.ExecutionContext = ExecutionContext;
 exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileConnectorStorage = FileConnectorStorage;
 exports.FileStorage = FileStorage;
+exports.FrameworkLogger = FrameworkLogger;
 exports.HistoryManager = HistoryManager;
 exports.HookManager = HookManager;
 exports.IdempotencyCache = IdempotencyCache;
 exports.InMemoryAgentStateStorage = InMemoryAgentStateStorage;
+exports.InMemoryMetrics = InMemoryMetrics;
 exports.InMemoryPlanStorage = InMemoryPlanStorage;
 exports.InMemoryStorage = InMemoryStorage;
 exports.InvalidConfigError = InvalidConfigError;
@@ -10914,6 +12102,7 @@ exports.MemoryStorage = MemoryStorage;
 exports.MessageBuilder = MessageBuilder;
 exports.MessageRole = MessageRole;
 exports.ModelNotSupportedError = ModelNotSupportedError;
+exports.NoOpMetrics = NoOpMetrics;
 exports.OAuthManager = OAuthManager;
 exports.PlanExecutor = PlanExecutor;
 exports.ProviderAuthError = ProviderAuthError;
@@ -10935,14 +12124,19 @@ exports.ToolTimeoutError = ToolTimeoutError;
 exports.VENDORS = VENDORS;
 exports.Vendor = Vendor;
 exports.WorkingMemory = WorkingMemory;
+exports.addJitter = addJitter;
 exports.assertNotDestroyed = assertNotDestroyed;
 exports.authenticatedFetch = authenticatedFetch;
+exports.backoffSequence = backoffSequence;
+exports.backoffWait = backoffWait;
+exports.calculateBackoff = calculateBackoff;
 exports.calculateCost = calculateCost;
 exports.createAgentStorage = createAgentStorage;
 exports.createAuthenticatedFetch = createAuthenticatedFetch;
 exports.createExecuteJavaScriptTool = createExecuteJavaScriptTool;
 exports.createMemoryTools = createMemoryTools;
 exports.createMessageWithImages = createMessageWithImages;
+exports.createMetricsCollector = createMetricsCollector;
 exports.createProvider = createProvider;
 exports.createTextMessage = createTextMessage;
 exports.generateEncryptionKey = generateEncryptionKey;
@@ -10958,7 +12152,11 @@ exports.isStreamEvent = isStreamEvent;
 exports.isToolCallArgumentsDelta = isToolCallArgumentsDelta;
 exports.isToolCallArgumentsDone = isToolCallArgumentsDone;
 exports.isVendor = isVendor;
+exports.logger = logger;
+exports.metrics = metrics;
 exports.readClipboardImage = readClipboardImage;
+exports.retryWithBackoff = retryWithBackoff;
+exports.setMetricsCollector = setMetricsCollector;
 exports.tools = tools_exports;
 //# sourceMappingURL=index.cjs.map
 //# sourceMappingURL=index.cjs.map
