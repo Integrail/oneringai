@@ -1,8 +1,17 @@
 # TaskAgent - Autonomous Task-Based Agents
 
+**Version:** 2.0 (Phase 2)
+**Status:** Production Ready
+**Updated:** 2026-01-23
+
 ## Overview
 
 TaskAgent is an extension to the `@oneringai/agents` library that provides autonomous, task-based agent execution with advanced context management and state persistence for long-running workflows.
+
+**New in Version 2.0:**
+- ✨ **PlanningAgent** - AI-driven plan generation from goals
+- ✨ **Context Inspection Tools** - 4 tools for agent self-awareness
+- ✨ **Enhanced Observability** - Agents can monitor their own state
 
 ## Key Features
 
@@ -41,6 +50,19 @@ TaskAgent is an extension to the `@oneringai/agents` library that provides auton
 - Custom storage backends (Redis, Postgres, etc.)
 - Simplified KV adapter for persistence
 - Event-driven architecture
+
+### 7. **AI-Driven Planning (NEW)**
+- PlanningAgent generates task graphs from goals
+- Automatic dependency identification
+- Complexity estimation
+- Plan refinement with feedback
+- Separate planning and execution phases
+
+### 8. **Context Inspection Tools (NEW)**
+- `context_inspect()` - Monitor context budget
+- `context_breakdown()` - Analyze token usage
+- `cache_stats()` - Track cache effectiveness
+- `memory_stats()` - View working memory state
 
 ## Architecture
 
@@ -93,6 +115,144 @@ const handle = await agent.start({
 const result = await handle.wait();
 console.log('Status:', result.status);
 ```
+
+## AI-Driven Planning (NEW)
+
+PlanningAgent generates task graphs automatically from high-level goals.
+
+### Basic Usage
+
+```typescript
+import { PlanningAgent, TaskAgent } from '@oneringai/agents';
+
+// 1. Create Planning Agent
+const planner = PlanningAgent.create({
+  connector: 'openai',
+  model: 'gpt-3.5-turbo',  // Cheaper model for planning
+  availableTools: [searchTool, analysisTool, reportTool]
+});
+
+// 2. Generate Plan from Goal
+const generated = await planner.generatePlan({
+  goal: 'Generate market research report on AI agents',
+  context: 'Focus on enterprise use cases and pricing',
+  constraints: ['Include 3+ competitors', 'Under 500 words']
+});
+
+// 3. Review Generated Plan
+console.log(`Tasks generated: ${generated.plan.tasks.length}`);
+console.log(`Complexity: ${generated.complexity}`);
+console.log(`Reasoning: ${generated.reasoning}`);
+
+// 4. (Optional) Refine Plan
+const refined = await planner.refinePlan(generated.plan,
+  'Add task to analyze pricing trends'
+);
+
+// 5. Execute with TaskAgent
+const executor = TaskAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',  // More powerful for execution
+  tools: [searchTool, analysisTool, reportTool]
+});
+
+const result = await executor.start(refined.plan);
+```
+
+### Benefits
+
+- **Less Manual Work** - AI breaks down goals automatically
+- **Better Task Graphs** - AI identifies optimal dependencies
+- **Cost Optimization** - Use cheaper models for planning
+- **Iterative Refinement** - Review and adjust before execution
+- **Separate Concerns** - Planning phase separate from execution
+
+### API Reference
+
+```typescript
+PlanningAgent.create({
+  connector: string | Connector,
+  model: string,
+  maxPlanningIterations?: number,      // Default: 20
+  planningTemperature?: number,        // Default: 0.3
+  availableTools?: ToolFunction[]      // Inform AI of capabilities
+});
+
+planner.generatePlan({
+  goal: string,
+  context?: string,
+  constraints?: string[]
+}) => Promise<GeneratedPlan>
+
+planner.refinePlan(
+  plan: Plan,
+  feedback: string
+) => Promise<GeneratedPlan>
+```
+
+## Context Inspection Tools (NEW)
+
+TaskAgent includes 4 built-in tools for agents to inspect their own state.
+
+### Available Tools
+
+```typescript
+// 1. context_inspect() - Context budget overview
+const info = await context_inspect();
+// Returns: { total_tokens, used_tokens, available_tokens,
+//            utilization_percent, status: 'ok'|'warning'|'critical' }
+
+// 2. context_breakdown() - Detailed token usage
+const breakdown = await context_breakdown();
+// Returns: { components: [{ name, tokens, percent }, ...] }
+
+// 3. cache_stats() - Idempotency cache metrics
+const stats = await cache_stats();
+// Returns: { entries, hits, misses, hit_rate, effectiveness }
+
+// 4. memory_stats() - Working memory info
+const memory = await memory_stats();
+// Returns: { entry_count, entries: [{ key, description }, ...] }
+```
+
+### Use Cases
+
+**1. Check Context Before Large Operations**
+```typescript
+const context = await context_inspect();
+if (context.status === 'warning') {
+  // Clean up before continuing
+  await memory_delete({ key: 'old_data' });
+}
+```
+
+**2. Debug Context Overflow**
+```typescript
+const breakdown = await context_breakdown();
+const largest = breakdown.components.sort((a,b) => b.tokens - a.tokens)[0];
+console.log(`${largest.name} using ${largest.percent}% of context`);
+```
+
+**3. Verify Cache Effectiveness**
+```typescript
+const stats = await cache_stats();
+console.log(`Cache preventing ${stats.hits} duplicate calls`);
+console.log(`Effectiveness: ${stats.effectiveness}`);
+```
+
+**4. Monitor Memory Usage**
+```typescript
+const memory = await memory_stats();
+console.log(`Stored ${memory.entry_count} entries`);
+memory.entries.forEach(e => console.log(`- ${e.key}: ${e.description}`));
+```
+
+### Benefits
+
+- **Self-Awareness** - Agents understand their own state
+- **Proactive** - Prevent issues before they occur
+- **Debuggable** - Easy to diagnose resource problems
+- **Intelligent** - Make informed decisions about resources
 
 ## Working Memory
 
@@ -403,11 +563,25 @@ const agent = TaskAgent.create({
 
 ## Development Status
 
+### Phase 1: Critical Fixes ✅ COMPLETE
+- ✅ Fixed EventEmitter memory leaks
+- ✅ Added TTL cleanup to IdempotencyCache
+- ✅ Integrated IdempotencyCache with tool execution
+- ✅ Fixed CheckpointManager async cleanup
+- ✅ Fixed CheckpointManager interval timer
+
+### Phase 2: Architecture Improvements ✅ COMPLETE
+- ✅ **PlanningAgent** - AI-driven plan generation
+- ✅ **Context Inspection Tools** - 4 new tools (context_inspect, context_breakdown, cache_stats, memory_stats)
+- ✅ **Enhanced ToolContext** - contextManager and idempotencyCache fields
+- ✅ **ContextManager inspection** - getCurrentBudget, getConfig, getStrategy methods
+
+### Core Features ✅ COMPLETE
 - ✅ Domain entities (Memory, Task, AgentState)
 - ✅ Storage interfaces & in-memory implementations
 - ✅ Working memory with indexed access
 - ✅ Context manager with auto-compaction
-- ✅ Idempotency cache for tools
+- ✅ Idempotency cache for tools (fully integrated)
 - ✅ Memory tools (store, retrieve, delete, list)
 - ✅ **Full TaskAgent orchestration**
 - ✅ **PlanExecutor with LLM integration**
@@ -415,17 +589,29 @@ const agent = TaskAgent.create({
 - ✅ **HistoryManager** with conversation tracking
 - ✅ **CheckpointManager** for state persistence
 - ✅ **Complete execution loop** - Full agentic loop with LLM calls
-- 🚧 File-based & Redis storage adapters (planned)
-- 🚧 OpenTelemetry observability (planned)
+
+### Phase 3: Production Hardening ⏭️ NEXT
+- ⏭️ Rate limiting for tools
+- ⏭️ Circuit breaker pattern
+- ⏭️ Production observability (structured logging, metrics)
+- ⏭️ File-based & Redis storage adapters
+- ⏭️ Production deployment guide
+
+### Phase 4: Testing & Validation 🚧 PLANNED
+- 🚧 Memory leak tests
+- 🚧 Performance benchmarks
+- 🚧 OpenTelemetry observability
 
 ## How to Run
 
 ```bash
-# Run basic example
-npm run example:task-agent
+# Core TaskAgent examples
+npm run example:task-agent        # Basic usage
+npm run example:task-agent-demo   # Full feature demo
 
-# Run full demo with all features
-npm run example:task-agent-demo
+# Phase 2 examples (NEW)
+npm run example:planning-agent-demo      # AI-driven planning
+npm run example:context-inspection-demo  # Context inspection tools
 ```
 
 ## Next Steps

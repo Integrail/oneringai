@@ -102,6 +102,9 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     // Store state reference for checkpointing
     this.currentState = state;
 
+    // Update checkpoint manager with current state
+    this.checkpointManager.setCurrentState(state);
+
     // Reset metrics for this execution
     this.currentMetrics = {
       totalLLMCalls: 0,
@@ -240,7 +243,7 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
         });
       }
 
-      // Call LLM through the agent
+      // Call LLM through the agent (tools already wrapped with cache in TaskAgent)
       const response = await this.agent.run(taskPrompt);
 
       // Track metrics from response
@@ -423,27 +426,7 @@ ${plan.context ? `**Context:** ${plan.context}\n` : ''}
   }
 
   /**
-   * Get idempotency cache (for future tool execution integration)
-   *
-   * TODO: Full IdempotencyCache Integration
-   * ----------------------------------------
-   * To fully integrate idempotency caching:
-   *
-   * Option 1: Wrap Agent.run() with tool interception
-   * - Intercept tool calls before Agent.run()
-   * - Check cache with: await this.idempotencyCache.get(tool, args)
-   * - If cached, inject result into LLM context
-   * - After execution: await this.idempotencyCache.set(tool, args, result)
-   *
-   * Option 2: Modify Agent class to accept IdempotencyCache
-   * - Pass idempotencyCache to Agent constructor
-   * - Agent integrates with ToolExecutor
-   * - Automatic caching for all tool calls
-   *
-   * Option 3: Create ToolContext wrapper
-   * - Wrap tools with context (agentId, taskId, memory)
-   * - Cache-aware tool execution
-   * - Auto-store large outputs in memory
+   * Get idempotency cache
    */
   getIdempotencyCache(): IdempotencyCache {
     return this.idempotencyCache;

@@ -55,3 +55,9 @@ export {
   memoryDeleteDefinition,
   memoryListDefinition,
 } from './memoryTools.js';
+
+export { createContextTools } from './contextTools.js';
+
+export { PlanningAgent } from './PlanningAgent.js';
+export type { PlanningAgentConfig, GeneratedPlan } from './PlanningAgent.js';
+export { generateSimplePlan } from './PlanningAgent.js';

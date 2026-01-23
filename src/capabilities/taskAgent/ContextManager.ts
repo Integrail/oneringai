@@ -136,6 +136,7 @@ export interface ContextManagerEvents {
 export class ContextManager extends EventEmitter<ContextManagerEvents> {
   private config: ContextManagerConfig;
   private strategy: CompactionStrategy;
+  private lastBudget?: ContextBudget;
 
   constructor(
     config: ContextManagerConfig = DEFAULT_CONTEXT_CONFIG,
@@ -218,6 +219,9 @@ export class ContextManager extends EventEmitter<ContextManagerEvents> {
   ): Promise<PreparedContext> {
     let current = { ...components };
     let budget = this.estimateBudget(current);
+
+    // Store budget for inspection
+    this.lastBudget = budget;
 
     // If under threshold, no compaction needed
     if (budget.status === 'ok') {
@@ -399,6 +403,27 @@ export class ContextManager extends EventEmitter<ContextManagerEvents> {
     const serialized = JSON.stringify(output);
     const tokens = this.estimateTokens(serialized);
     return tokens > threshold;
+  }
+
+  /**
+   * Get current context budget
+   */
+  getCurrentBudget(): ContextBudget | null {
+    return this.lastBudget ?? null;
+  }
+
+  /**
+   * Get current configuration
+   */
+  getConfig(): ContextManagerConfig {
+    return { ...this.config };
+  }
+
+  /**
+   * Get current compaction strategy
+   */
+  getStrategy(): CompactionStrategy {
+    return { ...this.strategy };
   }
 
   /**

@@ -47,9 +47,15 @@ export class IdempotencyCache {
   private cache = new Map<string, { value: unknown; expiresAt: number }>();
   private hits = 0;
   private misses = 0;
+  private cleanupInterval?: NodeJS.Timeout;
 
   constructor(config: IdempotencyCacheConfig = DEFAULT_IDEMPOTENCY_CONFIG) {
     this.config = config;
+
+    // Start background cleanup (every 5 minutes)
+    this.cleanupInterval = setInterval(() => {
+      this.pruneExpired();
+    }, 300000);
   }
 
   /**
@@ -161,9 +167,30 @@ export class IdempotencyCache {
   }
 
   /**
+   * Prune expired entries from cache
+   */
+  pruneExpired(): number {
+    const now = Date.now();
+    const toDelete: string[] = [];
+
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiresAt) {
+        toDelete.push(key);
+      }
+    }
+
+    toDelete.forEach(key => this.cache.delete(key));
+    return toDelete.length;
+  }
+
+  /**
    * Clear all cached results
    */
   async clear(): Promise<void> {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+    }
     this.cache.clear();
     this.hits = 0;
     this.misses = 0;

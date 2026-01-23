@@ -40,6 +40,7 @@ export class CheckpointManager {
   private llmCallsSinceCheckpoint = 0;
   private intervalTimer?: NodeJS.Timeout;
   private pendingCheckpoints = new Set<Promise<void>>();
+  private currentState: AgentState | null = null;
 
   constructor(storage: IAgentStorage, strategy: CheckpointStrategy = DEFAULT_CHECKPOINT_STRATEGY) {
     this.storage = storage;
@@ -51,6 +52,13 @@ export class CheckpointManager {
         this.checkIntervalCheckpoint();
       }, this.strategy.intervalMs);
     }
+  }
+
+  /**
+   * Set the current agent state (for interval checkpointing)
+   */
+  setCurrentState(state: AgentState): void {
+    this.currentState = state;
   }
 
   /**
@@ -116,9 +124,10 @@ export class CheckpointManager {
    * Check if interval-based checkpoint is needed
    */
   private checkIntervalCheckpoint(): void {
-    // This will be called by the interval timer
-    // We don't have access to state here, so this is just a flag
-    // The actual checkpoint will be triggered by the next operation
+    if (this.currentState) {
+      // Trigger interval checkpoint
+      this.checkpoint(this.currentState, 'interval');
+    }
   }
 
   /**
@@ -131,9 +140,12 @@ export class CheckpointManager {
   /**
    * Cleanup resources
    */
-  cleanup(): void {
+  async cleanup(): Promise<void> {
     if (this.intervalTimer) {
       clearInterval(this.intervalTimer);
     }
+
+    // Wait for all pending checkpoints to complete
+    await this.flush();
   }
 }

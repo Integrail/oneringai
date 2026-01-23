@@ -2,6 +2,9 @@
  * Tool context interface - passed to tools during execution
  */
 
+import type { ContextManager } from '../../capabilities/taskAgent/ContextManager.js';
+import type { IdempotencyCache } from '../../capabilities/taskAgent/IdempotencyCache.js';
+
 /**
  * Limited memory access for tools
  */
@@ -25,6 +28,12 @@ export interface ToolContext {
 
   /** Working memory access (if running in TaskAgent) */
   memory?: WorkingMemoryAccess;
+
+  /** Context manager (if running in TaskAgent) */
+  contextManager?: ContextManager;
+
+  /** Idempotency cache (if running in TaskAgent) */
+  idempotencyCache?: IdempotencyCache;
 
   /** Abort signal for cancellation */
   signal?: AbortSignal;

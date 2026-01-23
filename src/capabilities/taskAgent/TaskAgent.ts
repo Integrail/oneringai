@@ -18,6 +18,7 @@ import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { PlanExecutor } from './PlanExecutor.js';
 import { CheckpointManager, DEFAULT_CHECKPOINT_STRATEGY } from './CheckpointManager.js';
 import { createMemoryTools } from './memoryTools.js';
+import { createContextTools } from './contextTools.js';
 import { getModelInfo } from '../../domain/entities/Model.js';
 
 /**
@@ -183,6 +184,9 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
   protected tools: ToolFunction[] = [];
   protected config: TaskAgentConfig;
 
+  // Event listener cleanup tracking
+  private eventCleanupFunctions: Array<() => void> = [];
+
   protected constructor(
     id: string,
     state: AgentState,
@@ -199,9 +203,16 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     this.config = config;
     this.hooks = hooks;
 
-    // Forward memory events to agent
-    memory.on('stored', (data) => this.emit('memory:stored', data));
-    memory.on('limit_warning', (data) => this.emit('memory:limit_warning', { utilization: data.utilizationPercent }));
+    // Forward memory events to agent (with cleanup tracking)
+    const storedHandler = (data: any) => this.emit('memory:stored', data);
+    const limitWarningHandler = (data: any) => this.emit('memory:limit_warning', { utilization: data.utilizationPercent });
+
+    memory.on('stored', storedHandler);
+    memory.on('limit_warning', limitWarningHandler);
+
+    // Track cleanup functions
+    this.eventCleanupFunctions.push(() => memory.off('stored', storedHandler));
+    this.eventCleanupFunctions.push(() => memory.off('limit_warning', limitWarningHandler));
   }
 
   /**
@@ -248,18 +259,60 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
   }
 
   /**
+   * Wrap a tool with idempotency cache and enhanced context
+   */
+  private wrapToolWithCache(tool: ToolFunction): ToolFunction {
+    return {
+      ...tool,
+      execute: async (args: any, context?: any) => {
+        // Enhance context with contextManager and idempotencyCache
+        const enhancedContext = {
+          ...context,
+          contextManager: this.contextManager,
+          idempotencyCache: this.idempotencyCache,
+        };
+
+        if (!this.idempotencyCache) {
+          return tool.execute(args, enhancedContext);
+        }
+
+        // Check cache first
+        const cached = await this.idempotencyCache.get(tool, args);
+        if (cached !== undefined) {
+          return cached;
+        }
+
+        // Execute tool with enhanced context
+        const result = await tool.execute(args, enhancedContext);
+
+        // Cache result
+        await this.idempotencyCache.set(tool, args, result);
+
+        return result;
+      }
+    };
+  }
+
+  /**
    * Initialize internal components
    */
   private initializeComponents(config: TaskAgentConfig): void {
-    // Combine user tools with memory tools
+    // Combine user tools with memory tools and context tools
     const memoryTools = createMemoryTools();
-    this.tools = [...(config.tools ?? []), ...memoryTools];
+    const contextTools = createContextTools();
+    this.tools = [...(config.tools ?? []), ...memoryTools, ...contextTools];
+
+    // Create idempotency cache first (needed for wrapping tools)
+    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
+
+    // Wrap tools with cache for idempotency
+    const cachedTools = this.tools.map((tool) => this.wrapToolWithCache(tool));
 
     // Create base Agent for LLM calls
     this.agent = Agent.create({
       connector: config.connector,
       model: config.model,
-      tools: this.tools,
+      tools: cachedTools,
       instructions: config.instructions,
       temperature: config.temperature,
       maxIterations: config.maxIterations ?? 10,
@@ -278,8 +331,7 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
       DEFAULT_COMPACTION_STRATEGY
     );
 
-    // Create idempotency cache
-    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
+    // Note: idempotencyCache already created above for tool wrapping
 
     // Create history manager
     this.historyManager = new HistoryManager(DEFAULT_HISTORY_CONFIG);
@@ -305,18 +357,31 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
       }
     );
 
-    // Forward events from plan executor to task agent
-    this.planExecutor.on('task:start', (data) => this.emit('task:start', data));
-    this.planExecutor.on('task:complete', (data) => {
+    // Forward events from plan executor to task agent (with cleanup tracking)
+    const taskStartHandler = (data: any) => this.emit('task:start', data);
+    const taskCompleteHandler = (data: any) => {
       this.emit('task:complete', { task: data.task, result: { success: true, output: data.result } });
       // Call afterTask hook
       if (this.hooks?.afterTask) {
         this.hooks.afterTask(data.task, { success: true, output: data.result });
       }
-    });
-    this.planExecutor.on('task:failed', (data) => this.emit('task:failed', data));
-    this.planExecutor.on('task:skipped', (data) => this.emit('task:failed', { task: data.task, error: new Error(data.reason) }));
-    this.planExecutor.on('task:waiting_external', (data) => this.emit('task:waiting', { task: data.task, dependency: data.task.externalDependency }));
+    };
+    const taskFailedHandler = (data: any) => this.emit('task:failed', data);
+    const taskSkippedHandler = (data: any) => this.emit('task:failed', { task: data.task, error: new Error(data.reason) });
+    const taskWaitingExternalHandler = (data: any) => this.emit('task:waiting', { task: data.task, dependency: data.task.externalDependency });
+
+    this.planExecutor.on('task:start', taskStartHandler);
+    this.planExecutor.on('task:complete', taskCompleteHandler);
+    this.planExecutor.on('task:failed', taskFailedHandler);
+    this.planExecutor.on('task:skipped', taskSkippedHandler);
+    this.planExecutor.on('task:waiting_external', taskWaitingExternalHandler);
+
+    // Track cleanup functions
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:start', taskStartHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:complete', taskCompleteHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:failed', taskFailedHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:skipped', taskSkippedHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:waiting_external', taskWaitingExternalHandler));
   }
 
   /**
@@ -629,9 +694,14 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
   /**
    * Cleanup resources
    */
-  destroy(): void {
+  async destroy(): Promise<void> {
+    // Remove all event listeners first
+    this.eventCleanupFunctions.forEach((cleanup) => cleanup());
+    this.eventCleanupFunctions = [];
+
+    // Cleanup components
     this.externalHandler?.cleanup();
-    this.checkpointManager?.cleanup();
+    await this.checkpointManager?.cleanup();
     this.planExecutor?.cleanup();
     this.agent?.destroy();
   }
