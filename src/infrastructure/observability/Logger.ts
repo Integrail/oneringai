@@ -2,8 +2,16 @@
  * Structured logging infrastructure
  *
  * Provides framework-wide structured logging with context propagation.
- * Supports console output (default) with optional pino integration.
+ * Supports console output (default) with optional file output.
+ *
+ * Environment variables:
+ * - LOG_LEVEL: trace|debug|info|warn|error|silent (default: info)
+ * - LOG_FILE: Path to log file (optional, default: console output)
+ * - LOG_PRETTY: true|false (default: true in development)
  */
+
+import * as fs from 'fs';
+import * as path from 'path';
 
 /**
  * Log level
@@ -37,6 +45,9 @@ export interface LoggerConfig {
 
   /** Custom destination (default: console) */
   destination?: 'console' | 'stdout' | 'stderr';
+
+  /** File path for file logging */
+  filePath?: string;
 }
 
 /**
@@ -56,17 +67,51 @@ export class FrameworkLogger {
   private config: LoggerConfig;
   private context: Record<string, any>;
   private levelValue: number;
+  private fileStream?: fs.WriteStream;
 
   constructor(config: LoggerConfig = {}) {
     this.config = {
       level: (config.level || process.env.LOG_LEVEL || 'info') as LogLevel,
-      pretty: config.pretty ?? process.env.NODE_ENV === 'development',
+      pretty: config.pretty ?? (process.env.LOG_PRETTY === 'true' || process.env.NODE_ENV === 'development'),
       destination: config.destination || 'console',
       context: config.context || {},
+      filePath: config.filePath || process.env.LOG_FILE,
     };
 
     this.context = this.config.context || {};
     this.levelValue = LOG_LEVEL_VALUES[this.config.level || 'info'];
+
+    // Initialize file stream if file path is provided
+    if (this.config.filePath) {
+      this.initFileStream(this.config.filePath);
+    }
+  }
+
+  /**
+   * Initialize file stream for logging
+   */
+  private initFileStream(filePath: string): void {
+    try {
+      // Ensure directory exists
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+
+      // Create write stream with append mode
+      this.fileStream = fs.createWriteStream(filePath, {
+        flags: 'a', // append mode
+        encoding: 'utf8',
+      });
+
+      // Handle stream errors
+      this.fileStream.on('error', (err) => {
+        console.error(`[Logger] File stream error: ${err.message}`);
+        this.fileStream = undefined;
+      });
+    } catch (err) {
+      console.error(`[Logger] Failed to initialize log file: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   /**
@@ -173,7 +218,7 @@ export class FrameworkLogger {
     };
 
     const reset = '\x1b[0m';
-    const color = levelColors[entry.level] || '';
+    const color = this.fileStream ? '' : levelColors[entry.level] || ''; // No colors in file
 
     // Format time
     const time = new Date(entry.time).toISOString().substring(11, 23);
@@ -193,6 +238,15 @@ export class FrameworkLogger {
     // Output
     const output = `${color}[${time}] ${levelStr}${reset} ${entry.msg}${context}`;
 
+    // Write to file if available
+    if (this.fileStream) {
+      // Strip ANSI color codes for file output
+      const cleanOutput = output.replace(/\x1b\[[0-9;]*m/g, '');
+      this.fileStream.write(cleanOutput + '\n');
+      return;
+    }
+
+    // Console output
     switch (entry.level) {
       case 'error':
       case 'warn':
@@ -209,6 +263,13 @@ export class FrameworkLogger {
   private jsonPrint(entry: LogEntry): void {
     const json = JSON.stringify(entry);
 
+    // Write to file if available
+    if (this.fileStream) {
+      this.fileStream.write(json + '\n');
+      return;
+    }
+
+    // Console output
     switch (this.config.destination) {
       case 'stderr':
         console.error(json);
@@ -231,6 +292,31 @@ export class FrameworkLogger {
     if (config.context) {
       this.context = { ...this.context, ...config.context };
     }
+
+    // Reinitialize file stream if file path changed
+    if (config.filePath !== undefined) {
+      this.closeFileStream();
+      if (config.filePath) {
+        this.initFileStream(config.filePath);
+      }
+    }
+  }
+
+  /**
+   * Close file stream
+   */
+  private closeFileStream(): void {
+    if (this.fileStream) {
+      this.fileStream.end();
+      this.fileStream = undefined;
+    }
+  }
+
+  /**
+   * Cleanup resources (call before process exit)
+   */
+  close(): void {
+    this.closeFileStream();
   }
 
   /**
@@ -253,5 +339,23 @@ export class FrameworkLogger {
  */
 export const logger = new FrameworkLogger({
   level: (process.env.LOG_LEVEL as LogLevel) || 'info',
-  pretty: process.env.NODE_ENV === 'development',
+  pretty: process.env.LOG_PRETTY === 'true' || process.env.NODE_ENV === 'development',
+  filePath: process.env.LOG_FILE,
+});
+
+/**
+ * Cleanup logger on process exit
+ */
+process.on('exit', () => {
+  logger.close();
+});
+
+process.on('SIGINT', () => {
+  logger.close();
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => {
+  logger.close();
+  process.exit(0);
 });

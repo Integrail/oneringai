@@ -1,4 +1,6 @@
 import EventEmitter$1, { EventEmitter } from 'eventemitter3';
+import * as fs from 'fs';
+import * as path from 'path';
 import { randomUUID } from 'crypto';
 
 // src/domain/errors/AIErrors.ts
@@ -266,8 +268,6 @@ var CircuitBreaker = class extends EventEmitter$1 {
     return { ...this.config };
   }
 };
-
-// src/infrastructure/observability/Logger.ts
 var LOG_LEVEL_VALUES = {
   trace: 10,
   debug: 20,
@@ -280,15 +280,42 @@ var FrameworkLogger = class _FrameworkLogger {
   config;
   context;
   levelValue;
+  fileStream;
   constructor(config = {}) {
     this.config = {
       level: config.level || process.env.LOG_LEVEL || "info",
-      pretty: config.pretty ?? process.env.NODE_ENV === "development",
+      pretty: config.pretty ?? (process.env.LOG_PRETTY === "true" || process.env.NODE_ENV === "development"),
       destination: config.destination || "console",
-      context: config.context || {}
+      context: config.context || {},
+      filePath: config.filePath || process.env.LOG_FILE
     };
     this.context = this.config.context || {};
     this.levelValue = LOG_LEVEL_VALUES[this.config.level || "info"];
+    if (this.config.filePath) {
+      this.initFileStream(this.config.filePath);
+    }
+  }
+  /**
+   * Initialize file stream for logging
+   */
+  initFileStream(filePath) {
+    try {
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      this.fileStream = fs.createWriteStream(filePath, {
+        flags: "a",
+        // append mode
+        encoding: "utf8"
+      });
+      this.fileStream.on("error", (err) => {
+        console.error(`[Logger] File stream error: ${err.message}`);
+        this.fileStream = void 0;
+      });
+    } catch (err) {
+      console.error(`[Logger] Failed to initialize log file: ${err instanceof Error ? err.message : err}`);
+    }
   }
   /**
    * Create child logger with additional context
@@ -382,7 +409,7 @@ var FrameworkLogger = class _FrameworkLogger {
       silent: ""
     };
     const reset = "\x1B[0m";
-    const color = levelColors[entry.level] || "";
+    const color = this.fileStream ? "" : levelColors[entry.level] || "";
     const time = new Date(entry.time).toISOString().substring(11, 23);
     const levelStr = entry.level.toUpperCase().padEnd(5);
     const contextParts = [];
@@ -393,6 +420,11 @@ var FrameworkLogger = class _FrameworkLogger {
     }
     const context = contextParts.length > 0 ? ` ${contextParts.join(" ")}` : "";
     const output = `${color}[${time}] ${levelStr}${reset} ${entry.msg}${context}`;
+    if (this.fileStream) {
+      const cleanOutput = output.replace(/\x1b\[[0-9;]*m/g, "");
+      this.fileStream.write(cleanOutput + "\n");
+      return;
+    }
     switch (entry.level) {
       case "error":
       case "warn":
@@ -407,6 +439,10 @@ var FrameworkLogger = class _FrameworkLogger {
    */
   jsonPrint(entry) {
     const json = JSON.stringify(entry);
+    if (this.fileStream) {
+      this.fileStream.write(json + "\n");
+      return;
+    }
     switch (this.config.destination) {
       case "stderr":
         console.error(json);
@@ -426,6 +462,27 @@ var FrameworkLogger = class _FrameworkLogger {
     if (config.context) {
       this.context = { ...this.context, ...config.context };
     }
+    if (config.filePath !== void 0) {
+      this.closeFileStream();
+      if (config.filePath) {
+        this.initFileStream(config.filePath);
+      }
+    }
+  }
+  /**
+   * Close file stream
+   */
+  closeFileStream() {
+    if (this.fileStream) {
+      this.fileStream.end();
+      this.fileStream = void 0;
+    }
+  }
+  /**
+   * Cleanup resources (call before process exit)
+   */
+  close() {
+    this.closeFileStream();
   }
   /**
    * Get current log level
@@ -442,7 +499,19 @@ var FrameworkLogger = class _FrameworkLogger {
 };
 var logger = new FrameworkLogger({
   level: process.env.LOG_LEVEL || "info",
-  pretty: process.env.NODE_ENV === "development"
+  pretty: process.env.LOG_PRETTY === "true" || process.env.NODE_ENV === "development",
+  filePath: process.env.LOG_FILE
+});
+process.on("exit", () => {
+  logger.close();
+});
+process.on("SIGINT", () => {
+  logger.close();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  logger.close();
+  process.exit(0);
 });
 
 // src/infrastructure/observability/Metrics.ts

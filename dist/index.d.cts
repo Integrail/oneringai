@@ -2430,7 +2430,12 @@ declare abstract class BaseProvider implements IProvider {
  * Structured logging infrastructure
  *
  * Provides framework-wide structured logging with context propagation.
- * Supports console output (default) with optional pino integration.
+ * Supports console output (default) with optional file output.
+ *
+ * Environment variables:
+ * - LOG_LEVEL: trace|debug|info|warn|error|silent (default: info)
+ * - LOG_FILE: Path to log file (optional, default: console output)
+ * - LOG_PRETTY: true|false (default: true in development)
  */
 /**
  * Log level
@@ -2448,6 +2453,8 @@ interface LoggerConfig {
     context?: Record<string, any>;
     /** Custom destination (default: console) */
     destination?: 'console' | 'stdout' | 'stderr';
+    /** File path for file logging */
+    filePath?: string;
 }
 /**
  * Log entry
@@ -2465,7 +2472,12 @@ declare class FrameworkLogger {
     private config;
     private context;
     private levelValue;
+    private fileStream?;
     constructor(config?: LoggerConfig);
+    /**
+     * Initialize file stream for logging
+     */
+    private initFileStream;
     /**
      * Create child logger with additional context
      */
@@ -2510,6 +2522,14 @@ declare class FrameworkLogger {
      * Update configuration
      */
     updateConfig(config: Partial<LoggerConfig>): void;
+    /**
+     * Close file stream
+     */
+    private closeFileStream;
+    /**
+     * Cleanup resources (call before process exit)
+     */
+    close(): void;
     /**
      * Get current log level
      */

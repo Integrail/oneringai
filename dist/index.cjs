@@ -2,13 +2,13 @@
 
 var crypto = require('crypto');
 var jose = require('jose');
-var fs4 = require('fs');
+var fs5 = require('fs');
 var EventEmitter = require('eventemitter3');
 var OpenAI = require('openai');
+var path3 = require('path');
 var Anthropic = require('@anthropic-ai/sdk');
 var genai = require('@google/genai');
-var fs3 = require('fs/promises');
-var path2 = require('path');
+var fs4 = require('fs/promises');
 var child_process = require('child_process');
 var util = require('util');
 var os = require('os');
@@ -36,12 +36,12 @@ function _interopNamespace(e) {
 }
 
 var crypto__namespace = /*#__PURE__*/_interopNamespace(crypto);
-var fs4__namespace = /*#__PURE__*/_interopNamespace(fs4);
+var fs5__namespace = /*#__PURE__*/_interopNamespace(fs5);
 var EventEmitter__default = /*#__PURE__*/_interopDefault(EventEmitter);
 var OpenAI__default = /*#__PURE__*/_interopDefault(OpenAI);
+var path3__namespace = /*#__PURE__*/_interopNamespace(path3);
 var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
-var fs3__namespace = /*#__PURE__*/_interopNamespace(fs3);
-var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
+var fs4__namespace = /*#__PURE__*/_interopNamespace(fs4);
 var os__namespace = /*#__PURE__*/_interopNamespace(os);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
 
@@ -655,7 +655,7 @@ var JWTBearerFlow = class {
       this.privateKey = config.privateKey;
     } else if (config.privateKeyPath) {
       try {
-        this.privateKey = fs4__namespace.readFileSync(config.privateKeyPath, "utf8");
+        this.privateKey = fs5__namespace.readFileSync(config.privateKeyPath, "utf8");
       } catch (error) {
         throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
       }
@@ -1604,8 +1604,6 @@ var CircuitBreaker = class extends EventEmitter__default.default {
     return { ...this.config };
   }
 };
-
-// src/infrastructure/observability/Logger.ts
 var LOG_LEVEL_VALUES = {
   trace: 10,
   debug: 20,
@@ -1618,15 +1616,42 @@ var FrameworkLogger = class _FrameworkLogger {
   config;
   context;
   levelValue;
+  fileStream;
   constructor(config = {}) {
     this.config = {
       level: config.level || process.env.LOG_LEVEL || "info",
-      pretty: config.pretty ?? process.env.NODE_ENV === "development",
+      pretty: config.pretty ?? (process.env.LOG_PRETTY === "true" || process.env.NODE_ENV === "development"),
       destination: config.destination || "console",
-      context: config.context || {}
+      context: config.context || {},
+      filePath: config.filePath || process.env.LOG_FILE
     };
     this.context = this.config.context || {};
     this.levelValue = LOG_LEVEL_VALUES[this.config.level || "info"];
+    if (this.config.filePath) {
+      this.initFileStream(this.config.filePath);
+    }
+  }
+  /**
+   * Initialize file stream for logging
+   */
+  initFileStream(filePath) {
+    try {
+      const dir = path3__namespace.dirname(filePath);
+      if (!fs5__namespace.existsSync(dir)) {
+        fs5__namespace.mkdirSync(dir, { recursive: true });
+      }
+      this.fileStream = fs5__namespace.createWriteStream(filePath, {
+        flags: "a",
+        // append mode
+        encoding: "utf8"
+      });
+      this.fileStream.on("error", (err) => {
+        console.error(`[Logger] File stream error: ${err.message}`);
+        this.fileStream = void 0;
+      });
+    } catch (err) {
+      console.error(`[Logger] Failed to initialize log file: ${err instanceof Error ? err.message : err}`);
+    }
   }
   /**
    * Create child logger with additional context
@@ -1720,7 +1745,7 @@ var FrameworkLogger = class _FrameworkLogger {
       silent: ""
     };
     const reset = "\x1B[0m";
-    const color = levelColors[entry.level] || "";
+    const color = this.fileStream ? "" : levelColors[entry.level] || "";
     const time = new Date(entry.time).toISOString().substring(11, 23);
     const levelStr = entry.level.toUpperCase().padEnd(5);
     const contextParts = [];
@@ -1731,6 +1756,11 @@ var FrameworkLogger = class _FrameworkLogger {
     }
     const context = contextParts.length > 0 ? ` ${contextParts.join(" ")}` : "";
     const output = `${color}[${time}] ${levelStr}${reset} ${entry.msg}${context}`;
+    if (this.fileStream) {
+      const cleanOutput = output.replace(/\x1b\[[0-9;]*m/g, "");
+      this.fileStream.write(cleanOutput + "\n");
+      return;
+    }
     switch (entry.level) {
       case "error":
       case "warn":
@@ -1745,6 +1775,10 @@ var FrameworkLogger = class _FrameworkLogger {
    */
   jsonPrint(entry) {
     const json = JSON.stringify(entry);
+    if (this.fileStream) {
+      this.fileStream.write(json + "\n");
+      return;
+    }
     switch (this.config.destination) {
       case "stderr":
         console.error(json);
@@ -1764,6 +1798,27 @@ var FrameworkLogger = class _FrameworkLogger {
     if (config.context) {
       this.context = { ...this.context, ...config.context };
     }
+    if (config.filePath !== void 0) {
+      this.closeFileStream();
+      if (config.filePath) {
+        this.initFileStream(config.filePath);
+      }
+    }
+  }
+  /**
+   * Close file stream
+   */
+  closeFileStream() {
+    if (this.fileStream) {
+      this.fileStream.end();
+      this.fileStream = void 0;
+    }
+  }
+  /**
+   * Cleanup resources (call before process exit)
+   */
+  close() {
+    this.closeFileStream();
   }
   /**
    * Get current log level
@@ -1780,7 +1835,19 @@ var FrameworkLogger = class _FrameworkLogger {
 };
 var logger = new FrameworkLogger({
   level: process.env.LOG_LEVEL || "info",
-  pretty: process.env.NODE_ENV === "development"
+  pretty: process.env.LOG_PRETTY === "true" || process.env.NODE_ENV === "development",
+  filePath: process.env.LOG_FILE
+});
+process.on("exit", () => {
+  logger.close();
+});
+process.on("SIGINT", () => {
+  logger.close();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  logger.close();
+  process.exit(0);
 });
 
 // src/infrastructure/observability/Metrics.ts
@@ -9683,8 +9750,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs3__namespace.mkdir(this.directory, { recursive: true });
-      await fs3__namespace.chmod(this.directory, 448);
+      await fs4__namespace.mkdir(this.directory, { recursive: true });
+      await fs4__namespace.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -9693,20 +9760,20 @@ var FileStorage = class {
    */
   getFilePath(key) {
     const hash = crypto__namespace.createHash("sha256").update(key).digest("hex");
-    return path2__namespace.join(this.directory, `${hash}.token`);
+    return path3__namespace.join(this.directory, `${hash}.token`);
   }
   async storeToken(key, token) {
     await this.ensureDirectory();
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs3__namespace.writeFile(filePath, encrypted, "utf8");
-    await fs3__namespace.chmod(filePath, 384);
+    await fs4__namespace.writeFile(filePath, encrypted, "utf8");
+    await fs4__namespace.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs3__namespace.readFile(filePath, "utf8");
+      const encrypted = await fs4__namespace.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -9715,7 +9782,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs3__namespace.unlink(filePath);
+        await fs4__namespace.unlink(filePath);
       } catch {
       }
       return null;
@@ -9724,7 +9791,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs3__namespace.unlink(filePath);
+      await fs4__namespace.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -9734,7 +9801,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs3__namespace.access(filePath);
+      await fs4__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -9745,7 +9812,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs3__namespace.readdir(this.directory);
+      const files = await fs4__namespace.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -9756,10 +9823,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs3__namespace.readdir(this.directory);
+      const files = await fs4__namespace.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs3__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs4__namespace.unlink(path3__namespace.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -10151,20 +10218,20 @@ var FileConnectorStorage = class {
       throw new Error("FileConnectorStorage requires a directory path");
     }
     this.directory = config.directory;
-    this.indexPath = path2__namespace.join(this.directory, "_index.json");
+    this.indexPath = path3__namespace.join(this.directory, "_index.json");
   }
   async save(name, stored) {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs3__namespace.writeFile(filePath, json, "utf8");
-    await fs3__namespace.chmod(filePath, 384);
+    await fs4__namespace.writeFile(filePath, json, "utf8");
+    await fs4__namespace.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs3__namespace.readFile(filePath, "utf8");
+      const json = await fs4__namespace.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -10177,7 +10244,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs3__namespace.unlink(filePath);
+      await fs4__namespace.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -10191,7 +10258,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs3__namespace.access(filePath);
+      await fs4__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -10217,13 +10284,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs3__namespace.readdir(this.directory);
+      const files = await fs4__namespace.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs3__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+          (f) => fs4__namespace.unlink(path3__namespace.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -10236,7 +10303,7 @@ var FileConnectorStorage = class {
    */
   getFilePath(name) {
     const hash = this.hashName(name);
-    return path2__namespace.join(this.directory, `${hash}.connector.json`);
+    return path3__namespace.join(this.directory, `${hash}.connector.json`);
   }
   /**
    * Hash connector name to prevent enumeration
@@ -10250,8 +10317,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs3__namespace.mkdir(this.directory, { recursive: true });
-      await fs3__namespace.chmod(this.directory, 448);
+      await fs4__namespace.mkdir(this.directory, { recursive: true });
+      await fs4__namespace.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -10262,7 +10329,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs3__namespace.readFile(this.indexPath, "utf8");
+      const json = await fs4__namespace.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -10280,8 +10347,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs3__namespace.writeFile(this.indexPath, json, "utf8");
-    await fs3__namespace.chmod(this.indexPath, 384);
+    await fs4__namespace.writeFile(this.indexPath, json, "utf8");
+    await fs4__namespace.chmod(this.indexPath, 384);
   }
 };
 
@@ -10493,8 +10560,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = util.promisify(child_process.exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs4__namespace.existsSync(filePath)) {
-      fs4__namespace.unlinkSync(filePath);
+    if (fs5__namespace.existsSync(filePath)) {
+      fs5__namespace.unlinkSync(filePath);
     }
   } catch {
   }
@@ -10523,7 +10590,7 @@ async function readClipboardImage() {
   }
 }
 async function readClipboardImageMac() {
-  const tempFile = path2__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path3__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`pngpaste "${tempFile}"`);
@@ -10545,7 +10612,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs4__namespace.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs5__namespace.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -10558,18 +10625,18 @@ async function readClipboardImageMac() {
   }
 }
 async function readClipboardImageLinux() {
-  const tempFile = path2__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path3__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs4__namespace.existsSync(tempFile) && fs4__namespace.statSync(tempFile).size > 0) {
+      if (fs5__namespace.existsSync(tempFile) && fs5__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs4__namespace.existsSync(tempFile) && fs4__namespace.statSync(tempFile).size > 0) {
+      if (fs5__namespace.existsSync(tempFile) && fs5__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -10583,7 +10650,7 @@ async function readClipboardImageLinux() {
   }
 }
 async function readClipboardImageWindows() {
-  const tempFile = path2__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
+  const tempFile = path3__namespace.join(os__namespace.tmpdir(), `clipboard-${Date.now()}.png`);
   try {
     const psScript = `
       Add-Type -AssemblyName System.Windows.Forms;
@@ -10596,7 +10663,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs4__namespace.existsSync(tempFile) && fs4__namespace.statSync(tempFile).size > 0) {
+    if (fs5__namespace.existsSync(tempFile) && fs5__namespace.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -10609,7 +10676,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs4__namespace.readFileSync(filePath);
+    const imageBuffer = fs5__namespace.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -10680,19 +10747,19 @@ __export(tools_exports, {
 });
 
 // src/tools/json/pathUtils.ts
-function parsePath(path4) {
-  if (path4 === "" || path4 === "$") {
+function parsePath(path5) {
+  if (path5 === "" || path5 === "$") {
     return [];
   }
-  const keys = path4.split(".");
+  const keys = path5.split(".");
   const filtered = keys.filter((p) => p.length > 0);
   if (filtered.length !== keys.length) {
-    throw new Error(`Invalid path format: ${path4} (consecutive dots not allowed)`);
+    throw new Error(`Invalid path format: ${path5} (consecutive dots not allowed)`);
   }
   return filtered;
 }
-function getValueAtPath(obj, path4) {
-  const keys = parsePath(path4);
+function getValueAtPath(obj, path5) {
+  const keys = parsePath(path5);
   let current = obj;
   for (const key of keys) {
     if (current === null || current === void 0) {
@@ -10702,8 +10769,8 @@ function getValueAtPath(obj, path4) {
   }
   return current;
 }
-function setValueAtPath(obj, path4, value) {
-  const keys = parsePath(path4);
+function setValueAtPath(obj, path5, value) {
+  const keys = parsePath(path5);
   if (keys.length === 0) {
     throw new Error("Cannot set root object - path must not be empty");
   }
@@ -10732,8 +10799,8 @@ function setValueAtPath(obj, path4, value) {
   }
   return true;
 }
-function deleteAtPath(obj, path4) {
-  const keys = parsePath(path4);
+function deleteAtPath(obj, path5) {
+  const keys = parsePath(path5);
   if (keys.length === 0) {
     throw new Error("Cannot delete root object - path must not be empty");
   }
@@ -10763,9 +10830,9 @@ function deleteAtPath(obj, path4) {
   }
   return true;
 }
-function pathExists(obj, path4) {
+function pathExists(obj, path5) {
   try {
-    const value = getValueAtPath(obj, path4);
+    const value = getValueAtPath(obj, path5);
     return value !== void 0;
   } catch {
     return false;

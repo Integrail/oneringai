@@ -58,7 +58,8 @@
     "example:custom-infrastructure": "tsx examples/custom-infrastructure.ts",
     "example:provider-config": "tsx examples/provider-config-generator.ts",
     "example:task-agent": "tsx examples/task-agent-basic.ts",
-    "example:task-agent-demo": "tsx examples/task-agent-demo.ts"
+    "example:task-agent-demo": "tsx examples/task-agent-demo.ts",
+    "example:logging": "tsx examples/logging-demo.ts"
   },
   "keywords": [
     "ai",
