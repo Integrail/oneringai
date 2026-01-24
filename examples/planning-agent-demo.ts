@@ -5,6 +5,7 @@
  * generate task plans from high-level goals.
  */
 
+import 'dotenv/config';
 import { Connector, Vendor, PlanningAgent, TaskAgent, ToolFunction } from '../src/index.js';
 
 // Example tools

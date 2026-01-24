@@ -9,18 +9,19 @@
  * - Context management
  */
 
+import 'dotenv/config';
 import {
   Connector,
   Vendor,
   TaskAgent,
   ToolFunction,
-} from '../dist/index.js';
+} from '../src/index.js';
 
 // Setup connector
 Connector.create({
   name: 'demo',
   vendor: Vendor.OpenAI,
-  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || 'demo-key' },
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
 });
 
 // Define tools

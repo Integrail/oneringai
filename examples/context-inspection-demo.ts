@@ -5,6 +5,7 @@
  * tools to monitor their own state and manage resources proactively.
  */
 
+import 'dotenv/config';
 import { Connector, Vendor, TaskAgent, ToolFunction } from '../src/index.js';
 
 // Tool that generates large responses

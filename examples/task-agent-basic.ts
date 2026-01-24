@@ -5,19 +5,20 @@
  * with working memory and plan-based workflows.
  */
 
+import 'dotenv/config';
 import {
   Connector,
   Vendor,
   TaskAgent,
   ToolFunction,
   createMemoryTools,
-} from '../dist/index.js';
+} from '../src/index.js';
 
 // Create a connector
 Connector.create({
   name: 'openai',
   vendor: Vendor.OpenAI,
-  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || 'test-key' },
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY || '' },
 });
 
 // Define custom tools
