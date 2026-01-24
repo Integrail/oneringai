@@ -11,6 +11,7 @@ export interface ProviderCapabilities {
 
 export interface IProvider {
   readonly name: string;
+  readonly vendor?: string;
   readonly capabilities: ProviderCapabilities;
 
   /**

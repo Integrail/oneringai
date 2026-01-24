@@ -1,0 +1,32 @@
+{
+  "name": "@oneringai/amos",
+  "version": "0.1.0",
+  "description": "Advanced Multimodal Orchestration System - Terminal-based agentic app",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "amos": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "LOG_FILE=./data/logs/amos.log LOG_LEVEL=debug tsx src/index.ts",
+    "dev:verbose": "LOG_FILE=./data/logs/amos.log LOG_LEVEL=trace tsx src/index.ts",
+    "dev:console": "LOG_LEVEL=info tsx src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@oneringai/agents": "file:../..",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsup": "^8.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,3 @@
+# Custom tools directory
+# Add .js or .mjs files here to extend AMOS with custom tools
+# Use /tool reload to load new tools at runtime

@@ -1,7 +1,7 @@
 import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
 import { EventEmitter } from 'events';
-import { T as ToolFunction, A as AgenticLoopEvents, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as TokenUsage, h as ToolCall, L as LLMResponse, i as StreamEventType, j as IProvider, P as ProviderCapabilities, k as CircuitBreaker, l as TextGenerateOptions, M as ModelCapabilities, m as MessageRole } from './index-tANSS66q.cjs';
-export { ac as AfterToolContext, a7 as AgenticLoopEventName, af as ApprovalResult, ad as ApproveToolContext, ab as BeforeToolContext, B as BuiltInTool, ai as CircuitBreakerConfig, aj as CircuitBreakerEvents, ah as CircuitOpenError, v as CompactionItem, o as Content, n as ContentType, ak as DEFAULT_CIRCUIT_BREAKER_CONFIG, _ as ErrorEvent, F as FunctionToolDefinition, a9 as Hook, a6 as HookManager, a8 as HookName, ag as IToolExecutor, q as InputImageContent, p as InputTextContent, Y as IterationCompleteEvent, J as JSONSchema, t as Message, aa as ModifyingHook, u as OutputItem, O as OutputTextContent, K as OutputTextDeltaEvent, N as OutputTextDoneEvent, R as ReasoningItem, Z as ResponseCompleteEvent, D as ResponseCreatedEvent, G as ResponseInProgressEvent, x as Tool, U as ToolCallArgumentsDeltaEvent, V as ToolCallArgumentsDoneEvent, Q as ToolCallStartEvent, w as ToolCallState, z as ToolExecutionContext, X as ToolExecutionDoneEvent, W as ToolExecutionStartEvent, ae as ToolModification, a5 as ToolRegistry, y as ToolResult, s as ToolResultContent, r as ToolUseContent, a4 as isErrorEvent, a0 as isOutputTextDelta, a3 as isResponseComplete, $ as isStreamEvent, a1 as isToolCallArgumentsDelta, a2 as isToolCallArgumentsDone } from './index-tANSS66q.cjs';
+import { T as ToolFunction, A as AgenticLoopEvents, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as IProvider, h as TokenUsage, i as ToolCall, L as LLMResponse, j as StreamEventType, P as ProviderCapabilities, k as CircuitBreaker, l as TextGenerateOptions, M as ModelCapabilities, m as MessageRole } from './index-bng68u4f.cjs';
+export { ac as AfterToolContext, a7 as AgenticLoopEventName, af as ApprovalResult, ad as ApproveToolContext, ab as BeforeToolContext, B as BuiltInTool, ai as CircuitBreakerConfig, aj as CircuitBreakerEvents, ah as CircuitOpenError, v as CompactionItem, o as Content, n as ContentType, ak as DEFAULT_CIRCUIT_BREAKER_CONFIG, _ as ErrorEvent, F as FunctionToolDefinition, a9 as Hook, a6 as HookManager, a8 as HookName, ag as IToolExecutor, q as InputImageContent, p as InputTextContent, Y as IterationCompleteEvent, J as JSONSchema, t as Message, aa as ModifyingHook, u as OutputItem, O as OutputTextContent, K as OutputTextDeltaEvent, N as OutputTextDoneEvent, R as ReasoningItem, Z as ResponseCompleteEvent, D as ResponseCreatedEvent, G as ResponseInProgressEvent, x as Tool, U as ToolCallArgumentsDeltaEvent, V as ToolCallArgumentsDoneEvent, Q as ToolCallStartEvent, w as ToolCallState, z as ToolExecutionContext, X as ToolExecutionDoneEvent, W as ToolExecutionStartEvent, ae as ToolModification, a5 as ToolRegistry, y as ToolResult, s as ToolResultContent, r as ToolUseContent, a4 as isErrorEvent, a0 as isOutputTextDelta, a3 as isResponseComplete, $ as isStreamEvent, a1 as isToolCallArgumentsDelta, a2 as isToolCallArgumentsDone } from './index-bng68u4f.cjs';
 
 /**
  * Supported AI Vendors
@@ -1011,6 +1011,654 @@ declare class Agent extends EventEmitter$1<AgenticLoopEvents> implements IDispos
  * Create a text provider from a connector
  */
 declare function createProvider(connector: Connector): ITextProvider;
+
+/**
+ * Shared types used across all multimodal capabilities
+ * This file provides the foundation for Image, Audio, and Video model registries
+ */
+
+/**
+ * Aspect ratios - normalized across all visual modalities (images, video)
+ */
+type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '21:9' | '3:2' | '2:3';
+/**
+ * Quality levels - normalized across vendors
+ * Providers map these to vendor-specific quality settings
+ */
+type QualityLevel = 'draft' | 'standard' | 'high' | 'ultra';
+/**
+ * Audio output formats
+ */
+type AudioFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm' | 'ogg';
+/**
+ * Output format preference for media
+ */
+type OutputFormat = 'url' | 'base64' | 'buffer';
+/**
+ * Source links for model documentation and maintenance
+ * Used to track where information came from and when it was last verified
+ */
+interface ISourceLinks {
+    /** Official documentation URL */
+    documentation: string;
+    /** Pricing page URL */
+    pricing?: string;
+    /** API reference URL */
+    apiReference?: string;
+    /** Additional reference (e.g., blog post, announcement) */
+    additional?: string;
+    /** Last verified date (YYYY-MM-DD) */
+    lastVerified: string;
+}
+/**
+ * Vendor-specific option schema for validation and documentation
+ * Used to describe vendor-specific options that fall outside semantic options
+ */
+interface VendorOptionSchema {
+    type: 'string' | 'number' | 'boolean' | 'enum' | 'array';
+    description: string;
+    required?: boolean;
+    enum?: string[];
+    min?: number;
+    max?: number;
+    default?: unknown;
+}
+/**
+ * Base model description - shared by all registries
+ * Every model registry (Image, TTS, STT, Video) extends this
+ */
+interface IBaseModelDescription {
+    /** Model identifier (e.g., "dall-e-3", "tts-1") */
+    name: string;
+    /** Display name for UI (e.g., "DALL-E 3", "TTS-1") */
+    displayName: string;
+    /** Vendor/provider */
+    provider: Vendor;
+    /** Model description */
+    description?: string;
+    /** Whether the model is currently available */
+    isActive: boolean;
+    /** Release date (YYYY-MM-DD) */
+    releaseDate?: string;
+    /** Deprecation date if scheduled (YYYY-MM-DD) */
+    deprecationDate?: string;
+    /** Documentation/pricing links for maintenance */
+    sources: ISourceLinks;
+}
+
+/**
+ * Shared voice definitions and language constants
+ * Eliminates duplication across TTS model registries
+ */
+/**
+ * Voice information structure
+ * Used consistently across all TTS providers
+ */
+interface IVoiceInfo {
+    id: string;
+    name: string;
+    language: string;
+    gender: 'male' | 'female' | 'neutral';
+    style?: string;
+    previewUrl?: string;
+    isDefault?: boolean;
+    accent?: string;
+    age?: 'child' | 'young' | 'adult' | 'senior';
+}
+
+/**
+ * Audio provider interfaces for Text-to-Speech and Speech-to-Text
+ */
+
+/**
+ * Options for text-to-speech synthesis
+ */
+interface TTSOptions {
+    /** Model to use (e.g., 'tts-1', 'gpt-4o-mini-tts') */
+    model: string;
+    /** Text to synthesize */
+    input: string;
+    /** Voice ID to use */
+    voice: string;
+    /** Audio output format */
+    format?: AudioFormat;
+    /** Speech speed (0.25 to 4.0, vendor-dependent) */
+    speed?: number;
+    /** Vendor-specific options passthrough */
+    vendorOptions?: Record<string, unknown>;
+}
+/**
+ * Response from text-to-speech synthesis
+ */
+interface TTSResponse {
+    /** Audio data as Buffer */
+    audio: Buffer;
+    /** Format of the audio */
+    format: AudioFormat;
+    /** Duration in seconds (if available) */
+    durationSeconds?: number;
+    /** Number of characters used (for billing) */
+    charactersUsed?: number;
+}
+/**
+ * Text-to-Speech provider interface
+ */
+interface ITextToSpeechProvider extends IProvider {
+    /**
+     * Synthesize speech from text
+     */
+    synthesize(options: TTSOptions): Promise<TTSResponse>;
+    /**
+     * List available voices (optional - some providers return static list)
+     */
+    listVoices?(): Promise<IVoiceInfo[]>;
+}
+/**
+ * STT output format types
+ */
+type STTOutputFormat$1 = 'json' | 'text' | 'srt' | 'vtt' | 'verbose_json';
+/**
+ * Options for speech-to-text transcription
+ */
+interface STTOptions {
+    /** Model to use (e.g., 'whisper-1', 'gpt-4o-transcribe') */
+    model: string;
+    /** Audio data as Buffer or file path */
+    audio: Buffer | string;
+    /** Language code (ISO-639-1), optional for auto-detection */
+    language?: string;
+    /** Output format */
+    outputFormat?: STTOutputFormat$1;
+    /** Include word/segment timestamps */
+    includeTimestamps?: boolean;
+    /** Timestamp granularity if timestamps enabled */
+    timestampGranularity?: 'word' | 'segment';
+    /** Optional prompt to guide the model */
+    prompt?: string;
+    /** Temperature for sampling (0-1) */
+    temperature?: number;
+    /** Vendor-specific options passthrough */
+    vendorOptions?: Record<string, unknown>;
+}
+/**
+ * Word-level timestamp
+ */
+interface WordTimestamp {
+    word: string;
+    start: number;
+    end: number;
+}
+/**
+ * Segment-level timestamp
+ */
+interface SegmentTimestamp {
+    id: number;
+    text: string;
+    start: number;
+    end: number;
+    tokens?: number[];
+}
+/**
+ * Response from speech-to-text transcription
+ */
+interface STTResponse {
+    /** Transcribed text */
+    text: string;
+    /** Detected or specified language */
+    language?: string;
+    /** Audio duration in seconds */
+    durationSeconds?: number;
+    /** Word-level timestamps (if requested) */
+    words?: WordTimestamp[];
+    /** Segment-level timestamps (if requested) */
+    segments?: SegmentTimestamp[];
+}
+/**
+ * Speech-to-Text provider interface
+ */
+interface ISpeechToTextProvider extends IProvider {
+    /**
+     * Transcribe audio to text
+     */
+    transcribe(options: STTOptions): Promise<STTResponse>;
+    /**
+     * Translate audio to English text (optional, Whisper-specific)
+     */
+    translate?(options: STTOptions): Promise<STTResponse>;
+}
+
+/**
+ * Text-to-Speech model registry with comprehensive metadata
+ */
+
+/**
+ * TTS model capabilities
+ */
+interface TTSModelCapabilities {
+    /** Available voices (empty array means fetch dynamically via API) */
+    voices: IVoiceInfo[];
+    /** Supported output formats */
+    formats: readonly AudioFormat[] | AudioFormat[];
+    /** Supported languages (ISO-639-1 codes) */
+    languages: readonly string[] | string[];
+    /** Speed control support */
+    speed: {
+        supported: boolean;
+        min?: number;
+        max?: number;
+        default?: number;
+    };
+    /** Feature support flags */
+    features: {
+        /** Real-time streaming support */
+        streaming: boolean;
+        /** SSML markup support */
+        ssml: boolean;
+        /** Emotion/style control */
+        emotions: boolean;
+        /** Custom voice cloning */
+        voiceCloning: boolean;
+        /** Word-level timestamps */
+        wordTimestamps: boolean;
+        /** Instruction steering (prompt-based style control) */
+        instructionSteering?: boolean;
+    };
+    /** Model limits */
+    limits: {
+        /** Maximum input length in characters */
+        maxInputLength: number;
+        /** Rate limit (requests per minute) */
+        maxRequestsPerMinute?: number;
+    };
+    /** Vendor-specific options schema */
+    vendorOptions?: Record<string, VendorOptionSchema>;
+}
+/**
+ * TTS model pricing
+ */
+interface TTSModelPricing {
+    /** Cost per 1,000 characters */
+    per1kCharacters: number;
+    currency: 'USD';
+}
+/**
+ * Complete TTS model description
+ */
+interface ITTSModelDescription extends IBaseModelDescription {
+    capabilities: TTSModelCapabilities;
+    pricing?: TTSModelPricing;
+}
+declare const TTS_MODELS: {
+    readonly openai: {
+        /** NEW: Instruction-steerable TTS with emotional control */
+        readonly GPT_4O_MINI_TTS: "gpt-4o-mini-tts";
+        /** Fast, low-latency TTS */
+        readonly TTS_1: "tts-1";
+        /** High-definition TTS */
+        readonly TTS_1_HD: "tts-1-hd";
+    };
+    readonly google: {
+        /** Gemini native TTS */
+        readonly GEMINI_TTS: "gemini-tts";
+    };
+};
+/**
+ * Complete TTS model registry
+ * Last full audit: January 2026
+ */
+declare const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription>;
+declare const getTTSModelInfo: (modelName: string) => ITTSModelDescription | undefined;
+declare const getTTSModelsByVendor: (vendor: Vendor) => ITTSModelDescription[];
+declare const getActiveTTSModels: () => ITTSModelDescription[];
+/**
+ * Get TTS models that support a specific feature
+ */
+declare function getTTSModelsWithFeature(feature: keyof ITTSModelDescription['capabilities']['features']): ITTSModelDescription[];
+/**
+ * Calculate estimated cost for TTS
+ */
+declare function calculateTTSCost(modelName: string, characterCount: number): number | null;
+
+/**
+ * Configuration for TextToSpeech capability
+ */
+interface TextToSpeechConfig {
+    /** Connector name or instance */
+    connector: string | Connector;
+    /** Default model to use */
+    model?: string;
+    /** Default voice to use */
+    voice?: string;
+    /** Default audio format */
+    format?: AudioFormat;
+    /** Default speed (0.25 to 4.0) */
+    speed?: number;
+}
+/**
+ * TextToSpeech capability class
+ * Provides text-to-speech synthesis with model introspection
+ *
+ * @example
+ * ```typescript
+ * const tts = TextToSpeech.create({
+ *   connector: 'openai',
+ *   model: 'tts-1-hd',
+ *   voice: 'nova',
+ * });
+ *
+ * const audio = await tts.synthesize('Hello, world!');
+ * await tts.toFile('Hello', './output.mp3');
+ * ```
+ */
+declare class TextToSpeech {
+    private provider;
+    private config;
+    /**
+     * Create a new TextToSpeech instance
+     */
+    static create(config: TextToSpeechConfig): TextToSpeech;
+    private constructor();
+    /**
+     * Synthesize speech from text
+     *
+     * @param text - Text to synthesize
+     * @param options - Optional synthesis parameters
+     * @returns Audio data and metadata
+     */
+    synthesize(text: string, options?: Partial<Omit<TTSOptions, 'model' | 'input'>>): Promise<TTSResponse>;
+    /**
+     * Synthesize speech and save to file
+     *
+     * @param text - Text to synthesize
+     * @param filePath - Output file path
+     * @param options - Optional synthesis parameters
+     */
+    toFile(text: string, filePath: string, options?: Partial<Omit<TTSOptions, 'model' | 'input'>>): Promise<void>;
+    /**
+     * Get model information for current or specified model
+     */
+    getModelInfo(model?: string): ITTSModelDescription;
+    /**
+     * Get model capabilities
+     */
+    getModelCapabilities(model?: string): TTSModelCapabilities;
+    /**
+     * List all available voices for current model
+     * For dynamic voice providers (e.g., ElevenLabs), fetches from API
+     * For static providers (e.g., OpenAI), returns from registry
+     */
+    listVoices(model?: string): Promise<IVoiceInfo[]>;
+    /**
+     * List all available models for this provider's vendor
+     */
+    listAvailableModels(): ITTSModelDescription[];
+    /**
+     * Check if a specific feature is supported by the model
+     */
+    supportsFeature(feature: keyof ITTSModelDescription['capabilities']['features'], model?: string): boolean;
+    /**
+     * Get supported audio formats for the model
+     */
+    getSupportedFormats(model?: string): readonly AudioFormat[] | AudioFormat[];
+    /**
+     * Get supported languages for the model
+     */
+    getSupportedLanguages(model?: string): readonly string[] | string[];
+    /**
+     * Check if speed control is supported
+     */
+    supportsSpeedControl(model?: string): boolean;
+    /**
+     * Update default model
+     */
+    setModel(model: string): void;
+    /**
+     * Update default voice
+     */
+    setVoice(voice: string): void;
+    /**
+     * Update default format
+     */
+    setFormat(format: AudioFormat): void;
+    /**
+     * Update default speed
+     */
+    setSpeed(speed: number): void;
+    /**
+     * Get default model (first active model for vendor)
+     */
+    private getDefaultModel;
+    /**
+     * Get default voice (first or default-marked voice)
+     */
+    private getDefaultVoice;
+}
+
+/**
+ * Speech-to-Text model registry with comprehensive metadata
+ */
+
+/**
+ * STT output format types
+ */
+type STTOutputFormat = 'json' | 'text' | 'srt' | 'vtt' | 'verbose_json';
+/**
+ * STT model capabilities
+ */
+interface STTModelCapabilities {
+    /** Supported input audio formats */
+    inputFormats: readonly string[] | string[];
+    /** Supported output formats */
+    outputFormats: STTOutputFormat[];
+    /** Supported languages (empty = auto-detect all) */
+    languages: string[];
+    /** Timestamp support */
+    timestamps: {
+        supported: boolean;
+        granularities?: ('word' | 'segment')[];
+    };
+    /** Feature support flags */
+    features: {
+        /** Translation to English */
+        translation: boolean;
+        /** Speaker identification */
+        diarization: boolean;
+        /** Real-time streaming (not implemented in v1) */
+        streaming: boolean;
+        /** Automatic punctuation */
+        punctuation: boolean;
+        /** Profanity filtering */
+        profanityFilter: boolean;
+    };
+    /** Model limits */
+    limits: {
+        /** Maximum file size in MB */
+        maxFileSizeMB: number;
+        /** Maximum duration in seconds */
+        maxDurationSeconds?: number;
+    };
+    /** Vendor-specific options schema */
+    vendorOptions?: Record<string, VendorOptionSchema>;
+}
+/**
+ * STT model pricing
+ */
+interface STTModelPricing {
+    /** Cost per minute of audio */
+    perMinute: number;
+    currency: 'USD';
+}
+/**
+ * Complete STT model description
+ */
+interface ISTTModelDescription extends IBaseModelDescription {
+    capabilities: STTModelCapabilities;
+    pricing?: STTModelPricing;
+}
+declare const STT_MODELS: {
+    readonly openai: {
+        /** NEW: GPT-4o based transcription */
+        readonly GPT_4O_TRANSCRIBE: "gpt-4o-transcribe";
+        /** NEW: GPT-4o with speaker diarization */
+        readonly GPT_4O_TRANSCRIBE_DIARIZE: "gpt-4o-transcribe-diarize";
+        /** Classic Whisper */
+        readonly WHISPER_1: "whisper-1";
+    };
+    readonly groq: {
+        /** Ultra-fast Whisper on Groq LPUs */
+        readonly WHISPER_LARGE_V3: "whisper-large-v3";
+        /** Faster English-only variant */
+        readonly DISTIL_WHISPER: "distil-whisper-large-v3-en";
+    };
+};
+/**
+ * Complete STT model registry
+ * Last full audit: January 2026
+ */
+declare const STT_MODEL_REGISTRY: Record<string, ISTTModelDescription>;
+declare const getSTTModelInfo: (modelName: string) => ISTTModelDescription | undefined;
+declare const getSTTModelsByVendor: (vendor: Vendor) => ISTTModelDescription[];
+declare const getActiveSTTModels: () => ISTTModelDescription[];
+/**
+ * Get STT models that support a specific feature
+ */
+declare function getSTTModelsWithFeature(feature: keyof ISTTModelDescription['capabilities']['features']): ISTTModelDescription[];
+/**
+ * Calculate estimated cost for STT
+ */
+declare function calculateSTTCost(modelName: string, durationSeconds: number): number | null;
+
+/**
+ * Configuration for SpeechToText capability
+ */
+interface SpeechToTextConfig {
+    /** Connector name or instance */
+    connector: string | Connector;
+    /** Default model to use */
+    model?: string;
+    /** Default language (ISO-639-1 code) */
+    language?: string;
+    /** Default temperature for sampling */
+    temperature?: number;
+}
+/**
+ * SpeechToText capability class
+ * Provides speech-to-text transcription with model introspection
+ *
+ * @example
+ * ```typescript
+ * const stt = SpeechToText.create({
+ *   connector: 'openai',
+ *   model: 'whisper-1',
+ * });
+ *
+ * const result = await stt.transcribe(audioBuffer);
+ * console.log(result.text);
+ *
+ * const detailed = await stt.transcribeWithTimestamps(audioBuffer, 'word');
+ * console.log(detailed.words);
+ * ```
+ */
+declare class SpeechToText {
+    private provider;
+    private config;
+    /**
+     * Create a new SpeechToText instance
+     */
+    static create(config: SpeechToTextConfig): SpeechToText;
+    private constructor();
+    /**
+     * Transcribe audio to text
+     *
+     * @param audio - Audio data as Buffer or file path
+     * @param options - Optional transcription parameters
+     * @returns Transcription result with text and metadata
+     */
+    transcribe(audio: Buffer | string, options?: Partial<Omit<STTOptions, 'model' | 'audio'>>): Promise<STTResponse>;
+    /**
+     * Transcribe audio file by path
+     *
+     * @param filePath - Path to audio file
+     * @param options - Optional transcription parameters
+     */
+    transcribeFile(filePath: string, options?: Partial<Omit<STTOptions, 'model' | 'audio'>>): Promise<STTResponse>;
+    /**
+     * Transcribe audio with word or segment timestamps
+     *
+     * @param audio - Audio data as Buffer or file path
+     * @param granularity - Timestamp granularity ('word' or 'segment')
+     * @param options - Optional transcription parameters
+     */
+    transcribeWithTimestamps(audio: Buffer | string, granularity?: 'word' | 'segment', options?: Partial<Omit<STTOptions, 'model' | 'audio' | 'includeTimestamps' | 'timestampGranularity'>>): Promise<STTResponse>;
+    /**
+     * Translate audio to English text
+     * Note: Only supported by some models (e.g., Whisper)
+     *
+     * @param audio - Audio data as Buffer or file path
+     * @param options - Optional transcription parameters
+     */
+    translate(audio: Buffer | string, options?: Partial<Omit<STTOptions, 'model' | 'audio'>>): Promise<STTResponse>;
+    /**
+     * Get model information for current or specified model
+     */
+    getModelInfo(model?: string): ISTTModelDescription;
+    /**
+     * Get model capabilities
+     */
+    getModelCapabilities(model?: string): STTModelCapabilities;
+    /**
+     * List all available models for this provider's vendor
+     */
+    listAvailableModels(): ISTTModelDescription[];
+    /**
+     * Check if a specific feature is supported by the model
+     */
+    supportsFeature(feature: keyof ISTTModelDescription['capabilities']['features'], model?: string): boolean;
+    /**
+     * Get supported input audio formats
+     */
+    getSupportedInputFormats(model?: string): readonly string[] | string[];
+    /**
+     * Get supported output formats
+     */
+    getSupportedOutputFormats(model?: string): readonly string[];
+    /**
+     * Get supported languages (empty array = auto-detect all)
+     */
+    getSupportedLanguages(model?: string): readonly string[];
+    /**
+     * Check if timestamps are supported
+     */
+    supportsTimestamps(model?: string): boolean;
+    /**
+     * Check if translation is supported
+     */
+    supportsTranslation(model?: string): boolean;
+    /**
+     * Check if speaker diarization is supported
+     */
+    supportsDiarization(model?: string): boolean;
+    /**
+     * Get timestamp granularities supported
+     */
+    getTimestampGranularities(model?: string): ('word' | 'segment')[] | undefined;
+    /**
+     * Update default model
+     */
+    setModel(model: string): void;
+    /**
+     * Update default language
+     */
+    setLanguage(language: string): void;
+    /**
+     * Update default temperature
+     */
+    setTemperature(temperature: number): void;
+    /**
+     * Get default model (first active model for vendor)
+     */
+    private getDefaultModel;
+}
 
 /**
  * Task and Plan entities for TaskAgent
@@ -3744,6 +4392,46 @@ declare abstract class BaseTextProvider extends BaseProvider implements ITextPro
 }
 
 /**
+ * Base media provider with common functionality for Image, Audio, and Video providers
+ * Provides circuit breaker, logging, and metrics similar to BaseTextProvider
+ */
+
+/**
+ * Base class for all media providers (Image, Audio, Video)
+ * Follows the same patterns as BaseTextProvider for consistency
+ */
+declare abstract class BaseMediaProvider extends BaseProvider implements IProvider {
+    protected circuitBreaker?: CircuitBreaker;
+    protected logger: FrameworkLogger;
+    private _isObservabilityInitialized;
+    constructor(config: any);
+    /**
+     * Auto-initialize observability on first use (lazy initialization)
+     * This is called automatically by executeWithCircuitBreaker()
+     * @internal
+     */
+    private ensureObservabilityInitialized;
+    /**
+     * Execute operation with circuit breaker protection
+     * Automatically records metrics and handles errors
+     *
+     * @param operation - The async operation to execute
+     * @param operationName - Name of the operation for metrics (e.g., 'image.generate', 'audio.synthesize')
+     * @param metadata - Additional metadata to log/record
+     */
+    protected executeWithCircuitBreaker<TResult>(operation: () => Promise<TResult>, operationName: string, metadata?: Record<string, unknown>): Promise<TResult>;
+    /**
+     * Log operation start with context
+     * Useful for logging before async operations
+     */
+    protected logOperationStart(operation: string, context: Record<string, unknown>): void;
+    /**
+     * Log operation completion with context
+     */
+    protected logOperationComplete(operation: string, context: Record<string, unknown>): void;
+}
+
+/**
  * Unified error mapper for all providers
  * Converts provider-specific errors to our standard error types
  */
@@ -5221,4 +5909,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, type APIKeyConnectorAuth, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISessionStorage, ITextProvider, type ITokenEstimator, type ITokenStorage, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VENDORS, Vendor, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getMetaTools, getModelInfo, getModelsByVendor, hasClipboardImage, isMetaTool, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };
+export { AIError, type APIKeyConnectorAuth, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, type AspectRatio, type AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISourceLinks, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, type ITokenStorage, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type OutputFormat, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type QualityLevel, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VENDORS, Vendor, type VendorOptionSchema, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, hasClipboardImage, isMetaTool, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };

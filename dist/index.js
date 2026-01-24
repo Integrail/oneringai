@@ -1,16 +1,16 @@
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs6 from 'fs';
+import * as fs9 from 'fs';
 import { promises } from 'fs';
 import EventEmitter, { EventEmitter as EventEmitter$2 } from 'eventemitter3';
-import OpenAI from 'openai';
+import OpenAI2 from 'openai';
 import * as path3 from 'path';
 import { join } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { EventEmitter as EventEmitter$1 } from 'events';
-import * as fs5 from 'fs/promises';
+import * as fs8 from 'fs/promises';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
@@ -627,7 +627,7 @@ var JWTBearerFlow = class {
       this.privateKey = config.privateKey;
     } else if (config.privateKeyPath) {
       try {
-        this.privateKey = fs6.readFileSync(config.privateKeyPath, "utf8");
+        this.privateKey = fs9.readFileSync(config.privateKeyPath, "utf8");
       } catch (error) {
         throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
       }
@@ -1609,10 +1609,10 @@ var FrameworkLogger = class _FrameworkLogger {
   initFileStream(filePath) {
     try {
       const dir = path3.dirname(filePath);
-      if (!fs6.existsSync(dir)) {
-        fs6.mkdirSync(dir, { recursive: true });
+      if (!fs9.existsSync(dir)) {
+        fs9.mkdirSync(dir, { recursive: true });
       }
-      this.fileStream = fs6.createWriteStream(filePath, {
+      this.fileStream = fs9.createWriteStream(filePath, {
         flags: "a",
         // append mode
         encoding: "utf8"
@@ -2142,7 +2142,7 @@ var OpenAITextProvider = class extends BaseTextProvider {
   client;
   constructor(config) {
     super(config);
-    this.client = new OpenAI({
+    this.client = new OpenAI2({
       apiKey: this.getApiKey(),
       baseURL: this.getBaseURL(),
       organization: config.organization,
@@ -7132,6 +7132,1304 @@ var Agent = class _Agent extends EventEmitter$2 {
   }
 };
 
+// src/infrastructure/providers/base/BaseMediaProvider.ts
+var BaseMediaProvider = class extends BaseProvider {
+  circuitBreaker;
+  logger;
+  _isObservabilityInitialized = false;
+  constructor(config) {
+    super(config);
+    this.logger = logger.child({
+      component: "MediaProvider",
+      provider: "unknown"
+    });
+  }
+  /**
+   * Auto-initialize observability on first use (lazy initialization)
+   * This is called automatically by executeWithCircuitBreaker()
+   * @internal
+   */
+  ensureObservabilityInitialized() {
+    if (this._isObservabilityInitialized) {
+      return;
+    }
+    const providerName = this.name || "unknown";
+    const cbConfig = this.config.circuitBreaker || DEFAULT_CIRCUIT_BREAKER_CONFIG;
+    this.circuitBreaker = new CircuitBreaker(
+      `media-provider:${providerName}`,
+      cbConfig
+    );
+    this.logger = logger.child({
+      component: "MediaProvider",
+      provider: providerName
+    });
+    this.circuitBreaker.on("opened", (data) => {
+      this.logger.warn(data, "Circuit breaker opened");
+      metrics.increment("circuit_breaker.opened", 1, {
+        breaker: data.name,
+        provider: providerName
+      });
+    });
+    this.circuitBreaker.on("closed", (data) => {
+      this.logger.info(data, "Circuit breaker closed");
+      metrics.increment("circuit_breaker.closed", 1, {
+        breaker: data.name,
+        provider: providerName
+      });
+    });
+    this._isObservabilityInitialized = true;
+  }
+  /**
+   * Execute operation with circuit breaker protection
+   * Automatically records metrics and handles errors
+   *
+   * @param operation - The async operation to execute
+   * @param operationName - Name of the operation for metrics (e.g., 'image.generate', 'audio.synthesize')
+   * @param metadata - Additional metadata to log/record
+   */
+  async executeWithCircuitBreaker(operation, operationName, metadata) {
+    this.ensureObservabilityInitialized();
+    const startTime = Date.now();
+    const metricLabels = {
+      provider: this.name,
+      operation: operationName,
+      ...metadata
+    };
+    try {
+      const result = await this.circuitBreaker.execute(operation);
+      const duration = Date.now() - startTime;
+      metrics.histogram(`${operationName}.duration`, duration, metricLabels);
+      metrics.increment(`${operationName}.success`, 1, metricLabels);
+      this.logger.debug(
+        { operation: operationName, duration, ...metadata },
+        "Operation completed successfully"
+      );
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      metrics.increment(`${operationName}.error`, 1, {
+        ...metricLabels,
+        error: error instanceof Error ? error.name : "unknown"
+      });
+      this.logger.error(
+        {
+          operation: operationName,
+          duration,
+          error: error instanceof Error ? error.message : String(error),
+          ...metadata
+        },
+        "Operation failed"
+      );
+      throw error;
+    }
+  }
+  /**
+   * Log operation start with context
+   * Useful for logging before async operations
+   */
+  logOperationStart(operation, context) {
+    this.ensureObservabilityInitialized();
+    this.logger.info({ operation, ...context }, `${operation} started`);
+  }
+  /**
+   * Log operation completion with context
+   */
+  logOperationComplete(operation, context) {
+    this.ensureObservabilityInitialized();
+    this.logger.info({ operation, ...context }, `${operation} completed`);
+  }
+};
+
+// src/domain/entities/SharedVoices.ts
+var OPENAI_VOICES = [
+  { id: "alloy", name: "Alloy", language: "multi", gender: "neutral", isDefault: true },
+  { id: "ash", name: "Ash", language: "multi", gender: "male" },
+  { id: "ballad", name: "Ballad", language: "multi", gender: "male" },
+  { id: "coral", name: "Coral", language: "multi", gender: "female" },
+  { id: "echo", name: "Echo", language: "multi", gender: "male" },
+  { id: "fable", name: "Fable", language: "multi", gender: "neutral", accent: "british" },
+  { id: "nova", name: "Nova", language: "multi", gender: "female" },
+  { id: "onyx", name: "Onyx", language: "multi", gender: "male" },
+  { id: "sage", name: "Sage", language: "multi", gender: "female" },
+  { id: "shimmer", name: "Shimmer", language: "multi", gender: "female" },
+  { id: "verse", name: "Verse", language: "multi", gender: "neutral" },
+  { id: "marin", name: "Marin", language: "multi", gender: "female" },
+  { id: "cedar", name: "Cedar", language: "multi", gender: "male" }
+];
+var GEMINI_VOICES = [
+  { id: "Puck", name: "Puck", language: "multi", gender: "neutral", isDefault: true },
+  { id: "Charon", name: "Charon", language: "multi", gender: "male" },
+  { id: "Kore", name: "Kore", language: "multi", gender: "female" },
+  { id: "Fenrir", name: "Fenrir", language: "multi", gender: "male" },
+  { id: "Aoede", name: "Aoede", language: "multi", gender: "female" }
+];
+var COMMON_LANGUAGES = {
+  /**
+   * Languages supported by OpenAI TTS models (50+)
+   * Source: https://platform.openai.com/docs/guides/text-to-speech
+   */
+  OPENAI_TTS: [
+    "en",
+    "es",
+    "fr",
+    "de",
+    "it",
+    "pt",
+    "pl",
+    "ru",
+    "ja",
+    "ko",
+    "zh",
+    "ar",
+    "hi",
+    "nl",
+    "sv",
+    "tr",
+    "af",
+    "hy",
+    "az",
+    "be",
+    "bs",
+    "bg",
+    "ca",
+    "hr",
+    "cs",
+    "da",
+    "et",
+    "fi",
+    "gl",
+    "el",
+    "he",
+    "hu",
+    "is",
+    "id",
+    "lv",
+    "lt",
+    "mk",
+    "ms",
+    "mi",
+    "ne",
+    "no",
+    "fa",
+    "ro",
+    "sr",
+    "sk",
+    "sl",
+    "sw",
+    "tl",
+    "ta",
+    "th",
+    "uk",
+    "ur",
+    "vi",
+    "cy"
+  ],
+  /**
+   * Core languages supported by most vendors
+   */
+  CORE: ["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ru", "ar", "hi"]};
+var AUDIO_FORMATS = {
+  /**
+   * OpenAI TTS output formats
+   * Source: https://platform.openai.com/docs/guides/text-to-speech
+   */
+  OPENAI_TTS: ["mp3", "opus", "aac", "flac", "wav", "pcm"],
+  /**
+   * Google TTS output formats
+   */
+  GOOGLE_TTS: ["mp3", "wav", "ogg"],
+  /**
+   * Common STT input formats (widely supported)
+   */
+  STT_INPUT: ["mp3", "mp4", "mpeg", "mpga", "m4a", "wav", "webm", "flac", "ogg"]
+};
+
+// src/infrastructure/providers/openai/OpenAITTSProvider.ts
+var OpenAITTSProvider = class extends BaseMediaProvider {
+  name = "openai-tts";
+  vendor = "openai";
+  capabilities = {
+    text: false,
+    images: false,
+    videos: false,
+    audio: true,
+    features: {
+      textToSpeech: true
+    }
+  };
+  client;
+  constructor(config) {
+    super(config);
+    this.client = new OpenAI2({
+      apiKey: config.auth.type === "api_key" ? config.auth.apiKey : void 0,
+      baseURL: config.baseURL,
+      organization: config.organization,
+      timeout: config.timeout ?? 6e4,
+      maxRetries: config.maxRetries ?? 2
+    });
+  }
+  /**
+   * Synthesize speech from text
+   */
+  async synthesize(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          const format = this.mapFormat(options.format);
+          const requestParams = {
+            model: options.model,
+            input: options.input,
+            voice: options.voice,
+            response_format: format,
+            speed: options.speed
+          };
+          if (options.vendorOptions?.instructions) {
+            requestParams.instructions = options.vendorOptions.instructions;
+          }
+          this.logOperationStart("tts.synthesize", {
+            model: options.model,
+            voice: options.voice,
+            inputLength: options.input.length
+          });
+          const response = await this.client.audio.speech.create(requestParams);
+          const arrayBuffer = await response.arrayBuffer();
+          const audio = Buffer.from(arrayBuffer);
+          this.logOperationComplete("tts.synthesize", {
+            model: options.model,
+            audioSize: audio.length
+          });
+          return {
+            audio,
+            format: options.format || "mp3",
+            charactersUsed: options.input.length
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "tts.synthesize",
+      { model: options.model, voice: options.voice }
+    );
+  }
+  /**
+   * List available voices (returns static list for OpenAI)
+   */
+  async listVoices() {
+    return OPENAI_VOICES;
+  }
+  /**
+   * Map semantic audio format to OpenAI format
+   */
+  mapFormat(format) {
+    switch (format) {
+      case "mp3":
+        return "mp3";
+      case "opus":
+        return "opus";
+      case "aac":
+        return "aac";
+      case "flac":
+        return "flac";
+      case "wav":
+        return "wav";
+      case "pcm":
+        return "pcm";
+      default:
+        return "mp3";
+    }
+  }
+  /**
+   * Handle OpenAI API errors
+   */
+  handleError(error) {
+    if (error instanceof OpenAI2.APIError) {
+      const status = error.status;
+      const message = error.message || "Unknown OpenAI API error";
+      if (status === 401) {
+        throw new ProviderAuthError("openai", "Invalid API key");
+      }
+      if (status === 429) {
+        throw new ProviderRateLimitError("openai", message);
+      }
+      if (status === 400) {
+        throw new ProviderError("openai", `Bad request: ${message}`);
+      }
+      throw new ProviderError("openai", message);
+    }
+    throw error;
+  }
+};
+var OpenAISTTProvider = class extends BaseMediaProvider {
+  name = "openai-stt";
+  vendor = "openai";
+  capabilities = {
+    text: false,
+    images: false,
+    videos: false,
+    audio: true,
+    features: {
+      speechToText: true
+    }
+  };
+  client;
+  constructor(config) {
+    super(config);
+    this.client = new OpenAI2({
+      apiKey: config.auth.type === "api_key" ? config.auth.apiKey : void 0,
+      baseURL: config.baseURL,
+      organization: config.organization,
+      timeout: config.timeout ?? 12e4,
+      // 2 minutes for audio processing
+      maxRetries: config.maxRetries ?? 2
+    });
+  }
+  /**
+   * Transcribe audio to text
+   */
+  async transcribe(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("stt.transcribe", {
+            model: options.model,
+            language: options.language,
+            format: options.outputFormat
+          });
+          const audioFile = await this.prepareAudioFile(options.audio);
+          const requestParams = {
+            model: options.model,
+            file: audioFile,
+            language: options.language,
+            prompt: options.prompt,
+            temperature: options.temperature
+          };
+          if (options.outputFormat) {
+            requestParams.response_format = this.mapOutputFormat(options.outputFormat);
+          } else if (options.includeTimestamps) {
+            requestParams.response_format = "verbose_json";
+          }
+          if (options.includeTimestamps && options.timestampGranularity) {
+            requestParams.timestamp_granularities = [options.timestampGranularity];
+          }
+          if (options.model.includes("diarize") && options.vendorOptions?.max_speakers) {
+            requestParams.max_speakers = options.vendorOptions.max_speakers;
+          }
+          const response = await this.client.audio.transcriptions.create(
+            requestParams
+          );
+          this.logOperationComplete("stt.transcribe", {
+            model: options.model,
+            textLength: typeof response === "string" ? response.length : response.text?.length || 0
+          });
+          return this.convertResponse(response);
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "stt.transcribe",
+      { model: options.model }
+    );
+  }
+  /**
+   * Translate audio to English text
+   */
+  async translate(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("stt.translate", {
+            model: options.model
+          });
+          const audioFile = await this.prepareAudioFile(options.audio);
+          const requestParams = {
+            model: options.model,
+            file: audioFile,
+            prompt: options.prompt,
+            temperature: options.temperature
+          };
+          if (options.outputFormat) {
+            requestParams.response_format = this.mapOutputFormat(options.outputFormat);
+          }
+          const response = await this.client.audio.translations.create(
+            requestParams
+          );
+          this.logOperationComplete("stt.translate", {
+            model: options.model,
+            textLength: typeof response === "string" ? response.length : response.text?.length || 0
+          });
+          return this.convertResponse(response);
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "stt.translate",
+      { model: options.model }
+    );
+  }
+  /**
+   * Prepare audio file for API request
+   * Handles both Buffer and file path inputs
+   */
+  async prepareAudioFile(audio) {
+    if (Buffer.isBuffer(audio)) {
+      const blob = new Blob([audio]);
+      return new File([blob], "audio.wav", { type: "audio/wav" });
+    } else if (typeof audio === "string") {
+      return fs9.createReadStream(audio);
+    } else {
+      throw new Error("Invalid audio input: must be Buffer or file path");
+    }
+  }
+  /**
+   * Map semantic output format to OpenAI format
+   */
+  mapOutputFormat(format) {
+    switch (format) {
+      case "json":
+        return "json";
+      case "text":
+        return "text";
+      case "srt":
+        return "srt";
+      case "vtt":
+        return "vtt";
+      case "verbose_json":
+        return "verbose_json";
+      default:
+        return "json";
+    }
+  }
+  /**
+   * Convert OpenAI response to our standard format
+   */
+  convertResponse(response) {
+    if (typeof response === "string") {
+      return { text: response };
+    }
+    const result = {
+      text: response.text,
+      language: response.language,
+      durationSeconds: response.duration
+    };
+    if (response.words) {
+      result.words = response.words.map((w) => ({
+        word: w.word,
+        start: w.start,
+        end: w.end
+      }));
+    }
+    if (response.segments) {
+      result.segments = response.segments.map((s) => ({
+        id: s.id,
+        text: s.text,
+        start: s.start,
+        end: s.end,
+        tokens: s.tokens
+      }));
+    }
+    return result;
+  }
+  /**
+   * Handle OpenAI API errors
+   */
+  handleError(error) {
+    if (error instanceof OpenAI2.APIError) {
+      const status = error.status;
+      const message = error.message || "Unknown OpenAI API error";
+      if (status === 401) {
+        throw new ProviderAuthError("openai", "Invalid API key");
+      }
+      if (status === 429) {
+        throw new ProviderRateLimitError("openai", message);
+      }
+      if (status === 400) {
+        throw new ProviderError("openai", `Bad request: ${message}`);
+      }
+      if (status === 413) {
+        throw new ProviderError("openai", "Audio file too large (max 25MB)");
+      }
+      throw new ProviderError("openai", message);
+    }
+    throw error;
+  }
+};
+
+// src/core/createAudioProvider.ts
+function createTTSProvider(connector) {
+  const vendor = connector.vendor;
+  switch (vendor) {
+    case Vendor.OpenAI:
+      return new OpenAITTSProvider(extractOpenAIConfig(connector));
+    case Vendor.Google:
+      throw new Error(`Google TTS provider not yet implemented`);
+    default:
+      throw new Error(
+        `No TTS provider available for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}`
+      );
+  }
+}
+function createSTTProvider(connector) {
+  const vendor = connector.vendor;
+  switch (vendor) {
+    case Vendor.OpenAI:
+      return new OpenAISTTProvider(extractOpenAIConfig(connector));
+    case Vendor.Groq:
+      throw new Error(`Groq STT provider not yet implemented`);
+    case Vendor.Google:
+      throw new Error(`Google STT provider not yet implemented`);
+    default:
+      throw new Error(
+        `No STT provider available for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Groq}`
+      );
+  }
+}
+function extractOpenAIConfig(connector) {
+  const auth = connector.config.auth;
+  if (auth.type !== "api_key") {
+    throw new Error("OpenAI requires API key authentication");
+  }
+  const options = connector.getOptions();
+  return {
+    auth: {
+      type: "api_key",
+      apiKey: auth.apiKey
+    },
+    baseURL: connector.baseURL,
+    organization: options.organization,
+    timeout: options.timeout,
+    maxRetries: options.maxRetries
+  };
+}
+
+// src/domain/entities/RegistryUtils.ts
+function createRegistryHelpers(registry) {
+  return {
+    /**
+     * Get model information by name
+     */
+    getInfo: (modelName) => {
+      return registry[modelName];
+    },
+    /**
+     * Get all active models for a specific vendor
+     */
+    getByVendor: (vendor) => {
+      return Object.values(registry).filter(
+        (model) => model.provider === vendor && model.isActive
+      );
+    },
+    /**
+     * Get all currently active models (across all vendors)
+     */
+    getActive: () => {
+      return Object.values(registry).filter((model) => model.isActive);
+    },
+    /**
+     * Get all models (including inactive/deprecated)
+     */
+    getAll: () => {
+      return Object.values(registry);
+    },
+    /**
+     * Check if model exists in registry
+     */
+    has: (modelName) => {
+      return modelName in registry;
+    }
+  };
+}
+
+// src/domain/entities/TTSModel.ts
+var TTS_MODELS = {
+  [Vendor.OpenAI]: {
+    /** NEW: Instruction-steerable TTS with emotional control */
+    GPT_4O_MINI_TTS: "gpt-4o-mini-tts",
+    /** Fast, low-latency TTS */
+    TTS_1: "tts-1",
+    /** High-definition TTS */
+    TTS_1_HD: "tts-1-hd"
+  },
+  [Vendor.Google]: {
+    /** Gemini native TTS */
+    GEMINI_TTS: "gemini-tts"
+  }
+};
+var OPENAI_TTS_BASE = {
+  voices: OPENAI_VOICES,
+  formats: AUDIO_FORMATS.OPENAI_TTS,
+  languages: COMMON_LANGUAGES.OPENAI_TTS,
+  speed: { supported: true, min: 0.25, max: 4, default: 1 }
+};
+var TTS_MODEL_REGISTRY = {
+  // ======================== OpenAI ========================
+  "gpt-4o-mini-tts": {
+    name: "gpt-4o-mini-tts",
+    displayName: "GPT-4o Mini TTS",
+    provider: Vendor.OpenAI,
+    description: "Instruction-steerable TTS with emotional control via prompts",
+    isActive: true,
+    releaseDate: "2025-03-01",
+    sources: {
+      documentation: "https://platform.openai.com/docs/guides/text-to-speech",
+      pricing: "https://openai.com/pricing",
+      lastVerified: "2026-01-24"
+    },
+    capabilities: {
+      ...OPENAI_TTS_BASE,
+      features: {
+        streaming: false,
+        // Not implementing streaming in v1
+        ssml: false,
+        emotions: true,
+        // Via instruction steering
+        voiceCloning: true,
+        wordTimestamps: false,
+        instructionSteering: true
+      },
+      limits: { maxInputLength: 2e3 },
+      vendorOptions: {
+        instructions: {
+          type: "string",
+          description: 'Natural language instructions for voice style (e.g., "speak like a calm meditation guide")'
+        }
+      }
+    },
+    pricing: { per1kCharacters: 0.015, currency: "USD" }
+  },
+  "tts-1": {
+    name: "tts-1",
+    displayName: "TTS-1",
+    provider: Vendor.OpenAI,
+    description: "Fast, low-latency text-to-speech optimized for real-time use",
+    isActive: true,
+    releaseDate: "2023-11-06",
+    sources: {
+      documentation: "https://platform.openai.com/docs/guides/text-to-speech",
+      pricing: "https://openai.com/pricing",
+      lastVerified: "2026-01-24"
+    },
+    capabilities: {
+      ...OPENAI_TTS_BASE,
+      features: {
+        streaming: false,
+        // Not implementing streaming in v1
+        ssml: false,
+        emotions: false,
+        voiceCloning: false,
+        wordTimestamps: false
+      },
+      limits: { maxInputLength: 4096 }
+    },
+    pricing: { per1kCharacters: 0.015, currency: "USD" }
+  },
+  "tts-1-hd": {
+    name: "tts-1-hd",
+    displayName: "TTS-1 HD",
+    provider: Vendor.OpenAI,
+    description: "High-definition text-to-speech with improved audio quality",
+    isActive: true,
+    releaseDate: "2023-11-06",
+    sources: {
+      documentation: "https://platform.openai.com/docs/guides/text-to-speech",
+      pricing: "https://openai.com/pricing",
+      lastVerified: "2026-01-24"
+    },
+    capabilities: {
+      ...OPENAI_TTS_BASE,
+      features: {
+        streaming: false,
+        // Not implementing streaming in v1
+        ssml: false,
+        emotions: false,
+        voiceCloning: false,
+        wordTimestamps: false
+      },
+      limits: { maxInputLength: 4096 }
+    },
+    pricing: { per1kCharacters: 0.03, currency: "USD" }
+  },
+  // ======================== Google ========================
+  "gemini-tts": {
+    name: "gemini-tts",
+    displayName: "Gemini TTS",
+    provider: Vendor.Google,
+    description: "Google Gemini native text-to-speech",
+    isActive: true,
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/text-to-speech",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-01-24"
+    },
+    capabilities: {
+      voices: GEMINI_VOICES,
+      formats: AUDIO_FORMATS.GOOGLE_TTS,
+      languages: COMMON_LANGUAGES.CORE,
+      speed: { supported: true, min: 0.5, max: 2 },
+      features: {
+        streaming: false,
+        // Not implementing streaming in v1
+        ssml: false,
+        emotions: false,
+        voiceCloning: false,
+        wordTimestamps: false
+      },
+      limits: { maxInputLength: 8e3 }
+    }
+  }
+};
+var helpers = createRegistryHelpers(TTS_MODEL_REGISTRY);
+var getTTSModelInfo = helpers.getInfo;
+var getTTSModelsByVendor = helpers.getByVendor;
+var getActiveTTSModels = helpers.getActive;
+function getTTSModelsWithFeature(feature) {
+  return Object.values(TTS_MODEL_REGISTRY).filter(
+    (model) => model.isActive && model.capabilities.features[feature]
+  );
+}
+function calculateTTSCost(modelName, characterCount) {
+  const model = getTTSModelInfo(modelName);
+  if (!model?.pricing) return null;
+  return characterCount / 1e3 * model.pricing.per1kCharacters;
+}
+var TextToSpeech = class _TextToSpeech {
+  provider;
+  config;
+  /**
+   * Create a new TextToSpeech instance
+   */
+  static create(config) {
+    return new _TextToSpeech(config);
+  }
+  constructor(config) {
+    const connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
+    this.provider = createTTSProvider(connector);
+    this.config = config;
+  }
+  // ======================== Synthesis Methods ========================
+  /**
+   * Synthesize speech from text
+   *
+   * @param text - Text to synthesize
+   * @param options - Optional synthesis parameters
+   * @returns Audio data and metadata
+   */
+  async synthesize(text, options) {
+    const fullOptions = {
+      model: this.config.model ?? this.getDefaultModel(),
+      input: text,
+      voice: options?.voice ?? this.config.voice ?? this.getDefaultVoice(),
+      format: options?.format ?? this.config.format,
+      speed: options?.speed ?? this.config.speed,
+      vendorOptions: options?.vendorOptions
+    };
+    return this.provider.synthesize(fullOptions);
+  }
+  /**
+   * Synthesize speech and save to file
+   *
+   * @param text - Text to synthesize
+   * @param filePath - Output file path
+   * @param options - Optional synthesis parameters
+   */
+  async toFile(text, filePath, options) {
+    const response = await this.synthesize(text, options);
+    await fs8.writeFile(filePath, response.audio);
+  }
+  // ======================== Introspection Methods ========================
+  /**
+   * Get model information for current or specified model
+   */
+  getModelInfo(model) {
+    const targetModel = model ?? this.config.model ?? this.getDefaultModel();
+    const info = getTTSModelInfo(targetModel);
+    if (!info) {
+      throw new Error(`Unknown TTS model: ${targetModel}`);
+    }
+    return info;
+  }
+  /**
+   * Get model capabilities
+   */
+  getModelCapabilities(model) {
+    return this.getModelInfo(model).capabilities;
+  }
+  /**
+   * List all available voices for current model
+   * For dynamic voice providers (e.g., ElevenLabs), fetches from API
+   * For static providers (e.g., OpenAI), returns from registry
+   */
+  async listVoices(model) {
+    if (this.provider.listVoices) {
+      return this.provider.listVoices();
+    }
+    const caps = this.getModelCapabilities(model);
+    return caps.voices;
+  }
+  /**
+   * List all available models for this provider's vendor
+   */
+  listAvailableModels() {
+    const vendor = this.provider.vendor;
+    if (!vendor) {
+      return [];
+    }
+    return getTTSModelsByVendor(vendor);
+  }
+  /**
+   * Check if a specific feature is supported by the model
+   */
+  supportsFeature(feature, model) {
+    const caps = this.getModelCapabilities(model);
+    return Boolean(caps.features[feature]);
+  }
+  /**
+   * Get supported audio formats for the model
+   */
+  getSupportedFormats(model) {
+    return this.getModelCapabilities(model).formats;
+  }
+  /**
+   * Get supported languages for the model
+   */
+  getSupportedLanguages(model) {
+    return this.getModelCapabilities(model).languages;
+  }
+  /**
+   * Check if speed control is supported
+   */
+  supportsSpeedControl(model) {
+    return this.getModelCapabilities(model).speed.supported;
+  }
+  // ======================== Configuration Methods ========================
+  /**
+   * Update default model
+   */
+  setModel(model) {
+    this.config.model = model;
+  }
+  /**
+   * Update default voice
+   */
+  setVoice(voice) {
+    this.config.voice = voice;
+  }
+  /**
+   * Update default format
+   */
+  setFormat(format) {
+    this.config.format = format;
+  }
+  /**
+   * Update default speed
+   */
+  setSpeed(speed) {
+    this.config.speed = speed;
+  }
+  // ======================== Private Methods ========================
+  /**
+   * Get default model (first active model for vendor)
+   */
+  getDefaultModel() {
+    const models = this.listAvailableModels();
+    const firstModel = models[0];
+    if (!firstModel) {
+      throw new Error("No TTS models available for this provider");
+    }
+    return firstModel.name;
+  }
+  /**
+   * Get default voice (first or default-marked voice)
+   */
+  getDefaultVoice() {
+    const caps = this.getModelInfo().capabilities;
+    const defaultVoice = caps.voices.find((v) => v.isDefault);
+    return defaultVoice?.id ?? caps.voices[0]?.id ?? "alloy";
+  }
+};
+
+// src/domain/entities/STTModel.ts
+var STT_MODELS = {
+  [Vendor.OpenAI]: {
+    /** NEW: GPT-4o based transcription */
+    GPT_4O_TRANSCRIBE: "gpt-4o-transcribe",
+    /** NEW: GPT-4o with speaker diarization */
+    GPT_4O_TRANSCRIBE_DIARIZE: "gpt-4o-transcribe-diarize",
+    /** Classic Whisper */
+    WHISPER_1: "whisper-1"
+  },
+  [Vendor.Groq]: {
+    /** Ultra-fast Whisper on Groq LPUs */
+    WHISPER_LARGE_V3: "whisper-large-v3",
+    /** Faster English-only variant */
+    DISTIL_WHISPER: "distil-whisper-large-v3-en"
+  }
+};
+var WHISPER_BASE_CAPABILITIES = {
+  inputFormats: AUDIO_FORMATS.STT_INPUT,
+  outputFormats: ["json", "text", "srt", "vtt", "verbose_json"],
+  languages: [],
+  // Auto-detect, 50+ languages
+  timestamps: { supported: true, granularities: ["word", "segment"] }
+};
+var STT_MODEL_REGISTRY = {
+  // ======================== OpenAI ========================
+  "gpt-4o-transcribe": {
+    name: "gpt-4o-transcribe",
+    displayName: "GPT-4o Transcribe",
+    provider: Vendor.OpenAI,
+    description: "GPT-4o based transcription with superior accuracy and context understanding",
+    isActive: true,
+    releaseDate: "2025-04-01",
+    sources: {
+      documentation: "https://platform.openai.com/docs/guides/speech-to-text",
+      pricing: "https://openai.com/pricing",
+      lastVerified: "2026-01-24"
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      features: {
+        translation: true,
+        diarization: false,
+        streaming: false,
+        // Not implementing streaming in v1
+        punctuation: true,
+        profanityFilter: false
+      },
+      limits: { maxFileSizeMB: 25, maxDurationSeconds: 7200 }
+    },
+    pricing: { perMinute: 6e-3, currency: "USD" }
+  },
+  "gpt-4o-transcribe-diarize": {
+    name: "gpt-4o-transcribe-diarize",
+    displayName: "GPT-4o Transcribe + Diarization",
+    provider: Vendor.OpenAI,
+    description: "GPT-4o transcription with speaker identification",
+    isActive: true,
+    releaseDate: "2025-04-01",
+    sources: {
+      documentation: "https://platform.openai.com/docs/guides/speech-to-text",
+      pricing: "https://openai.com/pricing",
+      lastVerified: "2026-01-24"
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      outputFormats: ["json", "verbose_json"],
+      features: {
+        translation: true,
+        diarization: true,
+        // Built-in speaker identification
+        streaming: false,
+        punctuation: true,
+        profanityFilter: false
+      },
+      limits: { maxFileSizeMB: 25, maxDurationSeconds: 7200 },
+      vendorOptions: {
+        max_speakers: {
+          type: "number",
+          description: "Maximum number of speakers to detect",
+          min: 2,
+          max: 10,
+          default: 4
+        }
+      }
+    },
+    pricing: { perMinute: 0.012, currency: "USD" }
+    // 2x for diarization
+  },
+  "whisper-1": {
+    name: "whisper-1",
+    displayName: "Whisper",
+    provider: Vendor.OpenAI,
+    description: "OpenAI's general-purpose speech recognition model",
+    isActive: true,
+    releaseDate: "2023-03-01",
+    sources: {
+      documentation: "https://platform.openai.com/docs/guides/speech-to-text",
+      pricing: "https://openai.com/pricing",
+      lastVerified: "2026-01-24"
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      inputFormats: ["mp3", "mp4", "mpeg", "mpga", "m4a", "wav", "webm"],
+      features: {
+        translation: true,
+        diarization: false,
+        streaming: false,
+        punctuation: true,
+        profanityFilter: false
+      },
+      limits: { maxFileSizeMB: 25 }
+    },
+    pricing: { perMinute: 6e-3, currency: "USD" }
+  },
+  // ======================== Groq ========================
+  "whisper-large-v3": {
+    name: "whisper-large-v3",
+    displayName: "Whisper Large v3 (Groq)",
+    provider: Vendor.Groq,
+    description: "Ultra-fast Whisper on Groq LPUs - 12x cheaper than OpenAI",
+    isActive: true,
+    releaseDate: "2024-04-01",
+    sources: {
+      documentation: "https://console.groq.com/docs/speech-text",
+      pricing: "https://groq.com/pricing/",
+      lastVerified: "2026-01-24"
+    },
+    capabilities: {
+      ...WHISPER_BASE_CAPABILITIES,
+      timestamps: { supported: true, granularities: ["segment"] },
+      outputFormats: ["json", "text", "verbose_json"],
+      features: {
+        translation: true,
+        diarization: false,
+        streaming: false,
+        punctuation: true,
+        profanityFilter: false
+      },
+      limits: { maxFileSizeMB: 25 }
+    },
+    pricing: { perMinute: 5e-4, currency: "USD" }
+    // 12x cheaper!
+  },
+  "distil-whisper-large-v3-en": {
+    name: "distil-whisper-large-v3-en",
+    displayName: "Distil Whisper (Groq)",
+    provider: Vendor.Groq,
+    description: "Faster English-only Whisper variant on Groq",
+    isActive: true,
+    releaseDate: "2024-04-01",
+    sources: {
+      documentation: "https://console.groq.com/docs/speech-text",
+      pricing: "https://groq.com/pricing/",
+      lastVerified: "2026-01-24"
+    },
+    capabilities: {
+      inputFormats: AUDIO_FORMATS.STT_INPUT,
+      outputFormats: ["json", "text", "verbose_json"],
+      languages: ["en"],
+      // English only
+      timestamps: { supported: true, granularities: ["segment"] },
+      features: {
+        translation: false,
+        diarization: false,
+        streaming: false,
+        punctuation: true,
+        profanityFilter: false
+      },
+      limits: { maxFileSizeMB: 25 }
+    },
+    pricing: { perMinute: 33e-5, currency: "USD" }
+  }
+};
+var helpers2 = createRegistryHelpers(STT_MODEL_REGISTRY);
+var getSTTModelInfo = helpers2.getInfo;
+var getSTTModelsByVendor = helpers2.getByVendor;
+var getActiveSTTModels = helpers2.getActive;
+function getSTTModelsWithFeature(feature) {
+  return Object.values(STT_MODEL_REGISTRY).filter(
+    (model) => model.isActive && model.capabilities.features[feature]
+  );
+}
+function calculateSTTCost(modelName, durationSeconds) {
+  const model = getSTTModelInfo(modelName);
+  if (!model?.pricing) return null;
+  return durationSeconds / 60 * model.pricing.perMinute;
+}
+var SpeechToText = class _SpeechToText {
+  provider;
+  config;
+  /**
+   * Create a new SpeechToText instance
+   */
+  static create(config) {
+    return new _SpeechToText(config);
+  }
+  constructor(config) {
+    const connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
+    this.provider = createSTTProvider(connector);
+    this.config = config;
+  }
+  // ======================== Transcription Methods ========================
+  /**
+   * Transcribe audio to text
+   *
+   * @param audio - Audio data as Buffer or file path
+   * @param options - Optional transcription parameters
+   * @returns Transcription result with text and metadata
+   */
+  async transcribe(audio, options) {
+    const fullOptions = {
+      model: this.config.model ?? this.getDefaultModel(),
+      audio,
+      language: options?.language ?? this.config.language,
+      outputFormat: options?.outputFormat,
+      includeTimestamps: options?.includeTimestamps,
+      timestampGranularity: options?.timestampGranularity,
+      prompt: options?.prompt,
+      temperature: options?.temperature ?? this.config.temperature,
+      vendorOptions: options?.vendorOptions
+    };
+    return this.provider.transcribe(fullOptions);
+  }
+  /**
+   * Transcribe audio file by path
+   *
+   * @param filePath - Path to audio file
+   * @param options - Optional transcription parameters
+   */
+  async transcribeFile(filePath, options) {
+    const audio = await fs8.readFile(filePath);
+    return this.transcribe(audio, options);
+  }
+  /**
+   * Transcribe audio with word or segment timestamps
+   *
+   * @param audio - Audio data as Buffer or file path
+   * @param granularity - Timestamp granularity ('word' or 'segment')
+   * @param options - Optional transcription parameters
+   */
+  async transcribeWithTimestamps(audio, granularity = "segment", options) {
+    return this.transcribe(audio, {
+      ...options,
+      outputFormat: "verbose_json",
+      includeTimestamps: true,
+      timestampGranularity: granularity
+    });
+  }
+  /**
+   * Translate audio to English text
+   * Note: Only supported by some models (e.g., Whisper)
+   *
+   * @param audio - Audio data as Buffer or file path
+   * @param options - Optional transcription parameters
+   */
+  async translate(audio, options) {
+    if (!this.provider.translate) {
+      throw new Error("Translation not supported by this provider");
+    }
+    const fullOptions = {
+      model: this.config.model ?? this.getDefaultModel(),
+      audio,
+      outputFormat: options?.outputFormat,
+      prompt: options?.prompt,
+      temperature: options?.temperature ?? this.config.temperature,
+      vendorOptions: options?.vendorOptions
+    };
+    return this.provider.translate(fullOptions);
+  }
+  // ======================== Introspection Methods ========================
+  /**
+   * Get model information for current or specified model
+   */
+  getModelInfo(model) {
+    const targetModel = model ?? this.config.model ?? this.getDefaultModel();
+    const info = getSTTModelInfo(targetModel);
+    if (!info) {
+      throw new Error(`Unknown STT model: ${targetModel}`);
+    }
+    return info;
+  }
+  /**
+   * Get model capabilities
+   */
+  getModelCapabilities(model) {
+    return this.getModelInfo(model).capabilities;
+  }
+  /**
+   * List all available models for this provider's vendor
+   */
+  listAvailableModels() {
+    const vendor = this.provider.vendor;
+    if (!vendor) {
+      return [];
+    }
+    return getSTTModelsByVendor(vendor);
+  }
+  /**
+   * Check if a specific feature is supported by the model
+   */
+  supportsFeature(feature, model) {
+    const caps = this.getModelCapabilities(model);
+    return Boolean(caps.features[feature]);
+  }
+  /**
+   * Get supported input audio formats
+   */
+  getSupportedInputFormats(model) {
+    return this.getModelCapabilities(model).inputFormats;
+  }
+  /**
+   * Get supported output formats
+   */
+  getSupportedOutputFormats(model) {
+    return this.getModelCapabilities(model).outputFormats;
+  }
+  /**
+   * Get supported languages (empty array = auto-detect all)
+   */
+  getSupportedLanguages(model) {
+    return this.getModelCapabilities(model).languages;
+  }
+  /**
+   * Check if timestamps are supported
+   */
+  supportsTimestamps(model) {
+    return this.getModelCapabilities(model).timestamps.supported;
+  }
+  /**
+   * Check if translation is supported
+   */
+  supportsTranslation(model) {
+    return this.supportsFeature("translation", model);
+  }
+  /**
+   * Check if speaker diarization is supported
+   */
+  supportsDiarization(model) {
+    return this.supportsFeature("diarization", model);
+  }
+  /**
+   * Get timestamp granularities supported
+   */
+  getTimestampGranularities(model) {
+    return this.getModelCapabilities(model).timestamps.granularities;
+  }
+  // ======================== Configuration Methods ========================
+  /**
+   * Update default model
+   */
+  setModel(model) {
+    this.config.model = model;
+  }
+  /**
+   * Update default language
+   */
+  setLanguage(language) {
+    this.config.language = language;
+  }
+  /**
+   * Update default temperature
+   */
+  setTemperature(temperature) {
+    this.config.temperature = temperature;
+  }
+  // ======================== Private Methods ========================
+  /**
+   * Get default model (first active model for vendor)
+   */
+  getDefaultModel() {
+    const models = this.listAvailableModels();
+    const firstModel = models[0];
+    if (!firstModel) {
+      throw new Error("No STT models available for this provider");
+    }
+    return firstModel.name;
+  }
+};
+
 // src/domain/entities/Task.ts
 function createTask(input) {
   const now = Date.now();
@@ -12080,8 +13378,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs5.mkdir(this.directory, { recursive: true });
-      await fs5.chmod(this.directory, 448);
+      await fs8.mkdir(this.directory, { recursive: true });
+      await fs8.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -12097,13 +13395,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs5.writeFile(filePath, encrypted, "utf8");
-    await fs5.chmod(filePath, 384);
+    await fs8.writeFile(filePath, encrypted, "utf8");
+    await fs8.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs5.readFile(filePath, "utf8");
+      const encrypted = await fs8.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -12112,7 +13410,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs5.unlink(filePath);
+        await fs8.unlink(filePath);
       } catch {
       }
       return null;
@@ -12121,7 +13419,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs5.unlink(filePath);
+      await fs8.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -12131,7 +13429,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs5.access(filePath);
+      await fs8.access(filePath);
       return true;
     } catch {
       return false;
@@ -12142,7 +13440,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs5.readdir(this.directory);
+      const files = await fs8.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -12153,10 +13451,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs5.readdir(this.directory);
+      const files = await fs8.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs5.unlink(path3.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs8.unlink(path3.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -12554,14 +13852,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs5.writeFile(filePath, json, "utf8");
-    await fs5.chmod(filePath, 384);
+    await fs8.writeFile(filePath, json, "utf8");
+    await fs8.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs5.readFile(filePath, "utf8");
+      const json = await fs8.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -12574,7 +13872,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs5.unlink(filePath);
+      await fs8.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -12588,7 +13886,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs5.access(filePath);
+      await fs8.access(filePath);
       return true;
     } catch {
       return false;
@@ -12614,13 +13912,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs5.readdir(this.directory);
+      const files = await fs8.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs5.unlink(path3.join(this.directory, f)).catch(() => {
+          (f) => fs8.unlink(path3.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -12647,8 +13945,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs5.mkdir(this.directory, { recursive: true });
-      await fs5.chmod(this.directory, 448);
+      await fs8.mkdir(this.directory, { recursive: true });
+      await fs8.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -12659,7 +13957,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs5.readFile(this.indexPath, "utf8");
+      const json = await fs8.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -12677,8 +13975,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs5.writeFile(this.indexPath, json, "utf8");
-    await fs5.chmod(this.indexPath, 384);
+    await fs8.writeFile(this.indexPath, json, "utf8");
+    await fs8.chmod(this.indexPath, 384);
   }
 };
 
@@ -12890,8 +14188,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs6.existsSync(filePath)) {
-      fs6.unlinkSync(filePath);
+    if (fs9.existsSync(filePath)) {
+      fs9.unlinkSync(filePath);
     }
   } catch {
   }
@@ -12942,7 +14240,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs6.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs9.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -12959,14 +14257,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs6.existsSync(tempFile) && fs6.statSync(tempFile).size > 0) {
+      if (fs9.existsSync(tempFile) && fs9.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs6.existsSync(tempFile) && fs6.statSync(tempFile).size > 0) {
+      if (fs9.existsSync(tempFile) && fs9.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -12993,7 +14291,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs6.existsSync(tempFile) && fs6.statSync(tempFile).size > 0) {
+    if (fs9.existsSync(tempFile) && fs9.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -13006,7 +14304,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs6.readFileSync(filePath);
+    const imageBuffer = fs9.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -15733,6 +17031,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IdempotencyCache, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, SessionManager, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TaskAgent, TaskAgentContextProvider, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, Vendor, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getMetaTools, getModelInfo, getModelsByVendor, hasClipboardImage, isErrorEvent, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, tools_exports as tools };
+export { AIError, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IdempotencyCache, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, STT_MODELS, STT_MODEL_REGISTRY, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TextToSpeech, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, Vendor, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, hasClipboardImage, isErrorEvent, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

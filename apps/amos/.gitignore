@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Logs (keep .gitkeep)
+data/logs/*.log
+!data/logs/.gitkeep
+
+# Connector configs (contain API keys!)
+data/connectors/*.json
+!data/connectors/.gitkeep
+
+# Session data
+data/sessions/*.json
+data/sessions/_index.json
+!data/sessions/.gitkeep
+
+# App config (may contain sensitive defaults)
+data/config.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

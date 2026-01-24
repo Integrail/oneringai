@@ -30,6 +30,10 @@
 export { Connector, Agent, Vendor, VENDORS, isVendor, createProvider } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
+// Audio Capabilities
+export { TextToSpeech, SpeechToText } from './core/index.js';
+export type { TextToSpeechConfig, SpeechToTextConfig } from './core/index.js';
+
 // Tool Management (Dynamic)
 export { ToolManager } from './core/index.js';
 export type {
@@ -235,6 +239,29 @@ export {
   calculateCost,
 } from './domain/entities/Model.js';
 
+// Audio Model Registries
+export type { ITTSModelDescription, TTSModelCapabilities } from './domain/entities/TTSModel.js';
+export type { ISTTModelDescription, STTModelCapabilities } from './domain/entities/STTModel.js';
+export type { IVoiceInfo } from './domain/entities/SharedVoices.js';
+export {
+  TTS_MODELS,
+  TTS_MODEL_REGISTRY,
+  getTTSModelInfo,
+  getTTSModelsByVendor,
+  getActiveTTSModels,
+  getTTSModelsWithFeature,
+  calculateTTSCost,
+} from './domain/entities/TTSModel.js';
+export {
+  STT_MODELS,
+  STT_MODEL_REGISTRY,
+  getSTTModelInfo,
+  getSTTModelsByVendor,
+  getActiveSTTModels,
+  getSTTModelsWithFeature,
+  calculateSTTCost,
+} from './domain/entities/STTModel.js';
+
 // ============ Streaming ============
 export { StreamEventType } from './domain/entities/StreamEvent.js';
 export type {
@@ -305,10 +332,35 @@ export type { IToolExecutor } from './domain/interfaces/IToolExecutor.js';
 export type { IDisposable, IAsyncDisposable } from './domain/interfaces/IDisposable.js';
 export { assertNotDestroyed } from './domain/interfaces/IDisposable.js';
 
+// Audio Interfaces
+export type {
+  ITextToSpeechProvider,
+  ISpeechToTextProvider,
+  TTSOptions,
+  TTSResponse,
+  STTOptions,
+  STTResponse,
+  STTOutputFormat,
+  WordTimestamp,
+  SegmentTimestamp,
+} from './domain/interfaces/IAudioProvider.js';
+
 // Base classes for custom providers
 export { BaseProvider } from './infrastructure/providers/base/BaseProvider.js';
 export { BaseTextProvider } from './infrastructure/providers/base/BaseTextProvider.js';
+export { BaseMediaProvider } from './infrastructure/providers/base/BaseMediaProvider.js';
 export { ProviderErrorMapper } from './infrastructure/providers/base/ProviderErrorMapper.js';
+
+// Shared types for multi-modal
+export type {
+  AspectRatio,
+  QualityLevel,
+  AudioFormat,
+  OutputFormat,
+  ISourceLinks,
+  VendorOptionSchema,
+  IBaseModelDescription,
+} from './domain/types/SharedTypes.js';
 
 // ============ OAuth & Storage (for external APIs) ============
 export { OAuthManager, MemoryStorage, FileStorage } from './connectors/index.js';

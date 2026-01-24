@@ -31,6 +31,12 @@ export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 export { Vendor, VENDORS, isVendor } from './Vendor.js';
 export { createProvider, createProviderAsync } from './createProvider.js';
 
+// Audio capabilities
+export { TextToSpeech } from './TextToSpeech.js';
+export type { TextToSpeechConfig } from './TextToSpeech.js';
+export { SpeechToText } from './SpeechToText.js';
+export type { SpeechToTextConfig } from './SpeechToText.js';
+
 // Tool management
 export { ToolManager } from './ToolManager.js';
 export type {
