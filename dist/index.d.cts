@@ -982,7 +982,7 @@ declare function createAgentStorage(options?: {
 /**
  * Context manager configuration
  */
-interface ContextManagerConfig {
+interface ContextManagerConfig$1 {
     /** Model's max context tokens */
     maxContextTokens: number;
     /** Trigger compaction at this % of max */
@@ -1023,7 +1023,7 @@ interface ContextComponents {
 /**
  * Context budget breakdown
  */
-interface ContextBudget {
+interface ContextBudget$1 {
     total: number;
     reserved: number;
     used: number;
@@ -1041,9 +1041,9 @@ interface ContextBudget {
 /**
  * Prepared context result
  */
-interface PreparedContext {
+interface PreparedContext$1 {
     components: ContextComponents;
-    budget: ContextBudget;
+    budget: ContextBudget$1;
     compacted: boolean;
     compactionLog?: string[];
 }
@@ -1064,15 +1064,7 @@ interface IHistoryManager {
     summarize(): Promise<void>;
     truncate?(messages: any[], limit: number): Promise<any[]>;
 }
-/**
- * Default configuration
- */
-declare const DEFAULT_CONTEXT_CONFIG: ContextManagerConfig;
-/**
- * Default compaction strategy
- */
-declare const DEFAULT_COMPACTION_STRATEGY: CompactionStrategy;
-interface ContextManagerEvents {
+interface ContextManagerEvents$1 {
     compacting: {
         reason: string;
     };
@@ -1089,11 +1081,11 @@ interface ContextManagerEvents {
  * - Configurable compaction strategies
  * - Tool output truncation
  */
-declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
+declare class ContextManager$1 extends EventEmitter$1<ContextManagerEvents$1> {
     private config;
     private strategy;
     private lastBudget?;
-    constructor(config?: ContextManagerConfig, strategy?: CompactionStrategy);
+    constructor(config?: ContextManagerConfig$1, strategy?: CompactionStrategy);
     /**
      * Estimate token count for text
      */
@@ -1101,11 +1093,11 @@ declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
     /**
      * Estimate budget for context components
      */
-    estimateBudget(components: ContextComponents): ContextBudget;
+    estimateBudget(components: ContextComponents): ContextBudget$1;
     /**
      * Prepare context, compacting if necessary
      */
-    prepareContext(components: ContextComponents, memory: IMemoryManager, history: IHistoryManager): Promise<PreparedContext>;
+    prepareContext(components: ContextComponents, memory: IMemoryManager, history: IHistoryManager): Promise<PreparedContext$1>;
     /**
      * Truncate tool outputs in conversation history
      */
@@ -1125,11 +1117,11 @@ declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
     /**
      * Get current context budget
      */
-    getCurrentBudget(): ContextBudget | null;
+    getCurrentBudget(): ContextBudget$1 | null;
     /**
      * Get current configuration
      */
-    getConfig(): ContextManagerConfig;
+    getConfig(): ContextManagerConfig$1;
     /**
      * Get current compaction strategy
      */
@@ -1137,7 +1129,7 @@ declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
     /**
      * Update configuration
      */
-    updateConfig(updates: Partial<ContextManagerConfig>): void;
+    updateConfig(updates: Partial<ContextManagerConfig$1>): void;
 }
 
 /**
@@ -1252,7 +1244,7 @@ interface ToolContext {
     /** Working memory access (if running in TaskAgent) */
     memory?: WorkingMemoryAccess;
     /** Context manager (if running in TaskAgent) */
-    contextManager?: ContextManager;
+    contextManager?: ContextManager$1;
     /** Idempotency cache (if running in TaskAgent) */
     idempotencyCache?: IdempotencyCache;
     /** Abort signal for cancellation */
@@ -1627,7 +1619,7 @@ declare class PlanExecutor extends EventEmitter$1<PlanExecutorEvents> {
     private abortController;
     private currentMetrics;
     private currentState;
-    constructor(agent: Agent, memory: WorkingMemory, contextManager: ContextManager, idempotencyCache: IdempotencyCache, historyManager: HistoryManager, externalHandler: ExternalDependencyHandler, checkpointManager: CheckpointManager, hooks: TaskAgentHooks | undefined, config: PlanExecutorConfig);
+    constructor(agent: Agent, memory: WorkingMemory, contextManager: ContextManager$1, idempotencyCache: IdempotencyCache, historyManager: HistoryManager, externalHandler: ExternalDependencyHandler, checkpointManager: CheckpointManager, hooks: TaskAgentHooks | undefined, config: PlanExecutorConfig);
     /**
      * Execute a plan
      */
@@ -1824,7 +1816,7 @@ declare class TaskAgent extends EventEmitter$1<TaskAgentEvents> {
     protected hooks?: TaskAgentHooks;
     protected executionPromise?: Promise<PlanResult>;
     protected agent?: Agent;
-    protected contextManager?: ContextManager;
+    protected contextManager?: ContextManager$1;
     protected idempotencyCache?: IdempotencyCache;
     protected historyManager?: HistoryManager;
     protected externalHandler?: ExternalDependencyHandler;
@@ -1912,6 +1904,537 @@ declare class TaskAgent extends EventEmitter$1<TaskAgentEvents> {
  * Create all memory tools
  */
 declare function createMemoryTools(): ToolFunction[];
+
+/**
+ * Core types for context management system
+ */
+/**
+ * Context component that can be compacted
+ */
+interface IContextComponent {
+    /** Unique name for this component */
+    name: string;
+    /** The actual content (string or structured data) */
+    content: string | unknown;
+    /** Priority for compaction (higher = compact first) */
+    priority: number;
+    /** Whether this component can be compacted */
+    compactable: boolean;
+    /** Additional metadata for compaction strategies */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Context budget information
+ */
+interface ContextBudget {
+    /** Total available tokens */
+    total: number;
+    /** Reserved tokens for response */
+    reserved: number;
+    /** Currently used tokens */
+    used: number;
+    /** Available tokens remaining */
+    available: number;
+    /** Utilization percentage (used / (total - reserved)) */
+    utilizationPercent: number;
+    /** Budget status */
+    status: 'ok' | 'warning' | 'critical';
+    /** Token breakdown by component */
+    breakdown: Record<string, number>;
+}
+/**
+ * Context preparation result
+ */
+interface PreparedContext {
+    /** Prepared components */
+    components: IContextComponent[];
+    /** Current budget */
+    budget: ContextBudget;
+    /** Whether compaction occurred */
+    compacted: boolean;
+    /** Compaction log if compacted */
+    compactionLog?: string[];
+}
+/**
+ * Context manager configuration
+ */
+interface ContextManagerConfig {
+    /** Maximum context tokens for the model */
+    maxContextTokens: number;
+    /** Threshold to trigger compaction (0.0 - 1.0) */
+    compactionThreshold: number;
+    /** Hard limit - must compact before this (0.0 - 1.0) */
+    hardLimit: number;
+    /** Reserve space for response (0.0 - 1.0) */
+    responseReserve: number;
+    /** Token estimator to use */
+    estimator: 'approximate' | 'tiktoken' | ITokenEstimator;
+    /** Enable automatic compaction */
+    autoCompact: boolean;
+    /** Strategy to use */
+    strategy?: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive' | IContextStrategy;
+    /** Strategy-specific options */
+    strategyOptions?: Record<string, unknown>;
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_CONTEXT_CONFIG: ContextManagerConfig;
+/**
+ * Abstract interface for providing context components.
+ * Each agent type implements this to define what goes into context.
+ */
+interface IContextProvider {
+    /**
+     * Get current context components
+     */
+    getComponents(): Promise<IContextComponent[]>;
+    /**
+     * Update components after compaction
+     */
+    applyCompactedComponents(components: IContextComponent[]): Promise<void>;
+    /**
+     * Get max context size for this agent/model
+     */
+    getMaxContextSize(): number;
+}
+/**
+ * Abstract interface for token estimation
+ */
+interface ITokenEstimator {
+    /**
+     * Estimate token count for text
+     */
+    estimateTokens(text: string, model?: string): number;
+    /**
+     * Estimate tokens for structured data
+     */
+    estimateDataTokens(data: unknown, model?: string): number;
+}
+/**
+ * Abstract interface for compaction strategies
+ */
+interface IContextCompactor {
+    /** Compactor name */
+    readonly name: string;
+    /** Priority order (lower = run first) */
+    readonly priority: number;
+    /**
+     * Check if this compactor can handle the component
+     */
+    canCompact(component: IContextComponent): boolean;
+    /**
+     * Compact the component to target size
+     */
+    compact(component: IContextComponent, targetTokens: number): Promise<IContextComponent>;
+    /**
+     * Estimate savings from compaction
+     */
+    estimateSavings(component: IContextComponent): number;
+}
+/**
+ * Context management strategy - defines the overall approach to managing context
+ */
+interface IContextStrategy {
+    /** Strategy name */
+    readonly name: string;
+    /**
+     * Decide if compaction is needed based on current budget
+     */
+    shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean;
+    /**
+     * Execute compaction using available compactors
+     */
+    compact(components: IContextComponent[], budget: ContextBudget, compactors: IContextCompactor[], estimator: ITokenEstimator): Promise<{
+        components: IContextComponent[];
+        log: string[];
+        tokensFreed: number;
+    }>;
+    /**
+     * Optional: Prepare components before budget calculation
+     * Use this for strategies that pre-process context (e.g., rolling window)
+     */
+    prepareComponents?(components: IContextComponent[]): Promise<IContextComponent[]>;
+    /**
+     * Optional: Post-process after compaction
+     * Use this for strategies that need cleanup or optimization
+     */
+    postProcess?(components: IContextComponent[], budget: ContextBudget): Promise<IContextComponent[]>;
+    /**
+     * Optional: Get strategy-specific metrics
+     */
+    getMetrics?(): Record<string, unknown>;
+}
+
+/**
+ * ContextManager - Universal context management with strategy support
+ */
+
+/**
+ * Context manager events
+ */
+interface ContextManagerEvents {
+    compacting: {
+        reason: string;
+        currentBudget: ContextBudget;
+        strategy: string;
+    };
+    compacted: {
+        log: string[];
+        newBudget: ContextBudget;
+        tokensFreed: number;
+    };
+    budget_warning: {
+        budget: ContextBudget;
+    };
+    budget_critical: {
+        budget: ContextBudget;
+    };
+    strategy_switched: {
+        from: string;
+        to: string;
+        reason: string;
+    };
+}
+/**
+ * Universal Context Manager
+ *
+ * Works with any agent type through the IContextProvider interface.
+ * Supports multiple compaction strategies that can be switched at runtime.
+ */
+declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
+    private config;
+    private provider;
+    private estimator;
+    private compactors;
+    private strategy;
+    private lastBudget?;
+    constructor(provider: IContextProvider, config?: Partial<ContextManagerConfig>, compactors?: IContextCompactor[], estimator?: ITokenEstimator, strategy?: IContextStrategy);
+    /**
+     * Prepare context for LLM call
+     * Returns prepared components, automatically compacting if needed
+     */
+    prepare(): Promise<PreparedContext>;
+    /**
+     * Compact using the current strategy
+     */
+    private compactWithStrategy;
+    /**
+     * Calculate budget for components
+     */
+    private calculateBudget;
+    /**
+     * Estimate tokens for a component
+     */
+    private estimateComponent;
+    /**
+     * Switch to a different strategy at runtime
+     */
+    setStrategy(strategy: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive' | IContextStrategy): void;
+    /**
+     * Get current strategy
+     */
+    getStrategy(): IContextStrategy;
+    /**
+     * Get strategy metrics
+     */
+    getStrategyMetrics(): Record<string, unknown>;
+    /**
+     * Get current budget
+     */
+    getCurrentBudget(): ContextBudget | null;
+    /**
+     * Get configuration
+     */
+    getConfig(): ContextManagerConfig;
+    /**
+     * Update configuration
+     */
+    updateConfig(updates: Partial<ContextManagerConfig>): void;
+    /**
+     * Add compactor
+     */
+    addCompactor(compactor: IContextCompactor): void;
+    /**
+     * Get all compactors
+     */
+    getCompactors(): IContextCompactor[];
+    /**
+     * Create estimator from name
+     */
+    private createEstimator;
+    /**
+     * Create strategy from name or config
+     */
+    private createStrategy;
+}
+
+/**
+ * Proactive Compaction Strategy
+ *
+ * - Monitors context budget continuously
+ * - Compacts proactively when reaching threshold
+ * - Follows priority-based compaction order
+ */
+
+declare class ProactiveCompactionStrategy implements IContextStrategy {
+    readonly name = "proactive";
+    private metrics;
+    shouldCompact(budget: ContextBudget, _config: ContextManagerConfig): boolean;
+    compact(components: IContextComponent[], budget: ContextBudget, compactors: IContextCompactor[], estimator: ITokenEstimator): Promise<{
+        components: IContextComponent[];
+        log: string[];
+        tokensFreed: number;
+    }>;
+    private estimateComponent;
+    getMetrics(): {
+        compactionCount: number;
+        totalTokensFreed: number;
+        avgTokensFreedPerCompaction: number;
+    };
+}
+
+/**
+ * Aggressive Compaction Strategy
+ *
+ * - Compacts earlier (60% threshold instead of 75%)
+ * - Targets lower usage (50% instead of 65%)
+ * - More aggressive per-component reduction
+ * - Good for: Long-running agents, constrained context
+ */
+
+interface AggressiveStrategyOptions {
+    /** Threshold to trigger compaction (default: 0.60) */
+    threshold?: number;
+    /** Target utilization after compaction (default: 0.50) */
+    target?: number;
+}
+declare class AggressiveCompactionStrategy implements IContextStrategy {
+    private options;
+    readonly name = "aggressive";
+    constructor(options?: AggressiveStrategyOptions);
+    shouldCompact(budget: ContextBudget, _config: ContextManagerConfig): boolean;
+    compact(components: IContextComponent[], budget: ContextBudget, compactors: IContextCompactor[], estimator: ITokenEstimator): Promise<{
+        components: IContextComponent[];
+        log: string[];
+        tokensFreed: number;
+    }>;
+    private estimateComponent;
+}
+
+/**
+ * Lazy Compaction Strategy
+ *
+ * - Only compacts when absolutely necessary (>90%)
+ * - Minimal compaction (just enough to fit)
+ * - Preserves as much context as possible
+ * - Good for: High-context models, short conversations
+ */
+
+declare class LazyCompactionStrategy implements IContextStrategy {
+    readonly name = "lazy";
+    shouldCompact(budget: ContextBudget, _config: ContextManagerConfig): boolean;
+    compact(components: IContextComponent[], budget: ContextBudget, compactors: IContextCompactor[], estimator: ITokenEstimator): Promise<{
+        components: IContextComponent[];
+        log: string[];
+        tokensFreed: number;
+    }>;
+    private estimateComponent;
+}
+
+/**
+ * Rolling Window Strategy
+ *
+ * - Maintains fixed-size window of recent context
+ * - No compaction needed - just drops old items
+ * - Very fast and predictable
+ * - Good for: Real-time agents, streaming conversations
+ */
+
+interface RollingWindowOptions {
+    /** Maximum number of messages to keep */
+    maxMessages?: number;
+    /** Maximum tokens per component */
+    maxTokensPerComponent?: number;
+}
+declare class RollingWindowStrategy implements IContextStrategy {
+    private options;
+    readonly name = "rolling-window";
+    constructor(options?: RollingWindowOptions);
+    shouldCompact(_budget: ContextBudget, _config: ContextManagerConfig): boolean;
+    prepareComponents(components: IContextComponent[]): Promise<IContextComponent[]>;
+    compact(): Promise<{
+        components: IContextComponent[];
+        log: string[];
+        tokensFreed: number;
+    }>;
+}
+
+/**
+ * Adaptive Strategy
+ *
+ * - Learns from usage patterns
+ * - Adjusts thresholds based on observed behavior
+ * - Switches between strategies dynamically
+ * - Good for: Production systems, varied workloads
+ */
+
+interface AdaptiveStrategyOptions {
+    /** Number of compactions to learn from (default: 10) */
+    learningWindow?: number;
+    /** Compactions per minute threshold to switch to aggressive (default: 5) */
+    switchThreshold?: number;
+}
+declare class AdaptiveStrategy implements IContextStrategy {
+    private options;
+    readonly name = "adaptive";
+    private currentStrategy;
+    private metrics;
+    constructor(options?: AdaptiveStrategyOptions);
+    shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean;
+    compact(components: IContextComponent[], budget: ContextBudget, compactors: IContextCompactor[], estimator: ITokenEstimator): Promise<{
+        components: IContextComponent[];
+        log: string[];
+        tokensFreed: number;
+    }>;
+    private updateMetrics;
+    private maybeAdapt;
+    getMetrics(): {
+        currentStrategy: string;
+        avgUtilization: number;
+        compactionFrequency: number;
+        lastCompactions: number[];
+    };
+}
+
+/**
+ * Context management strategies
+ */
+
+/**
+ * Strategy factory
+ */
+declare function createStrategy(name: string, options?: Record<string, unknown>): IContextStrategy;
+
+/**
+ * Context provider for TaskAgent
+ */
+
+interface TaskAgentContextProviderConfig {
+    model: string;
+    instructions?: string;
+    plan: Plan;
+    memory: WorkingMemory;
+    historyManager: HistoryManager;
+    currentInput?: string;
+}
+/**
+ * Context provider for TaskAgent
+ */
+declare class TaskAgentContextProvider implements IContextProvider {
+    private config;
+    constructor(config: TaskAgentContextProviderConfig);
+    getComponents(): Promise<IContextComponent[]>;
+    applyCompactedComponents(components: IContextComponent[]): Promise<void>;
+    getMaxContextSize(): number;
+    /**
+     * Update configuration (e.g., when task changes)
+     */
+    updateConfig(updates: Partial<TaskAgentContextProviderConfig>): void;
+    /**
+     * Build system prompt for TaskAgent
+     */
+    private buildSystemPrompt;
+    /**
+     * Serialize plan for context
+     */
+    private serializePlan;
+    /**
+     * Extract tool outputs from conversation history
+     */
+    private extractToolOutputs;
+}
+
+/**
+ * Truncate Compactor
+ *
+ * Truncates content to target size by:
+ * - For strings: Cut to character limit
+ * - For arrays: Keep most recent items
+ */
+
+declare class TruncateCompactor implements IContextCompactor {
+    private estimator;
+    readonly name = "truncate";
+    readonly priority = 10;
+    constructor(estimator: ITokenEstimator);
+    canCompact(component: IContextComponent): boolean;
+    compact(component: IContextComponent, targetTokens: number): Promise<IContextComponent>;
+    estimateSavings(component: IContextComponent): number;
+    private truncateString;
+    private truncateArray;
+}
+
+/**
+ * Summarize Compactor (Placeholder)
+ *
+ * Uses LLM to create summaries of conversation history
+ * TODO: Implement when needed
+ */
+
+declare class SummarizeCompactor implements IContextCompactor {
+    private estimator;
+    readonly name = "summarize";
+    readonly priority = 5;
+    constructor(estimator: ITokenEstimator);
+    canCompact(component: IContextComponent): boolean;
+    compact(component: IContextComponent, _targetTokens: number): Promise<IContextComponent>;
+    estimateSavings(component: IContextComponent): number;
+}
+
+/**
+ * Memory Eviction Compactor
+ *
+ * Evicts LRU entries from memory index
+ * Works with memory components that have eviction metadata
+ */
+
+declare class MemoryEvictionCompactor implements IContextCompactor {
+    private estimator;
+    readonly name = "memory-eviction";
+    readonly priority = 8;
+    constructor(estimator: ITokenEstimator);
+    canCompact(component: IContextComponent): boolean;
+    compact(component: IContextComponent, targetTokens: number): Promise<IContextComponent>;
+    estimateSavings(component: IContextComponent): number;
+}
+
+/**
+ * Approximate Token Estimator
+ *
+ * Uses simple heuristic: 1 token ≈ 4 characters
+ * Fast and good enough for most use cases
+ */
+
+declare class ApproximateTokenEstimator implements ITokenEstimator {
+    /**
+     * Estimate tokens for text using 4 chars per token heuristic
+     */
+    estimateTokens(text: string, _model?: string): number;
+    /**
+     * Estimate tokens for structured data
+     */
+    estimateDataTokens(data: unknown, _model?: string): number;
+}
+
+/**
+ * Token estimators
+ */
+
+/**
+ * Create token estimator from name
+ */
+declare function createEstimator(name: string): ITokenEstimator;
 
 /**
  * Complete description of an LLM model including capabilities, pricing, and features
@@ -3563,4 +4086,4 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AIError, type APIKeyConnectorAuth, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, AgentResponse, type AgentState, type AgentStatus, AgenticLoopEvents, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, type CompactionStrategy, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, type ContextComponents, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_COMPACTION_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IConnectorConfigStorage, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, ITextProvider, type ITokenStorage, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, type LogEntry, type LogLevel, type LoggerConfig, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type Plan, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, type Task, TaskAgent, type TaskAgentConfig, type TaskAgentHooks, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, VENDORS, Vendor, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, createAgentStorage, createAuthenticatedFetch, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };
+export { AIError, type APIKeyConnectorAuth, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, AgentResponse, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, ITextProvider, type ITokenEstimator, type ITokenStorage, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type Plan, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, TruncateCompactor, VENDORS, Vendor, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, createAgentStorage, createAuthenticatedFetch, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };

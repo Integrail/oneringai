@@ -232,12 +232,21 @@ const provider = createProvider(connector);
 ```
 src/
 ├── index.ts                          # Main exports
-├── core/                             # NEW: Core architecture
+├── core/                             # Core architecture
 │   ├── index.ts                      # Core exports
 │   ├── Vendor.ts                     # Vendor enum
 │   ├── Connector.ts                  # Connector registry
 │   ├── Agent.ts                      # Agent class
-│   └── createProvider.ts             # Provider factory
+│   ├── createProvider.ts             # Provider factory
+│   └── context/                      # NEW: Universal context management
+│       ├── ContextManager.ts         # Strategy-based context manager
+│       ├── types.ts                  # Core interfaces
+│       └── strategies/               # Compaction strategies
+│           ├── ProactiveStrategy.ts
+│           ├── AggressiveStrategy.ts
+│           ├── LazyStrategy.ts
+│           ├── RollingWindowStrategy.ts
+│           └── AdaptiveStrategy.ts
 ├── domain/                           # Domain layer
 │   ├── entities/                     # Data structures
 │   │   ├── Message.ts                # InputItem, OutputItem
@@ -245,24 +254,48 @@ src/
 │   │   ├── Tool.ts                   # ToolFunction, ToolCall
 │   │   ├── Connector.ts              # ConnectorConfig types
 │   │   ├── Model.ts                  # Model registry (23+ models)
+│   │   ├── Task.ts                   # Task & Plan entities
+│   │   ├── Memory.ts                 # Memory entities
 │   │   └── Response.ts               # LLMResponse
 │   ├── interfaces/                   # Contracts
 │   │   ├── IProvider.ts
 │   │   ├── ITextProvider.ts
-│   │   └── IToolExecutor.ts
+│   │   ├── IToolExecutor.ts
+│   │   ├── IMemoryStorage.ts
+│   │   └── IToolContext.ts
 │   ├── types/                        # Shared types
 │   └── errors/                       # Error classes
 ├── capabilities/                     # Feature modules
-│   └── agents/                       # Agentic workflows
-│       ├── Agent.ts                  # Legacy Agent (still used)
-│       ├── AgenticLoop.ts            # Tool calling loop
-│       └── ToolExecutor.ts           # Tool execution
-├── infrastructure/                   # Provider implementations
-│   └── providers/
-│       ├── openai/
-│       ├── anthropic/
-│       ├── google/
-│       └── generic/                  # OpenAI-compatible
+│   ├── agents/                       # Agentic workflows
+│   │   ├── AgenticLoop.ts            # Tool calling loop
+│   │   └── ToolExecutor.ts           # Tool execution
+│   └── taskAgent/                    # Task-based agents
+│       ├── TaskAgent.ts              # Main orchestrator
+│       ├── WorkingMemory.ts          # Memory management
+│       ├── HistoryManager.ts         # Conversation tracking
+│       ├── IdempotencyCache.ts       # Tool call caching
+│       ├── PlanExecutor.ts           # Plan execution
+│       ├── CheckpointManager.ts      # State persistence
+│       ├── PlanningAgent.ts          # AI-driven planning
+│       ├── memoryTools.ts            # Built-in memory tools
+│       └── contextTools.ts           # Context inspection tools
+├── infrastructure/                   # Infrastructure implementations
+│   ├── providers/                    # LLM providers
+│   │   ├── openai/
+│   │   ├── anthropic/
+│   │   ├── google/
+│   │   └── generic/                  # OpenAI-compatible
+│   ├── context/                      # NEW: Context infrastructure
+│   │   ├── providers/                # Context providers
+│   │   │   └── TaskAgentContextProvider.ts
+│   │   ├── compactors/               # Compaction implementations
+│   │   │   ├── TruncateCompactor.ts
+│   │   │   ├── SummarizeCompactor.ts
+│   │   │   └── MemoryEvictionCompactor.ts
+│   │   └── estimators/               # Token estimation
+│   │       └── ApproximateEstimator.ts
+│   └── storage/                      # Persistence
+│       └── InMemoryStorage.ts
 ├── connectors/                       # External API auth (OAuth)
 │   ├── oauth/                        # OAuth 2.0 implementation
 │   └── authenticatedFetch.ts         # Authenticated fetch using Connector
@@ -472,18 +505,101 @@ npm run lint           # ESLint
 npm test               # Run tests
 ```
 
+## Context Management (NEW)
+
+The library includes a universal context management system with multiple strategies:
+
+```typescript
+import {
+  ContextManager,
+  TaskAgentContextProvider,
+  ApproximateTokenEstimator,
+  TruncateCompactor,
+} from '@oneringai/agents';
+
+// Create context provider (agent-specific)
+const provider = new TaskAgentContextProvider({
+  model: 'gpt-4',
+  plan: plan,
+  memory: workingMemory,
+  historyManager: historyManager,
+  currentInput: 'Task prompt',
+});
+
+// Create context manager with strategy
+const contextManager = new ContextManager(
+  provider,
+  {
+    maxContextTokens: 128000,
+    strategy: 'adaptive',  // or 'proactive', 'aggressive', 'lazy', 'rolling-window'
+    strategyOptions: { learningWindow: 50 },
+  },
+  [new TruncateCompactor(new ApproximateTokenEstimator())],
+  new ApproximateTokenEstimator()
+);
+
+// Use before LLM calls
+const prepared = await contextManager.prepare();
+
+// Switch strategy at runtime
+contextManager.setStrategy('aggressive');
+```
+
+**Available Strategies:**
+- `proactive` - Default, balanced (compact at 75%)
+- `aggressive` - Early compaction (compact at 60%)
+- `lazy` - Minimal compaction (compact at 90%)
+- `rolling-window` - Fixed-size window, no compaction
+- `adaptive` - Learns and adapts based on usage
+
+**See:** `USER_GUIDE.md` for complete documentation.
+
+## Task Agents
+
+TaskAgents provide autonomous execution with:
+
+```typescript
+import { TaskAgent } from '@oneringai/agents';
+
+const agent = TaskAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool, emailTool],
+});
+
+await agent.start({
+  goal: 'Check weather and notify user',
+  tasks: [
+    { name: 'fetch_weather', description: 'Get weather' },
+    { name: 'send_email', description: 'Email user', dependsOn: ['fetch_weather'] },
+  ],
+});
+```
+
+**Features:**
+- **Working Memory** - Indexed key-value store with lazy loading
+- **Context Management** - Automatic compaction with strategies
+- **Tool Idempotency** - Cache tool results to prevent duplicates
+- **State Persistence** - Resume after crashes
+- **External Dependencies** - Wait for webhooks, polling, manual input
+
+**See:** `USER_GUIDE.md` for complete TaskAgent documentation.
+
 ## Key Files
 
 1. `src/core/Connector.ts` - Connector registry
 2. `src/core/Agent.ts` - Agent creation
 3. `src/core/createProvider.ts` - Provider factory
 4. `src/core/Vendor.ts` - Vendor enum
-5. `src/domain/entities/Model.ts` - Model registry (23+ models with pricing, features)
-6. `src/capabilities/agents/AgenticLoop.ts` - Tool calling
-7. `src/infrastructure/providers/` - Provider implementations
+5. `src/core/context/` - **Universal context management** (NEW)
+6. `src/domain/entities/Model.ts` - Model registry (23+ models)
+7. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
+8. `src/capabilities/taskAgent/` - Task agent implementation
+9. `src/infrastructure/providers/` - LLM provider implementations
+10. `src/infrastructure/context/` - Context strategies, compactors, providers
 
 ---
 
 **Version**: 0.2.0
-**Last Updated**: 2026-01-15
+**Last Updated**: 2026-01-24
 **Architecture**: Connector-First (v2)

@@ -34,7 +34,6 @@ export type { AgentConfig } from './core/index.js';
 export {
   TaskAgent,
   WorkingMemory,
-  ContextManager,
   IdempotencyCache,
   HistoryManager,
   ExternalDependencyHandler,
@@ -52,10 +51,6 @@ export type {
   TaskResult,
   ErrorContext,
   WorkingMemoryEvents,
-  ContextManagerConfig,
-  ContextComponents,
-  ContextBudget,
-  CompactionStrategy,
   IdempotencyCacheConfig,
   CacheStats,
   HistoryManagerConfig,
@@ -65,7 +60,41 @@ export type {
   PlanExecutionResult,
   CheckpointStrategy,
 } from './capabilities/taskAgent/index.js';
-export { DEFAULT_CONTEXT_CONFIG, DEFAULT_COMPACTION_STRATEGY, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY } from './capabilities/taskAgent/index.js';
+export { DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY } from './capabilities/taskAgent/index.js';
+
+// ============ Context Management (Universal) ============
+export { ContextManager } from './core/context/index.js';
+export type {
+  IContextComponent,
+  ContextBudget,
+  PreparedContext,
+  ContextManagerConfig,
+  IContextProvider,
+  ITokenEstimator,
+  IContextCompactor,
+  IContextStrategy,
+} from './core/context/types.js';
+export { DEFAULT_CONTEXT_CONFIG } from './core/context/types.js';
+
+// Context Strategies
+export {
+  ProactiveCompactionStrategy,
+  AggressiveCompactionStrategy,
+  LazyCompactionStrategy,
+  RollingWindowStrategy,
+  AdaptiveStrategy,
+  createStrategy,
+} from './core/context/strategies/index.js';
+
+// Context Infrastructure
+export {
+  TaskAgentContextProvider,
+  TruncateCompactor,
+  SummarizeCompactor,
+  MemoryEvictionCompactor,
+  ApproximateTokenEstimator,
+  createEstimator,
+} from './infrastructure/context/index.js';
 
 // Task & Plan Entities
 export type {

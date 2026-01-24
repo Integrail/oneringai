@@ -9471,6 +9471,802 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
   }
 };
 
+// src/core/context/types.ts
+var DEFAULT_CONTEXT_CONFIG2 = {
+  maxContextTokens: 128e3,
+  compactionThreshold: 0.75,
+  hardLimit: 0.9,
+  responseReserve: 0.15,
+  estimator: "approximate",
+  autoCompact: true,
+  strategy: "proactive",
+  strategyOptions: {}
+};
+
+// src/core/context/strategies/ProactiveStrategy.ts
+var ProactiveCompactionStrategy = class {
+  name = "proactive";
+  metrics = {
+    compactionCount: 0,
+    totalTokensFreed: 0,
+    avgTokensFreedPerCompaction: 0
+  };
+  shouldCompact(budget, _config) {
+    return budget.status === "warning" || budget.status === "critical";
+  }
+  async compact(components, budget, compactors, estimator) {
+    const log = [];
+    let current = [...components];
+    const targetUsage = Math.floor(budget.total * 0.65);
+    const tokensToFree = budget.used - targetUsage;
+    let freedTokens = 0;
+    let round = 0;
+    const maxRounds = 3;
+    const sortedComponents = current.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
+    while (freedTokens < tokensToFree && round < maxRounds) {
+      round++;
+      let roundFreed = 0;
+      for (const component of sortedComponents) {
+        if (freedTokens >= tokensToFree) break;
+        const compactor = compactors.find((c) => c.canCompact(component));
+        if (!compactor) continue;
+        const beforeSize = this.estimateComponent(component, estimator);
+        const reductionFactor = 0.5 - (round - 1) * 0.15;
+        const targetSize = Math.floor(beforeSize * reductionFactor);
+        const compacted = await compactor.compact(component, targetSize);
+        const index = current.findIndex((c) => c.name === component.name);
+        current[index] = compacted;
+        const afterSize = this.estimateComponent(compacted, estimator);
+        const saved = beforeSize - afterSize;
+        freedTokens += saved;
+        roundFreed += saved;
+        log.push(
+          `Round ${round}: ${compactor.name} compacted "${component.name}" by ${saved} tokens`
+        );
+      }
+      if (roundFreed === 0) break;
+    }
+    this.metrics.compactionCount++;
+    this.metrics.totalTokensFreed += freedTokens;
+    this.metrics.avgTokensFreedPerCompaction = this.metrics.totalTokensFreed / this.metrics.compactionCount;
+    return { components: current, log, tokensFreed: freedTokens };
+  }
+  estimateComponent(component, estimator) {
+    if (typeof component.content === "string") {
+      return estimator.estimateTokens(component.content);
+    }
+    return estimator.estimateDataTokens(component.content);
+  }
+  getMetrics() {
+    return { ...this.metrics };
+  }
+};
+
+// src/core/context/strategies/AggressiveStrategy.ts
+var AggressiveCompactionStrategy = class {
+  constructor(options = {}) {
+    this.options = options;
+  }
+  name = "aggressive";
+  shouldCompact(budget, _config) {
+    const threshold = this.options.threshold ?? 0.6;
+    const utilizationRatio = (budget.used + budget.reserved) / budget.total;
+    return utilizationRatio >= threshold;
+  }
+  async compact(components, budget, compactors, estimator) {
+    const log = [];
+    let current = [...components];
+    const target = this.options.target ?? 0.5;
+    const targetUsage = Math.floor(budget.total * target);
+    const tokensToFree = budget.used - targetUsage;
+    let freedTokens = 0;
+    const sortedComponents = current.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
+    for (const component of sortedComponents) {
+      if (freedTokens >= tokensToFree) break;
+      const compactor = compactors.find((c) => c.canCompact(component));
+      if (!compactor) continue;
+      const beforeSize = this.estimateComponent(component, estimator);
+      const targetSize = Math.floor(beforeSize * 0.3);
+      const compacted = await compactor.compact(component, targetSize);
+      const index = current.findIndex((c) => c.name === component.name);
+      current[index] = compacted;
+      const afterSize = this.estimateComponent(compacted, estimator);
+      const saved = beforeSize - afterSize;
+      freedTokens += saved;
+      log.push(`Aggressive: ${compactor.name} compacted "${component.name}" by ${saved} tokens`);
+    }
+    return { components: current, log, tokensFreed: freedTokens };
+  }
+  estimateComponent(component, estimator) {
+    if (typeof component.content === "string") {
+      return estimator.estimateTokens(component.content);
+    }
+    return estimator.estimateDataTokens(component.content);
+  }
+};
+
+// src/core/context/strategies/LazyStrategy.ts
+var LazyCompactionStrategy = class {
+  name = "lazy";
+  shouldCompact(budget, _config) {
+    return budget.status === "critical";
+  }
+  async compact(components, budget, compactors, estimator) {
+    const log = [];
+    let current = [...components];
+    const targetUsage = Math.floor(budget.total * 0.85);
+    const tokensToFree = budget.used - targetUsage;
+    let freedTokens = 0;
+    const sortedComponents = current.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
+    for (const component of sortedComponents) {
+      if (freedTokens >= tokensToFree) break;
+      const compactor = compactors.find((c) => c.canCompact(component));
+      if (!compactor) continue;
+      const beforeSize = this.estimateComponent(component, estimator);
+      const targetSize = Math.floor(beforeSize * 0.7);
+      const compacted = await compactor.compact(component, targetSize);
+      const index = current.findIndex((c) => c.name === component.name);
+      current[index] = compacted;
+      const afterSize = this.estimateComponent(compacted, estimator);
+      const saved = beforeSize - afterSize;
+      freedTokens += saved;
+      log.push(`Lazy: ${compactor.name} compacted "${component.name}" by ${saved} tokens`);
+    }
+    return { components: current, log, tokensFreed: freedTokens };
+  }
+  estimateComponent(component, estimator) {
+    if (typeof component.content === "string") {
+      return estimator.estimateTokens(component.content);
+    }
+    return estimator.estimateDataTokens(component.content);
+  }
+};
+
+// src/core/context/strategies/RollingWindowStrategy.ts
+var RollingWindowStrategy = class {
+  constructor(options = {}) {
+    this.options = options;
+  }
+  name = "rolling-window";
+  shouldCompact(_budget, _config) {
+    return false;
+  }
+  async prepareComponents(components) {
+    return components.map((component) => {
+      if (Array.isArray(component.content)) {
+        const maxMessages = this.options.maxMessages ?? 20;
+        if (component.content.length > maxMessages) {
+          return {
+            ...component,
+            content: component.content.slice(-maxMessages),
+            metadata: {
+              ...component.metadata,
+              windowed: true,
+              originalLength: component.content.length,
+              keptLength: maxMessages
+            }
+          };
+        }
+      }
+      return component;
+    });
+  }
+  async compact() {
+    return { components: [], log: [], tokensFreed: 0 };
+  }
+};
+
+// src/core/context/strategies/AdaptiveStrategy.ts
+var AdaptiveStrategy = class {
+  constructor(options = {}) {
+    this.options = options;
+    this.currentStrategy = new ProactiveCompactionStrategy();
+  }
+  name = "adaptive";
+  currentStrategy;
+  metrics = {
+    avgUtilization: 0,
+    compactionFrequency: 0,
+    lastCompactions: []
+  };
+  shouldCompact(budget, config) {
+    this.updateMetrics(budget);
+    this.maybeAdapt();
+    return this.currentStrategy.shouldCompact(budget, config);
+  }
+  async compact(components, budget, compactors, estimator) {
+    const result = await this.currentStrategy.compact(components, budget, compactors, estimator);
+    this.metrics.lastCompactions.push(Date.now());
+    const window = this.options.learningWindow ?? 10;
+    if (this.metrics.lastCompactions.length > window) {
+      this.metrics.lastCompactions.shift();
+    }
+    return {
+      ...result,
+      log: [`[Adaptive: using ${this.currentStrategy.name}]`, ...result.log]
+    };
+  }
+  updateMetrics(budget) {
+    const alpha = 0.1;
+    this.metrics.avgUtilization = alpha * budget.utilizationPercent + (1 - alpha) * this.metrics.avgUtilization;
+  }
+  maybeAdapt() {
+    const now = Date.now();
+    if (this.metrics.lastCompactions.length >= 2) {
+      const firstCompaction = this.metrics.lastCompactions[0];
+      if (firstCompaction !== void 0) {
+        const timeSpan = now - firstCompaction;
+        this.metrics.compactionFrequency = this.metrics.lastCompactions.length / timeSpan * 6e4;
+      }
+    }
+    const threshold = this.options.switchThreshold ?? 5;
+    if (this.metrics.compactionFrequency > threshold) {
+      if (this.currentStrategy.name !== "aggressive") {
+        this.currentStrategy = new AggressiveCompactionStrategy();
+      }
+    } else if (this.metrics.compactionFrequency < 0.5 && this.metrics.avgUtilization < 70) {
+      if (this.currentStrategy.name !== "lazy") {
+        this.currentStrategy = new LazyCompactionStrategy();
+      }
+    } else {
+      if (this.currentStrategy.name !== "proactive") {
+        this.currentStrategy = new ProactiveCompactionStrategy();
+      }
+    }
+  }
+  getMetrics() {
+    return {
+      ...this.metrics,
+      currentStrategy: this.currentStrategy.name
+    };
+  }
+};
+
+// src/core/context/strategies/index.ts
+function createStrategy(name, options = {}) {
+  switch (name) {
+    case "proactive":
+      return new ProactiveCompactionStrategy();
+    case "aggressive":
+      return new AggressiveCompactionStrategy(options);
+    case "lazy":
+      return new LazyCompactionStrategy();
+    case "rolling-window":
+      return new RollingWindowStrategy(options);
+    case "adaptive":
+      return new AdaptiveStrategy(options);
+    default:
+      throw new Error(`Unknown context strategy: ${name}`);
+  }
+}
+
+// src/core/context/ContextManager.ts
+var ContextManager2 = class extends EventEmitter__default.default {
+  config;
+  provider;
+  estimator;
+  compactors;
+  strategy;
+  lastBudget;
+  constructor(provider, config = {}, compactors = [], estimator, strategy) {
+    super();
+    this.provider = provider;
+    this.config = { ...DEFAULT_CONTEXT_CONFIG2, ...config };
+    this.compactors = compactors.sort((a, b) => a.priority - b.priority);
+    if (estimator) {
+      this.estimator = estimator;
+    } else if (typeof this.config.estimator === "string") {
+      this.estimator = this.createEstimator(this.config.estimator);
+    } else {
+      this.estimator = this.config.estimator;
+    }
+    if (strategy) {
+      this.strategy = strategy;
+    } else {
+      this.strategy = this.createStrategy(this.config.strategy || "proactive");
+    }
+  }
+  /**
+   * Prepare context for LLM call
+   * Returns prepared components, automatically compacting if needed
+   */
+  async prepare() {
+    let components = await this.provider.getComponents();
+    if (this.strategy.prepareComponents) {
+      components = await this.strategy.prepareComponents(components);
+    }
+    let budget = this.calculateBudget(components);
+    this.lastBudget = budget;
+    if (budget.status === "warning") {
+      this.emit("budget_warning", { budget });
+    } else if (budget.status === "critical") {
+      this.emit("budget_critical", { budget });
+    }
+    const needsCompaction = this.config.autoCompact && this.strategy.shouldCompact(budget, this.config);
+    if (needsCompaction) {
+      return await this.compactWithStrategy(components, budget);
+    }
+    return {
+      components,
+      budget,
+      compacted: false
+    };
+  }
+  /**
+   * Compact using the current strategy
+   */
+  async compactWithStrategy(components, budget) {
+    this.emit("compacting", {
+      reason: `Context at ${budget.utilizationPercent.toFixed(1)}%`,
+      currentBudget: budget,
+      strategy: this.strategy.name
+    });
+    const result = await this.strategy.compact(components, budget, this.compactors, this.estimator);
+    let finalComponents = result.components;
+    if (this.strategy.postProcess) {
+      finalComponents = await this.strategy.postProcess(result.components, budget);
+    }
+    const newBudget = this.calculateBudget(finalComponents);
+    if (newBudget.status === "critical") {
+      throw new Error(
+        `Cannot fit context within limits after compaction (strategy: ${this.strategy.name}). Used: ${newBudget.used}, Limit: ${budget.total - budget.reserved}`
+      );
+    }
+    this.emit("compacted", {
+      log: result.log,
+      newBudget,
+      tokensFreed: result.tokensFreed
+    });
+    await this.provider.applyCompactedComponents(finalComponents);
+    return {
+      components: finalComponents,
+      budget: newBudget,
+      compacted: true,
+      compactionLog: result.log
+    };
+  }
+  /**
+   * Calculate budget for components
+   */
+  calculateBudget(components) {
+    const breakdown = {};
+    let used = 0;
+    for (const component of components) {
+      const tokens = this.estimateComponent(component);
+      breakdown[component.name] = tokens;
+      used += tokens;
+    }
+    const total = this.provider.getMaxContextSize();
+    const reserved = Math.floor(total * this.config.responseReserve);
+    const available = total - reserved - used;
+    const utilizationRatio = (used + reserved) / total;
+    const utilizationPercent = used / (total - reserved) * 100;
+    let status;
+    if (utilizationRatio >= this.config.hardLimit) {
+      status = "critical";
+    } else if (utilizationRatio >= this.config.compactionThreshold) {
+      status = "warning";
+    } else {
+      status = "ok";
+    }
+    return {
+      total,
+      reserved,
+      used,
+      available,
+      utilizationPercent,
+      status,
+      breakdown
+    };
+  }
+  /**
+   * Estimate tokens for a component
+   */
+  estimateComponent(component) {
+    if (typeof component.content === "string") {
+      return this.estimator.estimateTokens(component.content);
+    }
+    return this.estimator.estimateDataTokens(component.content);
+  }
+  /**
+   * Switch to a different strategy at runtime
+   */
+  setStrategy(strategy) {
+    const oldStrategy = this.strategy.name;
+    this.strategy = typeof strategy === "string" ? this.createStrategy(strategy) : strategy;
+    this.emit("strategy_switched", {
+      from: oldStrategy,
+      to: this.strategy.name,
+      reason: "manual"
+    });
+  }
+  /**
+   * Get current strategy
+   */
+  getStrategy() {
+    return this.strategy;
+  }
+  /**
+   * Get strategy metrics
+   */
+  getStrategyMetrics() {
+    return this.strategy.getMetrics?.() ?? {};
+  }
+  /**
+   * Get current budget
+   */
+  getCurrentBudget() {
+    return this.lastBudget ?? null;
+  }
+  /**
+   * Get configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+  /**
+   * Update configuration
+   */
+  updateConfig(updates) {
+    this.config = { ...this.config, ...updates };
+  }
+  /**
+   * Add compactor
+   */
+  addCompactor(compactor) {
+    this.compactors.push(compactor);
+    this.compactors.sort((a, b) => a.priority - b.priority);
+  }
+  /**
+   * Get all compactors
+   */
+  getCompactors() {
+    return [...this.compactors];
+  }
+  /**
+   * Create estimator from name
+   */
+  createEstimator(_name) {
+    return {
+      estimateTokens: (text) => {
+        if (!text || text.length === 0) return 0;
+        return Math.ceil(text.length / 4);
+      },
+      estimateDataTokens: (data) => {
+        const serialized = JSON.stringify(data);
+        return Math.ceil(serialized.length / 4);
+      }
+    };
+  }
+  /**
+   * Create strategy from name or config
+   */
+  createStrategy(strategy) {
+    if (typeof strategy !== "string") {
+      return strategy;
+    }
+    return createStrategy(strategy, this.config.strategyOptions || {});
+  }
+};
+
+// src/infrastructure/context/providers/TaskAgentContextProvider.ts
+var TaskAgentContextProvider = class {
+  config;
+  constructor(config) {
+    this.config = config;
+  }
+  async getComponents() {
+    const components = [];
+    components.push({
+      name: "system_prompt",
+      content: this.buildSystemPrompt(),
+      priority: 0,
+      compactable: false
+    });
+    if (this.config.instructions) {
+      components.push({
+        name: "instructions",
+        content: this.config.instructions,
+        priority: 0,
+        compactable: false
+      });
+    }
+    components.push({
+      name: "plan",
+      content: this.serializePlan(this.config.plan),
+      priority: 1,
+      compactable: false
+    });
+    const memoryIndex = await this.config.memory.formatIndex();
+    components.push({
+      name: "memory_index",
+      content: memoryIndex,
+      priority: 8,
+      compactable: true,
+      metadata: {
+        strategy: "evict",
+        evict: async (count) => {
+          await this.config.memory.evictLRU(count);
+        },
+        getUpdatedContent: async () => {
+          return await this.config.memory.formatIndex();
+        }
+      }
+    });
+    const messages = this.config.historyManager.getRecentMessages();
+    components.push({
+      name: "conversation_history",
+      content: messages.map((m) => ({
+        role: m.role,
+        content: m.content
+      })),
+      priority: 6,
+      compactable: true,
+      metadata: {
+        strategy: "truncate",
+        truncatable: true
+      }
+    });
+    const toolOutputs = this.extractToolOutputs(messages);
+    if (toolOutputs.length > 0) {
+      components.push({
+        name: "tool_outputs",
+        content: toolOutputs,
+        priority: 10,
+        compactable: true,
+        metadata: {
+          strategy: "truncate",
+          truncatable: true,
+          maxTokens: 4e3
+        }
+      });
+    }
+    if (this.config.currentInput) {
+      components.push({
+        name: "current_input",
+        content: this.config.currentInput,
+        priority: 0,
+        compactable: false
+      });
+    }
+    return components;
+  }
+  async applyCompactedComponents(components) {
+    const historyComponent = components.find((c) => c.name === "conversation_history");
+    if (historyComponent && Array.isArray(historyComponent.content)) ;
+  }
+  getMaxContextSize() {
+    const modelInfo = getModelInfo(this.config.model);
+    return modelInfo?.features.input.tokens ?? 128e3;
+  }
+  /**
+   * Update configuration (e.g., when task changes)
+   */
+  updateConfig(updates) {
+    this.config = { ...this.config, ...updates };
+  }
+  /**
+   * Build system prompt for TaskAgent
+   */
+  buildSystemPrompt() {
+    return `You are an autonomous task-based agent executing a plan.
+
+Your capabilities:
+- Access to working memory (use memory_store, memory_retrieve, memory_delete tools)
+- Tool execution for completing tasks
+- Context awareness (use context_inspect, context_breakdown tools)
+
+Guidelines:
+- Complete each task as specified in the plan
+- Store important information in memory for later tasks
+- Use tools efficiently
+- Be concise but thorough
+- Monitor your context usage`;
+  }
+  /**
+   * Serialize plan for context
+   */
+  serializePlan(plan) {
+    return `## Current Plan
+
+**Goal**: ${plan.goal}
+
+**Tasks**:
+${plan.tasks.map((t, i) => {
+      const status = t.status || "pending";
+      const deps = t.dependsOn && t.dependsOn.length > 0 ? ` (depends on: ${t.dependsOn.join(", ")})` : "";
+      return `${i + 1}. [${status}] ${t.name}: ${t.description}${deps}`;
+    }).join("\n")}`;
+  }
+  /**
+   * Extract tool outputs from conversation history
+   */
+  extractToolOutputs(messages) {
+    const toolOutputs = [];
+    for (const msg of messages) {
+      if (msg.role === "assistant" && msg.toolCalls) {
+        for (const toolCall of msg.toolCalls) {
+          if (toolCall.result) {
+            toolOutputs.push({
+              tool: toolCall.name,
+              output: toolCall.result
+            });
+          }
+        }
+      }
+    }
+    return toolOutputs;
+  }
+};
+
+// src/infrastructure/context/compactors/TruncateCompactor.ts
+var TruncateCompactor = class {
+  constructor(estimator) {
+    this.estimator = estimator;
+  }
+  name = "truncate";
+  priority = 10;
+  canCompact(component) {
+    return component.compactable && (component.metadata?.strategy === "truncate" || component.metadata?.truncatable === true);
+  }
+  async compact(component, targetTokens) {
+    if (typeof component.content === "string") {
+      return this.truncateString(component, targetTokens);
+    }
+    if (Array.isArray(component.content)) {
+      return this.truncateArray(component, targetTokens);
+    }
+    return component;
+  }
+  estimateSavings(component) {
+    const current = this.estimator.estimateDataTokens(component.content);
+    return Math.floor(current * 0.5);
+  }
+  truncateString(component, targetTokens) {
+    const content = component.content;
+    const currentTokens = this.estimator.estimateTokens(content);
+    if (currentTokens <= targetTokens) {
+      return component;
+    }
+    const targetChars = targetTokens * 4;
+    const truncated = content.substring(0, targetChars) + "\n[truncated...]";
+    return {
+      ...component,
+      content: truncated,
+      metadata: {
+        ...component.metadata,
+        truncated: true,
+        originalLength: content.length,
+        truncatedLength: truncated.length
+      }
+    };
+  }
+  truncateArray(component, targetTokens) {
+    const content = component.content;
+    let tokens = 0;
+    const kept = [];
+    for (let i = content.length - 1; i >= 0; i--) {
+      const item = content[i];
+      const itemTokens = this.estimator.estimateDataTokens(item);
+      if (tokens + itemTokens > targetTokens && kept.length > 0) {
+        break;
+      }
+      kept.unshift(item);
+      tokens += itemTokens;
+    }
+    return {
+      ...component,
+      content: kept,
+      metadata: {
+        ...component.metadata,
+        truncated: true,
+        originalLength: content.length,
+        keptLength: kept.length,
+        droppedLength: content.length - kept.length
+      }
+    };
+  }
+};
+
+// src/infrastructure/context/compactors/SummarizeCompactor.ts
+var SummarizeCompactor = class {
+  constructor(estimator) {
+    this.estimator = estimator;
+  }
+  name = "summarize";
+  priority = 5;
+  canCompact(component) {
+    return component.compactable && component.metadata?.strategy === "summarize";
+  }
+  async compact(component, _targetTokens) {
+    console.warn("SummarizeCompactor not yet implemented - returning component unchanged");
+    return component;
+  }
+  estimateSavings(component) {
+    const current = this.estimator.estimateDataTokens(component.content);
+    return Math.floor(current * 0.8);
+  }
+};
+
+// src/infrastructure/context/compactors/MemoryEvictionCompactor.ts
+var MemoryEvictionCompactor = class {
+  constructor(estimator) {
+    this.estimator = estimator;
+  }
+  name = "memory-eviction";
+  priority = 8;
+  canCompact(component) {
+    return component.compactable && (component.metadata?.strategy === "evict" || component.name === "memory_index");
+  }
+  async compact(component, targetTokens) {
+    if (component.metadata?.evict && typeof component.metadata.evict === "function") {
+      const currentTokens = this.estimator.estimateDataTokens(component.content);
+      const tokensToFree = Math.max(0, currentTokens - targetTokens);
+      const avgEntrySize = component.metadata.avgEntrySize || 100;
+      const entriesToEvict = Math.ceil(tokensToFree / avgEntrySize);
+      if (entriesToEvict > 0) {
+        await component.metadata.evict(entriesToEvict);
+        if (component.metadata.getUpdatedContent && typeof component.metadata.getUpdatedContent === "function") {
+          const updatedContent = await component.metadata.getUpdatedContent();
+          return {
+            ...component,
+            content: updatedContent,
+            metadata: {
+              ...component.metadata,
+              evicted: true,
+              evictedCount: entriesToEvict
+            }
+          };
+        }
+      }
+    }
+    return component;
+  }
+  estimateSavings(component) {
+    const avgEntrySize = component.metadata?.avgEntrySize || 100;
+    return avgEntrySize * 2;
+  }
+};
+
+// src/infrastructure/context/estimators/ApproximateEstimator.ts
+var ApproximateTokenEstimator = class {
+  /**
+   * Estimate tokens for text using 4 chars per token heuristic
+   */
+  estimateTokens(text, _model) {
+    if (!text || text.length === 0) {
+      return 0;
+    }
+    return Math.ceil(text.length / 4);
+  }
+  /**
+   * Estimate tokens for structured data
+   */
+  estimateDataTokens(data, _model) {
+    if (data === null || data === void 0) {
+      return 1;
+    }
+    try {
+      const serialized = JSON.stringify(data);
+      return this.estimateTokens(serialized);
+    } catch {
+      return 100;
+    }
+  }
+};
+
+// src/infrastructure/context/estimators/index.ts
+function createEstimator(name) {
+  switch (name) {
+    case "approximate":
+      return new ApproximateTokenEstimator();
+    case "tiktoken":
+      throw new Error('Tiktoken estimator not yet implemented. Use "approximate" for now.');
+    default:
+      throw new Error(`Unknown token estimator: ${name}`);
+  }
+}
+
 // src/index.ts
 init_Memory();
 
@@ -12145,7 +12941,10 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
 };
 
 exports.AIError = AIError;
+exports.AdaptiveStrategy = AdaptiveStrategy;
 exports.Agent = Agent;
+exports.AggressiveCompactionStrategy = AggressiveCompactionStrategy;
+exports.ApproximateTokenEstimator = ApproximateTokenEstimator;
 exports.BaseProvider = BaseProvider;
 exports.BaseTextProvider = BaseTextProvider;
 exports.CONNECTOR_CONFIG_VERSION = CONNECTOR_CONFIG_VERSION;
@@ -12156,12 +12955,11 @@ exports.Connector = Connector;
 exports.ConnectorConfigStore = ConnectorConfigStore;
 exports.ConsoleMetrics = ConsoleMetrics;
 exports.ContentType = ContentType;
-exports.ContextManager = ContextManager;
+exports.ContextManager = ContextManager2;
 exports.DEFAULT_BACKOFF_CONFIG = DEFAULT_BACKOFF_CONFIG;
 exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
 exports.DEFAULT_CIRCUIT_BREAKER_CONFIG = DEFAULT_CIRCUIT_BREAKER_CONFIG;
-exports.DEFAULT_COMPACTION_STRATEGY = DEFAULT_COMPACTION_STRATEGY;
-exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG;
+exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG2;
 exports.DEFAULT_HISTORY_CONFIG = DEFAULT_HISTORY_CONFIG;
 exports.DEFAULT_IDEMPOTENCY_CONFIG = DEFAULT_IDEMPOTENCY_CONFIG;
 exports.ExecutionContext = ExecutionContext;
@@ -12179,8 +12977,10 @@ exports.InMemoryStorage = InMemoryStorage;
 exports.InvalidConfigError = InvalidConfigError;
 exports.InvalidToolArgumentsError = InvalidToolArgumentsError;
 exports.LLM_MODELS = LLM_MODELS;
+exports.LazyCompactionStrategy = LazyCompactionStrategy;
 exports.MODEL_REGISTRY = MODEL_REGISTRY;
 exports.MemoryConnectorStorage = MemoryConnectorStorage;
+exports.MemoryEvictionCompactor = MemoryEvictionCompactor;
 exports.MemoryStorage = MemoryStorage;
 exports.MessageBuilder = MessageBuilder;
 exports.MessageRole = MessageRole;
@@ -12188,6 +12988,7 @@ exports.ModelNotSupportedError = ModelNotSupportedError;
 exports.NoOpMetrics = NoOpMetrics;
 exports.OAuthManager = OAuthManager;
 exports.PlanExecutor = PlanExecutor;
+exports.ProactiveCompactionStrategy = ProactiveCompactionStrategy;
 exports.ProviderAuthError = ProviderAuthError;
 exports.ProviderConfigAgent = ProviderConfigAgent;
 exports.ProviderContextLengthError = ProviderContextLengthError;
@@ -12195,15 +12996,19 @@ exports.ProviderError = ProviderError;
 exports.ProviderErrorMapper = ProviderErrorMapper;
 exports.ProviderNotFoundError = ProviderNotFoundError;
 exports.ProviderRateLimitError = ProviderRateLimitError;
+exports.RollingWindowStrategy = RollingWindowStrategy;
 exports.StreamEventType = StreamEventType;
 exports.StreamHelpers = StreamHelpers;
 exports.StreamState = StreamState;
+exports.SummarizeCompactor = SummarizeCompactor;
 exports.TaskAgent = TaskAgent;
+exports.TaskAgentContextProvider = TaskAgentContextProvider;
 exports.ToolCallState = ToolCallState;
 exports.ToolExecutionError = ToolExecutionError;
 exports.ToolNotFoundError = ToolNotFoundError;
 exports.ToolRegistry = ToolRegistry;
 exports.ToolTimeoutError = ToolTimeoutError;
+exports.TruncateCompactor = TruncateCompactor;
 exports.VENDORS = VENDORS;
 exports.Vendor = Vendor;
 exports.WorkingMemory = WorkingMemory;
@@ -12216,11 +13021,13 @@ exports.calculateBackoff = calculateBackoff;
 exports.calculateCost = calculateCost;
 exports.createAgentStorage = createAgentStorage;
 exports.createAuthenticatedFetch = createAuthenticatedFetch;
+exports.createEstimator = createEstimator;
 exports.createExecuteJavaScriptTool = createExecuteJavaScriptTool;
 exports.createMemoryTools = createMemoryTools;
 exports.createMessageWithImages = createMessageWithImages;
 exports.createMetricsCollector = createMetricsCollector;
 exports.createProvider = createProvider;
+exports.createStrategy = createStrategy;
 exports.createTextMessage = createTextMessage;
 exports.generateEncryptionKey = generateEncryptionKey;
 exports.generateWebAPITool = generateWebAPITool;
