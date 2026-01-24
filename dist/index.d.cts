@@ -5055,9 +5055,13 @@ declare class UniversalAgent extends EventEmitter {
     get toolManager(): ToolManager;
     setAutoApproval(value: boolean): void;
     setPlanningEnabled(value: boolean): void;
+    private _isPaused;
     pause(): void;
     resume(): void;
     cancel(): void;
+    isRunning(): boolean;
+    isPaused(): boolean;
+    onCleanup(callback: () => void): void;
     destroy(): void;
 }
 

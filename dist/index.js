@@ -11567,6 +11567,9 @@ var FileSessionStorage = class {
       if (error.code === "ENOENT") {
         return null;
       }
+      if (error instanceof SyntaxError) {
+        return null;
+      }
       throw error;
     }
   }
@@ -11722,16 +11725,37 @@ var FileSessionStorage = class {
     await this.saveIndex();
   }
   async removeFromIndex(sessionId) {
+    await this.ensureDirectory();
     const index = await this.loadIndex();
     index.sessions = index.sessions.filter((e) => e.id !== sessionId);
     await this.saveIndex();
   }
   sessionToIndexEntry(session) {
+    let createdAtStr;
+    if (typeof session.createdAt === "string") {
+      createdAtStr = session.createdAt;
+    } else if (typeof session.createdAt === "number") {
+      createdAtStr = new Date(session.createdAt).toISOString();
+    } else if (session.createdAt instanceof Date) {
+      createdAtStr = session.createdAt.toISOString();
+    } else {
+      createdAtStr = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    let lastActiveAtStr;
+    if (typeof session.lastActiveAt === "string") {
+      lastActiveAtStr = session.lastActiveAt;
+    } else if (typeof session.lastActiveAt === "number") {
+      lastActiveAtStr = new Date(session.lastActiveAt).toISOString();
+    } else if (session.lastActiveAt instanceof Date) {
+      lastActiveAtStr = session.lastActiveAt.toISOString();
+    } else {
+      lastActiveAtStr = (/* @__PURE__ */ new Date()).toISOString();
+    }
     return {
       id: session.id,
       agentType: session.agentType,
-      createdAt: typeof session.createdAt === "string" ? session.createdAt : session.createdAt.toISOString(),
-      lastActiveAt: typeof session.lastActiveAt === "string" ? session.lastActiveAt : session.lastActiveAt.toISOString(),
+      createdAt: createdAtStr,
+      lastActiveAt: lastActiveAtStr,
       metadata: {
         title: session.metadata.title,
         userId: session.metadata.userId,
@@ -14999,7 +15023,8 @@ var UniversalAgent = class _UniversalAgent extends EventEmitter$1 {
     );
     if (planningToolCall) {
       this.modeManager.enterPlanning("agent_requested");
-      const args = JSON.parse(planningToolCall.input || "{}");
+      const rawInput = planningToolCall.input;
+      const args = typeof rawInput === "string" ? JSON.parse(rawInput || "{}") : rawInput || {};
       return this.createPlan(args.goal, args.reasoning);
     }
     return {
@@ -15663,12 +15688,15 @@ Currently working on: ${progress.current.name}`;
   // ============================================================================
   // Control
   // ============================================================================
+  _isPaused = false;
   pause() {
+    this._isPaused = true;
     if (this.modeManager.getMode() === "executing") {
       this.modeManager.pauseExecution("user_request");
     }
   }
   resume() {
+    this._isPaused = false;
     if (this.modeManager.isPaused()) {
       this.modeManager.resumeExecution();
     }
@@ -15678,6 +15706,15 @@ Currently working on: ${progress.current.name}`;
       this.currentPlan.status = "cancelled";
     }
     this.modeManager.returnToInteractive("cancelled");
+  }
+  isRunning() {
+    return this.modeManager.getMode() === "executing" && !this.isPaused();
+  }
+  isPaused() {
+    return this._isPaused || this.modeManager.isPaused();
+  }
+  onCleanup(callback) {
+    this.agent.onCleanup(callback);
   }
   // ============================================================================
   // Cleanup
