@@ -1,6 +1,7 @@
-import EventEmitter$1, { EventEmitter } from 'eventemitter3';
-import { A as AgenticLoopEvents, T as ToolFunction, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as TokenUsage, h as ToolCall, L as LLMResponse, i as StreamEventType, j as IProvider, P as ProviderCapabilities, k as CircuitBreaker, l as TextGenerateOptions, M as ModelCapabilities, m as MessageRole } from './index-BElN4ALe.cjs';
-export { ac as AfterToolContext, a7 as AgenticLoopEventName, af as ApprovalResult, ad as ApproveToolContext, ab as BeforeToolContext, B as BuiltInTool, ai as CircuitBreakerConfig, aj as CircuitBreakerEvents, ah as CircuitOpenError, v as CompactionItem, o as Content, n as ContentType, ak as DEFAULT_CIRCUIT_BREAKER_CONFIG, _ as ErrorEvent, F as FunctionToolDefinition, a9 as Hook, a6 as HookManager, a8 as HookName, ag as IToolExecutor, q as InputImageContent, p as InputTextContent, Y as IterationCompleteEvent, J as JSONSchema, t as Message, aa as ModifyingHook, u as OutputItem, O as OutputTextContent, K as OutputTextDeltaEvent, N as OutputTextDoneEvent, R as ReasoningItem, Z as ResponseCompleteEvent, D as ResponseCreatedEvent, G as ResponseInProgressEvent, x as Tool, U as ToolCallArgumentsDeltaEvent, V as ToolCallArgumentsDoneEvent, Q as ToolCallStartEvent, w as ToolCallState, z as ToolExecutionContext, X as ToolExecutionDoneEvent, W as ToolExecutionStartEvent, ae as ToolModification, a5 as ToolRegistry, y as ToolResult, s as ToolResultContent, r as ToolUseContent, a4 as isErrorEvent, a0 as isOutputTextDelta, a3 as isResponseComplete, $ as isStreamEvent, a1 as isToolCallArgumentsDelta, a2 as isToolCallArgumentsDone } from './index-BElN4ALe.cjs';
+import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
+import { EventEmitter } from 'events';
+import { T as ToolFunction, A as AgenticLoopEvents, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as TokenUsage, h as ToolCall, L as LLMResponse, i as StreamEventType, j as IProvider, P as ProviderCapabilities, k as CircuitBreaker, l as TextGenerateOptions, M as ModelCapabilities, m as MessageRole } from './index-tANSS66q.cjs';
+export { ac as AfterToolContext, a7 as AgenticLoopEventName, af as ApprovalResult, ad as ApproveToolContext, ab as BeforeToolContext, B as BuiltInTool, ai as CircuitBreakerConfig, aj as CircuitBreakerEvents, ah as CircuitOpenError, v as CompactionItem, o as Content, n as ContentType, ak as DEFAULT_CIRCUIT_BREAKER_CONFIG, _ as ErrorEvent, F as FunctionToolDefinition, a9 as Hook, a6 as HookManager, a8 as HookName, ag as IToolExecutor, q as InputImageContent, p as InputTextContent, Y as IterationCompleteEvent, J as JSONSchema, t as Message, aa as ModifyingHook, u as OutputItem, O as OutputTextContent, K as OutputTextDeltaEvent, N as OutputTextDoneEvent, R as ReasoningItem, Z as ResponseCompleteEvent, D as ResponseCreatedEvent, G as ResponseInProgressEvent, x as Tool, U as ToolCallArgumentsDeltaEvent, V as ToolCallArgumentsDoneEvent, Q as ToolCallStartEvent, w as ToolCallState, z as ToolExecutionContext, X as ToolExecutionDoneEvent, W as ToolExecutionStartEvent, ae as ToolModification, a5 as ToolRegistry, y as ToolResult, s as ToolResultContent, r as ToolUseContent, a4 as isErrorEvent, a0 as isOutputTextDelta, a3 as isResponseComplete, $ as isStreamEvent, a1 as isToolCallArgumentsDelta, a2 as isToolCallArgumentsDone } from './index-tANSS66q.cjs';
 
 /**
  * Supported AI Vendors
@@ -298,6 +299,441 @@ declare class Connector {
 }
 
 /**
+ * ToolManager - Dynamic tool management for agents
+ *
+ * Provides advanced tool management capabilities:
+ * - Enable/disable tools at runtime without removing them
+ * - Namespace grouping for organizing related tools
+ * - Priority-based selection
+ * - Context-aware tool selection
+ * - Usage statistics
+ *
+ * Backward compatible: Works with existing ToolFunction interface
+ */
+
+interface ToolOptions {
+    /** Whether the tool is enabled. Default: true */
+    enabled?: boolean;
+    /** Namespace for grouping related tools. Default: 'default' */
+    namespace?: string;
+    /** Priority for selection ordering. Higher = preferred. Default: 0 */
+    priority?: number;
+    /** Conditions for auto-enable/disable */
+    conditions?: ToolCondition[];
+}
+interface ToolCondition {
+    type: 'mode' | 'context' | 'custom';
+    predicate: (context: ToolSelectionContext) => boolean;
+}
+interface ToolSelectionContext {
+    /** Current user input or task description */
+    input?: string;
+    /** Current agent mode (for UniversalAgent) */
+    mode?: string;
+    /** Current task name (for TaskAgent) */
+    currentTask?: string;
+    /** Recently used tools (to avoid repetition) */
+    recentTools?: string[];
+    /** Token budget for tool definitions */
+    tokenBudget?: number;
+    /** Custom context data */
+    custom?: Record<string, unknown>;
+}
+interface ToolRegistration {
+    tool: ToolFunction;
+    enabled: boolean;
+    namespace: string;
+    priority: number;
+    conditions: ToolCondition[];
+    metadata: ToolMetadata;
+}
+interface ToolMetadata {
+    registeredAt: Date;
+    usageCount: number;
+    lastUsed?: Date;
+    totalExecutionMs: number;
+    avgExecutionMs: number;
+    successCount: number;
+    failureCount: number;
+}
+interface ToolManagerStats {
+    totalTools: number;
+    enabledTools: number;
+    disabledTools: number;
+    namespaces: string[];
+    toolsByNamespace: Record<string, number>;
+    mostUsed: Array<{
+        name: string;
+        count: number;
+    }>;
+    totalExecutions: number;
+}
+interface SerializedToolState {
+    enabled: Record<string, boolean>;
+    namespaces: Record<string, string>;
+    priorities: Record<string, number>;
+}
+type ToolManagerEvent = 'tool:registered' | 'tool:unregistered' | 'tool:enabled' | 'tool:disabled' | 'tool:executed' | 'namespace:enabled' | 'namespace:disabled';
+declare class ToolManager extends EventEmitter {
+    private registry;
+    private namespaceIndex;
+    constructor();
+    /**
+     * Register a tool with optional configuration
+     */
+    register(tool: ToolFunction, options?: ToolOptions): void;
+    /**
+     * Register multiple tools at once
+     */
+    registerMany(tools: ToolFunction[], options?: Omit<ToolOptions, 'conditions'>): void;
+    /**
+     * Unregister a tool by name
+     */
+    unregister(name: string): boolean;
+    /**
+     * Clear all tools
+     */
+    clear(): void;
+    /**
+     * Enable a tool by name
+     */
+    enable(name: string): boolean;
+    /**
+     * Disable a tool by name (keeps it registered but inactive)
+     */
+    disable(name: string): boolean;
+    /**
+     * Toggle a tool's enabled state
+     */
+    toggle(name: string): boolean;
+    /**
+     * Check if a tool is enabled
+     */
+    isEnabled(name: string): boolean;
+    /**
+     * Set enabled state for multiple tools
+     */
+    setEnabled(names: string[], enabled: boolean): void;
+    /**
+     * Set the namespace for a tool
+     */
+    setNamespace(toolName: string, namespace: string): boolean;
+    /**
+     * Enable all tools in a namespace
+     */
+    enableNamespace(namespace: string): void;
+    /**
+     * Disable all tools in a namespace
+     */
+    disableNamespace(namespace: string): void;
+    /**
+     * Get all namespace names
+     */
+    getNamespaces(): string[];
+    /**
+     * Create a namespace with tools
+     */
+    createNamespace(namespace: string, tools: ToolFunction[], options?: Omit<ToolOptions, 'namespace'>): void;
+    /**
+     * Set priority for a tool
+     */
+    setPriority(name: string, priority: number): boolean;
+    /**
+     * Get priority for a tool
+     */
+    getPriority(name: string): number | undefined;
+    /**
+     * Get a tool by name
+     */
+    get(name: string): ToolFunction | undefined;
+    /**
+     * Check if a tool exists
+     */
+    has(name: string): boolean;
+    /**
+     * Get all enabled tools (sorted by priority)
+     */
+    getEnabled(): ToolFunction[];
+    /**
+     * Get all tools (enabled and disabled)
+     */
+    getAll(): ToolFunction[];
+    /**
+     * Get tools by namespace
+     */
+    getByNamespace(namespace: string): ToolFunction[];
+    /**
+     * Get tool registration info
+     */
+    getRegistration(name: string): ToolRegistration | undefined;
+    /**
+     * List all tool names
+     */
+    list(): string[];
+    /**
+     * List enabled tool names
+     */
+    listEnabled(): string[];
+    /**
+     * Get count of registered tools
+     */
+    get size(): number;
+    /**
+     * Select tools based on context (uses conditions and smart filtering)
+     */
+    selectForContext(context: ToolSelectionContext): ToolFunction[];
+    /**
+     * Select tools by matching capability description
+     */
+    selectByCapability(description: string): ToolFunction[];
+    /**
+     * Filter tools to fit within a token budget
+     */
+    selectWithinBudget(budget: number): ToolFunction[];
+    /**
+     * Record tool execution (called by agent/loop)
+     */
+    recordExecution(name: string, executionMs: number, success: boolean): void;
+    /**
+     * Get comprehensive statistics
+     */
+    getStats(): ToolManagerStats;
+    /**
+     * Get serializable state (for session persistence)
+     */
+    getState(): SerializedToolState;
+    /**
+     * Load state (restores enabled/disabled, namespaces, priorities)
+     * Note: Tools must be re-registered separately (they contain functions)
+     */
+    loadState(state: SerializedToolState): void;
+    private getToolName;
+    private getSortedByPriority;
+    private addToNamespace;
+    private removeFromNamespace;
+    private moveToNamespace;
+    private filterByTokenBudget;
+    private estimateToolTokens;
+}
+
+/**
+ * SessionManager - Unified session persistence for all agent types
+ *
+ * Provides session management capabilities:
+ * - Create, save, load, delete sessions
+ * - Auto-save functionality
+ * - Session metadata and filtering
+ * - Pluggable storage backends
+ *
+ * Works with Agent, TaskAgent, and UniversalAgent
+ */
+
+interface Session {
+    /** Unique session identifier */
+    id: string;
+    /** Type of agent that owns this session */
+    agentType: 'agent' | 'task-agent' | 'universal-agent' | string;
+    /** When the session was created */
+    createdAt: Date;
+    /** Last activity timestamp */
+    lastActiveAt: Date;
+    /** Serialized conversation history */
+    history: SerializedHistory;
+    /** Tool enabled/disabled state */
+    toolState: SerializedToolState;
+    /** Working memory contents (TaskAgent, UniversalAgent) */
+    memory?: SerializedMemory;
+    /** Current plan (TaskAgent, UniversalAgent) */
+    plan?: SerializedPlan;
+    /** Current mode (UniversalAgent) */
+    mode?: string;
+    /** Execution metrics */
+    metrics?: SessionMetrics;
+    /** Agent-specific custom data */
+    custom: Record<string, unknown>;
+    metadata: SessionMetadata;
+}
+interface SessionMetadata {
+    /** Optional user identifier */
+    userId?: string;
+    /** Human-readable title */
+    title?: string;
+    /** Tags for filtering */
+    tags?: string[];
+    /** Custom metadata */
+    [key: string]: unknown;
+}
+interface SessionMetrics {
+    totalMessages: number;
+    totalToolCalls: number;
+    totalTokens: number;
+    totalDurationMs: number;
+}
+interface SerializedHistory {
+    /** History format version */
+    version: number;
+    /** Serialized history entries */
+    entries: SerializedHistoryEntry[];
+}
+interface SerializedHistoryEntry {
+    type: 'user' | 'assistant' | 'tool_result' | 'system' | 'task_event' | 'plan_event';
+    content: unknown;
+    timestamp: string;
+    metadata?: Record<string, unknown>;
+}
+interface SerializedMemory {
+    /** Memory format version */
+    version: number;
+    /** Serialized memory entries */
+    entries: SerializedMemoryEntry[];
+}
+interface SerializedMemoryEntry {
+    key: string;
+    description: string;
+    value: unknown;
+    scope: 'task' | 'persistent';
+    sizeBytes: number;
+}
+interface SerializedPlan {
+    /** Plan format version */
+    version: number;
+    /** Plan data */
+    data: unknown;
+}
+interface SessionFilter {
+    /** Filter by agent type */
+    agentType?: string;
+    /** Filter by user ID */
+    userId?: string;
+    /** Filter by tags (any match) */
+    tags?: string[];
+    /** Filter by creation date range */
+    createdAfter?: Date;
+    createdBefore?: Date;
+    /** Filter by last active date range */
+    activeAfter?: Date;
+    activeBefore?: Date;
+    /** Limit results */
+    limit?: number;
+    /** Offset for pagination */
+    offset?: number;
+}
+interface SessionSummary {
+    id: string;
+    agentType: string;
+    createdAt: Date;
+    lastActiveAt: Date;
+    metadata: SessionMetadata;
+    messageCount: number;
+}
+interface ISessionStorage {
+    /**
+     * Save a session (create or update)
+     */
+    save(session: Session): Promise<void>;
+    /**
+     * Load a session by ID
+     */
+    load(sessionId: string): Promise<Session | null>;
+    /**
+     * Delete a session by ID
+     */
+    delete(sessionId: string): Promise<void>;
+    /**
+     * Check if a session exists
+     */
+    exists(sessionId: string): Promise<boolean>;
+    /**
+     * List sessions with optional filtering
+     */
+    list(filter?: SessionFilter): Promise<SessionSummary[]>;
+    /**
+     * Search sessions by query string (searches title, tags, metadata)
+     */
+    search?(query: string, filter?: SessionFilter): Promise<SessionSummary[]>;
+}
+type SessionManagerEvent = 'session:created' | 'session:saved' | 'session:loaded' | 'session:deleted' | 'session:error';
+interface SessionManagerConfig {
+    storage: ISessionStorage;
+    /** Default metadata for new sessions */
+    defaultMetadata?: Partial<SessionMetadata>;
+}
+declare class SessionManager extends EventEmitter {
+    private storage;
+    private defaultMetadata;
+    private autoSaveTimers;
+    constructor(config: SessionManagerConfig);
+    /**
+     * Create a new session
+     */
+    create(agentType: string, metadata?: SessionMetadata): Session;
+    /**
+     * Save a session to storage
+     */
+    save(session: Session): Promise<void>;
+    /**
+     * Load a session from storage
+     */
+    load(sessionId: string): Promise<Session | null>;
+    /**
+     * Delete a session from storage
+     */
+    delete(sessionId: string): Promise<void>;
+    /**
+     * Check if a session exists
+     */
+    exists(sessionId: string): Promise<boolean>;
+    /**
+     * List sessions with optional filtering
+     */
+    list(filter?: SessionFilter): Promise<SessionSummary[]>;
+    /**
+     * Search sessions by query string
+     */
+    search(query: string, filter?: SessionFilter): Promise<SessionSummary[]>;
+    /**
+     * Fork a session (create a copy with new ID)
+     */
+    fork(sessionId: string, newMetadata?: Partial<SessionMetadata>): Promise<Session>;
+    /**
+     * Update session metadata
+     */
+    updateMetadata(sessionId: string, metadata: Partial<SessionMetadata>): Promise<void>;
+    /**
+     * Enable auto-save for a session
+     */
+    enableAutoSave(session: Session, intervalMs: number, onSave?: (session: Session) => void): void;
+    /**
+     * Disable auto-save for a session
+     */
+    stopAutoSave(sessionId: string): void;
+    /**
+     * Stop all auto-save timers
+     */
+    stopAllAutoSave(): void;
+    /**
+     * Generate a unique session ID
+     */
+    private generateId;
+    /**
+     * Cleanup resources
+     */
+    destroy(): void;
+}
+/**
+ * Create an empty serialized history
+ */
+declare function createEmptyHistory(): SerializedHistory;
+/**
+ * Create an empty serialized memory
+ */
+declare function createEmptyMemory(): SerializedMemory;
+/**
+ * Add an entry to serialized history
+ */
+declare function addHistoryEntry(history: SerializedHistory, type: SerializedHistoryEntry['type'], content: unknown, metadata?: Record<string, unknown>): void;
+
+/**
  * Interface for objects that manage resources and need explicit cleanup.
  *
  * Implementing classes should release all resources (event listeners, timers,
@@ -344,6 +780,19 @@ interface IAsyncDisposable {
 declare function assertNotDestroyed(obj: IDisposable | IAsyncDisposable, operation: string): void;
 
 /**
+ * Session configuration for Agent
+ */
+interface AgentSessionConfig {
+    /** Storage backend for sessions */
+    storage: ISessionStorage;
+    /** Resume existing session by ID */
+    id?: string;
+    /** Auto-save session after each interaction */
+    autoSave?: boolean;
+    /** Auto-save interval in milliseconds */
+    autoSaveIntervalMs?: number;
+}
+/**
  * Agent configuration - new simplified interface
  */
 interface AgentConfig$1 {
@@ -367,11 +816,15 @@ interface AgentConfig$1 {
         toolFailureMode?: 'fail' | 'continue';
         maxConsecutiveErrors?: number;
     };
+    /** Session configuration for persistence (opt-in) */
+    session?: AgentSessionConfig;
+    /** Provide a pre-configured ToolManager (advanced) */
+    toolManager?: ToolManager;
 }
 /**
  * Agent class - represents an AI assistant with tool calling capabilities
  */
-declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposable {
+declare class Agent extends EventEmitter$1<AgenticLoopEvents> implements IDisposable {
     readonly name: string;
     readonly connector: Connector;
     readonly model: string;
@@ -383,7 +836,16 @@ declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposab
     private boundListeners;
     private _isDestroyed;
     private logger;
+    private _toolManager;
+    private _sessionManager;
+    private _session;
+    private _pendingSessionLoad;
     get isDestroyed(): boolean;
+    /**
+     * Advanced tool management. Returns ToolManager for fine-grained control.
+     * For simple cases, use addTool/removeTool instead.
+     */
+    get tools(): ToolManager;
     /**
      * Create a new agent
      *
@@ -398,7 +860,28 @@ declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposab
      * ```
      */
     static create(config: AgentConfig$1): Agent;
+    /**
+     * Resume an agent from a saved session
+     *
+     * @example
+     * ```typescript
+     * const agent = await Agent.resume('session-123', {
+     *   connector: 'openai',
+     *   model: 'gpt-4',
+     *   session: { storage: myStorage }
+     * });
+     * ```
+     */
+    static resume(sessionId: string, config: Omit<AgentConfig$1, 'session'> & {
+        session: {
+            storage: ISessionStorage;
+        };
+    }): Promise<Agent>;
     private constructor();
+    /**
+     * Internal method to load session
+     */
+    private loadSessionInternal;
     /**
      * Run the agent with input
      */
@@ -416,13 +899,38 @@ declare class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposab
      */
     removeTool(toolName: string): void;
     /**
-     * List registered tools
+     * List registered tools (returns enabled tool names)
      */
     listTools(): string[];
     /**
      * Replace all tools with a new array
      */
     setTools(tools: ToolFunction[]): void;
+    /**
+     * Get the current session ID (if session is enabled)
+     */
+    getSessionId(): string | null;
+    /**
+     * Check if this agent has session support enabled
+     */
+    hasSession(): boolean;
+    /**
+     * Save the current session to storage
+     * @throws Error if session is not enabled
+     */
+    saveSession(): Promise<void>;
+    /**
+     * Get the current session (for advanced use)
+     */
+    getSession(): Session | null;
+    /**
+     * Update session custom data
+     */
+    updateSessionData(key: string, value: unknown): void;
+    /**
+     * Get session custom data
+     */
+    getSessionData<T = unknown>(key: string): T | undefined;
     /**
      * Change the model
      */
@@ -1081,7 +1589,7 @@ interface ContextManagerEvents$1 {
  * - Configurable compaction strategies
  * - Tool output truncation
  */
-declare class ContextManager$1 extends EventEmitter$1<ContextManagerEvents$1> {
+declare class ContextManager$1 extends EventEmitter$2<ContextManagerEvents$1> {
     private config;
     private strategy;
     private lastBudget?;
@@ -1279,7 +1787,7 @@ interface WorkingMemoryEvents {
  * - LRU eviction when approaching limits
  * - Event emission for monitoring
  */
-declare class WorkingMemory extends EventEmitter$1<WorkingMemoryEvents> {
+declare class WorkingMemory extends EventEmitter$2<WorkingMemoryEvents> {
     private storage;
     private config;
     constructor(storage: IMemoryStorage, config?: WorkingMemoryConfig);
@@ -1449,7 +1957,7 @@ interface ExternalDependencyEvents {
 /**
  * Handles external task dependencies
  */
-declare class ExternalDependencyHandler extends EventEmitter$1<ExternalDependencyEvents> {
+declare class ExternalDependencyHandler extends EventEmitter$2<ExternalDependencyEvents> {
     private activePolls;
     private activeScheduled;
     private tools;
@@ -1606,7 +2114,7 @@ interface PlanExecutionResult {
 /**
  * Executes a plan using LLM and tools
  */
-declare class PlanExecutor extends EventEmitter$1<PlanExecutorEvents> {
+declare class PlanExecutor extends EventEmitter$2<PlanExecutorEvents> {
     private agent;
     private memory;
     private contextManager;
@@ -1745,6 +2253,19 @@ interface PlanUpdates {
     removeTasks?: string[];
 }
 /**
+ * Session configuration for TaskAgent
+ */
+interface TaskAgentSessionConfig {
+    /** Storage backend for sessions */
+    storage: ISessionStorage;
+    /** Resume existing session by ID */
+    id?: string;
+    /** Auto-save session after each task completion */
+    autoSave?: boolean;
+    /** Auto-save interval in milliseconds */
+    autoSaveIntervalMs?: number;
+}
+/**
  * TaskAgent configuration
  */
 interface TaskAgentConfig {
@@ -1754,12 +2275,16 @@ interface TaskAgentConfig {
     instructions?: string;
     temperature?: number;
     maxIterations?: number;
-    /** Storage for persistence */
+    /** Storage for persistence (agent state, checkpoints) */
     storage?: IAgentStorage;
     /** Memory configuration */
     memoryConfig?: WorkingMemoryConfig;
     /** Hooks for customization */
     hooks?: TaskAgentHooks;
+    /** Session configuration for persistence (opt-in) */
+    session?: TaskAgentSessionConfig;
+    /** Provide a pre-configured ToolManager (advanced) */
+    toolManager?: ToolManager;
 }
 /**
  * TaskAgent events
@@ -1808,7 +2333,7 @@ interface TaskAgentEvents {
  * - Suspend/resume capability
  * - State persistence for long-running agents
  */
-declare class TaskAgent extends EventEmitter$1<TaskAgentEvents> {
+declare class TaskAgent extends EventEmitter$2<TaskAgentEvents> {
     readonly id: string;
     protected state: AgentState;
     protected storage: IAgentStorage;
@@ -1822,9 +2347,16 @@ declare class TaskAgent extends EventEmitter$1<TaskAgentEvents> {
     protected externalHandler?: ExternalDependencyHandler;
     protected planExecutor?: PlanExecutor;
     protected checkpointManager?: CheckpointManager;
-    protected tools: ToolFunction[];
+    protected _tools: ToolFunction[];
+    protected _toolManager: ToolManager;
     protected config: TaskAgentConfig;
+    protected _sessionManager: SessionManager | null;
+    protected _session: Session | null;
     private eventCleanupFunctions;
+    /**
+     * Advanced tool management. Returns ToolManager for fine-grained control.
+     */
+    get tools(): ToolManager;
     protected constructor(id: string, state: AgentState, storage: IAgentStorage, memory: WorkingMemory, config: TaskAgentConfig, hooks?: TaskAgentHooks);
     /**
      * Create a new TaskAgent
@@ -1886,6 +2418,31 @@ declare class TaskAgent extends EventEmitter$1<TaskAgentEvents> {
      * Get working memory
      */
     getMemory(): WorkingMemory;
+    /**
+     * Get the current session ID (if session is enabled)
+     */
+    getSessionId(): string | null;
+    /**
+     * Check if this agent has session support enabled
+     */
+    hasSession(): boolean;
+    /**
+     * Save the current session to storage
+     * @throws Error if session is not enabled
+     */
+    saveSession(): Promise<void>;
+    /**
+     * Get the current session (for advanced use)
+     */
+    getSession(): Session | null;
+    /**
+     * Update session custom data
+     */
+    updateSessionData(key: string, value: unknown): void;
+    /**
+     * Get session custom data
+     */
+    getSessionData<T = unknown>(key: string): T | undefined;
     /**
      * Execute the plan (internal)
      */
@@ -2102,7 +2659,7 @@ interface ContextManagerEvents {
  * Works with any agent type through the IContextProvider interface.
  * Supports multiple compaction strategies that can be switched at runtime.
  */
-declare class ContextManager extends EventEmitter$1<ContextManagerEvents> {
+declare class ContextManager extends EventEmitter$2<ContextManagerEvents> {
     private config;
     private provider;
     private estimator;
@@ -2435,6 +2992,87 @@ declare class ApproximateTokenEstimator implements ITokenEstimator {
  * Create token estimator from name
  */
 declare function createEstimator(name: string): ITokenEstimator;
+
+/**
+ * InMemorySessionStorage - In-memory session storage implementation
+ *
+ * Stores sessions in memory. Data is lost when process exits.
+ * Useful for testing, development, and short-lived applications.
+ */
+
+declare class InMemorySessionStorage implements ISessionStorage {
+    private sessions;
+    save(session: Session): Promise<void>;
+    load(sessionId: string): Promise<Session | null>;
+    delete(sessionId: string): Promise<void>;
+    exists(sessionId: string): Promise<boolean>;
+    list(filter?: SessionFilter): Promise<SessionSummary[]>;
+    search(query: string, filter?: SessionFilter): Promise<SessionSummary[]>;
+    /**
+     * Clear all sessions (useful for testing)
+     */
+    clear(): void;
+    /**
+     * Get count of sessions
+     */
+    get size(): number;
+    private applyFilter;
+    private toSummary;
+}
+
+/**
+ * FileSessionStorage - File-based session storage implementation
+ *
+ * Stores sessions as JSON files in a directory.
+ * Each session is stored in its own file: {sessionId}.json
+ *
+ * Features:
+ * - Persistent storage across process restarts
+ * - Human-readable JSON format
+ * - Optional compression for large sessions
+ * - Index file for fast listing
+ */
+
+interface FileSessionStorageConfig {
+    /** Directory to store session files */
+    directory: string;
+    /** Pretty-print JSON (default: false for production) */
+    prettyPrint?: boolean;
+    /** File extension (default: .json) */
+    extension?: string;
+}
+declare class FileSessionStorage implements ISessionStorage {
+    private directory;
+    private prettyPrint;
+    private extension;
+    private indexPath;
+    private index;
+    constructor(config: FileSessionStorageConfig);
+    save(session: Session): Promise<void>;
+    load(sessionId: string): Promise<Session | null>;
+    delete(sessionId: string): Promise<void>;
+    exists(sessionId: string): Promise<boolean>;
+    list(filter?: SessionFilter): Promise<SessionSummary[]>;
+    search(query: string, filter?: SessionFilter): Promise<SessionSummary[]>;
+    /**
+     * Rebuild the index by scanning all session files
+     * Useful for recovery or migration
+     */
+    rebuildIndex(): Promise<void>;
+    /**
+     * Get the storage directory path
+     */
+    getDirectory(): string;
+    private getFilePath;
+    private ensureDirectory;
+    private loadIndex;
+    private saveIndex;
+    private updateIndex;
+    private removeFromIndex;
+    private sessionToIndexEntry;
+    private indexEntryToSummary;
+    private applyFilter;
+}
 
 /**
  * Complete description of an LLM model including capabilities, pricing, and features
@@ -4086,4 +4724,497 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-export { AIError, type APIKeyConnectorAuth, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, AgentResponse, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, ITextProvider, type ITokenEstimator, type ITokenStorage, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type Plan, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, ToolCall, ToolExecutionError, ToolFunction, ToolNotFoundError, ToolTimeoutError, TruncateCompactor, VENDORS, Vendor, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, createAgentStorage, createAuthenticatedFetch, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };
+/**
+ * UniversalAgent types and interfaces
+ */
+
+type AgentMode = 'interactive' | 'planning' | 'executing';
+interface UniversalAgentSessionConfig {
+    /** Storage backend for sessions */
+    storage: ISessionStorage;
+    /** Resume existing session by ID */
+    id?: string;
+    /** Auto-save session after each interaction */
+    autoSave?: boolean;
+    /** Auto-save interval in milliseconds */
+    autoSaveIntervalMs?: number;
+}
+interface UniversalAgentPlanningConfig {
+    /** Enable planning mode. Default: true */
+    enabled?: boolean;
+    /** Model to use for planning (can be different from execution model) */
+    model?: string;
+    /** Auto-detect complex tasks and switch to planning mode. Default: true */
+    autoDetect?: boolean;
+    /** Require user approval before executing plan. Default: true */
+    requireApproval?: boolean;
+    /** Maximum tasks before requiring approval (if requireApproval is false). Default: 3 */
+    maxTasksBeforeApproval?: number;
+}
+interface UniversalAgentConfig {
+    connector: string | Connector;
+    model: string;
+    name?: string;
+    tools?: ToolFunction[];
+    instructions?: string;
+    temperature?: number;
+    maxIterations?: number;
+    planning?: UniversalAgentPlanningConfig;
+    session?: UniversalAgentSessionConfig;
+    memoryConfig?: WorkingMemoryConfig;
+    toolManager?: ToolManager;
+}
+interface TaskProgress {
+    completed: number;
+    total: number;
+    current?: Task;
+    failed: number;
+    skipped: number;
+}
+interface UniversalResponse {
+    /** Human-readable response text */
+    text: string;
+    /** Current mode after this response */
+    mode: AgentMode;
+    /** Plan (if created or modified) */
+    plan?: Plan;
+    /** Plan status */
+    planStatus?: 'pending_approval' | 'approved' | 'executing' | 'completed' | 'failed';
+    /** Task progress (if executing) */
+    taskProgress?: TaskProgress;
+    /** Tool calls made during this interaction */
+    toolCalls?: ToolCallResult[];
+    /** Token usage */
+    usage?: {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+    };
+    /** Whether user action is needed */
+    needsUserAction?: boolean;
+    /** What action is needed */
+    userActionType?: 'approve_plan' | 'provide_input' | 'clarify';
+}
+interface ToolCallResult {
+    name: string;
+    args: unknown;
+    result: unknown;
+    error?: string;
+    durationMs: number;
+}
+type UniversalEvent = {
+    type: 'text:delta';
+    delta: string;
+} | {
+    type: 'text:done';
+    text: string;
+} | {
+    type: 'mode:changed';
+    from: AgentMode;
+    to: AgentMode;
+    reason: string;
+} | {
+    type: 'plan:analyzing';
+    goal: string;
+} | {
+    type: 'plan:created';
+    plan: Plan;
+} | {
+    type: 'plan:modified';
+    plan: Plan;
+    changes: PlanChange[];
+} | {
+    type: 'plan:awaiting_approval';
+    plan: Plan;
+} | {
+    type: 'plan:approved';
+    plan: Plan;
+} | {
+    type: 'plan:rejected';
+    plan: Plan;
+    reason?: string;
+} | {
+    type: 'task:started';
+    task: Task;
+} | {
+    type: 'task:progress';
+    task: Task;
+    status: string;
+} | {
+    type: 'task:completed';
+    task: Task;
+    result: unknown;
+} | {
+    type: 'task:failed';
+    task: Task;
+    error: string;
+} | {
+    type: 'task:skipped';
+    task: Task;
+    reason: string;
+} | {
+    type: 'execution:done';
+    result: ExecutionResult;
+} | {
+    type: 'execution:paused';
+    reason: string;
+} | {
+    type: 'execution:resumed';
+} | {
+    type: 'tool:start';
+    name: string;
+    args: unknown;
+} | {
+    type: 'tool:complete';
+    name: string;
+    result: unknown;
+    durationMs: number;
+} | {
+    type: 'tool:error';
+    name: string;
+    error: string;
+} | {
+    type: 'needs:approval';
+    plan: Plan;
+} | {
+    type: 'needs:input';
+    prompt: string;
+} | {
+    type: 'needs:clarification';
+    question: string;
+    options?: string[];
+} | {
+    type: 'error';
+    error: string;
+    recoverable: boolean;
+};
+interface PlanChange {
+    type: 'task_added' | 'task_removed' | 'task_updated' | 'task_reordered';
+    taskId?: string;
+    taskName?: string;
+    details?: string;
+}
+interface ExecutionResult {
+    status: 'completed' | 'failed' | 'cancelled' | 'paused';
+    completedTasks: number;
+    totalTasks: number;
+    failedTasks: number;
+    skippedTasks: number;
+    error?: string;
+}
+interface IntentAnalysis {
+    /** Detected intent type */
+    type: 'simple' | 'complex' | 'plan_modify' | 'status_query' | 'approval' | 'rejection' | 'feedback' | 'interrupt' | 'question';
+    /** Confidence score (0-1) */
+    confidence: number;
+    /** For complex tasks */
+    complexity?: 'low' | 'medium' | 'high';
+    estimatedSteps?: number;
+    /** For plan modifications */
+    modification?: {
+        action: 'add_task' | 'remove_task' | 'skip_task' | 'reorder' | 'update_task';
+        taskName?: string;
+        details?: string;
+    };
+    /** For approvals/rejections */
+    feedback?: string;
+    /** Raw reasoning from analysis */
+    reasoning?: string;
+}
+interface ModeState {
+    mode: AgentMode;
+    enteredAt: Date;
+    reason: string;
+    pendingPlan?: Plan;
+    planApproved?: boolean;
+    currentTaskIndex?: number;
+    pausedAt?: Date;
+    pauseReason?: string;
+}
+
+/**
+ * UniversalAgent - Unified agent combining interactive, planning, and task execution
+ *
+ * Features:
+ * - Mode-fluid: Automatically switches between interactive, planning, and executing
+ * - User intervention: Users can interrupt, modify plans, provide feedback
+ * - Smart detection: Auto-detects complex tasks that need planning
+ * - Session persistence: Save and resume conversations
+ * - Dynamic tools: Enable/disable tools at runtime
+ */
+
+interface UniversalAgentEvents {
+    'mode:changed': {
+        from: AgentMode;
+        to: AgentMode;
+        reason: string;
+    };
+    'plan:created': {
+        plan: Plan;
+    };
+    'plan:modified': {
+        plan: Plan;
+        changes: PlanChange[];
+    };
+    'plan:approved': {
+        plan: Plan;
+    };
+    'task:started': {
+        task: Task;
+    };
+    'task:completed': {
+        task: Task;
+        result: unknown;
+    };
+    'task:failed': {
+        task: Task;
+        error: string;
+    };
+    'execution:completed': {
+        result: ExecutionResult;
+    };
+    'error': {
+        error: Error;
+        recoverable: boolean;
+    };
+}
+declare class UniversalAgent extends EventEmitter {
+    readonly name: string;
+    readonly connector: Connector;
+    readonly model: string;
+    private config;
+    private agent;
+    private _toolManager;
+    private modeManager;
+    private planningAgent?;
+    private workingMemory;
+    private _sessionManager;
+    private _session;
+    private currentPlan;
+    private executionHistory;
+    private isDestroyed;
+    /**
+     * Create a new UniversalAgent
+     */
+    static create(config: UniversalAgentConfig): UniversalAgent;
+    /**
+     * Resume an agent from a saved session
+     */
+    static resume(sessionId: string, config: Omit<UniversalAgentConfig, 'session'> & {
+        session: {
+            storage: ISessionStorage;
+        };
+    }): Promise<UniversalAgent>;
+    private constructor();
+    /**
+     * Chat with the agent - the main entry point
+     */
+    chat(input: string): Promise<UniversalResponse>;
+    /**
+     * Stream chat response
+     */
+    stream(input: string): AsyncIterableIterator<UniversalEvent>;
+    private handleInteractive;
+    private handlePlanning;
+    private handleExecuting;
+    private streamInteractive;
+    private streamPlanning;
+    private streamExecuting;
+    private streamExecution;
+    private createPlan;
+    private createPlanInternal;
+    private approvePlan;
+    private handlePlanRejection;
+    private refinePlan;
+    private modifyPlan;
+    private continueExecution;
+    private reportProgress;
+    private analyzeIntent;
+    private isApproval;
+    private isRejection;
+    private isStatusQuery;
+    private isInterrupt;
+    private isPlanModification;
+    private parsePlanModification;
+    private estimateComplexity;
+    private estimateSteps;
+    private shouldSwitchToPlanning;
+    private buildInstructions;
+    private buildTaskPrompt;
+    private formatPlanSummary;
+    private formatProgress;
+    private getTaskProgress;
+    getSessionId(): string | null;
+    hasSession(): boolean;
+    saveSession(): Promise<void>;
+    private loadSession;
+    getSession(): Session | null;
+    getMode(): AgentMode;
+    getPlan(): Plan | null;
+    getProgress(): TaskProgress | null;
+    get toolManager(): ToolManager;
+    setAutoApproval(value: boolean): void;
+    setPlanningEnabled(value: boolean): void;
+    pause(): void;
+    resume(): void;
+    cancel(): void;
+    destroy(): void;
+}
+
+/**
+ * ModeManager - Manages agent mode transitions
+ *
+ * Handles the state machine for UniversalAgent modes:
+ * - interactive: Direct conversation, immediate tool execution
+ * - planning: Creating and refining plans
+ * - executing: Running through a plan
+ */
+
+interface ModeManagerEvents {
+    'mode:changed': {
+        from: AgentMode;
+        to: AgentMode;
+        reason: string;
+    };
+    'mode:transition_blocked': {
+        from: AgentMode;
+        to: AgentMode;
+        reason: string;
+    };
+}
+declare class ModeManager extends EventEmitter {
+    private state;
+    private transitionHistory;
+    constructor(initialMode?: AgentMode);
+    /**
+     * Get current mode
+     */
+    getMode(): AgentMode;
+    /**
+     * Get full mode state
+     */
+    getState(): ModeState;
+    /**
+     * Check if a transition is allowed
+     */
+    canTransition(to: AgentMode): boolean;
+    /**
+     * Transition to a new mode
+     */
+    transition(to: AgentMode, reason: string): boolean;
+    /**
+     * Enter planning mode with a goal
+     */
+    enterPlanning(reason?: string): boolean;
+    /**
+     * Enter executing mode (plan must be approved)
+     */
+    enterExecuting(_plan: Plan, reason?: string): boolean;
+    /**
+     * Return to interactive mode
+     */
+    returnToInteractive(reason?: string): boolean;
+    /**
+     * Set pending plan (in planning mode)
+     */
+    setPendingPlan(plan: Plan): void;
+    /**
+     * Get pending plan
+     */
+    getPendingPlan(): Plan | undefined;
+    /**
+     * Approve the pending plan
+     */
+    approvePlan(): boolean;
+    /**
+     * Check if plan is approved
+     */
+    isPlanApproved(): boolean;
+    /**
+     * Update current task index (in executing mode)
+     */
+    setCurrentTaskIndex(index: number): void;
+    /**
+     * Get current task index
+     */
+    getCurrentTaskIndex(): number;
+    /**
+     * Pause execution
+     */
+    pauseExecution(reason: string): void;
+    /**
+     * Resume execution
+     */
+    resumeExecution(): void;
+    /**
+     * Check if paused
+     */
+    isPaused(): boolean;
+    /**
+     * Get pause reason
+     */
+    getPauseReason(): string | undefined;
+    /**
+     * Determine recommended mode based on intent analysis
+     */
+    recommendMode(intent: IntentAnalysis, _currentPlan?: Plan): AgentMode | null;
+    /**
+     * Get transition history
+     */
+    getHistory(): Array<{
+        from: AgentMode;
+        to: AgentMode;
+        at: Date;
+        reason: string;
+    }>;
+    /**
+     * Clear transition history
+     */
+    clearHistory(): void;
+    /**
+     * Get time spent in current mode
+     */
+    getTimeInCurrentMode(): number;
+    /**
+     * Serialize state for session persistence
+     */
+    serialize(): {
+        mode: AgentMode;
+        enteredAt: string;
+        reason: string;
+        pendingPlan?: Plan;
+        planApproved?: boolean;
+        currentTaskIndex?: number;
+    };
+    /**
+     * Restore state from serialized data
+     */
+    restore(data: ReturnType<ModeManager['serialize']>): void;
+}
+
+/**
+ * Meta-tools for UniversalAgent
+ *
+ * These tools are used internally by the agent to signal mode transitions
+ * and perform meta-operations like planning and progress reporting.
+ */
+
+/**
+ * Get all meta-tools
+ */
+declare function getMetaTools(): ToolFunction[];
+/**
+ * Check if a tool name is a meta-tool
+ */
+declare function isMetaTool(toolName: string): boolean;
+/**
+ * Meta-tool names
+ */
+declare const META_TOOL_NAMES: {
+    readonly START_PLANNING: "_start_planning";
+    readonly MODIFY_PLAN: "_modify_plan";
+    readonly REPORT_PROGRESS: "_report_progress";
+    readonly REQUEST_APPROVAL: "_request_approval";
+};
+
+export { AIError, type APIKeyConnectorAuth, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISessionStorage, ITextProvider, type ITokenEstimator, type ITokenStorage, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VENDORS, Vendor, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getMetaTools, getModelInfo, getModelsByVendor, hasClipboardImage, isMetaTool, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };

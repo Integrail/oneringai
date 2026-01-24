@@ -1,13 +1,16 @@
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs5 from 'fs';
-import EventEmitter, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
+import * as fs6 from 'fs';
+import { promises } from 'fs';
+import EventEmitter, { EventEmitter as EventEmitter$2 } from 'eventemitter3';
 import OpenAI from 'openai';
 import * as path3 from 'path';
+import { join } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
-import * as fs4 from 'fs/promises';
+import { EventEmitter as EventEmitter$1 } from 'events';
+import * as fs5 from 'fs/promises';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
@@ -624,7 +627,7 @@ var JWTBearerFlow = class {
       this.privateKey = config.privateKey;
     } else if (config.privateKeyPath) {
       try {
-        this.privateKey = fs5.readFileSync(config.privateKeyPath, "utf8");
+        this.privateKey = fs6.readFileSync(config.privateKeyPath, "utf8");
       } catch (error) {
         throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
       }
@@ -1606,10 +1609,10 @@ var FrameworkLogger = class _FrameworkLogger {
   initFileStream(filePath) {
     try {
       const dir = path3.dirname(filePath);
-      if (!fs5.existsSync(dir)) {
-        fs5.mkdirSync(dir, { recursive: true });
+      if (!fs6.existsSync(dir)) {
+        fs6.mkdirSync(dir, { recursive: true });
       }
-      this.fileStream = fs5.createWriteStream(filePath, {
+      this.fileStream = fs6.createWriteStream(filePath, {
         flags: "a",
         // append mode
         encoding: "utf8"
@@ -4056,6 +4059,662 @@ function extractProviderConfig(connector) {
     maxRetries: connector.getOptions().maxRetries
   };
 }
+var ToolManager = class extends EventEmitter$1 {
+  registry = /* @__PURE__ */ new Map();
+  namespaceIndex = /* @__PURE__ */ new Map();
+  constructor() {
+    super();
+    this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
+  }
+  // ==========================================================================
+  // Registration
+  // ==========================================================================
+  /**
+   * Register a tool with optional configuration
+   */
+  register(tool, options = {}) {
+    const name = this.getToolName(tool);
+    if (this.registry.has(name)) {
+      const existing = this.registry.get(name);
+      existing.tool = tool;
+      if (options.enabled !== void 0) existing.enabled = options.enabled;
+      if (options.namespace !== void 0) {
+        this.moveToNamespace(name, existing.namespace, options.namespace);
+        existing.namespace = options.namespace;
+      }
+      if (options.priority !== void 0) existing.priority = options.priority;
+      if (options.conditions !== void 0) existing.conditions = options.conditions;
+      return;
+    }
+    const namespace = options.namespace ?? "default";
+    const registration = {
+      tool,
+      enabled: options.enabled ?? true,
+      namespace,
+      priority: options.priority ?? 0,
+      conditions: options.conditions ?? [],
+      metadata: {
+        registeredAt: /* @__PURE__ */ new Date(),
+        usageCount: 0,
+        totalExecutionMs: 0,
+        avgExecutionMs: 0,
+        successCount: 0,
+        failureCount: 0
+      }
+    };
+    this.registry.set(name, registration);
+    this.addToNamespace(name, namespace);
+    this.emit("tool:registered", { name, namespace, enabled: registration.enabled });
+  }
+  /**
+   * Register multiple tools at once
+   */
+  registerMany(tools, options = {}) {
+    for (const tool of tools) {
+      this.register(tool, options);
+    }
+  }
+  /**
+   * Unregister a tool by name
+   */
+  unregister(name) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    this.removeFromNamespace(name, registration.namespace);
+    this.registry.delete(name);
+    this.emit("tool:unregistered", { name });
+    return true;
+  }
+  /**
+   * Clear all tools
+   */
+  clear() {
+    this.registry.clear();
+    this.namespaceIndex.clear();
+    this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
+  }
+  // ==========================================================================
+  // Enable/Disable
+  // ==========================================================================
+  /**
+   * Enable a tool by name
+   */
+  enable(name) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    if (!registration.enabled) {
+      registration.enabled = true;
+      this.emit("tool:enabled", { name });
+    }
+    return true;
+  }
+  /**
+   * Disable a tool by name (keeps it registered but inactive)
+   */
+  disable(name) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    if (registration.enabled) {
+      registration.enabled = false;
+      this.emit("tool:disabled", { name });
+    }
+    return true;
+  }
+  /**
+   * Toggle a tool's enabled state
+   */
+  toggle(name) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    registration.enabled = !registration.enabled;
+    this.emit(registration.enabled ? "tool:enabled" : "tool:disabled", { name });
+    return registration.enabled;
+  }
+  /**
+   * Check if a tool is enabled
+   */
+  isEnabled(name) {
+    const registration = this.registry.get(name);
+    return registration?.enabled ?? false;
+  }
+  /**
+   * Set enabled state for multiple tools
+   */
+  setEnabled(names, enabled) {
+    for (const name of names) {
+      if (enabled) {
+        this.enable(name);
+      } else {
+        this.disable(name);
+      }
+    }
+  }
+  // ==========================================================================
+  // Namespaces
+  // ==========================================================================
+  /**
+   * Set the namespace for a tool
+   */
+  setNamespace(toolName, namespace) {
+    const registration = this.registry.get(toolName);
+    if (!registration) return false;
+    const oldNamespace = registration.namespace;
+    if (oldNamespace === namespace) return true;
+    this.moveToNamespace(toolName, oldNamespace, namespace);
+    registration.namespace = namespace;
+    return true;
+  }
+  /**
+   * Enable all tools in a namespace
+   */
+  enableNamespace(namespace) {
+    const tools = this.namespaceIndex.get(namespace);
+    if (!tools) return;
+    for (const name of tools) {
+      this.enable(name);
+    }
+    this.emit("namespace:enabled", { namespace });
+  }
+  /**
+   * Disable all tools in a namespace
+   */
+  disableNamespace(namespace) {
+    const tools = this.namespaceIndex.get(namespace);
+    if (!tools) return;
+    for (const name of tools) {
+      this.disable(name);
+    }
+    this.emit("namespace:disabled", { namespace });
+  }
+  /**
+   * Get all namespace names
+   */
+  getNamespaces() {
+    return Array.from(this.namespaceIndex.keys());
+  }
+  /**
+   * Create a namespace with tools
+   */
+  createNamespace(namespace, tools, options = {}) {
+    for (const tool of tools) {
+      this.register(tool, { ...options, namespace });
+    }
+  }
+  // ==========================================================================
+  // Priority
+  // ==========================================================================
+  /**
+   * Set priority for a tool
+   */
+  setPriority(name, priority) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    registration.priority = priority;
+    return true;
+  }
+  /**
+   * Get priority for a tool
+   */
+  getPriority(name) {
+    return this.registry.get(name)?.priority;
+  }
+  // ==========================================================================
+  // Query
+  // ==========================================================================
+  /**
+   * Get a tool by name
+   */
+  get(name) {
+    return this.registry.get(name)?.tool;
+  }
+  /**
+   * Check if a tool exists
+   */
+  has(name) {
+    return this.registry.has(name);
+  }
+  /**
+   * Get all enabled tools (sorted by priority)
+   */
+  getEnabled() {
+    return this.getSortedByPriority().filter((reg) => reg.enabled).map((reg) => reg.tool);
+  }
+  /**
+   * Get all tools (enabled and disabled)
+   */
+  getAll() {
+    return Array.from(this.registry.values()).map((reg) => reg.tool);
+  }
+  /**
+   * Get tools by namespace
+   */
+  getByNamespace(namespace) {
+    const toolNames = this.namespaceIndex.get(namespace);
+    if (!toolNames) return [];
+    return Array.from(toolNames).map((name) => this.registry.get(name)).filter((reg) => reg.enabled).sort((a, b) => b.priority - a.priority).map((reg) => reg.tool);
+  }
+  /**
+   * Get tool registration info
+   */
+  getRegistration(name) {
+    return this.registry.get(name);
+  }
+  /**
+   * List all tool names
+   */
+  list() {
+    return Array.from(this.registry.keys());
+  }
+  /**
+   * List enabled tool names
+   */
+  listEnabled() {
+    return Array.from(this.registry.entries()).filter(([_, reg]) => reg.enabled).map(([name]) => name);
+  }
+  /**
+   * Get count of registered tools
+   */
+  get size() {
+    return this.registry.size;
+  }
+  // ==========================================================================
+  // Selection
+  // ==========================================================================
+  /**
+   * Select tools based on context (uses conditions and smart filtering)
+   */
+  selectForContext(context) {
+    const sorted = this.getSortedByPriority();
+    const selected = [];
+    for (const reg of sorted) {
+      if (!reg.enabled) continue;
+      if (reg.conditions.length > 0) {
+        const allConditionsMet = reg.conditions.every((cond) => cond.predicate(context));
+        if (!allConditionsMet) continue;
+      }
+      if (context.recentTools?.includes(this.getToolName(reg.tool))) {
+        continue;
+      }
+      selected.push(reg.tool);
+    }
+    if (context.tokenBudget !== void 0) {
+      return this.filterByTokenBudget(selected, context.tokenBudget);
+    }
+    return selected;
+  }
+  /**
+   * Select tools by matching capability description
+   */
+  selectByCapability(description) {
+    const lowerDesc = description.toLowerCase();
+    const keywords = lowerDesc.split(/\s+/);
+    return this.getEnabled().filter((tool) => {
+      const toolDesc = (tool.definition.function.description ?? "").toLowerCase();
+      const toolName = tool.definition.function.name.toLowerCase();
+      return keywords.some((kw) => toolDesc.includes(kw) || toolName.includes(kw));
+    });
+  }
+  /**
+   * Filter tools to fit within a token budget
+   */
+  selectWithinBudget(budget) {
+    return this.filterByTokenBudget(this.getEnabled(), budget);
+  }
+  // ==========================================================================
+  // Execution Tracking
+  // ==========================================================================
+  /**
+   * Record tool execution (called by agent/loop)
+   */
+  recordExecution(name, executionMs, success) {
+    const registration = this.registry.get(name);
+    if (!registration) return;
+    const meta = registration.metadata;
+    meta.usageCount++;
+    meta.lastUsed = /* @__PURE__ */ new Date();
+    meta.totalExecutionMs += executionMs;
+    meta.avgExecutionMs = meta.totalExecutionMs / meta.usageCount;
+    if (success) {
+      meta.successCount++;
+    } else {
+      meta.failureCount++;
+    }
+    this.emit("tool:executed", {
+      name,
+      executionMs,
+      success,
+      totalUsage: meta.usageCount
+    });
+  }
+  // ==========================================================================
+  // Statistics
+  // ==========================================================================
+  /**
+   * Get comprehensive statistics
+   */
+  getStats() {
+    const registrations = Array.from(this.registry.values());
+    const enabledCount = registrations.filter((r) => r.enabled).length;
+    const toolsByNamespace = {};
+    for (const [ns, tools] of this.namespaceIndex) {
+      toolsByNamespace[ns] = tools.size;
+    }
+    const mostUsed = registrations.filter((r) => r.metadata.usageCount > 0).sort((a, b) => b.metadata.usageCount - a.metadata.usageCount).slice(0, 10).map((r) => ({
+      name: this.getToolName(r.tool),
+      count: r.metadata.usageCount
+    }));
+    const totalExecutions = registrations.reduce((sum, r) => sum + r.metadata.usageCount, 0);
+    return {
+      totalTools: this.registry.size,
+      enabledTools: enabledCount,
+      disabledTools: this.registry.size - enabledCount,
+      namespaces: this.getNamespaces(),
+      toolsByNamespace,
+      mostUsed,
+      totalExecutions
+    };
+  }
+  // ==========================================================================
+  // Persistence
+  // ==========================================================================
+  /**
+   * Get serializable state (for session persistence)
+   */
+  getState() {
+    const enabled = {};
+    const namespaces = {};
+    const priorities = {};
+    for (const [name, reg] of this.registry) {
+      enabled[name] = reg.enabled;
+      namespaces[name] = reg.namespace;
+      priorities[name] = reg.priority;
+    }
+    return { enabled, namespaces, priorities };
+  }
+  /**
+   * Load state (restores enabled/disabled, namespaces, priorities)
+   * Note: Tools must be re-registered separately (they contain functions)
+   */
+  loadState(state) {
+    for (const [name, isEnabled] of Object.entries(state.enabled)) {
+      const reg = this.registry.get(name);
+      if (reg) {
+        reg.enabled = isEnabled;
+      }
+    }
+    for (const [name, namespace] of Object.entries(state.namespaces)) {
+      this.setNamespace(name, namespace);
+    }
+    for (const [name, priority] of Object.entries(state.priorities)) {
+      this.setPriority(name, priority);
+    }
+  }
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+  getToolName(tool) {
+    return tool.definition.function.name;
+  }
+  getSortedByPriority() {
+    return Array.from(this.registry.values()).sort((a, b) => b.priority - a.priority);
+  }
+  addToNamespace(toolName, namespace) {
+    if (!this.namespaceIndex.has(namespace)) {
+      this.namespaceIndex.set(namespace, /* @__PURE__ */ new Set());
+    }
+    this.namespaceIndex.get(namespace).add(toolName);
+  }
+  removeFromNamespace(toolName, namespace) {
+    this.namespaceIndex.get(namespace)?.delete(toolName);
+  }
+  moveToNamespace(toolName, oldNamespace, newNamespace) {
+    this.removeFromNamespace(toolName, oldNamespace);
+    this.addToNamespace(toolName, newNamespace);
+  }
+  filterByTokenBudget(tools, budget) {
+    const result = [];
+    let usedTokens = 0;
+    for (const tool of tools) {
+      const toolTokens = this.estimateToolTokens(tool);
+      if (usedTokens + toolTokens <= budget) {
+        result.push(tool);
+        usedTokens += toolTokens;
+      }
+    }
+    return result;
+  }
+  estimateToolTokens(tool) {
+    const def = tool.definition.function;
+    const nameTokens = Math.ceil((def.name?.length ?? 0) / 4);
+    const descTokens = Math.ceil((def.description?.length ?? 0) / 4);
+    const paramTokens = def.parameters ? Math.ceil(JSON.stringify(def.parameters).length / 4) : 0;
+    return nameTokens + descTokens + paramTokens + 20;
+  }
+};
+var SessionManager = class extends EventEmitter$1 {
+  storage;
+  defaultMetadata;
+  autoSaveTimers = /* @__PURE__ */ new Map();
+  constructor(config) {
+    super();
+    this.storage = config.storage;
+    this.defaultMetadata = config.defaultMetadata ?? {};
+  }
+  // ==========================================================================
+  // Lifecycle
+  // ==========================================================================
+  /**
+   * Create a new session
+   */
+  create(agentType, metadata) {
+    const now = /* @__PURE__ */ new Date();
+    const session = {
+      id: this.generateId(),
+      agentType,
+      createdAt: now,
+      lastActiveAt: now,
+      history: { version: 1, entries: [] },
+      toolState: { enabled: {}, namespaces: {}, priorities: {} },
+      custom: {},
+      metadata: {
+        ...this.defaultMetadata,
+        ...metadata
+      }
+    };
+    this.emit("session:created", { sessionId: session.id, agentType });
+    return session;
+  }
+  /**
+   * Save a session to storage
+   */
+  async save(session) {
+    try {
+      session.lastActiveAt = /* @__PURE__ */ new Date();
+      await this.storage.save(session);
+      this.emit("session:saved", { sessionId: session.id });
+    } catch (error) {
+      this.emit("session:error", { sessionId: session.id, error, operation: "save" });
+      throw error;
+    }
+  }
+  /**
+   * Load a session from storage
+   */
+  async load(sessionId) {
+    try {
+      const session = await this.storage.load(sessionId);
+      if (session) {
+        session.createdAt = new Date(session.createdAt);
+        session.lastActiveAt = new Date(session.lastActiveAt);
+        this.emit("session:loaded", { sessionId });
+      }
+      return session;
+    } catch (error) {
+      this.emit("session:error", { sessionId, error, operation: "load" });
+      throw error;
+    }
+  }
+  /**
+   * Delete a session from storage
+   */
+  async delete(sessionId) {
+    try {
+      this.stopAutoSave(sessionId);
+      await this.storage.delete(sessionId);
+      this.emit("session:deleted", { sessionId });
+    } catch (error) {
+      this.emit("session:error", { sessionId, error, operation: "delete" });
+      throw error;
+    }
+  }
+  /**
+   * Check if a session exists
+   */
+  async exists(sessionId) {
+    return this.storage.exists(sessionId);
+  }
+  // ==========================================================================
+  // Query
+  // ==========================================================================
+  /**
+   * List sessions with optional filtering
+   */
+  async list(filter) {
+    return this.storage.list(filter);
+  }
+  /**
+   * Search sessions by query string
+   */
+  async search(query, filter) {
+    if (this.storage.search) {
+      return this.storage.search(query, filter);
+    }
+    const all = await this.storage.list(filter);
+    const lowerQuery = query.toLowerCase();
+    return all.filter(
+      (s) => s.metadata.title?.toLowerCase().includes(lowerQuery) || s.metadata.tags?.some((t) => t.toLowerCase().includes(lowerQuery))
+    );
+  }
+  // ==========================================================================
+  // Advanced Operations
+  // ==========================================================================
+  /**
+   * Fork a session (create a copy with new ID)
+   */
+  async fork(sessionId, newMetadata) {
+    const original = await this.load(sessionId);
+    if (!original) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    const forked = {
+      ...original,
+      id: this.generateId(),
+      createdAt: /* @__PURE__ */ new Date(),
+      lastActiveAt: /* @__PURE__ */ new Date(),
+      metadata: {
+        ...original.metadata,
+        ...newMetadata,
+        forkedFrom: sessionId
+      },
+      // Deep clone mutable fields
+      history: JSON.parse(JSON.stringify(original.history)),
+      toolState: JSON.parse(JSON.stringify(original.toolState)),
+      custom: JSON.parse(JSON.stringify(original.custom))
+    };
+    if (original.memory) {
+      forked.memory = JSON.parse(JSON.stringify(original.memory));
+    }
+    if (original.plan) {
+      forked.plan = JSON.parse(JSON.stringify(original.plan));
+    }
+    await this.save(forked);
+    return forked;
+  }
+  /**
+   * Update session metadata
+   */
+  async updateMetadata(sessionId, metadata) {
+    const session = await this.load(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    session.metadata = { ...session.metadata, ...metadata };
+    await this.save(session);
+  }
+  // ==========================================================================
+  // Auto-Save
+  // ==========================================================================
+  /**
+   * Enable auto-save for a session
+   */
+  enableAutoSave(session, intervalMs, onSave) {
+    this.stopAutoSave(session.id);
+    const timer = setInterval(async () => {
+      try {
+        await this.save(session);
+        onSave?.(session);
+      } catch (error) {
+        this.emit("session:error", {
+          sessionId: session.id,
+          error,
+          operation: "auto-save"
+        });
+      }
+    }, intervalMs);
+    this.autoSaveTimers.set(session.id, timer);
+  }
+  /**
+   * Disable auto-save for a session
+   */
+  stopAutoSave(sessionId) {
+    const timer = this.autoSaveTimers.get(sessionId);
+    if (timer) {
+      clearInterval(timer);
+      this.autoSaveTimers.delete(sessionId);
+    }
+  }
+  /**
+   * Stop all auto-save timers
+   */
+  stopAllAutoSave() {
+    for (const timer of this.autoSaveTimers.values()) {
+      clearInterval(timer);
+    }
+    this.autoSaveTimers.clear();
+  }
+  // ==========================================================================
+  // Utilities
+  // ==========================================================================
+  /**
+   * Generate a unique session ID
+   */
+  generateId() {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 10);
+    return `sess_${timestamp}_${random}`;
+  }
+  /**
+   * Cleanup resources
+   */
+  destroy() {
+    this.stopAllAutoSave();
+    this.removeAllListeners();
+  }
+};
+function createEmptyHistory() {
+  return { version: 1, entries: [] };
+}
+function createEmptyMemory() {
+  return { version: 1, entries: [] };
+}
+function addHistoryEntry(history, type, content, metadata) {
+  history.entries.push({
+    type,
+    content,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    metadata
+  });
+}
 
 // src/capabilities/agents/ToolRegistry.ts
 var ToolRegistry = class {
@@ -4882,7 +5541,7 @@ var StreamState = class {
 };
 
 // src/capabilities/agents/AgenticLoop.ts
-var AgenticLoop = class extends EventEmitter$1 {
+var AgenticLoop = class extends EventEmitter$2 {
   constructor(provider, toolExecutor, hookConfig, errorHandling) {
     super();
     this.provider = provider;
@@ -5949,7 +6608,7 @@ function assertNotDestroyed(obj, operation) {
 }
 
 // src/core/Agent.ts
-var Agent = class _Agent extends EventEmitter$1 {
+var Agent = class _Agent extends EventEmitter$2 {
   // ============ Instance Properties ============
   name;
   connector;
@@ -5962,8 +6621,20 @@ var Agent = class _Agent extends EventEmitter$1 {
   boundListeners = /* @__PURE__ */ new Map();
   _isDestroyed = false;
   logger;
+  // === NEW: Tool and Session Management ===
+  _toolManager;
+  _sessionManager = null;
+  _session = null;
+  _pendingSessionLoad = null;
   get isDestroyed() {
     return this._isDestroyed;
+  }
+  /**
+   * Advanced tool management. Returns ToolManager for fine-grained control.
+   * For simple cases, use addTool/removeTool instead.
+   */
+  get tools() {
+    return this._toolManager;
   }
   // ============ Static Factory ============
   /**
@@ -5981,6 +6652,31 @@ var Agent = class _Agent extends EventEmitter$1 {
    */
   static create(config) {
     return new _Agent(config);
+  }
+  /**
+   * Resume an agent from a saved session
+   *
+   * @example
+   * ```typescript
+   * const agent = await Agent.resume('session-123', {
+   *   connector: 'openai',
+   *   model: 'gpt-4',
+   *   session: { storage: myStorage }
+   * });
+   * ```
+   */
+  static async resume(sessionId, config) {
+    const agent = new _Agent({
+      ...config,
+      session: {
+        ...config.session,
+        id: sessionId
+      }
+    });
+    if (agent._pendingSessionLoad) {
+      await agent._pendingSessionLoad;
+    }
+    return agent;
   }
   // ============ Constructor ============
   constructor(config) {
@@ -6001,12 +6697,29 @@ var Agent = class _Agent extends EventEmitter$1 {
       connector: this.connector.name
     });
     this.provider = createProvider(this.connector);
+    this._toolManager = config.toolManager ?? new ToolManager();
+    if (config.tools) {
+      for (const tool of config.tools) {
+        this._toolManager.register(tool);
+      }
+    }
     this.toolRegistry = new ToolRegistry();
     if (config.tools) {
       for (const tool of config.tools) {
         this.toolRegistry.registerTool(tool);
       }
     }
+    this._toolManager.on("tool:registered", ({ name }) => {
+      const tool = this._toolManager.get(name);
+      if (tool && !this.toolRegistry.hasToolFunction(name)) {
+        this.toolRegistry.registerTool(tool);
+      }
+    });
+    this._toolManager.on("tool:unregistered", ({ name }) => {
+      if (this.toolRegistry.hasToolFunction(name)) {
+        this.toolRegistry.unregisterTool(name);
+      }
+    });
     this.agenticLoop = new AgenticLoop(
       this.provider,
       this.toolRegistry,
@@ -6014,6 +6727,48 @@ var Agent = class _Agent extends EventEmitter$1 {
       config.errorHandling
     );
     this.setupEventForwarding();
+    if (config.session) {
+      this._sessionManager = new SessionManager({ storage: config.session.storage });
+      if (config.session.id) {
+        this._pendingSessionLoad = this.loadSessionInternal(config.session.id);
+      } else {
+        this._session = this._sessionManager.create("agent", {
+          title: this.name
+        });
+        if (config.session.autoSave) {
+          const interval = config.session.autoSaveIntervalMs ?? 3e4;
+          this._sessionManager.enableAutoSave(this._session, interval);
+        }
+      }
+    }
+  }
+  /**
+   * Internal method to load session
+   */
+  async loadSessionInternal(sessionId) {
+    if (!this._sessionManager) return;
+    try {
+      const session = await this._sessionManager.load(sessionId);
+      if (session) {
+        this._session = session;
+        if (session.toolState) {
+          this._toolManager.loadState(session.toolState);
+        }
+        this.logger.info({ sessionId }, "Session loaded");
+        if (this.config.session?.autoSave) {
+          const interval = this.config.session.autoSaveIntervalMs ?? 3e4;
+          this._sessionManager.enableAutoSave(this._session, interval);
+        }
+      } else {
+        this.logger.warn({ sessionId }, "Session not found, creating new session");
+        this._session = this._sessionManager.create("agent", {
+          title: this.name
+        });
+      }
+    } catch (error) {
+      this.logger.error({ error: error.message, sessionId }, "Failed to load session");
+      throw error;
+    }
   }
   // ============ Main API ============
   /**
@@ -6032,7 +6787,8 @@ var Agent = class _Agent extends EventEmitter$1 {
     });
     const startTime = Date.now();
     try {
-      const tools = this.config.tools?.map((t) => t.definition) || [];
+      const enabledTools = this._toolManager.getEnabled();
+      const tools = enabledTools.map((t) => t.definition);
       const loopConfig = {
         model: this.model,
         input,
@@ -6090,7 +6846,8 @@ var Agent = class _Agent extends EventEmitter$1 {
     });
     const startTime = Date.now();
     try {
-      const tools = this.config.tools?.map((t) => t.definition) || [];
+      const enabledTools = this._toolManager.getEnabled();
+      const tools = enabledTools.map((t) => t.definition);
       const loopConfig = {
         model: this.model,
         input,
@@ -6134,6 +6891,7 @@ var Agent = class _Agent extends EventEmitter$1 {
    * Add a tool to the agent
    */
   addTool(tool) {
+    this._toolManager.register(tool);
     this.toolRegistry.registerTool(tool);
     if (!this.config.tools) {
       this.config.tools = [];
@@ -6144,6 +6902,7 @@ var Agent = class _Agent extends EventEmitter$1 {
    * Remove a tool from the agent
    */
   removeTool(toolName) {
+    this._toolManager.unregister(toolName);
     this.toolRegistry.unregisterTool(toolName);
     if (this.config.tools) {
       this.config.tools = this.config.tools.filter(
@@ -6152,22 +6911,70 @@ var Agent = class _Agent extends EventEmitter$1 {
     }
   }
   /**
-   * List registered tools
+   * List registered tools (returns enabled tool names)
    */
   listTools() {
-    return this.toolRegistry.listTools();
+    return this._toolManager.listEnabled();
   }
   /**
    * Replace all tools with a new array
    */
   setTools(tools) {
-    for (const name of this.toolRegistry.listTools()) {
+    for (const name of this._toolManager.list()) {
+      this._toolManager.unregister(name);
       this.toolRegistry.unregisterTool(name);
     }
     for (const tool of tools) {
+      this._toolManager.register(tool);
       this.toolRegistry.registerTool(tool);
     }
     this.config.tools = [...tools];
+  }
+  // ============ Session Management (NEW) ============
+  /**
+   * Get the current session ID (if session is enabled)
+   */
+  getSessionId() {
+    return this._session?.id ?? null;
+  }
+  /**
+   * Check if this agent has session support enabled
+   */
+  hasSession() {
+    return this._session !== null;
+  }
+  /**
+   * Save the current session to storage
+   * @throws Error if session is not enabled
+   */
+  async saveSession() {
+    if (!this._sessionManager || !this._session) {
+      throw new Error("Session not enabled. Configure session in AgentConfig to use this feature.");
+    }
+    this._session.toolState = this._toolManager.getState();
+    await this._sessionManager.save(this._session);
+    this.logger.debug({ sessionId: this._session.id }, "Session saved");
+  }
+  /**
+   * Get the current session (for advanced use)
+   */
+  getSession() {
+    return this._session;
+  }
+  /**
+   * Update session custom data
+   */
+  updateSessionData(key, value) {
+    if (!this._session) {
+      throw new Error("Session not enabled");
+    }
+    this._session.custom[key] = value;
+  }
+  /**
+   * Get session custom data
+   */
+  getSessionData(key) {
+    return this._session?.custom[key];
   }
   // ============ Configuration Methods ============
   /**
@@ -6271,6 +7078,13 @@ var Agent = class _Agent extends EventEmitter$1 {
     }
     this.boundListeners.clear();
     this.removeAllListeners();
+    if (this._sessionManager) {
+      if (this._session) {
+        this._sessionManager.stopAutoSave(this._session.id);
+      }
+      this._sessionManager.destroy();
+    }
+    this._toolManager.removeAllListeners();
     for (const callback of this.cleanupCallbacks) {
       try {
         callback();
@@ -9069,10 +9883,20 @@ var TaskAgent = class _TaskAgent extends EventEmitter {
   externalHandler;
   planExecutor;
   checkpointManager;
-  tools = [];
+  _tools = [];
+  _toolManager;
   config;
+  // Session management (NEW)
+  _sessionManager = null;
+  _session = null;
   // Event listener cleanup tracking
   eventCleanupFunctions = [];
+  /**
+   * Advanced tool management. Returns ToolManager for fine-grained control.
+   */
+  get tools() {
+    return this._toolManager;
+  }
   constructor(id, state, storage, memory, config, hooks) {
     super();
     this.id = id;
@@ -9081,12 +9905,21 @@ var TaskAgent = class _TaskAgent extends EventEmitter {
     this.memory = memory;
     this.config = config;
     this.hooks = hooks;
+    this._toolManager = config.toolManager ?? new ToolManager();
     const storedHandler = (data) => this.emit("memory:stored", data);
     const limitWarningHandler = (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent });
     memory.on("stored", storedHandler);
     memory.on("limit_warning", limitWarningHandler);
     this.eventCleanupFunctions.push(() => memory.off("stored", storedHandler));
     this.eventCleanupFunctions.push(() => memory.off("limit_warning", limitWarningHandler));
+    if (config.session) {
+      this._sessionManager = new SessionManager({ storage: config.session.storage });
+      if (config.session.id) ; else {
+        this._session = this._sessionManager.create("task-agent", {
+          title: `TaskAgent ${id}`
+        });
+      }
+    }
   }
   /**
    * Create a new TaskAgent
@@ -9144,9 +9977,13 @@ var TaskAgent = class _TaskAgent extends EventEmitter {
   initializeComponents(config) {
     const memoryTools = createMemoryTools();
     const contextTools = createContextTools();
-    this.tools = [...config.tools ?? [], ...memoryTools, ...contextTools];
+    this._tools = [...config.tools ?? [], ...memoryTools, ...contextTools];
+    for (const tool of this._tools) {
+      this._toolManager.register(tool);
+    }
     this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
-    const cachedTools = this.tools.map((tool) => this.wrapToolWithCache(tool));
+    const enabledTools = this._toolManager.getEnabled();
+    const cachedTools = enabledTools.map((tool) => this.wrapToolWithCache(tool));
     this.agent = Agent.create({
       connector: config.connector,
       model: config.model,
@@ -9165,7 +10002,7 @@ var TaskAgent = class _TaskAgent extends EventEmitter {
       DEFAULT_COMPACTION_STRATEGY
     );
     this.historyManager = new HistoryManager(DEFAULT_HISTORY_CONFIG);
-    this.externalHandler = new ExternalDependencyHandler(this.tools);
+    this.externalHandler = new ExternalDependencyHandler(this._tools);
     this.checkpointManager = new CheckpointManager(this.storage, DEFAULT_CHECKPOINT_STRATEGY);
     this.planExecutor = new PlanExecutor(
       this.agent,
@@ -9367,6 +10204,70 @@ var TaskAgent = class _TaskAgent extends EventEmitter {
   getMemory() {
     return this.memory;
   }
+  // ============ Session Management (NEW) ============
+  /**
+   * Get the current session ID (if session is enabled)
+   */
+  getSessionId() {
+    return this._session?.id ?? null;
+  }
+  /**
+   * Check if this agent has session support enabled
+   */
+  hasSession() {
+    return this._session !== null;
+  }
+  /**
+   * Save the current session to storage
+   * @throws Error if session is not enabled
+   */
+  async saveSession() {
+    if (!this._sessionManager || !this._session) {
+      throw new Error("Session not enabled. Configure session in TaskAgentConfig to use this feature.");
+    }
+    this._session.toolState = this._toolManager.getState();
+    if (this.state.plan) {
+      this._session.plan = {
+        version: 1,
+        data: this.state.plan
+      };
+    }
+    const memoryEntries = await this.memory.getIndex();
+    this._session.memory = {
+      version: 1,
+      entries: memoryEntries.entries.map((e) => ({
+        key: e.key,
+        description: e.description,
+        value: null,
+        // Don't serialize full values, they're in storage
+        scope: e.scope,
+        sizeBytes: 0
+        // Size is stored as human-readable in index
+      }))
+    };
+    await this._sessionManager.save(this._session);
+  }
+  /**
+   * Get the current session (for advanced use)
+   */
+  getSession() {
+    return this._session;
+  }
+  /**
+   * Update session custom data
+   */
+  updateSessionData(key, value) {
+    if (!this._session) {
+      throw new Error("Session not enabled");
+    }
+    this._session.custom[key] = value;
+  }
+  /**
+   * Get session custom data
+   */
+  getSessionData(key) {
+    return this._session?.custom[key];
+  }
   /**
    * Execute the plan (internal)
    */
@@ -9433,12 +10334,292 @@ var TaskAgent = class _TaskAgent extends EventEmitter {
   async destroy() {
     this.eventCleanupFunctions.forEach((cleanup) => cleanup());
     this.eventCleanupFunctions = [];
+    if (this._sessionManager) {
+      if (this._session) {
+        this._sessionManager.stopAutoSave(this._session.id);
+      }
+      this._sessionManager.destroy();
+    }
+    this._toolManager.removeAllListeners();
     this.externalHandler?.cleanup();
     await this.checkpointManager?.cleanup();
     this.planExecutor?.cleanup();
     this.agent?.destroy();
   }
 };
+
+// src/capabilities/taskAgent/PlanningAgent.ts
+var PLANNING_SYSTEM_PROMPT = `You are an AI planning agent. Your job is to analyze goals and break them down into structured, executable task plans.
+
+**Your Role:**
+1. Analyze the user's goal and context
+2. Break down the goal into logical, atomic tasks
+3. Identify dependencies between tasks
+4. Structure tasks for optimal execution (parallel where possible)
+5. Use the planning tools to create the plan
+
+**Planning Principles:**
+- Each task should have a single, clear responsibility
+- Tasks should be atomic (can't be broken down further meaningfully)
+- Dependencies should be explicit (use dependsOn)
+- Parallel tasks should be marked as such (execution.parallel)
+- Task names should be descriptive snake_case (e.g., "fetch_user_data")
+- Descriptions should be clear and actionable
+
+**Available Planning Tools:**
+- create_task: Add a task to the plan
+- add_dependency: Link tasks with dependencies
+- mark_parallel: Mark tasks that can run in parallel
+- finalize_plan: Complete the planning phase
+
+Always start by analyzing the goal, then create tasks one by one, building dependencies as you go.`;
+var PlanningAgent = class _PlanningAgent {
+  agent;
+  config;
+  currentTasks = [];
+  planningComplete = false;
+  constructor(agent, config) {
+    this.agent = agent;
+    this.config = config;
+  }
+  /**
+   * Create a new PlanningAgent
+   */
+  static create(config) {
+    const planningTools = createPlanningTools();
+    const agent = Agent.create({
+      connector: config.connector,
+      model: config.model,
+      tools: planningTools,
+      instructions: PLANNING_SYSTEM_PROMPT,
+      temperature: config.planningTemperature ?? 0.3,
+      // Lower temp for more structured output
+      maxIterations: config.maxPlanningIterations ?? 20
+    });
+    return new _PlanningAgent(agent, config);
+  }
+  /**
+   * Generate a plan from a goal
+   */
+  async generatePlan(input) {
+    this.currentTasks = [];
+    this.planningComplete = false;
+    const prompt = this.buildPlanningPrompt(input);
+    const response = await this.agent.run(prompt);
+    if (!this.planningComplete && this.currentTasks.length > 0) {
+      this.planningComplete = true;
+    }
+    const plan = createPlan({
+      goal: input.goal,
+      context: input.context,
+      tasks: this.currentTasks,
+      allowDynamicTasks: false
+      // Plans are static by default
+    });
+    return {
+      plan,
+      reasoning: response.output_text || "Plan generated",
+      complexity: this.estimateComplexity(this.currentTasks)
+    };
+  }
+  /**
+   * Validate and refine an existing plan
+   */
+  async refinePlan(plan, feedback) {
+    this.currentTasks = plan.tasks.map((task) => ({
+      name: task.name,
+      description: task.description,
+      dependsOn: task.dependsOn,
+      expectedOutput: task.expectedOutput,
+      condition: task.condition,
+      execution: task.execution,
+      externalDependency: task.externalDependency,
+      maxAttempts: task.maxAttempts
+    }));
+    this.planningComplete = false;
+    const prompt = `I have an existing plan that needs refinement based on feedback.
+
+**Current Plan Goal:** ${plan.goal}
+**Current Plan Context:** ${plan.context || "None"}
+
+**Current Tasks:**
+${this.currentTasks.map((t, i) => `${i + 1}. ${t.name}: ${t.description}${t.dependsOn?.length ? ` (depends on: ${t.dependsOn.join(", ")})` : ""}`).join("\n")}
+
+**Feedback:** ${feedback}
+
+Please refine the plan based on this feedback. You can:
+- Add new tasks
+- Modify existing task descriptions
+- Change dependencies
+- Remove unnecessary tasks
+- Adjust parallel execution
+
+Use the planning tools to make changes, then finalize when complete.`;
+    const response = await this.agent.run(prompt);
+    const refinedPlan = createPlan({
+      goal: plan.goal,
+      context: plan.context,
+      tasks: this.currentTasks,
+      allowDynamicTasks: false
+    });
+    return {
+      plan: refinedPlan,
+      reasoning: response.output_text || "Plan refined",
+      complexity: this.estimateComplexity(this.currentTasks)
+    };
+  }
+  /**
+   * Build planning prompt from input
+   */
+  buildPlanningPrompt(input) {
+    const parts = [];
+    parts.push("Please create an execution plan for the following goal:\n");
+    parts.push(`**Goal:** ${input.goal}
+`);
+    if (input.context) {
+      parts.push(`**Context:** ${input.context}
+`);
+    }
+    if (input.constraints && input.constraints.length > 0) {
+      parts.push("\n**Constraints:**");
+      input.constraints.forEach((c) => parts.push(`- ${c}`));
+      parts.push("");
+    }
+    if (this.config.availableTools && this.config.availableTools.length > 0) {
+      parts.push("\n**Available Tools for Execution:**");
+      this.config.availableTools.forEach((tool) => {
+        parts.push(`- ${tool.definition.function.name}: ${tool.definition.function.description}`);
+      });
+      parts.push("");
+    }
+    parts.push("\nAnalyze this goal and create a structured plan with clear tasks and dependencies.");
+    parts.push("Use the planning tools to build the plan step by step.");
+    return parts.join("\n");
+  }
+  /**
+   * Estimate plan complexity
+   */
+  estimateComplexity(tasks) {
+    const taskCount = tasks.length;
+    const hasDependencies = tasks.some((t) => t.dependsOn && t.dependsOn.length > 0);
+    const hasConditionals = tasks.some((t) => t.condition);
+    const hasExternalDeps = tasks.some((t) => t.externalDependency);
+    if (taskCount <= 3 && !hasDependencies && !hasConditionals && !hasExternalDeps) {
+      return "low";
+    }
+    if (taskCount <= 10 && !hasConditionals && !hasExternalDeps) {
+      return "medium";
+    }
+    return "high";
+  }
+  /**
+   * Get current tasks (for tool access)
+   */
+  getCurrentTasks() {
+    return [...this.currentTasks];
+  }
+  /**
+   * Add task (called by planning tools)
+   */
+  addTask(task) {
+    this.currentTasks.push(task);
+  }
+  /**
+   * Update task (called by planning tools)
+   */
+  updateTask(name, updates) {
+    const task = this.currentTasks.find((t) => t.name === name);
+    if (task) {
+      Object.assign(task, updates);
+    }
+  }
+  /**
+   * Remove task (called by planning tools)
+   */
+  removeTask(name) {
+    const index = this.currentTasks.findIndex((t) => t.name === name);
+    if (index >= 0) {
+      this.currentTasks.splice(index, 1);
+    }
+  }
+  /**
+   * Mark planning as complete
+   */
+  finalizePlanning() {
+    this.planningComplete = true;
+  }
+};
+function createPlanningTools() {
+  return [
+    {
+      definition: {
+        type: "function",
+        function: {
+          name: "create_task",
+          description: "Create a new task in the plan with name, description, and optional dependencies",
+          parameters: {
+            type: "object",
+            properties: {
+              name: {
+                type: "string",
+                description: 'Task name in snake_case (e.g., "fetch_user_data")'
+              },
+              description: {
+                type: "string",
+                description: "Clear, actionable description of what this task does"
+              },
+              depends_on: {
+                type: "array",
+                items: { type: "string" },
+                description: "Array of task names this task depends on (optional)"
+              },
+              parallel: {
+                type: "boolean",
+                description: "Whether this task can run in parallel with others (default: false)"
+              },
+              expected_output: {
+                type: "string",
+                description: "Description of expected output (optional)"
+              }
+            },
+            required: ["name", "description"]
+          }
+        }
+      },
+      execute: async (args) => {
+        return {
+          success: true,
+          message: `Task '${args.name}' created`
+        };
+      },
+      idempotency: {
+        safe: false
+      }
+    },
+    {
+      definition: {
+        type: "function",
+        function: {
+          name: "finalize_plan",
+          description: "Mark the planning phase as complete. Call this when all tasks have been created and the plan is ready.",
+          parameters: {
+            type: "object",
+            properties: {}
+          }
+        }
+      },
+      execute: async () => {
+        return {
+          success: true,
+          message: "Plan finalized and ready for execution"
+        };
+      },
+      idempotency: {
+        safe: false
+      }
+    }
+  ];
+}
 
 // src/core/context/types.ts
 var DEFAULT_CONTEXT_CONFIG2 = {
@@ -10123,6 +11304,10 @@ var TruncateCompactor = class {
       kept.unshift(item);
       tokens += itemTokens;
     }
+    const droppedLength = content.length - kept.length;
+    if (droppedLength === 0) {
+      return component;
+    }
     return {
       ...component,
       content: kept,
@@ -10131,7 +11316,7 @@ var TruncateCompactor = class {
         truncated: true,
         originalLength: content.length,
         keptLength: kept.length,
-        droppedLength: content.length - kept.length
+        droppedLength
       }
     };
   }
@@ -10238,6 +11423,362 @@ function createEstimator(name) {
 
 // src/index.ts
 init_Memory();
+
+// src/infrastructure/storage/InMemorySessionStorage.ts
+var InMemorySessionStorage = class {
+  sessions = /* @__PURE__ */ new Map();
+  async save(session) {
+    this.sessions.set(session.id, JSON.parse(JSON.stringify(session)));
+  }
+  async load(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    return JSON.parse(JSON.stringify(session));
+  }
+  async delete(sessionId) {
+    this.sessions.delete(sessionId);
+  }
+  async exists(sessionId) {
+    return this.sessions.has(sessionId);
+  }
+  async list(filter) {
+    let sessions = Array.from(this.sessions.values());
+    if (filter) {
+      sessions = this.applyFilter(sessions, filter);
+    }
+    sessions.sort(
+      (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
+    );
+    if (filter?.offset) {
+      sessions = sessions.slice(filter.offset);
+    }
+    if (filter?.limit) {
+      sessions = sessions.slice(0, filter.limit);
+    }
+    return sessions.map(this.toSummary);
+  }
+  async search(query, filter) {
+    const lowerQuery = query.toLowerCase();
+    let sessions = Array.from(this.sessions.values());
+    sessions = sessions.filter((s) => {
+      const titleMatch = s.metadata.title?.toLowerCase().includes(lowerQuery);
+      const tagMatch = s.metadata.tags?.some(
+        (t) => t.toLowerCase().includes(lowerQuery)
+      );
+      const idMatch = s.id.toLowerCase().includes(lowerQuery);
+      return titleMatch || tagMatch || idMatch;
+    });
+    if (filter) {
+      sessions = this.applyFilter(sessions, filter);
+    }
+    sessions.sort((a, b) => {
+      const aTitle = a.metadata.title?.toLowerCase().includes(lowerQuery) ? 1 : 0;
+      const bTitle = b.metadata.title?.toLowerCase().includes(lowerQuery) ? 1 : 0;
+      if (aTitle !== bTitle) return bTitle - aTitle;
+      return new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime();
+    });
+    if (filter?.offset) {
+      sessions = sessions.slice(filter.offset);
+    }
+    if (filter?.limit) {
+      sessions = sessions.slice(0, filter.limit);
+    }
+    return sessions.map(this.toSummary);
+  }
+  /**
+   * Clear all sessions (useful for testing)
+   */
+  clear() {
+    this.sessions.clear();
+  }
+  /**
+   * Get count of sessions
+   */
+  get size() {
+    return this.sessions.size;
+  }
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+  applyFilter(sessions, filter) {
+    return sessions.filter((s) => {
+      if (filter.agentType && s.agentType !== filter.agentType) {
+        return false;
+      }
+      if (filter.userId && s.metadata.userId !== filter.userId) {
+        return false;
+      }
+      if (filter.tags && filter.tags.length > 0) {
+        const sessionTags = s.metadata.tags ?? [];
+        const hasMatchingTag = filter.tags.some((t) => sessionTags.includes(t));
+        if (!hasMatchingTag) return false;
+      }
+      if (filter.createdAfter && new Date(s.createdAt) < filter.createdAfter) {
+        return false;
+      }
+      if (filter.createdBefore && new Date(s.createdAt) > filter.createdBefore) {
+        return false;
+      }
+      if (filter.activeAfter && new Date(s.lastActiveAt) < filter.activeAfter) {
+        return false;
+      }
+      if (filter.activeBefore && new Date(s.lastActiveAt) > filter.activeBefore) {
+        return false;
+      }
+      return true;
+    });
+  }
+  toSummary(session) {
+    return {
+      id: session.id,
+      agentType: session.agentType,
+      createdAt: new Date(session.createdAt),
+      lastActiveAt: new Date(session.lastActiveAt),
+      metadata: session.metadata,
+      messageCount: session.history.entries.length
+    };
+  }
+};
+var FileSessionStorage = class {
+  directory;
+  prettyPrint;
+  extension;
+  indexPath;
+  index = null;
+  constructor(config) {
+    this.directory = config.directory;
+    this.prettyPrint = config.prettyPrint ?? false;
+    this.extension = config.extension ?? ".json";
+    this.indexPath = join(this.directory, "_index.json");
+  }
+  async save(session) {
+    await this.ensureDirectory();
+    const filePath = this.getFilePath(session.id);
+    const data = this.prettyPrint ? JSON.stringify(session, null, 2) : JSON.stringify(session);
+    await promises.writeFile(filePath, data, "utf-8");
+    await this.updateIndex(session);
+  }
+  async load(sessionId) {
+    const filePath = this.getFilePath(sessionId);
+    try {
+      const data = await promises.readFile(filePath, "utf-8");
+      return JSON.parse(data);
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+  }
+  async delete(sessionId) {
+    const filePath = this.getFilePath(sessionId);
+    try {
+      await promises.unlink(filePath);
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    await this.removeFromIndex(sessionId);
+  }
+  async exists(sessionId) {
+    const filePath = this.getFilePath(sessionId);
+    try {
+      await promises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async list(filter) {
+    const index = await this.loadIndex();
+    let entries = index.sessions;
+    if (filter) {
+      entries = this.applyFilter(entries, filter);
+    }
+    entries.sort(
+      (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
+    );
+    if (filter?.offset) {
+      entries = entries.slice(filter.offset);
+    }
+    if (filter?.limit) {
+      entries = entries.slice(0, filter.limit);
+    }
+    return entries.map(this.indexEntryToSummary);
+  }
+  async search(query, filter) {
+    const index = await this.loadIndex();
+    const lowerQuery = query.toLowerCase();
+    let entries = index.sessions.filter((e) => {
+      const titleMatch = e.metadata.title?.toLowerCase().includes(lowerQuery);
+      const tagMatch = e.metadata.tags?.some(
+        (t) => t.toLowerCase().includes(lowerQuery)
+      );
+      const idMatch = e.id.toLowerCase().includes(lowerQuery);
+      return titleMatch || tagMatch || idMatch;
+    });
+    if (filter) {
+      entries = this.applyFilter(entries, filter);
+    }
+    entries.sort((a, b) => {
+      const aTitle = a.metadata.title?.toLowerCase().includes(lowerQuery) ? 1 : 0;
+      const bTitle = b.metadata.title?.toLowerCase().includes(lowerQuery) ? 1 : 0;
+      if (aTitle !== bTitle) return bTitle - aTitle;
+      return new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime();
+    });
+    if (filter?.offset) {
+      entries = entries.slice(filter.offset);
+    }
+    if (filter?.limit) {
+      entries = entries.slice(0, filter.limit);
+    }
+    return entries.map(this.indexEntryToSummary);
+  }
+  /**
+   * Rebuild the index by scanning all session files
+   * Useful for recovery or migration
+   */
+  async rebuildIndex() {
+    await this.ensureDirectory();
+    const files = await promises.readdir(this.directory);
+    const sessionFiles = files.filter(
+      (f) => f.endsWith(this.extension) && !f.startsWith("_")
+    );
+    const entries = [];
+    for (const file of sessionFiles) {
+      try {
+        const filePath = join(this.directory, file);
+        const data = await promises.readFile(filePath, "utf-8");
+        const session = JSON.parse(data);
+        entries.push(this.sessionToIndexEntry(session));
+      } catch {
+      }
+    }
+    this.index = {
+      version: 1,
+      sessions: entries,
+      lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    await this.saveIndex();
+  }
+  /**
+   * Get the storage directory path
+   */
+  getDirectory() {
+    return this.directory;
+  }
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+  getFilePath(sessionId) {
+    const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    return join(this.directory, `${safeId}${this.extension}`);
+  }
+  async ensureDirectory() {
+    try {
+      await promises.mkdir(this.directory, { recursive: true });
+    } catch (error) {
+      if (error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+  async loadIndex() {
+    if (this.index) {
+      return this.index;
+    }
+    try {
+      const data = await promises.readFile(this.indexPath, "utf-8");
+      this.index = JSON.parse(data);
+      return this.index;
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        this.index = {
+          version: 1,
+          sessions: [],
+          lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        return this.index;
+      }
+      throw error;
+    }
+  }
+  async saveIndex() {
+    if (!this.index) return;
+    this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
+    const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
+    await promises.writeFile(this.indexPath, data, "utf-8");
+  }
+  async updateIndex(session) {
+    const index = await this.loadIndex();
+    const entry = this.sessionToIndexEntry(session);
+    const existingIdx = index.sessions.findIndex((e) => e.id === session.id);
+    if (existingIdx >= 0) {
+      index.sessions[existingIdx] = entry;
+    } else {
+      index.sessions.push(entry);
+    }
+    await this.saveIndex();
+  }
+  async removeFromIndex(sessionId) {
+    const index = await this.loadIndex();
+    index.sessions = index.sessions.filter((e) => e.id !== sessionId);
+    await this.saveIndex();
+  }
+  sessionToIndexEntry(session) {
+    return {
+      id: session.id,
+      agentType: session.agentType,
+      createdAt: typeof session.createdAt === "string" ? session.createdAt : session.createdAt.toISOString(),
+      lastActiveAt: typeof session.lastActiveAt === "string" ? session.lastActiveAt : session.lastActiveAt.toISOString(),
+      metadata: {
+        title: session.metadata.title,
+        userId: session.metadata.userId,
+        tags: session.metadata.tags
+      },
+      messageCount: session.history.entries.length
+    };
+  }
+  indexEntryToSummary(entry) {
+    return {
+      id: entry.id,
+      agentType: entry.agentType,
+      createdAt: new Date(entry.createdAt),
+      lastActiveAt: new Date(entry.lastActiveAt),
+      metadata: entry.metadata,
+      messageCount: entry.messageCount
+    };
+  }
+  applyFilter(entries, filter) {
+    return entries.filter((e) => {
+      if (filter.agentType && e.agentType !== filter.agentType) {
+        return false;
+      }
+      if (filter.userId && e.metadata.userId !== filter.userId) {
+        return false;
+      }
+      if (filter.tags && filter.tags.length > 0) {
+        const entryTags = e.metadata.tags ?? [];
+        const hasMatchingTag = filter.tags.some((t) => entryTags.includes(t));
+        if (!hasMatchingTag) return false;
+      }
+      if (filter.createdAfter && new Date(e.createdAt) < filter.createdAfter) {
+        return false;
+      }
+      if (filter.createdBefore && new Date(e.createdAt) > filter.createdBefore) {
+        return false;
+      }
+      if (filter.activeAfter && new Date(e.lastActiveAt) < filter.activeAfter) {
+        return false;
+      }
+      if (filter.activeBefore && new Date(e.lastActiveAt) > filter.activeBefore) {
+        return false;
+      }
+      return true;
+    });
+  }
+};
 
 // src/capabilities/agents/StreamHelpers.ts
 var StreamHelpers = class {
@@ -10515,8 +12056,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs4.mkdir(this.directory, { recursive: true });
-      await fs4.chmod(this.directory, 448);
+      await fs5.mkdir(this.directory, { recursive: true });
+      await fs5.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -10532,13 +12073,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs4.writeFile(filePath, encrypted, "utf8");
-    await fs4.chmod(filePath, 384);
+    await fs5.writeFile(filePath, encrypted, "utf8");
+    await fs5.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs4.readFile(filePath, "utf8");
+      const encrypted = await fs5.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -10547,7 +12088,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs4.unlink(filePath);
+        await fs5.unlink(filePath);
       } catch {
       }
       return null;
@@ -10556,7 +12097,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs4.unlink(filePath);
+      await fs5.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -10566,7 +12107,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs4.access(filePath);
+      await fs5.access(filePath);
       return true;
     } catch {
       return false;
@@ -10577,7 +12118,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs4.readdir(this.directory);
+      const files = await fs5.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -10588,10 +12129,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs4.readdir(this.directory);
+      const files = await fs5.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs4.unlink(path3.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs5.unlink(path3.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -10989,14 +12530,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs4.writeFile(filePath, json, "utf8");
-    await fs4.chmod(filePath, 384);
+    await fs5.writeFile(filePath, json, "utf8");
+    await fs5.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs4.readFile(filePath, "utf8");
+      const json = await fs5.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -11009,7 +12550,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs4.unlink(filePath);
+      await fs5.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -11023,7 +12564,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs4.access(filePath);
+      await fs5.access(filePath);
       return true;
     } catch {
       return false;
@@ -11049,13 +12590,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs4.readdir(this.directory);
+      const files = await fs5.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs4.unlink(path3.join(this.directory, f)).catch(() => {
+          (f) => fs5.unlink(path3.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -11082,8 +12623,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs4.mkdir(this.directory, { recursive: true });
-      await fs4.chmod(this.directory, 448);
+      await fs5.mkdir(this.directory, { recursive: true });
+      await fs5.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -11094,7 +12635,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs4.readFile(this.indexPath, "utf8");
+      const json = await fs5.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -11112,8 +12653,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs4.writeFile(this.indexPath, json, "utf8");
-    await fs4.chmod(this.indexPath, 384);
+    await fs5.writeFile(this.indexPath, json, "utf8");
+    await fs5.chmod(this.indexPath, 384);
   }
 };
 
@@ -11325,8 +12866,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs5.existsSync(filePath)) {
-      fs5.unlinkSync(filePath);
+    if (fs6.existsSync(filePath)) {
+      fs6.unlinkSync(filePath);
     }
   } catch {
   }
@@ -11377,7 +12918,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs5.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs6.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -11394,14 +12935,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs5.existsSync(tempFile) && fs5.statSync(tempFile).size > 0) {
+      if (fs6.existsSync(tempFile) && fs6.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs5.existsSync(tempFile) && fs5.statSync(tempFile).size > 0) {
+      if (fs6.existsSync(tempFile) && fs6.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -11428,7 +12969,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs5.existsSync(tempFile) && fs5.statSync(tempFile).size > 0) {
+    if (fs6.existsSync(tempFile) && fs6.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -11441,7 +12982,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs5.readFileSync(filePath);
+    const imageBuffer = fs6.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -12908,7 +14449,1253 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
     this.agent = null;
   }
 };
+init_Memory();
+var ModeManager = class extends EventEmitter$1 {
+  state;
+  transitionHistory = [];
+  constructor(initialMode = "interactive") {
+    super();
+    this.state = {
+      mode: initialMode,
+      enteredAt: /* @__PURE__ */ new Date(),
+      reason: "initial"
+    };
+  }
+  /**
+   * Get current mode
+   */
+  getMode() {
+    return this.state.mode;
+  }
+  /**
+   * Get full mode state
+   */
+  getState() {
+    return { ...this.state };
+  }
+  /**
+   * Check if a transition is allowed
+   */
+  canTransition(to) {
+    const from = this.state.mode;
+    const validTransitions = {
+      "interactive": ["planning", "executing"],
+      "planning": ["interactive", "executing"],
+      "executing": ["interactive", "planning"]
+    };
+    return validTransitions[from].includes(to);
+  }
+  /**
+   * Transition to a new mode
+   */
+  transition(to, reason) {
+    const from = this.state.mode;
+    if (!this.canTransition(to)) {
+      this.emit("mode:transition_blocked", { from, to, reason });
+      return false;
+    }
+    this.transitionHistory.push({ from, to, at: /* @__PURE__ */ new Date(), reason });
+    this.state = {
+      mode: to,
+      enteredAt: /* @__PURE__ */ new Date(),
+      reason,
+      // Clear mode-specific state on transition
+      pendingPlan: to === "planning" ? this.state.pendingPlan : void 0,
+      planApproved: to === "executing" ? true : void 0,
+      currentTaskIndex: to === "executing" ? 0 : void 0
+    };
+    this.emit("mode:changed", { from, to, reason });
+    return true;
+  }
+  /**
+   * Enter planning mode with a goal
+   */
+  enterPlanning(reason = "user_request") {
+    return this.transition("planning", reason);
+  }
+  /**
+   * Enter executing mode (plan must be approved)
+   */
+  enterExecuting(_plan, reason = "plan_approved") {
+    if (this.state.mode === "planning" && !this.state.planApproved) {
+      this.state.planApproved = true;
+    }
+    const success = this.transition("executing", reason);
+    if (success) {
+      this.state.currentTaskIndex = 0;
+    }
+    return success;
+  }
+  /**
+   * Return to interactive mode
+   */
+  returnToInteractive(reason = "completed") {
+    return this.transition("interactive", reason);
+  }
+  /**
+   * Set pending plan (in planning mode)
+   */
+  setPendingPlan(plan) {
+    this.state.pendingPlan = plan;
+    this.state.planApproved = false;
+  }
+  /**
+   * Get pending plan
+   */
+  getPendingPlan() {
+    return this.state.pendingPlan;
+  }
+  /**
+   * Approve the pending plan
+   */
+  approvePlan() {
+    if (this.state.mode !== "planning" || !this.state.pendingPlan) {
+      return false;
+    }
+    this.state.planApproved = true;
+    return true;
+  }
+  /**
+   * Check if plan is approved
+   */
+  isPlanApproved() {
+    return this.state.planApproved ?? false;
+  }
+  /**
+   * Update current task index (in executing mode)
+   */
+  setCurrentTaskIndex(index) {
+    if (this.state.mode === "executing") {
+      this.state.currentTaskIndex = index;
+    }
+  }
+  /**
+   * Get current task index
+   */
+  getCurrentTaskIndex() {
+    return this.state.currentTaskIndex ?? 0;
+  }
+  /**
+   * Pause execution
+   */
+  pauseExecution(reason) {
+    if (this.state.mode === "executing") {
+      this.state.pausedAt = /* @__PURE__ */ new Date();
+      this.state.pauseReason = reason;
+    }
+  }
+  /**
+   * Resume execution
+   */
+  resumeExecution() {
+    if (this.state.mode === "executing") {
+      this.state.pausedAt = void 0;
+      this.state.pauseReason = void 0;
+    }
+  }
+  /**
+   * Check if paused
+   */
+  isPaused() {
+    return this.state.pausedAt !== void 0;
+  }
+  /**
+   * Get pause reason
+   */
+  getPauseReason() {
+    return this.state.pauseReason;
+  }
+  /**
+   * Determine recommended mode based on intent analysis
+   */
+  recommendMode(intent, _currentPlan) {
+    const currentMode = this.state.mode;
+    switch (intent.type) {
+      case "complex":
+        if (currentMode === "interactive") {
+          return "planning";
+        }
+        break;
+      case "approval":
+        if (currentMode === "planning" && this.state.pendingPlan) {
+          return "executing";
+        }
+        break;
+      case "rejection":
+        if (currentMode === "planning") {
+          return "planning";
+        }
+        break;
+      case "plan_modify":
+        if (currentMode === "executing" || currentMode === "interactive") {
+          return "planning";
+        }
+        break;
+      case "interrupt":
+        return "interactive";
+      case "simple":
+      case "question":
+        if (currentMode === "executing") {
+          return null;
+        }
+        return "interactive";
+      case "status_query":
+        return null;
+      case "feedback":
+        return null;
+    }
+    return null;
+  }
+  /**
+   * Get transition history
+   */
+  getHistory() {
+    return [...this.transitionHistory];
+  }
+  /**
+   * Clear transition history
+   */
+  clearHistory() {
+    this.transitionHistory = [];
+  }
+  /**
+   * Get time spent in current mode
+   */
+  getTimeInCurrentMode() {
+    return Date.now() - this.state.enteredAt.getTime();
+  }
+  /**
+   * Serialize state for session persistence
+   */
+  serialize() {
+    return {
+      mode: this.state.mode,
+      enteredAt: this.state.enteredAt.toISOString(),
+      reason: this.state.reason,
+      pendingPlan: this.state.pendingPlan,
+      planApproved: this.state.planApproved,
+      currentTaskIndex: this.state.currentTaskIndex
+    };
+  }
+  /**
+   * Restore state from serialized data
+   */
+  restore(data) {
+    this.state = {
+      mode: data.mode,
+      enteredAt: new Date(data.enteredAt),
+      reason: data.reason,
+      pendingPlan: data.pendingPlan,
+      planApproved: data.planApproved,
+      currentTaskIndex: data.currentTaskIndex
+    };
+  }
+};
 
-export { AIError, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IdempotencyCache, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TaskAgent, TaskAgentContextProvider, ToolCallState, ToolExecutionError, ToolNotFoundError, ToolRegistry, ToolTimeoutError, TruncateCompactor, VENDORS, Vendor, WorkingMemory, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, createAgentStorage, createAuthenticatedFetch, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getModelInfo, getModelsByVendor, hasClipboardImage, isErrorEvent, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, tools_exports as tools };
+// src/capabilities/universalAgent/metaTools.ts
+var startPlanningTool = {
+  definition: {
+    type: "function",
+    function: {
+      name: "_start_planning",
+      description: `Call this when the user's request is complex and requires a multi-step plan.
+Use for tasks that:
+- Require 3 or more distinct steps
+- Need multiple tools to be called in sequence
+- Have dependencies between actions
+- Would benefit from user review before execution
+
+Do NOT use for:
+- Simple questions
+- Single tool calls
+- Quick calculations
+- Direct information retrieval`,
+      parameters: {
+        type: "object",
+        properties: {
+          goal: {
+            type: "string",
+            description: "The high-level goal to achieve"
+          },
+          reasoning: {
+            type: "string",
+            description: "Brief explanation of why planning is needed"
+          }
+        },
+        required: ["goal", "reasoning"]
+      }
+    }
+  },
+  execute: async (args) => {
+    return { status: "planning_started", goal: args.goal };
+  }
+};
+var modifyPlanTool = {
+  definition: {
+    type: "function",
+    function: {
+      name: "_modify_plan",
+      description: `Call this when the user wants to change the current plan.
+Actions:
+- add_task: Add a new task to the plan
+- remove_task: Remove a task from the plan
+- skip_task: Mark a task to be skipped
+- update_task: Modify task description or dependencies
+- reorder: Change task order`,
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["add_task", "remove_task", "skip_task", "update_task", "reorder"],
+            description: "The type of modification"
+          },
+          taskName: {
+            type: "string",
+            description: "Name of the task (for remove/skip/update/reorder)"
+          },
+          details: {
+            type: "string",
+            description: "Details of the modification (new task description, updates, etc.)"
+          },
+          insertAfter: {
+            type: "string",
+            description: "For add_task/reorder: insert after this task name"
+          }
+        },
+        required: ["action", "details"]
+      }
+    }
+  },
+  execute: async (args) => {
+    return { status: "plan_modified", action: args.action };
+  }
+};
+var reportProgressTool = {
+  definition: {
+    type: "function",
+    function: {
+      name: "_report_progress",
+      description: "Call this when the user asks about current progress, status, or what has been done.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: []
+      }
+    }
+  },
+  execute: async () => {
+    return { status: "progress_reported", progress: null };
+  }
+};
+var requestApprovalTool = {
+  definition: {
+    type: "function",
+    function: {
+      name: "_request_approval",
+      description: "Call this when you need user approval to proceed. Use after creating a plan or before destructive operations.",
+      parameters: {
+        type: "object",
+        properties: {
+          message: {
+            type: "string",
+            description: "Optional message to show the user"
+          }
+        },
+        required: []
+      }
+    }
+  },
+  execute: async (args) => {
+    return { status: "approval_requested", message: args?.message };
+  }
+};
+function getMetaTools() {
+  return [
+    startPlanningTool,
+    modifyPlanTool,
+    reportProgressTool,
+    requestApprovalTool
+  ];
+}
+function isMetaTool(toolName) {
+  return toolName.startsWith("_");
+}
+var META_TOOL_NAMES = {
+  START_PLANNING: "_start_planning",
+  MODIFY_PLAN: "_modify_plan",
+  REPORT_PROGRESS: "_report_progress",
+  REQUEST_APPROVAL: "_request_approval"
+};
+
+// src/capabilities/universalAgent/UniversalAgent.ts
+var UniversalAgent = class _UniversalAgent extends EventEmitter$1 {
+  name;
+  connector;
+  model;
+  // Core components
+  config;
+  agent;
+  _toolManager;
+  modeManager;
+  planningAgent;
+  workingMemory;
+  // Session management
+  _sessionManager = null;
+  _session = null;
+  // Execution state
+  currentPlan = null;
+  executionHistory = [];
+  isDestroyed = false;
+  // ============================================================================
+  // Static Factory
+  // ============================================================================
+  /**
+   * Create a new UniversalAgent
+   */
+  static create(config) {
+    return new _UniversalAgent(config);
+  }
+  /**
+   * Resume an agent from a saved session
+   */
+  static async resume(sessionId, config) {
+    const agent = new _UniversalAgent({
+      ...config,
+      session: {
+        ...config.session,
+        id: sessionId
+      }
+    });
+    await agent.loadSession(sessionId);
+    return agent;
+  }
+  // ============================================================================
+  // Constructor
+  // ============================================================================
+  constructor(config) {
+    super();
+    this.connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
+    this.name = config.name ?? `universal-agent-${Date.now()}`;
+    this.model = config.model;
+    this.config = config;
+    this._toolManager = config.toolManager ?? new ToolManager();
+    if (config.tools) {
+      for (const tool of config.tools) {
+        this._toolManager.register(tool, { namespace: "user" });
+      }
+    }
+    const metaTools = getMetaTools();
+    for (const tool of metaTools) {
+      this._toolManager.register(tool, { namespace: "_meta" });
+    }
+    const allTools = this._toolManager.getEnabled();
+    this.agent = Agent.create({
+      connector: config.connector,
+      model: config.model,
+      tools: allTools,
+      instructions: this.buildInstructions(config.instructions),
+      temperature: config.temperature,
+      maxIterations: config.maxIterations ?? 20
+    });
+    this.modeManager = new ModeManager("interactive");
+    this.modeManager.on("mode:changed", (data) => {
+      this.emit("mode:changed", data);
+    });
+    const planningEnabled = config.planning?.enabled !== false;
+    if (planningEnabled) {
+      this.planningAgent = PlanningAgent.create({
+        connector: config.connector,
+        model: config.planning?.model ?? config.model,
+        availableTools: this._toolManager.getEnabled().filter((t) => !isMetaTool(t.definition.function.name))
+      });
+    }
+    const memoryStorage = new InMemoryStorage();
+    this.workingMemory = new WorkingMemory(memoryStorage, config.memoryConfig ?? DEFAULT_MEMORY_CONFIG);
+    if (config.session) {
+      this._sessionManager = new SessionManager({ storage: config.session.storage });
+      if (!config.session.id) {
+        this._session = this._sessionManager.create("universal-agent", {
+          title: this.name
+        });
+        if (config.session.autoSave) {
+          const interval = config.session.autoSaveIntervalMs ?? 3e4;
+          this._sessionManager.enableAutoSave(this._session, interval);
+        }
+      }
+    }
+  }
+  // ============================================================================
+  // Main API
+  // ============================================================================
+  /**
+   * Chat with the agent - the main entry point
+   */
+  async chat(input) {
+    if (this.isDestroyed) {
+      throw new Error("Agent has been destroyed");
+    }
+    const intent = await this.analyzeIntent(input);
+    let response;
+    switch (this.modeManager.getMode()) {
+      case "interactive":
+        response = await this.handleInteractive(input, intent);
+        break;
+      case "planning":
+        response = await this.handlePlanning(input, intent);
+        break;
+      case "executing":
+        response = await this.handleExecuting(input, intent);
+        break;
+      default:
+        throw new Error(`Unknown mode: ${this.modeManager.getMode()}`);
+    }
+    this.executionHistory.push({
+      input,
+      response,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    if (this.config.session?.autoSave && this._session) {
+      await this.saveSession().catch(() => {
+      });
+    }
+    return response;
+  }
+  /**
+   * Stream chat response
+   */
+  async *stream(input) {
+    if (this.isDestroyed) {
+      throw new Error("Agent has been destroyed");
+    }
+    const intent = await this.analyzeIntent(input);
+    const recommendedMode = this.modeManager.recommendMode(intent, this.currentPlan ?? void 0);
+    if (recommendedMode && recommendedMode !== this.modeManager.getMode()) {
+      const from = this.modeManager.getMode();
+      this.modeManager.transition(recommendedMode, intent.type);
+      yield { type: "mode:changed", from, to: recommendedMode, reason: intent.type };
+    }
+    const mode = this.modeManager.getMode();
+    if (mode === "interactive") {
+      yield* this.streamInteractive(input, intent);
+    } else if (mode === "planning") {
+      yield* this.streamPlanning(input, intent);
+    } else if (mode === "executing") {
+      yield* this.streamExecuting(intent);
+    }
+  }
+  // ============================================================================
+  // Mode Handlers
+  // ============================================================================
+  async handleInteractive(input, intent) {
+    const shouldPlan = this.shouldSwitchToPlanning(intent);
+    if (shouldPlan) {
+      this.modeManager.enterPlanning("complex_task_detected");
+      return this.handlePlanning(input, intent);
+    }
+    const response = await this.agent.run(input);
+    const planningToolCall = response.output.find(
+      (item) => item.type === "tool_use" && item.name === META_TOOL_NAMES.START_PLANNING
+    );
+    if (planningToolCall) {
+      this.modeManager.enterPlanning("agent_requested");
+      const args = JSON.parse(planningToolCall.input || "{}");
+      return this.createPlan(args.goal, args.reasoning);
+    }
+    return {
+      text: response.output_text ?? "",
+      mode: "interactive",
+      usage: response.usage ? {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        totalTokens: response.usage.total_tokens
+      } : void 0
+    };
+  }
+  async handlePlanning(input, intent) {
+    if (intent.type === "approval" && this.modeManager.getPendingPlan()) {
+      return this.approvePlan(intent.feedback);
+    }
+    if (intent.type === "rejection") {
+      return this.handlePlanRejection(input, intent);
+    }
+    if (intent.type === "plan_modify" && intent.modification) {
+      return this.modifyPlan(intent.modification);
+    }
+    if (!this.modeManager.getPendingPlan()) {
+      return this.createPlan(input);
+    } else {
+      return this.refinePlan(input);
+    }
+  }
+  async handleExecuting(input, intent) {
+    if (intent.type === "interrupt") {
+      this.modeManager.pauseExecution("user_interrupt");
+      return {
+        text: "Execution paused. What would you like to do?",
+        mode: "executing",
+        taskProgress: this.getTaskProgress(),
+        needsUserAction: true,
+        userActionType: "provide_input"
+      };
+    }
+    if (intent.type === "status_query") {
+      return this.reportProgress();
+    }
+    if (intent.type === "plan_modify" && intent.modification) {
+      this.modeManager.pauseExecution("plan_modification");
+      const modifyResult = await this.modifyPlan(intent.modification);
+      this.modeManager.resumeExecution();
+      return modifyResult;
+    }
+    if (intent.type === "feedback") {
+      await this.workingMemory.store(
+        `user_feedback_${Date.now()}`,
+        "User feedback during execution",
+        input,
+        "persistent"
+      );
+      return {
+        text: "Noted. I'll keep that in mind as I continue.",
+        mode: "executing",
+        taskProgress: this.getTaskProgress()
+      };
+    }
+    if (this.modeManager.isPaused()) {
+      this.modeManager.resumeExecution();
+      return this.continueExecution();
+    }
+    const response = await this.agent.run(input);
+    return {
+      text: response.output_text ?? "",
+      mode: "executing",
+      taskProgress: this.getTaskProgress()
+    };
+  }
+  // ============================================================================
+  // Streaming Handlers
+  // ============================================================================
+  async *streamInteractive(input, intent) {
+    if (this.shouldSwitchToPlanning(intent)) {
+      const from = this.modeManager.getMode();
+      this.modeManager.enterPlanning("complex_task_detected");
+      yield { type: "mode:changed", from, to: "planning", reason: "complex_task_detected" };
+      yield* this.streamPlanning(input, intent);
+      return;
+    }
+    let fullText = "";
+    for await (const event of this.agent.stream(input)) {
+      if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
+        const delta = event.delta || "";
+        fullText += delta;
+        yield { type: "text:delta", delta };
+      } else if (event.type === "response.tool_call.start" /* TOOL_CALL_START */) {
+        yield { type: "tool:start", name: event.tool_name || "unknown", args: null };
+      } else if (event.type === "response.tool_execution.done" /* TOOL_EXECUTION_DONE */) {
+        yield { type: "tool:complete", name: event.name || "unknown", result: event.result, durationMs: 0 };
+      }
+    }
+    yield { type: "text:done", text: fullText };
+  }
+  async *streamPlanning(input, intent) {
+    if (intent.type === "approval" && this.modeManager.getPendingPlan()) {
+      const plan2 = this.modeManager.getPendingPlan();
+      this.modeManager.approvePlan();
+      yield { type: "plan:approved", plan: plan2 };
+      this.modeManager.enterExecuting(plan2, "plan_approved");
+      yield { type: "mode:changed", from: "planning", to: "executing", reason: "plan_approved" };
+      yield* this.streamExecution();
+      return;
+    }
+    yield { type: "plan:analyzing", goal: input };
+    const plan = await this.createPlanInternal(input);
+    this.modeManager.setPendingPlan(plan);
+    this.currentPlan = plan;
+    yield { type: "plan:created", plan };
+    if (this.config.planning?.requireApproval !== false) {
+      yield { type: "plan:awaiting_approval", plan };
+      yield { type: "needs:approval", plan };
+      const summary = this.formatPlanSummary(plan);
+      yield { type: "text:delta", delta: summary };
+      yield { type: "text:done", text: summary };
+    }
+  }
+  async *streamExecuting(intent) {
+    if (intent.type === "status_query") {
+      const progress = this.getTaskProgress();
+      const text = this.formatProgress(progress);
+      yield { type: "text:delta", delta: text };
+      yield { type: "text:done", text };
+      return;
+    }
+    yield* this.streamExecution();
+  }
+  async *streamExecution() {
+    if (!this.currentPlan) {
+      yield { type: "error", error: "No plan to execute", recoverable: false };
+      return;
+    }
+    const tasks = this.currentPlan.tasks;
+    let completedTasks = 0;
+    let failedTasks = 0;
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      if (!task) continue;
+      if (this.modeManager.isPaused()) {
+        yield { type: "execution:paused", reason: this.modeManager.getPauseReason() || "unknown" };
+        return;
+      }
+      if (task.status === "completed" || task.status === "failed" || task.status === "skipped") {
+        if (task.status === "completed") completedTasks++;
+        if (task.status === "failed") failedTasks++;
+        continue;
+      }
+      task.status = "in_progress";
+      task.startedAt = Date.now();
+      task.attempts = (task.attempts || 0) + 1;
+      this.modeManager.setCurrentTaskIndex(i);
+      yield { type: "task:started", task };
+      try {
+        const prompt = this.buildTaskPrompt(task);
+        let taskResultText = "";
+        for await (const event of this.agent.stream(prompt)) {
+          if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
+            const delta = event.delta || "";
+            taskResultText += delta;
+            yield { type: "task:progress", task, status: delta };
+          } else if (event.type === "response.tool_call.start" /* TOOL_CALL_START */) {
+            yield { type: "tool:start", name: event.tool_name || "unknown", args: null };
+          } else if (event.type === "response.tool_execution.done" /* TOOL_EXECUTION_DONE */) {
+            yield { type: "tool:complete", name: event.name || "unknown", result: event.result, durationMs: 0 };
+          }
+        }
+        task.status = "completed";
+        task.completedAt = Date.now();
+        task.result = { success: true, output: taskResultText };
+        completedTasks++;
+        yield { type: "task:completed", task, result: taskResultText };
+      } catch (error) {
+        task.status = "failed";
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        task.result = { success: false, error: errorMsg };
+        failedTasks++;
+        yield { type: "task:failed", task, error: errorMsg };
+      }
+    }
+    const result = {
+      status: failedTasks === 0 ? "completed" : "failed",
+      completedTasks,
+      totalTasks: tasks.length,
+      failedTasks,
+      skippedTasks: tasks.filter((t) => t.status === "skipped").length
+    };
+    yield { type: "execution:done", result };
+    this.modeManager.returnToInteractive("execution_completed");
+    yield { type: "mode:changed", from: "executing", to: "interactive", reason: "execution_completed" };
+    this.emit("execution:completed", { result });
+  }
+  // ============================================================================
+  // Planning Helpers
+  // ============================================================================
+  async createPlan(goal, _reasoning) {
+    const plan = await this.createPlanInternal(goal);
+    this.modeManager.setPendingPlan(plan);
+    this.currentPlan = plan;
+    this.emit("plan:created", { plan });
+    const summary = this.formatPlanSummary(plan);
+    const requireApproval = this.config.planning?.requireApproval !== false;
+    return {
+      text: summary,
+      mode: "planning",
+      plan,
+      planStatus: requireApproval ? "pending_approval" : "approved",
+      needsUserAction: requireApproval,
+      userActionType: requireApproval ? "approve_plan" : void 0
+    };
+  }
+  async createPlanInternal(goal) {
+    if (this.planningAgent) {
+      const result = await this.planningAgent.generatePlan({ goal });
+      return createPlan({ goal, tasks: result.plan.tasks });
+    }
+    return createPlan({
+      goal,
+      tasks: [{ name: "execute", description: goal }]
+    });
+  }
+  async approvePlan(_feedback) {
+    const plan = this.modeManager.getPendingPlan();
+    if (!plan) {
+      return {
+        text: "No plan to approve.",
+        mode: this.modeManager.getMode()
+      };
+    }
+    this.modeManager.approvePlan();
+    this.modeManager.enterExecuting(plan, "user_approved");
+    this.currentPlan = plan;
+    this.emit("plan:approved", { plan });
+    return this.continueExecution();
+  }
+  async handlePlanRejection(_input, intent) {
+    if (intent.feedback) {
+      return this.refinePlan(intent.feedback);
+    }
+    return {
+      text: "I understand you'd like to change the plan. What would you like me to modify?",
+      mode: "planning",
+      plan: this.modeManager.getPendingPlan(),
+      needsUserAction: true,
+      userActionType: "provide_input"
+    };
+  }
+  async refinePlan(feedback) {
+    const currentPlan = this.modeManager.getPendingPlan();
+    if (!currentPlan || !this.planningAgent) {
+      return this.createPlan(feedback);
+    }
+    const refined = await this.planningAgent.refinePlan(currentPlan, feedback);
+    this.modeManager.setPendingPlan(refined.plan);
+    this.currentPlan = refined.plan;
+    this.emit("plan:modified", { plan: refined.plan, changes: [] });
+    return {
+      text: this.formatPlanSummary(refined.plan),
+      mode: "planning",
+      plan: refined.plan,
+      planStatus: "pending_approval",
+      needsUserAction: true,
+      userActionType: "approve_plan"
+    };
+  }
+  async modifyPlan(modification) {
+    if (!modification || !this.currentPlan) {
+      return {
+        text: "No active plan to modify.",
+        mode: this.modeManager.getMode()
+      };
+    }
+    const changes = [];
+    switch (modification.action) {
+      case "add_task": {
+        const newTask = createTask({
+          name: `task_${this.currentPlan.tasks.length + 1}`,
+          description: modification.details ?? "New task"
+        });
+        this.currentPlan.tasks.push(newTask);
+        changes.push({ type: "task_added", taskId: newTask.id, taskName: newTask.name, details: modification.details });
+        break;
+      }
+      case "remove_task": {
+        const idx = this.currentPlan.tasks.findIndex((t) => t.name === modification.taskName);
+        if (idx >= 0) {
+          this.currentPlan.tasks.splice(idx, 1);
+          changes.push({ type: "task_removed", taskName: modification.taskName });
+        }
+        break;
+      }
+      case "skip_task": {
+        const task = this.currentPlan.tasks.find((t) => t.name === modification.taskName);
+        if (task) {
+          task.status = "skipped";
+          changes.push({ type: "task_updated", taskId: task.id, taskName: task.name, details: "Marked as skipped" });
+        }
+        break;
+      }
+      case "update_task": {
+        const task = this.currentPlan.tasks.find((t) => t.name === modification.taskName);
+        if (task && modification.details) {
+          task.description = modification.details;
+          changes.push({ type: "task_updated", taskId: task.id, taskName: task.name, details: modification.details });
+        }
+        break;
+      }
+    }
+    this.currentPlan.lastUpdatedAt = Date.now();
+    this.emit("plan:modified", { plan: this.currentPlan, changes });
+    return {
+      text: `Plan updated: ${changes.map((c) => c.details || c.type).join(", ")}`,
+      mode: this.modeManager.getMode(),
+      plan: this.currentPlan
+    };
+  }
+  // ============================================================================
+  // Execution Helpers
+  // ============================================================================
+  async continueExecution() {
+    if (!this.currentPlan) {
+      return {
+        text: "No plan to execute.",
+        mode: "interactive"
+      };
+    }
+    const tasks = this.currentPlan.tasks;
+    const pendingTasks = tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
+    if (pendingTasks.length === 0) {
+      this.modeManager.returnToInteractive("all_tasks_completed");
+      return {
+        text: "All tasks completed!",
+        mode: "interactive",
+        taskProgress: this.getTaskProgress()
+      };
+    }
+    const nextTask = pendingTasks[0];
+    if (!nextTask) {
+      throw new Error("No pending task found");
+    }
+    nextTask.status = "in_progress";
+    nextTask.startedAt = Date.now();
+    nextTask.attempts = (nextTask.attempts || 0) + 1;
+    this.emit("task:started", { task: nextTask });
+    try {
+      const prompt = this.buildTaskPrompt(nextTask);
+      const response = await this.agent.run(prompt);
+      nextTask.status = "completed";
+      nextTask.completedAt = Date.now();
+      nextTask.result = { success: true, output: response.output_text };
+      this.emit("task:completed", { task: nextTask, result: response.output_text });
+      const remaining = tasks.filter((t) => t.status === "pending");
+      if (remaining.length > 0) {
+        return {
+          text: `Completed: ${nextTask.name}
+
+Continuing to next task...`,
+          mode: "executing",
+          taskProgress: this.getTaskProgress()
+        };
+      } else {
+        this.modeManager.returnToInteractive("all_tasks_completed");
+        return {
+          text: `All tasks completed!
+
+Final task result:
+${response.output_text}`,
+          mode: "interactive",
+          taskProgress: this.getTaskProgress()
+        };
+      }
+    } catch (error) {
+      nextTask.status = "failed";
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      nextTask.result = { success: false, error: errorMsg };
+      this.emit("task:failed", { task: nextTask, error: errorMsg });
+      return {
+        text: `Task failed: ${errorMsg}`,
+        mode: "executing",
+        taskProgress: this.getTaskProgress()
+      };
+    }
+  }
+  reportProgress() {
+    const progress = this.getTaskProgress();
+    return {
+      text: this.formatProgress(progress),
+      mode: this.modeManager.getMode(),
+      taskProgress: progress
+    };
+  }
+  // ============================================================================
+  // Intent Analysis
+  // ============================================================================
+  async analyzeIntent(input) {
+    const lowerInput = input.toLowerCase().trim();
+    if (this.isApproval(lowerInput)) {
+      return { type: "approval", confidence: 0.9 };
+    }
+    if (this.isRejection(lowerInput)) {
+      return { type: "rejection", confidence: 0.9, feedback: input };
+    }
+    if (this.isStatusQuery(lowerInput)) {
+      return { type: "status_query", confidence: 0.9 };
+    }
+    if (this.isInterrupt(lowerInput)) {
+      return { type: "interrupt", confidence: 0.9 };
+    }
+    if (this.isPlanModification(lowerInput)) {
+      return {
+        type: "plan_modify",
+        confidence: 0.8,
+        modification: this.parsePlanModification(input)
+      };
+    }
+    const complexity = this.estimateComplexity(input);
+    if (complexity === "high" || complexity === "medium") {
+      return {
+        type: "complex",
+        confidence: 0.7,
+        complexity,
+        estimatedSteps: this.estimateSteps(input)
+      };
+    }
+    return { type: "simple", confidence: 0.8 };
+  }
+  isApproval(input) {
+    const approvalPatterns = [
+      /^(yes|yeah|yep|sure|ok|okay|go ahead|proceed|approve|looks good|lgtm|do it|start|execute|run it)$/i,
+      /^(that('s| is) (good|fine|great|perfect))$/i,
+      /^(please proceed|please continue|continue)$/i
+    ];
+    return approvalPatterns.some((p) => p.test(input));
+  }
+  isRejection(input) {
+    const rejectionPatterns = [
+      /^(no|nope|nah|stop|cancel|reject|don't|wait)$/i,
+      /^(that('s| is) (wrong|not right|incorrect))$/i,
+      /change|modify|different|instead/i
+    ];
+    return rejectionPatterns.some((p) => p.test(input));
+  }
+  isStatusQuery(input) {
+    const statusPatterns = [
+      /status|progress|where are (you|we)|what('s| is) (the )?(status|progress)/i,
+      /how('s| is) it going|what have you done|current state/i,
+      /which task|what task/i
+    ];
+    return statusPatterns.some((p) => p.test(input));
+  }
+  isInterrupt(input) {
+    const interruptPatterns = [
+      /^(stop|pause|wait|hold on|hold up)$/i,
+      /stop (what you're doing|execution|everything)/i
+    ];
+    return interruptPatterns.some((p) => p.test(input));
+  }
+  isPlanModification(input) {
+    const modPatterns = [
+      /add (a )?task|new task|also (do|add)|additionally/i,
+      /remove (the )?task|skip (the )?task|don't do/i,
+      /change (the )?order|reorder|do .* first|prioritize/i,
+      /update (the )?task|modify (the )?task/i
+    ];
+    return modPatterns.some((p) => p.test(input));
+  }
+  parsePlanModification(input) {
+    const lowerInput = input.toLowerCase();
+    if (/add|new|also|additionally/.test(lowerInput)) {
+      return { action: "add_task", details: input };
+    }
+    if (/remove|skip|don't/.test(lowerInput)) {
+      return { action: "skip_task", details: input };
+    }
+    if (/reorder|first|prioritize/.test(lowerInput)) {
+      return { action: "reorder", details: input };
+    }
+    return { action: "update_task", details: input };
+  }
+  estimateComplexity(input) {
+    const words = input.split(/\s+/).length;
+    const hasMultipleActions = /and|then|after|before|also|additionally/.test(input.toLowerCase());
+    const hasComplexKeywords = /build|create|implement|design|develop|setup|configure|migrate|refactor/.test(input.toLowerCase());
+    if (words > 50 || hasMultipleActions && hasComplexKeywords) {
+      return "high";
+    }
+    if (words > 20 || hasMultipleActions || hasComplexKeywords) {
+      return "medium";
+    }
+    return "low";
+  }
+  estimateSteps(input) {
+    const andCount = (input.match(/\band\b/gi) || []).length;
+    const thenCount = (input.match(/\bthen\b/gi) || []).length;
+    return Math.max(2, andCount + thenCount + 1);
+  }
+  shouldSwitchToPlanning(intent) {
+    if (this.config.planning?.enabled !== false && this.config.planning?.autoDetect !== false) {
+      return intent.type === "complex" && (intent.complexity === "high" || intent.complexity === "medium");
+    }
+    return false;
+  }
+  // ============================================================================
+  // Helpers
+  // ============================================================================
+  buildInstructions(userInstructions) {
+    const baseInstructions = `You are a versatile AI assistant that can handle both simple requests and complex multi-step tasks.
+
+For simple requests:
+- Answer questions directly
+- Use tools when needed for immediate results
+
+For complex requests:
+- Use the _start_planning tool to create a structured plan
+- Wait for user approval before executing
+
+You have access to meta-tools:
+- _start_planning: Call when a task needs multiple steps
+- _modify_plan: Call when user wants to change the plan
+- _report_progress: Call when user asks about status
+- _request_approval: Call when you need user confirmation
+
+Always be helpful, clear, and ask for clarification when needed.`;
+    return userInstructions ? `${baseInstructions}
+
+Additional instructions:
+${userInstructions}` : baseInstructions;
+  }
+  buildTaskPrompt(task) {
+    let prompt = `Execute the following task:
+
+Task: ${task.name}
+Description: ${task.description}`;
+    if (task.expectedOutput) {
+      prompt += `
+Expected Output: ${task.expectedOutput}`;
+    }
+    return prompt;
+  }
+  formatPlanSummary(plan) {
+    let summary = `I've created a plan to: ${plan.goal}
+
+`;
+    summary += `Tasks (${plan.tasks.length}):
+`;
+    plan.tasks.forEach((task, i) => {
+      const deps = task.dependsOn?.length ? ` (depends on: ${task.dependsOn.join(", ")})` : "";
+      summary += `${i + 1}. ${task.name}: ${task.description}${deps}
+`;
+    });
+    summary += "\nWould you like me to proceed with this plan?";
+    return summary;
+  }
+  formatProgress(progress) {
+    let text = `Progress: ${progress.completed}/${progress.total} tasks completed`;
+    if (progress.failed > 0) {
+      text += ` (${progress.failed} failed)`;
+    }
+    if (progress.skipped > 0) {
+      text += ` (${progress.skipped} skipped)`;
+    }
+    if (progress.current) {
+      text += `
+
+Currently working on: ${progress.current.name}`;
+    }
+    return text;
+  }
+  getTaskProgress() {
+    if (!this.currentPlan) {
+      return { completed: 0, total: 0, failed: 0, skipped: 0 };
+    }
+    const tasks = this.currentPlan.tasks;
+    const currentIdx = this.modeManager.getCurrentTaskIndex();
+    return {
+      completed: tasks.filter((t) => t.status === "completed").length,
+      total: tasks.length,
+      current: tasks[currentIdx],
+      failed: tasks.filter((t) => t.status === "failed").length,
+      skipped: tasks.filter((t) => t.status === "skipped").length
+    };
+  }
+  // ============================================================================
+  // Session Management
+  // ============================================================================
+  getSessionId() {
+    return this._session?.id ?? null;
+  }
+  hasSession() {
+    return this._session !== null;
+  }
+  async saveSession() {
+    if (!this._sessionManager || !this._session) {
+      throw new Error("Session not enabled");
+    }
+    this._session.toolState = this._toolManager.getState();
+    this._session.mode = this.modeManager.getMode();
+    if (this.currentPlan) {
+      this._session.plan = { version: 1, data: this.currentPlan };
+    }
+    this._session.custom["modeState"] = this.modeManager.serialize();
+    this._session.custom["executionHistory"] = this.executionHistory;
+    await this._sessionManager.save(this._session);
+  }
+  async loadSession(sessionId) {
+    if (!this._sessionManager) return;
+    const session = await this._sessionManager.load(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    this._session = session;
+    if (session.toolState) {
+      this._toolManager.loadState(session.toolState);
+    }
+    if (session.custom["modeState"]) {
+      this.modeManager.restore(session.custom["modeState"]);
+    }
+    if (session.plan?.data) {
+      this.currentPlan = session.plan.data;
+    }
+    if (session.custom["executionHistory"]) {
+      this.executionHistory = session.custom["executionHistory"];
+    }
+  }
+  getSession() {
+    return this._session;
+  }
+  // ============================================================================
+  // Public Getters
+  // ============================================================================
+  getMode() {
+    return this.modeManager.getMode();
+  }
+  getPlan() {
+    return this.currentPlan;
+  }
+  getProgress() {
+    if (this.modeManager.getMode() !== "executing" || !this.currentPlan) {
+      return null;
+    }
+    return this.getTaskProgress();
+  }
+  get toolManager() {
+    return this._toolManager;
+  }
+  // ============================================================================
+  // Runtime Configuration
+  // ============================================================================
+  setAutoApproval(value) {
+    if (this.config.planning) {
+      this.config.planning.requireApproval = !value;
+    }
+  }
+  setPlanningEnabled(value) {
+    if (this.config.planning) {
+      this.config.planning.enabled = value;
+    }
+  }
+  // ============================================================================
+  // Control
+  // ============================================================================
+  pause() {
+    if (this.modeManager.getMode() === "executing") {
+      this.modeManager.pauseExecution("user_request");
+    }
+  }
+  resume() {
+    if (this.modeManager.isPaused()) {
+      this.modeManager.resumeExecution();
+    }
+  }
+  cancel() {
+    if (this.currentPlan) {
+      this.currentPlan.status = "cancelled";
+    }
+    this.modeManager.returnToInteractive("cancelled");
+  }
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
+  destroy() {
+    if (this.isDestroyed) return;
+    this.isDestroyed = true;
+    if (this._sessionManager && this._session) {
+      this._sessionManager.stopAutoSave(this._session.id);
+      this._sessionManager.destroy();
+    }
+    this.agent.destroy();
+    this._toolManager.removeAllListeners();
+    this.modeManager.removeAllListeners();
+    this.removeAllListeners();
+  }
+};
+
+export { AIError, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IdempotencyCache, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, SessionManager, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TaskAgent, TaskAgentContextProvider, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, Vendor, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getMetaTools, getModelInfo, getModelsByVendor, hasClipboardImage, isErrorEvent, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

@@ -11,6 +11,9 @@
 - ✨ **Unified API** - One interface for 10+ AI providers (OpenAI, Anthropic, Google, Groq, DeepSeek, and more)
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
 - 📊 **Model Registry** - Complete metadata for 23+ latest (2026) models with pricing and features
+- 🤖 **Universal Agent** - NEW: Unified agent combining chat, planning, and execution in one interface
+- 🎛️ **Dynamic Tool Management** - NEW: Enable/disable tools at runtime, namespaces, priority-based selection
+- 💾 **Session Persistence** - NEW: Save and resume conversations for all agent types
 - 🤖 **Task Agents** - Autonomous agents with working memory, context management, and state persistence
 - 🎯 **Context Management** - Smart strategies (proactive, aggressive, lazy, rolling-window, adaptive)
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
@@ -119,7 +122,107 @@ const response = await agent.run(
 
 ## Key Features
 
-### 1. Task Agents
+### 1. Universal Agent (NEW)
+
+Combines interactive chat, planning, and task execution in one powerful agent:
+
+```typescript
+import { UniversalAgent, FileSessionStorage } from '@oneringai/agents';
+
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool, emailTool],
+  planning: {
+    enabled: true,
+    autoDetect: true,        // Auto-detect complex tasks
+    requireApproval: true,   // Require approval before execution
+  },
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+  },
+});
+
+// Chat - handles mode transitions automatically
+const response = await agent.chat('Check weather and email me the report');
+console.log(response.text);
+console.log('Mode:', response.mode);  // 'interactive' | 'planning' | 'executing'
+
+// Get current state
+const mode = agent.getMode();
+const plan = agent.getPlan();
+const progress = agent.getProgress();
+```
+
+**Features:**
+- 🔄 **Auto-mode switching** - Seamlessly transitions between interactive, planning, and executing
+- 🧠 **Complexity detection** - LLM detects when tasks need planning
+- ✏️ **Dynamic plans** - Users can modify plans mid-execution
+- 💾 **Session persistence** - Resume conversations across restarts
+- ⚙️ **Runtime configuration** - Change approval requirements on the fly
+
+### 2. Dynamic Tool Management (NEW)
+
+Control tools at runtime for all agent types:
+
+```typescript
+import { Agent } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool, emailTool, databaseTool],
+});
+
+// Disable tool temporarily
+agent.tools.disable('database_tool');
+
+// Enable later
+agent.tools.enable('database_tool');
+
+// Context-aware selection
+const selected = agent.tools.selectForContext({
+  mode: 'interactive',
+  priority: 'high',
+});
+
+// Backward compatible
+agent.addTool(newTool);        // Still works!
+agent.removeTool('old_tool');  // Still works!
+```
+
+### 3. Session Persistence (NEW)
+
+Save and resume conversations for any agent type:
+
+```typescript
+import { Agent, FileSessionStorage } from '@oneringai/agents';
+
+// Create agent with session support
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+    autoSaveIntervalMs: 30000,  // Auto-save every 30s
+  },
+});
+
+await agent.run('Remember: my favorite color is blue');
+const sessionId = agent.getSessionId();
+
+// Later... resume from session
+const resumed = await Agent.resume(sessionId, {
+  storage: new FileSessionStorage({ directory: './sessions' }),
+});
+
+await resumed.run('What is my favorite color?');
+// Output: "Your favorite color is blue."
+```
+
+### 4. Task Agents
 
 Autonomous agents for complex workflows:
 
@@ -148,7 +251,7 @@ await agent.start({
 - 🔗 **External Dependencies** - Wait for webhooks, polling, manual input
 - 🔄 **Tool Idempotency** - Prevent duplicate side effects
 
-### 2. Context Management
+### 5. Context Management
 
 Five strategies for different use cases:
 
@@ -165,7 +268,7 @@ const contextManager = new ContextManager(provider, {
 // - Adapts based on usage patterns
 ```
 
-### 3. Model Registry
+### 6. Model Registry
 
 Complete metadata for 23+ models:
 
@@ -193,7 +296,7 @@ console.log(`Cached: $${cachedCost}`);  // $0.0293 (90% discount)
 - **Anthropic (5)**: Claude 4.5 series, Claude 4.x
 - **Google (7)**: Gemini 3, Gemini 2.5
 
-### 4. Streaming
+### 7. Streaming
 
 Real-time responses:
 
@@ -205,7 +308,7 @@ for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
 }
 ```
 
-### 5. OAuth for External APIs
+### 8. OAuth for External APIs
 
 ```typescript
 import { OAuthManager, FileStorage } from '@oneringai/agents';

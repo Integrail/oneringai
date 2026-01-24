@@ -5,6 +5,12 @@
 import EventEmitter from 'eventemitter3';
 import { Connector } from '../../core/Connector.js';
 import { Agent } from '../../core/Agent.js';
+import { ToolManager } from '../../core/ToolManager.js';
+import {
+  SessionManager,
+  Session,
+  ISessionStorage,
+} from '../../core/SessionManager.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import { Plan, PlanInput, Task, TaskInput, createPlan, createTask } from '../../domain/entities/Task.js';
 import { AgentState, AgentStatus, createAgentState, updateAgentStatus } from '../../domain/entities/AgentState.js';
@@ -120,6 +126,20 @@ export interface PlanUpdates {
 }
 
 /**
+ * Session configuration for TaskAgent
+ */
+export interface TaskAgentSessionConfig {
+  /** Storage backend for sessions */
+  storage: ISessionStorage;
+  /** Resume existing session by ID */
+  id?: string;
+  /** Auto-save session after each task completion */
+  autoSave?: boolean;
+  /** Auto-save interval in milliseconds */
+  autoSaveIntervalMs?: number;
+}
+
+/**
  * TaskAgent configuration
  */
 export interface TaskAgentConfig {
@@ -130,7 +150,7 @@ export interface TaskAgentConfig {
   temperature?: number;
   maxIterations?: number;
 
-  /** Storage for persistence */
+  /** Storage for persistence (agent state, checkpoints) */
   storage?: IAgentStorage;
 
   /** Memory configuration */
@@ -138,6 +158,14 @@ export interface TaskAgentConfig {
 
   /** Hooks for customization */
   hooks?: TaskAgentHooks;
+
+  // === NEW: Optional session support ===
+  /** Session configuration for persistence (opt-in) */
+  session?: TaskAgentSessionConfig;
+
+  // === NEW: Advanced tool management ===
+  /** Provide a pre-configured ToolManager (advanced) */
+  toolManager?: ToolManager;
 }
 
 /**
@@ -182,11 +210,23 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
   protected externalHandler?: ExternalDependencyHandler;
   protected planExecutor?: PlanExecutor;
   protected checkpointManager?: CheckpointManager;
-  protected tools: ToolFunction[] = [];
+  protected _tools: ToolFunction[] = [];
+  protected _toolManager: ToolManager;
   protected config: TaskAgentConfig;
+
+  // Session management (NEW)
+  protected _sessionManager: SessionManager | null = null;
+  protected _session: Session | null = null;
 
   // Event listener cleanup tracking
   private eventCleanupFunctions: Array<() => void> = [];
+
+  /**
+   * Advanced tool management. Returns ToolManager for fine-grained control.
+   */
+  get tools(): ToolManager {
+    return this._toolManager;
+  }
 
   protected constructor(
     id: string,
@@ -204,6 +244,9 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     this.config = config;
     this.hooks = hooks;
 
+    // Initialize ToolManager
+    this._toolManager = config.toolManager ?? new ToolManager();
+
     // Forward memory events to agent (with cleanup tracking)
     const storedHandler = (data: any) => this.emit('memory:stored', data);
     const limitWarningHandler = (data: any) => this.emit('memory:limit_warning', { utilization: data.utilizationPercent });
@@ -214,6 +257,20 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     // Track cleanup functions
     this.eventCleanupFunctions.push(() => memory.off('stored', storedHandler));
     this.eventCleanupFunctions.push(() => memory.off('limit_warning', limitWarningHandler));
+
+    // Setup session if configured
+    if (config.session) {
+      this._sessionManager = new SessionManager({ storage: config.session.storage });
+
+      if (config.session.id) {
+        // Will be loaded asynchronously in start()
+      } else {
+        // Create new session
+        this._session = this._sessionManager.create('task-agent', {
+          title: `TaskAgent ${id}`,
+        });
+      }
+    }
   }
 
   /**
@@ -301,13 +358,19 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     // Combine user tools with memory tools and context tools
     const memoryTools = createMemoryTools();
     const contextTools = createContextTools();
-    this.tools = [...(config.tools ?? []), ...memoryTools, ...contextTools];
+    this._tools = [...(config.tools ?? []), ...memoryTools, ...contextTools];
+
+    // Register tools with ToolManager
+    for (const tool of this._tools) {
+      this._toolManager.register(tool);
+    }
 
     // Create idempotency cache first (needed for wrapping tools)
     this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
 
-    // Wrap tools with cache for idempotency
-    const cachedTools = this.tools.map((tool) => this.wrapToolWithCache(tool));
+    // Get enabled tools from ToolManager and wrap with cache
+    const enabledTools = this._toolManager.getEnabled();
+    const cachedTools = enabledTools.map((tool) => this.wrapToolWithCache(tool));
 
     // Create base Agent for LLM calls
     this.agent = Agent.create({
@@ -338,7 +401,7 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     this.historyManager = new HistoryManager(DEFAULT_HISTORY_CONFIG);
 
     // Create external dependency handler
-    this.externalHandler = new ExternalDependencyHandler(this.tools);
+    this.externalHandler = new ExternalDependencyHandler(this._tools);
 
     // Create checkpoint manager
     this.checkpointManager = new CheckpointManager(this.storage, DEFAULT_CHECKPOINT_STRATEGY);
@@ -611,6 +674,82 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     return this.memory;
   }
 
+  // ============ Session Management (NEW) ============
+
+  /**
+   * Get the current session ID (if session is enabled)
+   */
+  getSessionId(): string | null {
+    return this._session?.id ?? null;
+  }
+
+  /**
+   * Check if this agent has session support enabled
+   */
+  hasSession(): boolean {
+    return this._session !== null;
+  }
+
+  /**
+   * Save the current session to storage
+   * @throws Error if session is not enabled
+   */
+  async saveSession(): Promise<void> {
+    if (!this._sessionManager || !this._session) {
+      throw new Error('Session not enabled. Configure session in TaskAgentConfig to use this feature.');
+    }
+
+    // Update session state before saving
+    this._session.toolState = this._toolManager.getState();
+
+    // Serialize plan if exists
+    if (this.state.plan) {
+      this._session.plan = {
+        version: 1,
+        data: this.state.plan,
+      };
+    }
+
+    // Serialize memory
+    const memoryEntries = await this.memory.getIndex();
+    this._session.memory = {
+      version: 1,
+      entries: memoryEntries.entries.map((e) => ({
+        key: e.key,
+        description: e.description,
+        value: null, // Don't serialize full values, they're in storage
+        scope: e.scope,
+        sizeBytes: 0, // Size is stored as human-readable in index
+      })),
+    };
+
+    await this._sessionManager.save(this._session);
+  }
+
+  /**
+   * Get the current session (for advanced use)
+   */
+  getSession(): Session | null {
+    return this._session;
+  }
+
+  /**
+   * Update session custom data
+   */
+  updateSessionData(key: string, value: unknown): void {
+    if (!this._session) {
+      throw new Error('Session not enabled');
+    }
+    this._session.custom[key] = value;
+  }
+
+  /**
+   * Get session custom data
+   */
+  getSessionData<T = unknown>(key: string): T | undefined {
+    return this._session?.custom[key] as T | undefined;
+  }
+
   /**
    * Execute the plan (internal)
    */
@@ -699,6 +838,17 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     // Remove all event listeners first
     this.eventCleanupFunctions.forEach((cleanup) => cleanup());
     this.eventCleanupFunctions = [];
+
+    // Cleanup session manager
+    if (this._sessionManager) {
+      if (this._session) {
+        this._sessionManager.stopAutoSave(this._session.id);
+      }
+      this._sessionManager.destroy();
+    }
+
+    // Cleanup tool manager
+    this._toolManager.removeAllListeners();
 
     // Cleanup components
     this.externalHandler?.cleanup();

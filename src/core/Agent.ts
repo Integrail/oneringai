@@ -8,6 +8,8 @@
 import { EventEmitter } from 'eventemitter3';
 import { Connector } from './Connector.js';
 import { createProvider } from './createProvider.js';
+import { ToolManager } from './ToolManager.js';
+import { SessionManager, Session, ISessionStorage } from './SessionManager.js';
 import { ToolRegistry } from '../capabilities/agents/ToolRegistry.js';
 import { AgenticLoop, AgenticLoopConfig } from '../capabilities/agents/AgenticLoop.js';
 import { ExecutionContext, HistoryMode } from '../capabilities/agents/ExecutionContext.js';
@@ -21,6 +23,20 @@ import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposabl
 import { ITextProvider } from '../domain/interfaces/ITextProvider.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
+
+/**
+ * Session configuration for Agent
+ */
+export interface AgentSessionConfig {
+  /** Storage backend for sessions */
+  storage: ISessionStorage;
+  /** Resume existing session by ID */
+  id?: string;
+  /** Auto-save session after each interaction */
+  autoSave?: boolean;
+  /** Auto-save interval in milliseconds */
+  autoSaveIntervalMs?: number;
+}
 
 /**
  * Agent configuration - new simplified interface
@@ -53,6 +69,14 @@ export interface AgentConfig {
     toolFailureMode?: 'fail' | 'continue';
     maxConsecutiveErrors?: number;
   };
+
+  // === NEW: Optional session support ===
+  /** Session configuration for persistence (opt-in) */
+  session?: AgentSessionConfig;
+
+  // === NEW: Advanced tool management ===
+  /** Provide a pre-configured ToolManager (advanced) */
+  toolManager?: ToolManager;
 }
 
 /**
@@ -74,8 +98,22 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
   private _isDestroyed = false;
   private logger: FrameworkLogger;
 
+  // === NEW: Tool and Session Management ===
+  private _toolManager: ToolManager;
+  private _sessionManager: SessionManager | null = null;
+  private _session: Session | null = null;
+  private _pendingSessionLoad: Promise<void> | null = null;
+
   get isDestroyed(): boolean {
     return this._isDestroyed;
+  }
+
+  /**
+   * Advanced tool management. Returns ToolManager for fine-grained control.
+   * For simple cases, use addTool/removeTool instead.
+   */
+  get tools(): ToolManager {
+    return this._toolManager;
   }
 
   // ============ Static Factory ============
@@ -95,6 +133,38 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
    */
   static create(config: AgentConfig): Agent {
     return new Agent(config);
+  }
+
+  /**
+   * Resume an agent from a saved session
+   *
+   * @example
+   * ```typescript
+   * const agent = await Agent.resume('session-123', {
+   *   connector: 'openai',
+   *   model: 'gpt-4',
+   *   session: { storage: myStorage }
+   * });
+   * ```
+   */
+  static async resume(
+    sessionId: string,
+    config: Omit<AgentConfig, 'session'> & { session: { storage: ISessionStorage } }
+  ): Promise<Agent> {
+    const agent = new Agent({
+      ...config,
+      session: {
+        ...config.session,
+        id: sessionId,
+      },
+    });
+
+    // Wait for session to load
+    if (agent._pendingSessionLoad) {
+      await agent._pendingSessionLoad;
+    }
+
+    return agent;
   }
 
   // ============ Constructor ============
@@ -129,13 +199,38 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     // Create provider from connector
     this.provider = createProvider(this.connector);
 
-    // Create tool registry
+    // === Create ToolManager ===
+    this._toolManager = config.toolManager ?? new ToolManager();
+
+    // Register tools from config (backward compatible)
+    if (config.tools) {
+      for (const tool of config.tools) {
+        this._toolManager.register(tool);
+      }
+    }
+
+    // Create tool registry (still needed for AgenticLoop compatibility)
+    // ToolRegistry wraps the execution, ToolManager handles registration
     this.toolRegistry = new ToolRegistry();
     if (config.tools) {
       for (const tool of config.tools) {
         this.toolRegistry.registerTool(tool);
       }
     }
+
+    // Sync ToolManager events with ToolRegistry
+    this._toolManager.on('tool:registered', ({ name }) => {
+      const tool = this._toolManager.get(name);
+      if (tool && !this.toolRegistry.hasToolFunction(name)) {
+        this.toolRegistry.registerTool(tool);
+      }
+    });
+
+    this._toolManager.on('tool:unregistered', ({ name }) => {
+      if (this.toolRegistry.hasToolFunction(name)) {
+        this.toolRegistry.unregisterTool(name);
+      }
+    });
 
     // Create agentic loop
     this.agenticLoop = new AgenticLoop(
@@ -147,6 +242,62 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
 
     // Forward events from AgenticLoop
     this.setupEventForwarding();
+
+    // === Setup Session (optional) ===
+    if (config.session) {
+      this._sessionManager = new SessionManager({ storage: config.session.storage });
+
+      if (config.session.id) {
+        // Resume existing session
+        this._pendingSessionLoad = this.loadSessionInternal(config.session.id);
+      } else {
+        // Create new session
+        this._session = this._sessionManager.create('agent', {
+          title: this.name,
+        });
+
+        // Setup auto-save if configured
+        if (config.session.autoSave) {
+          const interval = config.session.autoSaveIntervalMs ?? 30000;
+          this._sessionManager.enableAutoSave(this._session, interval);
+        }
+      }
+    }
+  }
+
+  /**
+   * Internal method to load session
+   */
+  private async loadSessionInternal(sessionId: string): Promise<void> {
+    if (!this._sessionManager) return;
+
+    try {
+      const session = await this._sessionManager.load(sessionId);
+      if (session) {
+        this._session = session;
+
+        // Restore tool state
+        if (session.toolState) {
+          this._toolManager.loadState(session.toolState);
+        }
+
+        this.logger.info({ sessionId }, 'Session loaded');
+
+        // Setup auto-save if configured
+        if (this.config.session?.autoSave) {
+          const interval = this.config.session.autoSaveIntervalMs ?? 30000;
+          this._sessionManager.enableAutoSave(this._session, interval);
+        }
+      } else {
+        this.logger.warn({ sessionId }, 'Session not found, creating new session');
+        this._session = this._sessionManager.create('agent', {
+          title: this.name,
+        });
+      }
+    } catch (error) {
+      this.logger.error({ error: (error as Error).message, sessionId }, 'Failed to load session');
+      throw error;
+    }
   }
 
   // ============ Main API ============
@@ -174,7 +325,9 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     const startTime = Date.now();
 
     try {
-      const tools = this.config.tools?.map((t) => t.definition) || [];
+      // Get enabled tools from ToolManager (respects enable/disable)
+      const enabledTools = this._toolManager.getEnabled();
+      const tools = enabledTools.map((t) => t.definition);
 
       const loopConfig: AgenticLoopConfig = {
         model: this.model,
@@ -250,7 +403,9 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     const startTime = Date.now();
 
     try {
-      const tools = this.config.tools?.map((t) => t.definition) || [];
+      // Get enabled tools from ToolManager (respects enable/disable)
+      const enabledTools = this._toolManager.getEnabled();
+      const tools = enabledTools.map((t) => t.definition);
 
       const loopConfig: AgenticLoopConfig = {
         model: this.model,
@@ -305,6 +460,7 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
    * Add a tool to the agent
    */
   addTool(tool: ToolFunction): void {
+    this._toolManager.register(tool);
     this.toolRegistry.registerTool(tool);
     if (!this.config.tools) {
       this.config.tools = [];
@@ -316,6 +472,7 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
    * Remove a tool from the agent
    */
   removeTool(toolName: string): void {
+    this._toolManager.unregister(toolName);
     this.toolRegistry.unregisterTool(toolName);
     if (this.config.tools) {
       this.config.tools = this.config.tools.filter(
@@ -325,10 +482,10 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
   }
 
   /**
-   * List registered tools
+   * List registered tools (returns enabled tool names)
    */
   listTools(): string[] {
-    return this.toolRegistry.listTools();
+    return this._toolManager.listEnabled();
   }
 
   /**
@@ -336,14 +493,72 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
    */
   setTools(tools: ToolFunction[]): void {
     // Clear existing tools
-    for (const name of this.toolRegistry.listTools()) {
+    for (const name of this._toolManager.list()) {
+      this._toolManager.unregister(name);
       this.toolRegistry.unregisterTool(name);
     }
     // Register new tools
     for (const tool of tools) {
+      this._toolManager.register(tool);
       this.toolRegistry.registerTool(tool);
     }
     this.config.tools = [...tools];
+  }
+
+  // ============ Session Management (NEW) ============
+
+  /**
+   * Get the current session ID (if session is enabled)
+   */
+  getSessionId(): string | null {
+    return this._session?.id ?? null;
+  }
+
+  /**
+   * Check if this agent has session support enabled
+   */
+  hasSession(): boolean {
+    return this._session !== null;
+  }
+
+  /**
+   * Save the current session to storage
+   * @throws Error if session is not enabled
+   */
+  async saveSession(): Promise<void> {
+    if (!this._sessionManager || !this._session) {
+      throw new Error('Session not enabled. Configure session in AgentConfig to use this feature.');
+    }
+
+    // Update session state before saving
+    this._session.toolState = this._toolManager.getState();
+
+    await this._sessionManager.save(this._session);
+    this.logger.debug({ sessionId: this._session.id }, 'Session saved');
+  }
+
+  /**
+   * Get the current session (for advanced use)
+   */
+  getSession(): Session | null {
+    return this._session;
+  }
+
+  /**
+   * Update session custom data
+   */
+  updateSessionData(key: string, value: unknown): void {
+    if (!this._session) {
+      throw new Error('Session not enabled');
+    }
+    this._session.custom[key] = value;
+  }
+
+  /**
+   * Get session custom data
+   */
+  getSessionData<T = unknown>(key: string): T | undefined {
+    return this._session?.custom[key] as T | undefined;
   }
 
   // ============ Configuration Methods ============
@@ -475,6 +690,17 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     }
     this.boundListeners.clear();
     this.removeAllListeners();
+
+    // Cleanup session manager
+    if (this._sessionManager) {
+      if (this._session) {
+        this._sessionManager.stopAutoSave(this._session.id);
+      }
+      this._sessionManager.destroy();
+    }
+
+    // Cleanup tool manager listeners
+    this._toolManager.removeAllListeners();
 
     // Run cleanup callbacks
     for (const callback of this.cleanupCallbacks) {

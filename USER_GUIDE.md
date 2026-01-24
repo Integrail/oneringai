@@ -14,15 +14,18 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 3. [Basic Text Generation](#basic-text-generation)
 4. [Connectors & Authentication](#connectors--authentication)
 5. [Agent Features](#agent-features)
-6. [Task Agents](#task-agents)
-7. [Context Management](#context-management)
-8. [Tools & Function Calling](#tools--function-calling)
-9. [Multimodal (Vision)](#multimodal-vision)
-10. [Streaming](#streaming)
-11. [OAuth for External APIs](#oauth-for-external-apis)
-12. [Model Registry](#model-registry)
-13. [Advanced Features](#advanced-features)
-14. [Production Deployment](#production-deployment)
+6. [Session Persistence](#session-persistence) **NEW**
+7. [Universal Agent](#universal-agent) **NEW**
+8. [Task Agents](#task-agents)
+9. [Context Management](#context-management)
+10. [Tools & Function Calling](#tools--function-calling)
+11. [Dynamic Tool Management](#dynamic-tool-management) **NEW**
+12. [Multimodal (Vision)](#multimodal-vision)
+13. [Streaming](#streaming)
+14. [OAuth for External APIs](#oauth-for-external-apis)
+15. [Model Registry](#model-registry)
+16. [Advanced Features](#advanced-features)
+17. [Production Deployment](#production-deployment)
 
 ---
 
@@ -360,6 +363,806 @@ agent.onCleanup(() => {
 
 // Destroy agent
 agent.destroy();
+```
+
+---
+
+## Session Persistence
+
+Save and resume agent conversations across restarts. Available for **all agent types** (Agent, TaskAgent, UniversalAgent).
+
+### Quick Start
+
+```typescript
+import { Agent, FileSessionStorage } from '@oneringai/agents';
+
+// Create agent with session support
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+    autoSaveIntervalMs: 30000,  // Auto-save every 30s
+  },
+});
+
+await agent.run('Remember: my name is Alice');
+const sessionId = agent.getSessionId();
+console.log('Session ID:', sessionId);
+
+// Later... resume from session
+const resumed = await Agent.resume(sessionId, {
+  storage: new FileSessionStorage({ directory: './sessions' }),
+});
+
+await resumed.run('What is my name?');
+// Output: "Your name is Alice."
+```
+
+### Storage Backends
+
+#### In-Memory Storage (Testing)
+
+```typescript
+import { Agent, InMemorySessionStorage } from '@oneringai/agents';
+
+const storage = new InMemorySessionStorage();
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  session: { storage },
+});
+```
+
+**Use case:** Testing, development
+**Pros:** Fast, no file I/O
+**Cons:** Lost on restart
+
+#### File Storage (Production)
+
+```typescript
+import { Agent, FileSessionStorage } from '@oneringai/agents';
+
+const storage = new FileSessionStorage({
+  directory: './sessions',
+  // Optional: custom serialization
+  serialize: (session) => JSON.stringify(session, null, 2),
+  deserialize: (data) => JSON.parse(data),
+});
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  session: { storage },
+});
+```
+
+**Use case:** Production, persistence required
+**Pros:** Survives restarts, human-readable JSON
+**Cons:** File I/O overhead
+
+#### Custom Storage
+
+Implement `ISessionStorage` interface:
+
+```typescript
+import { ISessionStorage, Session, SessionSummary } from '@oneringai/agents';
+
+class DatabaseSessionStorage implements ISessionStorage {
+  async save(session: Session): Promise<void> {
+    // Save to database
+  }
+
+  async load(sessionId: string): Promise<Session | null> {
+    // Load from database
+  }
+
+  async delete(sessionId: string): Promise<void> {
+    // Delete from database
+  }
+
+  async exists(sessionId: string): Promise<boolean> {
+    // Check existence
+  }
+
+  async list(filter?: SessionFilter): Promise<SessionSummary[]> {
+    // List sessions with optional filtering
+  }
+}
+```
+
+### Session Management
+
+#### Manual Save/Load
+
+```typescript
+import { SessionManager, FileSessionStorage } from '@oneringai/agents';
+
+const sessionManager = new SessionManager({
+  storage: new FileSessionStorage({ directory: './sessions' }),
+});
+
+// Create session
+const session = sessionManager.create('agent', {
+  name: 'Customer Support Bot',
+  tags: ['support', 'production'],
+});
+
+// Modify session data
+session.customData = { userId: '123', context: 'billing' };
+
+// Save manually
+await sessionManager.save(session);
+
+// Load later
+const loaded = await sessionManager.load(session.id);
+```
+
+#### Auto-Save
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+    autoSaveIntervalMs: 30000,  // Save every 30 seconds
+  },
+});
+
+// Session auto-saved after each interaction
+await agent.run('Hello');
+// ... auto-save triggered
+
+await agent.run('How are you?');
+// ... auto-save triggered
+```
+
+#### List Sessions
+
+```typescript
+const sessionManager = new SessionManager({
+  storage: new FileSessionStorage({ directory: './sessions' }),
+});
+
+// List all sessions
+const all = await sessionManager.list();
+
+// Filter by agent type
+const agentSessions = await sessionManager.list({ agentType: 'agent' });
+
+// Filter by metadata
+const productionSessions = await sessionManager.list({
+  metadata: { tags: ['production'] },
+});
+
+for (const summary of productionSessions) {
+  console.log(`${summary.id}: ${summary.metadata.name}`);
+  console.log(`  Created: ${new Date(summary.createdAt)}`);
+  console.log(`  Messages: ${summary.metrics.totalMessages}`);
+}
+```
+
+### Session Structure
+
+```typescript
+interface Session {
+  id: string;
+  agentType: string;
+  createdAt: number;
+  lastAccessedAt: number;
+
+  // Metadata
+  metadata: {
+    name?: string;
+    description?: string;
+    tags?: string[];
+    [key: string]: unknown;
+  };
+
+  // Conversation history
+  history: {
+    messages: Array<{
+      role: 'user' | 'assistant';
+      content: any[];
+      timestamp: number;
+    }>;
+    totalMessages: number;
+  };
+
+  // Memory (for TaskAgent)
+  memory?: {
+    entries: Array<{
+      key: string;
+      value: unknown;
+      scope: string;
+      createdAt: number;
+    }>;
+  };
+
+  // Plan (for TaskAgent/UniversalAgent)
+  plan?: {
+    goal: string;
+    tasks: Task[];
+    status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  };
+
+  // Metrics
+  metrics: {
+    totalMessages: number;
+    totalTokens: number;
+    totalCost: number;
+    toolCallCount: number;
+  };
+
+  // Custom data
+  customData?: Record<string, unknown>;
+}
+```
+
+### Best Practices
+
+#### 1. Use Meaningful Session IDs
+
+```typescript
+// Bad: random IDs
+const session1 = sessionManager.create('agent');
+
+// Good: descriptive IDs
+const session = sessionManager.create('agent', {
+  name: 'Support Chat - User 12345',
+  tags: ['support', 'user-12345'],
+});
+```
+
+#### 2. Clean Up Old Sessions
+
+```typescript
+const sessions = await sessionManager.list();
+const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+for (const session of sessions) {
+  if (session.lastAccessedAt < oneWeekAgo) {
+    await sessionManager.delete(session.id);
+    console.log(`Deleted old session: ${session.id}`);
+  }
+}
+```
+
+#### 3. Handle Resume Errors
+
+```typescript
+try {
+  const agent = await Agent.resume(sessionId, {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+  });
+  // Use resumed agent
+} catch (error) {
+  console.error('Failed to resume session:', error);
+  // Fall back to new session
+  const agent = Agent.create({
+    connector: 'openai',
+    model: 'gpt-4',
+  });
+}
+```
+
+#### 4. Use Custom Data for Context
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+  },
+});
+
+// Store custom context
+const session = await sessionManager.load(agent.getSessionId()!);
+if (session) {
+  session.customData = {
+    userId: '12345',
+    preferences: { language: 'en', theme: 'dark' },
+    context: { lastTopic: 'billing' },
+  };
+  await sessionManager.save(session);
+}
+```
+
+### Usage with TaskAgent
+
+```typescript
+import { TaskAgent, FileSessionStorage } from '@oneringai/agents';
+
+const agent = TaskAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool],
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+  },
+});
+
+await agent.start({
+  goal: 'Check weather for multiple cities',
+  tasks: [
+    { name: 'check_sf', description: 'Check SF weather' },
+    { name: 'check_ny', description: 'Check NY weather' },
+  ],
+});
+
+// Session includes plan, memory, and task execution state
+const sessionId = agent.getSessionId();
+
+// Resume after restart
+const resumed = await TaskAgent.resume(sessionId, {
+  storage: new FileSessionStorage({ directory: './sessions' }),
+});
+// Continues from where it left off
+```
+
+---
+
+## Universal Agent
+
+A **unified agent** that combines interactive chat, planning, and task execution in one powerful interface.
+
+### Overview
+
+UniversalAgent seamlessly transitions between three modes:
+- **Interactive** - Direct conversation, immediate tool execution
+- **Planning** - Creates multi-step plans for complex tasks
+- **Executing** - Runs tasks from plan, allows user intervention
+
+### Quick Start
+
+```typescript
+import { UniversalAgent, FileSessionStorage } from '@oneringai/agents';
+
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool, emailTool],
+  planning: {
+    enabled: true,
+    autoDetect: true,        // LLM detects complex tasks
+    requireApproval: true,   // Ask before executing
+  },
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+  },
+});
+
+const response = await agent.chat('Check weather in Paris and email me');
+console.log(response.text);
+console.log('Mode:', response.mode);       // 'planning'
+console.log('Plan:', response.plan);        // Multi-step plan
+console.log('Status:', response.planStatus); // 'pending_approval'
+```
+
+### Modes
+
+#### Interactive Mode
+
+Direct conversation, single-turn or simple tasks:
+
+```typescript
+const response = await agent.chat('What is 2 + 2?');
+// Mode: 'interactive'
+// Text: "The answer is 4."
+```
+
+**Triggers:**
+- Simple questions
+- Single tool calls
+- Quick calculations
+- Direct information requests
+
+#### Planning Mode
+
+Creates multi-step plans for complex tasks:
+
+```typescript
+const response = await agent.chat(
+  'Research competitors, analyze pricing, and create a report'
+);
+// Mode: 'planning'
+// Plan: { tasks: [...], status: 'pending_approval' }
+```
+
+**Triggers:**
+- User explicitly requests planning
+- LLM detects task requires multiple steps
+- Task has dependencies
+- User says "let's plan this"
+
+**Plan Structure:**
+```typescript
+interface Plan {
+  id: string;
+  goal: string;
+  tasks: Task[];
+  status: 'pending' | 'in_progress' | 'completed' | 'failed';
+  createdAt: number;
+  lastUpdatedAt: number;
+}
+
+interface Task {
+  id: string;
+  name: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
+  dependsOn?: string[];  // Task IDs
+  result?: {
+    success: boolean;
+    output?: unknown;
+    error?: string;
+  };
+}
+```
+
+#### Executing Mode
+
+Runs tasks from plan:
+
+```typescript
+// After plan approval
+const response = await agent.chat('yes, proceed');
+// Mode: 'executing'
+// Progress: { completed: 1, total: 3, current: {...} }
+```
+
+**Features:**
+- Step-by-step execution
+- Progress tracking
+- User intervention support
+- Dynamic plan modification
+- Pause/resume capability
+
+### Mode Transitions
+
+```
+interactive ←→ planning ←→ executing
+```
+
+Automatic transitions based on:
+1. **User input patterns**
+   - "yes" / "approved" → executing
+   - "no" / "cancel" → back to interactive
+   - "what's the status?" → report progress (stay in mode)
+
+2. **Task complexity**
+   - LLM detects complex task → planning
+   - Simple question during execution → handle inline (stay in executing)
+
+3. **Plan lifecycle**
+   - Plan completed → interactive
+   - Plan rejected → planning (to refine)
+
+4. **User control**
+   - User says "stop" / "cancel" → interactive
+   - User modifies plan → planning
+
+### Configuration
+
+#### Auto-Detection
+
+```typescript
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [tools...],
+  planning: {
+    enabled: true,
+    autoDetect: true,  // LLM decides when to plan
+  },
+});
+
+// Complex task → auto-enters planning mode
+await agent.chat('Build a website, deploy it, and setup monitoring');
+```
+
+#### Manual Planning
+
+```typescript
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [tools...],
+  planning: {
+    enabled: true,
+    autoDetect: false,  // User must explicitly request
+  },
+});
+
+// Stays in interactive unless user says "plan this"
+await agent.chat('Build a website');  // Interactive mode
+await agent.chat('Let\'s plan this: Build a website');  // Planning mode
+```
+
+#### Approval Settings
+
+```typescript
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  planning: {
+    requireApproval: true,  // Always ask before executing
+  },
+});
+
+// Change at runtime
+agent.setAutoApproval(false);  // Require approval
+agent.setAutoApproval(true);   // Auto-execute (dangerous!)
+```
+
+### Chat Response
+
+```typescript
+interface UniversalResponse {
+  text: string;              // Human-readable response
+  mode: AgentMode;           // Current mode
+  plan?: Plan;               // Plan (if created/modified)
+  planStatus?: string;       // 'pending_approval' | 'executing' | 'completed'
+  taskProgress?: {           // Progress (if executing)
+    completed: number;
+    total: number;
+    current?: Task;
+    failed: number;
+    skipped: number;
+  };
+  toolCalls?: ToolCallResult[];
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
+  needsUserAction?: boolean;
+  userActionType?: 'approve_plan' | 'provide_input' | 'clarify';
+}
+```
+
+### Streaming
+
+```typescript
+for await (const event of agent.stream('Complex task here')) {
+  switch (event.type) {
+    case 'text:delta':
+      process.stdout.write(event.delta);
+      break;
+
+    case 'mode:changed':
+      console.log(`\nMode: ${event.from} → ${event.to}`);
+      break;
+
+    case 'plan:created':
+      console.log('\nPlan created:', event.plan);
+      break;
+
+    case 'plan:awaiting_approval':
+      console.log('\n[Approval required]');
+      break;
+
+    case 'task:started':
+      console.log(`\nStarting: ${event.task.name}`);
+      break;
+
+    case 'task:completed':
+      console.log(`✓ Completed: ${event.task.name}`);
+      break;
+
+    case 'execution:done':
+      console.log(`\nAll tasks completed!`);
+      break;
+  }
+}
+```
+
+### State Introspection
+
+```typescript
+// Current mode
+const mode = agent.getMode();  // 'interactive' | 'planning' | 'executing'
+
+// Current plan
+const plan = agent.getPlan();
+if (plan) {
+  console.log('Goal:', plan.goal);
+  console.log('Tasks:', plan.tasks.length);
+  console.log('Status:', plan.status);
+}
+
+// Execution progress
+const progress = agent.getProgress();
+if (progress) {
+  console.log(`Progress: ${progress.completed}/${progress.total}`);
+  if (progress.current) {
+    console.log('Current task:', progress.current.name);
+  }
+}
+
+// Tool management
+agent.toolManager.disable('risky_tool');
+agent.toolManager.enable('safe_tool');
+```
+
+### Plan Modification
+
+Users can modify plans during planning or execution:
+
+```typescript
+// Agent creates plan
+const response1 = await agent.chat('Do A, B, C');
+// Plan created with tasks A, B, C
+
+// User modifies
+const response2 = await agent.chat('Actually, skip B and add D after A');
+// Plan updated: A → D → C
+
+// LLM detects modification intent and uses internal meta-tool
+```
+
+**Supported modifications:**
+- Add task
+- Remove task
+- Skip task
+- Reorder tasks
+- Update task description
+
+### Pause and Resume
+
+```typescript
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+  },
+});
+
+// Start executing
+await agent.chat('Do tasks A, B, C');
+await agent.chat('yes, proceed');
+
+// Pause
+agent.pause();
+
+// Resume later (even after restart)
+const sessionId = agent.getSessionId();
+const resumed = await UniversalAgent.resume(sessionId, {
+  storage: new FileSessionStorage({ directory: './sessions' }),
+});
+
+resumed.resume();
+// Continues from where it left off
+```
+
+### Intent Analysis
+
+UniversalAgent analyzes user input to detect intent:
+
+```typescript
+// Approval intents
+'yes' | 'approved' | 'go ahead' | 'proceed' | 'do it'
+→ Approve plan and execute
+
+// Rejection intents
+'no' | 'cancel' | 'stop' | 'don\'t do that'
+→ Reject plan, return to interactive
+
+// Status queries
+'status?' | 'what\'s happening?' | 'progress?'
+→ Report current state
+
+// Modification intents
+'add task X' | 'skip task Y' | 'change task Z'
+→ Modify plan
+
+// Interrupts
+'stop' | 'pause' | 'wait'
+→ Pause execution
+```
+
+### Best Practices
+
+#### 1. Always Use Sessions
+
+```typescript
+// Good
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+  },
+});
+
+// Bad - loses state on restart
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  // No session config
+});
+```
+
+#### 2. Handle Approval Requests
+
+```typescript
+const response = await agent.chat(input);
+
+if (response.needsUserAction && response.userActionType === 'approve_plan') {
+  // Show plan to user
+  console.log('Plan:', response.plan);
+
+  // Get user input
+  const userApproval = await getUserInput('Approve? (yes/no): ');
+
+  // Send approval
+  await agent.chat(userApproval);
+}
+```
+
+#### 3. Monitor Progress
+
+```typescript
+for await (const event of agent.stream(input)) {
+  if (event.type === 'task:completed') {
+    logProgress(event.task);
+    notifyUser(`Completed: ${event.task.name}`);
+  }
+
+  if (event.type === 'task:failed') {
+    alertUser(`Failed: ${event.task.name} - ${event.error}`);
+    // Optionally pause or cancel
+  }
+}
+```
+
+#### 4. Use Planning for Complex Tasks
+
+```typescript
+// Simple - stay in interactive
+await agent.chat('What is 2+2?');
+
+// Complex - use planning
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  planning: {
+    enabled: true,
+    autoDetect: true,
+  },
+});
+
+await agent.chat('Research 10 companies, analyze financials, create report');
+// Auto-enters planning mode
+```
+
+#### 5. Disable Risky Tools During Execution
+
+```typescript
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [safeTool, riskyTool],
+});
+
+// Before executing
+agent.toolManager.disable('risky_tool');
+
+// Execute
+await agent.chat('yes, proceed');
+
+// Re-enable after
+agent.toolManager.enable('risky_tool');
 ```
 
 ---
@@ -1349,6 +2152,464 @@ const response = await agent.run('Calculate the sum of numbers from 1 to 100');
 // 1. Generate JavaScript code
 // 2. Execute: executeJavaScript({ code: 'Array(100).fill(0).map((_, i) => i+1).reduce((a,b) => a+b)' })
 // 3. Return result: 5050
+```
+
+---
+
+## Dynamic Tool Management
+
+Control tools at runtime for all agent types. Enable, disable, organize, and select tools dynamically.
+
+### Quick Start
+
+```typescript
+import { Agent } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool, emailTool, databaseTool],
+});
+
+// Disable tool temporarily
+agent.tools.disable('database_tool');
+
+// Run without database access
+await agent.run('Check weather and email me');
+
+// Re-enable later
+agent.tools.enable('database_tool');
+```
+
+### ToolManager API
+
+Every agent has a `tools` property that returns a `ToolManager`:
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [tool1, tool2],
+});
+
+// Access ToolManager
+const toolManager = agent.tools;
+
+// Register new tool
+toolManager.register(tool3, {
+  namespace: 'data',
+  priority: 10,
+  enabled: true,
+});
+
+// Unregister tool
+toolManager.unregister('tool_name');
+
+// Enable/disable
+toolManager.enable('tool_name');
+toolManager.disable('tool_name');
+
+// Check if enabled
+const isEnabled = toolManager.isEnabled('tool_name');
+
+// List tools
+const all = toolManager.list();           // All tools
+const enabled = toolManager.listEnabled(); // Only enabled
+```
+
+### Tool Options
+
+```typescript
+interface ToolOptions {
+  /** Namespace for organizing tools */
+  namespace?: string;
+
+  /** Priority for selection (higher = preferred) */
+  priority?: number;
+
+  /** Initial enabled state */
+  enabled?: boolean;
+
+  /** Condition function for context-aware enabling */
+  condition?: (context: ToolSelectionContext) => boolean;
+
+  /** Tool metadata */
+  metadata?: Record<string, unknown>;
+}
+```
+
+#### Namespaces
+
+Organize tools by category:
+
+```typescript
+// Register tools with namespaces
+agent.tools.register(weatherTool, { namespace: 'external-api' });
+agent.tools.register(emailTool, { namespace: 'communication' });
+agent.tools.register(databaseReadTool, { namespace: 'database' });
+agent.tools.register(databaseWriteTool, { namespace: 'database' });
+
+// Disable all database tools
+for (const name of agent.tools.list()) {
+  const tool = agent.tools.get(name);
+  if (tool?.metadata?.namespace === 'database') {
+    agent.tools.disable(name);
+  }
+}
+```
+
+#### Priority
+
+Control tool selection order:
+
+```typescript
+agent.tools.register(primaryWeatherTool, {
+  priority: 100,  // High priority
+});
+
+agent.tools.register(fallbackWeatherTool, {
+  priority: 10,   // Low priority (fallback)
+});
+
+// LLM sees high-priority tools first
+```
+
+#### Conditions
+
+Dynamic enabling based on context:
+
+```typescript
+agent.tools.register(adminTool, {
+  condition: (context) => context.user?.role === 'admin',
+});
+
+// Tool only available when condition is met
+const selected = agent.tools.selectForContext({
+  user: { role: 'admin' },
+});
+```
+
+### Context-Aware Selection
+
+```typescript
+interface ToolSelectionContext {
+  /** Current agent mode */
+  mode?: 'interactive' | 'planning' | 'executing';
+
+  /** Current task name */
+  taskName?: string;
+
+  /** User role/permissions */
+  user?: {
+    role?: string;
+    permissions?: string[];
+  };
+
+  /** Environment */
+  environment?: 'development' | 'staging' | 'production';
+
+  /** Custom context */
+  [key: string]: unknown;
+}
+```
+
+```typescript
+// Select tools based on context
+const tools = agent.tools.selectForContext({
+  mode: 'executing',
+  environment: 'production',
+  user: { role: 'admin', permissions: ['write'] },
+});
+
+// Only tools matching context are selected
+```
+
+### State Persistence
+
+Save and restore tool configuration:
+
+```typescript
+// Get current state
+const state = agent.tools.getState();
+
+// Save to file
+await fs.writeFile('./tool-config.json', JSON.stringify(state));
+
+// Later... load state
+const savedState = JSON.parse(await fs.readFile('./tool-config.json', 'utf-8'));
+agent.tools.loadState(savedState);
+
+// All tool registrations, priorities, and enabled states restored
+```
+
+### Events
+
+Listen to tool changes:
+
+```typescript
+agent.tools.on('tool:registered', ({ name, options }) => {
+  console.log(`Tool registered: ${name}`);
+});
+
+agent.tools.on('tool:unregistered', ({ name }) => {
+  console.log(`Tool unregistered: ${name}`);
+});
+
+agent.tools.on('tool:enabled', ({ name }) => {
+  console.log(`Tool enabled: ${name}`);
+});
+
+agent.tools.on('tool:disabled', ({ name }) => {
+  console.log(`Tool disabled: ${name}`);
+});
+```
+
+### Advanced Patterns
+
+#### Environment-Based Tools
+
+```typescript
+const isDevelopment = process.env.NODE_ENV === 'development';
+
+agent.tools.register(debugTool, {
+  enabled: isDevelopment,
+  namespace: 'debug',
+});
+
+agent.tools.register(productionTool, {
+  enabled: !isDevelopment,
+  namespace: 'production',
+});
+```
+
+#### Permission-Based Tools
+
+```typescript
+function createAgentWithPermissions(userRole: string) {
+  const agent = Agent.create({
+    connector: 'openai',
+    model: 'gpt-4',
+  });
+
+  // Register all tools
+  agent.tools.register(readTool, {
+    namespace: 'data',
+    priority: 100,
+  });
+
+  agent.tools.register(writeTool, {
+    namespace: 'data',
+    priority: 90,
+    enabled: userRole === 'admin',  // Only for admins
+  });
+
+  agent.tools.register(deleteTool, {
+    namespace: 'data',
+    priority: 80,
+    enabled: userRole === 'super-admin',  // Only for super admins
+  });
+
+  return agent;
+}
+```
+
+#### Rate-Limited Tools
+
+```typescript
+class RateLimitedToolManager {
+  private calls = new Map<string, number>();
+  private limits = new Map<string, number>();
+
+  constructor(private agent: Agent) {}
+
+  registerWithLimit(tool: ToolFunction, limit: number) {
+    this.agent.tools.register(tool);
+    this.limits.set(tool.definition.function.name, limit);
+    this.calls.set(tool.definition.function.name, 0);
+  }
+
+  async execute(name: string, args: unknown) {
+    const count = this.calls.get(name) || 0;
+    const limit = this.limits.get(name);
+
+    if (limit && count >= limit) {
+      throw new Error(`Rate limit exceeded for ${name}`);
+    }
+
+    this.calls.set(name, count + 1);
+    return await this.agent.tools.get(name)?.execute(args);
+  }
+}
+```
+
+#### Dynamic Tool Loading
+
+```typescript
+class PluginManager {
+  constructor(private agent: Agent) {}
+
+  async loadPlugin(pluginPath: string) {
+    const plugin = await import(pluginPath);
+
+    for (const tool of plugin.tools) {
+      this.agent.tools.register(tool, {
+        namespace: plugin.name,
+        metadata: { plugin: plugin.name, version: plugin.version },
+      });
+    }
+
+    console.log(`Loaded plugin: ${plugin.name}`);
+  }
+
+  unloadPlugin(pluginName: string) {
+    for (const name of this.agent.tools.list()) {
+      const tool = this.agent.tools.get(name);
+      if (tool?.metadata?.plugin === pluginName) {
+        this.agent.tools.unregister(name);
+      }
+    }
+
+    console.log(`Unloaded plugin: ${pluginName}`);
+  }
+}
+```
+
+### Usage with TaskAgent
+
+```typescript
+import { TaskAgent } from '@oneringai/agents';
+
+const agent = TaskAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [tool1, tool2, tool3],
+});
+
+// Same ToolManager API
+agent.tools.disable('risky_tool');
+
+await agent.start({
+  goal: 'Process data safely',
+  tasks: [
+    { name: 'read_data', description: 'Read from database' },
+    { name: 'process', description: 'Process the data' },
+  ],
+});
+```
+
+### Usage with UniversalAgent
+
+```typescript
+import { UniversalAgent } from '@oneringai/agents';
+
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [safeTools...],
+});
+
+// Disable tools during execution
+agent.on('mode:changed', ({ from, to }) => {
+  if (to === 'executing') {
+    agent.toolManager.disable('destructive_tool');
+  } else if (to === 'interactive') {
+    agent.toolManager.enable('destructive_tool');
+  }
+});
+```
+
+### Backward Compatibility
+
+The old API still works:
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [tool1, tool2],  // Still works!
+});
+
+// Old methods still work
+agent.addTool(tool3);        // Still works!
+agent.removeTool('tool1');   // Still works!
+agent.setTools([newTools]);  // Still works!
+agent.listTools();           // Still works!
+
+// New API via .tools property
+agent.tools.disable('tool2');  // NEW!
+agent.tools.enable('tool2');   // NEW!
+```
+
+### Best Practices
+
+#### 1. Use Namespaces for Organization
+
+```typescript
+// Good
+agent.tools.register(githubTool, { namespace: 'github' });
+agent.tools.register(slackTool, { namespace: 'slack' });
+agent.tools.register(databaseTool, { namespace: 'database' });
+
+// Bad
+agent.tools.register(githubTool);  // Hard to organize later
+```
+
+#### 2. Set Priorities for Fallbacks
+
+```typescript
+// Good
+agent.tools.register(primaryAPI, { priority: 100 });
+agent.tools.register(fallbackAPI, { priority: 50 });
+
+// Bad - no priority, random selection
+agent.tools.register(primaryAPI);
+agent.tools.register(fallbackAPI);
+```
+
+#### 3. Disable Destructive Tools by Default
+
+```typescript
+// Good
+agent.tools.register(deleteTool, {
+  enabled: false,  // Disabled by default
+  namespace: 'destructive',
+});
+
+// Enable only when needed
+function enableDestructiveMode() {
+  agent.tools.enable('delete_tool');
+}
+```
+
+#### 4. Use Conditions for Complex Logic
+
+```typescript
+// Good
+agent.tools.register(adminTool, {
+  condition: (ctx) => ctx.user?.role === 'admin' && ctx.environment === 'production',
+});
+
+// Bad - manual checking everywhere
+if (user.role === 'admin') {
+  agent.tools.enable('admin_tool');
+} else {
+  agent.tools.disable('admin_tool');
+}
+```
+
+#### 5. Persist Tool State for Sessions
+
+```typescript
+// Save tool state with session
+const toolState = agent.tools.getState();
+session.customData = { ...session.customData, toolState };
+await sessionManager.save(session);
+
+// Restore tool state
+const loaded = await sessionManager.load(sessionId);
+if (loaded?.customData?.toolState) {
+  agent.tools.loadState(loaded.customData.toolState);
+}
 ```
 
 ---

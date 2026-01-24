@@ -1,6 +1,101 @@
 import EventEmitter$1, { EventEmitter } from 'eventemitter3';
 
 /**
+ * Tool entities with blocking/non-blocking execution support
+ */
+interface JSONSchema {
+    type: string;
+    properties?: Record<string, any>;
+    required?: string[];
+    [key: string]: any;
+}
+interface FunctionToolDefinition {
+    type: 'function';
+    function: {
+        name: string;
+        description?: string;
+        parameters?: JSONSchema;
+        strict?: boolean;
+    };
+    blocking?: boolean;
+    timeout?: number;
+}
+interface BuiltInTool {
+    type: 'web_search' | 'file_search' | 'computer_use' | 'code_interpreter';
+    blocking?: boolean;
+}
+type Tool = FunctionToolDefinition | BuiltInTool;
+declare enum ToolCallState {
+    PENDING = "pending",// Tool call identified, not yet executed
+    EXECUTING = "executing",// Currently executing
+    COMPLETED = "completed",// Successfully completed
+    FAILED = "failed",// Execution failed
+    TIMEOUT = "timeout"
+}
+interface ToolCall {
+    id: string;
+    type: 'function';
+    function: {
+        name: string;
+        arguments: string;
+    };
+    blocking: boolean;
+    state: ToolCallState;
+    startTime?: Date;
+    endTime?: Date;
+    error?: string;
+}
+interface ToolResult {
+    tool_use_id: string;
+    content: any;
+    error?: string;
+    executionTime?: number;
+    state: ToolCallState;
+}
+/**
+ * Tool execution context - tracks all tool calls in a generation
+ */
+interface ToolExecutionContext {
+    executionId: string;
+    toolCalls: Map<string, ToolCall>;
+    pendingNonBlocking: Set<string>;
+    completedResults: Map<string, ToolResult>;
+}
+/**
+ * Tool context - passed to tools during execution (optional, for TaskAgent)
+ */
+interface ToolContext {
+    agentId: string;
+    taskId?: string;
+    memory?: any;
+    signal?: AbortSignal;
+}
+/**
+ * Output handling hints for context management
+ */
+interface ToolOutputHints {
+    expectedSize?: 'small' | 'medium' | 'large' | 'variable';
+    summarize?: (output: unknown) => string;
+}
+/**
+ * Idempotency configuration for tool caching
+ */
+interface ToolIdempotency {
+    safe: boolean;
+    keyFn?: (args: Record<string, unknown>) => string;
+    ttlMs?: number;
+}
+/**
+ * User-provided tool function
+ */
+interface ToolFunction<TArgs = any, TResult = any> {
+    definition: FunctionToolDefinition;
+    execute: (args: TArgs, context?: ToolContext) => Promise<TResult>;
+    idempotency?: ToolIdempotency;
+    output?: ToolOutputHints;
+}
+
+/**
  * Content types based on OpenAI Responses API format
  */
 declare enum ContentType {
@@ -126,101 +221,6 @@ interface IProvider {
      * Validate that the provider configuration is correct
      */
     validateConfig(): Promise<boolean>;
-}
-
-/**
- * Tool entities with blocking/non-blocking execution support
- */
-interface JSONSchema {
-    type: string;
-    properties?: Record<string, any>;
-    required?: string[];
-    [key: string]: any;
-}
-interface FunctionToolDefinition {
-    type: 'function';
-    function: {
-        name: string;
-        description?: string;
-        parameters?: JSONSchema;
-        strict?: boolean;
-    };
-    blocking?: boolean;
-    timeout?: number;
-}
-interface BuiltInTool {
-    type: 'web_search' | 'file_search' | 'computer_use' | 'code_interpreter';
-    blocking?: boolean;
-}
-type Tool = FunctionToolDefinition | BuiltInTool;
-declare enum ToolCallState {
-    PENDING = "pending",// Tool call identified, not yet executed
-    EXECUTING = "executing",// Currently executing
-    COMPLETED = "completed",// Successfully completed
-    FAILED = "failed",// Execution failed
-    TIMEOUT = "timeout"
-}
-interface ToolCall {
-    id: string;
-    type: 'function';
-    function: {
-        name: string;
-        arguments: string;
-    };
-    blocking: boolean;
-    state: ToolCallState;
-    startTime?: Date;
-    endTime?: Date;
-    error?: string;
-}
-interface ToolResult {
-    tool_use_id: string;
-    content: any;
-    error?: string;
-    executionTime?: number;
-    state: ToolCallState;
-}
-/**
- * Tool execution context - tracks all tool calls in a generation
- */
-interface ToolExecutionContext {
-    executionId: string;
-    toolCalls: Map<string, ToolCall>;
-    pendingNonBlocking: Set<string>;
-    completedResults: Map<string, ToolResult>;
-}
-/**
- * Tool context - passed to tools during execution (optional, for TaskAgent)
- */
-interface ToolContext {
-    agentId: string;
-    taskId?: string;
-    memory?: any;
-    signal?: AbortSignal;
-}
-/**
- * Output handling hints for context management
- */
-interface ToolOutputHints {
-    expectedSize?: 'small' | 'medium' | 'large' | 'variable';
-    summarize?: (output: unknown) => string;
-}
-/**
- * Idempotency configuration for tool caching
- */
-interface ToolIdempotency {
-    safe: boolean;
-    keyFn?: (args: Record<string, unknown>) => string;
-    ttlMs?: number;
-}
-/**
- * User-provided tool function
- */
-interface ToolFunction<TArgs = any, TResult = any> {
-    definition: FunctionToolDefinition;
-    execute: (args: TArgs, context?: ToolContext) => Promise<TResult>;
-    idempotency?: ToolIdempotency;
-    output?: ToolOutputHints;
 }
 
 /**

@@ -5,6 +5,7 @@
 export { TaskAgent } from './TaskAgent.js';
 export type {
   TaskAgentConfig,
+  TaskAgentSessionConfig,
   TaskAgentHooks,
   TaskAgentEvents,
   AgentHandle,

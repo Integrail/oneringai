@@ -237,8 +237,10 @@ src/
 │   ├── Vendor.ts                     # Vendor enum
 │   ├── Connector.ts                  # Connector registry
 │   ├── Agent.ts                      # Agent class
+│   ├── ToolManager.ts                # NEW: Dynamic tool management
+│   ├── SessionManager.ts             # NEW: Unified session persistence
 │   ├── createProvider.ts             # Provider factory
-│   └── context/                      # NEW: Universal context management
+│   └── context/                      # Universal context management
 │       ├── ContextManager.ts         # Strategy-based context manager
 │       ├── types.ts                  # Core interfaces
 │       └── strategies/               # Compaction strategies
@@ -269,16 +271,22 @@ src/
 │   ├── agents/                       # Agentic workflows
 │   │   ├── AgenticLoop.ts            # Tool calling loop
 │   │   └── ToolExecutor.ts           # Tool execution
-│   └── taskAgent/                    # Task-based agents
-│       ├── TaskAgent.ts              # Main orchestrator
-│       ├── WorkingMemory.ts          # Memory management
-│       ├── HistoryManager.ts         # Conversation tracking
-│       ├── IdempotencyCache.ts       # Tool call caching
-│       ├── PlanExecutor.ts           # Plan execution
-│       ├── CheckpointManager.ts      # State persistence
-│       ├── PlanningAgent.ts          # AI-driven planning
-│       ├── memoryTools.ts            # Built-in memory tools
-│       └── contextTools.ts           # Context inspection tools
+│   ├── taskAgent/                    # Task-based agents
+│   │   ├── TaskAgent.ts              # Main orchestrator
+│   │   ├── WorkingMemory.ts          # Memory management
+│   │   ├── HistoryManager.ts         # Conversation tracking
+│   │   ├── IdempotencyCache.ts       # Tool call caching
+│   │   ├── PlanExecutor.ts           # Plan execution
+│   │   ├── CheckpointManager.ts      # State persistence
+│   │   ├── PlanningAgent.ts          # AI-driven planning
+│   │   ├── memoryTools.ts            # Built-in memory tools
+│   │   └── contextTools.ts           # Context inspection tools
+│   └── universalAgent/               # NEW: Universal agent
+│       ├── UniversalAgent.ts         # Main unified agent
+│       ├── ModeManager.ts            # Mode state machine
+│       ├── metaTools.ts              # Meta-tools for mode transitions
+│       ├── types.ts                  # Type definitions
+│       └── index.ts                  # Exports
 ├── infrastructure/                   # Infrastructure implementations
 │   ├── providers/                    # LLM providers
 │   │   ├── openai/
@@ -295,7 +303,9 @@ src/
 │   │   └── estimators/               # Token estimation
 │   │       └── ApproximateEstimator.ts
 │   └── storage/                      # Persistence
-│       └── InMemoryStorage.ts
+│       ├── InMemoryStorage.ts        # Memory storage (Task data)
+│       ├── InMemorySessionStorage.ts # NEW: Session storage (in-memory)
+│       └── FileSessionStorage.ts     # NEW: Session storage (file-based)
 ├── connectors/                       # External API auth (OAuth)
 │   ├── oauth/                        # OAuth 2.0 implementation
 │   └── authenticatedFetch.ts         # Authenticated fetch using Connector
@@ -585,18 +595,260 @@ await agent.start({
 
 **See:** `USER_GUIDE.md` for complete TaskAgent documentation.
 
+## Tool Management (NEW)
+
+### ToolManager (`src/core/ToolManager.ts`)
+
+Dynamic tool management for all agent types. Provides runtime enable/disable, namespaces, priority, and context-aware selection.
+
+```typescript
+import { ToolManager } from '@oneringai/agents';
+
+const toolManager = new ToolManager();
+
+// Register tools
+toolManager.register(weatherTool, {
+  namespace: 'weather',
+  priority: 10,
+  enabled: true,
+});
+
+// Enable/disable at runtime
+toolManager.disable('get_weather');
+toolManager.enable('get_weather');
+
+// Get enabled tools
+const enabled = toolManager.getEnabled();
+
+// Context-aware selection
+const selected = toolManager.selectForContext({
+  mode: 'interactive',
+  taskName: 'weather_check',
+});
+
+// State persistence
+const state = toolManager.getState();
+toolManager.loadState(state);
+```
+
+**Features:**
+- **Dynamic registration** - Add/remove tools at runtime
+- **Enable/disable** - Toggle tools without unregistering
+- **Namespaces** - Organize tools by category
+- **Priority** - Control tool selection order
+- **Context-aware** - Select tools based on current context
+- **State serialization** - Persist tool configuration
+
+**Integration with Agent:**
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool, emailTool],  // Still works!
+});
+
+// Access ToolManager
+agent.tools.disable('email_tool');
+agent.tools.enable('email_tool');
+
+// Backward compatible methods still work
+agent.addTool(newTool);
+agent.removeTool('old_tool');
+agent.listTools();
+```
+
+## Session Management (NEW)
+
+### SessionManager (`src/core/SessionManager.ts`)
+
+Unified session persistence for all agent types (Agent, TaskAgent, UniversalAgent). Supports pluggable storage backends.
+
+```typescript
+import { SessionManager, InMemorySessionStorage, FileSessionStorage } from '@oneringai/agents';
+
+// In-memory storage
+const memoryStorage = new InMemorySessionStorage();
+const sessionManager = new SessionManager({ storage: memoryStorage });
+
+// File storage
+const fileStorage = new FileSessionStorage({ directory: './sessions' });
+const sessionManager = new SessionManager({ storage: fileStorage });
+
+// Create session
+const session = sessionManager.create('agent', {
+  name: 'My Agent',
+  tags: ['production'],
+});
+
+// Save session
+await sessionManager.save(session);
+
+// Load session
+const loaded = await sessionManager.load(session.id);
+
+// List sessions
+const sessions = await sessionManager.list({ agentType: 'agent' });
+
+// Auto-save
+sessionManager.enableAutoSave(session, 30000); // Every 30s
+```
+
+**Session Structure:**
+```typescript
+interface Session {
+  id: string;
+  agentType: string;
+  createdAt: number;
+  lastAccessedAt: number;
+  metadata: SessionMetadata;
+
+  // Conversation
+  history: SerializedHistory;
+
+  // Memory (for TaskAgent)
+  memory?: SerializedMemory;
+
+  // Plan (for TaskAgent/UniversalAgent)
+  plan?: SerializedPlan;
+
+  // Metrics
+  metrics: SessionMetrics;
+
+  // Custom data
+  customData?: Record<string, unknown>;
+}
+```
+
+**Integration with Agent:**
+
+```typescript
+// Create agent with session support
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+    autoSaveIntervalMs: 30000,
+  },
+});
+
+// Session methods
+const sessionId = agent.getSessionId();
+const hasSession = agent.hasSession();
+await agent.saveSession();
+
+// Resume from session
+const resumed = await Agent.resume(sessionId, {
+  storage: new FileSessionStorage({ directory: './sessions' }),
+});
+```
+
+**Storage Implementations:**
+- **InMemorySessionStorage** - Fast, non-persistent (testing)
+- **FileSessionStorage** - JSON files with index (production)
+- **Custom** - Implement `ISessionStorage` interface
+
+## Universal Agent (NEW)
+
+### UniversalAgent (`src/capabilities/universalAgent/UniversalAgent.ts`)
+
+A unified agent that combines interactive chat, planning, and task execution in one powerful interface.
+
+```typescript
+import { UniversalAgent } from '@oneringai/agents';
+
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool, emailTool],
+  planning: {
+    enabled: true,
+    autoDetect: true,         // Auto-detect complex tasks
+    requireApproval: true,    // Require approval before execution
+  },
+  session: {
+    storage: new FileSessionStorage({ directory: './sessions' }),
+    autoSave: true,
+  },
+});
+
+// Chat - automatically handles mode transitions
+const response = await agent.chat('Check weather in Paris and email me');
+// Response includes mode, plan, progress, etc.
+
+// Stream responses
+for await (const event of agent.stream('What is 2+2?')) {
+  if (event.type === 'text:delta') {
+    process.stdout.write(event.delta);
+  } else if (event.type === 'plan:created') {
+    console.log('Plan created:', event.plan);
+  }
+}
+
+// Configure at runtime
+agent.setAutoApproval(false);
+agent.setPlanningEnabled(true);
+
+// Introspection
+const mode = agent.getMode();           // 'interactive' | 'planning' | 'executing'
+const plan = agent.getPlan();           // Current plan
+const progress = agent.getProgress();   // Task progress
+```
+
+**Modes:**
+
+1. **Interactive Mode** - Direct conversation, immediate tool execution
+2. **Planning Mode** - Creates multi-step plans for complex tasks
+3. **Executing Mode** - Executes plan tasks with user intervention support
+
+**Features:**
+- **Auto-detect complexity** - LLM detects when tasks need planning
+- **Dynamic plan modification** - User can modify plans mid-execution
+- **Configurable approval** - Control when approval is required
+- **Session persistence** - Resume conversations seamlessly
+- **Event streaming** - Real-time updates on plan/task progress
+- **Intent analysis** - Pattern-based understanding of user intent
+
+**Mode Transitions:**
+
+```
+interactive ←→ planning ←→ executing
+```
+
+Agent automatically transitions based on:
+- User input patterns (approval, rejection, status query)
+- Task complexity detection
+- Plan completion
+- User interrupts
+
+**Meta-tools:**
+
+UniversalAgent uses special meta-tools internally:
+- `_start_planning` - Transition to planning mode
+- `_modify_plan` - Modify current plan
+- `_report_progress` - Report current status
+- `_request_approval` - Request user approval
+
+These are handled internally and don't require manual implementation.
+
 ## Key Files
 
 1. `src/core/Connector.ts` - Connector registry
 2. `src/core/Agent.ts` - Agent creation
-3. `src/core/createProvider.ts` - Provider factory
-4. `src/core/Vendor.ts` - Vendor enum
-5. `src/core/context/` - **Universal context management** (NEW)
-6. `src/domain/entities/Model.ts` - Model registry (23+ models)
-7. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
-8. `src/capabilities/taskAgent/` - Task agent implementation
-9. `src/infrastructure/providers/` - LLM provider implementations
-10. `src/infrastructure/context/` - Context strategies, compactors, providers
+3. `src/core/ToolManager.ts` - **Dynamic tool management** (NEW)
+4. `src/core/SessionManager.ts` - **Unified session persistence** (NEW)
+5. `src/core/createProvider.ts` - Provider factory
+6. `src/core/Vendor.ts` - Vendor enum
+7. `src/core/context/` - Universal context management
+8. `src/domain/entities/Model.ts` - Model registry (23+ models)
+9. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
+10. `src/capabilities/taskAgent/` - Task agent implementation
+11. `src/capabilities/universalAgent/` - **Universal agent** (NEW)
+12. `src/infrastructure/providers/` - LLM provider implementations
+13. `src/infrastructure/context/` - Context strategies, compactors, providers
+14. `src/infrastructure/storage/` - Session and data storage
 
 ---
 

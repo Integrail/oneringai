@@ -28,7 +28,38 @@
 
 // ============ Core API (Primary) ============
 export { Connector, Agent, Vendor, VENDORS, isVendor, createProvider } from './core/index.js';
-export type { AgentConfig } from './core/index.js';
+export type { AgentConfig, AgentSessionConfig } from './core/index.js';
+
+// Tool Management (Dynamic)
+export { ToolManager } from './core/index.js';
+export type {
+  ToolOptions,
+  ToolCondition,
+  ToolSelectionContext,
+  ToolRegistration,
+  ToolMetadata,
+  ToolManagerStats,
+  SerializedToolState,
+  ToolManagerEvent,
+} from './core/index.js';
+
+// Session Management (Persistence)
+export { SessionManager, createEmptyHistory, createEmptyMemory, addHistoryEntry } from './core/index.js';
+export type {
+  Session,
+  SessionMetadata,
+  SessionMetrics,
+  SessionFilter,
+  SessionSummary,
+  ISessionStorage,
+  SerializedHistory,
+  SerializedHistoryEntry,
+  SerializedMemory,
+  SerializedMemoryEntry,
+  SerializedPlan,
+  SessionManagerConfig,
+  SessionManagerEvent,
+} from './core/index.js';
 
 // ============ Task-Based Agents ============
 export {
@@ -43,6 +74,7 @@ export {
 } from './capabilities/taskAgent/index.js';
 export type {
   TaskAgentConfig,
+  TaskAgentSessionConfig,
   TaskAgentHooks,
   AgentHandle,
   PlanResult,
@@ -136,6 +168,10 @@ export type { IAgentStateStorage } from './domain/interfaces/IAgentStateStorage.
 export { createAgentStorage } from './infrastructure/storage/index.js';
 export type { IAgentStorage } from './infrastructure/storage/InMemoryStorage.js';
 export { InMemoryStorage, InMemoryPlanStorage, InMemoryAgentStateStorage } from './infrastructure/storage/index.js';
+
+// Session Storage Implementations
+export { InMemorySessionStorage, FileSessionStorage } from './infrastructure/storage/index.js';
+export type { FileSessionStorageConfig } from './infrastructure/storage/index.js';
 
 // Tool Context
 export type { ToolContext as TaskToolContext, WorkingMemoryAccess } from './domain/interfaces/IToolContext.js';
@@ -337,3 +373,26 @@ export { createExecuteJavaScriptTool } from './tools/code/executeJavaScript.js';
 // ============ Built-in Agents ============
 export { ProviderConfigAgent } from './agents/index.js';
 export type { ConnectorConfigResult } from './agents/index.js';
+
+// ============ UniversalAgent (NEW) ============
+export { UniversalAgent, ModeManager } from './capabilities/universalAgent/index.js';
+export type { UniversalAgentEvents, ModeManagerEvents } from './capabilities/universalAgent/index.js';
+export {
+  getMetaTools,
+  isMetaTool,
+  META_TOOL_NAMES,
+} from './capabilities/universalAgent/index.js';
+export type {
+  UniversalAgentConfig,
+  UniversalAgentSessionConfig,
+  UniversalAgentPlanningConfig,
+  UniversalResponse,
+  UniversalEvent,
+  AgentMode,
+  TaskProgress,
+  IntentAnalysis,
+  PlanChange,
+  ExecutionResult,
+  ToolCallResult as UniversalToolCallResult,
+  ModeState,
+} from './capabilities/universalAgent/index.js';

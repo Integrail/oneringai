@@ -27,6 +27,37 @@
 
 export { Connector } from './Connector.js';
 export { Agent } from './Agent.js';
-export type { AgentConfig } from './Agent.js';
+export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 export { Vendor, VENDORS, isVendor } from './Vendor.js';
 export { createProvider, createProviderAsync } from './createProvider.js';
+
+// Tool management
+export { ToolManager } from './ToolManager.js';
+export type {
+  ToolOptions,
+  ToolCondition,
+  ToolSelectionContext,
+  ToolRegistration,
+  ToolMetadata,
+  ToolManagerStats,
+  SerializedToolState,
+  ToolManagerEvent,
+} from './ToolManager.js';
+
+// Session management
+export { SessionManager, createEmptyHistory, createEmptyMemory, addHistoryEntry } from './SessionManager.js';
+export type {
+  Session,
+  SessionMetadata,
+  SessionMetrics,
+  SessionFilter,
+  SessionSummary,
+  ISessionStorage,
+  SerializedHistory,
+  SerializedHistoryEntry,
+  SerializedMemory,
+  SerializedMemoryEntry,
+  SerializedPlan,
+  SessionManagerConfig,
+  SessionManagerEvent,
+} from './SessionManager.js';
