@@ -1376,6 +1376,8 @@ interface VideoResponse {
     status: VideoStatus;
     /** Timestamp when created */
     created: number;
+    /** Progress percentage (0-100) */
+    progress?: number;
     /** Generated video data (when complete) */
     video?: {
         /** URL to download the video (if available) */
@@ -3806,9 +3808,9 @@ declare const VIDEO_MODELS: {
     };
     readonly google: {
         readonly VEO_2: "veo-2.0-generate-001";
-        readonly VEO_3: "veo-3.0-generate-001";
-        readonly VEO_3_FAST: "veo-3.0-fast-generate-001";
-        readonly VEO_3_1: "veo-3.1-generate-001";
+        readonly VEO_3: "veo-3-generate-preview";
+        readonly VEO_3_FAST: "veo-3.1-fast-generate-preview";
+        readonly VEO_3_1: "veo-3.1-generate-preview";
     };
 };
 /**

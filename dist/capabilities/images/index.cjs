@@ -1892,15 +1892,19 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
             quality: options.quality,
             n: options.n
           });
-          const response = await this.client.images.generate({
+          const isGptImage = options.model === "gpt-image-1";
+          const params = {
             model: options.model,
             prompt: options.prompt,
             size: options.size,
             quality: options.quality,
             style: options.style,
-            n: options.n || 1,
-            response_format: options.response_format || "b64_json"
-          });
+            n: options.n || 1
+          };
+          if (!isGptImage) {
+            params.response_format = options.response_format || "b64_json";
+          }
+          const response = await this.client.images.generate(params);
           const data = response.data || [];
           this.logOperationComplete("image.generate", {
             model: options.model,
@@ -1938,15 +1942,19 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
           });
           const image = this.prepareImageInput(options.image);
           const mask = options.mask ? this.prepareImageInput(options.mask) : void 0;
-          const response = await this.client.images.edit({
+          const isGptImage = options.model === "gpt-image-1";
+          const params = {
             model: options.model,
             image,
             prompt: options.prompt,
             mask,
             size: options.size,
-            n: options.n || 1,
-            response_format: options.response_format || "b64_json"
-          });
+            n: options.n || 1
+          };
+          if (!isGptImage) {
+            params.response_format = options.response_format || "b64_json";
+          }
+          const response = await this.client.images.edit(params);
           const data = response.data || [];
           this.logOperationComplete("image.edit", {
             model: options.model,

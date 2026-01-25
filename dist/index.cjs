@@ -8763,15 +8763,19 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
             quality: options.quality,
             n: options.n
           });
-          const response = await this.client.images.generate({
+          const isGptImage = options.model === "gpt-image-1";
+          const params = {
             model: options.model,
             prompt: options.prompt,
             size: options.size,
             quality: options.quality,
             style: options.style,
-            n: options.n || 1,
-            response_format: options.response_format || "b64_json"
-          });
+            n: options.n || 1
+          };
+          if (!isGptImage) {
+            params.response_format = options.response_format || "b64_json";
+          }
+          const response = await this.client.images.generate(params);
           const data = response.data || [];
           this.logOperationComplete("image.generate", {
             model: options.model,
@@ -8809,15 +8813,19 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
           });
           const image = this.prepareImageInput(options.image);
           const mask = options.mask ? this.prepareImageInput(options.mask) : void 0;
-          const response = await this.client.images.edit({
+          const isGptImage = options.model === "gpt-image-1";
+          const params = {
             model: options.model,
             image,
             prompt: options.prompt,
             mask,
             size: options.size,
-            n: options.n || 1,
-            response_format: options.response_format || "b64_json"
-          });
+            n: options.n || 1
+          };
+          if (!isGptImage) {
+            params.response_format = options.response_format || "b64_json";
+          }
+          const response = await this.client.images.edit(params);
           const data = response.data || [];
           this.logOperationComplete("image.edit", {
             model: options.model,
@@ -9551,22 +9559,19 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
             resolution: options.resolution
           });
           const model = options.model || "sora-2";
-          const duration = options.duration || 4;
+          const seconds = this.durationToSeconds(options.duration || 4);
           const params = {
-            model,
             prompt: options.prompt,
-            duration
+            model,
+            seconds
           };
           if (options.resolution) {
-            params.resolution = options.resolution;
+            params.size = this.resolutionToSize(options.resolution);
           } else if (options.aspectRatio) {
-            params.resolution = this.aspectRatioToResolution(options.aspectRatio);
-          }
-          if (options.seed !== void 0) {
-            params.seed = options.seed;
+            params.size = this.aspectRatioToSize(options.aspectRatio);
           }
           if (options.image) {
-            params.image = this.prepareImageInput(options.image);
+            params.input_reference = await this.prepareImageInput(options.image);
           }
           const response = await this.client.videos.create(params);
           this.logOperationComplete("video.generate", {
@@ -9595,7 +9600,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
           const response = await this.client.videos.retrieve(jobId);
           this.logOperationComplete("video.status", {
             jobId,
-            status: response.status
+            status: response.status,
+            progress: response.progress
           });
           return this.mapResponse(response);
         } catch (error) {
@@ -9615,18 +9621,13 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       async () => {
         try {
           this.logOperationStart("video.download", { jobId });
-          const status = await this.getVideoStatus(jobId);
-          if (status.status !== "completed") {
-            throw new ProviderError("openai", `Video not ready. Status: ${status.status}`);
+          const statusResponse = await this.getVideoStatus(jobId);
+          if (statusResponse.status !== "completed") {
+            throw new ProviderError("openai", `Video not ready. Status: ${statusResponse.status}`);
           }
-          if (!status.video?.url) {
-            throw new ProviderError("openai", "No video URL available");
-          }
-          const response = await fetch(status.video.url);
-          if (!response.ok) {
-            throw new ProviderError("openai", `Failed to download video: ${response.statusText}`);
-          }
-          const buffer = Buffer.from(await response.arrayBuffer());
+          const response = await this.client.videos.downloadContent(jobId, { variant: "video" });
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
           this.logOperationComplete("video.download", {
             jobId,
             size: buffer.length
@@ -9643,7 +9644,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
     );
   }
   /**
-   * Extend an existing video
+   * Extend/remix an existing video
+   * Note: OpenAI SDK uses 'remix' instead of 'extend'
    */
   async extendVideo(options) {
     return this.executeWithCircuitBreaker(
@@ -9654,24 +9656,24 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
             extendDuration: options.extendDuration,
             direction: options.direction
           });
-          const params = {
-            model: options.model || "sora-2",
-            video: this.prepareVideoInput(options.video),
-            extend_duration: options.extendDuration
-          };
-          if (options.prompt) {
-            params.prompt = options.prompt;
+          let videoId;
+          if (typeof options.video === "string" && !options.video.startsWith("http")) {
+            videoId = options.video;
+          } else {
+            throw new ProviderError(
+              "openai",
+              "Video extension requires a video ID. Upload the video first or provide the job ID."
+            );
           }
-          if (options.direction) {
-            params.direction = options.direction;
-          }
-          const response = await this.client.videos.extend(params);
+          const prompt = options.prompt || "Extend this video seamlessly";
+          const response = await this.client.videos.remix(videoId, { prompt });
           this.logOperationComplete("video.extend", {
             jobId: response.id,
             status: response.status
           });
           return this.mapResponse(response);
         } catch (error) {
+          if (error instanceof ProviderError) throw error;
           this.handleError(error);
           throw error;
         }
@@ -9687,40 +9689,35 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
     return ["sora-2", "sora-2-pro"];
   }
   /**
-   * Cancel a pending job
+   * Cancel/delete a pending job
    */
   async cancelJob(jobId) {
     try {
-      await this.client.videos.cancel(jobId);
-      return true;
+      const response = await this.client.videos.delete(jobId);
+      return response.deleted;
     } catch {
       return false;
     }
   }
   /**
-   * Map OpenAI response to our VideoResponse format
+   * Map OpenAI SDK Video response to our VideoResponse format
    */
   mapResponse(response) {
     const result = {
       jobId: response.id,
       status: this.mapStatus(response.status),
-      created: response.created || Math.floor(Date.now() / 1e3)
+      created: response.created_at,
+      progress: response.progress
     };
-    if (response.status === "completed" && response.video) {
+    if (response.status === "completed") {
       result.video = {
-        url: response.video.url,
-        duration: response.video.duration,
-        resolution: response.video.resolution,
+        duration: this.secondsStringToNumber(response.seconds),
+        resolution: response.size,
         format: "mp4"
       };
-      if (response.audio) {
-        result.audio = {
-          url: response.audio.url
-        };
-      }
     }
-    if (response.status === "failed") {
-      result.error = response.error?.message || "Video generation failed";
+    if (response.status === "failed" && response.error) {
+      result.error = response.error.message || "Video generation failed";
     }
     return result;
   }
@@ -9746,41 +9743,56 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
     }
   }
   /**
-   * Map aspect ratio to resolution
+   * Convert duration number to SDK's seconds string format
    */
-  aspectRatioToResolution(aspectRatio) {
+  durationToSeconds(duration) {
+    if (duration <= 4) return "4";
+    if (duration <= 8) return "8";
+    return "12";
+  }
+  /**
+   * Convert seconds string back to number
+   */
+  secondsStringToNumber(seconds) {
+    return parseInt(seconds, 10) || 4;
+  }
+  /**
+   * Map resolution string to SDK's size format
+   */
+  resolutionToSize(resolution) {
+    const validSizes = ["720x1280", "1280x720", "1024x1792", "1792x1024"];
+    if (validSizes.includes(resolution)) {
+      return resolution;
+    }
+    return "720x1280";
+  }
+  /**
+   * Map aspect ratio to SDK's size format
+   */
+  aspectRatioToSize(aspectRatio) {
     const map = {
       "16:9": "1280x720",
       "9:16": "720x1280",
-      "1:1": "1024x1024",
-      "4:3": "1024x768",
-      "3:4": "768x1024"
+      "9:16-tall": "1024x1792",
+      "16:9-tall": "1792x1024"
     };
-    return map[aspectRatio] || "1280x720";
+    return map[aspectRatio] || "720x1280";
   }
   /**
-   * Prepare image input for API
+   * Prepare image input for API (input_reference)
    */
-  prepareImageInput(image) {
+  async prepareImageInput(image) {
     if (Buffer.isBuffer(image)) {
-      return {
-        type: "base64",
-        data: image.toString("base64")
-      };
+      return new File([image], "input.png", { type: "image/png" });
     }
-    return { type: "url", url: image };
-  }
-  /**
-   * Prepare video input for API
-   */
-  prepareVideoInput(video) {
-    if (Buffer.isBuffer(video)) {
-      return {
-        type: "base64",
-        data: video.toString("base64")
-      };
+    if (!image.startsWith("http")) {
+      const fs11 = await import('fs');
+      const data = fs11.readFileSync(image);
+      return new File([data], "input.png", { type: "image/png" });
     }
-    return { type: "url", url: video };
+    const response = await fetch(image);
+    const arrayBuffer = await response.arrayBuffer();
+    return new File([new Uint8Array(arrayBuffer)], "input.png", { type: "image/png" });
   }
   /**
    * Handle OpenAI API errors
@@ -9837,7 +9849,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
             duration: options.duration,
             resolution: options.resolution
           });
-          const model = options.model || "veo-3.0-generate-001";
+          const model = options.model || "veo-3.1-generate-preview";
           const googleOptions = options.vendorOptions || {};
           const config = {};
           if (options.aspectRatio) {
@@ -9847,7 +9859,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
             config.resolution = options.resolution;
           }
           if (options.duration) {
-            config.durationSeconds = String(options.duration);
+            config.durationSeconds = options.duration;
           }
           if (options.seed !== void 0) {
             config.seed = options.seed;
@@ -9989,7 +10001,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
             model: options.model,
             extendDuration: options.extendDuration
           });
-          const model = options.model || "veo-3.1-generate-001";
+          const model = options.model || "veo-3.1-generate-preview";
           const request = {
             model,
             prompt: options.prompt || "Continue the video seamlessly",
@@ -10031,9 +10043,9 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
   async listModels() {
     return [
       "veo-2.0-generate-001",
-      "veo-3.0-generate-001",
-      "veo-3.0-fast-generate-001",
-      "veo-3.1-generate-001"
+      "veo-3-generate-preview",
+      "veo-3.1-fast-generate-preview",
+      "veo-3.1-generate-preview"
     ];
   }
   /**
@@ -10194,10 +10206,11 @@ var VIDEO_MODELS = {
     SORA_2_PRO: "sora-2-pro"
   },
   [Vendor.Google]: {
+    // Gemini API (ai.google.dev) model names - use with API key
     VEO_2: "veo-2.0-generate-001",
-    VEO_3: "veo-3.0-generate-001",
-    VEO_3_FAST: "veo-3.0-fast-generate-001",
-    VEO_3_1: "veo-3.1-generate-001"
+    VEO_3: "veo-3-generate-preview",
+    VEO_3_FAST: "veo-3.1-fast-generate-preview",
+    VEO_3_1: "veo-3.1-generate-preview"
   }
 };
 var OPENAI_SOURCES = {
@@ -10295,14 +10308,14 @@ var VIDEO_MODEL_REGISTRY = {
       currency: "USD"
     }
   },
-  "veo-3.0-generate-001": {
-    name: "veo-3.0-generate-001",
+  "veo-3-generate-preview": {
+    name: "veo-3-generate-preview",
     displayName: "Veo 3.0",
     provider: Vendor.Google,
     isActive: true,
     sources: GOOGLE_SOURCES,
     capabilities: {
-      durations: [5, 6, 7, 8, 10, 15, 20],
+      durations: [4, 6, 8],
       resolutions: ["720p", "1080p", "768x1408", "1408x768"],
       maxFps: 30,
       audio: true,
@@ -10317,21 +10330,21 @@ var VIDEO_MODEL_REGISTRY = {
       }
     },
     pricing: {
-      perSecond: 0.05,
+      perSecond: 0.75,
       currency: "USD"
     }
   },
-  "veo-3.0-fast-generate-001": {
-    name: "veo-3.0-fast-generate-001",
-    displayName: "Veo 3.0 Fast",
+  "veo-3.1-fast-generate-preview": {
+    name: "veo-3.1-fast-generate-preview",
+    displayName: "Veo 3.1 Fast",
     provider: Vendor.Google,
     isActive: true,
     sources: GOOGLE_SOURCES,
     capabilities: {
-      durations: [5, 6, 7, 8],
+      durations: [4, 6, 8],
       resolutions: ["720p", "768x1408", "1408x768"],
       maxFps: 24,
-      audio: false,
+      audio: true,
       imageToVideo: true,
       videoExtension: false,
       frameControl: false,
@@ -10343,19 +10356,19 @@ var VIDEO_MODEL_REGISTRY = {
       }
     },
     pricing: {
-      perSecond: 0.02,
+      perSecond: 0.75,
       currency: "USD"
     }
   },
-  "veo-3.1-generate-001": {
-    name: "veo-3.1-generate-001",
+  "veo-3.1-generate-preview": {
+    name: "veo-3.1-generate-preview",
     displayName: "Veo 3.1",
     provider: Vendor.Google,
     isActive: true,
     sources: GOOGLE_SOURCES,
     capabilities: {
-      durations: [5, 6, 7, 8, 10, 15, 20, 30],
-      resolutions: ["720p", "1080p", "4K", "768x1408", "1408x768"],
+      durations: [4, 6, 8],
+      resolutions: ["720p", "1080p", "4k", "768x1408", "1408x768"],
       maxFps: 30,
       audio: true,
       imageToVideo: true,
@@ -10369,7 +10382,7 @@ var VIDEO_MODEL_REGISTRY = {
       }
     },
     pricing: {
-      perSecond: 0.08,
+      perSecond: 0.75,
       currency: "USD"
     }
   }
