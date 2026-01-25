@@ -1,6 +1,6 @@
 # @oneringai/agents
 
-> **A unified AI agent library with multi-provider support for text generation, image analysis, and agentic workflows.**
+> **A unified AI agent library with multi-provider support for text generation, image analysis, audio (TTS/STT), and agentic workflows.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
@@ -11,9 +11,10 @@
 - ✨ **Unified API** - One interface for 10+ AI providers (OpenAI, Anthropic, Google, Groq, DeepSeek, and more)
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
 - 📊 **Model Registry** - Complete metadata for 23+ latest (2026) models with pricing and features
-- 🤖 **Universal Agent** - NEW: Unified agent combining chat, planning, and execution in one interface
-- 🎛️ **Dynamic Tool Management** - NEW: Enable/disable tools at runtime, namespaces, priority-based selection
-- 💾 **Session Persistence** - NEW: Save and resume conversations for all agent types
+- 🎤 **Audio Capabilities** - NEW: Text-to-Speech (TTS) and Speech-to-Text (STT) with OpenAI and Groq
+- 🤖 **Universal Agent** - Unified agent combining chat, planning, and execution in one interface
+- 🎛️ **Dynamic Tool Management** - Enable/disable tools at runtime, namespaces, priority-based selection
+- 💾 **Session Persistence** - Save and resume conversations for all agent types
 - 🤖 **Task Agents** - Autonomous agents with working memory, context management, and state persistence
 - 🎯 **Context Management** - Smart strategies (proactive, aggressive, lazy, rolling-window, adaptive)
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
@@ -104,21 +105,45 @@ const response = await agent.run(
 );
 ```
 
+### Audio (NEW)
+
+```typescript
+import { TextToSpeech, SpeechToText } from '@oneringai/agents';
+
+// Text-to-Speech
+const tts = TextToSpeech.create({
+  connector: 'openai',
+  model: 'tts-1-hd',
+  voice: 'nova',
+});
+
+await tts.toFile('Hello, world!', './output.mp3');
+
+// Speech-to-Text
+const stt = SpeechToText.create({
+  connector: 'openai',
+  model: 'whisper-1',
+});
+
+const result = await stt.transcribeFile('./audio.mp3');
+console.log(result.text);
+```
+
 ## Supported Providers
 
-| Provider | Text | Vision | Tools | Context |
-|----------|------|--------|-------|---------|
-| **OpenAI** | ✅ | ✅ | ✅ | 128K |
-| **Anthropic (Claude)** | ✅ | ✅ | ✅ | 200K |
-| **Google (Gemini)** | ✅ | ✅ | ✅ | 1M |
-| **Google Vertex AI** | ✅ | ✅ | ✅ | 1M |
-| **Grok (xAI)** | ✅ | ✅ | ✅ | 128K |
-| **Groq** | ✅ | ❌ | ✅ | 128K |
-| **Together AI** | ✅ | Some | ✅ | 128K |
-| **DeepSeek** | ✅ | ❌ | ✅ | 64K |
-| **Mistral** | ✅ | ❌ | ✅ | 32K |
-| **Ollama** | ✅ | Varies | ✅ | Varies |
-| **Custom** | ✅ | Varies | ✅ | Varies |
+| Provider | Text | Vision | TTS | STT | Tools | Context |
+|----------|------|--------|-----|-----|-------|---------|
+| **OpenAI** | ✅ | ✅ | ✅ | ✅ | ✅ | 128K |
+| **Anthropic (Claude)** | ✅ | ✅ | ❌ | ❌ | ✅ | 200K |
+| **Google (Gemini)** | ✅ | ✅ | 🔜 | ❌ | ✅ | 1M |
+| **Google Vertex AI** | ✅ | ✅ | ❌ | ❌ | ✅ | 1M |
+| **Grok (xAI)** | ✅ | ✅ | ❌ | ❌ | ✅ | 128K |
+| **Groq** | ✅ | ❌ | ❌ | ✅ | ✅ | 128K |
+| **Together AI** | ✅ | Some | ❌ | ❌ | ✅ | 128K |
+| **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ✅ | 64K |
+| **Mistral** | ✅ | ❌ | ❌ | ❌ | ✅ | 32K |
+| **Ollama** | ✅ | Varies | ❌ | ❌ | ✅ | Varies |
+| **Custom** | ✅ | Varies | ❌ | ❌ | ✅ | Varies |
 
 ## Key Features
 
@@ -268,7 +293,56 @@ const contextManager = new ContextManager(provider, {
 // - Adapts based on usage patterns
 ```
 
-### 6. Model Registry
+### 6. Audio Capabilities (NEW)
+
+Text-to-Speech and Speech-to-Text with multiple providers:
+
+```typescript
+import { TextToSpeech, SpeechToText } from '@oneringai/agents';
+
+// === Text-to-Speech ===
+const tts = TextToSpeech.create({
+  connector: 'openai',
+  model: 'tts-1-hd',       // or 'gpt-4o-mini-tts' for instruction steering
+  voice: 'nova',
+});
+
+// Synthesize to file
+await tts.toFile('Hello, world!', './output.mp3');
+
+// Synthesize with options
+const audio = await tts.synthesize('Speak slowly', {
+  format: 'wav',
+  speed: 0.75,
+});
+
+// Introspection
+const voices = await tts.listVoices();
+const models = tts.listAvailableModels();
+
+// === Speech-to-Text ===
+const stt = SpeechToText.create({
+  connector: 'openai',
+  model: 'whisper-1',      // or 'gpt-4o-transcribe'
+});
+
+// Transcribe
+const result = await stt.transcribeFile('./audio.mp3');
+console.log(result.text);
+
+// With timestamps
+const detailed = await stt.transcribeWithTimestamps(audioBuffer, 'word');
+console.log(detailed.words);  // [{ word, start, end }, ...]
+
+// Translation
+const english = await stt.translate(frenchAudio);
+```
+
+**Available Models:**
+- **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-tts`)
+- **STT**: OpenAI (`whisper-1`, `gpt-4o-transcribe`), Groq (`whisper-large-v3` - 12x cheaper!)
+
+### 7. Model Registry
 
 Complete metadata for 23+ models:
 
@@ -296,7 +370,7 @@ console.log(`Cached: $${cachedCost}`);  // $0.0293 (90% discount)
 - **Anthropic (5)**: Claude 4.5 series, Claude 4.x
 - **Google (7)**: Gemini 3, Gemini 2.5
 
-### 7. Streaming
+### 8. Streaming
 
 Real-time responses:
 
@@ -308,7 +382,7 @@ for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
 }
 ```
 
-### 8. OAuth for External APIs
+### 9. OAuth for External APIs
 
 ```typescript
 import { OAuthManager, FileStorage } from '@oneringai/agents';
@@ -344,6 +418,9 @@ npm run example:basic              # Simple text generation
 npm run example:streaming          # Streaming responses
 npm run example:vision             # Image analysis
 npm run example:tools              # Tool calling
+
+# Audio examples
+npm run example:audio              # TTS and STT demo
 
 # Task Agent examples
 npm run example:task-agent         # Basic task agent

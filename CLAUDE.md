@@ -5,7 +5,7 @@ This document provides context for AI assistants (like Claude) to continue devel
 ## Project Overview
 
 **Name**: `@oneringai/agents`
-**Purpose**: Unified AI agent library with multi-vendor support for text generation, image analysis, and agentic workflows
+**Purpose**: Unified AI agent library with multi-vendor support for text generation, image analysis, audio (TTS/STT), and agentic workflows
 **Language**: TypeScript (strict mode)
 **Runtime**: Node.js 18+
 **Package Type**: ESM (ES Modules)
@@ -227,6 +227,110 @@ const provider = createProvider(connector);
 // Returns: OpenAITextProvider, AnthropicTextProvider, etc.
 ```
 
+### Audio Capabilities (NEW)
+
+#### TextToSpeech (`src/core/TextToSpeech.ts`)
+
+High-level Text-to-Speech synthesis:
+
+```typescript
+import { TextToSpeech } from '@oneringai/agents';
+
+const tts = TextToSpeech.create({
+  connector: 'openai',
+  model: 'tts-1-hd',      // or 'tts-1', 'gpt-4o-mini-tts'
+  voice: 'nova',          // alloy, echo, fable, onyx, nova, shimmer
+});
+
+// Synthesize to Buffer
+const response = await tts.synthesize('Hello, world!');
+console.log(response.audio);  // Buffer
+console.log(response.format); // 'mp3'
+
+// Synthesize to file
+await tts.toFile('Hello, world!', './output.mp3');
+
+// With options
+const audio = await tts.synthesize('Speak slowly', {
+  voice: 'alloy',
+  format: 'wav',
+  speed: 0.75,  // 0.25 to 4.0
+});
+
+// Introspection
+const voices = await tts.listVoices();
+const models = tts.listAvailableModels();
+const supportsInstructions = tts.supportsFeature('instructionSteering');
+```
+
+#### SpeechToText (`src/core/SpeechToText.ts`)
+
+High-level Speech-to-Text transcription:
+
+```typescript
+import { SpeechToText } from '@oneringai/agents';
+
+const stt = SpeechToText.create({
+  connector: 'openai',
+  model: 'whisper-1',  // or 'gpt-4o-transcribe'
+});
+
+// Transcribe from file path
+const result = await stt.transcribeFile('./audio.mp3');
+console.log(result.text);
+
+// Transcribe from Buffer
+const audioBuffer = await fs.readFile('./audio.mp3');
+const result = await stt.transcribe(audioBuffer);
+
+// With timestamps
+const detailed = await stt.transcribeWithTimestamps(audioBuffer, 'word');
+console.log(detailed.words);  // [{ word, start, end }, ...]
+
+// Translation (to English)
+const english = await stt.translate(frenchAudioBuffer);
+
+// Introspection
+const supportsDiarization = stt.supportsFeature('diarization');
+const granularities = stt.getTimestampGranularities();
+```
+
+#### TTS Model Registry (`src/domain/entities/TTSModel.ts`)
+
+```typescript
+import { getTTSModelInfo, TTS_MODELS, Vendor } from '@oneringai/agents';
+
+// Access model constants
+const model = TTS_MODELS[Vendor.OpenAI].TTS_1_HD;  // 'tts-1-hd'
+
+// Get model info
+const info = getTTSModelInfo('gpt-4o-mini-tts');
+console.log(info.capabilities.features.instructionSteering);  // true
+console.log(info.pricing.per1kCharacters);  // 0.015
+```
+
+**Available TTS Models:**
+- **OpenAI**: `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` (instruction-steerable)
+- **Google**: `gemini-tts`
+
+#### STT Model Registry (`src/domain/entities/STTModel.ts`)
+
+```typescript
+import { getSTTModelInfo, STT_MODELS, Vendor } from '@oneringai/agents';
+
+// Access model constants
+const model = STT_MODELS[Vendor.OpenAI].WHISPER_1;  // 'whisper-1'
+
+// Get model info
+const info = getSTTModelInfo('gpt-4o-transcribe-diarize');
+console.log(info.capabilities.features.diarization);  // true
+console.log(info.pricing.perMinute);  // 0.012
+```
+
+**Available STT Models:**
+- **OpenAI**: `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-transcribe-diarize`
+- **Groq**: `whisper-large-v3`, `distil-whisper-large-v3-en` (12x cheaper!)
+
 ## Directory Structure
 
 ```
@@ -237,9 +341,12 @@ src/
 │   ├── Vendor.ts                     # Vendor enum
 │   ├── Connector.ts                  # Connector registry
 │   ├── Agent.ts                      # Agent class
-│   ├── ToolManager.ts                # NEW: Dynamic tool management
-│   ├── SessionManager.ts             # NEW: Unified session persistence
-│   ├── createProvider.ts             # Provider factory
+│   ├── ToolManager.ts                # Dynamic tool management
+│   ├── SessionManager.ts             # Unified session persistence
+│   ├── createProvider.ts             # Provider factory (text)
+│   ├── createAudioProvider.ts        # NEW: Provider factory (audio)
+│   ├── TextToSpeech.ts               # NEW: TTS capability class
+│   ├── SpeechToText.ts               # NEW: STT capability class
 │   └── context/                      # Universal context management
 │       ├── ContextManager.ts         # Strategy-based context manager
 │       ├── types.ts                  # Core interfaces
@@ -255,17 +362,23 @@ src/
 │   │   ├── Content.ts                # ContentType
 │   │   ├── Tool.ts                   # ToolFunction, ToolCall
 │   │   ├── Connector.ts              # ConnectorConfig types
-│   │   ├── Model.ts                  # Model registry (23+ models)
+│   │   ├── Model.ts                  # LLM model registry (23+ models)
+│   │   ├── TTSModel.ts               # NEW: TTS model registry
+│   │   ├── STTModel.ts               # NEW: STT model registry
+│   │   ├── SharedVoices.ts           # NEW: Voice/language constants
+│   │   ├── RegistryUtils.ts          # NEW: Generic registry helpers
 │   │   ├── Task.ts                   # Task & Plan entities
 │   │   ├── Memory.ts                 # Memory entities
 │   │   └── Response.ts               # LLMResponse
 │   ├── interfaces/                   # Contracts
 │   │   ├── IProvider.ts
 │   │   ├── ITextProvider.ts
+│   │   ├── IAudioProvider.ts         # NEW: TTS/STT interfaces
 │   │   ├── IToolExecutor.ts
 │   │   ├── IMemoryStorage.ts
 │   │   └── IToolContext.ts
 │   ├── types/                        # Shared types
+│   │   └── SharedTypes.ts            # NEW: Audio/image shared types
 │   └── errors/                       # Error classes
 ├── capabilities/                     # Feature modules
 │   ├── agents/                       # Agentic workflows
@@ -289,7 +402,12 @@ src/
 │       └── index.ts                  # Exports
 ├── infrastructure/                   # Infrastructure implementations
 │   ├── providers/                    # LLM providers
+│   │   ├── base/                     # NEW: Base provider classes
+│   │   │   └── BaseMediaProvider.ts  # Circuit breaker, logging, metrics
 │   │   ├── openai/
+│   │   │   ├── OpenAITextProvider.ts
+│   │   │   ├── OpenAITTSProvider.ts  # NEW: TTS
+│   │   │   └── OpenAISTTProvider.ts  # NEW: STT
 │   │   ├── anthropic/
 │   │   ├── google/
 │   │   └── generic/                  # OpenAI-compatible
@@ -837,18 +955,23 @@ These are handled internally and don't require manual implementation.
 
 1. `src/core/Connector.ts` - Connector registry
 2. `src/core/Agent.ts` - Agent creation
-3. `src/core/ToolManager.ts` - **Dynamic tool management** (NEW)
-4. `src/core/SessionManager.ts` - **Unified session persistence** (NEW)
-5. `src/core/createProvider.ts` - Provider factory
-6. `src/core/Vendor.ts` - Vendor enum
-7. `src/core/context/` - Universal context management
-8. `src/domain/entities/Model.ts` - Model registry (23+ models)
-9. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
-10. `src/capabilities/taskAgent/` - Task agent implementation
-11. `src/capabilities/universalAgent/` - **Universal agent** (NEW)
-12. `src/infrastructure/providers/` - LLM provider implementations
-13. `src/infrastructure/context/` - Context strategies, compactors, providers
-14. `src/infrastructure/storage/` - Session and data storage
+3. `src/core/ToolManager.ts` - Dynamic tool management
+4. `src/core/SessionManager.ts` - Unified session persistence
+5. `src/core/createProvider.ts` - Provider factory (text)
+6. `src/core/createAudioProvider.ts` - **Provider factory (audio)** (NEW)
+7. `src/core/TextToSpeech.ts` - **TTS capability class** (NEW)
+8. `src/core/SpeechToText.ts` - **STT capability class** (NEW)
+9. `src/core/Vendor.ts` - Vendor enum
+10. `src/core/context/` - Universal context management
+11. `src/domain/entities/Model.ts` - LLM model registry (23+ models)
+12. `src/domain/entities/TTSModel.ts` - **TTS model registry** (NEW)
+13. `src/domain/entities/STTModel.ts` - **STT model registry** (NEW)
+14. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
+15. `src/capabilities/taskAgent/` - Task agent implementation
+16. `src/capabilities/universalAgent/` - Universal agent
+17. `src/infrastructure/providers/` - LLM and audio provider implementations
+18. `src/infrastructure/context/` - Context strategies, compactors, providers
+19. `src/infrastructure/storage/` - Session and data storage
 
 ---
 

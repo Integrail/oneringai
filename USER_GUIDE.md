@@ -14,18 +14,19 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 3. [Basic Text Generation](#basic-text-generation)
 4. [Connectors & Authentication](#connectors--authentication)
 5. [Agent Features](#agent-features)
-6. [Session Persistence](#session-persistence) **NEW**
-7. [Universal Agent](#universal-agent) **NEW**
+6. [Session Persistence](#session-persistence)
+7. [Universal Agent](#universal-agent)
 8. [Task Agents](#task-agents)
 9. [Context Management](#context-management)
 10. [Tools & Function Calling](#tools--function-calling)
-11. [Dynamic Tool Management](#dynamic-tool-management) **NEW**
+11. [Dynamic Tool Management](#dynamic-tool-management)
 12. [Multimodal (Vision)](#multimodal-vision)
-13. [Streaming](#streaming)
-14. [OAuth for External APIs](#oauth-for-external-apis)
-15. [Model Registry](#model-registry)
-16. [Advanced Features](#advanced-features)
-17. [Production Deployment](#production-deployment)
+13. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
+14. [Streaming](#streaming)
+15. [OAuth for External APIs](#oauth-for-external-apis)
+16. [Model Registry](#model-registry)
+17. [Advanced Features](#advanced-features)
+18. [Production Deployment](#production-deployment)
 
 ---
 
@@ -2705,6 +2706,298 @@ const response = await agent.run(
 // 2. Call extractTextTool to extract text
 // 3. Parse numbers
 // 4. Calculate total
+```
+
+---
+
+## Audio (TTS/STT)
+
+The library provides comprehensive Text-to-Speech (TTS) and Speech-to-Text (STT) capabilities.
+
+### Text-to-Speech
+
+#### Basic Usage
+
+```typescript
+import { Connector, TextToSpeech, Vendor } from '@oneringai/agents';
+
+// Setup connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Create TTS instance
+const tts = TextToSpeech.create({
+  connector: 'openai',
+  model: 'tts-1-hd',      // High-quality model
+  voice: 'nova',          // Female voice
+});
+
+// Synthesize to Buffer
+const response = await tts.synthesize('Hello, world!');
+console.log(response.audio);   // Buffer
+console.log(response.format);  // 'mp3'
+
+// Synthesize to file
+await tts.toFile('Hello, world!', './output.mp3');
+```
+
+#### Voice Options
+
+```typescript
+// Available voices
+const voices = await tts.listVoices();
+// [
+//   { id: 'alloy', name: 'Alloy', gender: 'neutral', isDefault: true },
+//   { id: 'echo', name: 'Echo', gender: 'male' },
+//   { id: 'fable', name: 'Fable', gender: 'male' },
+//   { id: 'onyx', name: 'Onyx', gender: 'male' },
+//   { id: 'nova', name: 'Nova', gender: 'female' },
+//   { id: 'shimmer', name: 'Shimmer', gender: 'female' },
+//   ...
+// ]
+
+// Synthesize with specific voice
+const audio = await tts.synthesize('Hello', { voice: 'echo' });
+```
+
+#### Audio Formats
+
+```typescript
+// Supported formats: mp3, opus, aac, flac, wav, pcm
+const mp3 = await tts.synthesize('Hello', { format: 'mp3' });
+const wav = await tts.synthesize('Hello', { format: 'wav' });
+const flac = await tts.synthesize('Hello', { format: 'flac' });
+```
+
+#### Speed Control
+
+```typescript
+// Speed range: 0.25 (slow) to 4.0 (fast)
+const slow = await tts.synthesize('Speaking slowly', { speed: 0.5 });
+const normal = await tts.synthesize('Normal speed', { speed: 1.0 });
+const fast = await tts.synthesize('Speaking fast', { speed: 2.0 });
+```
+
+#### Instruction Steering (gpt-4o-mini-tts)
+
+The `gpt-4o-mini-tts` model supports instruction steering for emotional control:
+
+```typescript
+const tts = TextToSpeech.create({
+  connector: 'openai',
+  model: 'gpt-4o-mini-tts',
+  voice: 'nova',
+});
+
+const audio = await tts.synthesize('I\'m so happy to see you!', {
+  vendorOptions: {
+    instructions: 'Speak with enthusiasm and joy, like greeting an old friend.',
+  },
+});
+```
+
+#### Model Introspection
+
+```typescript
+// Get model information
+const info = tts.getModelInfo();
+console.log(info.capabilities.features.instructionSteering); // true for gpt-4o-mini-tts
+
+// Check feature support
+const canSteer = tts.supportsFeature('instructionSteering');
+const canStream = tts.supportsFeature('streaming');
+
+// Get supported formats
+const formats = tts.getSupportedFormats();  // ['mp3', 'opus', 'aac', ...]
+
+// List available models
+const models = tts.listAvailableModels();
+```
+
+### Speech-to-Text
+
+#### Basic Usage
+
+```typescript
+import { Connector, SpeechToText, Vendor } from '@oneringai/agents';
+
+// Setup connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Create STT instance
+const stt = SpeechToText.create({
+  connector: 'openai',
+  model: 'whisper-1',
+});
+
+// Transcribe from file path
+const result = await stt.transcribeFile('./audio.mp3');
+console.log(result.text);
+
+// Transcribe from Buffer
+import * as fs from 'fs/promises';
+const audioBuffer = await fs.readFile('./audio.mp3');
+const result2 = await stt.transcribe(audioBuffer);
+```
+
+#### Timestamps
+
+```typescript
+// Word-level timestamps
+const withWords = await stt.transcribeWithTimestamps(audioBuffer, 'word');
+console.log(withWords.words);
+// [
+//   { word: 'Hello', start: 0.0, end: 0.5 },
+//   { word: 'world', start: 0.6, end: 1.1 },
+// ]
+
+// Segment-level timestamps
+const withSegments = await stt.transcribeWithTimestamps(audioBuffer, 'segment');
+console.log(withSegments.segments);
+// [
+//   { id: 0, text: 'Hello world.', start: 0.0, end: 1.5 },
+// ]
+```
+
+#### Translation
+
+Translate audio to English:
+
+```typescript
+const stt = SpeechToText.create({
+  connector: 'openai',
+  model: 'whisper-1',
+});
+
+// Translate French audio to English
+const english = await stt.translate(frenchAudioBuffer);
+console.log(english.text);  // English translation
+```
+
+#### Output Formats
+
+```typescript
+// JSON (default)
+const json = await stt.transcribe(audio, { outputFormat: 'json' });
+
+// Plain text
+const text = await stt.transcribe(audio, { outputFormat: 'text' });
+
+// Subtitles (SRT format)
+const srt = await stt.transcribe(audio, { outputFormat: 'srt' });
+
+// WebVTT format
+const vtt = await stt.transcribe(audio, { outputFormat: 'vtt' });
+
+// Verbose JSON (includes all metadata)
+const verbose = await stt.transcribe(audio, { outputFormat: 'verbose_json' });
+```
+
+#### Language Hints
+
+```typescript
+// Provide language hint for better accuracy
+const result = await stt.transcribe(audio, { language: 'fr' });  // French
+const result2 = await stt.transcribe(audio, { language: 'es' }); // Spanish
+```
+
+#### Model Introspection
+
+```typescript
+// Get model information
+const info = stt.getModelInfo();
+console.log(info.capabilities.features.diarization);  // Speaker identification
+
+// Check feature support
+const supportsTranslation = stt.supportsFeature('translation');
+const supportsDiarization = stt.supportsFeature('diarization');
+
+// Get supported formats
+const inputFormats = stt.getSupportedInputFormats();
+const outputFormats = stt.getSupportedOutputFormats();
+
+// Get timestamp granularities
+const granularities = stt.getTimestampGranularities();  // ['word', 'segment']
+```
+
+### Available Models
+
+#### TTS Models
+
+| Model | Provider | Features | Price/1k chars |
+|-------|----------|----------|----------------|
+| `tts-1` | OpenAI | Fast, low-latency | $0.015 |
+| `tts-1-hd` | OpenAI | High-quality audio | $0.030 |
+| `gpt-4o-mini-tts` | OpenAI | Instruction steering, emotions | $0.015 |
+| `gemini-tts` | Google | Native Gemini TTS | - |
+
+#### STT Models
+
+| Model | Provider | Features | Price/minute |
+|-------|----------|----------|--------------|
+| `whisper-1` | OpenAI | General-purpose, 50+ languages | $0.006 |
+| `gpt-4o-transcribe` | OpenAI | Superior accuracy | $0.006 |
+| `gpt-4o-transcribe-diarize` | OpenAI | Speaker identification | $0.012 |
+| `whisper-large-v3` | Groq | Ultra-fast (12x cheaper!) | $0.0005 |
+| `distil-whisper-large-v3-en` | Groq | English-only, fastest | $0.00033 |
+
+### Voice Assistant Pipeline
+
+Combine TTS and STT for a voice assistant:
+
+```typescript
+import { Connector, Agent, TextToSpeech, SpeechToText, Vendor } from '@oneringai/agents';
+
+// Setup
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+const stt = SpeechToText.create({ connector: 'openai', model: 'whisper-1' });
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+const tts = TextToSpeech.create({ connector: 'openai', model: 'tts-1-hd', voice: 'nova' });
+
+// Voice assistant pipeline
+async function voiceAssistant(audioInput: Buffer): Promise<Buffer> {
+  // 1. Speech → Text
+  const transcription = await stt.transcribe(audioInput);
+  console.log('User said:', transcription.text);
+
+  // 2. Text → AI Response
+  const response = await agent.run(transcription.text);
+  console.log('Agent response:', response.output_text);
+
+  // 3. Text → Speech
+  const audioResponse = await tts.synthesize(response.output_text);
+  return audioResponse.audio;
+}
+```
+
+### Cost Estimation
+
+```typescript
+import { calculateTTSCost, calculateSTTCost } from '@oneringai/agents';
+
+// TTS cost (per 1,000 characters)
+const ttsCost = calculateTTSCost('tts-1-hd', 5000);  // 5000 characters
+console.log(`TTS cost: $${ttsCost}`);  // $0.15
+
+// STT cost (per minute)
+const sttCost = calculateSTTCost('whisper-1', 300);  // 5 minutes
+console.log(`STT cost: $${sttCost}`);  // $0.03
+
+// Groq is much cheaper for STT
+const groqCost = calculateSTTCost('whisper-large-v3', 300);  // 5 minutes
+console.log(`Groq STT cost: $${groqCost}`);  // $0.0025
 ```
 
 ---
