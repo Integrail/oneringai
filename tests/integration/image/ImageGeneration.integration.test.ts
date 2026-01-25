@@ -1,0 +1,405 @@
+/**
+ * Integration tests for ImageGeneration (requires API keys)
+ * These tests make real API calls to verify functionality
+ */
+
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { Connector } from '../../../src/core/Connector.js';
+import { ImageGeneration } from '../../../src/capabilities/images/ImageGeneration.js';
+import { Vendor } from '../../../src/core/Vendor.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
+import * as dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const HAS_OPENAI_KEY = Boolean(OPENAI_API_KEY);
+const HAS_GOOGLE_KEY = Boolean(GOOGLE_API_KEY);
+
+// Skip tests if no API key
+const describeIfOpenAI = HAS_OPENAI_KEY ? describe : describe.skip;
+const describeIfGoogle = HAS_GOOGLE_KEY ? describe : describe.skip;
+
+// ============================================================================
+// OpenAI Image Generation Tests
+// ============================================================================
+
+describeIfOpenAI('ImageGeneration Integration (OpenAI)', () => {
+  const tempFiles: string[] = [];
+
+  beforeAll(() => {
+    if (!OPENAI_API_KEY) {
+      console.warn('⚠️  OPENAI_API_KEY not set, skipping OpenAI image integration tests');
+      return;
+    }
+
+    Connector.create({
+      name: 'openai-image-test',
+      vendor: Vendor.OpenAI,
+      auth: { type: 'api_key', apiKey: OPENAI_API_KEY },
+    });
+  });
+
+  afterAll(async () => {
+    // Cleanup temp files
+    for (const file of tempFiles) {
+      try {
+        await fs.unlink(file);
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    try {
+      Connector.clear();
+    } catch {
+      // Ignore if already cleared
+    }
+  });
+
+  describe('Basic generation with DALL-E 3', () => {
+    it('should generate an image from a prompt', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A simple red circle on a white background',
+        model: 'dall-e-3',
+        size: '1024x1024',
+        quality: 'standard',
+      });
+
+      expect(response.created).toBeGreaterThan(0);
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json).toBeDefined();
+      expect(response.data[0].b64_json!.length).toBeGreaterThan(1000);
+
+      // DALL-E 3 often revises prompts
+      if (response.data[0].revised_prompt) {
+        expect(response.data[0].revised_prompt.length).toBeGreaterThan(0);
+      }
+    }, 60000); // 60s timeout for image generation
+
+    it('should generate with vivid style', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A sunset over mountains',
+        model: 'dall-e-3',
+        size: '1024x1024',
+        style: 'vivid',
+      });
+
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json).toBeDefined();
+    }, 60000);
+
+    it('should generate with natural style', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A forest path in autumn',
+        model: 'dall-e-3',
+        size: '1024x1024',
+        style: 'natural',
+      });
+
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json).toBeDefined();
+    }, 60000);
+  });
+
+  describe('DALL-E 2 generation', () => {
+    it('should generate an image with DALL-E 2', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A blue square',
+        model: 'dall-e-2',
+        size: '512x512',
+      });
+
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json).toBeDefined();
+    }, 60000);
+
+    it('should generate multiple images with DALL-E 2', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A green triangle',
+        model: 'dall-e-2',
+        size: '256x256',
+        n: 2,
+      });
+
+      expect(response.data).toHaveLength(2);
+      expect(response.data[0].b64_json).toBeDefined();
+      expect(response.data[1].b64_json).toBeDefined();
+    }, 60000);
+  });
+
+  describe('HD quality', () => {
+    it('should generate HD quality image', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A detailed cityscape at night',
+        model: 'dall-e-3',
+        size: '1024x1024',
+        quality: 'hd',
+      });
+
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json).toBeDefined();
+      // HD images should generally be larger
+      expect(response.data[0].b64_json!.length).toBeGreaterThan(10000);
+    }, 90000); // Longer timeout for HD
+  });
+
+  describe('Different aspect ratios', () => {
+    it('should generate landscape image', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A panoramic mountain view',
+        model: 'dall-e-3',
+        size: '1792x1024', // Landscape
+      });
+
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json).toBeDefined();
+    }, 60000);
+
+    it('should generate portrait image', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A tall waterfall',
+        model: 'dall-e-3',
+        size: '1024x1792', // Portrait
+      });
+
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json).toBeDefined();
+    }, 60000);
+  });
+
+  describe('Save to file', () => {
+    it('should save generated image to file', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A simple star shape',
+        model: 'dall-e-2',
+        size: '256x256',
+      });
+
+      expect(response.data[0].b64_json).toBeDefined();
+
+      // Save to file
+      const outputPath = path.join(__dirname, 'test-output-openai.png');
+      tempFiles.push(outputPath);
+
+      const buffer = Buffer.from(response.data[0].b64_json!, 'base64');
+      await fs.writeFile(outputPath, buffer);
+
+      const stats = await fs.stat(outputPath);
+      expect(stats.size).toBeGreaterThan(0);
+
+      // Verify PNG header
+      const fileBuffer = await fs.readFile(outputPath);
+      expect(fileBuffer.slice(0, 4).toString('hex')).toBe('89504e47'); // PNG magic
+    }, 60000);
+  });
+
+  describe('List models', () => {
+    it('should list available models', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const models = await imageGen.listModels();
+
+      expect(models).toContain('dall-e-3');
+      expect(models).toContain('dall-e-2');
+      expect(models).toContain('gpt-image-1');
+    });
+  });
+
+  describe('Model info', () => {
+    it('should get model info', () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'openai-image-test',
+      });
+
+      const info = imageGen.getModelInfo('dall-e-3');
+
+      expect(info).toBeDefined();
+      expect(info?.name).toBe('dall-e-3');
+      expect(info?.capabilities.features.styleControl).toBe(true);
+      expect(info?.capabilities.features.promptRevision).toBe(true);
+    });
+  });
+});
+
+// ============================================================================
+// Google Imagen Tests
+// ============================================================================
+
+describeIfGoogle('ImageGeneration Integration (Google)', () => {
+  const tempFiles: string[] = [];
+
+  beforeAll(() => {
+    if (!GOOGLE_API_KEY) {
+      console.warn('⚠️  GOOGLE_API_KEY not set, skipping Google image integration tests');
+      return;
+    }
+
+    Connector.create({
+      name: 'google-image-test',
+      vendor: Vendor.Google,
+      auth: { type: 'api_key', apiKey: GOOGLE_API_KEY },
+    });
+  });
+
+  afterAll(async () => {
+    // Cleanup temp files
+    for (const file of tempFiles) {
+      try {
+        await fs.unlink(file);
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    try {
+      Connector.clear();
+    } catch {
+      // Ignore if already cleared
+    }
+  });
+
+  describe('Basic generation with Imagen 4.0', () => {
+    it('should generate an image from a prompt', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'google-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A simple red apple on a white background',
+        model: 'imagen-4.0-generate-001',
+      });
+
+      expect(response.created).toBeGreaterThan(0);
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json).toBeDefined();
+      expect(response.data[0].b64_json!.length).toBeGreaterThan(1000);
+    }, 60000);
+
+    it('should generate multiple images', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'google-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A colorful butterfly',
+        model: 'imagen-4.0-generate-001',
+        n: 2,
+      });
+
+      expect(response.data.length).toBeGreaterThanOrEqual(1);
+      expect(response.data[0].b64_json).toBeDefined();
+    }, 60000);
+  });
+
+  describe('Imagen 4.0 Fast model', () => {
+    it('should generate with fast model', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'google-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A simple blue circle',
+        model: 'imagen-4.0-fast-generate-001',
+      });
+
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json).toBeDefined();
+    }, 60000);
+  });
+
+  describe('Save to file', () => {
+    it('should save generated image to file', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'google-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A simple green square',
+        model: 'imagen-4.0-fast-generate-001',
+      });
+
+      expect(response.data[0].b64_json).toBeDefined();
+
+      // Save to file
+      const outputPath = path.join(__dirname, 'test-output-google.png');
+      tempFiles.push(outputPath);
+
+      const buffer = Buffer.from(response.data[0].b64_json!, 'base64');
+      await fs.writeFile(outputPath, buffer);
+
+      const stats = await fs.stat(outputPath);
+      expect(stats.size).toBeGreaterThan(0);
+    }, 60000);
+  });
+
+  describe('List models', () => {
+    it('should list available models', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'google-image-test',
+      });
+
+      const models = await imageGen.listModels();
+
+      expect(models).toContain('imagen-4.0-generate-001');
+      expect(models).toContain('imagen-4.0-fast-generate-001');
+      expect(models).toContain('imagen-4.0-ultra-generate-001');
+    });
+  });
+
+  describe('Model info', () => {
+    it('should get model info', () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'google-image-test',
+      });
+
+      const info = imageGen.getModelInfo('imagen-4.0-generate-001');
+
+      expect(info).toBeDefined();
+      expect(info?.name).toBe('imagen-4.0-generate-001');
+      expect(info?.capabilities.aspectRatios).toBeDefined();
+      expect(info?.capabilities.aspectRatios).toContain('16:9');
+    });
+  });
+});

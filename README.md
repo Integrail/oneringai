@@ -129,21 +129,49 @@ const result = await stt.transcribeFile('./audio.mp3');
 console.log(result.text);
 ```
 
+### Image Generation (NEW)
+
+```typescript
+import { ImageGeneration } from '@oneringai/agents';
+
+// OpenAI DALL-E
+const imageGen = ImageGeneration.create({ connector: 'openai' });
+
+const result = await imageGen.generate({
+  prompt: 'A futuristic city at sunset',
+  model: 'dall-e-3',
+  size: '1024x1024',
+  quality: 'hd',
+});
+
+// Save to file
+const buffer = Buffer.from(result.data[0].b64_json!, 'base64');
+await fs.writeFile('./output.png', buffer);
+
+// Google Imagen
+const googleGen = ImageGeneration.create({ connector: 'google' });
+
+const googleResult = await googleGen.generate({
+  prompt: 'A colorful butterfly in a garden',
+  model: 'imagen-4.0-generate-001',
+});
+```
+
 ## Supported Providers
 
-| Provider | Text | Vision | TTS | STT | Tools | Context |
-|----------|------|--------|-----|-----|-------|---------|
-| **OpenAI** | ✅ | ✅ | ✅ | ✅ | ✅ | 128K |
-| **Anthropic (Claude)** | ✅ | ✅ | ❌ | ❌ | ✅ | 200K |
-| **Google (Gemini)** | ✅ | ✅ | 🔜 | ❌ | ✅ | 1M |
-| **Google Vertex AI** | ✅ | ✅ | ❌ | ❌ | ✅ | 1M |
-| **Grok (xAI)** | ✅ | ✅ | ❌ | ❌ | ✅ | 128K |
-| **Groq** | ✅ | ❌ | ❌ | ✅ | ✅ | 128K |
-| **Together AI** | ✅ | Some | ❌ | ❌ | ✅ | 128K |
-| **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ✅ | 64K |
-| **Mistral** | ✅ | ❌ | ❌ | ❌ | ✅ | 32K |
-| **Ollama** | ✅ | Varies | ❌ | ❌ | ✅ | Varies |
-| **Custom** | ✅ | Varies | ❌ | ❌ | ✅ | Varies |
+| Provider | Text | Vision | TTS | STT | Image | Tools | Context |
+|----------|------|--------|-----|-----|-------|-------|---------|
+| **OpenAI** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 128K |
+| **Anthropic (Claude)** | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | 200K |
+| **Google (Gemini)** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | 1M |
+| **Google Vertex AI** | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | 1M |
+| **Grok (xAI)** | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | 128K |
+| **Groq** | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | 128K |
+| **Together AI** | ✅ | Some | ❌ | ❌ | ❌ | ✅ | 128K |
+| **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 64K |
+| **Mistral** | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 32K |
+| **Ollama** | ✅ | Varies | ❌ | ❌ | ❌ | ✅ | Varies |
+| **Custom** | ✅ | Varies | ❌ | ❌ | ❌ | ✅ | Varies |
 
 ## Key Features
 

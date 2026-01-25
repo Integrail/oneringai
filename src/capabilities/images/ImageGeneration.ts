@@ -196,7 +196,7 @@ export class ImageGeneration {
       case Vendor.OpenAI:
         return IMAGE_MODELS[Vendor.OpenAI].DALL_E_3;
       case Vendor.Google:
-        return IMAGE_MODELS[Vendor.Google].IMAGEN_3_GENERATE;
+        return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
       default:
         throw new Error(`No default image model for vendor: ${vendor}`);
     }
@@ -212,7 +212,8 @@ export class ImageGeneration {
       case Vendor.OpenAI:
         return IMAGE_MODELS[Vendor.OpenAI].GPT_IMAGE_1;
       case Vendor.Google:
-        return IMAGE_MODELS[Vendor.Google].IMAGEN_3_CAPABILITY;
+        // Imagen 4 doesn't have a separate editing model yet
+        return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
       default:
         throw new Error(`No edit model for vendor: ${vendor}`);
     }

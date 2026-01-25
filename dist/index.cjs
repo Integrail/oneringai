@@ -2146,6 +2146,9 @@ function isStreamEvent(event, type) {
 function isOutputTextDelta(event) {
   return event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */;
 }
+function isToolCallStart(event) {
+  return event.type === "response.tool_call.start" /* TOOL_CALL_START */;
+}
 function isToolCallArgumentsDelta(event) {
   return event.type === "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */;
 }
@@ -9023,9 +9026,9 @@ var GoogleImageProvider = class extends BaseMediaProvider {
    */
   async listModels() {
     return [
-      "imagen-3.0-generate-002",
-      "imagen-3.0-fast-generate-001",
-      "imagen-3.0-capability-001"
+      "imagen-4.0-generate-001",
+      "imagen-4.0-ultra-generate-001",
+      "imagen-4.0-fast-generate-001"
     ];
   }
   /**
@@ -9123,12 +9126,12 @@ var IMAGE_MODELS = {
     DALL_E_2: "dall-e-2"
   },
   [Vendor.Google]: {
-    /** Imagen 3.0: Latest Google image generation model */
-    IMAGEN_3_GENERATE: "imagen-3.0-generate-002",
-    /** Imagen 3.0 Capability: For editing operations */
-    IMAGEN_3_CAPABILITY: "imagen-3.0-capability-001",
-    /** Imagen 3.0 Fast: Optimized for speed */
-    IMAGEN_3_FAST: "imagen-3.0-fast-generate-001"
+    /** Imagen 4.0: Latest Google image generation model */
+    IMAGEN_4_GENERATE: "imagen-4.0-generate-001",
+    /** Imagen 4.0 Ultra: Highest quality */
+    IMAGEN_4_ULTRA: "imagen-4.0-ultra-generate-001",
+    /** Imagen 4.0 Fast: Optimized for speed */
+    IMAGEN_4_FAST: "imagen-4.0-fast-generate-001"
   }
 };
 var IMAGE_MODEL_REGISTRY = {
@@ -9248,13 +9251,13 @@ var IMAGE_MODEL_REGISTRY = {
     }
   },
   // ======================== Google ========================
-  "imagen-3.0-generate-002": {
-    name: "imagen-3.0-generate-002",
-    displayName: "Imagen 3.0 Generate",
+  "imagen-4.0-generate-001": {
+    name: "imagen-4.0-generate-001",
+    displayName: "Imagen 4.0 Generate",
     provider: Vendor.Google,
-    description: "Google Imagen 3.0 - highest quality image generation",
+    description: "Google Imagen 4.0 - standard quality image generation",
     isActive: true,
-    releaseDate: "2024-08-01",
+    releaseDate: "2025-06-01",
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/imagen",
       pricing: "https://ai.google.dev/pricing",
@@ -9295,13 +9298,13 @@ var IMAGE_MODEL_REGISTRY = {
       currency: "USD"
     }
   },
-  "imagen-3.0-capability-001": {
-    name: "imagen-3.0-capability-001",
-    displayName: "Imagen 3.0 Capability",
+  "imagen-4.0-ultra-generate-001": {
+    name: "imagen-4.0-ultra-generate-001",
+    displayName: "Imagen 4.0 Ultra",
     provider: Vendor.Google,
-    description: "Google Imagen 3.0 for editing and advanced operations",
+    description: "Google Imagen 4.0 Ultra - highest quality image generation",
     isActive: true,
-    releaseDate: "2024-08-01",
+    releaseDate: "2025-06-01",
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/imagen",
       pricing: "https://ai.google.dev/pricing",
@@ -9313,28 +9316,28 @@ var IMAGE_MODEL_REGISTRY = {
       maxImagesPerRequest: 4,
       outputFormats: ["png", "jpeg"],
       features: {
-        generation: false,
-        editing: true,
+        generation: true,
+        editing: false,
         variations: false,
         styleControl: false,
-        qualityControl: false,
+        qualityControl: true,
         transparency: false,
         promptRevision: false
       },
       limits: { maxPromptLength: 480 }
     },
     pricing: {
-      perImage: 0.04,
+      perImage: 0.08,
       currency: "USD"
     }
   },
-  "imagen-3.0-fast-generate-001": {
-    name: "imagen-3.0-fast-generate-001",
-    displayName: "Imagen 3.0 Fast",
+  "imagen-4.0-fast-generate-001": {
+    name: "imagen-4.0-fast-generate-001",
+    displayName: "Imagen 4.0 Fast",
     provider: Vendor.Google,
-    description: "Google Imagen 3.0 optimized for speed",
+    description: "Google Imagen 4.0 Fast - optimized for speed",
     isActive: true,
-    releaseDate: "2024-08-01",
+    releaseDate: "2025-06-01",
     sources: {
       documentation: "https://ai.google.dev/gemini-api/docs/imagen",
       pricing: "https://ai.google.dev/pricing",
@@ -9486,7 +9489,7 @@ var ImageGeneration = class _ImageGeneration {
       case Vendor.OpenAI:
         return IMAGE_MODELS[Vendor.OpenAI].DALL_E_3;
       case Vendor.Google:
-        return IMAGE_MODELS[Vendor.Google].IMAGEN_3_GENERATE;
+        return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
       default:
         throw new Error(`No default image model for vendor: ${vendor}`);
     }
@@ -9500,7 +9503,7 @@ var ImageGeneration = class _ImageGeneration {
       case Vendor.OpenAI:
         return IMAGE_MODELS[Vendor.OpenAI].GPT_IMAGE_1;
       case Vendor.Google:
-        return IMAGE_MODELS[Vendor.Google].IMAGEN_3_CAPABILITY;
+        return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
       default:
         throw new Error(`No edit model for vendor: ${vendor}`);
     }
@@ -18247,6 +18250,7 @@ exports.isResponseComplete = isResponseComplete;
 exports.isStreamEvent = isStreamEvent;
 exports.isToolCallArgumentsDelta = isToolCallArgumentsDelta;
 exports.isToolCallArgumentsDone = isToolCallArgumentsDone;
+exports.isToolCallStart = isToolCallStart;
 exports.isVendor = isVendor;
 exports.logger = logger;
 exports.metrics = metrics;

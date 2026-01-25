@@ -2936,7 +2936,8 @@ const granularities = stt.getTimestampGranularities();  // ['word', 'segment']
 | `tts-1` | OpenAI | Fast, low-latency | $0.015 |
 | `tts-1-hd` | OpenAI | High-quality audio | $0.030 |
 | `gpt-4o-mini-tts` | OpenAI | Instruction steering, emotions | $0.015 |
-| `gemini-tts` | Google | Native Gemini TTS | - |
+| `gemini-2.5-flash-preview-tts` | Google | Low latency, 30 voices | - |
+| `gemini-2.5-pro-preview-tts` | Google | High quality, 30 voices | - |
 
 #### STT Models
 
@@ -2998,6 +2999,153 @@ console.log(`STT cost: $${sttCost}`);  // $0.03
 // Groq is much cheaper for STT
 const groqCost = calculateSTTCost('whisper-large-v3', 300);  // 5 minutes
 console.log(`Groq STT cost: $${groqCost}`);  // $0.0025
+```
+
+---
+
+## Image Generation
+
+The library provides comprehensive image generation capabilities with support for OpenAI (DALL-E) and Google (Imagen).
+
+### Basic Usage
+
+```typescript
+import { Connector, ImageGeneration, Vendor } from '@oneringai/agents';
+import * as fs from 'fs/promises';
+
+// Setup connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Create image generator
+const imageGen = ImageGeneration.create({ connector: 'openai' });
+
+// Generate an image
+const result = await imageGen.generate({
+  prompt: 'A futuristic city at sunset with flying cars',
+  model: 'dall-e-3',
+  size: '1024x1024',
+  quality: 'hd',
+});
+
+// Save to file
+const buffer = Buffer.from(result.data[0].b64_json!, 'base64');
+await fs.writeFile('./output.png', buffer);
+```
+
+### OpenAI DALL-E
+
+```typescript
+// DALL-E 3 (recommended for quality)
+const result = await imageGen.generate({
+  prompt: 'A serene mountain landscape',
+  model: 'dall-e-3',
+  size: '1024x1024',      // 1024x1024, 1024x1792, 1792x1024
+  quality: 'hd',           // standard or hd
+  style: 'vivid',          // vivid or natural
+});
+
+// DALL-E 3 often revises prompts for better results
+console.log('Revised prompt:', result.data[0].revised_prompt);
+
+// DALL-E 2 (faster, supports multiple images)
+const multiResult = await imageGen.generate({
+  prompt: 'A colorful abstract pattern',
+  model: 'dall-e-2',
+  size: '512x512',         // 256x256, 512x512, 1024x1024
+  n: 4,                    // Generate up to 10 images
+});
+
+// Process all generated images
+for (let i = 0; i < multiResult.data.length; i++) {
+  const buffer = Buffer.from(multiResult.data[i].b64_json!, 'base64');
+  await fs.writeFile(`./output-${i}.png`, buffer);
+}
+```
+
+### Google Imagen
+
+```typescript
+// Setup Google connector
+Connector.create({
+  name: 'google',
+  vendor: Vendor.Google,
+  auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
+});
+
+const googleGen = ImageGeneration.create({ connector: 'google' });
+
+// Imagen 4.0 (standard quality)
+const result = await googleGen.generate({
+  prompt: 'A beautiful butterfly in a garden',
+  model: 'imagen-4.0-generate-001',
+  n: 2,  // Up to 4 images
+});
+
+// Imagen 4.0 Fast (optimized for speed)
+const fastResult = await googleGen.generate({
+  prompt: 'A simple geometric pattern',
+  model: 'imagen-4.0-fast-generate-001',
+});
+
+// Imagen 4.0 Ultra (highest quality)
+const ultraResult = await googleGen.generate({
+  prompt: 'A photorealistic portrait',
+  model: 'imagen-4.0-ultra-generate-001',
+});
+```
+
+### Available Models
+
+#### OpenAI Image Models
+
+| Model | Features | Max Images | Sizes | Price/Image |
+|-------|----------|------------|-------|-------------|
+| `dall-e-3` | HD quality, style control, prompt revision | 1 | 1024², 1024x1792, 1792x1024 | $0.04-0.08 |
+| `dall-e-2` | Fast, multiple images, editing, variations | 10 | 256², 512², 1024² | $0.02 |
+| `gpt-image-1` | Latest model, transparency support | 1 | 1024², 1024x1536, 1536x1024 | $0.01-0.04 |
+
+#### Google Image Models
+
+| Model | Features | Max Images | Price/Image |
+|-------|----------|------------|-------------|
+| `imagen-4.0-generate-001` | Standard quality, aspect ratios | 4 | $0.04 |
+| `imagen-4.0-ultra-generate-001` | Highest quality | 4 | $0.08 |
+| `imagen-4.0-fast-generate-001` | Speed optimized | 4 | $0.02 |
+
+### Model Introspection
+
+```typescript
+// List available models
+const models = await imageGen.listModels();
+console.log('Available models:', models);
+
+// Get model information
+const info = imageGen.getModelInfo('dall-e-3');
+console.log('Max images:', info.capabilities.maxImagesPerRequest);
+console.log('Supported sizes:', info.capabilities.sizes);
+console.log('Has style control:', info.capabilities.features.styleControl);
+```
+
+### Cost Estimation
+
+```typescript
+import { calculateImageCost } from '@oneringai/agents';
+
+// Standard quality
+const standardCost = calculateImageCost('dall-e-3', 5, 'standard');
+console.log(`5 standard images: $${standardCost}`);  // $0.20
+
+// HD quality
+const hdCost = calculateImageCost('dall-e-3', 5, 'hd');
+console.log(`5 HD images: $${hdCost}`);  // $0.40
+
+// Google Imagen
+const imagenCost = calculateImageCost('imagen-4.0-generate-001', 4);
+console.log(`4 Imagen images: $${imagenCost}`);  // $0.16
 ```
 
 ---

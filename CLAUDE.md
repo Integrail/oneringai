@@ -311,7 +311,7 @@ console.log(info.pricing.per1kCharacters);  // 0.015
 
 **Available TTS Models:**
 - **OpenAI**: `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` (instruction-steerable)
-- **Google**: `gemini-tts`
+- **Google**: `gemini-2.5-flash-preview-tts`, `gemini-2.5-pro-preview-tts`
 
 #### STT Model Registry (`src/domain/entities/STTModel.ts`)
 
@@ -331,6 +331,66 @@ console.log(info.pricing.perMinute);  // 0.012
 - **OpenAI**: `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-transcribe-diarize`
 - **Groq**: `whisper-large-v3`, `distil-whisper-large-v3-en` (12x cheaper!)
 
+### Image Generation (NEW)
+
+#### ImageGeneration (`src/capabilities/images/ImageGeneration.ts`)
+
+High-level image generation with OpenAI DALL-E and Google Imagen:
+
+```typescript
+import { ImageGeneration } from '@oneringai/agents';
+
+const imageGen = ImageGeneration.create({ connector: 'openai' });
+
+// Generate image
+const result = await imageGen.generate({
+  prompt: 'A futuristic city at sunset',
+  model: 'dall-e-3',
+  size: '1024x1024',
+  quality: 'hd',
+  style: 'vivid',  // or 'natural'
+});
+
+// Access result
+const base64 = result.data[0].b64_json;
+const revisedPrompt = result.data[0].revised_prompt;
+
+// Save to file
+const buffer = Buffer.from(base64!, 'base64');
+await fs.writeFile('./output.png', buffer);
+
+// Google Imagen
+const googleGen = ImageGeneration.create({ connector: 'google' });
+const googleResult = await googleGen.generate({
+  prompt: 'A colorful butterfly',
+  model: 'imagen-4.0-generate-001',
+  n: 2,
+});
+```
+
+#### Image Model Registry (`src/domain/entities/ImageModel.ts`)
+
+```typescript
+import { getImageModelInfo, IMAGE_MODELS, Vendor, calculateImageCost } from '@oneringai/agents';
+
+// Access model constants
+const dalle3 = IMAGE_MODELS[Vendor.OpenAI].DALL_E_3;  // 'dall-e-3'
+const imagen = IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;  // 'imagen-4.0-generate-001'
+
+// Get model info
+const info = getImageModelInfo('dall-e-3');
+console.log(info.capabilities.features.styleControl);  // true
+console.log(info.capabilities.features.promptRevision);  // true
+
+// Calculate cost
+const cost = calculateImageCost('dall-e-3', 5, 'hd');  // 5 HD images
+console.log(`Cost: $${cost}`);  // $0.40
+```
+
+**Available Image Models:**
+- **OpenAI**: `dall-e-3`, `dall-e-2`, `gpt-image-1`
+- **Google**: `imagen-4.0-generate-001`, `imagen-4.0-ultra-generate-001`, `imagen-4.0-fast-generate-001`
+
 ## Directory Structure
 
 ```
@@ -344,9 +404,10 @@ src/
 │   ├── ToolManager.ts                # Dynamic tool management
 │   ├── SessionManager.ts             # Unified session persistence
 │   ├── createProvider.ts             # Provider factory (text)
-│   ├── createAudioProvider.ts        # NEW: Provider factory (audio)
-│   ├── TextToSpeech.ts               # NEW: TTS capability class
-│   ├── SpeechToText.ts               # NEW: STT capability class
+│   ├── createAudioProvider.ts        # Provider factory (audio)
+│   ├── createImageProvider.ts        # Provider factory (image)
+│   ├── TextToSpeech.ts               # TTS capability class
+│   ├── SpeechToText.ts               # STT capability class
 │   └── context/                      # Universal context management
 │       ├── ContextManager.ts         # Strategy-based context manager
 │       ├── types.ts                  # Core interfaces
@@ -363,10 +424,11 @@ src/
 │   │   ├── Tool.ts                   # ToolFunction, ToolCall
 │   │   ├── Connector.ts              # ConnectorConfig types
 │   │   ├── Model.ts                  # LLM model registry (23+ models)
-│   │   ├── TTSModel.ts               # NEW: TTS model registry
-│   │   ├── STTModel.ts               # NEW: STT model registry
-│   │   ├── SharedVoices.ts           # NEW: Voice/language constants
-│   │   ├── RegistryUtils.ts          # NEW: Generic registry helpers
+│   │   ├── TTSModel.ts               # TTS model registry
+│   │   ├── STTModel.ts               # STT model registry
+│   │   ├── ImageModel.ts             # Image model registry
+│   │   ├── SharedVoices.ts           # Voice/language constants
+│   │   ├── RegistryUtils.ts          # Generic registry helpers
 │   │   ├── Task.ts                   # Task & Plan entities
 │   │   ├── Memory.ts                 # Memory entities
 │   │   └── Response.ts               # LLMResponse
@@ -958,20 +1020,23 @@ These are handled internally and don't require manual implementation.
 3. `src/core/ToolManager.ts` - Dynamic tool management
 4. `src/core/SessionManager.ts` - Unified session persistence
 5. `src/core/createProvider.ts` - Provider factory (text)
-6. `src/core/createAudioProvider.ts` - **Provider factory (audio)** (NEW)
-7. `src/core/TextToSpeech.ts` - **TTS capability class** (NEW)
-8. `src/core/SpeechToText.ts` - **STT capability class** (NEW)
-9. `src/core/Vendor.ts` - Vendor enum
-10. `src/core/context/` - Universal context management
-11. `src/domain/entities/Model.ts` - LLM model registry (23+ models)
-12. `src/domain/entities/TTSModel.ts` - **TTS model registry** (NEW)
-13. `src/domain/entities/STTModel.ts` - **STT model registry** (NEW)
-14. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
-15. `src/capabilities/taskAgent/` - Task agent implementation
-16. `src/capabilities/universalAgent/` - Universal agent
-17. `src/infrastructure/providers/` - LLM and audio provider implementations
-18. `src/infrastructure/context/` - Context strategies, compactors, providers
-19. `src/infrastructure/storage/` - Session and data storage
+6. `src/core/createAudioProvider.ts` - Provider factory (audio)
+7. `src/core/createImageProvider.ts` - Provider factory (image)
+8. `src/core/TextToSpeech.ts` - TTS capability class
+9. `src/core/SpeechToText.ts` - STT capability class
+10. `src/core/Vendor.ts` - Vendor enum
+11. `src/core/context/` - Universal context management
+12. `src/domain/entities/Model.ts` - LLM model registry (23+ models)
+13. `src/domain/entities/TTSModel.ts` - TTS model registry
+14. `src/domain/entities/STTModel.ts` - STT model registry
+15. `src/domain/entities/ImageModel.ts` - Image model registry
+16. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
+17. `src/capabilities/taskAgent/` - Task agent implementation
+18. `src/capabilities/universalAgent/` - Universal agent
+19. `src/capabilities/images/` - Image generation capability
+20. `src/infrastructure/providers/` - LLM, audio, and image provider implementations
+21. `src/infrastructure/context/` - Context strategies, compactors, providers
+22. `src/infrastructure/storage/` - Session and data storage
 
 ---
 

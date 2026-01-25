@@ -23,9 +23,9 @@ describe('ImageModel Registry', () => {
     });
 
     it('should have all declared Google models', () => {
-      expect(IMAGE_MODEL_REGISTRY['imagen-3.0-generate-002']).toBeDefined();
-      expect(IMAGE_MODEL_REGISTRY['imagen-3.0-capability-001']).toBeDefined();
-      expect(IMAGE_MODEL_REGISTRY['imagen-3.0-fast-generate-001']).toBeDefined();
+      expect(IMAGE_MODEL_REGISTRY['imagen-4.0-generate-001']).toBeDefined();
+      expect(IMAGE_MODEL_REGISTRY['imagen-4.0-ultra-generate-001']).toBeDefined();
+      expect(IMAGE_MODEL_REGISTRY['imagen-4.0-fast-generate-001']).toBeDefined();
     });
 
     it('should have consistent structure', () => {
@@ -95,7 +95,7 @@ describe('ImageModel Registry', () => {
       const models = getImageModelsWithFeature('generation');
       expect(models.length).toBeGreaterThan(0);
       expect(models.some((m) => m.name === 'dall-e-3')).toBe(true);
-      expect(models.some((m) => m.name === 'imagen-3.0-generate-002')).toBe(true);
+      expect(models.some((m) => m.name === 'imagen-4.0-generate-001')).toBe(true);
     });
 
     it('should find models with editing support', () => {
@@ -135,7 +135,7 @@ describe('ImageModel Registry', () => {
     });
 
     it('should calculate cost for Google Imagen', () => {
-      const cost = calculateImageCost('imagen-3.0-generate-002', 2);
+      const cost = calculateImageCost('imagen-4.0-generate-001', 2);
       expect(cost).toBe(0.080); // 2 * 0.04
     });
 
@@ -153,9 +153,9 @@ describe('ImageModel Registry', () => {
     });
 
     it('should have IMAGE_MODELS constants for Google', () => {
-      expect(IMAGE_MODELS[Vendor.Google].IMAGEN_3_GENERATE).toBe('imagen-3.0-generate-002');
-      expect(IMAGE_MODELS[Vendor.Google].IMAGEN_3_CAPABILITY).toBe('imagen-3.0-capability-001');
-      expect(IMAGE_MODELS[Vendor.Google].IMAGEN_3_FAST).toBe('imagen-3.0-fast-generate-001');
+      expect(IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE).toBe('imagen-4.0-generate-001');
+      expect(IMAGE_MODELS[Vendor.Google].IMAGEN_4_ULTRA).toBe('imagen-4.0-ultra-generate-001');
+      expect(IMAGE_MODELS[Vendor.Google].IMAGEN_4_FAST).toBe('imagen-4.0-fast-generate-001');
     });
   });
 
@@ -181,7 +181,7 @@ describe('ImageModel Registry', () => {
     });
 
     it('should show Google Imagen aspect ratios', () => {
-      const model = getImageModelInfo('imagen-3.0-generate-002');
+      const model = getImageModelInfo('imagen-4.0-generate-001');
       expect(model?.capabilities.aspectRatios).toBeDefined();
       expect(model?.capabilities.aspectRatios).toContain('16:9');
       expect(model?.capabilities.aspectRatios).toContain('9:16');

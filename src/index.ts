@@ -299,6 +299,7 @@ export type {
 export {
   isStreamEvent,
   isOutputTextDelta,
+  isToolCallStart,
   isToolCallArgumentsDelta,
   isToolCallArgumentsDone,
   isResponseComplete,

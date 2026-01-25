@@ -583,12 +583,12 @@ declare const IMAGE_MODELS: {
         readonly DALL_E_2: "dall-e-2";
     };
     readonly google: {
-        /** Imagen 3.0: Latest Google image generation model */
-        readonly IMAGEN_3_GENERATE: "imagen-3.0-generate-002";
-        /** Imagen 3.0 Capability: For editing operations */
-        readonly IMAGEN_3_CAPABILITY: "imagen-3.0-capability-001";
-        /** Imagen 3.0 Fast: Optimized for speed */
-        readonly IMAGEN_3_FAST: "imagen-3.0-fast-generate-001";
+        /** Imagen 4.0: Latest Google image generation model */
+        readonly IMAGEN_4_GENERATE: "imagen-4.0-generate-001";
+        /** Imagen 4.0 Ultra: Highest quality */
+        readonly IMAGEN_4_ULTRA: "imagen-4.0-ultra-generate-001";
+        /** Imagen 4.0 Fast: Optimized for speed */
+        readonly IMAGEN_4_FAST: "imagen-4.0-fast-generate-001";
     };
 };
 /**

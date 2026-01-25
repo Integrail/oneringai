@@ -193,6 +193,10 @@ export function isOutputTextDelta(event: StreamEvent): event is OutputTextDeltaE
   return event.type === StreamEventType.OUTPUT_TEXT_DELTA;
 }
 
+export function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent {
+  return event.type === StreamEventType.TOOL_CALL_START;
+}
+
 export function isToolCallArgumentsDelta(
   event: StreamEvent
 ): event is ToolCallArgumentsDeltaEvent {
