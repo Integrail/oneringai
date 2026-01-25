@@ -8,7 +8,8 @@ import type { ISpeechToTextProvider } from '../domain/interfaces/IAudioProvider.
 import { Vendor } from './Vendor.js';
 import { OpenAITTSProvider } from '../infrastructure/providers/openai/OpenAITTSProvider.js';
 import { OpenAISTTProvider } from '../infrastructure/providers/openai/OpenAISTTProvider.js';
-import type { OpenAIConfig } from '../domain/types/ProviderConfig.js';
+import { GoogleTTSProvider } from '../infrastructure/providers/google/GoogleTTSProvider.js';
+import type { OpenAIMediaConfig, GoogleConfig } from '../domain/types/ProviderConfig.js';
 
 /**
  * Create a Text-to-Speech provider from a connector
@@ -21,13 +22,12 @@ export function createTTSProvider(connector: Connector): ITextToSpeechProvider {
       return new OpenAITTSProvider(extractOpenAIConfig(connector));
 
     case Vendor.Google:
-      // TODO: Implement GoogleTTSProvider
-      throw new Error(`Google TTS provider not yet implemented`);
+      return new GoogleTTSProvider(extractGoogleConfig(connector));
 
     default:
       throw new Error(
         `No TTS provider available for vendor: ${vendor}. ` +
-        `Supported vendors: ${Vendor.OpenAI}`
+        `Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
       );
   }
 }
@@ -61,7 +61,7 @@ export function createSTTProvider(connector: Connector): ISpeechToTextProvider {
 /**
  * Extract OpenAI configuration from connector
  */
-function extractOpenAIConfig(connector: Connector): OpenAIConfig {
+function extractOpenAIConfig(connector: Connector): OpenAIMediaConfig {
   const auth = connector.config.auth;
 
   if (auth.type !== 'api_key') {
@@ -79,5 +79,20 @@ function extractOpenAIConfig(connector: Connector): OpenAIConfig {
     organization: options.organization as string | undefined,
     timeout: options.timeout as number | undefined,
     maxRetries: options.maxRetries as number | undefined,
+  };
+}
+
+/**
+ * Extract Google configuration from connector
+ */
+function extractGoogleConfig(connector: Connector): GoogleConfig {
+  const auth = connector.config.auth;
+
+  if (auth.type !== 'api_key') {
+    throw new Error('Google requires API key authentication');
+  }
+
+  return {
+    apiKey: auth.apiKey,
   };
 }

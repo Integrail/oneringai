@@ -34,6 +34,11 @@ export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 export { TextToSpeech, SpeechToText } from './core/index.js';
 export type { TextToSpeechConfig, SpeechToTextConfig } from './core/index.js';
 
+// Image Capabilities
+export { ImageGeneration } from './capabilities/images/index.js';
+export type { ImageGenerationCreateOptions, SimpleGenerateOptions } from './capabilities/images/index.js';
+export { createImageProvider } from './core/index.js';
+
 // Tool Management (Dynamic)
 export { ToolManager } from './core/index.js';
 export type {
@@ -262,6 +267,18 @@ export {
   calculateSTTCost,
 } from './domain/entities/STTModel.js';
 
+// Image Model Registry
+export type { IImageModelDescription, ImageModelCapabilities, ImageModelPricing } from './domain/entities/ImageModel.js';
+export {
+  IMAGE_MODELS,
+  IMAGE_MODEL_REGISTRY,
+  getImageModelInfo,
+  getImageModelsByVendor,
+  getActiveImageModels,
+  getImageModelsWithFeature,
+  calculateImageCost,
+} from './domain/entities/ImageModel.js';
+
 // ============ Streaming ============
 export { StreamEventType } from './domain/entities/StreamEvent.js';
 export type {
@@ -344,6 +361,15 @@ export type {
   WordTimestamp,
   SegmentTimestamp,
 } from './domain/interfaces/IAudioProvider.js';
+
+// Image Interfaces
+export type {
+  IImageProvider,
+  ImageGenerateOptions,
+  ImageEditOptions,
+  ImageVariationOptions,
+  ImageResponse,
+} from './domain/interfaces/IImageProvider.js';
 
 // Base classes for custom providers
 export { BaseProvider } from './infrastructure/providers/base/BaseProvider.js';

@@ -46,17 +46,76 @@ export const OPENAI_VOICES: IVoiceInfo[] = [
 ];
 
 /**
- * Google Gemini TTS voices
- * Source: https://ai.google.dev/gemini-api/docs/text-to-speech
- * Last verified: 2026-01-24
+ * Google Gemini TTS voices (30 total)
+ * Source: https://ai.google.dev/gemini-api/docs/speech-generation
+ * Last verified: 2026-01-25
  */
 export const GEMINI_VOICES: IVoiceInfo[] = [
-  { id: 'Puck', name: 'Puck', language: 'multi', gender: 'neutral', isDefault: true },
+  // Default voice
+  { id: 'Kore', name: 'Kore', language: 'multi', gender: 'female', isDefault: true },
+  // Primary voices
+  { id: 'Puck', name: 'Puck', language: 'multi', gender: 'neutral' },
   { id: 'Charon', name: 'Charon', language: 'multi', gender: 'male' },
-  { id: 'Kore', name: 'Kore', language: 'multi', gender: 'female' },
   { id: 'Fenrir', name: 'Fenrir', language: 'multi', gender: 'male' },
+  { id: 'Zephyr', name: 'Zephyr', language: 'multi', gender: 'neutral' },
+  { id: 'Leda', name: 'Leda', language: 'multi', gender: 'female' },
+  { id: 'Orus', name: 'Orus', language: 'multi', gender: 'male' },
   { id: 'Aoede', name: 'Aoede', language: 'multi', gender: 'female' },
+  // Extended voices (celestial/astronomical naming)
+  { id: 'Callirrhoe', name: 'Callirrhoe', language: 'multi', gender: 'female' },
+  { id: 'Autonoe', name: 'Autonoe', language: 'multi', gender: 'female' },
+  { id: 'Enceladus', name: 'Enceladus', language: 'multi', gender: 'male' },
+  { id: 'Iapetus', name: 'Iapetus', language: 'multi', gender: 'male' },
+  { id: 'Umbriel', name: 'Umbriel', language: 'multi', gender: 'neutral' },
+  { id: 'Algieba', name: 'Algieba', language: 'multi', gender: 'male' },
+  { id: 'Despina', name: 'Despina', language: 'multi', gender: 'female' },
+  { id: 'Erinome', name: 'Erinome', language: 'multi', gender: 'female' },
+  { id: 'Algenib', name: 'Algenib', language: 'multi', gender: 'male' },
+  { id: 'Rasalgethi', name: 'Rasalgethi', language: 'multi', gender: 'male' },
+  { id: 'Laomedeia', name: 'Laomedeia', language: 'multi', gender: 'female' },
+  { id: 'Achernar', name: 'Achernar', language: 'multi', gender: 'male' },
+  { id: 'Alnilam', name: 'Alnilam', language: 'multi', gender: 'male' },
+  { id: 'Schedar', name: 'Schedar', language: 'multi', gender: 'female' },
+  { id: 'Gacrux', name: 'Gacrux', language: 'multi', gender: 'male' },
+  { id: 'Pulcherrima', name: 'Pulcherrima', language: 'multi', gender: 'female' },
+  { id: 'Achird', name: 'Achird', language: 'multi', gender: 'male' },
+  { id: 'Zubenelgenubi', name: 'Zubenelgenubi', language: 'multi', gender: 'male' },
+  { id: 'Vindemiatrix', name: 'Vindemiatrix', language: 'multi', gender: 'female' },
+  { id: 'Sadachbia', name: 'Sadachbia', language: 'multi', gender: 'male' },
+  { id: 'Sadaltager', name: 'Sadaltager', language: 'multi', gender: 'male' },
+  { id: 'Sulafat', name: 'Sulafat', language: 'multi', gender: 'female' },
 ];
+
+/**
+ * Google Gemini TTS supported languages (24)
+ * Source: https://ai.google.dev/gemini-api/docs/speech-generation
+ */
+export const GEMINI_TTS_LANGUAGES = [
+  'ar-EG',  // Arabic (Egyptian)
+  'bn',     // Bengali
+  'de-DE',  // German (Germany)
+  'en-US',  // English (US)
+  'en-IN',  // English (India)
+  'es',     // Spanish
+  'fr-FR',  // French (France)
+  'hi',     // Hindi
+  'id',     // Indonesian
+  'it',     // Italian
+  'ja',     // Japanese
+  'ko',     // Korean
+  'mr',     // Marathi
+  'nl',     // Dutch
+  'pl',     // Polish
+  'pt-BR',  // Portuguese (Brazil)
+  'ro',     // Romanian
+  'ru',     // Russian
+  'ta',     // Tamil
+  'te',     // Telugu
+  'th',     // Thai
+  'tr',     // Turkish
+  'uk',     // Ukrainian
+  'vi',     // Vietnamese
+] as const;
 
 // =============================================================================
 // Language Constants

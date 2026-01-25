@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs9 from 'fs';
+import * as fs10 from 'fs';
 import { promises } from 'fs';
 import EventEmitter, { EventEmitter as EventEmitter$2 } from 'eventemitter3';
 import OpenAI2 from 'openai';
@@ -10,7 +10,7 @@ import { join } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { EventEmitter as EventEmitter$1 } from 'events';
-import * as fs8 from 'fs/promises';
+import * as fs9 from 'fs/promises';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
@@ -627,7 +627,7 @@ var JWTBearerFlow = class {
       this.privateKey = config.privateKey;
     } else if (config.privateKeyPath) {
       try {
-        this.privateKey = fs9.readFileSync(config.privateKeyPath, "utf8");
+        this.privateKey = fs10.readFileSync(config.privateKeyPath, "utf8");
       } catch (error) {
         throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
       }
@@ -1609,10 +1609,10 @@ var FrameworkLogger = class _FrameworkLogger {
   initFileStream(filePath) {
     try {
       const dir = path3.dirname(filePath);
-      if (!fs9.existsSync(dir)) {
-        fs9.mkdirSync(dir, { recursive: true });
+      if (!fs10.existsSync(dir)) {
+        fs10.mkdirSync(dir, { recursive: true });
       }
-      this.fileStream = fs9.createWriteStream(filePath, {
+      this.fileStream = fs10.createWriteStream(filePath, {
         flags: "a",
         // append mode
         encoding: "utf8"
@@ -7257,11 +7257,89 @@ var OPENAI_VOICES = [
   { id: "cedar", name: "Cedar", language: "multi", gender: "male" }
 ];
 var GEMINI_VOICES = [
-  { id: "Puck", name: "Puck", language: "multi", gender: "neutral", isDefault: true },
+  // Default voice
+  { id: "Kore", name: "Kore", language: "multi", gender: "female", isDefault: true },
+  // Primary voices
+  { id: "Puck", name: "Puck", language: "multi", gender: "neutral" },
   { id: "Charon", name: "Charon", language: "multi", gender: "male" },
-  { id: "Kore", name: "Kore", language: "multi", gender: "female" },
   { id: "Fenrir", name: "Fenrir", language: "multi", gender: "male" },
-  { id: "Aoede", name: "Aoede", language: "multi", gender: "female" }
+  { id: "Zephyr", name: "Zephyr", language: "multi", gender: "neutral" },
+  { id: "Leda", name: "Leda", language: "multi", gender: "female" },
+  { id: "Orus", name: "Orus", language: "multi", gender: "male" },
+  { id: "Aoede", name: "Aoede", language: "multi", gender: "female" },
+  // Extended voices (celestial/astronomical naming)
+  { id: "Callirrhoe", name: "Callirrhoe", language: "multi", gender: "female" },
+  { id: "Autonoe", name: "Autonoe", language: "multi", gender: "female" },
+  { id: "Enceladus", name: "Enceladus", language: "multi", gender: "male" },
+  { id: "Iapetus", name: "Iapetus", language: "multi", gender: "male" },
+  { id: "Umbriel", name: "Umbriel", language: "multi", gender: "neutral" },
+  { id: "Algieba", name: "Algieba", language: "multi", gender: "male" },
+  { id: "Despina", name: "Despina", language: "multi", gender: "female" },
+  { id: "Erinome", name: "Erinome", language: "multi", gender: "female" },
+  { id: "Algenib", name: "Algenib", language: "multi", gender: "male" },
+  { id: "Rasalgethi", name: "Rasalgethi", language: "multi", gender: "male" },
+  { id: "Laomedeia", name: "Laomedeia", language: "multi", gender: "female" },
+  { id: "Achernar", name: "Achernar", language: "multi", gender: "male" },
+  { id: "Alnilam", name: "Alnilam", language: "multi", gender: "male" },
+  { id: "Schedar", name: "Schedar", language: "multi", gender: "female" },
+  { id: "Gacrux", name: "Gacrux", language: "multi", gender: "male" },
+  { id: "Pulcherrima", name: "Pulcherrima", language: "multi", gender: "female" },
+  { id: "Achird", name: "Achird", language: "multi", gender: "male" },
+  { id: "Zubenelgenubi", name: "Zubenelgenubi", language: "multi", gender: "male" },
+  { id: "Vindemiatrix", name: "Vindemiatrix", language: "multi", gender: "female" },
+  { id: "Sadachbia", name: "Sadachbia", language: "multi", gender: "male" },
+  { id: "Sadaltager", name: "Sadaltager", language: "multi", gender: "male" },
+  { id: "Sulafat", name: "Sulafat", language: "multi", gender: "female" }
+];
+var GEMINI_TTS_LANGUAGES = [
+  "ar-EG",
+  // Arabic (Egyptian)
+  "bn",
+  // Bengali
+  "de-DE",
+  // German (Germany)
+  "en-US",
+  // English (US)
+  "en-IN",
+  // English (India)
+  "es",
+  // Spanish
+  "fr-FR",
+  // French (France)
+  "hi",
+  // Hindi
+  "id",
+  // Indonesian
+  "it",
+  // Italian
+  "ja",
+  // Japanese
+  "ko",
+  // Korean
+  "mr",
+  // Marathi
+  "nl",
+  // Dutch
+  "pl",
+  // Polish
+  "pt-BR",
+  // Portuguese (Brazil)
+  "ro",
+  // Romanian
+  "ru",
+  // Russian
+  "ta",
+  // Tamil
+  "te",
+  // Telugu
+  "th",
+  // Thai
+  "tr",
+  // Turkish
+  "uk",
+  // Ukrainian
+  "vi"
+  // Vietnamese
 ];
 var COMMON_LANGUAGES = {
   /**
@@ -7323,21 +7401,13 @@ var COMMON_LANGUAGES = {
     "ur",
     "vi",
     "cy"
-  ],
-  /**
-   * Core languages supported by most vendors
-   */
-  CORE: ["en", "es", "fr", "de", "it", "pt", "ja", "ko", "zh", "ru", "ar", "hi"]};
+  ]};
 var AUDIO_FORMATS = {
   /**
    * OpenAI TTS output formats
    * Source: https://platform.openai.com/docs/guides/text-to-speech
    */
   OPENAI_TTS: ["mp3", "opus", "aac", "flac", "wav", "pcm"],
-  /**
-   * Google TTS output formats
-   */
-  GOOGLE_TTS: ["mp3", "wav", "ogg"],
   /**
    * Common STT input formats (widely supported)
    */
@@ -7359,9 +7429,9 @@ var OpenAITTSProvider = class extends BaseMediaProvider {
   };
   client;
   constructor(config) {
-    super(config);
+    super({ apiKey: config.auth.apiKey, ...config });
     this.client = new OpenAI2({
-      apiKey: config.auth.type === "api_key" ? config.auth.apiKey : void 0,
+      apiKey: config.auth.apiKey,
       baseURL: config.baseURL,
       organization: config.organization,
       timeout: config.timeout ?? 6e4,
@@ -7474,9 +7544,9 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
   };
   client;
   constructor(config) {
-    super(config);
+    super({ apiKey: config.auth.apiKey, ...config });
     this.client = new OpenAI2({
-      apiKey: config.auth.type === "api_key" ? config.auth.apiKey : void 0,
+      apiKey: config.auth.apiKey,
       baseURL: config.baseURL,
       organization: config.organization,
       timeout: config.timeout ?? 12e4,
@@ -7578,7 +7648,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
       const blob = new Blob([audio]);
       return new File([blob], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs9.createReadStream(audio);
+      return fs10.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -7656,6 +7726,152 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     throw error;
   }
 };
+var GoogleTTSProvider = class extends BaseMediaProvider {
+  name = "google-tts";
+  vendor = "google";
+  capabilities = {
+    text: false,
+    images: false,
+    videos: false,
+    audio: true,
+    features: {
+      textToSpeech: true
+    }
+  };
+  client;
+  constructor(config) {
+    super(config);
+    this.client = new GoogleGenAI({
+      apiKey: config.apiKey
+    });
+  }
+  /**
+   * Synthesize speech from text using Gemini TTS
+   */
+  async synthesize(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("tts.synthesize", {
+            model: options.model,
+            voice: options.voice,
+            inputLength: options.input.length
+          });
+          const result = await this.client.models.generateContent({
+            model: options.model,
+            contents: [
+              {
+                parts: [{ text: options.input }]
+              }
+            ],
+            config: {
+              responseModalities: ["AUDIO"],
+              speechConfig: {
+                voiceConfig: {
+                  prebuiltVoiceConfig: {
+                    voiceName: options.voice || "Kore"
+                  }
+                }
+              }
+            }
+          });
+          const audioData = this.extractAudioData(result);
+          if (!audioData) {
+            throw new ProviderError("google", "No audio data in response");
+          }
+          this.logOperationComplete("tts.synthesize", {
+            model: options.model,
+            audioSize: audioData.length
+          });
+          return {
+            audio: audioData,
+            format: "wav",
+            // Gemini outputs PCM 24kHz 16-bit, we convert to WAV
+            charactersUsed: options.input.length
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "tts.synthesize",
+      { model: options.model, voice: options.voice }
+    );
+  }
+  /**
+   * List available voices (returns static list for Google)
+   */
+  async listVoices() {
+    return GEMINI_VOICES;
+  }
+  /**
+   * Extract audio data from Gemini response
+   * Gemini returns raw PCM data (24kHz, 16-bit, mono), we wrap it in WAV format
+   */
+  extractAudioData(result) {
+    const candidates = result.candidates;
+    if (!candidates || candidates.length === 0) {
+      return null;
+    }
+    const content = candidates[0]?.content;
+    if (!content?.parts || content.parts.length === 0) {
+      return null;
+    }
+    for (const part of content.parts) {
+      if (part.inlineData?.data) {
+        const rawPcm = Buffer.from(part.inlineData.data, "base64");
+        return this.pcmToWav(rawPcm, 24e3, 1, 16);
+      }
+    }
+    return null;
+  }
+  /**
+   * Convert raw PCM data to WAV format
+   * @param pcmData - Raw PCM data buffer
+   * @param sampleRate - Sample rate in Hz (default 24000 for Gemini)
+   * @param channels - Number of channels (default 1 for mono)
+   * @param bitsPerSample - Bits per sample (default 16)
+   */
+  pcmToWav(pcmData, sampleRate = 24e3, channels = 1, bitsPerSample = 16) {
+    const byteRate = sampleRate * channels * bitsPerSample / 8;
+    const blockAlign = channels * bitsPerSample / 8;
+    const dataSize = pcmData.length;
+    const headerSize = 44;
+    const fileSize = headerSize + dataSize;
+    const header = Buffer.alloc(headerSize);
+    header.write("RIFF", 0);
+    header.writeUInt32LE(fileSize - 8, 4);
+    header.write("WAVE", 8);
+    header.write("fmt ", 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(channels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write("data", 36);
+    header.writeUInt32LE(dataSize, 40);
+    return Buffer.concat([header, pcmData]);
+  }
+  /**
+   * Handle Google API errors
+   */
+  handleError(error) {
+    const message = error.message || "Unknown Google API error";
+    const status = error.status || error.code;
+    if (status === 401 || message.includes("API key not valid")) {
+      throw new ProviderAuthError("google", "Invalid API key");
+    }
+    if (status === 429 || message.includes("Resource exhausted")) {
+      throw new ProviderRateLimitError("google", message);
+    }
+    if (status === 400) {
+      throw new ProviderError("google", `Bad request: ${message}`);
+    }
+    throw new ProviderError("google", message);
+  }
+};
 
 // src/core/createAudioProvider.ts
 function createTTSProvider(connector) {
@@ -7664,10 +7880,10 @@ function createTTSProvider(connector) {
     case Vendor.OpenAI:
       return new OpenAITTSProvider(extractOpenAIConfig(connector));
     case Vendor.Google:
-      throw new Error(`Google TTS provider not yet implemented`);
+      return new GoogleTTSProvider(extractGoogleConfig(connector));
     default:
       throw new Error(
-        `No TTS provider available for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}`
+        `No TTS provider available for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
       );
   }
 }
@@ -7701,6 +7917,15 @@ function extractOpenAIConfig(connector) {
     organization: options.organization,
     timeout: options.timeout,
     maxRetries: options.maxRetries
+  };
+}
+function extractGoogleConfig(connector) {
+  const auth = connector.config.auth;
+  if (auth.type !== "api_key") {
+    throw new Error("Google requires API key authentication");
+  }
+  return {
+    apiKey: auth.apiKey
   };
 }
 
@@ -7753,8 +7978,10 @@ var TTS_MODELS = {
     TTS_1_HD: "tts-1-hd"
   },
   [Vendor.Google]: {
-    /** Gemini native TTS */
-    GEMINI_TTS: "gemini-tts"
+    /** Gemini 2.5 Flash TTS (optimized for low latency) */
+    GEMINI_2_5_FLASH_TTS: "gemini-2.5-flash-preview-tts",
+    /** Gemini 2.5 Pro TTS (optimized for quality) */
+    GEMINI_2_5_PRO_TTS: "gemini-2.5-pro-preview-tts"
   }
 };
 var OPENAI_TTS_BASE = {
@@ -7852,31 +8079,68 @@ var TTS_MODEL_REGISTRY = {
     pricing: { per1kCharacters: 0.03, currency: "USD" }
   },
   // ======================== Google ========================
-  "gemini-tts": {
-    name: "gemini-tts",
-    displayName: "Gemini TTS",
+  "gemini-2.5-flash-preview-tts": {
+    name: "gemini-2.5-flash-preview-tts",
+    displayName: "Gemini 2.5 Flash TTS",
     provider: Vendor.Google,
-    description: "Google Gemini native text-to-speech",
+    description: "Google Gemini 2.5 Flash TTS - optimized for low latency",
     isActive: true,
+    releaseDate: "2025-01-01",
     sources: {
-      documentation: "https://ai.google.dev/gemini-api/docs/text-to-speech",
+      documentation: "https://ai.google.dev/gemini-api/docs/speech-generation",
       pricing: "https://ai.google.dev/pricing",
-      lastVerified: "2026-01-24"
+      lastVerified: "2026-01-25"
     },
     capabilities: {
       voices: GEMINI_VOICES,
-      formats: AUDIO_FORMATS.GOOGLE_TTS,
-      languages: COMMON_LANGUAGES.CORE,
-      speed: { supported: true, min: 0.5, max: 2 },
+      formats: ["wav"],
+      // PCM output, 24kHz 16-bit mono
+      languages: [...GEMINI_TTS_LANGUAGES],
+      speed: { supported: false },
+      // Speed not directly configurable
       features: {
         streaming: false,
         // Not implementing streaming in v1
         ssml: false,
-        emotions: false,
+        emotions: true,
+        // Supports affective dialogue
         voiceCloning: false,
         wordTimestamps: false
       },
-      limits: { maxInputLength: 8e3 }
+      limits: { maxInputLength: 32e3 }
+      // 32k tokens
+    }
+  },
+  "gemini-2.5-pro-preview-tts": {
+    name: "gemini-2.5-pro-preview-tts",
+    displayName: "Gemini 2.5 Pro TTS",
+    provider: Vendor.Google,
+    description: "Google Gemini 2.5 Pro TTS - optimized for quality",
+    isActive: true,
+    releaseDate: "2025-01-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/speech-generation",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-01-25"
+    },
+    capabilities: {
+      voices: GEMINI_VOICES,
+      formats: ["wav"],
+      // PCM output, 24kHz 16-bit mono
+      languages: [...GEMINI_TTS_LANGUAGES],
+      speed: { supported: false },
+      // Speed not directly configurable
+      features: {
+        streaming: false,
+        // Not implementing streaming in v1
+        ssml: false,
+        emotions: true,
+        // Supports affective dialogue
+        voiceCloning: false,
+        wordTimestamps: false
+      },
+      limits: { maxInputLength: 32e3 }
+      // 32k tokens
     }
   }
 };
@@ -7936,7 +8200,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs8.writeFile(filePath, response.audio);
+    await fs9.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -8281,7 +8545,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs8.readFile(filePath);
+    const audio = await fs9.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -8427,6 +8691,790 @@ var SpeechToText = class _SpeechToText {
       throw new Error("No STT models available for this provider");
     }
     return firstModel.name;
+  }
+};
+var OpenAIImageProvider = class extends BaseMediaProvider {
+  name = "openai-image";
+  vendor = "openai";
+  capabilities = {
+    text: false,
+    images: true,
+    videos: false,
+    audio: false,
+    features: {
+      imageGeneration: true,
+      imageEditing: true
+    }
+  };
+  client;
+  constructor(config) {
+    super({ apiKey: config.auth.apiKey, ...config });
+    this.client = new OpenAI2({
+      apiKey: config.auth.apiKey,
+      baseURL: config.baseURL,
+      organization: config.organization,
+      timeout: config.timeout,
+      maxRetries: config.maxRetries
+    });
+  }
+  /**
+   * Generate images from a text prompt
+   */
+  async generateImage(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("image.generate", {
+            model: options.model,
+            size: options.size,
+            quality: options.quality,
+            n: options.n
+          });
+          const response = await this.client.images.generate({
+            model: options.model,
+            prompt: options.prompt,
+            size: options.size,
+            quality: options.quality,
+            style: options.style,
+            n: options.n || 1,
+            response_format: options.response_format || "b64_json"
+          });
+          this.logOperationComplete("image.generate", {
+            model: options.model,
+            imagesGenerated: response.data.length
+          });
+          return {
+            created: response.created,
+            data: response.data.map((img) => ({
+              url: img.url,
+              b64_json: img.b64_json,
+              revised_prompt: img.revised_prompt
+            }))
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "image.generate",
+      { model: options.model }
+    );
+  }
+  /**
+   * Edit an existing image with a prompt
+   * Supported by: gpt-image-1, dall-e-2
+   */
+  async editImage(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("image.edit", {
+            model: options.model,
+            size: options.size,
+            n: options.n
+          });
+          const image = this.prepareImageInput(options.image);
+          const mask = options.mask ? this.prepareImageInput(options.mask) : void 0;
+          const response = await this.client.images.edit({
+            model: options.model,
+            image,
+            prompt: options.prompt,
+            mask,
+            size: options.size,
+            n: options.n || 1,
+            response_format: options.response_format || "b64_json"
+          });
+          this.logOperationComplete("image.edit", {
+            model: options.model,
+            imagesGenerated: response.data.length
+          });
+          return {
+            created: response.created,
+            data: response.data.map((img) => ({
+              url: img.url,
+              b64_json: img.b64_json,
+              revised_prompt: img.revised_prompt
+            }))
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "image.edit",
+      { model: options.model }
+    );
+  }
+  /**
+   * Create variations of an existing image
+   * Supported by: dall-e-2 only
+   */
+  async createVariation(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("image.variation", {
+            model: options.model,
+            size: options.size,
+            n: options.n
+          });
+          const image = this.prepareImageInput(options.image);
+          const response = await this.client.images.createVariation({
+            model: options.model,
+            image,
+            size: options.size,
+            n: options.n || 1,
+            response_format: options.response_format || "b64_json"
+          });
+          this.logOperationComplete("image.variation", {
+            model: options.model,
+            imagesGenerated: response.data.length
+          });
+          return {
+            created: response.created,
+            data: response.data.map((img) => ({
+              url: img.url,
+              b64_json: img.b64_json,
+              revised_prompt: img.revised_prompt
+            }))
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "image.variation",
+      { model: options.model }
+    );
+  }
+  /**
+   * List available image models
+   */
+  async listModels() {
+    return ["gpt-image-1", "dall-e-3", "dall-e-2"];
+  }
+  /**
+   * Prepare image input (Buffer or file path) for OpenAI API
+   */
+  prepareImageInput(image) {
+    if (Buffer.isBuffer(image)) {
+      return new File([image], "image.png", { type: "image/png" });
+    }
+    return fs10.createReadStream(image);
+  }
+  /**
+   * Handle OpenAI API errors
+   */
+  handleError(error) {
+    const message = error.message || "Unknown OpenAI API error";
+    const status = error.status;
+    if (status === 401) {
+      throw new ProviderAuthError("openai", "Invalid API key");
+    }
+    if (status === 429) {
+      throw new ProviderRateLimitError("openai", message);
+    }
+    if (status === 400) {
+      if (message.includes("safety system")) {
+        throw new ProviderError("openai", `Content policy violation: ${message}`);
+      }
+      throw new ProviderError("openai", `Bad request: ${message}`);
+    }
+    throw new ProviderError("openai", message);
+  }
+};
+var GoogleImageProvider = class extends BaseMediaProvider {
+  name = "google-image";
+  vendor = "google";
+  capabilities = {
+    text: false,
+    images: true,
+    videos: false,
+    audio: false,
+    features: {
+      imageGeneration: true,
+      imageEditing: true
+    }
+  };
+  client;
+  constructor(config) {
+    super(config);
+    this.client = new GoogleGenAI({
+      apiKey: config.apiKey
+    });
+  }
+  /**
+   * Generate images from a text prompt using Google Imagen
+   */
+  async generateImage(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("image.generate", {
+            model: options.model,
+            n: options.n
+          });
+          const googleOptions = options;
+          const response = await this.client.models.generateImages({
+            model: options.model,
+            prompt: options.prompt,
+            config: {
+              numberOfImages: options.n || 1,
+              negativePrompt: googleOptions.negativePrompt,
+              aspectRatio: googleOptions.aspectRatio,
+              seed: googleOptions.seed,
+              outputMimeType: googleOptions.outputMimeType,
+              includeRaiReason: googleOptions.includeRaiReason
+            }
+          });
+          const images = response.generatedImages || [];
+          this.logOperationComplete("image.generate", {
+            model: options.model,
+            imagesGenerated: images.length
+          });
+          return {
+            created: Math.floor(Date.now() / 1e3),
+            data: images.map((img) => ({
+              b64_json: img.image?.imageBytes
+              // Google doesn't provide URLs, only base64
+            }))
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "image.generate",
+      { model: options.model }
+    );
+  }
+  /**
+   * Edit an existing image using Imagen capability model
+   * Uses imagen-3.0-capability-001
+   */
+  async editImage(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("image.edit", {
+            model: options.model,
+            n: options.n
+          });
+          const referenceImage = await this.prepareReferenceImage(options.image);
+          const response = await this.client.models.editImage({
+            model: options.model || "imagen-3.0-capability-001",
+            prompt: options.prompt,
+            referenceImages: [referenceImage],
+            config: {
+              numberOfImages: options.n || 1
+            }
+          });
+          const images = response.generatedImages || [];
+          this.logOperationComplete("image.edit", {
+            model: options.model,
+            imagesGenerated: images.length
+          });
+          return {
+            created: Math.floor(Date.now() / 1e3),
+            data: images.map((img) => ({
+              b64_json: img.image?.imageBytes
+            }))
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "image.edit",
+      { model: options.model }
+    );
+  }
+  /**
+   * List available image models
+   */
+  async listModels() {
+    return [
+      "imagen-3.0-generate-002",
+      "imagen-3.0-fast-generate-001",
+      "imagen-3.0-capability-001"
+    ];
+  }
+  /**
+   * Prepare a reference image for Google's editImage API
+   */
+  async prepareReferenceImage(image) {
+    let imageBytes;
+    if (Buffer.isBuffer(image)) {
+      imageBytes = image.toString("base64");
+    } else {
+      const fs11 = await import('fs');
+      const buffer = fs11.readFileSync(image);
+      imageBytes = buffer.toString("base64");
+    }
+    return {
+      referenceImage: {
+        image: {
+          imageBytes
+        }
+      },
+      referenceType: "REFERENCE_TYPE_SUBJECT"
+    };
+  }
+  /**
+   * Handle Google API errors
+   */
+  handleError(error) {
+    const message = error.message || "Unknown Google API error";
+    const status = error.status || error.code;
+    if (status === 401 || message.includes("API key not valid")) {
+      throw new ProviderAuthError("google", "Invalid API key");
+    }
+    if (status === 429 || message.includes("Resource exhausted")) {
+      throw new ProviderRateLimitError("google", message);
+    }
+    if (status === 400) {
+      if (message.includes("SAFETY") || message.includes("blocked") || message.includes("Responsible AI")) {
+        throw new ProviderError("google", `Content policy violation: ${message}`);
+      }
+      throw new ProviderError("google", `Bad request: ${message}`);
+    }
+    throw new ProviderError("google", message);
+  }
+};
+
+// src/core/createImageProvider.ts
+function createImageProvider(connector) {
+  const vendor = connector.vendor;
+  switch (vendor) {
+    case Vendor.OpenAI:
+      return new OpenAIImageProvider(extractOpenAIConfig2(connector));
+    case Vendor.Google:
+      return new GoogleImageProvider(extractGoogleConfig2(connector));
+    default:
+      throw new Error(
+        `No Image provider available for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
+      );
+  }
+}
+function extractOpenAIConfig2(connector) {
+  const auth = connector.config.auth;
+  if (auth.type !== "api_key") {
+    throw new Error("OpenAI requires API key authentication");
+  }
+  const options = connector.getOptions();
+  return {
+    auth: {
+      type: "api_key",
+      apiKey: auth.apiKey
+    },
+    baseURL: connector.baseURL,
+    organization: options.organization,
+    timeout: options.timeout,
+    maxRetries: options.maxRetries
+  };
+}
+function extractGoogleConfig2(connector) {
+  const auth = connector.config.auth;
+  if (auth.type !== "api_key") {
+    throw new Error("Google requires API key authentication");
+  }
+  return {
+    apiKey: auth.apiKey
+  };
+}
+
+// src/domain/entities/ImageModel.ts
+var IMAGE_MODELS = {
+  [Vendor.OpenAI]: {
+    /** GPT-Image-1: Latest OpenAI image model with best quality */
+    GPT_IMAGE_1: "gpt-image-1",
+    /** DALL-E 3: High quality image generation */
+    DALL_E_3: "dall-e-3",
+    /** DALL-E 2: Fast, supports editing and variations */
+    DALL_E_2: "dall-e-2"
+  },
+  [Vendor.Google]: {
+    /** Imagen 3.0: Latest Google image generation model */
+    IMAGEN_3_GENERATE: "imagen-3.0-generate-002",
+    /** Imagen 3.0 Capability: For editing operations */
+    IMAGEN_3_CAPABILITY: "imagen-3.0-capability-001",
+    /** Imagen 3.0 Fast: Optimized for speed */
+    IMAGEN_3_FAST: "imagen-3.0-fast-generate-001"
+  }
+};
+var IMAGE_MODEL_REGISTRY = {
+  // ======================== OpenAI ========================
+  "gpt-image-1": {
+    name: "gpt-image-1",
+    displayName: "GPT-Image-1",
+    provider: Vendor.OpenAI,
+    description: "OpenAI latest image generation model with best quality and features",
+    isActive: true,
+    releaseDate: "2025-04-01",
+    sources: {
+      documentation: "https://platform.openai.com/docs/guides/images",
+      pricing: "https://openai.com/pricing",
+      lastVerified: "2026-01-25"
+    },
+    capabilities: {
+      sizes: ["1024x1024", "1024x1536", "1536x1024", "auto"],
+      maxImagesPerRequest: 1,
+      outputFormats: ["png", "webp", "jpeg"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: true,
+        transparency: true,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 32e3 },
+      vendorOptions: {
+        background: {
+          type: "string",
+          description: "Background setting: transparent, opaque, or auto"
+        },
+        output_format: {
+          type: "string",
+          description: "Output format: png, webp, or jpeg"
+        }
+      }
+    },
+    pricing: {
+      perImageStandard: 0.011,
+      perImageHD: 0.042,
+      currency: "USD"
+    }
+  },
+  "dall-e-3": {
+    name: "dall-e-3",
+    displayName: "DALL-E 3",
+    provider: Vendor.OpenAI,
+    description: "High quality image generation with prompt revision",
+    isActive: true,
+    releaseDate: "2023-11-06",
+    sources: {
+      documentation: "https://platform.openai.com/docs/guides/images",
+      pricing: "https://openai.com/pricing",
+      lastVerified: "2026-01-25"
+    },
+    capabilities: {
+      sizes: ["1024x1024", "1024x1792", "1792x1024"],
+      maxImagesPerRequest: 1,
+      outputFormats: ["png", "url"],
+      features: {
+        generation: true,
+        editing: false,
+        variations: false,
+        styleControl: true,
+        qualityControl: true,
+        transparency: false,
+        promptRevision: true
+      },
+      limits: { maxPromptLength: 4e3 },
+      vendorOptions: {
+        style: {
+          type: "string",
+          description: "Style: vivid (hyper-real) or natural (more natural)"
+        }
+      }
+    },
+    pricing: {
+      perImageStandard: 0.04,
+      perImageHD: 0.08,
+      currency: "USD"
+    }
+  },
+  "dall-e-2": {
+    name: "dall-e-2",
+    displayName: "DALL-E 2",
+    provider: Vendor.OpenAI,
+    description: "Fast image generation with editing and variation support",
+    isActive: true,
+    releaseDate: "2022-11-03",
+    sources: {
+      documentation: "https://platform.openai.com/docs/guides/images",
+      pricing: "https://openai.com/pricing",
+      lastVerified: "2026-01-25"
+    },
+    capabilities: {
+      sizes: ["256x256", "512x512", "1024x1024"],
+      maxImagesPerRequest: 10,
+      outputFormats: ["png", "url"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: true,
+        styleControl: false,
+        qualityControl: false,
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 1e3 }
+    },
+    pricing: {
+      perImage: 0.02,
+      currency: "USD"
+    }
+  },
+  // ======================== Google ========================
+  "imagen-3.0-generate-002": {
+    name: "imagen-3.0-generate-002",
+    displayName: "Imagen 3.0 Generate",
+    provider: Vendor.Google,
+    description: "Google Imagen 3.0 - highest quality image generation",
+    isActive: true,
+    releaseDate: "2024-08-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/imagen",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-01-25"
+    },
+    capabilities: {
+      sizes: ["1024x1024"],
+      aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+      maxImagesPerRequest: 4,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: false,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 480 },
+      vendorOptions: {
+        negativePrompt: {
+          type: "string",
+          description: "Description of what to avoid in the image"
+        },
+        seed: {
+          type: "number",
+          description: "Random seed for reproducible generation"
+        },
+        aspectRatio: {
+          type: "string",
+          description: "Aspect ratio: 1:1, 3:4, 4:3, 9:16, or 16:9"
+        }
+      }
+    },
+    pricing: {
+      perImage: 0.04,
+      currency: "USD"
+    }
+  },
+  "imagen-3.0-capability-001": {
+    name: "imagen-3.0-capability-001",
+    displayName: "Imagen 3.0 Capability",
+    provider: Vendor.Google,
+    description: "Google Imagen 3.0 for editing and advanced operations",
+    isActive: true,
+    releaseDate: "2024-08-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/imagen",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-01-25"
+    },
+    capabilities: {
+      sizes: ["1024x1024"],
+      aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+      maxImagesPerRequest: 4,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: false,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 480 }
+    },
+    pricing: {
+      perImage: 0.04,
+      currency: "USD"
+    }
+  },
+  "imagen-3.0-fast-generate-001": {
+    name: "imagen-3.0-fast-generate-001",
+    displayName: "Imagen 3.0 Fast",
+    provider: Vendor.Google,
+    description: "Google Imagen 3.0 optimized for speed",
+    isActive: true,
+    releaseDate: "2024-08-01",
+    sources: {
+      documentation: "https://ai.google.dev/gemini-api/docs/imagen",
+      pricing: "https://ai.google.dev/pricing",
+      lastVerified: "2026-01-25"
+    },
+    capabilities: {
+      sizes: ["1024x1024"],
+      aspectRatios: ["1:1", "3:4", "4:3", "9:16", "16:9"],
+      maxImagesPerRequest: 4,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: false,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 480 }
+    },
+    pricing: {
+      perImage: 0.02,
+      currency: "USD"
+    }
+  }
+};
+var helpers3 = createRegistryHelpers(IMAGE_MODEL_REGISTRY);
+var getImageModelInfo = helpers3.getInfo;
+var getImageModelsByVendor = helpers3.getByVendor;
+var getActiveImageModels = helpers3.getActive;
+function getImageModelsWithFeature(feature) {
+  return Object.values(IMAGE_MODEL_REGISTRY).filter(
+    (model) => model.isActive && model.capabilities.features[feature]
+  );
+}
+function calculateImageCost(modelName, imageCount, quality = "standard") {
+  const model = getImageModelInfo(modelName);
+  if (!model?.pricing) return null;
+  if (model.pricing.perImage) {
+    return imageCount * model.pricing.perImage;
+  }
+  const pricePerImage = quality === "hd" ? model.pricing.perImageHD : model.pricing.perImageStandard;
+  if (!pricePerImage) return null;
+  return imageCount * pricePerImage;
+}
+
+// src/capabilities/images/ImageGeneration.ts
+var ImageGeneration = class _ImageGeneration {
+  provider;
+  connector;
+  defaultModel;
+  constructor(connector) {
+    this.connector = connector;
+    this.provider = createImageProvider(connector);
+    this.defaultModel = this.getDefaultModel();
+  }
+  /**
+   * Create an ImageGeneration instance
+   */
+  static create(options) {
+    const connector = typeof options.connector === "string" ? Connector.get(options.connector) : options.connector;
+    if (!connector) {
+      throw new Error(`Connector not found: ${options.connector}`);
+    }
+    return new _ImageGeneration(connector);
+  }
+  /**
+   * Generate images from a text prompt
+   */
+  async generate(options) {
+    const fullOptions = {
+      model: options.model || this.defaultModel,
+      prompt: options.prompt,
+      size: options.size,
+      quality: options.quality,
+      style: options.style,
+      n: options.n,
+      response_format: options.response_format || "b64_json"
+    };
+    return this.provider.generateImage(fullOptions);
+  }
+  /**
+   * Edit an existing image
+   * Note: Not all models/vendors support this
+   */
+  async edit(options) {
+    if (!this.provider.editImage) {
+      throw new Error(`Image editing not supported by ${this.provider.name}`);
+    }
+    const fullOptions = {
+      ...options,
+      model: options.model || this.getEditModel()
+    };
+    return this.provider.editImage(fullOptions);
+  }
+  /**
+   * Create variations of an existing image
+   * Note: Only DALL-E 2 supports this
+   */
+  async createVariation(options) {
+    if (!this.provider.createVariation) {
+      throw new Error(`Image variations not supported by ${this.provider.name}`);
+    }
+    const fullOptions = {
+      ...options,
+      model: options.model || "dall-e-2"
+      // Only DALL-E 2 supports variations
+    };
+    return this.provider.createVariation(fullOptions);
+  }
+  /**
+   * List available models for this provider
+   */
+  async listModels() {
+    if (this.provider.listModels) {
+      return this.provider.listModels();
+    }
+    const vendor = this.connector.vendor;
+    if (vendor && IMAGE_MODELS[vendor]) {
+      return Object.values(IMAGE_MODELS[vendor]);
+    }
+    return [];
+  }
+  /**
+   * Get information about a specific model
+   */
+  getModelInfo(modelName) {
+    return getImageModelInfo(modelName);
+  }
+  /**
+   * Get the underlying provider
+   */
+  getProvider() {
+    return this.provider;
+  }
+  /**
+   * Get the current connector
+   */
+  getConnector() {
+    return this.connector;
+  }
+  /**
+   * Get the default model for this vendor
+   */
+  getDefaultModel() {
+    const vendor = this.connector.vendor;
+    switch (vendor) {
+      case Vendor.OpenAI:
+        return IMAGE_MODELS[Vendor.OpenAI].DALL_E_3;
+      case Vendor.Google:
+        return IMAGE_MODELS[Vendor.Google].IMAGEN_3_GENERATE;
+      default:
+        throw new Error(`No default image model for vendor: ${vendor}`);
+    }
+  }
+  /**
+   * Get the default edit model for this vendor
+   */
+  getEditModel() {
+    const vendor = this.connector.vendor;
+    switch (vendor) {
+      case Vendor.OpenAI:
+        return IMAGE_MODELS[Vendor.OpenAI].GPT_IMAGE_1;
+      case Vendor.Google:
+        return IMAGE_MODELS[Vendor.Google].IMAGEN_3_CAPABILITY;
+      default:
+        throw new Error(`No edit model for vendor: ${vendor}`);
+    }
   }
 };
 
@@ -13378,8 +14426,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs8.mkdir(this.directory, { recursive: true });
-      await fs8.chmod(this.directory, 448);
+      await fs9.mkdir(this.directory, { recursive: true });
+      await fs9.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -13395,13 +14443,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs8.writeFile(filePath, encrypted, "utf8");
-    await fs8.chmod(filePath, 384);
+    await fs9.writeFile(filePath, encrypted, "utf8");
+    await fs9.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs8.readFile(filePath, "utf8");
+      const encrypted = await fs9.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -13410,7 +14458,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs8.unlink(filePath);
+        await fs9.unlink(filePath);
       } catch {
       }
       return null;
@@ -13419,7 +14467,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs8.unlink(filePath);
+      await fs9.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -13429,7 +14477,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs8.access(filePath);
+      await fs9.access(filePath);
       return true;
     } catch {
       return false;
@@ -13440,7 +14488,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs8.readdir(this.directory);
+      const files = await fs9.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -13451,10 +14499,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs8.readdir(this.directory);
+      const files = await fs9.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs8.unlink(path3.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs9.unlink(path3.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -13852,14 +14900,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs8.writeFile(filePath, json, "utf8");
-    await fs8.chmod(filePath, 384);
+    await fs9.writeFile(filePath, json, "utf8");
+    await fs9.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs8.readFile(filePath, "utf8");
+      const json = await fs9.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -13872,7 +14920,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs8.unlink(filePath);
+      await fs9.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -13886,7 +14934,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs8.access(filePath);
+      await fs9.access(filePath);
       return true;
     } catch {
       return false;
@@ -13912,13 +14960,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs8.readdir(this.directory);
+      const files = await fs9.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs8.unlink(path3.join(this.directory, f)).catch(() => {
+          (f) => fs9.unlink(path3.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -13945,8 +14993,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs8.mkdir(this.directory, { recursive: true });
-      await fs8.chmod(this.directory, 448);
+      await fs9.mkdir(this.directory, { recursive: true });
+      await fs9.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -13957,7 +15005,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs8.readFile(this.indexPath, "utf8");
+      const json = await fs9.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -13975,8 +15023,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs8.writeFile(this.indexPath, json, "utf8");
-    await fs8.chmod(this.indexPath, 384);
+    await fs9.writeFile(this.indexPath, json, "utf8");
+    await fs9.chmod(this.indexPath, 384);
   }
 };
 
@@ -14188,8 +15236,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs9.existsSync(filePath)) {
-      fs9.unlinkSync(filePath);
+    if (fs10.existsSync(filePath)) {
+      fs10.unlinkSync(filePath);
     }
   } catch {
   }
@@ -14240,7 +15288,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs9.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs10.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -14257,14 +15305,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs9.existsSync(tempFile) && fs9.statSync(tempFile).size > 0) {
+      if (fs10.existsSync(tempFile) && fs10.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs9.existsSync(tempFile) && fs9.statSync(tempFile).size > 0) {
+      if (fs10.existsSync(tempFile) && fs10.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -14291,7 +15339,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs9.existsSync(tempFile) && fs9.statSync(tempFile).size > 0) {
+    if (fs10.existsSync(tempFile) && fs10.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -14304,7 +15352,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs9.readFileSync(filePath);
+    const imageBuffer = fs10.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -17031,6 +18079,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IdempotencyCache, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, STT_MODELS, STT_MODEL_REGISTRY, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TextToSpeech, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, Vendor, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, hasClipboardImage, isErrorEvent, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, tools_exports as tools };
+export { AIError, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, STT_MODELS, STT_MODEL_REGISTRY, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TextToSpeech, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, Vendor, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateImageCost, calculateSTTCost, calculateTTSCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, hasClipboardImage, isErrorEvent, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

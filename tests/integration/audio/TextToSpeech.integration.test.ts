@@ -15,10 +15,13 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 const HAS_OPENAI_KEY = Boolean(OPENAI_API_KEY);
+const HAS_GOOGLE_KEY = Boolean(GOOGLE_API_KEY);
 
 // Skip tests if no API key
 const describeIfOpenAI = HAS_OPENAI_KEY ? describe : describe.skip;
+const describeIfGoogle = HAS_GOOGLE_KEY ? describe : describe.skip;
 
 describeIfOpenAI('TextToSpeech Integration (OpenAI)', () => {
   const tempFiles: string[] = [];
@@ -191,5 +194,145 @@ describeIfOpenAI('TextToSpeech Integration (OpenAI)', () => {
         tts.synthesize(longText)
       ).rejects.toThrow();
     }, 30000);
+  });
+});
+
+// ============================================================================
+// Google TTS Integration Tests
+// ============================================================================
+
+describeIfGoogle('TextToSpeech Integration (Google)', () => {
+  const tempFiles: string[] = [];
+
+  beforeAll(() => {
+    if (!GOOGLE_API_KEY) {
+      console.warn('⚠️  GOOGLE_API_KEY not set, skipping Google TTS integration tests');
+      return;
+    }
+
+    Connector.create({
+      name: 'google-test',
+      vendor: Vendor.Google,
+      auth: { type: 'api_key', apiKey: GOOGLE_API_KEY },
+    });
+  });
+
+  afterAll(async () => {
+    // Cleanup temp files
+    for (const file of tempFiles) {
+      try {
+        await fs.unlink(file);
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    // Clear only if we created this connector
+    if (HAS_GOOGLE_KEY) {
+      try {
+        Connector.clear();
+      } catch {
+        // Ignore if already cleared
+      }
+    }
+  });
+
+  describe('Basic synthesis with Gemini TTS', () => {
+    it('should synthesize short text with gemini-2.5-flash-preview-tts', async () => {
+      const tts = TextToSpeech.create({
+        connector: 'google-test',
+        model: 'gemini-2.5-flash-preview-tts',
+        voice: 'Kore',
+      });
+
+      const response = await tts.synthesize('Hello, this is a test from Google.');
+
+      expect(response.audio).toBeInstanceOf(Buffer);
+      expect(response.audio.length).toBeGreaterThan(0);
+      expect(response.format).toBe('wav'); // Google outputs WAV
+      expect(response.charactersUsed).toBe('Hello, this is a test from Google.'.length);
+    }, 60000); // 60s timeout for Google
+
+    it('should synthesize with different voices', async () => {
+      const tts = TextToSpeech.create({
+        connector: 'google-test',
+        model: 'gemini-2.5-flash-preview-tts',
+      });
+
+      // Use longer text - Gemini TTS doesn't handle very short text well
+      const kore = await tts.synthesize('This is a test with the Kore voice.', { voice: 'Kore' });
+      const puck = await tts.synthesize('This is a test with the Puck voice.', { voice: 'Puck' });
+
+      expect(kore.audio).toBeInstanceOf(Buffer);
+      expect(puck.audio).toBeInstanceOf(Buffer);
+      expect(kore.audio.length).toBeGreaterThan(0);
+      expect(puck.audio.length).toBeGreaterThan(0);
+    }, 60000);
+
+    it('should synthesize with Charon voice', async () => {
+      const tts = TextToSpeech.create({
+        connector: 'google-test',
+        model: 'gemini-2.5-flash-preview-tts',
+        voice: 'Charon',
+      });
+
+      const response = await tts.synthesize('Testing the Charon voice.');
+
+      expect(response.audio).toBeInstanceOf(Buffer);
+      expect(response.audio.length).toBeGreaterThan(0);
+    }, 60000);
+  });
+
+  describe('File output', () => {
+    it('should save audio to WAV file', async () => {
+      const tts = TextToSpeech.create({
+        connector: 'google-test',
+        model: 'gemini-2.5-flash-preview-tts',
+      });
+
+      const outputPath = path.join(__dirname, 'test-google-output.wav');
+      tempFiles.push(outputPath);
+
+      await tts.toFile('This is saved to a file from Google.', outputPath);
+
+      const stats = await fs.stat(outputPath);
+      expect(stats.size).toBeGreaterThan(0);
+
+      // Verify WAV header
+      const buffer = await fs.readFile(outputPath);
+      expect(buffer.slice(0, 4).toString()).toBe('RIFF');
+      expect(buffer.slice(8, 12).toString()).toBe('WAVE');
+    }, 60000);
+  });
+
+  describe('Pro model', () => {
+    it('should synthesize with gemini-2.5-pro-preview-tts', async () => {
+      const tts = TextToSpeech.create({
+        connector: 'google-test',
+        model: 'gemini-2.5-pro-preview-tts',
+        voice: 'Aoede',
+      });
+
+      const response = await tts.synthesize('Testing the pro quality model.');
+
+      expect(response.audio).toBeInstanceOf(Buffer);
+      expect(response.audio.length).toBeGreaterThan(0);
+    }, 60000);
+  });
+
+  describe('List voices', () => {
+    it('should list available voices', async () => {
+      const tts = TextToSpeech.create({
+        connector: 'google-test',
+        model: 'gemini-2.5-flash-preview-tts',
+      });
+
+      const voices = await tts.listVoices();
+
+      expect(voices.length).toBeGreaterThan(0);
+      expect(voices.some(v => v.id === 'Kore')).toBe(true);
+      expect(voices.some(v => v.id === 'Puck')).toBe(true);
+      expect(voices.some(v => v.id === 'Charon')).toBe(true);
+    });
   });
 });

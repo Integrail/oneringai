@@ -1,10 +1,12 @@
 /**
  * Images capability exports
- *
- * Note: ImageManager is deprecated. Image generation will be added to Agent.
  */
 
-// Types only - re-export from interfaces
+// Main capability class
+export { ImageGeneration } from './ImageGeneration.js';
+export type { ImageGenerationCreateOptions, SimpleGenerateOptions } from './ImageGeneration.js';
+
+// Types from interfaces
 export type {
   ImageGenerateOptions,
   ImageEditOptions,

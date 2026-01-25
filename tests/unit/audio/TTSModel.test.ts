@@ -20,7 +20,8 @@ describe('TTSModel Registry', () => {
       expect(TTS_MODEL_REGISTRY['tts-1']).toBeDefined();
       expect(TTS_MODEL_REGISTRY['tts-1-hd']).toBeDefined();
       expect(TTS_MODEL_REGISTRY['gpt-4o-mini-tts']).toBeDefined();
-      expect(TTS_MODEL_REGISTRY['gemini-tts']).toBeDefined();
+      expect(TTS_MODEL_REGISTRY['gemini-2.5-flash-preview-tts']).toBeDefined();
+      expect(TTS_MODEL_REGISTRY['gemini-2.5-pro-preview-tts']).toBeDefined();
     });
 
     it('should have consistent structure', () => {
@@ -136,7 +137,8 @@ describe('TTSModel Registry', () => {
       expect(TTS_MODELS[Vendor.OpenAI].TTS_1).toBe('tts-1');
       expect(TTS_MODELS[Vendor.OpenAI].TTS_1_HD).toBe('tts-1-hd');
       expect(TTS_MODELS[Vendor.OpenAI].GPT_4O_MINI_TTS).toBe('gpt-4o-mini-tts');
-      expect(TTS_MODELS[Vendor.Google].GEMINI_TTS).toBe('gemini-tts');
+      expect(TTS_MODELS[Vendor.Google].GEMINI_2_5_FLASH_TTS).toBe('gemini-2.5-flash-preview-tts');
+      expect(TTS_MODELS[Vendor.Google].GEMINI_2_5_PRO_TTS).toBe('gemini-2.5-pro-preview-tts');
     });
   });
 

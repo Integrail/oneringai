@@ -5,7 +5,7 @@
 import { Vendor } from '../../core/Vendor.js';
 import type { IBaseModelDescription, AudioFormat, VendorOptionSchema } from '../types/SharedTypes.js';
 import { createRegistryHelpers } from './RegistryUtils.js';
-import { OPENAI_VOICES, GEMINI_VOICES, COMMON_LANGUAGES, AUDIO_FORMATS, type IVoiceInfo } from './SharedVoices.js';
+import { OPENAI_VOICES, GEMINI_VOICES, GEMINI_TTS_LANGUAGES, COMMON_LANGUAGES, AUDIO_FORMATS, type IVoiceInfo } from './SharedVoices.js';
 
 // Re-export IVoiceInfo for public API
 export type { IVoiceInfo } from './SharedVoices.js';
@@ -94,8 +94,10 @@ export const TTS_MODELS = {
     TTS_1_HD: 'tts-1-hd',
   },
   [Vendor.Google]: {
-    /** Gemini native TTS */
-    GEMINI_TTS: 'gemini-tts',
+    /** Gemini 2.5 Flash TTS (optimized for low latency) */
+    GEMINI_2_5_FLASH_TTS: 'gemini-2.5-flash-preview-tts',
+    /** Gemini 2.5 Pro TTS (optimized for quality) */
+    GEMINI_2_5_PRO_TTS: 'gemini-2.5-pro-preview-tts',
   },
 } as const;
 
@@ -211,30 +213,59 @@ export const TTS_MODEL_REGISTRY: Record<string, ITTSModelDescription> = {
 
   // ======================== Google ========================
 
-  'gemini-tts': {
-    name: 'gemini-tts',
-    displayName: 'Gemini TTS',
+  'gemini-2.5-flash-preview-tts': {
+    name: 'gemini-2.5-flash-preview-tts',
+    displayName: 'Gemini 2.5 Flash TTS',
     provider: Vendor.Google,
-    description: 'Google Gemini native text-to-speech',
+    description: 'Google Gemini 2.5 Flash TTS - optimized for low latency',
     isActive: true,
+    releaseDate: '2025-01-01',
     sources: {
-      documentation: 'https://ai.google.dev/gemini-api/docs/text-to-speech',
+      documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
       pricing: 'https://ai.google.dev/pricing',
-      lastVerified: '2026-01-24',
+      lastVerified: '2026-01-25',
     },
     capabilities: {
       voices: GEMINI_VOICES,
-      formats: AUDIO_FORMATS.GOOGLE_TTS,
-      languages: COMMON_LANGUAGES.CORE,
-      speed: { supported: true, min: 0.5, max: 2.0 },
+      formats: ['wav'] as const, // PCM output, 24kHz 16-bit mono
+      languages: [...GEMINI_TTS_LANGUAGES],
+      speed: { supported: false }, // Speed not directly configurable
       features: {
         streaming: false, // Not implementing streaming in v1
         ssml: false,
-        emotions: false,
+        emotions: true, // Supports affective dialogue
         voiceCloning: false,
         wordTimestamps: false,
       },
-      limits: { maxInputLength: 8000 },
+      limits: { maxInputLength: 32000 }, // 32k tokens
+    },
+  },
+
+  'gemini-2.5-pro-preview-tts': {
+    name: 'gemini-2.5-pro-preview-tts',
+    displayName: 'Gemini 2.5 Pro TTS',
+    provider: Vendor.Google,
+    description: 'Google Gemini 2.5 Pro TTS - optimized for quality',
+    isActive: true,
+    releaseDate: '2025-01-01',
+    sources: {
+      documentation: 'https://ai.google.dev/gemini-api/docs/speech-generation',
+      pricing: 'https://ai.google.dev/pricing',
+      lastVerified: '2026-01-25',
+    },
+    capabilities: {
+      voices: GEMINI_VOICES,
+      formats: ['wav'] as const, // PCM output, 24kHz 16-bit mono
+      languages: [...GEMINI_TTS_LANGUAGES],
+      speed: { supported: false }, // Speed not directly configurable
+      features: {
+        streaming: false, // Not implementing streaming in v1
+        ssml: false,
+        emotions: true, // Supports affective dialogue
+        voiceCloning: false,
+        wordTimestamps: false,
+      },
+      limits: { maxInputLength: 32000 }, // 32k tokens
     },
   },
 };

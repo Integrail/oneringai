@@ -1,4 +1,5 @@
 import EventEmitter$1, { EventEmitter } from 'eventemitter3';
+import { I as IProvider } from './IProvider-DBcefFfB.js';
 
 /**
  * Tool entities with blocking/non-blocking execution support
@@ -204,25 +205,6 @@ interface LLMResponse {
     metadata?: Record<string, string>;
 }
 type AgentResponse = LLMResponse;
-
-/**
- * Base provider interface
- */
-interface ProviderCapabilities {
-    text: boolean;
-    images: boolean;
-    videos: boolean;
-    audio: boolean;
-}
-interface IProvider {
-    readonly name: string;
-    readonly vendor?: string;
-    readonly capabilities: ProviderCapabilities;
-    /**
-     * Validate that the provider configuration is correct
-     */
-    validateConfig(): Promise<boolean>;
-}
 
 /**
  * Streaming event types for real-time LLM responses
@@ -1325,4 +1307,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { isStreamEvent as $, type AgenticLoopEvents as A, type BuiltInTool as B, type CircuitState as C, type ResponseCreatedEvent as D, ExecutionContext as E, type FunctionToolDefinition as F, type ResponseInProgressEvent as G, type HookConfig as H, type InputItem as I, type JSONSchema as J, type OutputTextDeltaEvent as K, type LLMResponse as L, type ModelCapabilities as M, type OutputTextDoneEvent as N, type OutputTextContent as O, type ProviderCapabilities as P, type ToolCallStartEvent as Q, type ReasoningItem as R, type StreamEvent as S, type ToolFunction as T, type ToolCallArgumentsDeltaEvent as U, type ToolCallArgumentsDoneEvent as V, type ToolExecutionStartEvent as W, type ToolExecutionDoneEvent as X, type IterationCompleteEvent$1 as Y, type ResponseCompleteEvent as Z, type ErrorEvent as _, type HistoryMode as a, isOutputTextDelta as a0, isToolCallArgumentsDelta as a1, isToolCallArgumentsDone as a2, isResponseComplete as a3, isErrorEvent as a4, ToolRegistry as a5, HookManager as a6, type AgenticLoopEventName as a7, type HookName as a8, type Hook as a9, type ModifyingHook as aa, type BeforeToolContext as ab, type AfterToolContext as ac, type ApproveToolContext as ad, type ToolModification as ae, type ApprovalResult as af, type IToolExecutor as ag, CircuitOpenError as ah, type CircuitBreakerConfig as ai, type CircuitBreakerEvents as aj, DEFAULT_CIRCUIT_BREAKER_CONFIG as ak, AgenticLoop as al, type AgenticLoopConfig as am, type ExecutionStartEvent as an, type ExecutionCompleteEvent as ao, type ToolStartEvent as ap, type ToolCompleteEvent as aq, type LLMRequestEvent as ar, type LLMResponseEvent as as, type AgentResponse as b, type ExecutionMetrics as c, type AuditEntry as d, type CircuitBreakerMetrics as e, type ITextProvider as f, type IProvider as g, type TokenUsage as h, type ToolCall as i, StreamEventType as j, CircuitBreaker as k, type TextGenerateOptions as l, MessageRole as m, ContentType as n, type Content as o, type InputTextContent as p, type InputImageContent as q, type ToolUseContent as r, type ToolResultContent as s, type Message as t, type OutputItem as u, type CompactionItem as v, ToolCallState as w, type Tool as x, type ToolResult as y, type ToolExecutionContext as z };
+export { isToolCallArgumentsDelta as $, type AgenticLoopEvents as A, type BuiltInTool as B, type CircuitState as C, type ResponseInProgressEvent as D, ExecutionContext as E, type FunctionToolDefinition as F, type OutputTextDeltaEvent as G, type HookConfig as H, type InputItem as I, type JSONSchema as J, type OutputTextDoneEvent as K, type LLMResponse as L, type ModelCapabilities as M, type ToolCallStartEvent as N, type OutputTextContent as O, type ToolCallArgumentsDeltaEvent as P, type ToolCallArgumentsDoneEvent as Q, type ReasoningItem as R, type StreamEvent as S, type ToolFunction as T, type ToolExecutionStartEvent as U, type ToolExecutionDoneEvent as V, type IterationCompleteEvent$1 as W, type ResponseCompleteEvent as X, type ErrorEvent as Y, isStreamEvent as Z, isOutputTextDelta as _, type HistoryMode as a, isToolCallArgumentsDone as a0, isResponseComplete as a1, isErrorEvent as a2, ToolRegistry as a3, HookManager as a4, type AgenticLoopEventName as a5, type HookName as a6, type Hook as a7, type ModifyingHook as a8, type BeforeToolContext as a9, type AfterToolContext as aa, type ApproveToolContext as ab, type ToolModification as ac, type ApprovalResult as ad, type IToolExecutor as ae, CircuitOpenError as af, type CircuitBreakerConfig as ag, type CircuitBreakerEvents as ah, DEFAULT_CIRCUIT_BREAKER_CONFIG as ai, AgenticLoop as aj, type AgenticLoopConfig as ak, type ExecutionStartEvent as al, type ExecutionCompleteEvent as am, type ToolStartEvent as an, type ToolCompleteEvent as ao, type LLMRequestEvent as ap, type LLMResponseEvent as aq, type AgentResponse as b, type ExecutionMetrics as c, type AuditEntry as d, type CircuitBreakerMetrics as e, type ITextProvider as f, type TokenUsage as g, type ToolCall as h, StreamEventType as i, CircuitBreaker as j, type TextGenerateOptions as k, MessageRole as l, ContentType as m, type Content as n, type InputTextContent as o, type InputImageContent as p, type ToolUseContent as q, type ToolResultContent as r, type Message as s, type OutputItem as t, type CompactionItem as u, ToolCallState as v, type Tool as w, type ToolResult as x, type ToolExecutionContext as y, type ResponseCreatedEvent as z };

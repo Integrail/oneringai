@@ -37,6 +37,9 @@ export type { TextToSpeechConfig } from './TextToSpeech.js';
 export { SpeechToText } from './SpeechToText.js';
 export type { SpeechToTextConfig } from './SpeechToText.js';
 
+// Image capabilities
+export { createImageProvider } from './createImageProvider.js';
+
 // Tool management
 export { ToolManager } from './ToolManager.js';
 export type {

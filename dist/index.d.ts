@@ -1,302 +1,10 @@
+import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ITokenStorage, S as StoredToken$1, d as ConnectorConfig, e as ConnectorConfigResult } from './ImageModel-BLaL8ioR.js';
+export { l as APIKeyConnectorAuth, B as AspectRatio, k as ConnectorAuth, m as IImageModelDescription, p as IMAGE_MODELS, q as IMAGE_MODEL_REGISTRY, E as ISourceLinks, x as ImageEditOptions, w as ImageGenerateOptions, g as ImageGeneration, h as ImageGenerationCreateOptions, n as ImageModelCapabilities, o as ImageModelPricing, z as ImageResponse, y as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, D as OutputFormat, Q as QualityLevel, j as SimpleGenerateOptions, f as VENDORS, v as calculateImageCost, t as getActiveImageModels, r as getImageModelInfo, s as getImageModelsByVendor, u as getImageModelsWithFeature, i as isVendor } from './ImageModel-BLaL8ioR.js';
 import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
 import { EventEmitter } from 'events';
-import { T as ToolFunction, A as AgenticLoopEvents, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as IProvider, h as TokenUsage, i as ToolCall, L as LLMResponse, j as StreamEventType, P as ProviderCapabilities, k as CircuitBreaker, l as TextGenerateOptions, M as ModelCapabilities, m as MessageRole } from './index-bng68u4f.js';
-export { ac as AfterToolContext, a7 as AgenticLoopEventName, af as ApprovalResult, ad as ApproveToolContext, ab as BeforeToolContext, B as BuiltInTool, ai as CircuitBreakerConfig, aj as CircuitBreakerEvents, ah as CircuitOpenError, v as CompactionItem, o as Content, n as ContentType, ak as DEFAULT_CIRCUIT_BREAKER_CONFIG, _ as ErrorEvent, F as FunctionToolDefinition, a9 as Hook, a6 as HookManager, a8 as HookName, ag as IToolExecutor, q as InputImageContent, p as InputTextContent, Y as IterationCompleteEvent, J as JSONSchema, t as Message, aa as ModifyingHook, u as OutputItem, O as OutputTextContent, K as OutputTextDeltaEvent, N as OutputTextDoneEvent, R as ReasoningItem, Z as ResponseCompleteEvent, D as ResponseCreatedEvent, G as ResponseInProgressEvent, x as Tool, U as ToolCallArgumentsDeltaEvent, V as ToolCallArgumentsDoneEvent, Q as ToolCallStartEvent, w as ToolCallState, z as ToolExecutionContext, X as ToolExecutionDoneEvent, W as ToolExecutionStartEvent, ae as ToolModification, a5 as ToolRegistry, y as ToolResult, s as ToolResultContent, r as ToolUseContent, a4 as isErrorEvent, a0 as isOutputTextDelta, a3 as isResponseComplete, $ as isStreamEvent, a1 as isToolCallArgumentsDelta, a2 as isToolCallArgumentsDone } from './index-bng68u4f.js';
-
-/**
- * Supported AI Vendors
- *
- * Use this enum instead of string literals for type safety.
- * These map to specific provider implementations.
- */
-declare const Vendor: {
-    readonly OpenAI: "openai";
-    readonly Anthropic: "anthropic";
-    readonly Google: "google";
-    readonly GoogleVertex: "google-vertex";
-    readonly Groq: "groq";
-    readonly Together: "together";
-    readonly Perplexity: "perplexity";
-    readonly Grok: "grok";
-    readonly DeepSeek: "deepseek";
-    readonly Mistral: "mistral";
-    readonly Ollama: "ollama";
-    readonly Custom: "custom";
-};
-type Vendor = (typeof Vendor)[keyof typeof Vendor];
-/**
- * All vendor values as array (useful for validation)
- */
-declare const VENDORS: ("openai" | "anthropic" | "google" | "google-vertex" | "groq" | "together" | "perplexity" | "grok" | "deepseek" | "mistral" | "ollama" | "custom")[];
-/**
- * Check if a string is a valid vendor
- */
-declare function isVendor(value: string): value is Vendor;
-
-/**
- * Connector - Represents authenticated connection to ANY API
- *
- * Connectors handle authentication for:
- * - AI providers (OpenAI, Anthropic, Google, etc.)
- * - External APIs (GitHub, Microsoft, Salesforce, etc.)
- *
- * This is the SINGLE source of truth for authentication.
- */
-
-/**
- * Connector authentication configuration
- * Supports OAuth 2.0, API keys, and JWT bearer tokens
- */
-type ConnectorAuth = OAuthConnectorAuth | APIKeyConnectorAuth | JWTConnectorAuth;
-/**
- * OAuth 2.0 authentication for connectors
- * Supports multiple OAuth flows
- */
-interface OAuthConnectorAuth {
-    type: 'oauth';
-    flow: 'authorization_code' | 'client_credentials' | 'jwt_bearer';
-    clientId: string;
-    clientSecret?: string;
-    tokenUrl: string;
-    authorizationUrl?: string;
-    redirectUri?: string;
-    scope?: string;
-    usePKCE?: boolean;
-    privateKey?: string;
-    privateKeyPath?: string;
-    issuer?: string;
-    subject?: string;
-    audience?: string;
-    refreshBeforeExpiry?: number;
-    storageKey?: string;
-}
-/**
- * Static API key authentication
- * For services like OpenAI, Anthropic, many SaaS APIs
- */
-interface APIKeyConnectorAuth {
-    type: 'api_key';
-    apiKey: string;
-    headerName?: string;
-    headerPrefix?: string;
-}
-/**
- * JWT Bearer token authentication
- * For service accounts (Google, Salesforce)
- */
-interface JWTConnectorAuth {
-    type: 'jwt';
-    privateKey: string;
-    privateKeyPath?: string;
-    tokenUrl: string;
-    clientId: string;
-    scope?: string;
-    issuer?: string;
-    subject?: string;
-    audience?: string;
-}
-/**
- * Complete connector configuration
- * Used for BOTH AI providers AND external APIs
- */
-interface ConnectorConfig {
-    name?: string;
-    vendor?: Vendor;
-    auth: ConnectorAuth;
-    displayName?: string;
-    description?: string;
-    baseURL?: string;
-    defaultModel?: string;
-    apiVersion?: string;
-    rateLimit?: {
-        requestsPerMinute?: number;
-        requestsPerDay?: number;
-    };
-    documentation?: string;
-    tags?: string[];
-    options?: {
-        timeout?: number;
-        maxRetries?: number;
-        organization?: string;
-        project?: string;
-        anthropicVersion?: string;
-        location?: string;
-        projectId?: string;
-        [key: string]: unknown;
-    };
-}
-/**
- * Result from ProviderConfigAgent
- * Includes setup instructions and environment variables
- */
-interface ConnectorConfigResult {
-    name: string;
-    config: ConnectorConfig;
-    setupInstructions: string;
-    envVariables: string[];
-    setupUrl?: string;
-}
-
-/**
- * Token storage interface (Clean Architecture - Domain Layer)
- * All implementations must encrypt tokens at rest
- */
-interface StoredToken$1 {
-    access_token: string;
-    refresh_token?: string;
-    expires_in: number;
-    token_type: string;
-    scope?: string;
-    obtained_at: number;
-}
-/**
- * Token storage interface
- * All implementations MUST encrypt tokens before storing
- */
-interface ITokenStorage {
-    /**
-     * Store token (must be encrypted by implementation)
-     *
-     * @param key - Unique identifier for this token
-     * @param token - Token data to store
-     */
-    storeToken(key: string, token: StoredToken$1): Promise<void>;
-    /**
-     * Retrieve token (must be decrypted by implementation)
-     *
-     * @param key - Unique identifier for the token
-     * @returns Decrypted token or null if not found
-     */
-    getToken(key: string): Promise<StoredToken$1 | null>;
-    /**
-     * Delete token
-     *
-     * @param key - Unique identifier for the token
-     */
-    deleteToken(key: string): Promise<void>;
-    /**
-     * Check if token exists
-     *
-     * @param key - Unique identifier for the token
-     * @returns True if token exists
-     */
-    hasToken(key: string): Promise<boolean>;
-}
-
-/**
- * Connector - The single source of truth for authentication
- *
- * Manages authenticated connections to:
- * - AI providers (OpenAI, Anthropic, Google, etc.)
- * - External APIs (GitHub, Salesforce, etc.)
- */
-
-/**
- * Connector class - represents a single authenticated connection
- */
-declare class Connector {
-    private static registry;
-    private static defaultStorage;
-    /**
-     * Create and register a new connector
-     * @param config - Must include `name` field
-     */
-    static create(config: ConnectorConfig & {
-        name: string;
-    }): Connector;
-    /**
-     * Get a connector by name
-     */
-    static get(name: string): Connector;
-    /**
-     * Check if a connector exists
-     */
-    static has(name: string): boolean;
-    /**
-     * List all registered connector names
-     */
-    static list(): string[];
-    /**
-     * Remove a connector
-     */
-    static remove(name: string): boolean;
-    /**
-     * Clear all connectors (useful for testing)
-     */
-    static clear(): void;
-    /**
-     * Set default token storage for OAuth connectors
-     */
-    static setDefaultStorage(storage: ITokenStorage): void;
-    /**
-     * Get all registered connectors
-     */
-    static listAll(): Connector[];
-    /**
-     * Get number of registered connectors
-     */
-    static size(): number;
-    /**
-     * Get connector descriptions formatted for tool parameters
-     * Useful for generating dynamic tool descriptions
-     */
-    static getDescriptionsForTools(): string;
-    /**
-     * Get connector info (for tools and documentation)
-     */
-    static getInfo(): Record<string, {
-        displayName: string;
-        description: string;
-        baseURL: string;
-    }>;
-    readonly name: string;
-    readonly vendor?: Vendor;
-    readonly config: ConnectorConfig;
-    private oauthManager?;
-    private disposed;
-    private constructor();
-    /**
-     * Human-readable display name
-     */
-    get displayName(): string;
-    /**
-     * API base URL for this connector
-     */
-    get baseURL(): string;
-    /**
-     * Get the API key (for api_key auth type)
-     */
-    getApiKey(): string;
-    /**
-     * Get the current access token (for OAuth, JWT, or API key)
-     * Handles automatic refresh if needed
-     */
-    getToken(userId?: string): Promise<string>;
-    /**
-     * Start OAuth authorization flow
-     * Returns the URL to redirect the user to
-     */
-    startAuth(userId?: string): Promise<string>;
-    /**
-     * Handle OAuth callback
-     * Call this after user is redirected back from OAuth provider
-     */
-    handleCallback(callbackUrl: string, userId?: string): Promise<void>;
-    /**
-     * Check if the connector has a valid token
-     */
-    hasValidToken(userId?: string): Promise<boolean>;
-    /**
-     * Get vendor-specific options from config
-     */
-    getOptions(): Record<string, unknown>;
-    /**
-     * Dispose of resources
-     */
-    dispose(): void;
-    private initOAuthManager;
-    private initJWTManager;
-}
+import { T as ToolFunction, A as AgenticLoopEvents, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as TokenUsage, h as ToolCall, L as LLMResponse, i as StreamEventType, j as CircuitBreaker, k as TextGenerateOptions, M as ModelCapabilities, l as MessageRole } from './index-DvvMwP4A.js';
+export { aa as AfterToolContext, a5 as AgenticLoopEventName, ad as ApprovalResult, ab as ApproveToolContext, a9 as BeforeToolContext, B as BuiltInTool, ag as CircuitBreakerConfig, ah as CircuitBreakerEvents, af as CircuitOpenError, u as CompactionItem, n as Content, m as ContentType, ai as DEFAULT_CIRCUIT_BREAKER_CONFIG, Y as ErrorEvent, F as FunctionToolDefinition, a7 as Hook, a4 as HookManager, a6 as HookName, ae as IToolExecutor, p as InputImageContent, o as InputTextContent, W as IterationCompleteEvent, J as JSONSchema, s as Message, a8 as ModifyingHook, t as OutputItem, O as OutputTextContent, G as OutputTextDeltaEvent, K as OutputTextDoneEvent, R as ReasoningItem, X as ResponseCompleteEvent, z as ResponseCreatedEvent, D as ResponseInProgressEvent, w as Tool, P as ToolCallArgumentsDeltaEvent, Q as ToolCallArgumentsDoneEvent, N as ToolCallStartEvent, v as ToolCallState, y as ToolExecutionContext, V as ToolExecutionDoneEvent, U as ToolExecutionStartEvent, ac as ToolModification, a3 as ToolRegistry, x as ToolResult, r as ToolResultContent, q as ToolUseContent, a2 as isErrorEvent, _ as isOutputTextDelta, a1 as isResponseComplete, Z as isStreamEvent, $ as isToolCallArgumentsDelta, a0 as isToolCallArgumentsDone } from './index-DvvMwP4A.js';
+import { I as IProvider, P as ProviderCapabilities } from './IProvider-DBcefFfB.js';
 
 /**
  * ToolManager - Dynamic tool management for agents
@@ -1013,80 +721,6 @@ declare class Agent extends EventEmitter$1<AgenticLoopEvents> implements IDispos
 declare function createProvider(connector: Connector): ITextProvider;
 
 /**
- * Shared types used across all multimodal capabilities
- * This file provides the foundation for Image, Audio, and Video model registries
- */
-
-/**
- * Aspect ratios - normalized across all visual modalities (images, video)
- */
-type AspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4' | '21:9' | '3:2' | '2:3';
-/**
- * Quality levels - normalized across vendors
- * Providers map these to vendor-specific quality settings
- */
-type QualityLevel = 'draft' | 'standard' | 'high' | 'ultra';
-/**
- * Audio output formats
- */
-type AudioFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm' | 'ogg';
-/**
- * Output format preference for media
- */
-type OutputFormat = 'url' | 'base64' | 'buffer';
-/**
- * Source links for model documentation and maintenance
- * Used to track where information came from and when it was last verified
- */
-interface ISourceLinks {
-    /** Official documentation URL */
-    documentation: string;
-    /** Pricing page URL */
-    pricing?: string;
-    /** API reference URL */
-    apiReference?: string;
-    /** Additional reference (e.g., blog post, announcement) */
-    additional?: string;
-    /** Last verified date (YYYY-MM-DD) */
-    lastVerified: string;
-}
-/**
- * Vendor-specific option schema for validation and documentation
- * Used to describe vendor-specific options that fall outside semantic options
- */
-interface VendorOptionSchema {
-    type: 'string' | 'number' | 'boolean' | 'enum' | 'array';
-    description: string;
-    required?: boolean;
-    enum?: string[];
-    min?: number;
-    max?: number;
-    default?: unknown;
-}
-/**
- * Base model description - shared by all registries
- * Every model registry (Image, TTS, STT, Video) extends this
- */
-interface IBaseModelDescription {
-    /** Model identifier (e.g., "dall-e-3", "tts-1") */
-    name: string;
-    /** Display name for UI (e.g., "DALL-E 3", "TTS-1") */
-    displayName: string;
-    /** Vendor/provider */
-    provider: Vendor;
-    /** Model description */
-    description?: string;
-    /** Whether the model is currently available */
-    isActive: boolean;
-    /** Release date (YYYY-MM-DD) */
-    releaseDate?: string;
-    /** Deprecation date if scheduled (YYYY-MM-DD) */
-    deprecationDate?: string;
-    /** Documentation/pricing links for maintenance */
-    sources: ISourceLinks;
-}
-
-/**
  * Shared voice definitions and language constants
  * Eliminates duplication across TTS model registries
  */
@@ -1298,8 +932,10 @@ declare const TTS_MODELS: {
         readonly TTS_1_HD: "tts-1-hd";
     };
     readonly google: {
-        /** Gemini native TTS */
-        readonly GEMINI_TTS: "gemini-tts";
+        /** Gemini 2.5 Flash TTS (optimized for low latency) */
+        readonly GEMINI_2_5_FLASH_TTS: "gemini-2.5-flash-preview-tts";
+        /** Gemini 2.5 Pro TTS (optimized for quality) */
+        readonly GEMINI_2_5_PRO_TTS: "gemini-2.5-pro-preview-tts";
     };
 };
 /**
@@ -1659,6 +1295,15 @@ declare class SpeechToText {
      */
     private getDefaultModel;
 }
+
+/**
+ * Factory functions for creating image providers
+ */
+
+/**
+ * Create an Image Generation provider from a connector
+ */
+declare function createImageProvider(connector: Connector): IImageProvider;
 
 /**
  * Task and Plan entities for TaskAgent
@@ -4144,9 +3789,6 @@ declare class ProviderError extends AIError {
     constructor(providerName: string, message: string, statusCode?: number, originalError?: Error);
 }
 
-/**
- * Provider configuration types
- */
 interface BaseProviderConfig {
     apiKey: string;
     baseURL?: string;
@@ -5909,4 +5551,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, type APIKeyConnectorAuth, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, type AspectRatio, type AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, type ConnectorAuth, type ConnectorConfig, type ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, type IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISourceLinks, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, type ITokenStorage, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JWTConnectorAuth, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthConnectorAuth, type OAuthFlow, OAuthManager, type OutputFormat, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type QualityLevel, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VENDORS, Vendor, type VendorOptionSchema, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, hasClipboardImage, isMetaTool, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };
+export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, Vendor, VendorOptionSchema, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, hasClipboardImage, isMetaTool, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };

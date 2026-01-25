@@ -7,7 +7,7 @@ import OpenAI from 'openai';
 import { BaseMediaProvider } from '../base/BaseMediaProvider.js';
 import type { ITextToSpeechProvider, TTSOptions, TTSResponse } from '../../../domain/interfaces/IAudioProvider.js';
 import type { ProviderCapabilities } from '../../../domain/interfaces/IProvider.js';
-import type { OpenAIConfig } from '../../../domain/types/ProviderConfig.js';
+import type { OpenAIMediaConfig } from '../../../domain/types/ProviderConfig.js';
 import type { IVoiceInfo } from '../../../domain/entities/SharedVoices.js';
 import { OPENAI_VOICES } from '../../../domain/entities/SharedVoices.js';
 import {
@@ -31,11 +31,11 @@ export class OpenAITTSProvider extends BaseMediaProvider implements ITextToSpeec
 
   private client: OpenAI;
 
-  constructor(config: OpenAIConfig) {
-    super(config);
+  constructor(config: OpenAIMediaConfig) {
+    super({ apiKey: config.auth.apiKey, ...config });
 
     this.client = new OpenAI({
-      apiKey: config.auth.type === 'api_key' ? config.auth.apiKey : undefined,
+      apiKey: config.auth.apiKey,
       baseURL: config.baseURL,
       organization: config.organization,
       timeout: config.timeout ?? 60000,

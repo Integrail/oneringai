@@ -2,12 +2,32 @@
  * Provider configuration types
  */
 
+/**
+ * Authentication configuration for API key auth
+ */
+export interface APIKeyAuth {
+  type: 'api_key';
+  apiKey: string;
+}
+
 export interface BaseProviderConfig {
   apiKey: string;
   baseURL?: string;
   organization?: string;
   timeout?: number; // Request timeout in ms
   maxRetries?: number; // Max retry attempts
+}
+
+/**
+ * Extended OpenAI config for media providers (TTS, STT, Image)
+ * Supports both legacy apiKey and new auth structure
+ */
+export interface OpenAIMediaConfig {
+  auth: APIKeyAuth;
+  baseURL?: string;
+  organization?: string;
+  timeout?: number;
+  maxRetries?: number;
 }
 
 export interface OpenAIConfig extends BaseProviderConfig {
