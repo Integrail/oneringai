@@ -1,7 +1,7 @@
 # @oneringai/agents - Complete User Guide
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-24
+**Last Updated:** 2026-01-25
 
 A comprehensive guide to using all features of the @oneringai/agents library.
 
@@ -22,11 +22,13 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 11. [Dynamic Tool Management](#dynamic-tool-management)
 12. [Multimodal (Vision)](#multimodal-vision)
 13. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
-14. [Streaming](#streaming)
-15. [OAuth for External APIs](#oauth-for-external-apis)
-16. [Model Registry](#model-registry)
-17. [Advanced Features](#advanced-features)
-18. [Production Deployment](#production-deployment)
+14. [Image Generation](#image-generation) **NEW**
+15. [Video Generation](#video-generation) **NEW**
+16. [Streaming](#streaming)
+17. [OAuth for External APIs](#oauth-for-external-apis)
+18. [Model Registry](#model-registry)
+19. [Advanced Features](#advanced-features)
+20. [Production Deployment](#production-deployment)
 
 ---
 
@@ -3146,6 +3148,328 @@ console.log(`5 HD images: $${hdCost}`);  // $0.40
 // Google Imagen
 const imagenCost = calculateImageCost('imagen-4.0-generate-001', 4);
 console.log(`4 Imagen images: $${imagenCost}`);  // $0.16
+```
+
+---
+
+## Video Generation
+
+The library provides comprehensive video generation capabilities with support for OpenAI (Sora) and Google (Veo). Video generation is **asynchronous** - you start a job and poll for completion.
+
+### Basic Usage
+
+```typescript
+import { Connector, VideoGeneration, Vendor } from '@oneringai/agents';
+import * as fs from 'fs/promises';
+
+// Setup connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Create video generator
+const videoGen = VideoGeneration.create({ connector: 'openai' });
+
+// Start video generation (returns immediately with job ID)
+const job = await videoGen.generate({
+  prompt: 'A cinematic shot of a sunrise over mountains with clouds rolling',
+  model: 'sora-2',
+  duration: 8,           // 8 seconds
+  resolution: '1280x720', // 720p landscape
+});
+
+console.log('Job started:', job.jobId);
+console.log('Status:', job.status);  // 'pending'
+
+// Wait for completion (polls every 10 seconds, default 10-minute timeout)
+const result = await videoGen.waitForCompletion(job.jobId);
+
+// Download the completed video
+const videoBuffer = await videoGen.download(job.jobId);
+await fs.writeFile('./output.mp4', videoBuffer);
+```
+
+### Understanding the Async Model
+
+Video generation takes significant time (often minutes). The API uses an async job model:
+
+```typescript
+// 1. Start generation - returns immediately
+const job = await videoGen.generate({ prompt: '...', duration: 8 });
+// job.status = 'pending'
+
+// 2. Poll for status (optional - if you want progress updates)
+const status = await videoGen.getStatus(job.jobId);
+// status.status = 'processing', status.progress = 45
+
+// 3. Wait for completion (blocks until done or timeout)
+const result = await videoGen.waitForCompletion(job.jobId);
+// result.status = 'completed'
+
+// 4. Download the video
+const buffer = await videoGen.download(job.jobId);
+```
+
+Or use the convenience method:
+
+```typescript
+// Generate and wait in one call
+const result = await videoGen.generateAndWait({
+  prompt: 'A butterfly flying through a garden',
+  duration: 4,
+});
+
+const buffer = await videoGen.download(result.jobId);
+```
+
+### Video Response Structure
+
+The API returns a `VideoResponse` object:
+
+```typescript
+interface VideoResponse {
+  jobId: string;              // Unique job identifier
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  created: number;            // Unix timestamp
+  progress?: number;          // 0-100 percentage (when processing)
+  video?: {
+    url?: string;             // Download URL (if available)
+    duration?: number;        // Actual duration in seconds
+    resolution?: string;      // Actual resolution
+    format?: string;          // 'mp4' typically
+  };
+  error?: string;             // Error message if failed
+}
+```
+
+### Viewing Your Generated Video
+
+After downloading, the video is a standard MP4 file that can be:
+
+```typescript
+// Save to file
+await fs.writeFile('./output.mp4', videoBuffer);
+
+// Open with default player (Node.js)
+import { exec } from 'child_process';
+exec('open ./output.mp4');  // macOS
+exec('xdg-open ./output.mp4');  // Linux
+exec('start ./output.mp4');  // Windows
+
+// Serve via web server
+import express from 'express';
+const app = express();
+app.get('/video', (req, res) => {
+  res.setHeader('Content-Type', 'video/mp4');
+  res.send(videoBuffer);
+});
+
+// Convert to base64 for embedding
+const base64 = videoBuffer.toString('base64');
+const dataUrl = `data:video/mp4;base64,${base64}`;
+```
+
+### OpenAI Sora
+
+```typescript
+// Sora 2 (standard quality, good value)
+const result = await videoGen.generate({
+  prompt: 'A futuristic city at sunset with flying cars',
+  model: 'sora-2',
+  duration: 8,              // 4, 8, or 12 seconds
+  resolution: '1280x720',   // 720p landscape
+  seed: 42,                 // For reproducibility
+});
+
+// Sora 2 Pro (higher quality, more options)
+const proResult = await videoGen.generate({
+  prompt: 'A photorealistic ocean wave crashing',
+  model: 'sora-2-pro',
+  duration: 12,
+  resolution: '1920x1080',  // Full HD
+  seed: 42,
+});
+
+// Image-to-video (animate a still image)
+const imageBuffer = await fs.readFile('./photo.jpg');
+const animated = await videoGen.generate({
+  prompt: 'Gentle camera pan across the landscape',
+  image: imageBuffer,       // Reference image
+  model: 'sora-2',
+  duration: 4,
+});
+```
+
+### Google Veo
+
+```typescript
+// Setup Google connector
+Connector.create({
+  name: 'google',
+  vendor: Vendor.Google,
+  auth: { type: 'api_key', apiKey: process.env.GOOGLE_API_KEY! },
+});
+
+const googleVideo = VideoGeneration.create({ connector: 'google' });
+
+// Veo 2.0 (budget-friendly at $0.03/sec)
+const veo2 = await googleVideo.generate({
+  prompt: 'A colorful butterfly landing on a flower',
+  model: 'veo-2.0-generate-001',
+  duration: 5,
+  vendorOptions: {
+    negativePrompt: 'blurry, low quality',  // What to avoid
+  },
+});
+
+// Veo 3.0 (with audio support)
+const veo3 = await googleVideo.generate({
+  prompt: 'A thunderstorm over a city with lightning',
+  model: 'veo-3-generate-preview',
+  duration: 8,
+  vendorOptions: {
+    personGeneration: 'dont_allow',  // Safety setting
+  },
+});
+
+// Veo 3.1 (latest features, 4K support)
+const veo31 = await googleVideo.generate({
+  prompt: 'A drone shot flying over mountains',
+  model: 'veo-3.1-generate-preview',
+  duration: 8,
+  resolution: '4k',
+});
+
+// Veo 3.1 Fast (optimized for speed)
+const fast = await googleVideo.generate({
+  prompt: 'Simple animation of bouncing balls',
+  model: 'veo-3.1-fast-generate-preview',
+  duration: 4,
+});
+```
+
+### Video Extension
+
+Extend an existing video (not all models support this):
+
+```typescript
+const videoGen = VideoGeneration.create({ connector: 'openai' });
+
+// First, create a video
+const original = await videoGen.generateAndWait({
+  prompt: 'A rocket launching',
+  duration: 4,
+});
+
+// Download the original
+const originalBuffer = await videoGen.download(original.jobId);
+
+// Extend it
+const extended = await videoGen.extend({
+  video: originalBuffer,
+  prompt: 'The rocket continues into space',
+  extendDuration: 4,        // Add 4 more seconds
+  direction: 'end',         // Extend from the end
+});
+
+await videoGen.waitForCompletion(extended.jobId);
+```
+
+### Available Models
+
+#### OpenAI Sora Models
+
+| Model | Features | Durations | Resolutions | Price/Second |
+|-------|----------|-----------|-------------|--------------|
+| `sora-2` | Text/image-to-video, audio, seed | 4, 8, 12s | 720p, custom | $0.15 |
+| `sora-2-pro` | + HD, upscaling, style control | 4, 8, 12s | 720p-1080p | $0.40 |
+
+#### Google Veo Models
+
+| Model | Features | Durations | Resolutions | Price/Second |
+|-------|----------|-----------|-------------|--------------|
+| `veo-2.0-generate-001` | Image-to-video, negative prompts | 5-8s | 768x1408 | $0.03 |
+| `veo-3-generate-preview` | + Audio, extension, style | 4-8s | 720p-1080p | $0.75 |
+| `veo-3.1-fast-generate-preview` | Fast inference, audio | 4-8s | 720p | $0.75 |
+| `veo-3.1-generate-preview` | Full features, 4K | 4-8s | 720p-4K | $0.75 |
+
+### Model Introspection
+
+```typescript
+// List available models
+const models = await videoGen.listModels();
+console.log('Available models:', models);
+
+// Get model information
+const info = videoGen.getModelInfo('sora-2');
+console.log('Durations:', info.capabilities.durations);       // [4, 8, 12]
+console.log('Resolutions:', info.capabilities.resolutions);   // ['720x1280', ...]
+console.log('Has audio:', info.capabilities.audio);           // true
+console.log('Image-to-video:', info.capabilities.imageToVideo); // true
+console.log('Style control:', info.capabilities.features.styleControl); // false
+```
+
+### Cost Estimation
+
+```typescript
+import { calculateVideoCost } from '@oneringai/agents';
+
+// Sora 2: $0.15/second
+const soraCost = calculateVideoCost('sora-2', 8);  // 8 seconds
+console.log(`Sora 2 (8s): $${soraCost}`);  // $1.20
+
+// Sora 2 Pro: $0.40/second
+const proCost = calculateVideoCost('sora-2-pro', 12);  // 12 seconds
+console.log(`Sora 2 Pro (12s): $${proCost}`);  // $4.80
+
+// Veo 2.0: $0.03/second (budget option)
+const veo2Cost = calculateVideoCost('veo-2.0-generate-001', 8);
+console.log(`Veo 2.0 (8s): $${veo2Cost}`);  // $0.24
+
+// Veo 3.1: $0.75/second
+const veo3Cost = calculateVideoCost('veo-3.1-generate-preview', 8);
+console.log(`Veo 3.1 (8s): $${veo3Cost}`);  // $6.00
+```
+
+### Error Handling
+
+```typescript
+try {
+  const job = await videoGen.generate({
+    prompt: 'A video',
+    duration: 8,
+  });
+
+  const result = await videoGen.waitForCompletion(job.jobId, 300000); // 5 min timeout
+
+  if (result.status === 'completed') {
+    const buffer = await videoGen.download(result.jobId);
+    await fs.writeFile('./output.mp4', buffer);
+  }
+} catch (error) {
+  if (error.message.includes('timed out')) {
+    console.error('Video generation took too long');
+  } else if (error.message.includes('failed')) {
+    console.error('Video generation failed:', error.message);
+  } else if (error.message.includes('policy')) {
+    console.error('Content policy violation');
+  } else {
+    console.error('Error:', error.message);
+  }
+}
+```
+
+### Job Management
+
+```typescript
+// Cancel a pending job
+const job = await videoGen.generate({ prompt: '...', duration: 8 });
+
+// Changed your mind? Cancel it
+const cancelled = await videoGen.cancel(job.jobId);
+console.log('Cancelled:', cancelled);  // true
 ```
 
 ---

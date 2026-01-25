@@ -5,7 +5,7 @@ This document provides context for AI assistants (like Claude) to continue devel
 ## Project Overview
 
 **Name**: `@oneringai/agents`
-**Purpose**: Unified AI agent library with multi-vendor support for text generation, image analysis, audio (TTS/STT), and agentic workflows
+**Purpose**: Unified AI agent library with multi-vendor support for text generation, image/video generation, audio (TTS/STT), and agentic workflows
 **Language**: TypeScript (strict mode)
 **Runtime**: Node.js 18+
 **Package Type**: ESM (ES Modules)
@@ -391,6 +391,74 @@ console.log(`Cost: $${cost}`);  // $0.40
 - **OpenAI**: `dall-e-3`, `dall-e-2`, `gpt-image-1`
 - **Google**: `imagen-4.0-generate-001`, `imagen-4.0-ultra-generate-001`, `imagen-4.0-fast-generate-001`
 
+### Video Generation (NEW)
+
+#### VideoGeneration (`src/capabilities/video/VideoGeneration.ts`)
+
+High-level video generation with OpenAI Sora and Google Veo:
+
+```typescript
+import { VideoGeneration } from '@oneringai/agents';
+
+const videoGen = VideoGeneration.create({ connector: 'openai' });
+
+// Start video generation (async - returns job)
+const job = await videoGen.generate({
+  prompt: 'A cinematic shot of a sunrise over mountains',
+  model: 'sora-2',
+  duration: 8,
+  resolution: '1280x720',
+});
+
+// Wait for completion (polls every 10s)
+const result = await videoGen.waitForCompletion(job.jobId);
+
+// Download the video
+const videoBuffer = await videoGen.download(job.jobId);
+await fs.writeFile('./output.mp4', videoBuffer);
+
+// Or use convenience method
+const completed = await videoGen.generateAndWait({
+  prompt: 'A butterfly flying',
+  duration: 4,
+});
+
+// Google Veo
+const googleVideo = VideoGeneration.create({ connector: 'google' });
+const veoJob = await googleVideo.generate({
+  prompt: 'A thunderstorm over a city',
+  model: 'veo-3.1-generate-preview',
+  duration: 8,
+  vendorOptions: {
+    negativePrompt: 'blurry, low quality',
+  },
+});
+```
+
+#### Video Model Registry (`src/domain/entities/VideoModel.ts`)
+
+```typescript
+import { getVideoModelInfo, VIDEO_MODELS, Vendor, calculateVideoCost } from '@oneringai/agents';
+
+// Access model constants
+const sora = VIDEO_MODELS[Vendor.OpenAI].SORA_2;  // 'sora-2'
+const veo = VIDEO_MODELS[Vendor.Google].VEO_3_1;  // 'veo-3.1-generate-preview'
+
+// Get model info
+const info = getVideoModelInfo('sora-2');
+console.log(info.capabilities.durations);  // [4, 8, 12]
+console.log(info.capabilities.audio);  // true
+console.log(info.capabilities.imageToVideo);  // true
+
+// Calculate cost
+const cost = calculateVideoCost('sora-2', 8);  // 8 seconds
+console.log(`Cost: $${cost}`);  // $1.20
+```
+
+**Available Video Models:**
+- **OpenAI**: `sora-2`, `sora-2-pro`
+- **Google**: `veo-2.0-generate-001`, `veo-3-generate-preview`, `veo-3.1-fast-generate-preview`, `veo-3.1-generate-preview`
+
 ## Directory Structure
 
 ```
@@ -406,6 +474,7 @@ src/
 │   ├── createProvider.ts             # Provider factory (text)
 │   ├── createAudioProvider.ts        # Provider factory (audio)
 │   ├── createImageProvider.ts        # Provider factory (image)
+│   ├── createVideoProvider.ts        # Provider factory (video)
 │   ├── TextToSpeech.ts               # TTS capability class
 │   ├── SpeechToText.ts               # STT capability class
 │   └── context/                      # Universal context management
@@ -427,6 +496,7 @@ src/
 │   │   ├── TTSModel.ts               # TTS model registry
 │   │   ├── STTModel.ts               # STT model registry
 │   │   ├── ImageModel.ts             # Image model registry
+│   │   ├── VideoModel.ts             # Video model registry
 │   │   ├── SharedVoices.ts           # Voice/language constants
 │   │   ├── RegistryUtils.ts          # Generic registry helpers
 │   │   ├── Task.ts                   # Task & Plan entities
@@ -435,7 +505,8 @@ src/
 │   ├── interfaces/                   # Contracts
 │   │   ├── IProvider.ts
 │   │   ├── ITextProvider.ts
-│   │   ├── IAudioProvider.ts         # NEW: TTS/STT interfaces
+│   │   ├── IAudioProvider.ts         # TTS/STT interfaces
+│   │   ├── IVideoProvider.ts         # Video generation interface
 │   │   ├── IToolExecutor.ts
 │   │   ├── IMemoryStorage.ts
 │   │   └── IToolContext.ts
@@ -456,11 +527,14 @@ src/
 │   │   ├── PlanningAgent.ts          # AI-driven planning
 │   │   ├── memoryTools.ts            # Built-in memory tools
 │   │   └── contextTools.ts           # Context inspection tools
-│   └── universalAgent/               # NEW: Universal agent
-│       ├── UniversalAgent.ts         # Main unified agent
-│       ├── ModeManager.ts            # Mode state machine
-│       ├── metaTools.ts              # Meta-tools for mode transitions
-│       ├── types.ts                  # Type definitions
+│   ├── universalAgent/               # Universal agent
+│   │   ├── UniversalAgent.ts         # Main unified agent
+│   │   ├── ModeManager.ts            # Mode state machine
+│   │   ├── metaTools.ts              # Meta-tools for mode transitions
+│   │   ├── types.ts                  # Type definitions
+│   │   └── index.ts                  # Exports
+│   └── video/                        # Video generation capability
+│       ├── VideoGeneration.ts        # High-level video API
 │       └── index.ts                  # Exports
 ├── infrastructure/                   # Infrastructure implementations
 │   ├── providers/                    # LLM providers
@@ -468,10 +542,16 @@ src/
 │   │   │   └── BaseMediaProvider.ts  # Circuit breaker, logging, metrics
 │   │   ├── openai/
 │   │   │   ├── OpenAITextProvider.ts
-│   │   │   ├── OpenAITTSProvider.ts  # NEW: TTS
-│   │   │   └── OpenAISTTProvider.ts  # NEW: STT
+│   │   │   ├── OpenAITTSProvider.ts  # TTS
+│   │   │   ├── OpenAISTTProvider.ts  # STT
+│   │   │   ├── OpenAIImageProvider.ts # Image generation
+│   │   │   └── OpenAISoraProvider.ts # Video generation
 │   │   ├── anthropic/
 │   │   ├── google/
+│   │   │   ├── GoogleTextProvider.ts
+│   │   │   ├── GoogleTTSProvider.ts  # TTS
+│   │   │   ├── GoogleImagenProvider.ts # Image generation
+│   │   │   └── GoogleVeoProvider.ts  # Video generation
 │   │   └── generic/                  # OpenAI-compatible
 │   ├── context/                      # NEW: Context infrastructure
 │   │   ├── providers/                # Context providers
@@ -1024,24 +1104,27 @@ These are handled internally and don't require manual implementation.
 5. `src/core/createProvider.ts` - Provider factory (text)
 6. `src/core/createAudioProvider.ts` - Provider factory (audio)
 7. `src/core/createImageProvider.ts` - Provider factory (image)
-8. `src/core/TextToSpeech.ts` - TTS capability class
-9. `src/core/SpeechToText.ts` - STT capability class
-10. `src/core/Vendor.ts` - Vendor enum
-11. `src/core/context/` - Universal context management
-12. `src/domain/entities/Model.ts` - LLM model registry (23+ models)
-13. `src/domain/entities/TTSModel.ts` - TTS model registry
-14. `src/domain/entities/STTModel.ts` - STT model registry
-15. `src/domain/entities/ImageModel.ts` - Image model registry
-16. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
-17. `src/capabilities/taskAgent/` - Task agent implementation
-18. `src/capabilities/universalAgent/` - Universal agent
-19. `src/capabilities/images/` - Image generation capability
-20. `src/infrastructure/providers/` - LLM, audio, and image provider implementations
-21. `src/infrastructure/context/` - Context strategies, compactors, providers
-22. `src/infrastructure/storage/` - Session and data storage
+8. `src/core/createVideoProvider.ts` - Provider factory (video)
+9. `src/core/TextToSpeech.ts` - TTS capability class
+10. `src/core/SpeechToText.ts` - STT capability class
+11. `src/core/Vendor.ts` - Vendor enum
+12. `src/core/context/` - Universal context management
+13. `src/domain/entities/Model.ts` - LLM model registry (23+ models)
+14. `src/domain/entities/TTSModel.ts` - TTS model registry
+15. `src/domain/entities/STTModel.ts` - STT model registry
+16. `src/domain/entities/ImageModel.ts` - Image model registry
+17. `src/domain/entities/VideoModel.ts` - Video model registry (6 models)
+18. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
+19. `src/capabilities/taskAgent/` - Task agent implementation
+20. `src/capabilities/universalAgent/` - Universal agent
+21. `src/capabilities/images/` - Image generation capability
+22. `src/capabilities/video/` - Video generation capability
+23. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
+24. `src/infrastructure/context/` - Context strategies, compactors, providers
+25. `src/infrastructure/storage/` - Session and data storage
 
 ---
 
 **Version**: 0.2.0
-**Last Updated**: 2026-01-24
+**Last Updated**: 2026-01-25
 **Architecture**: Connector-First (v2)
