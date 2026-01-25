@@ -59,7 +59,10 @@
     "example:provider-config": "tsx examples/provider-config-generator.ts",
     "example:task-agent": "tsx examples/task-agent-basic.ts",
     "example:task-agent-demo": "tsx examples/task-agent-demo.ts",
-    "example:logging": "tsx examples/logging-demo.ts"
+    "example:logging": "tsx examples/logging-demo.ts",
+    "docs": "tsx scripts/generate-api-docs.ts --mode public",
+    "docs:public": "tsx scripts/generate-api-docs.ts --mode public",
+    "docs:full": "mkdir -p docs && tsx scripts/generate-api-docs.ts --mode full"
   },
   "keywords": [
     "ai",
@@ -96,6 +99,7 @@
     "@types/node": "^20.11.0",
     "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^8.56.0",
+    "ts-morph": "^27.0.2",
     "tsup": "^8.0.1",
     "tsx": "^4.21.0",
     "typescript": "^5.3.3",
