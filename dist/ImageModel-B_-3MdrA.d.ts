@@ -1,4 +1,4 @@
-import { I as IProvider } from './IProvider-DBcefFfB.cjs';
+import { I as IProvider } from './IProvider-BP49c93d.js';
 
 /**
  * Supported AI Vendors

@@ -1,6 +1,6 @@
 # @oneringai/agents
 
-> **A unified AI agent library with multi-provider support for text generation, image analysis, audio (TTS/STT), and agentic workflows.**
+> **A unified AI agent library with multi-provider support for text generation, image/video generation, audio (TTS/STT), and agentic workflows.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue.svg)](https://www.typescriptlang.org/)
@@ -11,7 +11,9 @@
 - ✨ **Unified API** - One interface for 10+ AI providers (OpenAI, Anthropic, Google, Groq, DeepSeek, and more)
 - 🔑 **Connector-First Architecture** - Single auth system with support for multiple keys per vendor
 - 📊 **Model Registry** - Complete metadata for 23+ latest (2026) models with pricing and features
-- 🎤 **Audio Capabilities** - NEW: Text-to-Speech (TTS) and Speech-to-Text (STT) with OpenAI and Groq
+- 🎤 **Audio Capabilities** - Text-to-Speech (TTS) and Speech-to-Text (STT) with OpenAI and Groq
+- 🖼️ **Image Generation** - DALL-E 3, gpt-image-1, Google Imagen 4 with editing and variations
+- 🎬 **Video Generation** - NEW: OpenAI Sora 2 and Google Veo 3 for AI video creation
 - 🤖 **Universal Agent** - Unified agent combining chat, planning, and execution in one interface
 - 🎛️ **Dynamic Tool Management** - Enable/disable tools at runtime, namespaces, priority-based selection
 - 💾 **Session Persistence** - Save and resume conversations for all agent types
@@ -157,21 +159,54 @@ const googleResult = await googleGen.generate({
 });
 ```
 
+### Video Generation (NEW)
+
+```typescript
+import { VideoGeneration } from '@oneringai/agents';
+
+// OpenAI Sora
+const videoGen = VideoGeneration.create({ connector: 'openai' });
+
+// Start video generation (async - returns a job)
+const job = await videoGen.generate({
+  prompt: 'A cinematic shot of a sunrise over mountains',
+  model: 'sora-2',
+  duration: 8,
+  resolution: '1280x720',
+});
+
+// Wait for completion
+const result = await videoGen.waitForCompletion(job.jobId);
+
+// Download the video
+const videoBuffer = await videoGen.download(job.jobId);
+await fs.writeFile('./output.mp4', videoBuffer);
+
+// Google Veo
+const googleVideo = VideoGeneration.create({ connector: 'google' });
+
+const veoJob = await googleVideo.generate({
+  prompt: 'A butterfly flying through a garden',
+  model: 'veo-3.0-generate-001',
+  duration: 8,
+});
+```
+
 ## Supported Providers
 
-| Provider | Text | Vision | TTS | STT | Image | Tools | Context |
-|----------|------|--------|-----|-----|-------|-------|---------|
-| **OpenAI** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 128K |
-| **Anthropic (Claude)** | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | 200K |
-| **Google (Gemini)** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | 1M |
-| **Google Vertex AI** | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | 1M |
-| **Grok (xAI)** | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | 128K |
-| **Groq** | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | 128K |
-| **Together AI** | ✅ | Some | ❌ | ❌ | ❌ | ✅ | 128K |
-| **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 64K |
-| **Mistral** | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 32K |
-| **Ollama** | ✅ | Varies | ❌ | ❌ | ❌ | ✅ | Varies |
-| **Custom** | ✅ | Varies | ❌ | ❌ | ❌ | ✅ | Varies |
+| Provider | Text | Vision | TTS | STT | Image | Video | Tools | Context |
+|----------|------|--------|-----|-----|-------|-------|-------|---------|
+| **OpenAI** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 128K |
+| **Anthropic (Claude)** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 200K |
+| **Google (Gemini)** | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | 1M |
+| **Google Vertex AI** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 1M |
+| **Grok (xAI)** | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
+| **Groq** | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | 128K |
+| **Together AI** | ✅ | Some | ❌ | ❌ | ❌ | ❌ | ✅ | 128K |
+| **DeepSeek** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 64K |
+| **Mistral** | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | 32K |
+| **Ollama** | ✅ | Varies | ❌ | ❌ | ❌ | ❌ | ✅ | Varies |
+| **Custom** | ✅ | Varies | ❌ | ❌ | ❌ | ❌ | ✅ | Varies |
 
 ## Key Features
 

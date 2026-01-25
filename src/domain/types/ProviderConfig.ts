@@ -30,6 +30,17 @@ export interface OpenAIMediaConfig {
   maxRetries?: number;
 }
 
+/**
+ * Extended Google config for media providers (TTS, Image, Video)
+ * Supports auth structure consistent with other media configs
+ */
+export interface GoogleMediaConfig {
+  auth: APIKeyAuth;
+  baseURL?: string;
+  timeout?: number;
+  maxRetries?: number;
+}
+
 export interface OpenAIConfig extends BaseProviderConfig {
   organization?: string;
   project?: string;

@@ -39,6 +39,14 @@ export { ImageGeneration } from './capabilities/images/index.js';
 export type { ImageGenerationCreateOptions, SimpleGenerateOptions } from './capabilities/images/index.js';
 export { createImageProvider } from './core/index.js';
 
+// Video Capabilities
+export { VideoGeneration } from './capabilities/video/index.js';
+export type {
+  VideoGenerationCreateOptions,
+  SimpleVideoGenerateOptions,
+} from './capabilities/video/index.js';
+export { createVideoProvider } from './core/createVideoProvider.js';
+
 // Tool Management (Dynamic)
 export { ToolManager } from './core/index.js';
 export type {
@@ -279,6 +287,19 @@ export {
   calculateImageCost,
 } from './domain/entities/ImageModel.js';
 
+// Video Model Registry
+export type { IVideoModelDescription, VideoModelCapabilities, VideoModelPricing } from './domain/entities/VideoModel.js';
+export {
+  VIDEO_MODELS,
+  VIDEO_MODEL_REGISTRY,
+  getVideoModelInfo,
+  getVideoModelsByVendor,
+  getActiveVideoModels,
+  getVideoModelsWithFeature,
+  getVideoModelsWithAudio,
+  calculateVideoCost,
+} from './domain/entities/VideoModel.js';
+
 // ============ Streaming ============
 export { StreamEventType } from './domain/entities/StreamEvent.js';
 export type {
@@ -371,6 +392,16 @@ export type {
   ImageVariationOptions,
   ImageResponse,
 } from './domain/interfaces/IImageProvider.js';
+
+// Video Interfaces
+export type {
+  IVideoProvider,
+  VideoGenerateOptions,
+  VideoExtendOptions,
+  VideoResponse,
+  VideoJob,
+  VideoStatus,
+} from './domain/interfaces/IVideoProvider.js';
 
 // Base classes for custom providers
 export { BaseProvider } from './infrastructure/providers/base/BaseProvider.js';

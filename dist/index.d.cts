@@ -1,10 +1,10 @@
-import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ITokenStorage, S as StoredToken$1, d as ConnectorConfig, e as ConnectorConfigResult } from './ImageModel-DLTe24fd.cjs';
-export { l as APIKeyConnectorAuth, B as AspectRatio, k as ConnectorAuth, m as IImageModelDescription, p as IMAGE_MODELS, q as IMAGE_MODEL_REGISTRY, E as ISourceLinks, x as ImageEditOptions, w as ImageGenerateOptions, g as ImageGeneration, h as ImageGenerationCreateOptions, n as ImageModelCapabilities, o as ImageModelPricing, z as ImageResponse, y as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, D as OutputFormat, Q as QualityLevel, j as SimpleGenerateOptions, f as VENDORS, v as calculateImageCost, t as getActiveImageModels, r as getImageModelInfo, s as getImageModelsByVendor, u as getImageModelsWithFeature, i as isVendor } from './ImageModel-DLTe24fd.cjs';
+import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ITokenStorage, S as StoredToken$1, d as ConnectorConfig, e as ConnectorConfigResult } from './ImageModel-16gWe_rH.cjs';
+export { l as APIKeyConnectorAuth, B as AspectRatio, k as ConnectorAuth, m as IImageModelDescription, p as IMAGE_MODELS, q as IMAGE_MODEL_REGISTRY, E as ISourceLinks, x as ImageEditOptions, w as ImageGenerateOptions, g as ImageGeneration, h as ImageGenerationCreateOptions, n as ImageModelCapabilities, o as ImageModelPricing, z as ImageResponse, y as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, D as OutputFormat, Q as QualityLevel, j as SimpleGenerateOptions, f as VENDORS, v as calculateImageCost, t as getActiveImageModels, r as getImageModelInfo, s as getImageModelsByVendor, u as getImageModelsWithFeature, i as isVendor } from './ImageModel-16gWe_rH.cjs';
 import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
 import { EventEmitter } from 'events';
-import { T as ToolFunction, A as AgenticLoopEvents, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as TokenUsage, h as ToolCall, L as LLMResponse, i as StreamEventType, j as CircuitBreaker, k as TextGenerateOptions, M as ModelCapabilities, l as MessageRole } from './index-BqriIwgg.cjs';
-export { ab as AfterToolContext, a6 as AgenticLoopEventName, ae as ApprovalResult, ac as ApproveToolContext, aa as BeforeToolContext, B as BuiltInTool, ah as CircuitBreakerConfig, ai as CircuitBreakerEvents, ag as CircuitOpenError, u as CompactionItem, n as Content, m as ContentType, aj as DEFAULT_CIRCUIT_BREAKER_CONFIG, Y as ErrorEvent, F as FunctionToolDefinition, a8 as Hook, a5 as HookManager, a7 as HookName, af as IToolExecutor, p as InputImageContent, o as InputTextContent, W as IterationCompleteEvent, J as JSONSchema, s as Message, a9 as ModifyingHook, t as OutputItem, O as OutputTextContent, G as OutputTextDeltaEvent, K as OutputTextDoneEvent, R as ReasoningItem, X as ResponseCompleteEvent, z as ResponseCreatedEvent, D as ResponseInProgressEvent, w as Tool, P as ToolCallArgumentsDeltaEvent, Q as ToolCallArgumentsDoneEvent, N as ToolCallStartEvent, v as ToolCallState, y as ToolExecutionContext, V as ToolExecutionDoneEvent, U as ToolExecutionStartEvent, ad as ToolModification, a4 as ToolRegistry, x as ToolResult, r as ToolResultContent, q as ToolUseContent, a3 as isErrorEvent, _ as isOutputTextDelta, a2 as isResponseComplete, Z as isStreamEvent, a0 as isToolCallArgumentsDelta, a1 as isToolCallArgumentsDone, $ as isToolCallStart } from './index-BqriIwgg.cjs';
-import { I as IProvider, P as ProviderCapabilities } from './IProvider-DBcefFfB.cjs';
+import { T as ToolFunction, A as AgenticLoopEvents, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as TokenUsage, h as ToolCall, L as LLMResponse, i as StreamEventType, j as CircuitBreaker, k as TextGenerateOptions, M as ModelCapabilities, l as MessageRole } from './index-Bx4n-gVP.cjs';
+export { ab as AfterToolContext, a6 as AgenticLoopEventName, ae as ApprovalResult, ac as ApproveToolContext, aa as BeforeToolContext, B as BuiltInTool, ah as CircuitBreakerConfig, ai as CircuitBreakerEvents, ag as CircuitOpenError, u as CompactionItem, n as Content, m as ContentType, aj as DEFAULT_CIRCUIT_BREAKER_CONFIG, Y as ErrorEvent, F as FunctionToolDefinition, a8 as Hook, a5 as HookManager, a7 as HookName, af as IToolExecutor, p as InputImageContent, o as InputTextContent, W as IterationCompleteEvent, J as JSONSchema, s as Message, a9 as ModifyingHook, t as OutputItem, O as OutputTextContent, G as OutputTextDeltaEvent, K as OutputTextDoneEvent, R as ReasoningItem, X as ResponseCompleteEvent, z as ResponseCreatedEvent, D as ResponseInProgressEvent, w as Tool, P as ToolCallArgumentsDeltaEvent, Q as ToolCallArgumentsDoneEvent, N as ToolCallStartEvent, v as ToolCallState, y as ToolExecutionContext, V as ToolExecutionDoneEvent, U as ToolExecutionStartEvent, ad as ToolModification, a4 as ToolRegistry, x as ToolResult, r as ToolResultContent, q as ToolUseContent, a3 as isErrorEvent, _ as isOutputTextDelta, a2 as isResponseComplete, Z as isStreamEvent, a0 as isToolCallArgumentsDelta, a1 as isToolCallArgumentsDone, $ as isToolCallStart } from './index-Bx4n-gVP.cjs';
+import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.cjs';
 
 /**
  * ToolManager - Dynamic tool management for agents
@@ -1304,6 +1304,234 @@ declare class SpeechToText {
  * Create an Image Generation provider from a connector
  */
 declare function createImageProvider(connector: Connector): IImageProvider;
+
+/**
+ * Video generation provider interface
+ */
+
+/**
+ * Options for generating a video
+ */
+interface VideoGenerateOptions {
+    /** Model to use */
+    model: string;
+    /** Text prompt describing the video */
+    prompt: string;
+    /** Duration in seconds */
+    duration?: number;
+    /** Output resolution (e.g., '1280x720', '1920x1080') */
+    resolution?: string;
+    /** Aspect ratio (alternative to resolution) */
+    aspectRatio?: '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
+    /** Reference image for image-to-video */
+    image?: Buffer | string;
+    /** Seed for reproducibility */
+    seed?: number;
+    /** Vendor-specific options */
+    vendorOptions?: Record<string, unknown>;
+}
+/**
+ * Options for extending an existing video
+ */
+interface VideoExtendOptions {
+    /** Model to use */
+    model: string;
+    /** The video to extend */
+    video: Buffer | string;
+    /** Optional prompt for the extension */
+    prompt?: string;
+    /** Duration to add in seconds */
+    extendDuration: number;
+    /** Extend from beginning or end */
+    direction?: 'start' | 'end';
+}
+/**
+ * Video generation status (for async operations)
+ */
+type VideoStatus = 'pending' | 'processing' | 'completed' | 'failed';
+/**
+ * Video generation job
+ */
+interface VideoJob {
+    /** Job ID */
+    id: string;
+    /** Current status */
+    status: VideoStatus;
+    /** Timestamp when created */
+    createdAt: number;
+    /** Timestamp when completed (if applicable) */
+    completedAt?: number;
+    /** Error message if failed */
+    error?: string;
+    /** Progress percentage (0-100) */
+    progress?: number;
+}
+/**
+ * Video generation response
+ */
+interface VideoResponse {
+    /** Job ID for tracking */
+    jobId: string;
+    /** Current status */
+    status: VideoStatus;
+    /** Timestamp when created */
+    created: number;
+    /** Generated video data (when complete) */
+    video?: {
+        /** URL to download the video (if available) */
+        url?: string;
+        /** Base64 encoded video data */
+        b64_json?: string;
+        /** Duration in seconds */
+        duration?: number;
+        /** Resolution */
+        resolution?: string;
+        /** Format (e.g., 'mp4', 'webm') */
+        format?: string;
+    };
+    /** Audio track info (if separate) */
+    audio?: {
+        url?: string;
+        b64_json?: string;
+    };
+    /** Error if failed */
+    error?: string;
+}
+/**
+ * Video provider interface
+ */
+interface IVideoProvider extends IProvider {
+    /**
+     * Generate a video from a text prompt
+     * Returns a job that can be polled for completion
+     */
+    generateVideo(options: VideoGenerateOptions): Promise<VideoResponse>;
+    /**
+     * Get the status of a video generation job
+     */
+    getVideoStatus(jobId: string): Promise<VideoResponse>;
+    /**
+     * Download a completed video
+     */
+    downloadVideo?(jobId: string): Promise<Buffer>;
+    /**
+     * Extend an existing video (optional)
+     */
+    extendVideo?(options: VideoExtendOptions): Promise<VideoResponse>;
+    /**
+     * List available video models
+     */
+    listModels?(): Promise<string[]>;
+    /**
+     * Cancel a pending video generation job
+     */
+    cancelJob?(jobId: string): Promise<boolean>;
+}
+
+/**
+ * Options for creating a VideoGeneration instance
+ */
+interface VideoGenerationCreateOptions {
+    /** Connector name or instance */
+    connector: string | Connector;
+}
+/**
+ * Simplified options for quick generation
+ */
+interface SimpleVideoGenerateOptions {
+    /** Text prompt describing the video */
+    prompt: string;
+    /** Model to use (defaults to vendor's best model) */
+    model?: string;
+    /** Duration in seconds */
+    duration?: number;
+    /** Output resolution (e.g., '1280x720', '1920x1080') */
+    resolution?: string;
+    /** Aspect ratio (alternative to resolution) */
+    aspectRatio?: '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
+    /** Reference image for image-to-video */
+    image?: Buffer | string;
+    /** Seed for reproducibility */
+    seed?: number;
+    /** Vendor-specific options */
+    vendorOptions?: Record<string, unknown>;
+}
+/**
+ * VideoGeneration capability class
+ */
+declare class VideoGeneration {
+    private provider;
+    private connector;
+    private defaultModel;
+    private constructor();
+    /**
+     * Create a VideoGeneration instance
+     */
+    static create(options: VideoGenerationCreateOptions): VideoGeneration;
+    /**
+     * Generate a video from a text prompt
+     * Returns a job that can be polled for completion
+     */
+    generate(options: SimpleVideoGenerateOptions): Promise<VideoResponse>;
+    /**
+     * Get the status of a video generation job
+     */
+    getStatus(jobId: string): Promise<VideoResponse>;
+    /**
+     * Wait for a video generation job to complete
+     */
+    waitForCompletion(jobId: string, timeoutMs?: number): Promise<VideoResponse>;
+    /**
+     * Download a completed video
+     */
+    download(jobId: string): Promise<Buffer>;
+    /**
+     * Generate and wait for completion in one call
+     */
+    generateAndWait(options: SimpleVideoGenerateOptions, timeoutMs?: number): Promise<VideoResponse>;
+    /**
+     * Extend an existing video
+     * Note: Not all models/vendors support this
+     */
+    extend(options: VideoExtendOptions): Promise<VideoResponse>;
+    /**
+     * Cancel a pending video generation job
+     */
+    cancel(jobId: string): Promise<boolean>;
+    /**
+     * List available models for this provider
+     */
+    listModels(): Promise<string[]>;
+    /**
+     * Get information about a specific model
+     */
+    getModelInfo(modelName: string): IVideoModelDescription | undefined;
+    /**
+     * Get the underlying provider
+     */
+    getProvider(): IVideoProvider;
+    /**
+     * Get the current connector
+     */
+    getConnector(): Connector;
+    /**
+     * Get the default model for this vendor
+     */
+    private getDefaultModel;
+    /**
+     * Get the model that supports video extension
+     */
+    private getExtendModel;
+}
+
+/**
+ * Factory for creating video providers from connectors
+ */
+
+/**
+ * Create a video provider from a connector
+ */
+declare function createVideoProvider(connector: Connector): IVideoProvider;
 
 /**
  * Task and Plan entities for TaskAgent
@@ -3512,6 +3740,107 @@ declare function calculateCost(model: string, inputTokens: number, outputTokens:
 }): number | null;
 
 /**
+ * Video Model Registry
+ *
+ * Comprehensive registry of video generation models with capabilities and pricing.
+ * Models are organized by vendor and include detailed capability information.
+ */
+
+/**
+ * Video model capabilities
+ */
+interface VideoModelCapabilities {
+    /** Supported durations in seconds */
+    durations: number[];
+    /** Supported resolutions (e.g., '720x1280', '1080x1920') */
+    resolutions: string[];
+    /** Maximum frames per second */
+    maxFps: number;
+    /** Whether the model supports audio generation */
+    audio: boolean;
+    /** Whether the model supports image-to-video */
+    imageToVideo: boolean;
+    /** Whether the model supports video extension */
+    videoExtension: boolean;
+    /** Whether the model supports first/last frame specification */
+    frameControl: boolean;
+    /** Additional features */
+    features: {
+        /** Supports upscaling output */
+        upscaling: boolean;
+        /** Supports style/mood control */
+        styleControl: boolean;
+        /** Supports negative prompts */
+        negativePrompt: boolean;
+        /** Supports seed for reproducibility */
+        seed: boolean;
+    };
+}
+/**
+ * Video model pricing
+ */
+interface VideoModelPricing {
+    /** Cost per second of generated video */
+    perSecond: number;
+    /** Currency */
+    currency: string;
+}
+/**
+ * Video model description
+ */
+interface IVideoModelDescription extends IBaseModelDescription {
+    capabilities: VideoModelCapabilities;
+    pricing?: VideoModelPricing;
+}
+/**
+ * Video model registry type
+ */
+type VideoModelRegistry = Record<string, IVideoModelDescription>;
+/**
+ * Model constants organized by vendor
+ */
+declare const VIDEO_MODELS: {
+    readonly openai: {
+        readonly SORA_2: "sora-2";
+        readonly SORA_2_PRO: "sora-2-pro";
+    };
+    readonly google: {
+        readonly VEO_2: "veo-2.0-generate-001";
+        readonly VEO_3: "veo-3.0-generate-001";
+        readonly VEO_3_FAST: "veo-3.0-fast-generate-001";
+        readonly VEO_3_1: "veo-3.1-generate-001";
+    };
+};
+/**
+ * Video Model Registry
+ */
+declare const VIDEO_MODEL_REGISTRY: VideoModelRegistry;
+/**
+ * Get model information by name
+ */
+declare const getVideoModelInfo: (modelName: string) => IVideoModelDescription | undefined;
+/**
+ * Get all models for a specific vendor
+ */
+declare const getVideoModelsByVendor: (vendor: Vendor) => IVideoModelDescription[];
+/**
+ * Get all currently active models
+ */
+declare const getActiveVideoModels: () => IVideoModelDescription[];
+/**
+ * Get models with a specific feature
+ */
+declare function getVideoModelsWithFeature(feature: keyof VideoModelCapabilities['features']): IVideoModelDescription[];
+/**
+ * Get models that support audio
+ */
+declare function getVideoModelsWithAudio(): IVideoModelDescription[];
+/**
+ * Calculate video generation cost
+ */
+declare function calculateVideoCost(modelName: string, durationSeconds: number): number | null;
+
+/**
  * StreamState - Accumulates streaming events to reconstruct complete response
  */
 
@@ -5551,4 +5880,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, Vendor, VendorOptionSchema, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, hasClipboardImage, isMetaTool, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };
+export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, createVideoProvider, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, hasClipboardImage, isMetaTool, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };

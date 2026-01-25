@@ -7552,7 +7552,7 @@ var OpenAITTSProvider = class extends BaseMediaProvider {
         throw new ProviderAuthError("openai", "Invalid API key");
       }
       if (status === 429) {
-        throw new ProviderRateLimitError("openai", message);
+        throw new ProviderRateLimitError("openai");
       }
       if (status === 400) {
         throw new ProviderError("openai", `Bad request: ${message}`);
@@ -7711,10 +7711,11 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (typeof response === "string") {
       return { text: response };
     }
+    const extResponse = response;
     const result = {
       text: response.text,
-      language: response.language,
-      durationSeconds: response.duration
+      language: extResponse.language,
+      durationSeconds: extResponse.duration
     };
     if (response.words) {
       result.words = response.words.map((w) => ({
@@ -7745,7 +7746,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
         throw new ProviderAuthError("openai", "Invalid API key");
       }
       if (status === 429) {
-        throw new ProviderRateLimitError("openai", message);
+        throw new ProviderRateLimitError("openai");
       }
       if (status === 400) {
         throw new ProviderError("openai", `Bad request: ${message}`);
@@ -8771,13 +8772,14 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
             n: options.n || 1,
             response_format: options.response_format || "b64_json"
           });
+          const data = response.data || [];
           this.logOperationComplete("image.generate", {
             model: options.model,
-            imagesGenerated: response.data.length
+            imagesGenerated: data.length
           });
           return {
             created: response.created,
-            data: response.data.map((img) => ({
+            data: data.map((img) => ({
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt
@@ -8816,13 +8818,14 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
             n: options.n || 1,
             response_format: options.response_format || "b64_json"
           });
+          const data = response.data || [];
           this.logOperationComplete("image.edit", {
             model: options.model,
-            imagesGenerated: response.data.length
+            imagesGenerated: data.length
           });
           return {
             created: response.created,
-            data: response.data.map((img) => ({
+            data: data.map((img) => ({
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt
@@ -8858,13 +8861,14 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
             n: options.n || 1,
             response_format: options.response_format || "b64_json"
           });
+          const data = response.data || [];
           this.logOperationComplete("image.variation", {
             model: options.model,
-            imagesGenerated: response.data.length
+            imagesGenerated: data.length
           });
           return {
             created: response.created,
-            data: response.data.map((img) => ({
+            data: data.map((img) => ({
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt
@@ -9506,6 +9510,1053 @@ var ImageGeneration = class _ImageGeneration {
         return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
       default:
         throw new Error(`No edit model for vendor: ${vendor}`);
+    }
+  }
+};
+var OpenAISoraProvider = class extends BaseMediaProvider {
+  name = "openai-video";
+  vendor = "openai";
+  capabilities = {
+    text: false,
+    images: false,
+    videos: true,
+    audio: false,
+    features: {
+      videoGeneration: true,
+      imageToVideo: true,
+      videoExtension: true
+    }
+  };
+  client;
+  constructor(config) {
+    super({ apiKey: config.auth.apiKey, ...config });
+    this.client = new OpenAI2__default.default({
+      apiKey: config.auth.apiKey,
+      baseURL: config.baseURL,
+      organization: config.organization,
+      timeout: config.timeout,
+      maxRetries: config.maxRetries
+    });
+  }
+  /**
+   * Generate a video from a text prompt
+   */
+  async generateVideo(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.generate", {
+            model: options.model,
+            duration: options.duration,
+            resolution: options.resolution
+          });
+          const model = options.model || "sora-2";
+          const duration = options.duration || 4;
+          const params = {
+            model,
+            prompt: options.prompt,
+            duration
+          };
+          if (options.resolution) {
+            params.resolution = options.resolution;
+          } else if (options.aspectRatio) {
+            params.resolution = this.aspectRatioToResolution(options.aspectRatio);
+          }
+          if (options.seed !== void 0) {
+            params.seed = options.seed;
+          }
+          if (options.image) {
+            params.image = this.prepareImageInput(options.image);
+          }
+          const response = await this.client.videos.create(params);
+          this.logOperationComplete("video.generate", {
+            model,
+            jobId: response.id,
+            status: response.status
+          });
+          return this.mapResponse(response);
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.generate",
+      { model: options.model }
+    );
+  }
+  /**
+   * Get the status of a video generation job
+   */
+  async getVideoStatus(jobId) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.status", { jobId });
+          const response = await this.client.videos.retrieve(jobId);
+          this.logOperationComplete("video.status", {
+            jobId,
+            status: response.status
+          });
+          return this.mapResponse(response);
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.status",
+      { jobId }
+    );
+  }
+  /**
+   * Download a completed video
+   */
+  async downloadVideo(jobId) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.download", { jobId });
+          const status = await this.getVideoStatus(jobId);
+          if (status.status !== "completed") {
+            throw new ProviderError("openai", `Video not ready. Status: ${status.status}`);
+          }
+          if (!status.video?.url) {
+            throw new ProviderError("openai", "No video URL available");
+          }
+          const response = await fetch(status.video.url);
+          if (!response.ok) {
+            throw new ProviderError("openai", `Failed to download video: ${response.statusText}`);
+          }
+          const buffer = Buffer.from(await response.arrayBuffer());
+          this.logOperationComplete("video.download", {
+            jobId,
+            size: buffer.length
+          });
+          return buffer;
+        } catch (error) {
+          if (error instanceof ProviderError) throw error;
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.download",
+      { jobId }
+    );
+  }
+  /**
+   * Extend an existing video
+   */
+  async extendVideo(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.extend", {
+            model: options.model,
+            extendDuration: options.extendDuration,
+            direction: options.direction
+          });
+          const params = {
+            model: options.model || "sora-2",
+            video: this.prepareVideoInput(options.video),
+            extend_duration: options.extendDuration
+          };
+          if (options.prompt) {
+            params.prompt = options.prompt;
+          }
+          if (options.direction) {
+            params.direction = options.direction;
+          }
+          const response = await this.client.videos.extend(params);
+          this.logOperationComplete("video.extend", {
+            jobId: response.id,
+            status: response.status
+          });
+          return this.mapResponse(response);
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.extend",
+      { model: options.model }
+    );
+  }
+  /**
+   * List available video models
+   */
+  async listModels() {
+    return ["sora-2", "sora-2-pro"];
+  }
+  /**
+   * Cancel a pending job
+   */
+  async cancelJob(jobId) {
+    try {
+      await this.client.videos.cancel(jobId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Map OpenAI response to our VideoResponse format
+   */
+  mapResponse(response) {
+    const result = {
+      jobId: response.id,
+      status: this.mapStatus(response.status),
+      created: response.created || Math.floor(Date.now() / 1e3)
+    };
+    if (response.status === "completed" && response.video) {
+      result.video = {
+        url: response.video.url,
+        duration: response.video.duration,
+        resolution: response.video.resolution,
+        format: "mp4"
+      };
+      if (response.audio) {
+        result.audio = {
+          url: response.audio.url
+        };
+      }
+    }
+    if (response.status === "failed") {
+      result.error = response.error?.message || "Video generation failed";
+    }
+    return result;
+  }
+  /**
+   * Map OpenAI status to our status type
+   */
+  mapStatus(status) {
+    switch (status) {
+      case "queued":
+      case "pending":
+        return "pending";
+      case "in_progress":
+      case "processing":
+        return "processing";
+      case "completed":
+      case "succeeded":
+        return "completed";
+      case "failed":
+      case "cancelled":
+        return "failed";
+      default:
+        return "pending";
+    }
+  }
+  /**
+   * Map aspect ratio to resolution
+   */
+  aspectRatioToResolution(aspectRatio) {
+    const map = {
+      "16:9": "1280x720",
+      "9:16": "720x1280",
+      "1:1": "1024x1024",
+      "4:3": "1024x768",
+      "3:4": "768x1024"
+    };
+    return map[aspectRatio] || "1280x720";
+  }
+  /**
+   * Prepare image input for API
+   */
+  prepareImageInput(image) {
+    if (Buffer.isBuffer(image)) {
+      return {
+        type: "base64",
+        data: image.toString("base64")
+      };
+    }
+    return { type: "url", url: image };
+  }
+  /**
+   * Prepare video input for API
+   */
+  prepareVideoInput(video) {
+    if (Buffer.isBuffer(video)) {
+      return {
+        type: "base64",
+        data: video.toString("base64")
+      };
+    }
+    return { type: "url", url: video };
+  }
+  /**
+   * Handle OpenAI API errors
+   */
+  handleError(error) {
+    const message = error.message || "Unknown OpenAI API error";
+    const status = error.status;
+    if (status === 401) {
+      throw new ProviderAuthError("openai", "Invalid API key");
+    }
+    if (status === 429) {
+      throw new ProviderRateLimitError("openai", message);
+    }
+    if (status === 400) {
+      if (message.includes("safety") || message.includes("policy")) {
+        throw new ProviderError("openai", `Content policy violation: ${message}`);
+      }
+      throw new ProviderError("openai", `Bad request: ${message}`);
+    }
+    throw new ProviderError("openai", message);
+  }
+};
+var GoogleVeoProvider = class extends BaseMediaProvider {
+  name = "google-video";
+  vendor = "google";
+  capabilities = {
+    text: false,
+    images: false,
+    videos: true,
+    audio: false,
+    features: {
+      videoGeneration: true,
+      imageToVideo: true,
+      videoExtension: true
+    }
+  };
+  client;
+  pendingOperations = /* @__PURE__ */ new Map();
+  constructor(config) {
+    super({ apiKey: config.auth.apiKey, ...config });
+    this.client = new genai.GoogleGenAI({
+      apiKey: config.auth.apiKey
+    });
+  }
+  /**
+   * Generate a video from a text prompt
+   */
+  async generateVideo(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.generate", {
+            model: options.model,
+            duration: options.duration,
+            resolution: options.resolution
+          });
+          const model = options.model || "veo-3.0-generate-001";
+          const googleOptions = options.vendorOptions || {};
+          const config = {};
+          if (options.aspectRatio) {
+            config.aspectRatio = options.aspectRatio;
+          }
+          if (options.resolution) {
+            config.resolution = options.resolution;
+          }
+          if (options.duration) {
+            config.durationSeconds = String(options.duration);
+          }
+          if (options.seed !== void 0) {
+            config.seed = options.seed;
+          }
+          if (googleOptions.negativePrompt) {
+            config.negativePrompt = googleOptions.negativePrompt;
+          }
+          if (googleOptions.personGeneration) {
+            config.personGeneration = googleOptions.personGeneration;
+          }
+          if (googleOptions.safetyFilterLevel) {
+            config.safetyFilterLevel = googleOptions.safetyFilterLevel;
+          }
+          const request = {
+            model,
+            prompt: options.prompt,
+            config
+          };
+          if (options.image) {
+            request.image = await this.prepareImageInput(options.image);
+          }
+          if (googleOptions.lastFrame) {
+            request.lastFrame = await this.prepareImageInput(googleOptions.lastFrame);
+          }
+          const operation = await this.client.models.generateVideos(request);
+          const jobId = this.extractJobId(operation);
+          this.pendingOperations.set(jobId, operation);
+          this.logOperationComplete("video.generate", {
+            model,
+            jobId,
+            status: "pending"
+          });
+          return {
+            jobId,
+            status: "pending",
+            created: Math.floor(Date.now() / 1e3)
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.generate",
+      { model: options.model }
+    );
+  }
+  /**
+   * Get the status of a video generation job
+   */
+  async getVideoStatus(jobId) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.status", { jobId });
+          let operation = this.pendingOperations.get(jobId);
+          if (!operation) {
+            try {
+              operation = await this.client.operations.getVideosOperation({
+                operation: { name: jobId }
+              });
+            } catch {
+              throw new ProviderError("google", `Video job not found: ${jobId}`);
+            }
+          }
+          operation = await this.client.operations.getVideosOperation({
+            operation
+          });
+          this.pendingOperations.set(jobId, operation);
+          const response = this.mapResponse(jobId, operation);
+          this.logOperationComplete("video.status", {
+            jobId,
+            status: response.status
+          });
+          if (response.status === "completed" || response.status === "failed") {
+            this.pendingOperations.delete(jobId);
+          }
+          return response;
+        } catch (error) {
+          if (error instanceof ProviderError) throw error;
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.status",
+      { jobId }
+    );
+  }
+  /**
+   * Download a completed video
+   */
+  async downloadVideo(jobId) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.download", { jobId });
+          const status = await this.getVideoStatus(jobId);
+          if (status.status !== "completed") {
+            throw new ProviderError("google", `Video not ready. Status: ${status.status}`);
+          }
+          const operation = this.pendingOperations.get(jobId);
+          if (!operation?.response?.generatedVideos?.[0]?.video) {
+            throw new ProviderError("google", "No video available for download");
+          }
+          const videoFile = operation.response.generatedVideos[0].video;
+          const downloadResponse = await this.client.files.download({
+            file: videoFile
+          });
+          let buffer;
+          if (downloadResponse instanceof Buffer) {
+            buffer = downloadResponse;
+          } else if (downloadResponse.data) {
+            buffer = Buffer.from(downloadResponse.data);
+          } else {
+            throw new ProviderError("google", "Unexpected download response format");
+          }
+          this.logOperationComplete("video.download", {
+            jobId,
+            size: buffer.length
+          });
+          return buffer;
+        } catch (error) {
+          if (error instanceof ProviderError) throw error;
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.download",
+      { jobId }
+    );
+  }
+  /**
+   * Extend an existing video (Veo 3.1 supports this)
+   */
+  async extendVideo(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.extend", {
+            model: options.model,
+            extendDuration: options.extendDuration
+          });
+          const model = options.model || "veo-3.1-generate-001";
+          const request = {
+            model,
+            prompt: options.prompt || "Continue the video seamlessly",
+            config: {
+              durationSeconds: String(options.extendDuration)
+            }
+          };
+          if (Buffer.isBuffer(options.video)) {
+            request.image = {
+              imageBytes: options.video.toString("base64")
+            };
+          } else {
+            request.video = { uri: options.video };
+          }
+          const operation = await this.client.models.generateVideos(request);
+          const jobId = this.extractJobId(operation);
+          this.pendingOperations.set(jobId, operation);
+          this.logOperationComplete("video.extend", {
+            jobId,
+            status: "pending"
+          });
+          return {
+            jobId,
+            status: "pending",
+            created: Math.floor(Date.now() / 1e3)
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.extend",
+      { model: options.model }
+    );
+  }
+  /**
+   * List available video models
+   */
+  async listModels() {
+    return [
+      "veo-2.0-generate-001",
+      "veo-3.0-generate-001",
+      "veo-3.0-fast-generate-001",
+      "veo-3.1-generate-001"
+    ];
+  }
+  /**
+   * Wait for video completion with polling
+   */
+  async waitForCompletion(jobId, timeoutMs = 6e5) {
+    const startTime = Date.now();
+    const pollInterval = 1e4;
+    while (Date.now() - startTime < timeoutMs) {
+      const status = await this.getVideoStatus(jobId);
+      if (status.status === "completed" || status.status === "failed") {
+        return status;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    }
+    throw new ProviderError("google", `Video generation timed out after ${timeoutMs}ms`);
+  }
+  /**
+   * Extract job ID from operation
+   */
+  extractJobId(operation) {
+    if (operation.name) {
+      return operation.name;
+    }
+    return `veo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+  /**
+   * Prepare image input for API
+   */
+  async prepareImageInput(image) {
+    if (Buffer.isBuffer(image)) {
+      return {
+        imageBytes: image.toString("base64")
+      };
+    }
+    if (image.startsWith("http://") || image.startsWith("https://")) {
+      return { imageUri: image };
+    }
+    const fs11 = await import('fs/promises');
+    const data = await fs11.readFile(image);
+    return {
+      imageBytes: data.toString("base64")
+    };
+  }
+  /**
+   * Map operation to VideoResponse
+   */
+  mapResponse(jobId, operation) {
+    const result = {
+      jobId,
+      status: this.mapStatus(operation),
+      created: Math.floor(Date.now() / 1e3)
+    };
+    if (operation.done && operation.response?.generatedVideos?.[0]) {
+      const video = operation.response.generatedVideos[0];
+      result.video = {
+        duration: video.video?.duration,
+        format: "mp4"
+      };
+      if (video.video?.uri) {
+        result.video.url = video.video.uri;
+      }
+    }
+    if (operation.error) {
+      result.error = operation.error.message || "Video generation failed";
+      result.status = "failed";
+    }
+    return result;
+  }
+  /**
+   * Map operation status to our status type
+   */
+  mapStatus(operation) {
+    if (operation.error) {
+      return "failed";
+    }
+    if (operation.done) {
+      return "completed";
+    }
+    if (operation.metadata?.state === "ACTIVE" || operation.metadata?.state === "PROCESSING") {
+      return "processing";
+    }
+    return "pending";
+  }
+  /**
+   * Handle Google API errors
+   */
+  handleError(error) {
+    const message = error.message || "Unknown Google API error";
+    const status = error.status || error.code;
+    if (status === 401 || status === 403 || message.includes("API key")) {
+      throw new ProviderAuthError("google", "Invalid API key");
+    }
+    if (status === 429 || message.includes("quota") || message.includes("rate")) {
+      throw new ProviderRateLimitError("google", message);
+    }
+    if (status === 400) {
+      if (message.includes("safety") || message.includes("blocked")) {
+        throw new ProviderError("google", `Content policy violation: ${message}`);
+      }
+      throw new ProviderError("google", `Bad request: ${message}`);
+    }
+    throw new ProviderError("google", message);
+  }
+};
+
+// src/core/createVideoProvider.ts
+function createVideoProvider(connector) {
+  const vendor = connector.vendor;
+  switch (vendor) {
+    case Vendor.OpenAI:
+      return new OpenAISoraProvider(extractOpenAIConfig3(connector));
+    case Vendor.Google:
+      return new GoogleVeoProvider(extractGoogleConfig3(connector));
+    default:
+      throw new Error(
+        `Video generation not supported for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
+      );
+  }
+}
+function extractOpenAIConfig3(connector) {
+  const auth = connector.config.auth;
+  if (auth.type !== "api_key") {
+    throw new Error("OpenAI requires API key authentication");
+  }
+  const options = connector.getOptions();
+  return {
+    auth: {
+      type: "api_key",
+      apiKey: auth.apiKey
+    },
+    baseURL: connector.baseURL,
+    organization: options.organization,
+    timeout: options.timeout,
+    maxRetries: options.maxRetries
+  };
+}
+function extractGoogleConfig3(connector) {
+  const auth = connector.config.auth;
+  if (auth.type !== "api_key") {
+    throw new Error("Google requires API key authentication");
+  }
+  const options = connector.getOptions();
+  return {
+    auth: {
+      type: "api_key",
+      apiKey: auth.apiKey
+    },
+    timeout: options.timeout,
+    maxRetries: options.maxRetries
+  };
+}
+
+// src/domain/entities/VideoModel.ts
+var VIDEO_MODELS = {
+  [Vendor.OpenAI]: {
+    SORA_2: "sora-2",
+    SORA_2_PRO: "sora-2-pro"
+  },
+  [Vendor.Google]: {
+    VEO_2: "veo-2.0-generate-001",
+    VEO_3: "veo-3.0-generate-001",
+    VEO_3_FAST: "veo-3.0-fast-generate-001",
+    VEO_3_1: "veo-3.1-generate-001"
+  }
+};
+var OPENAI_SOURCES = {
+  documentation: "https://platform.openai.com/docs/guides/video-generation",
+  apiReference: "https://platform.openai.com/docs/api-reference/videos",
+  lastVerified: "2026-01-25"
+};
+var GOOGLE_SOURCES = {
+  documentation: "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/overview",
+  apiReference: "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/veo-video-generation",
+  lastVerified: "2026-01-25"
+};
+var VIDEO_MODEL_REGISTRY = {
+  // ============================================================================
+  // OpenAI Sora Models
+  // ============================================================================
+  "sora-2": {
+    name: "sora-2",
+    displayName: "Sora 2",
+    provider: Vendor.OpenAI,
+    isActive: true,
+    sources: OPENAI_SOURCES,
+    capabilities: {
+      durations: [4, 8, 12],
+      resolutions: ["720x1280", "1280x720", "1024x1792", "1792x1024"],
+      maxFps: 30,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: true,
+      frameControl: false,
+      features: {
+        upscaling: false,
+        styleControl: false,
+        negativePrompt: false,
+        seed: true
+      }
+    },
+    pricing: {
+      perSecond: 0.15,
+      currency: "USD"
+    }
+  },
+  "sora-2-pro": {
+    name: "sora-2-pro",
+    displayName: "Sora 2 Pro",
+    provider: Vendor.OpenAI,
+    isActive: true,
+    sources: OPENAI_SOURCES,
+    capabilities: {
+      durations: [4, 8, 12],
+      resolutions: ["720x1280", "1280x720", "1024x1792", "1792x1024", "1920x1080", "1080x1920"],
+      maxFps: 30,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: true,
+      frameControl: true,
+      features: {
+        upscaling: true,
+        styleControl: true,
+        negativePrompt: false,
+        seed: true
+      }
+    },
+    pricing: {
+      perSecond: 0.4,
+      currency: "USD"
+    }
+  },
+  // ============================================================================
+  // Google Veo Models
+  // ============================================================================
+  "veo-2.0-generate-001": {
+    name: "veo-2.0-generate-001",
+    displayName: "Veo 2.0",
+    provider: Vendor.Google,
+    isActive: true,
+    sources: GOOGLE_SOURCES,
+    capabilities: {
+      durations: [5, 6, 7, 8],
+      resolutions: ["768x1408", "1408x768", "1024x1024"],
+      maxFps: 24,
+      audio: false,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: true,
+      features: {
+        upscaling: false,
+        styleControl: false,
+        negativePrompt: true,
+        seed: true
+      }
+    },
+    pricing: {
+      perSecond: 0.03,
+      currency: "USD"
+    }
+  },
+  "veo-3.0-generate-001": {
+    name: "veo-3.0-generate-001",
+    displayName: "Veo 3.0",
+    provider: Vendor.Google,
+    isActive: true,
+    sources: GOOGLE_SOURCES,
+    capabilities: {
+      durations: [5, 6, 7, 8, 10, 15, 20],
+      resolutions: ["720p", "1080p", "768x1408", "1408x768"],
+      maxFps: 30,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: true,
+      frameControl: true,
+      features: {
+        upscaling: true,
+        styleControl: true,
+        negativePrompt: true,
+        seed: true
+      }
+    },
+    pricing: {
+      perSecond: 0.05,
+      currency: "USD"
+    }
+  },
+  "veo-3.0-fast-generate-001": {
+    name: "veo-3.0-fast-generate-001",
+    displayName: "Veo 3.0 Fast",
+    provider: Vendor.Google,
+    isActive: true,
+    sources: GOOGLE_SOURCES,
+    capabilities: {
+      durations: [5, 6, 7, 8],
+      resolutions: ["720p", "768x1408", "1408x768"],
+      maxFps: 24,
+      audio: false,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: false,
+      features: {
+        upscaling: false,
+        styleControl: false,
+        negativePrompt: true,
+        seed: true
+      }
+    },
+    pricing: {
+      perSecond: 0.02,
+      currency: "USD"
+    }
+  },
+  "veo-3.1-generate-001": {
+    name: "veo-3.1-generate-001",
+    displayName: "Veo 3.1",
+    provider: Vendor.Google,
+    isActive: true,
+    sources: GOOGLE_SOURCES,
+    capabilities: {
+      durations: [5, 6, 7, 8, 10, 15, 20, 30],
+      resolutions: ["720p", "1080p", "4K", "768x1408", "1408x768"],
+      maxFps: 30,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: true,
+      frameControl: true,
+      features: {
+        upscaling: true,
+        styleControl: true,
+        negativePrompt: true,
+        seed: true
+      }
+    },
+    pricing: {
+      perSecond: 0.08,
+      currency: "USD"
+    }
+  }
+};
+var helpers4 = createRegistryHelpers(VIDEO_MODEL_REGISTRY);
+var getVideoModelInfo = helpers4.getInfo;
+var getVideoModelsByVendor = helpers4.getByVendor;
+var getActiveVideoModels = helpers4.getActive;
+function getVideoModelsWithFeature(feature) {
+  return Object.values(VIDEO_MODEL_REGISTRY).filter(
+    (model) => model.isActive && model.capabilities.features[feature]
+  );
+}
+function getVideoModelsWithAudio() {
+  return Object.values(VIDEO_MODEL_REGISTRY).filter((model) => model.isActive && model.capabilities.audio);
+}
+function calculateVideoCost(modelName, durationSeconds) {
+  const model = VIDEO_MODEL_REGISTRY[modelName];
+  if (!model || !model.pricing) {
+    return null;
+  }
+  return model.pricing.perSecond * durationSeconds;
+}
+
+// src/capabilities/video/VideoGeneration.ts
+var VideoGeneration = class _VideoGeneration {
+  provider;
+  connector;
+  defaultModel;
+  constructor(connector) {
+    this.connector = connector;
+    this.provider = createVideoProvider(connector);
+    this.defaultModel = this.getDefaultModel();
+  }
+  /**
+   * Create a VideoGeneration instance
+   */
+  static create(options) {
+    const connector = typeof options.connector === "string" ? Connector.get(options.connector) : options.connector;
+    if (!connector) {
+      throw new Error(`Connector not found: ${options.connector}`);
+    }
+    return new _VideoGeneration(connector);
+  }
+  /**
+   * Generate a video from a text prompt
+   * Returns a job that can be polled for completion
+   */
+  async generate(options) {
+    const fullOptions = {
+      model: options.model || this.defaultModel,
+      prompt: options.prompt,
+      duration: options.duration,
+      resolution: options.resolution,
+      aspectRatio: options.aspectRatio,
+      image: options.image,
+      seed: options.seed,
+      vendorOptions: options.vendorOptions
+    };
+    return this.provider.generateVideo(fullOptions);
+  }
+  /**
+   * Get the status of a video generation job
+   */
+  async getStatus(jobId) {
+    return this.provider.getVideoStatus(jobId);
+  }
+  /**
+   * Wait for a video generation job to complete
+   */
+  async waitForCompletion(jobId, timeoutMs = 6e5) {
+    const startTime = Date.now();
+    const pollInterval = 1e4;
+    while (Date.now() - startTime < timeoutMs) {
+      const status = await this.provider.getVideoStatus(jobId);
+      if (status.status === "completed") {
+        return status;
+      }
+      if (status.status === "failed") {
+        throw new ProviderError(
+          this.connector.vendor || "unknown",
+          `Video generation failed: ${status.error || "Unknown error"}`
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+    }
+    throw new ProviderError(
+      this.connector.vendor || "unknown",
+      `Video generation timed out after ${timeoutMs}ms`
+    );
+  }
+  /**
+   * Download a completed video
+   */
+  async download(jobId) {
+    if (!this.provider.downloadVideo) {
+      throw new Error(`Video download not supported by ${this.provider.name}`);
+    }
+    return this.provider.downloadVideo(jobId);
+  }
+  /**
+   * Generate and wait for completion in one call
+   */
+  async generateAndWait(options, timeoutMs = 6e5) {
+    const job = await this.generate(options);
+    return this.waitForCompletion(job.jobId, timeoutMs);
+  }
+  /**
+   * Extend an existing video
+   * Note: Not all models/vendors support this
+   */
+  async extend(options) {
+    if (!this.provider.extendVideo) {
+      throw new Error(`Video extension not supported by ${this.provider.name}`);
+    }
+    const fullOptions = {
+      ...options,
+      model: options.model || this.getExtendModel()
+    };
+    return this.provider.extendVideo(fullOptions);
+  }
+  /**
+   * Cancel a pending video generation job
+   */
+  async cancel(jobId) {
+    if (!this.provider.cancelJob) {
+      throw new Error(`Job cancellation not supported by ${this.provider.name}`);
+    }
+    return this.provider.cancelJob(jobId);
+  }
+  /**
+   * List available models for this provider
+   */
+  async listModels() {
+    if (this.provider.listModels) {
+      return this.provider.listModels();
+    }
+    const vendor = this.connector.vendor;
+    if (vendor && VIDEO_MODELS[vendor]) {
+      return Object.values(VIDEO_MODELS[vendor]);
+    }
+    return [];
+  }
+  /**
+   * Get information about a specific model
+   */
+  getModelInfo(modelName) {
+    return getVideoModelInfo(modelName);
+  }
+  /**
+   * Get the underlying provider
+   */
+  getProvider() {
+    return this.provider;
+  }
+  /**
+   * Get the current connector
+   */
+  getConnector() {
+    return this.connector;
+  }
+  /**
+   * Get the default model for this vendor
+   */
+  getDefaultModel() {
+    const vendor = this.connector.vendor;
+    switch (vendor) {
+      case Vendor.OpenAI:
+        return VIDEO_MODELS[Vendor.OpenAI].SORA_2;
+      case Vendor.Google:
+        return VIDEO_MODELS[Vendor.Google].VEO_3;
+      default:
+        throw new Error(`No default video model for vendor: ${vendor}`);
+    }
+  }
+  /**
+   * Get the model that supports video extension
+   */
+  getExtendModel() {
+    const vendor = this.connector.vendor;
+    switch (vendor) {
+      case Vendor.OpenAI:
+        return VIDEO_MODELS[Vendor.OpenAI].SORA_2;
+      case Vendor.Google:
+        return VIDEO_MODELS[Vendor.Google].VEO_3_1;
+      default:
+        throw new Error(`No extend model for vendor: ${vendor}`);
     }
   }
 };
@@ -18198,7 +19249,10 @@ exports.ToolTimeoutError = ToolTimeoutError;
 exports.TruncateCompactor = TruncateCompactor;
 exports.UniversalAgent = UniversalAgent;
 exports.VENDORS = VENDORS;
+exports.VIDEO_MODELS = VIDEO_MODELS;
+exports.VIDEO_MODEL_REGISTRY = VIDEO_MODEL_REGISTRY;
 exports.Vendor = Vendor;
+exports.VideoGeneration = VideoGeneration;
 exports.WorkingMemory = WorkingMemory;
 exports.addHistoryEntry = addHistoryEntry;
 exports.addJitter = addJitter;
@@ -18211,6 +19265,7 @@ exports.calculateCost = calculateCost;
 exports.calculateImageCost = calculateImageCost;
 exports.calculateSTTCost = calculateSTTCost;
 exports.calculateTTSCost = calculateTTSCost;
+exports.calculateVideoCost = calculateVideoCost;
 exports.createAgentStorage = createAgentStorage;
 exports.createAuthenticatedFetch = createAuthenticatedFetch;
 exports.createEmptyHistory = createEmptyHistory;
@@ -18224,12 +19279,14 @@ exports.createMetricsCollector = createMetricsCollector;
 exports.createProvider = createProvider;
 exports.createStrategy = createStrategy;
 exports.createTextMessage = createTextMessage;
+exports.createVideoProvider = createVideoProvider;
 exports.generateEncryptionKey = generateEncryptionKey;
 exports.generateWebAPITool = generateWebAPITool;
 exports.getActiveImageModels = getActiveImageModels;
 exports.getActiveModels = getActiveModels;
 exports.getActiveSTTModels = getActiveSTTModels;
 exports.getActiveTTSModels = getActiveTTSModels;
+exports.getActiveVideoModels = getActiveVideoModels;
 exports.getImageModelInfo = getImageModelInfo;
 exports.getImageModelsByVendor = getImageModelsByVendor;
 exports.getImageModelsWithFeature = getImageModelsWithFeature;
@@ -18242,6 +19299,10 @@ exports.getSTTModelsWithFeature = getSTTModelsWithFeature;
 exports.getTTSModelInfo = getTTSModelInfo;
 exports.getTTSModelsByVendor = getTTSModelsByVendor;
 exports.getTTSModelsWithFeature = getTTSModelsWithFeature;
+exports.getVideoModelInfo = getVideoModelInfo;
+exports.getVideoModelsByVendor = getVideoModelsByVendor;
+exports.getVideoModelsWithAudio = getVideoModelsWithAudio;
+exports.getVideoModelsWithFeature = getVideoModelsWithFeature;
 exports.hasClipboardImage = hasClipboardImage;
 exports.isErrorEvent = isErrorEvent;
 exports.isMetaTool = isMetaTool;

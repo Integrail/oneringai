@@ -1,5 +1,5 @@
 import EventEmitter$1, { EventEmitter } from 'eventemitter3';
-import { I as IProvider } from './IProvider-DBcefFfB.cjs';
+import { I as IProvider } from './IProvider-BP49c93d.cjs';
 
 /**
  * Tool entities with blocking/non-blocking execution support

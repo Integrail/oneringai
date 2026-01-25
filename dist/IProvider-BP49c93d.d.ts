@@ -6,6 +6,8 @@ interface ProviderCapabilities {
     images: boolean;
     videos: boolean;
     audio: boolean;
+    /** Optional feature flags for specific capabilities */
+    features?: Record<string, boolean>;
 }
 interface IProvider {
     readonly name: string;

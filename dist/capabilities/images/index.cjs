@@ -1901,13 +1901,14 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
             n: options.n || 1,
             response_format: options.response_format || "b64_json"
           });
+          const data = response.data || [];
           this.logOperationComplete("image.generate", {
             model: options.model,
-            imagesGenerated: response.data.length
+            imagesGenerated: data.length
           });
           return {
             created: response.created,
-            data: response.data.map((img) => ({
+            data: data.map((img) => ({
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt
@@ -1946,13 +1947,14 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
             n: options.n || 1,
             response_format: options.response_format || "b64_json"
           });
+          const data = response.data || [];
           this.logOperationComplete("image.edit", {
             model: options.model,
-            imagesGenerated: response.data.length
+            imagesGenerated: data.length
           });
           return {
             created: response.created,
-            data: response.data.map((img) => ({
+            data: data.map((img) => ({
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt
@@ -1988,13 +1990,14 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
             n: options.n || 1,
             response_format: options.response_format || "b64_json"
           });
+          const data = response.data || [];
           this.logOperationComplete("image.variation", {
             model: options.model,
-            imagesGenerated: response.data.length
+            imagesGenerated: data.length
           });
           return {
             created: response.created,
-            data: response.data.map((img) => ({
+            data: data.map((img) => ({
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt

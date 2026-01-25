@@ -143,7 +143,7 @@ export class OpenAITTSProvider extends BaseMediaProvider implements ITextToSpeec
       }
 
       if (status === 429) {
-        throw new ProviderRateLimitError('openai', message);
+        throw new ProviderRateLimitError('openai');
       }
 
       if (status === 400) {

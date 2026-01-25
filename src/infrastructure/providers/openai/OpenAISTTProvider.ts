@@ -14,7 +14,6 @@ import {
   ProviderError,
 } from '../../../domain/errors/AIErrors.js';
 import * as fs from 'fs';
-import { Readable } from 'stream';
 
 export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTextProvider {
   readonly name: string = 'openai-stt';
@@ -85,8 +84,8 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
             (requestParams as any).max_speakers = options.vendorOptions.max_speakers;
           }
 
-          const response = await this.client.audio.transcriptions.create(
-            requestParams as OpenAI.Audio.TranscriptionCreateParams
+          const response: any = await this.client.audio.transcriptions.create(
+            requestParams as any
           );
 
           this.logOperationComplete('stt.transcribe', {
@@ -126,11 +125,17 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
           };
 
           if (options.outputFormat) {
-            requestParams.response_format = this.mapOutputFormat(options.outputFormat);
+            // Translation API has more restricted response_format options
+            requestParams.response_format = this.mapOutputFormat(options.outputFormat) as
+              | 'text'
+              | 'json'
+              | 'srt'
+              | 'vtt'
+              | 'verbose_json';
           }
 
-          const response = await this.client.audio.translations.create(
-            requestParams as OpenAI.Audio.TranslationCreateParams
+          const response: any = await this.client.audio.translations.create(
+            requestParams as any
           );
 
           this.logOperationComplete('stt.translate', {
@@ -169,9 +174,7 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
   /**
    * Map semantic output format to OpenAI format
    */
-  private mapOutputFormat(
-    format: STTOutputFormat
-  ): OpenAI.Audio.TranscriptionCreateParams['response_format'] {
+  private mapOutputFormat(format: STTOutputFormat): OpenAI.Audio.AudioResponseFormat {
     switch (format) {
       case 'json':
         return 'json';
@@ -197,11 +200,14 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
       return { text: response };
     }
 
+    // Cast to access extended properties
+    const extResponse = response as any;
+
     // Handle JSON response
     const result: STTResponse = {
       text: response.text,
-      language: response.language,
-      durationSeconds: response.duration,
+      language: extResponse.language,
+      durationSeconds: extResponse.duration,
     };
 
     // Add word timestamps if available
@@ -240,7 +246,7 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
       }
 
       if (status === 429) {
-        throw new ProviderRateLimitError('openai', message);
+        throw new ProviderRateLimitError('openai');
       }
 
       if (status === 400) {

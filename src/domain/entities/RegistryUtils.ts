@@ -89,7 +89,7 @@ export function createCapabilityFilter<
       return Object.values(registry).filter((model) => {
         if (!model.isActive) return false;
 
-        const capValue = model.capabilities[feature];
+        const capValue = (model.capabilities as Record<string, unknown>)[feature as string];
 
         // If specific value provided, match exactly
         if (value !== undefined) {

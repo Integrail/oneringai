@@ -692,7 +692,9 @@ npm run build          # Build with tsup
 npm run dev            # Watch mode
 npm run typecheck      # Type check
 npm run lint           # ESLint
-npm test               # Run tests
+npm test               # Run all tests (unit + integration)
+npm run test:unit      # Run only unit tests
+npm run test:integration  # Run only integration tests (requires API keys)
 ```
 
 ## Context Management (NEW)

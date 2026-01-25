@@ -63,24 +63,35 @@ export class OpenAIImageProvider extends BaseMediaProvider implements IImageProv
             n: options.n,
           });
 
-          const response = await this.client.images.generate({
+          // gpt-image-1 doesn't support response_format parameter
+          const isGptImage = options.model === 'gpt-image-1';
+
+          const params: any = {
             model: options.model,
             prompt: options.prompt,
             size: options.size as any,
             quality: options.quality,
             style: options.style,
             n: options.n || 1,
-            response_format: options.response_format || 'b64_json',
-          });
+          };
+
+          // Only add response_format for models that support it
+          if (!isGptImage) {
+            params.response_format = options.response_format || 'b64_json';
+          }
+
+          const response = await this.client.images.generate(params);
+
+          const data = response.data || [];
 
           this.logOperationComplete('image.generate', {
             model: options.model,
-            imagesGenerated: response.data.length,
+            imagesGenerated: data.length,
           });
 
           return {
             created: response.created,
-            data: response.data.map((img) => ({
+            data: data.map((img) => ({
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt,
@@ -114,24 +125,35 @@ export class OpenAIImageProvider extends BaseMediaProvider implements IImageProv
           const image = this.prepareImageInput(options.image);
           const mask = options.mask ? this.prepareImageInput(options.mask) : undefined;
 
-          const response = await this.client.images.edit({
+          // gpt-image-1 doesn't support response_format parameter
+          const isGptImage = options.model === 'gpt-image-1';
+
+          const params: any = {
             model: options.model,
             image,
             prompt: options.prompt,
             mask,
             size: options.size as any,
             n: options.n || 1,
-            response_format: options.response_format || 'b64_json',
-          });
+          };
+
+          // Only add response_format for models that support it
+          if (!isGptImage) {
+            params.response_format = options.response_format || 'b64_json';
+          }
+
+          const response = await this.client.images.edit(params);
+
+          const data = response.data || [];
 
           this.logOperationComplete('image.edit', {
             model: options.model,
-            imagesGenerated: response.data.length,
+            imagesGenerated: data.length,
           });
 
           return {
             created: response.created,
-            data: response.data.map((img) => ({
+            data: data.map((img) => ({
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt,
@@ -172,14 +194,16 @@ export class OpenAIImageProvider extends BaseMediaProvider implements IImageProv
             response_format: options.response_format || 'b64_json',
           });
 
+          const data = response.data || [];
+
           this.logOperationComplete('image.variation', {
             model: options.model,
-            imagesGenerated: response.data.length,
+            imagesGenerated: data.length,
           });
 
           return {
             created: response.created,
-            data: response.data.map((img) => ({
+            data: data.map((img) => ({
               url: img.url,
               b64_json: img.b64_json,
               revised_prompt: img.revised_prompt,
