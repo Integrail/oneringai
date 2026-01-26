@@ -60,6 +60,23 @@ export type {
   ToolManagerEvent,
 } from './core/index.js';
 
+// Tool Permissions (NEW)
+export { ToolPermissionManager } from './core/permissions/index.js';
+export type {
+  PermissionScope,
+  RiskLevel,
+  ToolPermissionConfig,
+  ApprovalCacheEntry,
+  SerializedApprovalState,
+  SerializedApprovalEntry,
+  PermissionCheckResult,
+  ApprovalDecision,
+  AgentPermissionsConfig,
+  PermissionCheckContext,
+  PermissionManagerEvent,
+} from './core/permissions/index.js';
+export { APPROVAL_STATE_VERSION, DEFAULT_PERMISSION_CONFIG } from './core/permissions/index.js';
+
 // Session Management (Persistence)
 export { SessionManager, createEmptyHistory, createEmptyMemory, addHistoryEntry } from './core/index.js';
 export type {

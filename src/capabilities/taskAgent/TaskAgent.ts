@@ -166,6 +166,14 @@ export interface TaskAgentConfig {
   // === NEW: Advanced tool management ===
   /** Provide a pre-configured ToolManager (advanced) */
   toolManager?: ToolManager;
+
+  // === NEW: Tool permission system ===
+  /**
+   * Permission configuration for tool execution approval.
+   * Controls allowlist/blocklist, default scopes, and approval callbacks.
+   * Passed through to the internal Agent.
+   */
+  permissions?: import('../../core/permissions/types.js').AgentPermissionsConfig;
 }
 
 /**
@@ -226,6 +234,14 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
    */
   get tools(): ToolManager {
     return this._toolManager;
+  }
+
+  /**
+   * Permission management. Returns ToolPermissionManager for approval control.
+   * Delegates to internal Agent's permission manager.
+   */
+  get permissions() {
+    return this.agent?.permissions;
   }
 
   protected constructor(
@@ -380,6 +396,7 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
       instructions: config.instructions,
       temperature: config.temperature,
       maxIterations: config.maxIterations ?? 10,
+      permissions: config.permissions,
     });
 
     // Calculate context limit from model

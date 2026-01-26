@@ -96,6 +96,45 @@ export interface ToolIdempotency {
 }
 
 /**
+ * Permission configuration for a tool
+ *
+ * Controls when approval is required for tool execution.
+ * Used by the ToolPermissionManager.
+ */
+export interface ToolPermissionConfig {
+  /**
+   * When approval is required.
+   * - 'once' - Require approval for each call
+   * - 'session' - Approve once per session
+   * - 'always' - Auto-approve (no prompts)
+   * - 'never' - Always blocked
+   * @default 'once'
+   */
+  scope?: 'once' | 'session' | 'always' | 'never';
+
+  /**
+   * Risk level classification.
+   * @default 'low'
+   */
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+
+  /**
+   * Custom message shown in approval UI.
+   */
+  approvalMessage?: string;
+
+  /**
+   * Argument names that should be highlighted as sensitive.
+   */
+  sensitiveArgs?: string[];
+
+  /**
+   * TTL for session approvals (milliseconds).
+   */
+  sessionTTLMs?: number;
+}
+
+/**
  * User-provided tool function
  */
 export interface ToolFunction<TArgs = any, TResult = any> {
@@ -105,4 +144,8 @@ export interface ToolFunction<TArgs = any, TResult = any> {
   // Extended fields for TaskAgent (optional, backward compatible)
   idempotency?: ToolIdempotency;
   output?: ToolOutputHints;
+
+  // Permission configuration (optional, backward compatible)
+  /** Permission settings for this tool. If not set, defaults are used. */
+  permission?: ToolPermissionConfig;
 }

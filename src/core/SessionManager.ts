@@ -12,6 +12,7 @@
 
 import { EventEmitter } from 'events';
 import type { SerializedToolState } from './ToolManager.js';
+import type { SerializedApprovalState } from './permissions/types.js';
 
 // ============================================================================
 // Types
@@ -44,6 +45,8 @@ export interface Session {
   mode?: string;
   /** Execution metrics */
   metrics?: SessionMetrics;
+  /** Tool permission approval state (all agent types) */
+  approvalState?: SerializedApprovalState;
 
   // --- Custom State ---
 

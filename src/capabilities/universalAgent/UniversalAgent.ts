@@ -149,6 +149,7 @@ export class UniversalAgent extends EventEmitter {
       instructions: this.buildInstructions(config.instructions),
       temperature: config.temperature,
       maxIterations: config.maxIterations ?? 20,
+      permissions: config.permissions,
     });
 
     // Initialize mode manager
@@ -1100,6 +1101,14 @@ Always be helpful, clear, and ask for clarification when needed.`;
 
   get toolManager(): ToolManager {
     return this._toolManager;
+  }
+
+  /**
+   * Permission management. Returns ToolPermissionManager for approval control.
+   * Delegates to internal Agent's permission manager.
+   */
+  get permissions() {
+    return this.agent.permissions;
   }
 
   // ============================================================================

@@ -70,3 +70,20 @@ export type {
   SessionManagerConfig,
   SessionManagerEvent,
 } from './SessionManager.js';
+
+// Tool permission management
+export { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
+export type {
+  PermissionScope,
+  RiskLevel,
+  ToolPermissionConfig,
+  ApprovalCacheEntry,
+  SerializedApprovalState,
+  SerializedApprovalEntry,
+  PermissionCheckResult,
+  ApprovalDecision,
+  AgentPermissionsConfig,
+  PermissionCheckContext,
+  PermissionManagerEvent,
+} from './permissions/types.js';
+export { APPROVAL_STATE_VERSION, DEFAULT_PERMISSION_CONFIG } from './permissions/types.js';

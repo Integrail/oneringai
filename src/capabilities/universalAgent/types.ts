@@ -66,6 +66,10 @@ export interface UniversalAgentConfig {
 
   // Advanced: provide pre-configured managers
   toolManager?: ToolManager;
+
+  // Tool permission configuration
+  /** Permission configuration for tool execution approval. */
+  permissions?: import('../../core/permissions/types.js').AgentPermissionsConfig;
 }
 
 // ============================================================================

@@ -18,6 +18,8 @@ import { HookConfig } from './types/HookTypes.js';
 import { AgenticLoopEvents } from './types/EventTypes.js';
 import { StreamEvent, StreamEventType, isToolCallArgumentsDone } from '../../domain/entities/StreamEvent.js';
 import { StreamState } from '../../domain/entities/StreamState.js';
+import type { ToolPermissionManager } from '../../core/permissions/ToolPermissionManager.js';
+import type { PermissionCheckContext } from '../../core/permissions/types.js';
 
 export interface AgenticLoopConfig {
   model: string;
@@ -54,6 +56,23 @@ export interface AgenticLoopConfig {
    * @default 30000 (30 seconds)
    */
   toolTimeout?: number;
+
+  /**
+   * Permission manager for tool approval/blocking.
+   * If provided, permission checks run BEFORE approve:tool hooks.
+   */
+  permissionManager?: ToolPermissionManager;
+
+  /**
+   * Agent type for permission context (used by TaskAgent/UniversalAgent).
+   * @default 'agent'
+   */
+  agentType?: 'agent' | 'task-agent' | 'universal-agent';
+
+  /**
+   * Current task name (used for TaskAgent/UniversalAgent context).
+   */
+  taskName?: string;
 }
 
 export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
@@ -718,6 +737,78 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
   }
 
   /**
+   * Check tool permission before execution
+   * Returns true if approved, throws if blocked/rejected
+   * @private
+   */
+  private async checkToolPermission(
+    toolCall: ToolCall,
+    iteration: number,
+    executionId: string,
+    config: AgenticLoopConfig
+  ): Promise<boolean> {
+    const permissionManager = config.permissionManager;
+    if (!permissionManager) {
+      // No permission manager - skip permission checks (backward compatible)
+      return true;
+    }
+
+    const toolName = toolCall.function.name;
+
+    // Check if blocked first
+    if (permissionManager.isBlocked(toolName)) {
+      this.context?.audit('tool_blocked', { reason: 'Tool is blocklisted' }, undefined, toolName);
+      throw new Error(`Tool "${toolName}" is blocked and cannot be executed`);
+    }
+
+    // Check if already approved (allowlisted or session-approved)
+    if (permissionManager.isApproved(toolName)) {
+      return true;
+    }
+
+    // Check if needs approval
+    const checkResult = permissionManager.checkPermission(toolName);
+    if (!checkResult.needsApproval) {
+      // Allowed without approval
+      return true;
+    }
+
+    // Parse arguments for context
+    let parsedArgs: Record<string, unknown> = {};
+    try {
+      parsedArgs = JSON.parse(toolCall.function.arguments);
+    } catch {
+      // Use empty args if parsing fails
+    }
+
+    // Build permission context
+    const context: PermissionCheckContext = {
+      toolCall,
+      parsedArgs,
+      config: checkResult.config || {},
+      executionId,
+      iteration,
+      agentType: config.agentType || 'agent',
+      taskName: config.taskName,
+    };
+
+    // Request approval via permission manager's callback
+    const decision = await permissionManager.requestApproval(context);
+
+    if (decision.approved) {
+      this.context?.audit('tool_permission_approved', {
+        scope: decision.scope,
+        approvedBy: decision.approvedBy,
+      }, undefined, toolName);
+      return true;
+    }
+
+    // Not approved - but might need external approval via hooks
+    // Return false to indicate hooks should be used
+    return false;
+  }
+
+  /**
    * Execute single tool with hooks
    * @private
    */
@@ -741,15 +832,20 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
       timestamp: new Date(),
     }, {});
 
-    // Execute approve:tool hook if registered
-    if (this.hookManager.hasHooks('approve:tool')) {
+    // === NEW: Permission check (runs BEFORE approve:tool hooks) ===
+    // If permission manager exists and has an approval callback, use it first
+    const permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId, config);
+
+    // Execute approve:tool hook if registered AND permission check didn't auto-approve
+    // (hooks provide additional approval logic beyond the permission system)
+    if (!permissionApproved || this.hookManager.hasHooks('approve:tool')) {
       const approval = await this.hookManager.executeHooks('approve:tool', {
         executionId,
         iteration,
         toolCall,
         context: this.context!,
         timestamp: new Date(),
-      }, { approved: true });
+      }, { approved: permissionApproved }); // Default to permission result
 
       if (!approval.approved) {
         throw new Error(`Tool execution rejected: ${approval.reason || 'No reason provided'}`);
@@ -974,15 +1070,35 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
         this.context?.audit('tool_modified', { modifications: beforeTool.modified }, undefined, toolCall.function.name);
       }
 
-      // Execute approve:tool hook (if exists)
-      if (this.hookManager.hasHooks('approve:tool')) {
+      // === NEW: Permission check (runs BEFORE approve:tool hooks) ===
+      let permissionApproved = true;
+      try {
+        permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId, config);
+      } catch (error) {
+        // Tool is blocked
+        this.context?.audit('tool_blocked', { reason: (error as Error).message }, undefined, toolCall.function.name);
+
+        const blockedResult: ToolResult = {
+          tool_use_id: toolCall.id,
+          content: '',
+          error: (error as Error).message,
+          state: ToolCallState.FAILED,
+        };
+
+        results.push(blockedResult);
+        this.context?.addToolResult(blockedResult);
+        continue;
+      }
+
+      // Execute approve:tool hook (if exists AND permission check didn't auto-approve)
+      if (!permissionApproved || this.hookManager.hasHooks('approve:tool')) {
         const approval = await this.hookManager.executeHooks('approve:tool', {
           executionId,
           iteration,
           toolCall,
           context: this.context!,
           timestamp: new Date(),
-        }, { approved: true });
+        }, { approved: permissionApproved }); // Default to permission result
 
         if (!approval.approved) {
           this.context?.audit('tool_rejected', { reason: approval.reason }, undefined, toolCall.function.name);

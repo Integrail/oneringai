@@ -10,6 +10,8 @@ import { Connector } from './Connector.js';
 import { createProvider } from './createProvider.js';
 import { ToolManager } from './ToolManager.js';
 import { SessionManager, Session, ISessionStorage } from './SessionManager.js';
+import { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
+import type { AgentPermissionsConfig, SerializedApprovalState } from './permissions/types.js';
 import { ToolRegistry } from '../capabilities/agents/ToolRegistry.js';
 import { AgenticLoop, AgenticLoopConfig } from '../capabilities/agents/AgenticLoop.js';
 import { ExecutionContext, HistoryMode } from '../capabilities/agents/ExecutionContext.js';
@@ -77,6 +79,13 @@ export interface AgentConfig {
   // === NEW: Advanced tool management ===
   /** Provide a pre-configured ToolManager (advanced) */
   toolManager?: ToolManager;
+
+  // === NEW: Tool permission system ===
+  /**
+   * Permission configuration for tool execution approval.
+   * Controls allowlist/blocklist, default scopes, and approval callbacks.
+   */
+  permissions?: AgentPermissionsConfig;
 }
 
 /**
@@ -100,6 +109,7 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
 
   // === NEW: Tool and Session Management ===
   private _toolManager: ToolManager;
+  private _permissionManager: ToolPermissionManager;
   private _sessionManager: SessionManager | null = null;
   private _session: Session | null = null;
   private _pendingSessionLoad: Promise<void> | null = null;
@@ -114,6 +124,14 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
    */
   get tools(): ToolManager {
     return this._toolManager;
+  }
+
+  /**
+   * Permission management. Returns ToolPermissionManager for approval control.
+   * Use for runtime permission management, approval caching, and allowlist/blocklist.
+   */
+  get permissions(): ToolPermissionManager {
+    return this._permissionManager;
   }
 
   // ============ Static Factory ============
@@ -202,12 +220,27 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     // === Create ToolManager ===
     this._toolManager = config.toolManager ?? new ToolManager();
 
+    // === Create ToolPermissionManager ===
+    this._permissionManager = new ToolPermissionManager(config.permissions);
+
     // Register tools from config (backward compatible)
     if (config.tools) {
       for (const tool of config.tools) {
         this._toolManager.register(tool);
+        // Register permission config if tool has one
+        if (tool.permission) {
+          this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+        }
       }
     }
+
+    // Sync tool permission configs from ToolManager to PermissionManager
+    this._toolManager.on('tool:registered', ({ name }) => {
+      const permission = this._toolManager.getPermission(name);
+      if (permission) {
+        this._permissionManager.setToolConfig(name, permission);
+      }
+    });
 
     // Create tool registry (still needed for AgenticLoop compatibility)
     // ToolRegistry wraps the execution, ToolManager handles registration
@@ -281,6 +314,12 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
           this._toolManager.loadState(session.toolState);
         }
 
+        // Restore approval state (if permission inheritance is enabled)
+        const inheritFromSession = this.config.permissions?.inheritFromSession !== false;
+        if (inheritFromSession && session.custom['approvalState']) {
+          this._permissionManager.loadState(session.custom['approvalState'] as SerializedApprovalState);
+        }
+
         this.logger.info({ sessionId }, 'Session loaded');
 
         // Setup auto-save if configured
@@ -340,6 +379,8 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
         historyMode: this.config.historyMode,
         limits: this.config.limits,
         errorHandling: this.config.errorHandling,
+        permissionManager: this._permissionManager,
+        agentType: 'agent',
       };
 
       const response = await this.agenticLoop.execute(loopConfig);
@@ -418,6 +459,8 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
         historyMode: this.config.historyMode,
         limits: this.config.limits,
         errorHandling: this.config.errorHandling,
+        permissionManager: this._permissionManager,
+        agentType: 'agent',
       };
 
       yield* this.agenticLoop.executeStreaming(loopConfig);
@@ -501,8 +544,66 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
     for (const tool of tools) {
       this._toolManager.register(tool);
       this.toolRegistry.registerTool(tool);
+      // Sync permission config
+      if (tool.permission) {
+        this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+      }
     }
     this.config.tools = [...tools];
+  }
+
+  // ============ Permission Management (NEW) ============
+
+  /**
+   * Approve a tool for the current session.
+   * Tool will not require further approval until session ends or approval is revoked.
+   */
+  approveToolForSession(toolName: string): void {
+    this._permissionManager.approveForSession(toolName);
+  }
+
+  /**
+   * Revoke a tool's session approval.
+   * Tool will require approval again on next use.
+   */
+  revokeToolApproval(toolName: string): void {
+    this._permissionManager.revoke(toolName);
+  }
+
+  /**
+   * Get list of tools that have been approved for this session.
+   */
+  getApprovedTools(): string[] {
+    return this._permissionManager.getApprovedTools();
+  }
+
+  /**
+   * Check if a tool needs approval before execution.
+   */
+  toolNeedsApproval(toolName: string): boolean {
+    const result = this._permissionManager.checkPermission(toolName);
+    return result.needsApproval;
+  }
+
+  /**
+   * Check if a tool is blocked (cannot execute at all).
+   */
+  toolIsBlocked(toolName: string): boolean {
+    return this._permissionManager.isBlocked(toolName);
+  }
+
+  /**
+   * Add a tool to the allowlist (always allowed, no approval needed).
+   */
+  allowlistTool(toolName: string): void {
+    this._permissionManager.allowlistAdd(toolName);
+  }
+
+  /**
+   * Add a tool to the blocklist (always blocked, cannot execute).
+   */
+  blocklistTool(toolName: string): void {
+    this._permissionManager.blocklistAdd(toolName);
   }
 
   // ============ Session Management (NEW) ============
@@ -532,6 +633,9 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
 
     // Update session state before saving
     this._session.toolState = this._toolManager.getState();
+
+    // Save approval state (stored in custom data)
+    this._session.custom['approvalState'] = this._permissionManager.getState();
 
     await this._sessionManager.save(this._session);
     this.logger.debug({ sessionId: this._session.id }, 'Session saved');
@@ -701,6 +805,9 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
 
     // Cleanup tool manager listeners
     this._toolManager.removeAllListeners();
+
+    // Cleanup permission manager listeners
+    this._permissionManager.removeAllListeners();
 
     // Run cleanup callbacks
     for (const callback of this.cleanupCallbacks) {

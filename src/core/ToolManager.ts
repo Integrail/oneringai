@@ -12,7 +12,7 @@
  */
 
 import { EventEmitter } from 'events';
-import type { ToolFunction } from '../domain/entities/Tool.js';
+import type { ToolFunction, ToolPermissionConfig } from '../domain/entities/Tool.js';
 
 // ============================================================================
 // Types
@@ -27,6 +27,8 @@ export interface ToolOptions {
   priority?: number;
   /** Conditions for auto-enable/disable */
   conditions?: ToolCondition[];
+  /** Permission configuration override. If not set, uses tool's config or defaults. */
+  permission?: ToolPermissionConfig;
 }
 
 export interface ToolCondition {
@@ -56,6 +58,8 @@ export interface ToolRegistration {
   priority: number;
   conditions: ToolCondition[];
   metadata: ToolMetadata;
+  /** Effective permission config (merged from tool.permission and options.permission) */
+  permission?: ToolPermissionConfig;
 }
 
 export interface ToolMetadata {
@@ -82,6 +86,8 @@ export interface SerializedToolState {
   enabled: Record<string, boolean>;
   namespaces: Record<string, string>;
   priorities: Record<string, number>;
+  /** Permission configs by tool name */
+  permissions?: Record<string, ToolPermissionConfig>;
 }
 
 export type ToolManagerEvent =
@@ -128,10 +134,15 @@ export class ToolManager extends EventEmitter {
       }
       if (options.priority !== undefined) existing.priority = options.priority;
       if (options.conditions !== undefined) existing.conditions = options.conditions;
+      if (options.permission !== undefined) existing.permission = options.permission;
       return;
     }
 
     const namespace = options.namespace ?? 'default';
+
+    // Merge permission config: options.permission > tool.permission > undefined
+    const effectivePermission = options.permission ?? tool.permission;
+
     const registration: ToolRegistration = {
       tool,
       enabled: options.enabled ?? true,
@@ -146,6 +157,7 @@ export class ToolManager extends EventEmitter {
         successCount: 0,
         failureCount: 0,
       },
+      permission: effectivePermission,
     };
 
     this.registry.set(name, registration);
@@ -332,6 +344,24 @@ export class ToolManager extends EventEmitter {
    */
   getPriority(name: string): number | undefined {
     return this.registry.get(name)?.priority;
+  }
+
+  /**
+   * Get permission config for a tool
+   */
+  getPermission(name: string): ToolPermissionConfig | undefined {
+    return this.registry.get(name)?.permission;
+  }
+
+  /**
+   * Set permission config for a tool
+   */
+  setPermission(name: string, permission: ToolPermissionConfig): boolean {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+
+    registration.permission = permission;
+    return true;
   }
 
   // ==========================================================================
@@ -556,18 +586,22 @@ export class ToolManager extends EventEmitter {
     const enabled: Record<string, boolean> = {};
     const namespaces: Record<string, string> = {};
     const priorities: Record<string, number> = {};
+    const permissions: Record<string, ToolPermissionConfig> = {};
 
     for (const [name, reg] of this.registry) {
       enabled[name] = reg.enabled;
       namespaces[name] = reg.namespace;
       priorities[name] = reg.priority;
+      if (reg.permission) {
+        permissions[name] = reg.permission;
+      }
     }
 
-    return { enabled, namespaces, priorities };
+    return { enabled, namespaces, priorities, permissions };
   }
 
   /**
-   * Load state (restores enabled/disabled, namespaces, priorities)
+   * Load state (restores enabled/disabled, namespaces, priorities, permissions)
    * Note: Tools must be re-registered separately (they contain functions)
    */
   loadState(state: SerializedToolState): void {
@@ -584,6 +618,13 @@ export class ToolManager extends EventEmitter {
 
     for (const [name, priority] of Object.entries(state.priorities)) {
       this.setPriority(name, priority);
+    }
+
+    // Restore permissions if present
+    if (state.permissions) {
+      for (const [name, permission] of Object.entries(state.permissions)) {
+        this.setPermission(name, permission);
+      }
     }
   }
 
