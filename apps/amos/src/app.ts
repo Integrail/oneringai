@@ -6,6 +6,7 @@
 
 import { join } from 'node:path';
 import type { ToolFunction, ApprovalDecision } from '@oneringai/agents';
+import { defaultDescribeCall } from '@oneringai/agents';
 import { ConfigManager } from './config/ConfigManager.js';
 import type { AmosConfig, IAmosApp, IConnectorManager, IToolLoader, IAgentRunner, IPromptManager, ToolApprovalContext } from './config/types.js';
 import { ConnectorManager } from './connectors/ConnectorManager.js';
@@ -235,9 +236,9 @@ export class AmosApp implements IAmosApp {
 
             case 'tool:start':
               if (event.tool && config.ui.showTiming) {
-                const details = this.formatToolDetails(
+                const details = this.getToolDescription(
                   event.tool.name,
-                  event.tool.args || '{}'
+                  event.tool.args
                 );
                 if (details) {
                   this.terminal.printDim(`  🔧 ${event.tool.name}: ${details}`);
@@ -491,58 +492,36 @@ export class AmosApp implements IAmosApp {
   /**
    * Format tool details for display
    */
-  private formatToolDetails(toolName: string, args: Record<string, unknown> | string): string {
+  /**
+   * Get a human-readable description of a tool call.
+   * Uses the tool's describeCall method if available, otherwise falls back to defaultDescribeCall.
+   */
+  private getToolDescription(toolName: string, args: Record<string, unknown> | string | undefined): string {
     try {
-      const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+      const parsedArgs = typeof args === 'string' ? JSON.parse(args) : (args || {});
 
-      switch (toolName) {
-        case 'read_file':
-          return parsedArgs.path ? `${parsedArgs.path}` : '';
-
-        case 'write_file':
-        case 'edit_file':
-          return parsedArgs.path ? `${parsedArgs.path}` : '';
-
-        case 'bash':
-          return parsedArgs.command ? `${parsedArgs.command}` : '';
-
-        case 'glob':
-          return parsedArgs.pattern ? `${parsedArgs.pattern}` : '';
-
-        case 'grep':
-          return parsedArgs.pattern ? `"${parsedArgs.pattern}"` : '';
-
-        case 'list_directory':
-          return parsedArgs.path ? `${parsedArgs.path}` : '.';
-
-        case 'web_fetch':
-        case 'web_fetch_js':
-          return parsedArgs.url ? `${parsedArgs.url}` : '';
-
-        case 'web_search':
-          return parsedArgs.query ? `"${parsedArgs.query}"` : '';
-
-        case 'memory_store':
-        case 'memory_retrieve':
-        case 'memory_delete':
-          return parsedArgs.key ? `${parsedArgs.key}` : '';
-
-        default:
-          // For other tools, show first meaningful argument
-          const firstArg = Object.entries(parsedArgs)[0];
-          if (firstArg) {
-            const [key, value] = firstArg;
-            const valueStr = typeof value === 'string' ? value : JSON.stringify(value);
-            if (valueStr.length < 50) {
-              return `${key}=${valueStr}`;
-            }
-            return `${key}=${valueStr.slice(0, 47)}...`;
-          }
-          return '';
+      // Try to get the tool and use its describeCall method
+      const tool = this.toolLoader.getTool(toolName);
+      if (tool?.describeCall) {
+        try {
+          return tool.describeCall(parsedArgs);
+        } catch {
+          // Fall through to default
+        }
       }
+
+      // Fall back to the generic defaultDescribeCall
+      return defaultDescribeCall(parsedArgs);
     } catch {
       return '';
     }
+  }
+
+  /**
+   * Format tool details for display (legacy alias for getToolDescription)
+   */
+  private formatToolDetails(toolName: string, args: Record<string, unknown> | string): string {
+    return this.getToolDescription(toolName, args);
   }
 
   /**

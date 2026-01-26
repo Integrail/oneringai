@@ -169,6 +169,13 @@ WHEN TO USE:
       },
     },
 
+    describeCall: (args: GlobArgs): string => {
+      if (args.path) {
+        return `${args.pattern} in ${args.path}`;
+      }
+      return args.pattern;
+    },
+
     execute: async (args: GlobArgs): Promise<GlobResult> => {
       const { pattern, path } = args;
 

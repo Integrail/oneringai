@@ -259,7 +259,11 @@ export type {
 } from './domain/entities/Message.js';
 
 // Tools
-export { ToolCallState } from './domain/entities/Tool.js';
+export {
+  ToolCallState,
+  defaultDescribeCall,
+  getToolCallDescription,
+} from './domain/entities/Tool.js';
 export type {
   Tool,
   FunctionToolDefinition,

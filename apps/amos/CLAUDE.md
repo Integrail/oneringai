@@ -229,7 +229,27 @@ toolLoader.reloadTools(): Promise<void>
 - **Developer (Filesystem):** `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `list_directory`
 - **Developer (Shell):** `bash`
 
+**Tool Call Descriptions:**
+
+All developer tools implement `describeCall()` for human-readable logging:
+```
+🔧 read_file: /path/to/file.ts
+🔧 bash: npm install
+🔧 grep: "pattern" in *.ts
+```
+
+The app uses `tool.describeCall(args)` if available, falling back to `defaultDescribeCall(args)` from the library.
+
 **Custom tools:** Export default `ToolFunction` from `.js` files in `data/tools/`
+
+Custom tools can implement `describeCall` for better logging:
+```javascript
+export default {
+  definition: { ... },
+  execute: async (args) => { ... },
+  describeCall: (args) => args.query || args.input,
+};
+```
 
 ### 5. PromptManager (`src/prompts/PromptManager.ts`)
 
@@ -471,6 +491,12 @@ tools.push({
       },
     },
   },
+
+  // Human-readable description for logging/UI (optional but recommended)
+  describeCall: (args: { arg1: string }) => {
+    return args.arg1;  // e.g., "🔧 my_tool: value"
+  },
+
   execute: async (args: { arg1: string }) => {
     return { result: 'computed value' };
   },

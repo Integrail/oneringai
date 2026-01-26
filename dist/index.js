@@ -6,7 +6,7 @@ import { existsSync, promises } from 'fs';
 import EventEmitter, { EventEmitter as EventEmitter$2 } from 'eventemitter3';
 import OpenAI2 from 'openai';
 import * as path3 from 'path';
-import { dirname, relative, isAbsolute, normalize, resolve, join, extname } from 'path';
+import { dirname, relative, resolve, isAbsolute, normalize, join, extname } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { EventEmitter as EventEmitter$1 } from 'events';
@@ -15,6 +15,7 @@ import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
+import { homedir } from 'os';
 import { load } from 'cheerio';
 import * as vm from 'vm';
 
@@ -6597,6 +6598,56 @@ var ToolCallState = /* @__PURE__ */ ((ToolCallState2) => {
   ToolCallState2["TIMEOUT"] = "timeout";
   return ToolCallState2;
 })(ToolCallState || {});
+function defaultDescribeCall(args, maxLength = 60) {
+  if (!args || typeof args !== "object") {
+    return "";
+  }
+  const priorityKeys = [
+    "file_path",
+    "path",
+    "command",
+    "query",
+    "pattern",
+    "url",
+    "key",
+    "name",
+    "message",
+    "content",
+    "expression",
+    "prompt"
+  ];
+  for (const key of priorityKeys) {
+    if (key in args && args[key] != null) {
+      const value = args[key];
+      const str = typeof value === "string" ? value : JSON.stringify(value);
+      return str.length > maxLength ? str.slice(0, maxLength - 3) + "..." : str;
+    }
+  }
+  for (const [, value] of Object.entries(args)) {
+    if (typeof value === "string" && value.length > 0) {
+      return value.length > maxLength ? value.slice(0, maxLength - 3) + "..." : value;
+    }
+  }
+  const firstEntry = Object.entries(args)[0];
+  if (firstEntry) {
+    const [key, value] = firstEntry;
+    const str = typeof value === "string" ? value : JSON.stringify(value);
+    if (str.length > maxLength) {
+      return `${key}=${str.slice(0, maxLength - key.length - 4)}...`;
+    }
+    return `${key}=${str}`;
+  }
+  return "";
+}
+function getToolCallDescription(tool, args) {
+  if (tool.describeCall) {
+    try {
+      return tool.describeCall(args);
+    } catch {
+    }
+  }
+  return defaultDescribeCall(args);
+}
 
 // src/capabilities/agents/ExecutionContext.ts
 var ExecutionContext = class {
@@ -17827,6 +17878,7 @@ __export(tools_exports, {
   developerTools: () => developerTools,
   editFile: () => editFile,
   executeJavaScript: () => executeJavaScript,
+  expandTilde: () => expandTilde,
   getBackgroundOutput: () => getBackgroundOutput,
   glob: () => glob,
   grep: () => grep,
@@ -17897,11 +17949,17 @@ function validatePath(inputPath, config = {}) {
   const workingDir = config.workingDirectory || process.cwd();
   const allowedDirs = config.allowedDirectories || [];
   const blockedDirs = config.blockedDirectories || DEFAULT_FILESYSTEM_CONFIG.blockedDirectories;
+  let expandedPath = inputPath;
+  if (inputPath.startsWith("~/")) {
+    expandedPath = resolve(homedir(), inputPath.slice(2));
+  } else if (inputPath === "~") {
+    expandedPath = homedir();
+  }
   let resolvedPath;
-  if (isAbsolute(inputPath)) {
-    resolvedPath = normalize(inputPath);
+  if (isAbsolute(expandedPath)) {
+    resolvedPath = normalize(expandedPath);
   } else {
-    resolvedPath = resolve(workingDir, inputPath);
+    resolvedPath = resolve(workingDir, expandedPath);
   }
   const pathSegments = resolvedPath.split("/").filter(Boolean);
   for (const blocked of blockedDirs) {
@@ -17942,6 +18000,14 @@ function validatePath(inputPath, config = {}) {
     }
   }
   return { valid: true, resolvedPath };
+}
+function expandTilde(inputPath) {
+  if (inputPath.startsWith("~/")) {
+    return resolve(homedir(), inputPath.slice(2));
+  } else if (inputPath === "~") {
+    return homedir();
+  }
+  return inputPath;
 }
 function isExcludedExtension(filePath, excludeExtensions = DEFAULT_FILESYSTEM_CONFIG.excludeExtensions) {
   const ext = filePath.toLowerCase().substring(filePath.lastIndexOf("."));
@@ -17996,6 +18062,12 @@ EXAMPLES:
           required: ["file_path"]
         }
       }
+    },
+    describeCall: (args) => {
+      if (args.offset && args.limit) {
+        return `${args.file_path} [lines ${args.offset}-${args.offset + args.limit}]`;
+      }
+      return args.file_path;
     },
     execute: async (args) => {
       const { file_path, offset = 1, limit = 2e3 } = args;
@@ -18119,6 +18191,13 @@ EXAMPLES:
         }
       }
     },
+    describeCall: (args) => {
+      const size = args.content?.length || 0;
+      if (size > 1e3) {
+        return `${args.file_path} (${Math.round(size / 1024)}KB)`;
+      }
+      return args.file_path;
+    },
     execute: async (args) => {
       const { file_path, content } = args;
       const validation = validatePath(file_path, mergedConfig);
@@ -18216,6 +18295,10 @@ EXAMPLES:
           required: ["file_path", "old_string", "new_string"]
         }
       }
+    },
+    describeCall: (args) => {
+      const mode = args.replace_all ? " (replace all)" : "";
+      return `${args.file_path}${mode}`;
     },
     execute: async (args) => {
       const { file_path, old_string, new_string, replace_all = false } = args;
@@ -18412,6 +18495,12 @@ WHEN TO USE:
           required: ["pattern"]
         }
       }
+    },
+    describeCall: (args) => {
+      if (args.path) {
+        return `${args.pattern} in ${args.path}`;
+      }
+      return args.pattern;
     },
     execute: async (args) => {
       const { pattern, path: path5 } = args;
@@ -18624,6 +18713,13 @@ WHEN TO USE:
           required: ["pattern"]
         }
       }
+    },
+    describeCall: (args) => {
+      const parts = [`"${args.pattern}"`];
+      if (args.glob) parts.push(`in ${args.glob}`);
+      else if (args.type) parts.push(`in *.${args.type}`);
+      if (args.path) parts.push(`(${args.path})`);
+      return parts.join(" ");
     },
     execute: async (args) => {
       const {
@@ -18845,6 +18941,15 @@ EXAMPLES:
         }
       }
     },
+    describeCall: (args) => {
+      const flags = [];
+      if (args.recursive) flags.push("recursive");
+      if (args.filter) flags.push(args.filter);
+      if (flags.length > 0) {
+        return `${args.path} (${flags.join(", ")})`;
+      }
+      return args.path;
+    },
     execute: async (args) => {
       const { path: path5, recursive = false, filter, max_depth = 3 } = args;
       const validation = validatePath(path5, {
@@ -19020,6 +19125,15 @@ EXAMPLES:
           required: ["command"]
         }
       }
+    },
+    describeCall: (args) => {
+      const cmd = args.command;
+      const maxLen = 60;
+      const prefix = args.run_in_background ? "[bg] " : "";
+      if (cmd.length > maxLen - prefix.length) {
+        return prefix + cmd.slice(0, maxLen - prefix.length - 3) + "...";
+      }
+      return prefix + cmd;
     },
     execute: async (args) => {
       const {
@@ -22008,6 +22122,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_BUILDER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_SHELL_CONFIG, DefaultContextBuilder, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, STT_MODELS, STT_MODEL_REGISTRY, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TextToSpeech, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, calculateBackoff, calculateCost, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createReadFileTool, createStrategy, createTextMessage, createVideoProvider, createWriteFileTool, developerTools, editFile, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getBackgroundOutput, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile4 as readFile, retryWithBackoff, setMetricsCollector, tools_exports as tools, validatePath, writeFile4 as writeFile };
+export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_BUILDER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_SHELL_CONFIG, DefaultContextBuilder, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, STT_MODELS, STT_MODEL_REGISTRY, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TextToSpeech, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, calculateBackoff, calculateCost, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createReadFileTool, createStrategy, createTextMessage, createVideoProvider, createWriteFileTool, defaultDescribeCall, developerTools, editFile, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getBackgroundOutput, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getToolCallDescription, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile4 as readFile, retryWithBackoff, setMetricsCollector, tools_exports as tools, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

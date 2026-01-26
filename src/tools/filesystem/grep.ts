@@ -275,6 +275,14 @@ WHEN TO USE:
       },
     },
 
+    describeCall: (args: GrepArgs): string => {
+      const parts = [`"${args.pattern}"`];
+      if (args.glob) parts.push(`in ${args.glob}`);
+      else if (args.type) parts.push(`in *.${args.type}`);
+      if (args.path) parts.push(`(${args.path})`);
+      return parts.join(' ');
+    },
+
     execute: async (args: GrepArgs): Promise<GrepResult> => {
       const {
         pattern,

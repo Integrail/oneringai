@@ -131,7 +131,53 @@ interface ToolFunction<TArgs = any, TResult = any> {
     output?: ToolOutputHints;
     /** Permission settings for this tool. If not set, defaults are used. */
     permission?: ToolPermissionConfig$1;
+    /**
+     * Returns a human-readable description of a tool call.
+     * Used for logging, UI display, and debugging.
+     *
+     * @param args - The arguments passed to the tool
+     * @returns A concise description (e.g., "reading /path/to/file.ts")
+     *
+     * If not implemented, use `defaultDescribeCall()` as a fallback.
+     *
+     * @example
+     * // For read_file tool:
+     * describeCall: (args) => args.file_path
+     *
+     * @example
+     * // For bash tool:
+     * describeCall: (args) => args.command.length > 50
+     *   ? args.command.slice(0, 47) + '...'
+     *   : args.command
+     */
+    describeCall?: (args: TArgs) => string;
 }
+/**
+ * Default implementation for describeCall.
+ * Shows the first meaningful argument value.
+ *
+ * @param args - Tool arguments object
+ * @param maxLength - Maximum length before truncation (default: 60)
+ * @returns Human-readable description
+ *
+ * @example
+ * defaultDescribeCall({ file_path: '/path/to/file.ts' })
+ * // Returns: '/path/to/file.ts'
+ *
+ * @example
+ * defaultDescribeCall({ query: 'search term', limit: 10 })
+ * // Returns: 'search term'
+ */
+declare function defaultDescribeCall(args: Record<string, unknown>, maxLength?: number): string;
+/**
+ * Get a human-readable description of a tool call.
+ * Uses the tool's describeCall method if available, otherwise falls back to default.
+ *
+ * @param tool - The tool function
+ * @param args - The arguments passed to the tool
+ * @returns Human-readable description
+ */
+declare function getToolCallDescription<TArgs>(tool: ToolFunction<TArgs>, args: TArgs): string;
 
 /**
  * Tool Permission Types
@@ -1772,4 +1818,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type ToolResult as $, type AgenticLoopEvents as A, ContentType as B, type CircuitState as C, DEFAULT_PERMISSION_CONFIG as D, ExecutionContext as E, type Content as F, type InputTextContent as G, type HookConfig as H, type InputItem as I, type InputImageContent as J, type ToolUseContent as K, type LLMResponse as L, type ModelCapabilities as M, type ToolResultContent as N, type OutputTextContent as O, type PermissionScope as P, type Message as Q, type RiskLevel as R, type SerializedApprovalState as S, type ToolFunction as T, type OutputItem as U, type CompactionItem as V, type ReasoningItem as W, ToolCallState as X, type Tool as Y, type FunctionToolDefinition as Z, type BuiltInTool as _, type ToolPermissionConfig$1 as a, type ToolExecutionContext as a0, type JSONSchema as a1, type ResponseCreatedEvent as a2, type ResponseInProgressEvent as a3, type OutputTextDeltaEvent as a4, type OutputTextDoneEvent as a5, type ToolCallStartEvent as a6, type ToolCallArgumentsDeltaEvent as a7, type ToolCallArgumentsDoneEvent as a8, type ToolExecutionStartEvent as a9, DEFAULT_CIRCUIT_BREAKER_CONFIG as aA, AgenticLoop as aB, type AgenticLoopConfig as aC, type ExecutionStartEvent as aD, type ExecutionCompleteEvent as aE, type ToolStartEvent as aF, type ToolCompleteEvent as aG, type LLMRequestEvent as aH, type LLMResponseEvent as aI, type ToolExecutionDoneEvent as aa, type IterationCompleteEvent$1 as ab, type ResponseCompleteEvent as ac, type ErrorEvent as ad, isStreamEvent as ae, isOutputTextDelta as af, isToolCallStart as ag, isToolCallArgumentsDelta as ah, isToolCallArgumentsDone as ai, isResponseComplete as aj, isErrorEvent as ak, ToolRegistry as al, HookManager as am, type AgenticLoopEventName as an, type HookName as ao, type Hook as ap, type ModifyingHook as aq, type BeforeToolContext as ar, type AfterToolContext as as, type ApproveToolContext as at, type ToolModification as au, type ApprovalResult as av, type IToolExecutor as aw, CircuitOpenError as ax, type CircuitBreakerConfig as ay, type CircuitBreakerEvents as az, ToolPermissionManager as b, type HistoryMode as c, type AgentPermissionsConfig as d, type AgentResponse as e, type StreamEvent as f, type ExecutionMetrics as g, type AuditEntry as h, type CircuitBreakerMetrics as i, type ITextProvider as j, type TokenUsage as k, type ToolCall as l, StreamEventType as m, CircuitBreaker as n, type TextGenerateOptions as o, MessageRole as p, type ToolPermissionConfig as q, type ApprovalCacheEntry as r, type SerializedApprovalEntry as s, type PermissionCheckResult as t, type ApprovalDecision as u, type PermissionCheckContext as v, type PermissionManagerEvent as w, APPROVAL_STATE_VERSION as x, DEFAULT_ALLOWLIST as y, type DefaultAllowlistedTool as z };
+export { type FunctionToolDefinition as $, type AgenticLoopEvents as A, ContentType as B, type CircuitState as C, DEFAULT_PERMISSION_CONFIG as D, ExecutionContext as E, type Content as F, type InputTextContent as G, type HookConfig as H, type InputItem as I, type InputImageContent as J, type ToolUseContent as K, type LLMResponse as L, type ModelCapabilities as M, type ToolResultContent as N, type OutputTextContent as O, type PermissionScope as P, type Message as Q, type RiskLevel as R, type SerializedApprovalState as S, type ToolFunction as T, type OutputItem as U, type CompactionItem as V, type ReasoningItem as W, ToolCallState as X, defaultDescribeCall as Y, getToolCallDescription as Z, type Tool as _, type ToolPermissionConfig$1 as a, type BuiltInTool as a0, type ToolResult as a1, type ToolExecutionContext as a2, type JSONSchema as a3, type ResponseCreatedEvent as a4, type ResponseInProgressEvent as a5, type OutputTextDeltaEvent as a6, type OutputTextDoneEvent as a7, type ToolCallStartEvent as a8, type ToolCallArgumentsDeltaEvent as a9, type CircuitBreakerConfig as aA, type CircuitBreakerEvents as aB, DEFAULT_CIRCUIT_BREAKER_CONFIG as aC, AgenticLoop as aD, type AgenticLoopConfig as aE, type ExecutionStartEvent as aF, type ExecutionCompleteEvent as aG, type ToolStartEvent as aH, type ToolCompleteEvent as aI, type LLMRequestEvent as aJ, type LLMResponseEvent as aK, type ToolCallArgumentsDoneEvent as aa, type ToolExecutionStartEvent as ab, type ToolExecutionDoneEvent as ac, type IterationCompleteEvent$1 as ad, type ResponseCompleteEvent as ae, type ErrorEvent as af, isStreamEvent as ag, isOutputTextDelta as ah, isToolCallStart as ai, isToolCallArgumentsDelta as aj, isToolCallArgumentsDone as ak, isResponseComplete as al, isErrorEvent as am, ToolRegistry as an, HookManager as ao, type AgenticLoopEventName as ap, type HookName as aq, type Hook as ar, type ModifyingHook as as, type BeforeToolContext as at, type AfterToolContext as au, type ApproveToolContext as av, type ToolModification as aw, type ApprovalResult as ax, type IToolExecutor as ay, CircuitOpenError as az, ToolPermissionManager as b, type HistoryMode as c, type AgentPermissionsConfig as d, type AgentResponse as e, type StreamEvent as f, type ExecutionMetrics as g, type AuditEntry as h, type CircuitBreakerMetrics as i, type ITextProvider as j, type TokenUsage as k, type ToolCall as l, StreamEventType as m, CircuitBreaker as n, type TextGenerateOptions as o, MessageRole as p, type ToolPermissionConfig as q, type ApprovalCacheEntry as r, type SerializedApprovalEntry as s, type PermissionCheckResult as t, type ApprovalDecision as u, type PermissionCheckContext as v, type PermissionManagerEvent as w, APPROVAL_STATE_VERSION as x, DEFAULT_ALLOWLIST as y, type DefaultAllowlistedTool as z };

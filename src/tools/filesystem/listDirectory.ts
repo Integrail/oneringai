@@ -188,6 +188,16 @@ EXAMPLES:
       },
     },
 
+    describeCall: (args: ListDirectoryArgs): string => {
+      const flags: string[] = [];
+      if (args.recursive) flags.push('recursive');
+      if (args.filter) flags.push(args.filter);
+      if (flags.length > 0) {
+        return `${args.path} (${flags.join(', ')})`;
+      }
+      return args.path;
+    },
+
     execute: async (args: ListDirectoryArgs): Promise<ListDirectoryResult> => {
       const { path, recursive = false, filter, max_depth = 3 } = args;
 

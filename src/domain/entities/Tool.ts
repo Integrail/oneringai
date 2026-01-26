@@ -148,4 +148,107 @@ export interface ToolFunction<TArgs = any, TResult = any> {
   // Permission configuration (optional, backward compatible)
   /** Permission settings for this tool. If not set, defaults are used. */
   permission?: ToolPermissionConfig;
+
+  /**
+   * Returns a human-readable description of a tool call.
+   * Used for logging, UI display, and debugging.
+   *
+   * @param args - The arguments passed to the tool
+   * @returns A concise description (e.g., "reading /path/to/file.ts")
+   *
+   * If not implemented, use `defaultDescribeCall()` as a fallback.
+   *
+   * @example
+   * // For read_file tool:
+   * describeCall: (args) => args.file_path
+   *
+   * @example
+   * // For bash tool:
+   * describeCall: (args) => args.command.length > 50
+   *   ? args.command.slice(0, 47) + '...'
+   *   : args.command
+   */
+  describeCall?: (args: TArgs) => string;
+}
+
+/**
+ * Default implementation for describeCall.
+ * Shows the first meaningful argument value.
+ *
+ * @param args - Tool arguments object
+ * @param maxLength - Maximum length before truncation (default: 60)
+ * @returns Human-readable description
+ *
+ * @example
+ * defaultDescribeCall({ file_path: '/path/to/file.ts' })
+ * // Returns: '/path/to/file.ts'
+ *
+ * @example
+ * defaultDescribeCall({ query: 'search term', limit: 10 })
+ * // Returns: 'search term'
+ */
+export function defaultDescribeCall(
+  args: Record<string, unknown>,
+  maxLength = 60
+): string {
+  if (!args || typeof args !== 'object') {
+    return '';
+  }
+
+  // Priority order for common argument names
+  const priorityKeys = [
+    'file_path', 'path', 'command', 'query', 'pattern', 'url',
+    'key', 'name', 'message', 'content', 'expression', 'prompt',
+  ];
+
+  // Try priority keys first
+  for (const key of priorityKeys) {
+    if (key in args && args[key] != null) {
+      const value = args[key];
+      const str = typeof value === 'string' ? value : JSON.stringify(value);
+      return str.length > maxLength ? str.slice(0, maxLength - 3) + '...' : str;
+    }
+  }
+
+  // Fall back to first string argument
+  for (const [, value] of Object.entries(args)) {
+    if (typeof value === 'string' && value.length > 0) {
+      return value.length > maxLength ? value.slice(0, maxLength - 3) + '...' : value;
+    }
+  }
+
+  // Fall back to first argument of any type
+  const firstEntry = Object.entries(args)[0];
+  if (firstEntry) {
+    const [key, value] = firstEntry;
+    const str = typeof value === 'string' ? value : JSON.stringify(value);
+    if (str.length > maxLength) {
+      return `${key}=${str.slice(0, maxLength - key.length - 4)}...`;
+    }
+    return `${key}=${str}`;
+  }
+
+  return '';
+}
+
+/**
+ * Get a human-readable description of a tool call.
+ * Uses the tool's describeCall method if available, otherwise falls back to default.
+ *
+ * @param tool - The tool function
+ * @param args - The arguments passed to the tool
+ * @returns Human-readable description
+ */
+export function getToolCallDescription<TArgs>(
+  tool: ToolFunction<TArgs>,
+  args: TArgs
+): string {
+  if (tool.describeCall) {
+    try {
+      return tool.describeCall(args);
+    } catch {
+      // Fall through to default
+    }
+  }
+  return defaultDescribeCall(args as Record<string, unknown>);
 }

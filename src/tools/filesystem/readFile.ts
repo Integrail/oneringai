@@ -89,6 +89,13 @@ EXAMPLES:
       },
     },
 
+    describeCall: (args: ReadFileArgs): string => {
+      if (args.offset && args.limit) {
+        return `${args.file_path} [lines ${args.offset}-${args.offset + args.limit}]`;
+      }
+      return args.file_path;
+    },
+
     execute: async (args: ReadFileArgs): Promise<ReadFileResult> => {
       const { file_path, offset = 1, limit = 2000 } = args;
 

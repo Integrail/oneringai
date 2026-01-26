@@ -116,6 +116,16 @@ EXAMPLES:
       },
     },
 
+    describeCall: (args: BashArgs): string => {
+      const cmd = args.command;
+      const maxLen = 60;
+      const prefix = args.run_in_background ? '[bg] ' : '';
+      if (cmd.length > maxLen - prefix.length) {
+        return prefix + cmd.slice(0, maxLen - prefix.length - 3) + '...';
+      }
+      return prefix + cmd;
+    },
+
     execute: async (args: BashArgs): Promise<BashResult> => {
       const {
         command,

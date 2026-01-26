@@ -5,6 +5,7 @@
  */
 
 import { resolve, normalize, isAbsolute } from 'node:path';
+import { homedir } from 'node:os';
 
 /**
  * Configuration for filesystem tools
@@ -160,12 +161,20 @@ export function validatePath(
   const allowedDirs = config.allowedDirectories || [];
   const blockedDirs = config.blockedDirectories || DEFAULT_FILESYSTEM_CONFIG.blockedDirectories;
 
+  // Expand tilde (~) to home directory
+  let expandedPath = inputPath;
+  if (inputPath.startsWith('~/')) {
+    expandedPath = resolve(homedir(), inputPath.slice(2));
+  } else if (inputPath === '~') {
+    expandedPath = homedir();
+  }
+
   // Resolve the path
   let resolvedPath: string;
-  if (isAbsolute(inputPath)) {
-    resolvedPath = normalize(inputPath);
+  if (isAbsolute(expandedPath)) {
+    resolvedPath = normalize(expandedPath);
   } else {
-    resolvedPath = resolve(workingDir, inputPath);
+    resolvedPath = resolve(workingDir, expandedPath);
   }
 
   // Check blocked directories - check if any path segment matches a blocked directory name
@@ -213,6 +222,18 @@ export function validatePath(
   }
 
   return { valid: true, resolvedPath };
+}
+
+/**
+ * Expand tilde (~) to the user's home directory
+ */
+export function expandTilde(inputPath: string): string {
+  if (inputPath.startsWith('~/')) {
+    return resolve(homedir(), inputPath.slice(2));
+  } else if (inputPath === '~') {
+    return homedir();
+  }
+  return inputPath;
 }
 
 /**

@@ -46,6 +46,7 @@ export {
   DEFAULT_FILESYSTEM_CONFIG,
   validatePath,
   isExcludedExtension,
+  expandTilde,
 } from './types.js';
 
 // Read File Tool

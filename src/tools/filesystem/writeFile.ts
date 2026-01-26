@@ -82,6 +82,14 @@ EXAMPLES:
       },
     },
 
+    describeCall: (args: WriteFileArgs): string => {
+      const size = args.content?.length || 0;
+      if (size > 1000) {
+        return `${args.file_path} (${Math.round(size / 1024)}KB)`;
+      }
+      return args.file_path;
+    },
+
     execute: async (args: WriteFileArgs): Promise<WriteFileResult> => {
       const { file_path, content } = args;
 

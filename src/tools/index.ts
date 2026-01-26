@@ -50,6 +50,7 @@ export {
   DEFAULT_FILESYSTEM_CONFIG,
   validatePath,
   isExcludedExtension,
+  expandTilde,
 } from './filesystem/index.js';
 
 export type {

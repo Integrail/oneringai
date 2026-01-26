@@ -637,6 +637,8 @@ const weatherTool: ToolFunction = {
     },
   },
   execute: async (args) => ({ temp: 72, location: args.location }),
+  // Optional: Human-readable description for logging/UI
+  describeCall: (args) => args.location,
 };
 
 Connector.create({
@@ -745,6 +747,53 @@ const bash = createBashTool({
 - Configurable blocked directories (default: `node_modules`, `.git`)
 - Timeout protection (default 2 min, max 10 min)
 - Output truncation for large outputs
+
+### Tool Call Descriptions
+
+Tools can provide human-readable descriptions of their invocations for logging and UI display:
+
+```typescript
+import { ToolFunction, defaultDescribeCall, getToolCallDescription } from '@oneringai/agents';
+
+// Implement describeCall in your tool
+const myTool: ToolFunction = {
+  definition: { ... },
+  execute: async (args) => { ... },
+
+  // Optional: Returns a concise description for logging/UI
+  describeCall: (args) => {
+    if (args.verbose) {
+      return `${args.file_path} (verbose mode)`;
+    }
+    return args.file_path;
+  },
+};
+
+// Use defaultDescribeCall as a fallback for tools without describeCall
+const description = defaultDescribeCall({ file_path: '/path/to/file.ts', limit: 100 });
+// Returns: '/path/to/file.ts'
+
+// Or use getToolCallDescription which tries describeCall first, then falls back
+const desc = getToolCallDescription(myTool, args);
+```
+
+**Built-in Tool Descriptions:**
+
+| Tool | Example Output |
+|------|----------------|
+| `read_file` | `/path/to/file.ts` or `/path/to/file.ts [lines 100-200]` |
+| `write_file` | `/path/to/file.ts` or `/path/to/file.ts (5KB)` |
+| `edit_file` | `/path/to/file.ts` or `/path/to/file.ts (replace all)` |
+| `glob` | `**/*.ts` or `**/*.ts in /project` |
+| `grep` | `"pattern"` or `"pattern" in *.ts` |
+| `list_directory` | `/path` or `/path (recursive, files)` |
+| `bash` | `npm install` or `[bg] npm run build` |
+
+**defaultDescribeCall Priority:**
+1. Checks common argument names: `file_path`, `path`, `command`, `query`, `pattern`, `url`, `key`, `name`, `message`, `content`, `expression`, `prompt`
+2. Falls back to first string argument
+3. Falls back to `key=value` format for other types
+4. Truncates to 60 characters
 
 ## Adding New Vendors
 

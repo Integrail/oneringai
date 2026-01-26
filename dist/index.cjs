@@ -6625,6 +6625,56 @@ var ToolCallState = /* @__PURE__ */ ((ToolCallState2) => {
   ToolCallState2["TIMEOUT"] = "timeout";
   return ToolCallState2;
 })(ToolCallState || {});
+function defaultDescribeCall(args, maxLength = 60) {
+  if (!args || typeof args !== "object") {
+    return "";
+  }
+  const priorityKeys = [
+    "file_path",
+    "path",
+    "command",
+    "query",
+    "pattern",
+    "url",
+    "key",
+    "name",
+    "message",
+    "content",
+    "expression",
+    "prompt"
+  ];
+  for (const key of priorityKeys) {
+    if (key in args && args[key] != null) {
+      const value = args[key];
+      const str = typeof value === "string" ? value : JSON.stringify(value);
+      return str.length > maxLength ? str.slice(0, maxLength - 3) + "..." : str;
+    }
+  }
+  for (const [, value] of Object.entries(args)) {
+    if (typeof value === "string" && value.length > 0) {
+      return value.length > maxLength ? value.slice(0, maxLength - 3) + "..." : value;
+    }
+  }
+  const firstEntry = Object.entries(args)[0];
+  if (firstEntry) {
+    const [key, value] = firstEntry;
+    const str = typeof value === "string" ? value : JSON.stringify(value);
+    if (str.length > maxLength) {
+      return `${key}=${str.slice(0, maxLength - key.length - 4)}...`;
+    }
+    return `${key}=${str}`;
+  }
+  return "";
+}
+function getToolCallDescription(tool, args) {
+  if (tool.describeCall) {
+    try {
+      return tool.describeCall(args);
+    } catch {
+    }
+  }
+  return defaultDescribeCall(args);
+}
 
 // src/capabilities/agents/ExecutionContext.ts
 var ExecutionContext = class {
@@ -17855,6 +17905,7 @@ __export(tools_exports, {
   developerTools: () => developerTools,
   editFile: () => editFile,
   executeJavaScript: () => executeJavaScript,
+  expandTilde: () => expandTilde,
   getBackgroundOutput: () => getBackgroundOutput,
   glob: () => glob,
   grep: () => grep,
@@ -17925,11 +17976,17 @@ function validatePath(inputPath, config = {}) {
   const workingDir = config.workingDirectory || process.cwd();
   const allowedDirs = config.allowedDirectories || [];
   const blockedDirs = config.blockedDirectories || DEFAULT_FILESYSTEM_CONFIG.blockedDirectories;
+  let expandedPath = inputPath;
+  if (inputPath.startsWith("~/")) {
+    expandedPath = path3.resolve(os.homedir(), inputPath.slice(2));
+  } else if (inputPath === "~") {
+    expandedPath = os.homedir();
+  }
   let resolvedPath;
-  if (path3.isAbsolute(inputPath)) {
-    resolvedPath = path3.normalize(inputPath);
+  if (path3.isAbsolute(expandedPath)) {
+    resolvedPath = path3.normalize(expandedPath);
   } else {
-    resolvedPath = path3.resolve(workingDir, inputPath);
+    resolvedPath = path3.resolve(workingDir, expandedPath);
   }
   const pathSegments = resolvedPath.split("/").filter(Boolean);
   for (const blocked of blockedDirs) {
@@ -17970,6 +18027,14 @@ function validatePath(inputPath, config = {}) {
     }
   }
   return { valid: true, resolvedPath };
+}
+function expandTilde(inputPath) {
+  if (inputPath.startsWith("~/")) {
+    return path3.resolve(os.homedir(), inputPath.slice(2));
+  } else if (inputPath === "~") {
+    return os.homedir();
+  }
+  return inputPath;
 }
 function isExcludedExtension(filePath, excludeExtensions = DEFAULT_FILESYSTEM_CONFIG.excludeExtensions) {
   const ext = filePath.toLowerCase().substring(filePath.lastIndexOf("."));
@@ -18024,6 +18089,12 @@ EXAMPLES:
           required: ["file_path"]
         }
       }
+    },
+    describeCall: (args) => {
+      if (args.offset && args.limit) {
+        return `${args.file_path} [lines ${args.offset}-${args.offset + args.limit}]`;
+      }
+      return args.file_path;
     },
     execute: async (args) => {
       const { file_path, offset = 1, limit = 2e3 } = args;
@@ -18147,6 +18218,13 @@ EXAMPLES:
         }
       }
     },
+    describeCall: (args) => {
+      const size = args.content?.length || 0;
+      if (size > 1e3) {
+        return `${args.file_path} (${Math.round(size / 1024)}KB)`;
+      }
+      return args.file_path;
+    },
     execute: async (args) => {
       const { file_path, content } = args;
       const validation = validatePath(file_path, mergedConfig);
@@ -18244,6 +18322,10 @@ EXAMPLES:
           required: ["file_path", "old_string", "new_string"]
         }
       }
+    },
+    describeCall: (args) => {
+      const mode = args.replace_all ? " (replace all)" : "";
+      return `${args.file_path}${mode}`;
     },
     execute: async (args) => {
       const { file_path, old_string, new_string, replace_all = false } = args;
@@ -18440,6 +18522,12 @@ WHEN TO USE:
           required: ["pattern"]
         }
       }
+    },
+    describeCall: (args) => {
+      if (args.path) {
+        return `${args.pattern} in ${args.path}`;
+      }
+      return args.pattern;
     },
     execute: async (args) => {
       const { pattern, path: path5 } = args;
@@ -18652,6 +18740,13 @@ WHEN TO USE:
           required: ["pattern"]
         }
       }
+    },
+    describeCall: (args) => {
+      const parts = [`"${args.pattern}"`];
+      if (args.glob) parts.push(`in ${args.glob}`);
+      else if (args.type) parts.push(`in *.${args.type}`);
+      if (args.path) parts.push(`(${args.path})`);
+      return parts.join(" ");
     },
     execute: async (args) => {
       const {
@@ -18873,6 +18968,15 @@ EXAMPLES:
         }
       }
     },
+    describeCall: (args) => {
+      const flags = [];
+      if (args.recursive) flags.push("recursive");
+      if (args.filter) flags.push(args.filter);
+      if (flags.length > 0) {
+        return `${args.path} (${flags.join(", ")})`;
+      }
+      return args.path;
+    },
     execute: async (args) => {
       const { path: path5, recursive = false, filter, max_depth = 3 } = args;
       const validation = validatePath(path5, {
@@ -19048,6 +19152,15 @@ EXAMPLES:
           required: ["command"]
         }
       }
+    },
+    describeCall: (args) => {
+      const cmd = args.command;
+      const maxLen = 60;
+      const prefix = args.run_in_background ? "[bg] " : "";
+      if (cmd.length > maxLen - prefix.length) {
+        return prefix + cmd.slice(0, maxLen - prefix.length - 3) + "...";
+      }
+      return prefix + cmd;
     },
     execute: async (args) => {
       const {
@@ -22173,6 +22286,7 @@ exports.createStrategy = createStrategy;
 exports.createTextMessage = createTextMessage;
 exports.createVideoProvider = createVideoProvider;
 exports.createWriteFileTool = createWriteFileTool;
+exports.defaultDescribeCall = defaultDescribeCall;
 exports.developerTools = developerTools;
 exports.editFile = editFile;
 exports.generateEncryptionKey = generateEncryptionKey;
@@ -22195,6 +22309,7 @@ exports.getSTTModelsWithFeature = getSTTModelsWithFeature;
 exports.getTTSModelInfo = getTTSModelInfo;
 exports.getTTSModelsByVendor = getTTSModelsByVendor;
 exports.getTTSModelsWithFeature = getTTSModelsWithFeature;
+exports.getToolCallDescription = getToolCallDescription;
 exports.getVideoModelInfo = getVideoModelInfo;
 exports.getVideoModelsByVendor = getVideoModelsByVendor;
 exports.getVideoModelsWithAudio = getVideoModelsWithAudio;

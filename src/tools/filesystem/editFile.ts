@@ -104,6 +104,11 @@ EXAMPLES:
       },
     },
 
+    describeCall: (args: EditFileArgs): string => {
+      const mode = args.replace_all ? ' (replace all)' : '';
+      return `${args.file_path}${mode}`;
+    },
+
     execute: async (args: EditFileArgs): Promise<EditFileResult> => {
       const { file_path, old_string, new_string, replace_all = false } = args;
 
