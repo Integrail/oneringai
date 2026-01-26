@@ -596,6 +596,357 @@ src/
     └── clipboardImage.ts
 ```
 
+## MCP (Model Context Protocol) Integration
+
+The library provides seamless integration with Model Context Protocol (MCP) servers, enabling automatic discovery and registration of external tools.
+
+### Architecture
+
+MCP integration follows the existing Connector-First pattern:
+
+```
+┌─────────────────────────────────────────────────────┐
+│              Config.load() / Manual Setup           │
+│  MCPRegistry.create() → Agent.create()             │
+└────────────────┬────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────┐
+│           MCPRegistry (Static Registry)             │
+│  Pattern: Like Connector registry                  │
+│  Manages MCP client connections                    │
+└────────────────┬────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────┐
+│               MCPClient (Wrapper)                   │
+│  Wraps @modelcontextprotocol/sdk Client           │
+│  - Connection lifecycle & auto-reconnect          │
+│  - Tool/resource/prompt discovery                 │
+│  - Auto-register with ToolManager                 │
+└────────────────┬────────────────────────────────────┘
+                 │
+┌────────────────▼────────────────────────────────────┐
+│        @modelcontextprotocol/sdk (Official)        │
+│  - JSON-RPC 2.0 protocol                          │
+│  - Stdio/SSE/WebSocket transports                 │
+│  - MCP specification implementation               │
+└────────────────────────────────────────────────────┘
+```
+
+**Key Features:**
+- Official `@modelcontextprotocol/sdk` for protocol implementation
+- Static MCPRegistry for managing connections
+- Automatic tool discovery and registration
+- **Transport support**: Stdio (local) and HTTP/HTTPS (remote) transports
+- Auto-reconnect with exponential backoff
+- Health checks and connection monitoring
+- Namespace-based tool organization (`mcp:{server}:{tool}`)
+- Permission integration (all MCP tools require approval)
+
+### MCPRegistry (`src/core/mcp/MCPRegistry.ts`)
+
+Static registry for MCP client connections:
+
+```typescript
+import { MCPRegistry } from '@oneringai/agents';
+
+// Create and register an MCP client
+const client = MCPRegistry.create({
+  name: 'filesystem',
+  transport: 'stdio',
+  transportConfig: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '/path/to/dir'],
+  },
+  autoConnect: true,
+  toolNamespace: 'mcp:fs',
+});
+
+// Get a registered client
+const client = MCPRegistry.get('filesystem');
+
+// Check if exists
+if (MCPRegistry.has('filesystem')) { ... }
+
+// List all
+const names = MCPRegistry.list();
+
+// Get server info
+const info = MCPRegistry.getInfo('filesystem');
+// { name, state, connected, toolCount }
+
+// Load from config file
+const clients = await MCPRegistry.loadFromConfigFile('./oneringai.config.json');
+
+// Connect/disconnect all
+await MCPRegistry.connectAll();
+await MCPRegistry.disconnectAll();
+
+// Cleanup
+MCPRegistry.destroyAll();
+```
+
+### MCPClient (`src/core/mcp/MCPClient.ts`)
+
+High-level MCP client wrapper:
+
+```typescript
+import { MCPClient } from '@oneringai/agents';
+
+// Connection lifecycle
+await client.connect();
+await client.disconnect();
+await client.reconnect();
+const isConnected = client.isConnected();
+const alive = await client.ping();
+
+// Tool operations
+const tools = await client.listTools();
+const result = await client.callTool('read_file', { path: './README.md' });
+
+// Register with ToolManager
+client.registerTools(agent.tools);
+client.unregisterTools(agent.tools);
+
+// Resource operations
+const resources = await client.listResources();
+const content = await client.readResource('file:///path/to/file');
+await client.subscribeResource('file:///watch');
+await client.unsubscribeResource('file:///watch');
+
+// Prompt operations
+const prompts = await client.listPrompts();
+const prompt = await client.getPrompt('summarize', { length: 'short' });
+
+// State management
+const state = client.getState();
+client.loadState(state);
+
+// Events
+client.on('connected', () => console.log('Connected'));
+client.on('disconnected', () => console.log('Disconnected'));
+client.on('reconnecting', (attempt) => console.log(`Reconnecting (${attempt})...`));
+client.on('failed', (error) => console.error('Failed:', error));
+client.on('tool:called', (name, args) => console.log(`Tool called: ${name}`));
+client.on('tool:result', (name, result) => console.log(`Tool result: ${name}`));
+client.on('resource:updated', (uri) => console.log(`Resource updated: ${uri}`));
+client.on('error', (error) => console.error('Error:', error));
+
+// Cleanup
+client.destroy();
+```
+
+### Configuration (`oneringai.config.json`)
+
+Global configuration file for MCP servers and library settings:
+
+```json
+{
+  "version": "1.0",
+  "mcp": {
+    "servers": [
+      {
+        "name": "filesystem",
+        "displayName": "Filesystem Server",
+        "transport": "stdio",
+        "transportConfig": {
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"],
+          "env": { "NODE_ENV": "production" }
+        },
+        "autoConnect": true,
+        "toolNamespace": "mcp:fs",
+        "permissions": {
+          "defaultScope": "session",
+          "defaultRiskLevel": "medium"
+        }
+      }
+    ],
+    "defaults": {
+      "autoConnect": false,
+      "autoReconnect": true,
+      "reconnectIntervalMs": 5000,
+      "maxReconnectAttempts": 10,
+      "requestTimeoutMs": 30000,
+      "healthCheckIntervalMs": 60000
+    }
+  }
+}
+```
+
+**Configuration Sections:**
+- `mcp` - MCP server configurations
+- `tools` - Global tool permission defaults
+- `session` - Session storage configuration
+- `context` - Context management settings
+
+**Environment Variable Interpolation:**
+Use `${ENV_VAR}` in config values:
+```json
+{
+  "transportConfig": {
+    "token": "${GITHUB_TOKEN}"
+  }
+}
+```
+
+### Config Loader (`src/core/Config.ts`)
+
+Global configuration singleton:
+
+```typescript
+import { Config } from '@oneringai/agents';
+
+// Load from file
+const config = await Config.load('./oneringai.config.json');
+
+// Load synchronously
+const config = Config.loadSync();
+
+// Get current config
+const config = Config.get();
+
+// Get specific section
+const mcpConfig = Config.getSection('mcp');
+const sessionConfig = Config.getSection('session');
+
+// Check if loaded
+if (Config.isLoaded()) { ... }
+
+// Reload
+await Config.reload();
+
+// Set programmatically
+Config.set({ version: '1.0', mcp: {...} });
+
+// Clear (for testing)
+Config.clear();
+```
+
+**Default Search Paths:**
+1. `./oneringai.config.json` (current directory)
+2. `~/.oneringai/config.json` (home directory)
+
+### MCP Types
+
+**MCPServerConfig:**
+```typescript
+interface MCPServerConfig {
+  name: string;                    // Unique identifier
+  displayName?: string;            // Human-readable name
+  description?: string;            // Server description
+  transport: 'stdio' | 'sse' | 'websocket';
+  transportConfig: TransportConfig;
+  autoConnect?: boolean;           // Connect on startup (default: false)
+  autoReconnect?: boolean;         // Reconnect on failure (default: true)
+  reconnectIntervalMs?: number;    // Reconnect delay (default: 5000)
+  maxReconnectAttempts?: number;   // Max attempts (default: 10)
+  requestTimeoutMs?: number;       // Request timeout (default: 30000)
+  healthCheckIntervalMs?: number;  // Health check interval (default: 60000)
+  toolNamespace?: string;          // Tool prefix (default: 'mcp:{name}')
+  permissions?: {
+    defaultScope?: 'once' | 'session' | 'always' | 'never';
+    defaultRiskLevel?: 'low' | 'medium' | 'high' | 'critical';
+  };
+}
+```
+
+**Transport Configs:**
+```typescript
+// Stdio transport (process spawning for local servers)
+interface StdioTransportConfig {
+  command: string;      // e.g., 'npx', 'node', 'python'
+  args?: string[];      // Command arguments
+  env?: Record<string, string>;    // Environment variables
+  cwd?: string;         // Working directory
+}
+
+// HTTP/HTTPS transport (StreamableHTTP for remote servers)
+interface HTTPTransportConfig {
+  url: string;          // HTTP(S) endpoint URL
+  token?: string;       // Bearer token (supports ${ENV_VAR})
+  headers?: Record<string, string>;  // Additional headers
+  timeoutMs?: number;   // Request timeout (default: 30000)
+  sessionId?: string;   // Session ID for reconnection
+  reconnection?: {
+    maxReconnectionDelay?: number;         // Max delay (default: 30000)
+    initialReconnectionDelay?: number;     // Initial delay (default: 1000)
+    reconnectionDelayGrowFactor?: number;  // Growth factor (default: 1.5)
+    maxRetries?: number;                   // Max retries (default: 2)
+  };
+}
+```
+
+**MCP Tool:**
+```typescript
+interface MCPTool {
+  name: string;
+  description?: string;
+  inputSchema: {
+    type: 'object';
+    properties?: Record<string, unknown>;
+    required?: string[];
+  };
+}
+```
+
+**MCP Tool Result:**
+```typescript
+interface MCPToolResult {
+  content: Array<{
+    type: 'text' | 'image' | 'resource';
+    text?: string;
+    data?: string;
+    mimeType?: string;
+    uri?: string;
+  }>;
+  isError?: boolean;
+}
+```
+
+### Error Types
+
+```typescript
+import {
+  MCPError,
+  MCPConnectionError,
+  MCPTimeoutError,
+  MCPProtocolError,
+  MCPToolError,
+  MCPResourceError,
+} from '@oneringai/agents';
+
+// Base error
+throw new MCPError('Something went wrong', 'server-name');
+
+// Connection errors
+throw new MCPConnectionError('Failed to connect', 'server-name');
+
+// Timeout errors
+throw new MCPTimeoutError('Request timed out', 30000, 'server-name');
+
+// Protocol errors
+throw new MCPProtocolError('Invalid message', 'server-name');
+
+// Tool execution errors
+throw new MCPToolError('Tool failed', 'tool-name', 'server-name');
+
+// Resource errors
+throw new MCPResourceError('Resource not found', 'uri', 'server-name');
+```
+
+### Available MCP Servers
+
+Official MCP servers from `@modelcontextprotocol`:
+
+- **@modelcontextprotocol/server-filesystem** - File system access
+- **@modelcontextprotocol/server-github** - GitHub API integration
+- **@modelcontextprotocol/server-google-drive** - Google Drive access
+- **@modelcontextprotocol/server-slack** - Slack workspace integration
+- **@modelcontextprotocol/server-postgres** - PostgreSQL database access
+- And many more community servers...
+
+See https://github.com/modelcontextprotocol for full list.
+
 ## Usage Patterns
 
 ### Basic Text Generation
@@ -694,6 +1045,109 @@ for await (const event of agent.stream('Hello')) {
 for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
   process.stdout.write(text);
 }
+```
+
+### MCP Integration
+
+Use MCP servers to extend agent capabilities:
+
+```typescript
+import { Connector, Agent, Vendor, MCPRegistry } from '@oneringai/agents';
+
+// Setup connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Create MCP client
+const client = MCPRegistry.create({
+  name: 'filesystem',
+  transport: 'stdio',
+  transportConfig: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', process.cwd()],
+  },
+});
+
+// Connect to server
+await client.connect();
+
+// Create agent and register MCP tools
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+});
+
+client.registerTools(agent.tools);
+
+// Agent can now use MCP tools
+const response = await agent.run('List files in the current directory');
+```
+
+**Load from Configuration File:**
+
+```typescript
+import { Config, MCPRegistry, Agent } from '@oneringai/agents';
+
+// Load config
+await Config.load('./oneringai.config.json');
+
+// Create all MCP clients from config
+const clients = MCPRegistry.createFromConfig(Config.getSection('mcp')!);
+
+// Connect all with autoConnect enabled
+await MCPRegistry.connectAll();
+
+// Create agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+});
+
+// Register tools from all servers
+for (const client of clients) {
+  if (client.isConnected()) {
+    client.registerTools(agent.tools);
+  }
+}
+
+// Check what tools are available
+console.log(`Available tools: ${agent.listTools().join(', ')}`);
+```
+
+**Tool Namespacing:**
+
+MCP tools are namespaced to prevent conflicts:
+```typescript
+// Default namespace: mcp:{server-name}:{tool-name}
+client.tools.forEach(tool => {
+  console.log(tool.name);  // e.g., 'mcp:filesystem:read_file'
+});
+
+// Custom namespace
+MCPRegistry.create({
+  name: 'fs',
+  toolNamespace: 'files',
+  // ...
+});
+// Tools will be: files:read_file, files:write_file, etc.
+```
+
+**Event Monitoring:**
+
+```typescript
+client.on('connected', () => console.log('MCP server connected'));
+client.on('disconnected', () => console.log('MCP server disconnected'));
+client.on('reconnecting', (attempt) => console.log(`Reconnecting (${attempt})...`));
+client.on('tool:called', (name, args) => {
+  console.log(`Tool called: ${name}`, args);
+});
+client.on('tool:result', (name, result) => {
+  console.log(`Tool result: ${name}`, result);
+});
+client.on('error', (error) => console.error('MCP error:', error));
 ```
 
 ### Developer Tools (Filesystem & Shell)

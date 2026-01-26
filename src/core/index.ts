@@ -31,6 +31,13 @@ export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 export { Vendor, VENDORS, isVendor } from './Vendor.js';
 export { createProvider, createProviderAsync } from './createProvider.js';
 
+// Global configuration
+export { Config } from './Config.js';
+export type { OneRingAIConfig, MCPConfiguration } from '../domain/entities/MCPConfig.js';
+
+// MCP (Model Context Protocol)
+export * from './mcp/index.js';
+
 // Audio capabilities
 export { TextToSpeech } from './TextToSpeech.js';
 export type { TextToSpeechConfig } from './TextToSpeech.js';

@@ -1,26 +1,36 @@
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs10 from 'fs';
-import { existsSync, promises } from 'fs';
+import * as fs11 from 'fs';
+import { promises, existsSync } from 'fs';
 import EventEmitter, { EventEmitter as EventEmitter$2 } from 'eventemitter3';
 import OpenAI2 from 'openai';
 import * as path3 from 'path';
-import { dirname, relative, resolve, isAbsolute, normalize, join, extname } from 'path';
+import { join, resolve, dirname, relative, isAbsolute, normalize, extname } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { EventEmitter as EventEmitter$1 } from 'events';
-import * as fs9 from 'fs/promises';
+import * as os from 'os';
+import { homedir } from 'os';
+import '@modelcontextprotocol/sdk/client/index.js';
+import '@modelcontextprotocol/sdk/client/stdio.js';
+import '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import '@modelcontextprotocol/sdk/types.js';
+import * as fs10 from 'fs/promises';
 import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
-import * as os from 'os';
-import { homedir } from 'os';
 import { load } from 'cheerio';
 import * as vm from 'vm';
 
 var __defProp = Object.defineProperty;
 var __getOwnPropNames = Object.getOwnPropertyNames;
+var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+  get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+}) : x)(function(x) {
+  if (typeof require !== "undefined") return require.apply(this, arguments);
+  throw Error('Dynamic require of "' + x + '" is not supported');
+});
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
@@ -629,7 +639,7 @@ var JWTBearerFlow = class {
       this.privateKey = config.privateKey;
     } else if (config.privateKeyPath) {
       try {
-        this.privateKey = fs10.readFileSync(config.privateKeyPath, "utf8");
+        this.privateKey = fs11.readFileSync(config.privateKeyPath, "utf8");
       } catch (error) {
         throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
       }
@@ -1611,10 +1621,10 @@ var FrameworkLogger = class _FrameworkLogger {
   initFileStream(filePath) {
     try {
       const dir = path3.dirname(filePath);
-      if (!fs10.existsSync(dir)) {
-        fs10.mkdirSync(dir, { recursive: true });
+      if (!fs11.existsSync(dir)) {
+        fs11.mkdirSync(dir, { recursive: true });
       }
-      this.fileStream = fs10.createWriteStream(filePath, {
+      this.fileStream = fs11.createWriteStream(filePath, {
         flags: "a",
         // append mode
         encoding: "utf8"
@@ -8198,13 +8208,13 @@ var AgenticLoop = class extends EventEmitter$2 {
    * Execute function with timeout
    */
   async executeWithTimeout(fn, timeoutMs) {
-    return new Promise((resolve2, reject) => {
+    return new Promise((resolve3, reject) => {
       const timer = setTimeout(() => {
         reject(new ToolTimeoutError("tool", timeoutMs));
       }, timeoutMs);
       fn().then((result) => {
         clearTimeout(timer);
-        resolve2(result);
+        resolve3(result);
       }).catch((error) => {
         clearTimeout(timer);
         reject(error);
@@ -8345,8 +8355,8 @@ var AgenticLoop = class extends EventEmitter$2 {
   _doPause(reason) {
     if (this.paused) return;
     this.paused = true;
-    this.pausePromise = new Promise((resolve2) => {
-      this.resumeCallback = resolve2;
+    this.pausePromise = new Promise((resolve3) => {
+      this.resumeCallback = resolve3;
     });
     if (this.context) {
       this.context.paused = true;
@@ -9050,6 +9060,122 @@ var Agent = class _Agent extends EventEmitter$2 {
     }
   }
 };
+(class {
+  static DEFAULT_PATHS = [
+    "./oneringai.config.json",
+    join(homedir(), ".oneringai", "config.json")
+  ];
+  /**
+   * Load configuration from file
+   */
+  static async load(path5) {
+    const configPath = path5 ? resolve(path5) : await this.findConfig();
+    if (!configPath) {
+      throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
+    }
+    try {
+      const content = await promises.readFile(configPath, "utf-8");
+      let config = JSON.parse(content);
+      config = this.interpolateEnvVars(config);
+      this.validate(config);
+      return config;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(`Invalid JSON in configuration file '${configPath}': ${error.message}`);
+      }
+      throw error;
+    }
+  }
+  /**
+   * Load configuration synchronously
+   */
+  static loadSync(path5) {
+    const configPath = path5 ? resolve(path5) : this.findConfigSync();
+    if (!configPath) {
+      throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
+    }
+    try {
+      const fs12 = __require("fs");
+      const content = fs12.readFileSync(configPath, "utf-8");
+      let config = JSON.parse(content);
+      config = this.interpolateEnvVars(config);
+      this.validate(config);
+      return config;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        throw new Error(`Invalid JSON in configuration file '${configPath}': ${error.message}`);
+      }
+      throw error;
+    }
+  }
+  /**
+   * Find configuration file in default paths
+   */
+  static async findConfig() {
+    for (const path5 of this.DEFAULT_PATHS) {
+      try {
+        await promises.access(resolve(path5));
+        return resolve(path5);
+      } catch {
+      }
+    }
+    return null;
+  }
+  /**
+   * Find configuration file synchronously
+   */
+  static findConfigSync() {
+    const fs12 = __require("fs");
+    for (const path5 of this.DEFAULT_PATHS) {
+      try {
+        fs12.accessSync(resolve(path5));
+        return resolve(path5);
+      } catch {
+      }
+    }
+    return null;
+  }
+  /**
+   * Interpolate environment variables in configuration
+   * Replaces ${ENV_VAR} with process.env.ENV_VAR
+   */
+  static interpolateEnvVars(config) {
+    const jsonString = JSON.stringify(config);
+    const interpolated = jsonString.replace(/\$\{([^}]+)\}/g, (match, envVar) => {
+      const value = process.env[envVar];
+      if (value === void 0) {
+        console.warn(`Warning: Environment variable '${envVar}' is not set`);
+        return match;
+      }
+      return value;
+    });
+    return JSON.parse(interpolated);
+  }
+  /**
+   * Basic validation of configuration structure
+   */
+  static validate(config) {
+    if (typeof config !== "object" || config === null) {
+      throw new Error("Configuration must be an object");
+    }
+    if (config.mcp) {
+      if (!Array.isArray(config.mcp.servers)) {
+        throw new Error('MCP configuration must have a "servers" array');
+      }
+      for (const server of config.mcp.servers) {
+        if (!server.name) {
+          throw new Error('Each MCP server must have a "name" field');
+        }
+        if (!server.transport) {
+          throw new Error(`MCP server '${server.name}' must have a "transport" field`);
+        }
+        if (!server.transportConfig) {
+          throw new Error(`MCP server '${server.name}' must have a "transportConfig" field`);
+        }
+      }
+    }
+  }
+});
 
 // src/infrastructure/providers/base/BaseMediaProvider.ts
 var BaseMediaProvider = class extends BaseProvider {
@@ -9567,7 +9693,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
       const blob = new Blob([audio]);
       return new File([blob], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs10.createReadStream(audio);
+      return fs11.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -10120,7 +10246,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs9.writeFile(filePath, response.audio);
+    await fs10.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -10465,7 +10591,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs9.readFile(filePath);
+    const audio = await fs10.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -10791,7 +10917,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([image], "image.png", { type: "image/png" });
     }
-    return fs10.createReadStream(image);
+    return fs11.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -10938,8 +11064,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs11 = await import('fs');
-      const buffer = fs11.readFileSync(image);
+      const fs12 = await import('fs');
+      const buffer = fs12.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -11673,8 +11799,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([image], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs11 = await import('fs');
-      const data = fs11.readFileSync(image);
+      const fs12 = await import('fs');
+      const data = fs12.readFileSync(image);
       return new File([data], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -11946,7 +12072,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
       if (status.status === "completed" || status.status === "failed") {
         return status;
       }
-      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
+      await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
     }
     throw new ProviderError("google", `Video generation timed out after ${timeoutMs}ms`);
   }
@@ -11971,8 +12097,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs11 = await import('fs/promises');
-    const data = await fs11.readFile(image);
+    const fs12 = await import('fs/promises');
+    const data = await fs12.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -12354,7 +12480,7 @@ var VideoGeneration = class _VideoGeneration {
           `Video generation failed: ${status.error || "Unknown error"}`
         );
       }
-      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
+      await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
     }
     throw new ProviderError(
       this.connector.vendor || "unknown",
@@ -16876,8 +17002,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs9.mkdir(this.directory, { recursive: true });
-      await fs9.chmod(this.directory, 448);
+      await fs10.mkdir(this.directory, { recursive: true });
+      await fs10.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -16893,13 +17019,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs9.writeFile(filePath, encrypted, "utf8");
-    await fs9.chmod(filePath, 384);
+    await fs10.writeFile(filePath, encrypted, "utf8");
+    await fs10.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs9.readFile(filePath, "utf8");
+      const encrypted = await fs10.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -16908,7 +17034,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs9.unlink(filePath);
+        await fs10.unlink(filePath);
       } catch {
       }
       return null;
@@ -16917,7 +17043,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs9.unlink(filePath);
+      await fs10.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -16927,7 +17053,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs9.access(filePath);
+      await fs10.access(filePath);
       return true;
     } catch {
       return false;
@@ -16938,7 +17064,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs9.readdir(this.directory);
+      const files = await fs10.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -16949,10 +17075,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs9.readdir(this.directory);
+      const files = await fs10.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs9.unlink(path3.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs10.unlink(path3.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -17350,14 +17476,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs9.writeFile(filePath, json, "utf8");
-    await fs9.chmod(filePath, 384);
+    await fs10.writeFile(filePath, json, "utf8");
+    await fs10.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs9.readFile(filePath, "utf8");
+      const json = await fs10.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -17370,7 +17496,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs9.unlink(filePath);
+      await fs10.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -17384,7 +17510,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs9.access(filePath);
+      await fs10.access(filePath);
       return true;
     } catch {
       return false;
@@ -17410,13 +17536,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs9.readdir(this.directory);
+      const files = await fs10.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs9.unlink(path3.join(this.directory, f)).catch(() => {
+          (f) => fs10.unlink(path3.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -17443,8 +17569,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs9.mkdir(this.directory, { recursive: true });
-      await fs9.chmod(this.directory, 448);
+      await fs10.mkdir(this.directory, { recursive: true });
+      await fs10.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -17455,7 +17581,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs9.readFile(this.indexPath, "utf8");
+      const json = await fs10.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -17473,8 +17599,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs9.writeFile(this.indexPath, json, "utf8");
-    await fs9.chmod(this.indexPath, 384);
+    await fs10.writeFile(this.indexPath, json, "utf8");
+    await fs10.chmod(this.indexPath, 384);
   }
 };
 
@@ -17517,7 +17643,7 @@ function addJitter(delay, factor = 0.1) {
 }
 async function backoffWait(attempt, config = DEFAULT_BACKOFF_CONFIG) {
   const delay = calculateBackoff(attempt, config);
-  await new Promise((resolve2) => setTimeout(resolve2, delay));
+  await new Promise((resolve3) => setTimeout(resolve3, delay));
   return delay;
 }
 function* backoffSequence(config = DEFAULT_BACKOFF_CONFIG, maxAttempts) {
@@ -17686,8 +17812,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs10.existsSync(filePath)) {
-      fs10.unlinkSync(filePath);
+    if (fs11.existsSync(filePath)) {
+      fs11.unlinkSync(filePath);
     }
   } catch {
   }
@@ -17738,7 +17864,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs10.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs11.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -17755,14 +17881,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs10.existsSync(tempFile) && fs10.statSync(tempFile).size > 0) {
+      if (fs11.existsSync(tempFile) && fs11.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs10.existsSync(tempFile) && fs10.statSync(tempFile).size > 0) {
+      if (fs11.existsSync(tempFile) && fs11.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -17789,7 +17915,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs10.existsSync(tempFile) && fs10.statSync(tempFile).size > 0) {
+    if (fs11.existsSync(tempFile) && fs11.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -17802,7 +17928,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs10.readFileSync(filePath);
+    const imageBuffer = fs11.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -19153,7 +19279,7 @@ EXAMPLES:
         ...process.env,
         ...mergedConfig.env
       };
-      return new Promise((resolve2) => {
+      return new Promise((resolve3) => {
         const startTime = Date.now();
         const childProcess = spawn(command, [], {
           shell: mergedConfig.shell,
@@ -19176,7 +19302,7 @@ EXAMPLES:
               backgroundProcesses.delete(bgId);
             }, 3e5);
           });
-          resolve2({
+          resolve3({
             success: true,
             backgroundId: bgId,
             stdout: `Command started in background with ID: ${bgId}`
@@ -19220,7 +19346,7 @@ EXAMPLES:
             truncated = true;
           }
           if (killed) {
-            resolve2({
+            resolve3({
               success: false,
               stdout,
               stderr,
@@ -19231,7 +19357,7 @@ EXAMPLES:
               error: `Command timed out after ${effectiveTimeout}ms`
             });
           } else {
-            resolve2({
+            resolve3({
               success: code === 0,
               stdout,
               stderr,
@@ -19245,7 +19371,7 @@ EXAMPLES:
         });
         childProcess.on("error", (error) => {
           clearTimeout(timeoutId);
-          resolve2({
+          resolve3({
             success: false,
             error: `Failed to execute command: ${error.message}`,
             duration: Date.now() - startTime

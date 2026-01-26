@@ -1,0 +1,103 @@
+{
+  "$schema": "https://oneringai.dev/schemas/config.json",
+  "version": "1.0",
+
+  "mcp": {
+    "servers": [
+      {
+        "name": "filesystem",
+        "displayName": "Filesystem Server",
+        "description": "Local file system access",
+        "transport": "stdio",
+        "transportConfig": {
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/Users/username/projects"],
+          "env": {
+            "NODE_ENV": "production"
+          }
+        },
+        "autoConnect": true,
+        "toolNamespace": "mcp:fs",
+        "permissions": {
+          "defaultScope": "session",
+          "defaultRiskLevel": "medium"
+        }
+      },
+      {
+        "name": "remote-server",
+        "displayName": "Remote MCP Server",
+        "description": "Remote MCP server over HTTP",
+        "transport": "http",
+        "transportConfig": {
+          "url": "http://localhost:3000/mcp",
+          "token": "${MCP_SERVER_TOKEN}",
+          "headers": {
+            "X-Custom-Header": "value"
+          },
+          "timeoutMs": 30000,
+          "reconnection": {
+            "maxReconnectionDelay": 30000,
+            "initialReconnectionDelay": 1000,
+            "reconnectionDelayGrowFactor": 1.5,
+            "maxRetries": 5
+          }
+        },
+        "autoConnect": false,
+        "toolNamespace": "mcp:remote",
+        "permissions": {
+          "defaultScope": "session",
+          "defaultRiskLevel": "medium"
+        }
+      },
+      {
+        "name": "github",
+        "displayName": "GitHub MCP Server",
+        "description": "GitHub API via HTTPS MCP server",
+        "transport": "https",
+        "transportConfig": {
+          "url": "https://mcp.example.com/github",
+          "token": "${GITHUB_TOKEN}",
+          "timeoutMs": 60000
+        },
+        "autoConnect": false,
+        "toolNamespace": "mcp:github",
+        "permissions": {
+          "defaultScope": "once",
+          "defaultRiskLevel": "high"
+        }
+      }
+    ],
+    "defaults": {
+      "autoConnect": false,
+      "autoReconnect": true,
+      "reconnectIntervalMs": 5000,
+      "maxReconnectAttempts": 10,
+      "requestTimeoutMs": 30000,
+      "healthCheckIntervalMs": 60000
+    }
+  },
+
+  "tools": {
+    "permissions": {
+      "defaultScope": "session",
+      "defaultRiskLevel": "medium"
+    }
+  },
+
+  "session": {
+    "storage": "file",
+    "storageOptions": {
+      "directory": "./sessions"
+    },
+    "autoSave": true,
+    "autoSaveIntervalMs": 30000
+  },
+
+  "context": {
+    "maxContextTokens": 128000,
+    "strategy": "adaptive",
+    "strategyOptions": {
+      "learningWindow": 50
+    }
+  }
+}

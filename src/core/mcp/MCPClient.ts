@@ -1,0 +1,586 @@
+/**
+ * MCP Client Implementation
+ *
+ * Wrapper around @modelcontextprotocol/sdk Client with lifecycle management,
+ * auto-reconnect, and integration with ToolManager.
+ */
+
+import { EventEmitter } from 'events';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import {
+  ListToolsResultSchema,
+  CallToolResultSchema,
+  ListResourcesResultSchema,
+  ReadResourceResultSchema,
+  ListPromptsResultSchema,
+  GetPromptResultSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { IMCPClient, MCPClientConnectionState } from '../../domain/interfaces/IMCPClient.js';
+import type {
+  MCPTool,
+  MCPToolResult,
+  MCPResource,
+  MCPResourceContent,
+  MCPPrompt,
+  MCPPromptResult,
+  MCPServerCapabilities,
+  MCPClientState,
+} from '../../domain/entities/MCPTypes.js';
+import type {
+  MCPServerConfig,
+  MCPConfiguration,
+  StdioTransportConfig,
+  HTTPTransportConfig,
+} from '../../domain/entities/MCPConfig.js';
+import type { ToolManager } from '../ToolManager.js';
+import {
+  MCPError,
+  MCPConnectionError,
+  MCPToolError,
+} from '../../domain/errors/MCPError.js';
+import { applyServerDefaults } from '../../domain/entities/MCPConfig.js';
+import { createMCPToolAdapters } from '../../infrastructure/mcp/adapters/MCPToolAdapter.js';
+
+/**
+ * MCP Client class
+ */
+export class MCPClient extends EventEmitter implements IMCPClient {
+  public readonly name: string;
+  private readonly config: ReturnType<typeof applyServerDefaults>;
+  private client: Client | null = null;
+  private transport: Transport | null = null;
+  private _state: MCPClientConnectionState = 'disconnected';
+  private _capabilities?: MCPServerCapabilities;
+  private _tools: MCPTool[] = [];
+  private reconnectAttempts = 0;
+  private reconnectTimer?: NodeJS.Timeout;
+  private healthCheckTimer?: NodeJS.Timeout;
+  private subscribedResources = new Set<string>();
+  private registeredToolNames = new Set<string>();
+
+  constructor(config: MCPServerConfig, defaults?: MCPConfiguration['defaults']) {
+    super();
+    this.name = config.name;
+    this.config = applyServerDefaults(config, defaults);
+  }
+
+  // Getters
+
+  get state(): MCPClientConnectionState {
+    return this._state;
+  }
+
+  get capabilities(): MCPServerCapabilities | undefined {
+    return this._capabilities;
+  }
+
+  get tools(): MCPTool[] {
+    return this._tools;
+  }
+
+  // Lifecycle methods
+
+  async connect(): Promise<void> {
+    if (this._state === 'connected' || this._state === 'connecting') {
+      return;
+    }
+
+    this._state = 'connecting';
+    this.emit('connecting');
+
+    try {
+      // Create transport based on config
+      this.transport = this.createTransport();
+
+      // Create SDK client
+      this.client = new Client(
+        {
+          name: '@oneringai/agents',
+          version: '0.2.0',
+        },
+        {
+          capabilities: {
+            // Request all capabilities (empty object means we support all)
+          },
+        }
+      );
+
+      // Connect
+      await this.client.connect(this.transport);
+
+      // Get server capabilities - the SDK exposes this after connection
+      // The actual capabilities are negotiated during connection
+      this._capabilities = {} as MCPServerCapabilities;
+
+      // List available tools
+      await this.refreshTools();
+
+      this._state = 'connected';
+      this.reconnectAttempts = 0;
+      this.emit('connected');
+
+      // Start health check
+      this.startHealthCheck();
+    } catch (error) {
+      this._state = 'failed';
+      const mcpError = new MCPConnectionError(
+        `Failed to connect to MCP server '${this.name}'`,
+        this.name,
+        error as Error
+      );
+      this.emit('failed', mcpError);
+      this.emit('error', mcpError);
+
+      // Auto-reconnect if enabled
+      if (this.config.autoReconnect) {
+        this.scheduleReconnect();
+      } else {
+        throw mcpError;
+      }
+    }
+  }
+
+  async disconnect(): Promise<void> {
+    this.stopHealthCheck();
+    this.stopReconnect();
+
+    if (this.client && this.transport) {
+      try {
+        await this.client.close();
+      } catch (error) {
+        // Ignore close errors
+      }
+    }
+
+    this.client = null;
+    this.transport = null;
+    this._state = 'disconnected';
+    this._tools = [];
+    this.emit('disconnected');
+  }
+
+  async reconnect(): Promise<void> {
+    await this.disconnect();
+    await this.connect();
+  }
+
+  isConnected(): boolean {
+    return this._state === 'connected';
+  }
+
+  async ping(): Promise<boolean> {
+    if (!this.client || !this.isConnected()) {
+      return false;
+    }
+
+    try {
+      await this.client.ping();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Tool methods
+
+  async listTools(): Promise<MCPTool[]> {
+    this.ensureConnected();
+
+    try {
+      const response = await this.client!.request({ method: 'tools/list' }, ListToolsResultSchema);
+
+      this._tools = response.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema as MCPTool['inputSchema'],
+      }));
+
+      return this._tools;
+    } catch (error) {
+      throw new MCPError(`Failed to list tools from server '${this.name}'`, this.name, error as Error);
+    }
+  }
+
+  async callTool(name: string, args: Record<string, unknown>): Promise<MCPToolResult> {
+    this.ensureConnected();
+
+    this.emit('tool:called', name, args);
+
+    try {
+      const response = await this.client!.request(
+        {
+          method: 'tools/call',
+          params: {
+            name,
+            arguments: args,
+          },
+        },
+        CallToolResultSchema
+      );
+
+      const result: MCPToolResult = {
+        content: response.content.map((item) => ({
+          type: item.type as 'text' | 'image' | 'resource',
+          text: 'text' in item ? item.text : undefined,
+          data: 'data' in item ? item.data : undefined,
+          mimeType: 'mimeType' in item ? item.mimeType : undefined,
+          uri: 'uri' in item ? item.uri : undefined,
+        })),
+        isError: response.isError,
+      };
+
+      this.emit('tool:result', name, result);
+
+      if (result.isError) {
+        const errorText = result.content.find((c) => c.type === 'text')?.text || 'Unknown error';
+        throw new MCPToolError(errorText, name, this.name);
+      }
+
+      return result;
+    } catch (error) {
+      if (error instanceof MCPToolError) {
+        throw error;
+      }
+      throw new MCPToolError(
+        `Failed to call tool '${name}' on server '${this.name}'`,
+        name,
+        this.name,
+        error as Error
+      );
+    }
+  }
+
+  registerTools(toolManager: ToolManager): void {
+    if (this._tools.length === 0) {
+      return;
+    }
+
+    // Convert MCP tools to ToolFunctions
+    const toolFunctions = createMCPToolAdapters(this._tools, this, this.config.toolNamespace);
+
+    // Register each tool with the ToolManager
+    for (const toolFn of toolFunctions) {
+      const toolName = toolFn.definition.function.name;
+
+      toolManager.register(toolFn, {
+        namespace: this.config.toolNamespace,
+        enabled: true,
+        permission: this.config.permissions
+          ? {
+              scope: this.config.permissions.defaultScope,
+              riskLevel: this.config.permissions.defaultRiskLevel,
+            }
+          : undefined,
+      });
+
+      this.registeredToolNames.add(toolName);
+    }
+  }
+
+  unregisterTools(toolManager: ToolManager): void {
+    for (const toolName of this.registeredToolNames) {
+      toolManager.unregister(toolName);
+    }
+    this.registeredToolNames.clear();
+  }
+
+  // Resource methods
+
+  async listResources(): Promise<MCPResource[]> {
+    this.ensureConnected();
+
+    try {
+      const response = await this.client!.request({ method: 'resources/list' }, ListResourcesResultSchema);
+
+      return response.resources.map((resource) => ({
+        uri: resource.uri,
+        name: resource.name,
+        description: resource.description,
+        mimeType: resource.mimeType,
+      }));
+    } catch (error) {
+      throw new MCPError(
+        `Failed to list resources from server '${this.name}'`,
+        this.name,
+        error as Error
+      );
+    }
+  }
+
+  async readResource(uri: string): Promise<MCPResourceContent> {
+    this.ensureConnected();
+
+    try {
+      const response = await this.client!.request(
+        {
+          method: 'resources/read',
+          params: { uri },
+        },
+        ReadResourceResultSchema
+      );
+
+      const content = response.contents?.[0];
+      if (!content) {
+        throw new MCPError(`No content returned for resource '${uri}'`, this.name);
+      }
+
+      return {
+        uri: content.uri,
+        mimeType: content.mimeType,
+        text: 'text' in content ? content.text : undefined,
+        blob: 'blob' in content ? content.blob : undefined,
+      };
+    } catch (error) {
+      throw new MCPError(
+        `Failed to read resource '${uri}' from server '${this.name}'`,
+        this.name,
+        error as Error
+      );
+    }
+  }
+
+  async subscribeResource(uri: string): Promise<void> {
+    this.ensureConnected();
+
+    if (!this._capabilities?.resources?.subscribe) {
+      throw new MCPError(`Server '${this.name}' does not support resource subscriptions`, this.name);
+    }
+
+    try {
+      // Subscribe method typically doesn't return structured data
+      await this.client!.request(
+        {
+          method: 'resources/subscribe',
+          params: { uri },
+        },
+        {} as any // No specific schema for subscription acknowledgment
+      );
+
+      this.subscribedResources.add(uri);
+    } catch (error) {
+      throw new MCPError(
+        `Failed to subscribe to resource '${uri}' on server '${this.name}'`,
+        this.name,
+        error as Error
+      );
+    }
+  }
+
+  async unsubscribeResource(uri: string): Promise<void> {
+    this.ensureConnected();
+
+    try {
+      // Unsubscribe method typically doesn't return structured data
+      await this.client!.request(
+        {
+          method: 'resources/unsubscribe',
+          params: { uri },
+        },
+        {} as any // No specific schema for unsubscribe acknowledgment
+      );
+
+      this.subscribedResources.delete(uri);
+    } catch (error) {
+      throw new MCPError(
+        `Failed to unsubscribe from resource '${uri}' on server '${this.name}'`,
+        this.name,
+        error as Error
+      );
+    }
+  }
+
+  // Prompt methods
+
+  async listPrompts(): Promise<MCPPrompt[]> {
+    this.ensureConnected();
+
+    try {
+      const response = await this.client!.request({ method: 'prompts/list' }, ListPromptsResultSchema);
+
+      return response.prompts.map((prompt) => ({
+        name: prompt.name,
+        description: prompt.description,
+        arguments: prompt.arguments,
+      }));
+    } catch (error) {
+      throw new MCPError(`Failed to list prompts from server '${this.name}'`, this.name, error as Error);
+    }
+  }
+
+  async getPrompt(name: string, args?: Record<string, unknown>): Promise<MCPPromptResult> {
+    this.ensureConnected();
+
+    try {
+      const response = await this.client!.request(
+        {
+          method: 'prompts/get',
+          params: {
+            name,
+            arguments: args,
+          },
+        },
+        GetPromptResultSchema
+      );
+
+      return {
+        description: response.description,
+        messages: response.messages.map((msg) => ({
+          role: msg.role as 'user' | 'assistant',
+          content: {
+            type: msg.content.type as 'text' | 'image' | 'resource',
+            text: 'text' in msg.content ? msg.content.text : undefined,
+            data: 'data' in msg.content ? msg.content.data : undefined,
+            mimeType: 'mimeType' in msg.content ? msg.content.mimeType : undefined,
+            uri: 'uri' in msg.content ? msg.content.uri : undefined,
+          },
+        })),
+      };
+    } catch (error) {
+      throw new MCPError(
+        `Failed to get prompt '${name}' from server '${this.name}'`,
+        this.name,
+        error as Error
+      );
+    }
+  }
+
+  // State management
+
+  getState(): MCPClientState {
+    return {
+      name: this.name,
+      state: this._state,
+      capabilities: this._capabilities,
+      subscribedResources: Array.from(this.subscribedResources),
+      lastConnectedAt: this._state === 'connected' ? Date.now() : undefined,
+      connectionAttempts: this.reconnectAttempts,
+    };
+  }
+
+  loadState(state: MCPClientState): void {
+    this.subscribedResources = new Set(state.subscribedResources);
+    this.reconnectAttempts = state.connectionAttempts;
+  }
+
+  destroy(): void {
+    this.stopHealthCheck();
+    this.stopReconnect();
+    if (this.client) {
+      this.client.close().catch(() => {});
+    }
+    this.removeAllListeners();
+  }
+
+  // Private helper methods
+
+  private createTransport(): Transport {
+    const { transport, transportConfig } = this.config;
+
+    if (transport === 'stdio') {
+      const stdioConfig = transportConfig as StdioTransportConfig;
+      return new StdioClientTransport({
+        command: stdioConfig.command,
+        args: stdioConfig.args,
+        env: stdioConfig.env as Record<string, string> | undefined,
+      });
+    }
+
+    if (transport === 'http' || transport === 'https') {
+      const httpConfig = transportConfig as HTTPTransportConfig;
+
+      // Build headers
+      const headers: Record<string, string> = { ...httpConfig.headers };
+      if (httpConfig.token) {
+        headers['Authorization'] = `Bearer ${httpConfig.token}`;
+      }
+
+      return new StreamableHTTPClientTransport(new URL(httpConfig.url), {
+        sessionId: httpConfig.sessionId,
+        requestInit: {
+          headers,
+          ...(httpConfig.timeoutMs && { signal: AbortSignal.timeout(httpConfig.timeoutMs) }),
+        },
+        reconnectionOptions: httpConfig.reconnection
+          ? {
+              maxReconnectionDelay: httpConfig.reconnection.maxReconnectionDelay ?? 30000,
+              initialReconnectionDelay: httpConfig.reconnection.initialReconnectionDelay ?? 1000,
+              reconnectionDelayGrowFactor: httpConfig.reconnection.reconnectionDelayGrowFactor ?? 1.5,
+              maxRetries: httpConfig.reconnection.maxRetries ?? 2,
+            }
+          : undefined,
+      });
+    }
+
+    throw new MCPError(`Transport '${transport}' not supported`, this.name);
+  }
+
+  private ensureConnected(): void {
+    if (!this.client || !this.isConnected()) {
+      throw new MCPConnectionError(`MCP server '${this.name}' is not connected`, this.name);
+    }
+  }
+
+  private async refreshTools(): Promise<void> {
+    try {
+      await this.listTools();
+    } catch (error) {
+      // Log but don't fail
+      this.emit('error', error);
+    }
+  }
+
+  private startHealthCheck(): void {
+    if (this.config.healthCheckIntervalMs <= 0) {
+      return;
+    }
+
+    this.healthCheckTimer = setInterval(async () => {
+      const alive = await this.ping();
+      if (!alive && this._state === 'connected') {
+        this.emit('error', new MCPConnectionError(`Health check failed for server '${this.name}'`, this.name));
+        if (this.config.autoReconnect) {
+          await this.reconnect();
+        }
+      }
+    }, this.config.healthCheckIntervalMs);
+  }
+
+  private stopHealthCheck(): void {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = undefined;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
+      this.emit('error', new MCPConnectionError(`Max reconnect attempts reached for server '${this.name}'`, this.name));
+      return;
+    }
+
+    this.reconnectAttempts++;
+    this._state = 'reconnecting';
+    this.emit('reconnecting', this.reconnectAttempts);
+
+    // Exponential backoff: 5s, 10s, 20s, 40s, ...
+    const delay = this.config.reconnectIntervalMs * Math.pow(2, this.reconnectAttempts - 1);
+
+    this.reconnectTimer = setTimeout(async () => {
+      try {
+        await this.connect();
+      } catch (error) {
+        // connect() will handle retry
+      }
+    }, delay);
+  }
+
+  private stopReconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+  }
+}
