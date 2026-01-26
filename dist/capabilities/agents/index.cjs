@@ -1892,7 +1892,8 @@ var AgenticLoop = class extends EventEmitter.EventEmitter {
       instructions: config.instructions,
       tools: config.tools,
       tool_choice: "auto",
-      temperature: config.temperature
+      temperature: config.temperature,
+      vendorOptions: config.vendorOptions
     };
     await this.hookManager.executeHooks("before:llm", {
       executionId,
@@ -2112,7 +2113,8 @@ var AgenticLoop = class extends EventEmitter.EventEmitter {
       instructions: config.instructions,
       tools: config.tools,
       tool_choice: "auto",
-      temperature: config.temperature
+      temperature: config.temperature,
+      vendorOptions: config.vendorOptions
     };
     const beforeLLM = await this.hookManager.executeHooks("before:llm", {
       executionId,

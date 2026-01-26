@@ -4422,6 +4422,11 @@ var GoogleConverter = class {
       temperature: options.temperature,
       maxOutputTokens: options.max_output_tokens
     };
+    if (options.vendorOptions?.thinkingLevel) {
+      request.generationConfig.thinkingConfig = {
+        thinkingLevel: options.vendorOptions.thinkingLevel
+      };
+    }
     if (tools && tools.length > 0) {
       request.generationConfig.allowCodeExecution = false;
     }
@@ -4895,6 +4900,7 @@ var GoogleTextProvider = class extends BaseTextProvider {
             model: options.model,
             tools: googleRequest.tools,
             toolConfig: googleRequest.toolConfig,
+            generationConfig: googleRequest.generationConfig,
             contents: googleRequest.contents?.slice(0, 1)
             // First message only
           }, null, 2));
@@ -7669,7 +7675,8 @@ var AgenticLoop = class extends EventEmitter$2 {
       instructions: config.instructions,
       tools: config.tools,
       tool_choice: "auto",
-      temperature: config.temperature
+      temperature: config.temperature,
+      vendorOptions: config.vendorOptions
     };
     await this.hookManager.executeHooks("before:llm", {
       executionId,
@@ -7889,7 +7896,8 @@ var AgenticLoop = class extends EventEmitter$2 {
       instructions: config.instructions,
       tools: config.tools,
       tool_choice: "auto",
-      temperature: config.temperature
+      temperature: config.temperature,
+      vendorOptions: config.vendorOptions
     };
     const beforeLLM = await this.hookManager.executeHooks("before:llm", {
       executionId,
@@ -8599,6 +8607,7 @@ var Agent = class _Agent extends EventEmitter$2 {
         tools,
         temperature: this.config.temperature,
         maxIterations: this.config.maxIterations || 10,
+        vendorOptions: this.config.vendorOptions,
         hooks: this.config.hooks,
         historyMode: this.config.historyMode,
         limits: this.config.limits,
@@ -8660,6 +8669,7 @@ var Agent = class _Agent extends EventEmitter$2 {
         tools,
         temperature: this.config.temperature,
         maxIterations: this.config.maxIterations || 10,
+        vendorOptions: this.config.vendorOptions,
         hooks: this.config.hooks,
         historyMode: this.config.historyMode,
         limits: this.config.limits,
@@ -14792,16 +14802,10 @@ var PlanningAgent = class _PlanningAgent {
   config;
   currentTasks = [];
   planningComplete = false;
-  constructor(agent, config) {
-    this.agent = agent;
+  constructor(config) {
     this.config = config;
-  }
-  /**
-   * Create a new PlanningAgent
-   */
-  static create(config) {
-    const planningTools = createPlanningTools();
-    const agent = Agent.create({
+    const planningTools = this.createBoundPlanningTools();
+    this.agent = Agent.create({
       connector: config.connector,
       model: config.model,
       tools: planningTools,
@@ -14810,7 +14814,101 @@ var PlanningAgent = class _PlanningAgent {
       // Lower temp for more structured output
       maxIterations: config.maxPlanningIterations ?? 20
     });
-    return new _PlanningAgent(agent, config);
+  }
+  /**
+   * Create a new PlanningAgent
+   */
+  static create(config) {
+    return new _PlanningAgent(config);
+  }
+  /**
+   * Create planning tools bound to this PlanningAgent instance
+   */
+  createBoundPlanningTools() {
+    return [
+      {
+        definition: {
+          type: "function",
+          function: {
+            name: "create_task",
+            description: "Create a new task in the plan with name, description, and optional dependencies",
+            parameters: {
+              type: "object",
+              properties: {
+                name: {
+                  type: "string",
+                  description: 'Task name in snake_case (e.g., "fetch_user_data")'
+                },
+                description: {
+                  type: "string",
+                  description: "Clear, actionable description of what this task does"
+                },
+                depends_on: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Array of task names this task depends on (optional)"
+                },
+                parallel: {
+                  type: "boolean",
+                  description: "Whether this task can run in parallel with others (default: false)"
+                },
+                expected_output: {
+                  type: "string",
+                  description: "Description of expected output (optional)"
+                }
+              },
+              required: ["name", "description"]
+            }
+          }
+        },
+        execute: async (args) => {
+          const name = args.name;
+          const description = args.description;
+          const dependsOn = args.depends_on;
+          const parallel = args.parallel;
+          const expectedOutput = args.expected_output;
+          this.addTask({
+            name,
+            description,
+            dependsOn,
+            execution: parallel ? { parallel: true } : void 0,
+            expectedOutput
+          });
+          return {
+            success: true,
+            message: `Task '${name}' created`,
+            taskCount: this.currentTasks.length
+          };
+        },
+        idempotency: {
+          safe: false
+        }
+      },
+      {
+        definition: {
+          type: "function",
+          function: {
+            name: "finalize_plan",
+            description: "Mark the planning phase as complete. Call this when all tasks have been created and the plan is ready.",
+            parameters: {
+              type: "object",
+              properties: {}
+            }
+          }
+        },
+        execute: async () => {
+          this.finalizePlanning();
+          return {
+            success: true,
+            message: "Plan finalized and ready for execution",
+            totalTasks: this.currentTasks.length
+          };
+        },
+        idempotency: {
+          safe: false
+        }
+      }
+    ];
   }
   /**
    * Generate a plan from a goal
@@ -14963,77 +15061,6 @@ Use the planning tools to make changes, then finalize when complete.`;
     this.planningComplete = true;
   }
 };
-function createPlanningTools() {
-  return [
-    {
-      definition: {
-        type: "function",
-        function: {
-          name: "create_task",
-          description: "Create a new task in the plan with name, description, and optional dependencies",
-          parameters: {
-            type: "object",
-            properties: {
-              name: {
-                type: "string",
-                description: 'Task name in snake_case (e.g., "fetch_user_data")'
-              },
-              description: {
-                type: "string",
-                description: "Clear, actionable description of what this task does"
-              },
-              depends_on: {
-                type: "array",
-                items: { type: "string" },
-                description: "Array of task names this task depends on (optional)"
-              },
-              parallel: {
-                type: "boolean",
-                description: "Whether this task can run in parallel with others (default: false)"
-              },
-              expected_output: {
-                type: "string",
-                description: "Description of expected output (optional)"
-              }
-            },
-            required: ["name", "description"]
-          }
-        }
-      },
-      execute: async (args) => {
-        return {
-          success: true,
-          message: `Task '${args.name}' created`
-        };
-      },
-      idempotency: {
-        safe: false
-      }
-    },
-    {
-      definition: {
-        type: "function",
-        function: {
-          name: "finalize_plan",
-          description: "Mark the planning phase as complete. Call this when all tasks have been created and the plan is ready.",
-          parameters: {
-            type: "object",
-            properties: {}
-          }
-        }
-      },
-      execute: async () => {
-        return {
-          success: true,
-          message: "Plan finalized and ready for execution"
-        };
-      },
-      idempotency: {
-        safe: false
-      }
-    }
-  ];
-}
 
 // src/core/context/types.ts
 var DEFAULT_CONTEXT_CONFIG2 = {

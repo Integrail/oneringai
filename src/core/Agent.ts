@@ -56,6 +56,8 @@ export interface AgentConfig {
   tools?: ToolFunction[];
   temperature?: number;
   maxIterations?: number;
+  /** Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') */
+  vendorOptions?: Record<string, any>;
 
   // Enterprise features
   hooks?: HookConfig;
@@ -375,6 +377,7 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
         tools,
         temperature: this.config.temperature,
         maxIterations: this.config.maxIterations || 10,
+        vendorOptions: this.config.vendorOptions,
         hooks: this.config.hooks,
         historyMode: this.config.historyMode,
         limits: this.config.limits,
@@ -455,6 +458,7 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
         tools,
         temperature: this.config.temperature,
         maxIterations: this.config.maxIterations || 10,
+        vendorOptions: this.config.vendorOptions,
         hooks: this.config.hooks,
         historyMode: this.config.historyMode,
         limits: this.config.limits,

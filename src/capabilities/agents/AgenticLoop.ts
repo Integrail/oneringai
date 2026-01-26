@@ -28,6 +28,8 @@ export interface AgenticLoopConfig {
   tools: Tool[];
   temperature?: number;
   maxIterations: number;
+  /** Vendor-specific options (e.g., Google's thinkingLevel) */
+  vendorOptions?: Record<string, any>;
 
   // NEW: Enterprise configuration
   hooks?: HookConfig;
@@ -641,6 +643,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
       tools: config.tools,
       tool_choice: 'auto',
       temperature: config.temperature,
+      vendorOptions: config.vendorOptions,
     };
 
     // Execute before:llm hook
@@ -948,6 +951,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
       tools: config.tools,
       tool_choice: 'auto',
       temperature: config.temperature,
+      vendorOptions: config.vendorOptions,
     };
 
     // Execute before:llm hook

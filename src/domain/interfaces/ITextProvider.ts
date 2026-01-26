@@ -23,6 +23,8 @@ export interface TextGenerateOptions {
   parallel_tool_calls?: boolean;
   previous_response_id?: string;
   metadata?: Record<string, string>;
+  /** Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) */
+  vendorOptions?: Record<string, any>;
 }
 
 export interface ModelCapabilities {

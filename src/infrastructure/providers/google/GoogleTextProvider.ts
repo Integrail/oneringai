@@ -56,6 +56,7 @@ export class GoogleTextProvider extends BaseTextProvider {
             model: options.model,
             tools: googleRequest.tools,
             toolConfig: googleRequest.toolConfig,
+            generationConfig: googleRequest.generationConfig,
             contents: googleRequest.contents?.slice(0, 1), // First message only
           }, null, 2));
         }

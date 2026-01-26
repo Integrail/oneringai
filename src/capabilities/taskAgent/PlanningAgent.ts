@@ -77,20 +77,14 @@ export class PlanningAgent {
   private currentTasks: TaskInput[] = [];
   private planningComplete = false;
 
-  private constructor(agent: Agent, config: PlanningAgentConfig) {
-    this.agent = agent;
+  private constructor(config: PlanningAgentConfig) {
     this.config = config;
-  }
 
-  /**
-   * Create a new PlanningAgent
-   */
-  static create(config: PlanningAgentConfig): PlanningAgent {
-    // Create planning tools
-    const planningTools = createPlanningTools();
+    // Create planning tools bound to this instance
+    const planningTools = this.createBoundPlanningTools();
 
     // Create base Agent with planning configuration
-    const agent = Agent.create({
+    this.agent = Agent.create({
       connector: config.connector,
       model: config.model,
       tools: planningTools,
@@ -98,8 +92,106 @@ export class PlanningAgent {
       temperature: config.planningTemperature ?? 0.3, // Lower temp for more structured output
       maxIterations: config.maxPlanningIterations ?? 20,
     });
+  }
 
-    return new PlanningAgent(agent, config);
+  /**
+   * Create a new PlanningAgent
+   */
+  static create(config: PlanningAgentConfig): PlanningAgent {
+    return new PlanningAgent(config);
+  }
+
+  /**
+   * Create planning tools bound to this PlanningAgent instance
+   */
+  private createBoundPlanningTools(): ToolFunction[] {
+    return [
+      {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'create_task',
+            description: 'Create a new task in the plan with name, description, and optional dependencies',
+            parameters: {
+              type: 'object',
+              properties: {
+                name: {
+                  type: 'string',
+                  description: 'Task name in snake_case (e.g., "fetch_user_data")',
+                },
+                description: {
+                  type: 'string',
+                  description: 'Clear, actionable description of what this task does',
+                },
+                depends_on: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Array of task names this task depends on (optional)',
+                },
+                parallel: {
+                  type: 'boolean',
+                  description: 'Whether this task can run in parallel with others (default: false)',
+                },
+                expected_output: {
+                  type: 'string',
+                  description: 'Description of expected output (optional)',
+                },
+              },
+              required: ['name', 'description'],
+            },
+          },
+        },
+        execute: async (args: Record<string, unknown>) => {
+          const name = args.name as string;
+          const description = args.description as string;
+          const dependsOn = args.depends_on as string[] | undefined;
+          const parallel = args.parallel as boolean | undefined;
+          const expectedOutput = args.expected_output as string | undefined;
+
+          // Actually add the task to the plan
+          this.addTask({
+            name,
+            description,
+            dependsOn,
+            execution: parallel ? { parallel: true } : undefined,
+            expectedOutput,
+          });
+
+          return {
+            success: true,
+            message: `Task '${name}' created`,
+            taskCount: this.currentTasks.length,
+          };
+        },
+        idempotency: {
+          safe: false,
+        },
+      },
+      {
+        definition: {
+          type: 'function',
+          function: {
+            name: 'finalize_plan',
+            description: 'Mark the planning phase as complete. Call this when all tasks have been created and the plan is ready.',
+            parameters: {
+              type: 'object',
+              properties: {},
+            },
+          },
+        },
+        execute: async () => {
+          this.finalizePlanning();
+          return {
+            success: true,
+            message: 'Plan finalized and ready for execution',
+            totalTasks: this.currentTasks.length,
+          };
+        },
+        idempotency: {
+          safe: false,
+        },
+      },
+    ];
   }
 
   /**
@@ -292,83 +384,6 @@ Use the planning tools to make changes, then finalize when complete.`;
   finalizePlanning(): void {
     this.planningComplete = true;
   }
-}
-
-/**
- * Create planning tools
- */
-function createPlanningTools(): ToolFunction[] {
-  return [
-    {
-      definition: {
-        type: 'function',
-        function: {
-          name: 'create_task',
-          description: 'Create a new task in the plan with name, description, and optional dependencies',
-          parameters: {
-            type: 'object',
-            properties: {
-              name: {
-                type: 'string',
-                description: 'Task name in snake_case (e.g., "fetch_user_data")',
-              },
-              description: {
-                type: 'string',
-                description: 'Clear, actionable description of what this task does',
-              },
-              depends_on: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Array of task names this task depends on (optional)',
-              },
-              parallel: {
-                type: 'boolean',
-                description: 'Whether this task can run in parallel with others (default: false)',
-              },
-              expected_output: {
-                type: 'string',
-                description: 'Description of expected output (optional)',
-              },
-            },
-            required: ['name', 'description'],
-          },
-        },
-      },
-      execute: async (args: any) => {
-        // Note: In a real implementation, we'd need access to the PlanningAgent instance
-        // This is a simplified version - the actual implementation would need to be bound to the instance
-        return {
-          success: true,
-          message: `Task '${args.name}' created`,
-        };
-      },
-      idempotency: {
-        safe: false,
-      },
-    },
-    {
-      definition: {
-        type: 'function',
-        function: {
-          name: 'finalize_plan',
-          description: 'Mark the planning phase as complete. Call this when all tasks have been created and the plan is ready.',
-          parameters: {
-            type: 'object',
-            properties: {},
-          },
-        },
-      },
-      execute: async () => {
-        return {
-          success: true,
-          message: 'Plan finalized and ready for execution',
-        };
-      },
-      idempotency: {
-        safe: false,
-      },
-    },
-  ];
 }
 
 /**

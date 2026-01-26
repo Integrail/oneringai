@@ -1,5 +1,5 @@
 import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
-import { I as IProvider } from './IProvider-BP49c93d.js';
+import { I as IProvider } from './IProvider-BP49c93d.cjs';
 import { EventEmitter } from 'events';
 
 /**
@@ -833,6 +833,8 @@ interface TextGenerateOptions {
     parallel_tool_calls?: boolean;
     previous_response_id?: string;
     metadata?: Record<string, string>;
+    /** Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) */
+    vendorOptions?: Record<string, any>;
 }
 interface ModelCapabilities {
     supportsTools: boolean;
@@ -1207,6 +1209,8 @@ interface AgenticLoopConfig {
     tools: Tool[];
     temperature?: number;
     maxIterations: number;
+    /** Vendor-specific options (e.g., Google's thinkingLevel) */
+    vendorOptions?: Record<string, any>;
     hooks?: HookConfig;
     historyMode?: HistoryMode;
     limits?: {

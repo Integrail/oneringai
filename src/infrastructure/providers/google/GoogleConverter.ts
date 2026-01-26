@@ -73,6 +73,13 @@ export class GoogleConverter {
       maxOutputTokens: options.max_output_tokens,
     };
 
+    // Add thinking config for Gemini 3+ reasoning models
+    if (options.vendorOptions?.thinkingLevel) {
+      request.generationConfig.thinkingConfig = {
+        thinkingLevel: options.vendorOptions.thinkingLevel,
+      };
+    }
+
     // Disable Google's code execution if we have function tools
     // (prevents model from generating code instead of calling tools)
     if (tools && tools.length > 0) {

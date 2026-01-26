@@ -39,7 +39,7 @@ const HAS_ANTHROPIC_KEY = Boolean(ANTHROPIC_API_KEY);
 
 // Timeout for each model test (some models may be slow)
 const MODEL_TEST_TIMEOUT = 120000; // 2 minutes
-const REASONING_MODEL_TIMEOUT = 180000; // 3 minutes for reasoning models (e.g., gemini-3-pro-preview)
+const REASONING_MODEL_TIMEOUT = 240000; // 4 minutes for reasoning models (Google API can be slow)
 
 // Test prompt - simple greeting to minimize cost and latency
 const TEST_PROMPT = 'Hi! Say hello back in one short sentence.';
@@ -86,11 +86,16 @@ function getVendorModels(vendor: string): ILLMDescription[] {
  * Test a single model with a simple greeting
  */
 async function testModel(connectorName: string, modelName: string): Promise<void> {
+  // For Gemini 3 reasoning models, use low thinking level to speed up responses
+  const isGemini3Reasoning = modelName.startsWith('gemini-3-') &&
+                            (modelName.includes('pro') || modelName.includes('flash'));
+
   const agent = Agent.create({
     connector: connectorName,
     model: modelName,
     temperature: 0.7,
     maxOutputTokens: 100, // Limit output to reduce cost
+    vendorOptions: isGemini3Reasoning ? { thinkingLevel: 'low' } : undefined,
   });
 
   const response = await agent.run(TEST_PROMPT);
