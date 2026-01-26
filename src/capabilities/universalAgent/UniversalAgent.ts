@@ -413,10 +413,11 @@ export class UniversalAgent extends EventEmitter {
         const delta = (event as any).delta || '';
         fullText += delta;
         yield { type: 'text:delta', delta };
-      } else if (event.type === StreamEventType.TOOL_CALL_START) {
-        yield { type: 'tool:start', name: (event as any).tool_name || 'unknown', args: null };
+      } else if (event.type === StreamEventType.TOOL_EXECUTION_START) {
+        // TOOL_EXECUTION_START has the parsed arguments
+        yield { type: 'tool:start', name: (event as any).tool_name || 'unknown', args: (event as any).arguments || null };
       } else if (event.type === StreamEventType.TOOL_EXECUTION_DONE) {
-        yield { type: 'tool:complete', name: (event as any).name || 'unknown', result: (event as any).result, durationMs: 0 };
+        yield { type: 'tool:complete', name: (event as any).tool_name || 'unknown', result: (event as any).result, durationMs: (event as any).execution_time_ms || 0 };
       }
     }
 
@@ -513,10 +514,11 @@ export class UniversalAgent extends EventEmitter {
             const delta = (event as any).delta || '';
             taskResultText += delta;
             yield { type: 'task:progress', task, status: delta };
-          } else if (event.type === StreamEventType.TOOL_CALL_START) {
-            yield { type: 'tool:start', name: (event as any).tool_name || 'unknown', args: null };
+          } else if (event.type === StreamEventType.TOOL_EXECUTION_START) {
+            // TOOL_EXECUTION_START has the parsed arguments
+            yield { type: 'tool:start', name: (event as any).tool_name || 'unknown', args: (event as any).arguments || null };
           } else if (event.type === StreamEventType.TOOL_EXECUTION_DONE) {
-            yield { type: 'tool:complete', name: (event as any).name || 'unknown', result: (event as any).result, durationMs: 0 };
+            yield { type: 'tool:complete', name: (event as any).tool_name || 'unknown', result: (event as any).result, durationMs: (event as any).execution_time_ms || 0 };
           }
         }
 

@@ -2124,6 +2124,225 @@ var MessageRole = /* @__PURE__ */ ((MessageRole2) => {
   return MessageRole2;
 })(MessageRole || {});
 
+// src/infrastructure/providers/openai/OpenAIResponsesConverter.ts
+var OpenAIResponsesConverter = class {
+  /**
+   * Convert our input format to Responses API format
+   */
+  convertInput(input, instructions) {
+    if (typeof input === "string") {
+      return {
+        input,
+        instructions
+      };
+    }
+    const items = [];
+    for (const item of input) {
+      if (item.type === "message") {
+        const messageContent = [];
+        for (const content of item.content) {
+          switch (content.type) {
+            case "input_text":
+              messageContent.push({
+                type: "input_text",
+                text: content.text
+              });
+              break;
+            case "input_image_url":
+              messageContent.push({
+                type: "input_image",
+                image_url: content.image_url
+              });
+              break;
+            case "output_text":
+              messageContent.push({
+                type: "output_text",
+                text: content.text
+              });
+              break;
+            case "tool_use":
+              items.push({
+                type: "function_call",
+                call_id: content.id,
+                name: content.name,
+                arguments: content.arguments
+              });
+              break;
+            case "tool_result":
+              const output = typeof content.content === "string" ? content.content : JSON.stringify(content.content);
+              items.push({
+                type: "function_call_output",
+                call_id: content.tool_use_id,
+                output
+              });
+              break;
+          }
+        }
+        if (messageContent.length > 0) {
+          items.push({
+            type: "message",
+            role: item.role,
+            content: messageContent,
+            id: item.id,
+            status: "completed"
+          });
+        }
+      } else if (item.type === "compaction") {
+        items.push({
+          type: "compaction",
+          id: item.id,
+          encrypted_content: item.encrypted_content
+        });
+      }
+    }
+    return {
+      input: items,
+      instructions
+    };
+  }
+  /**
+   * Convert Responses API response to our LLMResponse format
+   */
+  convertResponse(response) {
+    const content = [];
+    let outputText = "";
+    let messageId;
+    for (const item of response.output || []) {
+      if (item.type === "message") {
+        const messageItem = item;
+        if (!messageId && messageItem.id) {
+          messageId = messageItem.id;
+        }
+        for (const contentItem of messageItem.content || []) {
+          if (contentItem.type === "output_text") {
+            const textContent = contentItem;
+            content.push({
+              type: "output_text",
+              text: textContent.text,
+              annotations: textContent.annotations || []
+            });
+            outputText += textContent.text;
+          }
+        }
+      } else if (item.type === "function_call") {
+        const functionCall = item;
+        content.push({
+          type: "tool_use",
+          id: functionCall.call_id,
+          name: functionCall.name,
+          arguments: functionCall.arguments
+        });
+      } else if (item.type === "reasoning") {
+        const reasoning = item;
+        if (reasoning.summary) {
+          content.push({
+            type: "reasoning",
+            summary: reasoning.summary,
+            // effort field may not exist in all versions
+            ..."effort" in reasoning && { effort: reasoning.effort }
+          });
+        }
+      }
+    }
+    if (!outputText) {
+      outputText = response.output_text || "";
+    }
+    const finalMessageId = messageId || response.id;
+    return {
+      id: response.id,
+      object: "response",
+      created_at: response.created_at,
+      status: response.status || "completed",
+      model: response.model,
+      output: [
+        {
+          type: "message",
+          id: finalMessageId,
+          role: "assistant" /* ASSISTANT */,
+          content
+        }
+      ],
+      output_text: outputText,
+      usage: {
+        input_tokens: response.usage?.input_tokens || 0,
+        output_tokens: response.usage?.output_tokens || 0,
+        total_tokens: response.usage?.total_tokens || 0
+      }
+    };
+  }
+  /**
+   * Convert our tool definitions to Responses API format
+   *
+   * Key difference: Responses API uses internally-tagged format
+   * (no nested `function` object) and strict mode requires proper schemas
+   */
+  convertTools(tools) {
+    return tools.map((tool) => {
+      if (tool.type === "function") {
+        const funcDef = tool.function;
+        const useStrict = funcDef.strict === true;
+        return {
+          type: "function",
+          name: funcDef.name,
+          description: funcDef.description || "",
+          parameters: funcDef.parameters || null,
+          strict: useStrict
+        };
+      }
+      return tool;
+    });
+  }
+  /**
+   * Convert tool_choice option to Responses API format
+   */
+  convertToolChoice(toolChoice) {
+    if (!toolChoice || toolChoice === "auto") {
+      return "auto";
+    }
+    if (toolChoice === "required") {
+      return "required";
+    }
+    return {
+      type: "function",
+      name: toolChoice.function.name
+    };
+  }
+  /**
+   * Convert response_format option to Responses API format (modalities)
+   */
+  convertResponseFormat(responseFormat) {
+    if (!responseFormat) {
+      return void 0;
+    }
+    if (responseFormat.type === "json_schema" && responseFormat.json_schema) {
+      return {
+        type: "text",
+        text: {
+          type: "json_schema",
+          name: responseFormat.json_schema.name || "response",
+          schema: responseFormat.json_schema.schema || responseFormat.json_schema,
+          description: responseFormat.json_schema.description,
+          strict: responseFormat.json_schema.strict !== false
+        }
+      };
+    }
+    if (responseFormat.type === "json_object") {
+      return {
+        type: "text",
+        text: {
+          type: "json_object"
+        }
+      };
+    }
+    return {
+      type: "text",
+      text: {
+        type: "text"
+      }
+    };
+  }
+};
+
 // src/domain/entities/StreamEvent.ts
 var StreamEventType = /* @__PURE__ */ ((StreamEventType2) => {
   StreamEventType2["RESPONSE_CREATED"] = "response.created";
@@ -2162,6 +2381,1163 @@ function isErrorEvent(event) {
   return event.type === "response.error" /* ERROR */;
 }
 
+// src/infrastructure/providers/openai/OpenAIResponsesStreamConverter.ts
+var OpenAIResponsesStreamConverter = class {
+  /**
+   * Convert Responses API stream to our StreamEvent format
+   */
+  async *convertStream(stream) {
+    let responseId = "";
+    let sequenceNumber = 0;
+    const activeItems = /* @__PURE__ */ new Map();
+    const toolCallBuffers = /* @__PURE__ */ new Map();
+    for await (const event of stream) {
+      if (process.env.DEBUG_OPENAI) {
+        console.error("[DEBUG] Responses API event:", event.type);
+      }
+      switch (event.type) {
+        case "response.created": {
+          responseId = event.response.id;
+          yield {
+            type: "response.created" /* RESPONSE_CREATED */,
+            response_id: responseId,
+            model: event.response.model,
+            created_at: event.response.created_at
+          };
+          break;
+        }
+        case "response.output_item.added": {
+          const addedEvent = event;
+          const item = addedEvent.item;
+          activeItems.set(addedEvent.output_index.toString(), {
+            type: item.type
+          });
+          if (item.type === "function_call") {
+            const functionCall = item;
+            const toolCallId = functionCall.call_id;
+            const toolName = functionCall.name;
+            activeItems.set(addedEvent.output_index.toString(), {
+              type: "function_call",
+              toolCallId,
+              toolName
+            });
+            toolCallBuffers.set(toolCallId, {
+              id: toolCallId,
+              name: toolName,
+              args: ""
+            });
+            yield {
+              type: "response.tool_call.start" /* TOOL_CALL_START */,
+              response_id: responseId,
+              item_id: `item_${addedEvent.output_index}`,
+              tool_call_id: toolCallId,
+              tool_name: toolName
+            };
+          }
+          break;
+        }
+        case "response.output_text.delta": {
+          const textEvent = event;
+          yield {
+            type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
+            response_id: responseId,
+            item_id: textEvent.item_id,
+            output_index: textEvent.output_index,
+            content_index: textEvent.content_index,
+            delta: textEvent.delta || "",
+            sequence_number: sequenceNumber++
+          };
+          break;
+        }
+        case "response.function_call_arguments.delta": {
+          const argsEvent = event;
+          const itemInfo = activeItems.get(argsEvent.output_index.toString());
+          if (itemInfo?.toolCallId) {
+            const buffer = toolCallBuffers.get(itemInfo.toolCallId);
+            if (buffer) {
+              buffer.args += argsEvent.delta || "";
+              yield {
+                type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
+                response_id: responseId,
+                item_id: argsEvent.item_id,
+                tool_call_id: buffer.id,
+                tool_name: buffer.name,
+                delta: argsEvent.delta || "",
+                sequence_number: sequenceNumber++
+              };
+            }
+          }
+          break;
+        }
+        case "response.output_item.done": {
+          const doneEvent = event;
+          const item = doneEvent.item;
+          if (item.type === "function_call") {
+            const functionCall = item;
+            const buffer = toolCallBuffers.get(functionCall.call_id);
+            if (buffer) {
+              yield {
+                type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
+                response_id: responseId,
+                tool_call_id: buffer.id,
+                tool_name: buffer.name,
+                arguments: buffer.args || functionCall.arguments
+              };
+            }
+          }
+          break;
+        }
+        case "response.completed": {
+          const completedEvent = event;
+          const response = completedEvent.response;
+          let status = "completed";
+          if (response.status === "failed") {
+            status = "failed";
+          } else if (response.status === "incomplete") {
+            status = "incomplete";
+          }
+          yield {
+            type: "response.complete" /* RESPONSE_COMPLETE */,
+            response_id: responseId,
+            status,
+            usage: {
+              input_tokens: response.usage?.input_tokens || 0,
+              output_tokens: response.usage?.output_tokens || 0,
+              total_tokens: response.usage?.total_tokens || 0
+            },
+            iterations: 1
+          };
+          break;
+        }
+        // Handle other event types if needed
+        default:
+          if (process.env.DEBUG_OPENAI) {
+            console.error("[DEBUG] Unhandled Responses API event type:", event.type);
+          }
+      }
+    }
+  }
+};
+
+// src/domain/entities/Model.ts
+var LLM_MODELS = {
+  [Vendor.OpenAI]: {
+    // GPT-5.2 Series (Current Flagship)
+    GPT_5_2: "gpt-5.2",
+    GPT_5_2_PRO: "gpt-5.2-pro",
+    // GPT-5 Series
+    GPT_5: "gpt-5",
+    GPT_5_MINI: "gpt-5-mini",
+    GPT_5_NANO: "gpt-5-nano",
+    // GPT-4.1 Series
+    GPT_4_1: "gpt-4.1",
+    GPT_4_1_MINI: "gpt-4.1-mini",
+    GPT_4_1_NANO: "gpt-4.1-nano",
+    // GPT-4o Series (Legacy, Audio Capable)
+    GPT_4O: "gpt-4o",
+    GPT_4O_MINI: "gpt-4o-mini",
+    // Reasoning Models (o-series)
+    O3_MINI: "o3-mini",
+    O1: "o1"
+  },
+  [Vendor.Anthropic]: {
+    // Claude 4.5 Series (Current)
+    CLAUDE_OPUS_4_5: "claude-opus-4-5-20251101",
+    CLAUDE_SONNET_4_5: "claude-sonnet-4-5-20250929",
+    CLAUDE_HAIKU_4_5: "claude-haiku-4-5-20251001",
+    // Claude 4.x Legacy
+    CLAUDE_OPUS_4_1: "claude-opus-4-1-20250805",
+    CLAUDE_SONNET_4: "claude-sonnet-4-20250514",
+    CLAUDE_SONNET_3_7: "claude-3-7-sonnet-20250219",
+    // Claude 3.x Legacy
+    CLAUDE_HAIKU_3: "claude-3-haiku-20240307"
+  },
+  [Vendor.Google]: {
+    // Gemini 3 Series (Preview)
+    GEMINI_3_FLASH_PREVIEW: "gemini-3-flash-preview",
+    GEMINI_3_PRO_PREVIEW: "gemini-3-pro-preview",
+    GEMINI_3_PRO_IMAGE_PREVIEW: "gemini-3-pro-image-preview",
+    // Gemini 2.5 Series (Production)
+    GEMINI_2_5_PRO: "gemini-2.5-pro",
+    GEMINI_2_5_FLASH: "gemini-2.5-flash",
+    GEMINI_2_5_FLASH_LITE: "gemini-2.5-flash-lite",
+    GEMINI_2_5_FLASH_IMAGE: "gemini-2.5-flash-image"
+  }
+};
+var MODEL_REGISTRY = {
+  // ============================================================================
+  // OpenAI Models (Verified from platform.openai.com)
+  // ============================================================================
+  // GPT-5.2 Series (Current Flagship)
+  "gpt-5.2": {
+    name: "gpt-5.2",
+    provider: Vendor.OpenAI,
+    description: "Flagship model for coding and agentic tasks. Reasoning.effort: none, low, medium, high, xhigh",
+    isActive: true,
+    releaseDate: "2025-12-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.75
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 14
+      }
+    }
+  },
+  "gpt-5.2-pro": {
+    name: "gpt-5.2-pro",
+    provider: Vendor.OpenAI,
+    description: "GPT-5.2 pro produces smarter and more precise responses. Reasoning.effort: medium, high, xhigh",
+    isActive: true,
+    releaseDate: "2025-12-01",
+    knowledgeCutoff: "2025-08-31",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 21
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 168
+      }
+    }
+  },
+  // GPT-5 Series
+  "gpt-5": {
+    name: "gpt-5",
+    provider: Vendor.OpenAI,
+    description: "Previous intelligent reasoning model for coding and agentic tasks. Reasoning.effort: minimal, low, medium, high",
+    isActive: true,
+    releaseDate: "2025-08-01",
+    knowledgeCutoff: "2024-09-30",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 1.25
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 10
+      }
+    }
+  },
+  "gpt-5-mini": {
+    name: "gpt-5-mini",
+    provider: Vendor.OpenAI,
+    description: "Faster, cost-efficient version of GPT-5 for well-defined tasks and precise prompts",
+    isActive: true,
+    releaseDate: "2025-08-01",
+    knowledgeCutoff: "2024-05-31",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 0.25
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 2
+      }
+    }
+  },
+  "gpt-5-nano": {
+    name: "gpt-5-nano",
+    provider: Vendor.OpenAI,
+    description: "Fastest, most cost-efficient GPT-5. Great for summarization and classification tasks",
+    isActive: true,
+    releaseDate: "2025-08-01",
+    knowledgeCutoff: "2024-05-31",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 4e5,
+        text: true,
+        image: true,
+        cpm: 0.05
+      },
+      output: {
+        tokens: 128e3,
+        text: true,
+        cpm: 0.4
+      }
+    }
+  },
+  // GPT-4.1 Series
+  "gpt-4.1": {
+    name: "gpt-4.1",
+    provider: Vendor.OpenAI,
+    description: "GPT-4.1 specialized for coding with 1M token context window",
+    isActive: true,
+    releaseDate: "2025-04-14",
+    knowledgeCutoff: "2025-04-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        cpm: 2
+      },
+      output: {
+        tokens: 32768,
+        text: true,
+        cpm: 8
+      }
+    }
+  },
+  "gpt-4.1-mini": {
+    name: "gpt-4.1-mini",
+    provider: Vendor.OpenAI,
+    description: "Efficient GPT-4.1 model, beats GPT-4o in many benchmarks at 83% lower cost",
+    isActive: true,
+    releaseDate: "2025-04-14",
+    knowledgeCutoff: "2025-04-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        cpm: 0.4
+      },
+      output: {
+        tokens: 16384,
+        text: true,
+        cpm: 1.6
+      }
+    }
+  },
+  "gpt-4.1-nano": {
+    name: "gpt-4.1-nano",
+    provider: Vendor.OpenAI,
+    description: "Fastest and cheapest model with 1M context. 80.1% MMLU, ideal for classification/autocompletion",
+    isActive: true,
+    releaseDate: "2025-04-14",
+    knowledgeCutoff: "2025-04-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        cpm: 0.1
+      },
+      output: {
+        tokens: 16384,
+        text: true,
+        cpm: 0.4
+      }
+    }
+  },
+  // GPT-4o Series (Legacy, Audio Capable)
+  "gpt-4o": {
+    name: "gpt-4o",
+    provider: Vendor.OpenAI,
+    description: "Versatile omni model with audio support. Legacy but still available",
+    isActive: true,
+    releaseDate: "2024-05-13",
+    knowledgeCutoff: "2024-04-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: true,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        audio: true,
+        cpm: 2.5
+      },
+      output: {
+        tokens: 16384,
+        text: true,
+        audio: true,
+        cpm: 10
+      }
+    }
+  },
+  "gpt-4o-mini": {
+    name: "gpt-4o-mini",
+    provider: Vendor.OpenAI,
+    description: "Fast, affordable omni model with audio support",
+    isActive: true,
+    releaseDate: "2024-07-18",
+    knowledgeCutoff: "2024-04-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: true,
+      predictedOutputs: false,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128e3,
+        text: true,
+        image: true,
+        audio: true,
+        cpm: 0.15
+      },
+      output: {
+        tokens: 16384,
+        text: true,
+        audio: true,
+        cpm: 0.6
+      }
+    }
+  },
+  // Reasoning Models (o-series)
+  "o3-mini": {
+    name: "o3-mini",
+    provider: Vendor.OpenAI,
+    description: "Fast reasoning model tailored for coding, math, and science",
+    isActive: true,
+    releaseDate: "2025-01-31",
+    knowledgeCutoff: "2024-10-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: false,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 1.1
+      },
+      output: {
+        tokens: 1e5,
+        text: true,
+        cpm: 4.4
+      }
+    }
+  },
+  "o1": {
+    name: "o1",
+    provider: Vendor.OpenAI,
+    description: "Advanced reasoning model for complex problems",
+    isActive: true,
+    releaseDate: "2024-12-17",
+    knowledgeCutoff: "2024-10-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: false,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false
+      },
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 15
+      },
+      output: {
+        tokens: 1e5,
+        text: true,
+        cpm: 60
+      }
+    }
+  },
+  // ============================================================================
+  // Anthropic Models (Verified from platform.claude.com)
+  // ============================================================================
+  // Claude 4.5 Series (Current)
+  "claude-opus-4-5-20251101": {
+    name: "claude-opus-4-5-20251101",
+    provider: Vendor.Anthropic,
+    description: "Premium model combining maximum intelligence with practical performance",
+    isActive: true,
+    releaseDate: "2025-11-01",
+    knowledgeCutoff: "2025-05-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 5,
+        cpmCached: 0.5
+      },
+      output: {
+        tokens: 64e3,
+        text: true,
+        cpm: 25
+      }
+    }
+  },
+  "claude-sonnet-4-5-20250929": {
+    name: "claude-sonnet-4-5-20250929",
+    provider: Vendor.Anthropic,
+    description: "Smart model for complex agents and coding. Best balance of intelligence, speed, cost",
+    isActive: true,
+    releaseDate: "2025-09-29",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3
+      },
+      output: {
+        tokens: 64e3,
+        text: true,
+        cpm: 15
+      }
+    }
+  },
+  "claude-haiku-4-5-20251001": {
+    name: "claude-haiku-4-5-20251001",
+    provider: Vendor.Anthropic,
+    description: "Fastest model with near-frontier intelligence. Matches Sonnet 4 on coding",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2025-02-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 1,
+        cpmCached: 0.1
+      },
+      output: {
+        tokens: 64e3,
+        text: true,
+        cpm: 5
+      }
+    }
+  },
+  // Claude 4.x Legacy
+  "claude-opus-4-1-20250805": {
+    name: "claude-opus-4-1-20250805",
+    provider: Vendor.Anthropic,
+    description: "Legacy Opus 4.1 focused on agentic tasks, real-world coding, and reasoning",
+    isActive: true,
+    releaseDate: "2025-08-05",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 15,
+        cpmCached: 1.5
+      },
+      output: {
+        tokens: 32e3,
+        text: true,
+        cpm: 75
+      }
+    }
+  },
+  "claude-sonnet-4-20250514": {
+    name: "claude-sonnet-4-20250514",
+    provider: Vendor.Anthropic,
+    description: "Legacy Sonnet 4. Default for most users, supports 1M context beta",
+    isActive: true,
+    releaseDate: "2025-05-14",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        // 1M with beta header
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3
+      },
+      output: {
+        tokens: 64e3,
+        text: true,
+        cpm: 15
+      }
+    }
+  },
+  "claude-3-7-sonnet-20250219": {
+    name: "claude-3-7-sonnet-20250219",
+    provider: Vendor.Anthropic,
+    description: "Claude 3.7 Sonnet with extended thinking, supports 128K output beta",
+    isActive: true,
+    releaseDate: "2025-02-19",
+    knowledgeCutoff: "2024-10-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3
+      },
+      output: {
+        tokens: 64e3,
+        // 128K with beta header
+        text: true,
+        cpm: 15
+      }
+    }
+  },
+  // Claude 3.x Legacy
+  "claude-3-haiku-20240307": {
+    name: "claude-3-haiku-20240307",
+    provider: Vendor.Anthropic,
+    description: "Fast legacy model. Recommend migrating to Haiku 4.5",
+    isActive: true,
+    releaseDate: "2024-03-07",
+    knowledgeCutoff: "2023-08-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 2e5,
+        text: true,
+        image: true,
+        cpm: 0.25,
+        cpmCached: 0.03
+      },
+      output: {
+        tokens: 4096,
+        text: true,
+        cpm: 1.25
+      }
+    }
+  },
+  // ============================================================================
+  // Google Models (Verified from ai.google.dev)
+  // ============================================================================
+  // Gemini 3 Series (Preview)
+  "gemini-3-flash-preview": {
+    name: "gemini-3-flash-preview",
+    provider: Vendor.Google,
+    description: "Pro-grade reasoning with Flash-level latency and efficiency",
+    isActive: true,
+    releaseDate: "2025-11-18",
+    knowledgeCutoff: "2025-08-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 0.15
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 0.6
+      }
+    }
+  },
+  "gemini-3-pro-preview": {
+    name: "gemini-3-pro-preview",
+    provider: Vendor.Google,
+    description: "Most advanced reasoning Gemini model for complex tasks",
+    isActive: true,
+    releaseDate: "2025-11-18",
+    knowledgeCutoff: "2025-08-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 1.25
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 10
+      }
+    }
+  },
+  "gemini-3-pro-image-preview": {
+    name: "gemini-3-pro-image-preview",
+    provider: Vendor.Google,
+    description: "Highest quality image generation model",
+    isActive: true,
+    releaseDate: "2025-11-18",
+    knowledgeCutoff: "2025-08-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: false,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        cpm: 1.25
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        image: true,
+        cpm: 10
+      }
+    }
+  },
+  // Gemini 2.5 Series (Production)
+  "gemini-2.5-pro": {
+    name: "gemini-2.5-pro",
+    provider: Vendor.Google,
+    description: "Advanced multimodal model built for deep reasoning and agents",
+    isActive: true,
+    releaseDate: "2025-03-01",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 1.25
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 10
+      }
+    }
+  },
+  "gemini-2.5-flash": {
+    name: "gemini-2.5-flash",
+    provider: Vendor.Google,
+    description: "Fast, cost-effective model with excellent reasoning",
+    isActive: true,
+    releaseDate: "2025-06-17",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 0.15
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 0.6
+      }
+    }
+  },
+  "gemini-2.5-flash-lite": {
+    name: "gemini-2.5-flash-lite",
+    provider: Vendor.Google,
+    description: "Lowest latency for high-volume tasks, summarization, classification",
+    isActive: true,
+    releaseDate: "2025-06-17",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: true,
+      video: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        audio: true,
+        video: true,
+        cpm: 0.075
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 0.3
+      }
+    }
+  },
+  "gemini-2.5-flash-image": {
+    name: "gemini-2.5-flash-image",
+    provider: Vendor.Google,
+    description: "Image generation and editing model",
+    isActive: true,
+    releaseDate: "2025-09-01",
+    knowledgeCutoff: "2025-01-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: false,
+      functionCalling: false,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1e6,
+        text: true,
+        image: true,
+        cpm: 0.15
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        image: true,
+        cpm: 0.6
+      }
+    }
+  }
+};
+function getModelInfo(modelName) {
+  return MODEL_REGISTRY[modelName];
+}
+function getModelsByVendor(vendor) {
+  return Object.values(MODEL_REGISTRY).filter((model) => model.provider === vendor);
+}
+function getActiveModels() {
+  return Object.values(MODEL_REGISTRY).filter((model) => model.isActive);
+}
+function calculateCost(model, inputTokens, outputTokens, options) {
+  const modelInfo = getModelInfo(model);
+  if (!modelInfo) {
+    return null;
+  }
+  const inputCPM = options?.useCachedInput && modelInfo.features.input.cpmCached !== void 0 ? modelInfo.features.input.cpmCached : modelInfo.features.input.cpm;
+  const outputCPM = modelInfo.features.output.cpm;
+  const inputCost = inputTokens / 1e6 * inputCPM;
+  const outputCost = outputTokens / 1e6 * outputCPM;
+  return inputCost + outputCost;
+}
+
 // src/infrastructure/providers/openai/OpenAITextProvider.ts
 var OpenAITextProvider = class extends BaseTextProvider {
   name = "openai";
@@ -2172,6 +3548,8 @@ var OpenAITextProvider = class extends BaseTextProvider {
     audio: true
   };
   client;
+  converter;
+  streamConverter;
   constructor(config) {
     super(config);
     this.client = new OpenAI2__default.default({
@@ -2181,6 +3559,18 @@ var OpenAITextProvider = class extends BaseTextProvider {
       timeout: this.getTimeout(),
       maxRetries: this.getMaxRetries()
     });
+    this.converter = new OpenAIResponsesConverter();
+    this.streamConverter = new OpenAIResponsesStreamConverter();
+  }
+  /**
+   * Check if a parameter is supported by the model
+   */
+  supportsParameter(model, parameter) {
+    const modelInfo = getModelInfo(model);
+    if (!modelInfo?.features.parameters) {
+      return true;
+    }
+    return modelInfo.features.parameters[parameter] !== false;
   }
   /**
    * Generate response using OpenAI Responses API
@@ -2188,16 +3578,35 @@ var OpenAITextProvider = class extends BaseTextProvider {
   async generate(options) {
     return this.executeWithCircuitBreaker(async () => {
       try {
-        const response = await this.client.chat.completions.create({
+        const { input, instructions } = this.converter.convertInput(
+          options.input,
+          options.instructions
+        );
+        const params = {
           model: options.model,
-          messages: this.convertInput(options.input, options.instructions),
-          tools: options.tools,
-          tool_choice: options.tool_choice,
-          temperature: options.temperature,
-          max_tokens: options.max_output_tokens,
-          response_format: options.response_format
-        });
-        return this.convertResponse(response);
+          input,
+          ...instructions && { instructions },
+          ...options.tools && options.tools.length > 0 && {
+            tools: this.converter.convertTools(options.tools)
+          },
+          ...options.tool_choice && {
+            tool_choice: this.converter.convertToolChoice(options.tool_choice)
+          },
+          ...options.temperature !== void 0 && this.supportsParameter(options.model, "temperature") && { temperature: options.temperature },
+          ...options.max_output_tokens && { max_output_tokens: options.max_output_tokens },
+          ...options.response_format && {
+            text: this.converter.convertResponseFormat(options.response_format)
+          },
+          ...options.parallel_tool_calls !== void 0 && {
+            parallel_tool_calls: options.parallel_tool_calls
+          },
+          ...options.previous_response_id && {
+            previous_response_id: options.previous_response_id
+          },
+          ...options.metadata && { metadata: options.metadata }
+        };
+        const response = await this.client.responses.create(params);
+        return this.converter.convertResponse(response);
       } catch (error) {
         this.handleError(error);
         throw error;
@@ -2205,132 +3614,40 @@ var OpenAITextProvider = class extends BaseTextProvider {
     }, options.model);
   }
   /**
-   * Stream response using OpenAI Streaming API
+   * Stream response using OpenAI Responses API
    */
   async *streamGenerate(options) {
     try {
-      const stream = await this.client.chat.completions.create({
+      const { input, instructions } = this.converter.convertInput(
+        options.input,
+        options.instructions
+      );
+      const params = {
         model: options.model,
-        messages: this.convertInput(options.input, options.instructions),
-        tools: options.tools,
-        tool_choice: options.tool_choice,
-        temperature: options.temperature,
-        max_tokens: options.max_output_tokens,
-        response_format: options.response_format,
-        stream: true,
-        stream_options: { include_usage: true }
-      });
-      let responseId = "";
-      let sequenceNumber = 0;
-      let hasUsage = false;
-      const toolCallBuffers = /* @__PURE__ */ new Map();
-      for await (const chunk of stream) {
-        if (process.env.DEBUG_OPENAI && chunk.usage) {
-          console.error("[DEBUG] OpenAI chunk has usage:", chunk.usage);
-        }
-        if (!responseId) {
-          responseId = chunk.id;
-          yield {
-            type: "response.created" /* RESPONSE_CREATED */,
-            response_id: responseId,
-            model: chunk.model,
-            created_at: chunk.created
-          };
-        }
-        if (chunk.usage) {
-          hasUsage = true;
-          if (process.env.DEBUG_OPENAI) {
-            console.error("[DEBUG] Emitting RESPONSE_COMPLETE with usage:", {
-              prompt_tokens: chunk.usage.prompt_tokens,
-              completion_tokens: chunk.usage.completion_tokens,
-              total_tokens: chunk.usage.total_tokens
-            });
-          }
-          yield {
-            type: "response.complete" /* RESPONSE_COMPLETE */,
-            response_id: responseId,
-            status: "completed",
-            usage: {
-              input_tokens: chunk.usage.prompt_tokens || 0,
-              output_tokens: chunk.usage.completion_tokens || 0,
-              total_tokens: chunk.usage.total_tokens || 0
-            },
-            iterations: 1
-          };
-        }
-        const choice = chunk.choices[0];
-        if (!choice) continue;
-        const delta = choice.delta;
-        if (delta.content) {
-          yield {
-            type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
-            response_id: responseId,
-            item_id: `msg_${responseId}`,
-            output_index: 0,
-            content_index: 0,
-            delta: delta.content,
-            sequence_number: sequenceNumber++
-          };
-        }
-        if (delta.tool_calls) {
-          for (const toolCall of delta.tool_calls) {
-            const index = toolCall.index;
-            if (!toolCallBuffers.has(index)) {
-              const toolCallId = toolCall.id || `call_${responseId}_${index}`;
-              const toolName = toolCall.function?.name || "";
-              toolCallBuffers.set(index, {
-                id: toolCallId,
-                name: toolName,
-                args: ""
-              });
-              yield {
-                type: "response.tool_call.start" /* TOOL_CALL_START */,
-                response_id: responseId,
-                item_id: `msg_${responseId}`,
-                tool_call_id: toolCallId,
-                tool_name: toolName
-              };
-            }
-            if (toolCall.function?.arguments) {
-              const buffer = toolCallBuffers.get(index);
-              buffer.args += toolCall.function.arguments;
-              yield {
-                type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
-                response_id: responseId,
-                item_id: `msg_${responseId}`,
-                tool_call_id: buffer.id,
-                tool_name: buffer.name,
-                delta: toolCall.function.arguments,
-                sequence_number: sequenceNumber++
-              };
-            }
-          }
-        }
-        if (choice.finish_reason && toolCallBuffers.size > 0) {
-          for (const buffer of toolCallBuffers.values()) {
-            yield {
-              type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
-              response_id: responseId,
-              tool_call_id: buffer.id,
-              tool_name: buffer.name,
-              arguments: buffer.args
-            };
-          }
-        }
-      }
-      if (responseId && !hasUsage) {
-        yield {
-          type: "response.complete" /* RESPONSE_COMPLETE */,
-          response_id: responseId,
-          status: "completed",
-          usage: {
-            input_tokens: 0,
-            output_tokens: 0,
-            total_tokens: 0
-          },
-          iterations: 1
-        };
-      }
+        input,
+        ...instructions && { instructions },
+        ...options.tools && options.tools.length > 0 && {
+          tools: this.converter.convertTools(options.tools)
+        },
+        ...options.tool_choice && {
+          tool_choice: this.converter.convertToolChoice(options.tool_choice)
+        },
+        ...options.temperature !== void 0 && this.supportsParameter(options.model, "temperature") && { temperature: options.temperature },
+        ...options.max_output_tokens && { max_output_tokens: options.max_output_tokens },
+        ...options.response_format && {
+          text: this.converter.convertResponseFormat(options.response_format)
+        },
+        ...options.parallel_tool_calls !== void 0 && {
+          parallel_tool_calls: options.parallel_tool_calls
+        },
+        ...options.previous_response_id && {
+          previous_response_id: options.previous_response_id
+        },
+        ...options.metadata && { metadata: options.metadata },
+        stream: true
+      };
+      const stream = await this.client.responses.create(params);
+      yield* this.streamConverter.convertStream(stream);
     } catch (error) {
       this.handleError(error);
       throw error;
@@ -2377,131 +3694,6 @@ var OpenAITextProvider = class extends BaseTextProvider {
       supportsJSONSchema: false,
       maxTokens: 4096,
       maxOutputTokens: 4096
-    };
-  }
-  /**
-   * Convert our input format to OpenAI messages format
-   * @param input - Input messages
-   * @param instructions - Optional system instructions (prepended as DEVELOPER message for OpenAI)
-   */
-  convertInput(input, instructions) {
-    const messages = [];
-    if (typeof input === "string") {
-      if (instructions) {
-        messages.push({ role: "developer", content: instructions });
-      }
-      messages.push({ role: "user", content: input });
-      return messages;
-    }
-    const hasDeveloperMessage = Array.isArray(input) && input.some(
-      (item) => item.type === "message" && item.role === "developer"
-    );
-    if (instructions && !hasDeveloperMessage) {
-      messages.push({
-        role: "developer",
-        content: instructions
-      });
-    }
-    for (const item of input) {
-      if (item.type === "message") {
-        const message = {
-          role: item.role,
-          // Keep role as-is (developer, user, assistant)
-          content: []
-        };
-        for (const content of item.content) {
-          switch (content.type) {
-            case "input_text":
-              message.content.push({ type: "text", text: content.text });
-              break;
-            case "input_image_url":
-              message.content.push({
-                type: "image_url",
-                image_url: content.image_url
-              });
-              break;
-            case "output_text":
-              message.content.push({ type: "text", text: content.text });
-              break;
-            case "tool_use":
-              if (!message.tool_calls) {
-                message.tool_calls = [];
-              }
-              message.tool_calls.push({
-                id: content.id,
-                type: "function",
-                function: {
-                  name: content.name,
-                  arguments: content.arguments
-                }
-              });
-              if (message.tool_calls.length > 0 && message.content.length === 0) {
-                message.content = null;
-              }
-              break;
-            case "tool_result":
-              messages.push({
-                role: "tool",
-                tool_call_id: content.tool_use_id,
-                content: typeof content.content === "string" ? content.content : JSON.stringify(content.content)
-              });
-              continue;
-          }
-        }
-        if (Array.isArray(message.content) && message.content.length === 1 && message.content[0].type === "text") {
-          message.content = message.content[0].text;
-        }
-        messages.push(message);
-      }
-    }
-    return messages;
-  }
-  /**
-   * Convert OpenAI response to our LLMResponse format
-   */
-  convertResponse(response) {
-    const choice = response.choices[0];
-    const message = choice?.message;
-    const content = [];
-    if (message?.content) {
-      content.push({
-        type: "output_text",
-        text: message.content,
-        annotations: []
-      });
-    }
-    if (message?.tool_calls) {
-      for (const toolCall of message.tool_calls) {
-        if (toolCall.type === "function" && "function" in toolCall) {
-          content.push({
-            type: "tool_use",
-            id: toolCall.id,
-            name: toolCall.function.name,
-            arguments: toolCall.function.arguments
-          });
-        }
-      }
-    }
-    return {
-      id: response.id,
-      object: "response",
-      created_at: response.created,
-      status: choice?.finish_reason === "stop" ? "completed" : "incomplete",
-      model: response.model,
-      output: [
-        {
-          type: "message",
-          id: response.id,
-          role: "assistant" /* ASSISTANT */,
-          content
-        }
-      ],
-      output_text: message?.content || "",
-      usage: {
-        input_tokens: response.usage?.prompt_tokens || 0,
-        output_tokens: response.usage?.completion_tokens || 0,
-        total_tokens: response.usage?.total_tokens || 0
-      }
     };
   }
   /**
@@ -4791,6 +5983,29 @@ var DEFAULT_PERMISSION_CONFIG = {
   scope: "once",
   riskLevel: "low"
 };
+var DEFAULT_ALLOWLIST = [
+  // Filesystem read-only tools
+  "read_file",
+  "glob",
+  "grep",
+  "list_directory",
+  // Memory management (internal state - safe)
+  "memory_store",
+  "memory_retrieve",
+  "memory_delete",
+  "memory_list",
+  // Context introspection (read-only)
+  "context_inspect",
+  "context_breakdown",
+  "cache_stats",
+  "memory_stats",
+  // Meta-tools (internal coordination)
+  "_start_planning",
+  "_modify_plan",
+  "_report_progress",
+  "_request_approval"
+  // CRITICAL: Must be allowlisted to avoid circular dependency!
+];
 
 // src/core/permissions/ToolPermissionManager.ts
 var ToolPermissionManager = class extends events.EventEmitter {
@@ -4810,6 +6025,9 @@ var ToolPermissionManager = class extends events.EventEmitter {
     super();
     this.defaultScope = config?.defaultScope ?? DEFAULT_PERMISSION_CONFIG.scope;
     this.defaultRiskLevel = config?.defaultRiskLevel ?? DEFAULT_PERMISSION_CONFIG.riskLevel;
+    for (const toolName of DEFAULT_ALLOWLIST) {
+      this.allowlist.add(toolName);
+    }
     if (config?.allowlist) {
       for (const toolName of config.allowlist) {
         this.allowlist.add(toolName);
@@ -12353,868 +13571,6 @@ var ExternalDependencyHandler = class extends EventEmitter__default.default {
     this.tools = new Map(tools.map((t) => [t.definition.function.name, t]));
   }
 };
-
-// src/domain/entities/Model.ts
-var LLM_MODELS = {
-  [Vendor.OpenAI]: {
-    GPT_5_2_INSTANT: "gpt-5.2-instant",
-    GPT_5_2_THINKING: "gpt-5.2-thinking",
-    GPT_5_2_PRO: "gpt-5.2-pro",
-    GPT_5_2_CODEX: "gpt-5.2-codex",
-    GPT_5_1: "gpt-5.1",
-    GPT_5: "gpt-5",
-    GPT_5_MINI: "gpt-5-mini",
-    GPT_5_NANO: "gpt-5-nano",
-    GPT_4_1: "gpt-4.1",
-    GPT_4_1_MINI: "gpt-4.1-mini",
-    O3_MINI: "o3-mini"
-  },
-  [Vendor.Anthropic]: {
-    CLAUDE_OPUS_4_5: "claude-opus-4-5-20251101",
-    CLAUDE_SONNET_4_5: "claude-sonnet-4-5-20250929",
-    CLAUDE_HAIKU_4_5: "claude-haiku-4-5-20251001",
-    CLAUDE_OPUS_4_1: "claude-opus-4-1-20250805",
-    CLAUDE_SONNET_4: "claude-sonnet-4-20250514"
-  },
-  [Vendor.Google]: {
-    GEMINI_3_FLASH_PREVIEW: "gemini-3-flash-preview",
-    GEMINI_3_PRO: "gemini-3-pro",
-    GEMINI_3_PRO_IMAGE: "gemini-3-pro-image",
-    GEMINI_2_5_PRO: "gemini-2.5-pro",
-    GEMINI_2_5_FLASH: "gemini-2.5-flash",
-    GEMINI_2_5_FLASH_LITE: "gemini-2.5-flash-lite",
-    GEMINI_2_5_FLASH_IMAGE: "gemini-2.5-flash-image"
-  }
-};
-var MODEL_REGISTRY = {
-  // ============================================================================
-  // OpenAI Models (11 total)
-  // ============================================================================
-  "gpt-5.2-instant": {
-    name: "gpt-5.2-instant",
-    provider: Vendor.OpenAI,
-    description: "Fast variant of GPT-5.2 with minimal reasoning step",
-    isActive: true,
-    releaseDate: "2025-12-11",
-    knowledgeCutoff: "2025-08-31",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 4e5,
-        text: true,
-        image: true,
-        cpm: 1.75,
-        cpmCached: 0.025
-        // 90% discount
-      },
-      output: {
-        tokens: 128e3,
-        text: true,
-        cpm: 14
-      }
-    }
-  },
-  "gpt-5.2-thinking": {
-    name: "gpt-5.2-thinking",
-    provider: Vendor.OpenAI,
-    description: "GPT-5.2 with extended reasoning capabilities and xhigh reasoning effort",
-    isActive: true,
-    releaseDate: "2025-12-11",
-    knowledgeCutoff: "2025-08-31",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 4e5,
-        text: true,
-        image: true,
-        cpm: 1.75,
-        cpmCached: 0.025
-      },
-      output: {
-        tokens: 128e3,
-        text: true,
-        cpm: 14
-      }
-    }
-  },
-  "gpt-5.2-pro": {
-    name: "gpt-5.2-pro",
-    provider: Vendor.OpenAI,
-    description: "Flagship GPT-5.2 model with advanced reasoning and highest quality",
-    isActive: true,
-    releaseDate: "2025-12-11",
-    knowledgeCutoff: "2025-08-31",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 4e5,
-        text: true,
-        image: true,
-        cpm: 21,
-        cpmCached: 0.025
-      },
-      output: {
-        tokens: 128e3,
-        text: true,
-        cpm: 168
-      }
-    }
-  },
-  "gpt-5.2-codex": {
-    name: "gpt-5.2-codex",
-    provider: Vendor.OpenAI,
-    description: "Most advanced agentic coding model for complex software engineering",
-    isActive: true,
-    releaseDate: "2026-01-14",
-    knowledgeCutoff: "2025-08-31",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 4e5,
-        text: true,
-        image: true,
-        cpm: 1.75,
-        cpmCached: 0.025
-      },
-      output: {
-        tokens: 128e3,
-        text: true,
-        cpm: 14
-      }
-    }
-  },
-  "gpt-5.1": {
-    name: "gpt-5.1",
-    provider: Vendor.OpenAI,
-    description: "Balanced GPT-5.1 model with expanded context window",
-    isActive: true,
-    releaseDate: "2025-11-13",
-    knowledgeCutoff: "2025-08-31",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 272e3,
-        text: true,
-        image: true,
-        cpm: 1.25,
-        cpmCached: 0.025
-      },
-      output: {
-        tokens: 128e3,
-        text: true,
-        cpm: 10
-      }
-    }
-  },
-  "gpt-5": {
-    name: "gpt-5",
-    provider: Vendor.OpenAI,
-    description: "Standard GPT-5 model with large context window",
-    isActive: true,
-    releaseDate: "2025-08-07",
-    knowledgeCutoff: "2025-08-31",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 4e5,
-        text: true,
-        image: true,
-        cpm: 1.25,
-        cpmCached: 0.025
-      },
-      output: {
-        tokens: 16384,
-        text: true,
-        cpm: 10
-      }
-    }
-  },
-  "gpt-5-mini": {
-    name: "gpt-5-mini",
-    provider: Vendor.OpenAI,
-    description: "Fast, cost-efficient version of GPT-5",
-    isActive: true,
-    releaseDate: "2025-08-07",
-    knowledgeCutoff: "2025-08-31",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 2e5,
-        text: true,
-        image: true,
-        cpm: 0.25,
-        cpmCached: 0.025
-      },
-      output: {
-        tokens: 16384,
-        text: true,
-        cpm: 2
-      }
-    }
-  },
-  "gpt-5-nano": {
-    name: "gpt-5-nano",
-    provider: Vendor.OpenAI,
-    description: "Fastest, most cost-effective version of GPT-5",
-    isActive: true,
-    releaseDate: "2025-08-07",
-    knowledgeCutoff: "2025-08-31",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: false,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 128e3,
-        text: true,
-        cpm: 0.05,
-        cpmCached: 0.025
-      },
-      output: {
-        tokens: 4096,
-        text: true,
-        cpm: 0.4
-      }
-    }
-  },
-  "gpt-4.1": {
-    name: "gpt-4.1",
-    provider: Vendor.OpenAI,
-    description: "GPT-4.1 specialized for coding with large context window",
-    isActive: true,
-    releaseDate: "2025-06-01",
-    knowledgeCutoff: "2025-04-01",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        text: true,
-        image: true,
-        cpm: 0.5,
-        cpmCached: 0.025
-      },
-      output: {
-        tokens: 32768,
-        text: true,
-        cpm: 2
-      }
-    }
-  },
-  "gpt-4.1-mini": {
-    name: "gpt-4.1-mini",
-    provider: Vendor.OpenAI,
-    description: "Efficient GPT-4.1 model with excellent instruction following",
-    isActive: true,
-    releaseDate: "2025-06-01",
-    knowledgeCutoff: "2025-04-01",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        text: true,
-        image: true,
-        cpm: 0.4,
-        cpmCached: 0.025
-      },
-      output: {
-        tokens: 16384,
-        text: true,
-        cpm: 1.6
-      }
-    }
-  },
-  "o3-mini": {
-    name: "o3-mini",
-    provider: Vendor.OpenAI,
-    description: "Fast reasoning model tailored for coding, math, and science",
-    isActive: true,
-    releaseDate: "2025-01-01",
-    knowledgeCutoff: "2023-10-01",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: false,
-      functionCalling: false,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: false,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: false,
-      input: {
-        tokens: 2e5,
-        text: true,
-        cpm: 0.4
-      },
-      output: {
-        tokens: 1e5,
-        text: true,
-        cpm: 1.6
-      }
-    }
-  },
-  // ============================================================================
-  // Anthropic Models (5 total)
-  // ============================================================================
-  "claude-opus-4-5-20251101": {
-    name: "claude-opus-4-5-20251101",
-    provider: Vendor.Anthropic,
-    description: "Flagship Claude model with extended thinking and 80.9% SWE-bench score",
-    isActive: true,
-    releaseDate: "2025-11-24",
-    knowledgeCutoff: "2025-03-01",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      extendedThinking: true,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 2e5,
-        text: true,
-        image: true,
-        cpm: 5,
-        cpmCached: 0.5
-        // 10x reduction for cache read
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 25
-      }
-    }
-  },
-  "claude-sonnet-4-5-20250929": {
-    name: "claude-sonnet-4-5-20250929",
-    provider: Vendor.Anthropic,
-    description: "Balanced Claude model with computer use and extended thinking",
-    isActive: true,
-    releaseDate: "2025-09-29",
-    knowledgeCutoff: "2025-03-01",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      extendedThinking: true,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 2e5,
-        text: true,
-        image: true,
-        cpm: 3,
-        cpmCached: 0.3
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 15
-      }
-    }
-  },
-  "claude-haiku-4-5-20251001": {
-    name: "claude-haiku-4-5-20251001",
-    provider: Vendor.Anthropic,
-    description: "Fastest Claude model with extended thinking and lowest latency",
-    isActive: true,
-    releaseDate: "2025-10-01",
-    knowledgeCutoff: "2025-03-01",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      extendedThinking: true,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 2e5,
-        text: true,
-        image: true,
-        cpm: 1,
-        cpmCached: 0.1
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 5
-      }
-    }
-  },
-  "claude-opus-4-1-20250805": {
-    name: "claude-opus-4-1-20250805",
-    provider: Vendor.Anthropic,
-    description: "Legacy Claude Opus 4.1 (67% more expensive than 4.5)",
-    isActive: true,
-    releaseDate: "2025-08-05",
-    knowledgeCutoff: "2025-03-01",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      extendedThinking: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 2e5,
-        text: true,
-        image: true,
-        cpm: 15,
-        cpmCached: 1.5
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 75
-      }
-    }
-  },
-  "claude-sonnet-4-20250514": {
-    name: "claude-sonnet-4-20250514",
-    provider: Vendor.Anthropic,
-    description: "Legacy Claude Sonnet 4 with optional 1M token context",
-    isActive: true,
-    releaseDate: "2025-05-14",
-    knowledgeCutoff: "2025-03-01",
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      extendedThinking: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        // Up to 1M with premium pricing beyond 200K
-        text: true,
-        image: true,
-        cpm: 3,
-        cpmCached: 0.3
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 15
-      }
-    }
-  },
-  // ============================================================================
-  // Google Models (7 total)
-  // ============================================================================
-  "gemini-3-flash-preview": {
-    name: "gemini-3-flash-preview",
-    provider: Vendor.Google,
-    description: "Pro-grade reasoning with Flash-level latency and efficiency",
-    isActive: true,
-    releaseDate: "2025-11-18",
-    knowledgeCutoff: "2025-08-01",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: true,
-      video: true,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        text: true,
-        image: true,
-        audio: true,
-        video: true,
-        cpm: 0.5
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 3
-      }
-    }
-  },
-  "gemini-3-pro": {
-    name: "gemini-3-pro",
-    provider: Vendor.Google,
-    description: "Most advanced reasoning Gemini model with 1M token context",
-    isActive: true,
-    releaseDate: "2025-11-18",
-    knowledgeCutoff: "2025-08-01",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: true,
-      video: true,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        text: true,
-        image: true,
-        audio: true,
-        video: true,
-        cpm: 2
-        // $2 up to 200K, $4 beyond
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 12
-        // $12 up to 200K, $18 beyond
-      }
-    }
-  },
-  "gemini-3-pro-image": {
-    name: "gemini-3-pro-image",
-    provider: Vendor.Google,
-    description: "Highest quality image generation model (Nano Banana Pro)",
-    isActive: true,
-    releaseDate: "2025-11-18",
-    knowledgeCutoff: "2025-08-01",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: false,
-      functionCalling: false,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        text: true,
-        image: true,
-        cpm: 2
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        image: true,
-        cpm: 120
-        // For image output
-      }
-    }
-  },
-  "gemini-2.5-pro": {
-    name: "gemini-2.5-pro",
-    provider: Vendor.Google,
-    description: "Balanced multimodal model built for agents",
-    isActive: true,
-    releaseDate: "2025-03-01",
-    knowledgeCutoff: "2025-01-01",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: true,
-      video: true,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        text: true,
-        image: true,
-        audio: true,
-        video: true,
-        cpm: 1.25
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 10
-      }
-    }
-  },
-  "gemini-2.5-flash": {
-    name: "gemini-2.5-flash",
-    provider: Vendor.Google,
-    description: "Cost-effective model with upgraded reasoning",
-    isActive: true,
-    releaseDate: "2025-06-17",
-    knowledgeCutoff: "2025-01-01",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: true,
-      video: true,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        text: true,
-        image: true,
-        audio: true,
-        video: true,
-        cpm: 0.1
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 0.4
-      }
-    }
-  },
-  "gemini-2.5-flash-lite": {
-    name: "gemini-2.5-flash-lite",
-    provider: Vendor.Google,
-    description: "Lowest latency Gemini model with 1M context",
-    isActive: true,
-    releaseDate: "2025-06-17",
-    knowledgeCutoff: "2025-01-01",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: true,
-      video: true,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        text: true,
-        image: true,
-        audio: true,
-        video: true,
-        cpm: 0.1
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        cpm: 0.4
-      }
-    }
-  },
-  "gemini-2.5-flash-image": {
-    name: "gemini-2.5-flash-image",
-    provider: Vendor.Google,
-    description: "State-of-the-art image generation and editing (1290 tokens per image)",
-    isActive: true,
-    releaseDate: "2026-01-01",
-    knowledgeCutoff: "2025-01-01",
-    features: {
-      reasoning: true,
-      streaming: true,
-      structuredOutput: false,
-      functionCalling: false,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1e6,
-        text: true,
-        image: true,
-        cpm: 0.1
-      },
-      output: {
-        tokens: 64e3,
-        text: true,
-        image: true,
-        cpm: 30
-        // For image output
-      }
-    }
-  }
-};
-function getModelInfo(modelName) {
-  return MODEL_REGISTRY[modelName];
-}
-function getModelsByVendor(vendor) {
-  return Object.values(MODEL_REGISTRY).filter((model) => model.provider === vendor);
-}
-function getActiveModels() {
-  return Object.values(MODEL_REGISTRY).filter((model) => model.isActive);
-}
-function calculateCost(model, inputTokens, outputTokens, options) {
-  const modelInfo = getModelInfo(model);
-  if (!modelInfo) {
-    return null;
-  }
-  const inputCPM = options?.useCachedInput && modelInfo.features.input.cpmCached !== void 0 ? modelInfo.features.input.cpmCached : modelInfo.features.input.cpm;
-  const outputCPM = modelInfo.features.output.cpm;
-  const inputCost = inputTokens / 1e6 * inputCPM;
-  const outputCost = outputTokens / 1e6 * outputCPM;
-  return inputCost + outputCost;
-}
-
-// src/capabilities/taskAgent/PlanExecutor.ts
 var PlanExecutor = class extends EventEmitter__default.default {
   agent;
   memory;
@@ -20553,10 +20909,10 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
         const delta = event.delta || "";
         fullText += delta;
         yield { type: "text:delta", delta };
-      } else if (event.type === "response.tool_call.start" /* TOOL_CALL_START */) {
-        yield { type: "tool:start", name: event.tool_name || "unknown", args: null };
+      } else if (event.type === "response.tool_execution.start" /* TOOL_EXECUTION_START */) {
+        yield { type: "tool:start", name: event.tool_name || "unknown", args: event.arguments || null };
       } else if (event.type === "response.tool_execution.done" /* TOOL_EXECUTION_DONE */) {
-        yield { type: "tool:complete", name: event.name || "unknown", result: event.result, durationMs: 0 };
+        yield { type: "tool:complete", name: event.tool_name || "unknown", result: event.result, durationMs: event.execution_time_ms || 0 };
       }
     }
     yield { type: "text:done", text: fullText };
@@ -20627,10 +20983,10 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
             const delta = event.delta || "";
             taskResultText += delta;
             yield { type: "task:progress", task, status: delta };
-          } else if (event.type === "response.tool_call.start" /* TOOL_CALL_START */) {
-            yield { type: "tool:start", name: event.tool_name || "unknown", args: null };
+          } else if (event.type === "response.tool_execution.start" /* TOOL_EXECUTION_START */) {
+            yield { type: "tool:start", name: event.tool_name || "unknown", args: event.arguments || null };
           } else if (event.type === "response.tool_execution.done" /* TOOL_EXECUTION_DONE */) {
-            yield { type: "tool:complete", name: event.name || "unknown", result: event.result, durationMs: 0 };
+            yield { type: "tool:complete", name: event.tool_name || "unknown", result: event.result, durationMs: event.execution_time_ms || 0 };
           }
         }
         task.status = "completed";
@@ -21197,6 +21553,7 @@ exports.ConnectorConfigStore = ConnectorConfigStore;
 exports.ConsoleMetrics = ConsoleMetrics;
 exports.ContentType = ContentType;
 exports.ContextManager = ContextManager2;
+exports.DEFAULT_ALLOWLIST = DEFAULT_ALLOWLIST;
 exports.DEFAULT_BACKOFF_CONFIG = DEFAULT_BACKOFF_CONFIG;
 exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
 exports.DEFAULT_CIRCUIT_BREAKER_CONFIG = DEFAULT_CIRCUIT_BREAKER_CONFIG;

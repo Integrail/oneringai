@@ -29,6 +29,7 @@ import type {
 import {
   APPROVAL_STATE_VERSION,
   DEFAULT_PERMISSION_CONFIG,
+  DEFAULT_ALLOWLIST,
 } from './types.js';
 import type { ToolCall } from '../../domain/entities/Tool.js';
 
@@ -76,7 +77,13 @@ export class ToolPermissionManager extends EventEmitter {
     this.defaultScope = config?.defaultScope ?? DEFAULT_PERMISSION_CONFIG.scope;
     this.defaultRiskLevel = config?.defaultRiskLevel ?? DEFAULT_PERMISSION_CONFIG.riskLevel;
 
-    // Initialize allowlist
+    // Initialize allowlist with defaults first
+    // This ensures safe tools (read-only, introspection, meta-tools) are always allowed
+    for (const toolName of DEFAULT_ALLOWLIST) {
+      this.allowlist.add(toolName);
+    }
+
+    // Add user-provided allowlist (merges with defaults)
     if (config?.allowlist) {
       for (const toolName of config.allowlist) {
         this.allowlist.add(toolName);

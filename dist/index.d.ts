@@ -2,8 +2,8 @@ import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as Vend
 export { l as APIKeyConnectorAuth, B as AspectRatio, k as ConnectorAuth, m as IImageModelDescription, p as IMAGE_MODELS, q as IMAGE_MODEL_REGISTRY, E as ISourceLinks, x as ImageEditOptions, w as ImageGenerateOptions, g as ImageGeneration, h as ImageGenerationCreateOptions, n as ImageModelCapabilities, o as ImageModelPricing, z as ImageResponse, y as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, D as OutputFormat, Q as QualityLevel, j as SimpleGenerateOptions, f as VENDORS, v as calculateImageCost, t as getActiveImageModels, r as getImageModelInfo, s as getImageModelsByVendor, u as getImageModelsWithFeature, i as isVendor } from './ImageModel-B_-3MdrA.js';
 import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
 import { EventEmitter } from 'events';
-import { T as ToolFunction, a as ToolPermissionConfig, S as SerializedApprovalState, A as AgenticLoopEvents, b as ToolPermissionManager, H as HookConfig, c as HistoryMode, d as AgentPermissionsConfig, I as InputItem, e as AgentResponse, f as StreamEvent, E as ExecutionContext, g as ExecutionMetrics, h as AuditEntry, C as CircuitState, i as CircuitBreakerMetrics, j as ITextProvider, k as TokenUsage, l as ToolCall, L as LLMResponse, m as StreamEventType, n as CircuitBreaker, o as TextGenerateOptions, M as ModelCapabilities, p as MessageRole } from './index-DD3ikSI1.js';
-export { x as APPROVAL_STATE_VERSION, aq as AfterToolContext, al as AgenticLoopEventName, r as ApprovalCacheEntry, u as ApprovalDecision, at as ApprovalResult, ar as ApproveToolContext, ap as BeforeToolContext, Y as BuiltInTool, aw as CircuitBreakerConfig, ax as CircuitBreakerEvents, av as CircuitOpenError, Q as CompactionItem, z as Content, y as ContentType, ay as DEFAULT_CIRCUIT_BREAKER_CONFIG, D as DEFAULT_PERMISSION_CONFIG, ab as ErrorEvent, X as FunctionToolDefinition, an as Hook, ak as HookManager, am as HookName, au as IToolExecutor, F as InputImageContent, B as InputTextContent, a9 as IterationCompleteEvent, $ as JSONSchema, K as Message, ao as ModifyingHook, N as OutputItem, O as OutputTextContent, a2 as OutputTextDeltaEvent, a3 as OutputTextDoneEvent, v as PermissionCheckContext, t as PermissionCheckResult, w as PermissionManagerEvent, P as PermissionScope, U as ReasoningItem, aa as ResponseCompleteEvent, a0 as ResponseCreatedEvent, a1 as ResponseInProgressEvent, R as RiskLevel, s as SerializedApprovalEntry, W as Tool, a5 as ToolCallArgumentsDeltaEvent, a6 as ToolCallArgumentsDoneEvent, a4 as ToolCallStartEvent, V as ToolCallState, _ as ToolExecutionContext, a8 as ToolExecutionDoneEvent, a7 as ToolExecutionStartEvent, as as ToolModification, q as ToolPermissionConfig, aj as ToolRegistry, Z as ToolResult, J as ToolResultContent, G as ToolUseContent, ai as isErrorEvent, ad as isOutputTextDelta, ah as isResponseComplete, ac as isStreamEvent, af as isToolCallArgumentsDelta, ag as isToolCallArgumentsDone, ae as isToolCallStart } from './index-DD3ikSI1.js';
+import { T as ToolFunction, a as ToolPermissionConfig, S as SerializedApprovalState, A as AgenticLoopEvents, b as ToolPermissionManager, H as HookConfig, c as HistoryMode, d as AgentPermissionsConfig, I as InputItem, e as AgentResponse, f as StreamEvent, E as ExecutionContext, g as ExecutionMetrics, h as AuditEntry, C as CircuitState, i as CircuitBreakerMetrics, j as ITextProvider, k as TokenUsage, l as ToolCall, L as LLMResponse, m as StreamEventType, n as CircuitBreaker, o as TextGenerateOptions, M as ModelCapabilities, p as MessageRole } from './index-Dxodzojl.js';
+export { x as APPROVAL_STATE_VERSION, as as AfterToolContext, an as AgenticLoopEventName, r as ApprovalCacheEntry, u as ApprovalDecision, av as ApprovalResult, at as ApproveToolContext, ar as BeforeToolContext, _ as BuiltInTool, ay as CircuitBreakerConfig, az as CircuitBreakerEvents, ax as CircuitOpenError, V as CompactionItem, F as Content, B as ContentType, y as DEFAULT_ALLOWLIST, aA as DEFAULT_CIRCUIT_BREAKER_CONFIG, D as DEFAULT_PERMISSION_CONFIG, z as DefaultAllowlistedTool, ad as ErrorEvent, Z as FunctionToolDefinition, ap as Hook, am as HookManager, ao as HookName, aw as IToolExecutor, J as InputImageContent, G as InputTextContent, ab as IterationCompleteEvent, a1 as JSONSchema, Q as Message, aq as ModifyingHook, U as OutputItem, O as OutputTextContent, a4 as OutputTextDeltaEvent, a5 as OutputTextDoneEvent, v as PermissionCheckContext, t as PermissionCheckResult, w as PermissionManagerEvent, P as PermissionScope, W as ReasoningItem, ac as ResponseCompleteEvent, a2 as ResponseCreatedEvent, a3 as ResponseInProgressEvent, R as RiskLevel, s as SerializedApprovalEntry, Y as Tool, a7 as ToolCallArgumentsDeltaEvent, a8 as ToolCallArgumentsDoneEvent, a6 as ToolCallStartEvent, X as ToolCallState, a0 as ToolExecutionContext, aa as ToolExecutionDoneEvent, a9 as ToolExecutionStartEvent, au as ToolModification, q as ToolPermissionConfig, al as ToolRegistry, $ as ToolResult, N as ToolResultContent, K as ToolUseContent, ak as isErrorEvent, af as isOutputTextDelta, aj as isResponseComplete, ae as isStreamEvent, ah as isToolCallArgumentsDelta, ai as isToolCallArgumentsDone, ag as isToolCallStart } from './index-Dxodzojl.js';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.js';
 
 /**
@@ -3705,6 +3705,17 @@ interface ILLMDescription {
         batchAPI?: boolean;
         /** Supports prompt caching */
         promptCaching?: boolean;
+        /** Parameter support - indicates which sampling parameters are supported */
+        parameters?: {
+            /** Supports temperature parameter */
+            temperature?: boolean;
+            /** Supports top_p parameter */
+            topP?: boolean;
+            /** Supports frequency_penalty parameter */
+            frequencyPenalty?: boolean;
+            /** Supports presence_penalty parameter */
+            presencePenalty?: boolean;
+        };
         /** Input specifications */
         input: {
             /** Maximum input context window (in tokens) */
@@ -3739,20 +3750,22 @@ interface ILLMDescription {
 }
 /**
  * Model name constants organized by vendor
+ * Updated: January 2026 - Contains only verified, currently available models
  */
 declare const LLM_MODELS: {
     readonly openai: {
-        readonly GPT_5_2_INSTANT: "gpt-5.2-instant";
-        readonly GPT_5_2_THINKING: "gpt-5.2-thinking";
+        readonly GPT_5_2: "gpt-5.2";
         readonly GPT_5_2_PRO: "gpt-5.2-pro";
-        readonly GPT_5_2_CODEX: "gpt-5.2-codex";
-        readonly GPT_5_1: "gpt-5.1";
         readonly GPT_5: "gpt-5";
         readonly GPT_5_MINI: "gpt-5-mini";
         readonly GPT_5_NANO: "gpt-5-nano";
         readonly GPT_4_1: "gpt-4.1";
         readonly GPT_4_1_MINI: "gpt-4.1-mini";
+        readonly GPT_4_1_NANO: "gpt-4.1-nano";
+        readonly GPT_4O: "gpt-4o";
+        readonly GPT_4O_MINI: "gpt-4o-mini";
         readonly O3_MINI: "o3-mini";
+        readonly O1: "o1";
     };
     readonly anthropic: {
         readonly CLAUDE_OPUS_4_5: "claude-opus-4-5-20251101";
@@ -3760,11 +3773,13 @@ declare const LLM_MODELS: {
         readonly CLAUDE_HAIKU_4_5: "claude-haiku-4-5-20251001";
         readonly CLAUDE_OPUS_4_1: "claude-opus-4-1-20250805";
         readonly CLAUDE_SONNET_4: "claude-sonnet-4-20250514";
+        readonly CLAUDE_SONNET_3_7: "claude-3-7-sonnet-20250219";
+        readonly CLAUDE_HAIKU_3: "claude-3-haiku-20240307";
     };
     readonly google: {
         readonly GEMINI_3_FLASH_PREVIEW: "gemini-3-flash-preview";
-        readonly GEMINI_3_PRO: "gemini-3-pro";
-        readonly GEMINI_3_PRO_IMAGE: "gemini-3-pro-image";
+        readonly GEMINI_3_PRO_PREVIEW: "gemini-3-pro-preview";
+        readonly GEMINI_3_PRO_IMAGE_PREVIEW: "gemini-3-pro-image-preview";
         readonly GEMINI_2_5_PRO: "gemini-2.5-pro";
         readonly GEMINI_2_5_FLASH: "gemini-2.5-flash";
         readonly GEMINI_2_5_FLASH_LITE: "gemini-2.5-flash-lite";
@@ -3773,7 +3788,7 @@ declare const LLM_MODELS: {
 };
 /**
  * Complete model registry with all model metadata
- * Updated: January 2026
+ * Updated: January 2026 - Verified from official vendor documentation
  */
 declare const MODEL_REGISTRY: Record<string, ILLMDescription>;
 /**

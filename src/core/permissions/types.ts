@@ -298,3 +298,46 @@ export const DEFAULT_PERMISSION_CONFIG: Required<Pick<ToolPermissionConfig, 'sco
   scope: 'once',
   riskLevel: 'low',
 };
+
+/**
+ * Default allowlist - tools that never require user confirmation.
+ *
+ * These tools are safe to execute without user approval:
+ * - Read-only operations (filesystem reads, searches)
+ * - Internal state management (memory tools)
+ * - Introspection tools (context/cache stats)
+ * - Meta-tools for agent coordination
+ *
+ * All other tools (write operations, shell commands, external requests)
+ * require explicit user approval by default.
+ */
+export const DEFAULT_ALLOWLIST: readonly string[] = [
+  // Filesystem read-only tools
+  'read_file',
+  'glob',
+  'grep',
+  'list_directory',
+
+  // Memory management (internal state - safe)
+  'memory_store',
+  'memory_retrieve',
+  'memory_delete',
+  'memory_list',
+
+  // Context introspection (read-only)
+  'context_inspect',
+  'context_breakdown',
+  'cache_stats',
+  'memory_stats',
+
+  // Meta-tools (internal coordination)
+  '_start_planning',
+  '_modify_plan',
+  '_report_progress',
+  '_request_approval', // CRITICAL: Must be allowlisted to avoid circular dependency!
+] as const;
+
+/**
+ * Type for default allowlisted tools
+ */
+export type DefaultAllowlistedTool = (typeof DEFAULT_ALLOWLIST)[number];

@@ -4,7 +4,7 @@
 
 import { BaseCommand } from '../BaseCommand.js';
 import type { CommandContext, CommandResult } from '../../config/types.js';
-import { Vendor } from '@oneringai/agents';
+import { Vendor, getModelsByVendor, type ILLMDescription } from '@oneringai/agents';
 
 export class VendorCommand extends BaseCommand {
   readonly name = 'vendor';
@@ -12,68 +12,90 @@ export class VendorCommand extends BaseCommand {
   readonly description = 'Switch vendor or list available vendors';
   readonly usage = '/vendor [name|list|info]';
 
-  private vendorInfo: Record<string, { name: string; defaultModel: string; description: string }> = {
-    [Vendor.OpenAI]: {
-      name: 'OpenAI',
-      defaultModel: 'gpt-4o',
-      description: 'GPT-4, GPT-4o, GPT-3.5, o1, o1-mini',
-    },
-    [Vendor.Anthropic]: {
-      name: 'Anthropic',
-      defaultModel: 'claude-3-opus-20240229',
-      description: 'Claude 3 Opus, Sonnet, Haiku',
-    },
-    [Vendor.Google]: {
-      name: 'Google AI',
-      defaultModel: 'gemini-pro',
-      description: 'Gemini Pro, Gemini Ultra',
-    },
-    [Vendor.GoogleVertex]: {
-      name: 'Google Vertex AI',
-      defaultModel: 'gemini-pro',
-      description: 'Gemini via Vertex AI',
-    },
-    [Vendor.Groq]: {
-      name: 'Groq',
-      defaultModel: 'llama3-70b-8192',
-      description: 'Fast inference for Llama, Mixtral',
-    },
-    [Vendor.Together]: {
-      name: 'Together AI',
-      defaultModel: 'meta-llama/Llama-3-70b-chat-hf',
-      description: 'Open source models hosted',
-    },
-    [Vendor.Grok]: {
-      name: 'xAI Grok',
-      defaultModel: 'grok-1',
-      description: 'xAI Grok models',
-    },
-    [Vendor.DeepSeek]: {
-      name: 'DeepSeek',
-      defaultModel: 'deepseek-chat',
-      description: 'DeepSeek coding and chat models',
-    },
-    [Vendor.Mistral]: {
-      name: 'Mistral AI',
-      defaultModel: 'mistral-large-latest',
-      description: 'Mistral, Mixtral models',
-    },
-    [Vendor.Perplexity]: {
-      name: 'Perplexity',
-      defaultModel: 'pplx-70b-online',
-      description: 'Perplexity online models',
-    },
-    [Vendor.Ollama]: {
-      name: 'Ollama (Local)',
-      defaultModel: 'llama3',
-      description: 'Local models via Ollama',
-    },
-    [Vendor.Custom]: {
-      name: 'Custom',
-      defaultModel: 'custom',
-      description: 'OpenAI-compatible API',
-    },
+  // Static vendor display names
+  private vendorNames: Record<string, string> = {
+    [Vendor.OpenAI]: 'OpenAI',
+    [Vendor.Anthropic]: 'Anthropic',
+    [Vendor.Google]: 'Google AI',
+    [Vendor.GoogleVertex]: 'Google Vertex AI',
+    [Vendor.Groq]: 'Groq',
+    [Vendor.Together]: 'Together AI',
+    [Vendor.Grok]: 'xAI Grok',
+    [Vendor.DeepSeek]: 'DeepSeek',
+    [Vendor.Mistral]: 'Mistral AI',
+    [Vendor.Perplexity]: 'Perplexity',
+    [Vendor.Ollama]: 'Ollama (Local)',
+    [Vendor.Custom]: 'Custom',
   };
+
+  /**
+   * Get vendor info dynamically from MODEL_REGISTRY
+   */
+  private getVendorInfo(vendorId: string): { name: string; defaultModel: string; description: string } {
+    const name = this.vendorNames[vendorId] || vendorId;
+    const models = getModelsByVendor(vendorId as any);
+
+    if (models.length === 0) {
+      // Vendor has no models in registry, use fallback
+      return {
+        name,
+        defaultModel: 'default',
+        description: 'No models registered',
+      };
+    }
+
+    // Select default model: prefer most capable (Opus/Pro) or latest
+    const defaultModel = this.selectDefaultModel(models);
+
+    // Generate description from available models
+    const modelNames = models.slice(0, 3).map((m) => this.getShortModelName(m.name));
+    const description =
+      models.length <= 3
+        ? modelNames.join(', ')
+        : `${modelNames.join(', ')} + ${models.length - 3} more`;
+
+    return { name, defaultModel, description };
+  }
+
+  /**
+   * Select the best default model for a vendor
+   */
+  private selectDefaultModel(models: ILLMDescription[]): string {
+    // Prefer: Opus > Pro > Sonnet > largest context > first
+    const opus = models.find((m) => m.name.toLowerCase().includes('opus'));
+    if (opus) return opus.name;
+
+    const pro = models.find((m) => m.name.toLowerCase().includes('pro') && !m.name.includes('preview'));
+    if (pro) return pro.name;
+
+    const sonnet = models.find((m) => m.name.toLowerCase().includes('sonnet'));
+    if (sonnet) return sonnet.name;
+
+    // Sort by context window size (descending) and take first
+    const sorted = [...models].sort((a, b) => b.features.input.tokens - a.features.input.tokens);
+    return sorted[0]?.name || models[0].name;
+  }
+
+  /**
+   * Get a short, friendly model name for display
+   */
+  private getShortModelName(fullName: string): string {
+    // Extract key parts: GPT-5.2, Claude Opus 4.5, Gemini 3 Flash, etc.
+    if (fullName.startsWith('gpt-5')) return fullName.split('-').slice(0, 2).join('-').toUpperCase();
+    if (fullName.startsWith('gpt-4')) return fullName.split('-').slice(0, 2).join('-').toUpperCase();
+    if (fullName.startsWith('claude')) {
+      const parts = fullName.split('-');
+      return `Claude ${parts[1]?.toUpperCase() || ''} ${parts[2] || ''}`.trim();
+    }
+    if (fullName.startsWith('gemini')) {
+      return fullName
+        .split('-')
+        .slice(0, 3)
+        .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+        .join(' ');
+    }
+    return fullName;
+  }
 
   async execute(context: CommandContext): Promise<CommandResult> {
     const { args, app } = context;
@@ -102,7 +124,11 @@ export class VendorCommand extends BaseCommand {
       '',
     ];
 
-    for (const [vendorId, info] of Object.entries(this.vendorInfo)) {
+    // Get all vendor IDs from Vendor enum
+    const vendorIds = Object.values(Vendor) as string[];
+
+    for (const vendorId of vendorIds) {
+      const info = this.getVendorInfo(vendorId);
       const marker = vendorId === currentVendor ? '→ ' : '  ';
       const connectors = connectorManager.getVendorConnectors(vendorId);
       const connectorStr = connectors.length > 0
@@ -126,21 +152,22 @@ export class VendorCommand extends BaseCommand {
     const currentVendor = config.activeVendor || config.defaults.vendor;
     const connectorManager = app.getConnectorManager();
 
-    const info = this.vendorInfo[currentVendor];
-    if (!info) {
-      return this.success(`Current vendor: ${currentVendor}\n(No detailed info available)`);
-    }
-
+    const info = this.getVendorInfo(currentVendor);
     const connectors = connectorManager.getVendorConnectors(currentVendor);
     const connectorList = connectors.length > 0
       ? connectors.map((c) => `  • ${c.name}`).join('\n')
       : '  (none configured)';
 
+    // Get model count
+    const models = getModelsByVendor(currentVendor as any);
+    const modelCount = models.length > 0 ? `${models.length} model${models.length > 1 ? 's' : ''}` : 'No models';
+
     const output = `
 Vendor: ${info.name} (${currentVendor})
 
-Description: ${info.description}
-Default Model: ${info.defaultModel}
+Available Models: ${modelCount}
+  ${info.description}
+Recommended Default: ${info.defaultModel}
 
 Configured Connectors:
 ${connectorList}
@@ -148,6 +175,8 @@ ${connectorList}
 Current Settings:
   Active Model: ${config.activeModel || config.defaults.model}
   Active Connector: ${config.activeConnector || '(none)'}
+
+Tip: Use /model list to see all available models for this vendor
 `;
 
     return this.success(output);
@@ -182,9 +211,9 @@ Current Settings:
       );
     }
 
-    // Get default model for vendor
-    const vendorInfo = this.vendorInfo[vendorName];
-    const defaultModel = vendorInfo?.defaultModel || 'default';
+    // Get default model for vendor from MODEL_REGISTRY
+    const vendorInfo = this.getVendorInfo(vendorName);
+    const defaultModel = vendorInfo.defaultModel;
 
     // Update config
     app.updateConfig({

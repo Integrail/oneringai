@@ -16,6 +16,9 @@ const { mockCreate, mockOpenAI } = vi.hoisted(() => {
         create: mockCreate,
       },
     },
+    responses: {
+      create: mockCreate,
+    },
   }));
   return { mockCreate, mockOpenAI };
 });
@@ -216,17 +219,26 @@ describe('GenericOpenAIProvider', () => {
         baseURL: 'https://example.com',
       });
 
+      // Mock Responses API format (not Chat Completions format)
       mockCreate.mockResolvedValue({
         id: 'test-123',
-        created: Date.now(),
+        created_at: Date.now(),
         model: 'test-model',
-        choices: [
+        status: 'completed',
+        output: [
           {
-            message: { role: 'assistant', content: 'Hello!' },
-            finish_reason: 'stop',
+            type: 'message',
+            role: 'assistant',
+            content: [
+              {
+                type: 'output_text',
+                text: 'Hello!',
+              },
+            ],
           },
         ],
-        usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+        output_text: 'Hello!',
+        usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
       });
 
       const response = await provider.generate({

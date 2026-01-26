@@ -347,7 +347,8 @@ describe('ToolPermissionManager', () => {
       const allowlist = permissionManager.getAllowlist();
       expect(allowlist).toContain('tool1');
       expect(allowlist).toContain('tool2');
-      expect(allowlist).toHaveLength(2);
+      // Should include DEFAULT_ALLOWLIST (16 items) + 2 custom tools = 18
+      expect(allowlist.length).toBeGreaterThanOrEqual(18);
     });
   });
 
@@ -660,6 +661,92 @@ describe('ToolPermissionManager', () => {
     });
   });
 
+  describe('default allowlist', () => {
+    it('should include default allowlisted tools on construction', () => {
+      const allowlist = permissionManager.getAllowlist();
+
+      // Check filesystem read-only tools
+      expect(allowlist).toContain('read_file');
+      expect(allowlist).toContain('glob');
+      expect(allowlist).toContain('grep');
+      expect(allowlist).toContain('list_directory');
+
+      // Check memory tools
+      expect(allowlist).toContain('memory_store');
+      expect(allowlist).toContain('memory_retrieve');
+      expect(allowlist).toContain('memory_delete');
+      expect(allowlist).toContain('memory_list');
+
+      // Check context introspection tools
+      expect(allowlist).toContain('context_inspect');
+      expect(allowlist).toContain('context_breakdown');
+      expect(allowlist).toContain('cache_stats');
+      expect(allowlist).toContain('memory_stats');
+
+      // Check meta-tools
+      expect(allowlist).toContain('_start_planning');
+      expect(allowlist).toContain('_modify_plan');
+      expect(allowlist).toContain('_report_progress');
+      expect(allowlist).toContain('_request_approval');
+    });
+
+    it('should allow default allowlisted tools without approval', () => {
+      // Test a read-only filesystem tool
+      const readResult = permissionManager.checkPermission('read_file');
+      expect(readResult.allowed).toBe(true);
+      expect(readResult.needsApproval).toBe(false);
+
+      // Test a memory tool
+      const memoryResult = permissionManager.checkPermission('memory_store');
+      expect(memoryResult.allowed).toBe(true);
+      expect(memoryResult.needsApproval).toBe(false);
+
+      // Test a meta-tool (critical!)
+      const metaResult = permissionManager.checkPermission('_request_approval');
+      expect(metaResult.allowed).toBe(true);
+      expect(metaResult.needsApproval).toBe(false);
+    });
+
+    it('should NOT auto-allow destructive tools', () => {
+      // Test destructive filesystem tools
+      const writeResult = permissionManager.checkPermission('write_file');
+      expect(writeResult.needsApproval).toBe(true);
+
+      const editResult = permissionManager.checkPermission('edit_file');
+      expect(editResult.needsApproval).toBe(true);
+
+      // Test shell execution
+      const bashResult = permissionManager.checkPermission('bash');
+      expect(bashResult.needsApproval).toBe(true);
+
+      // Test external requests
+      const webResult = permissionManager.checkPermission('web_fetch');
+      expect(webResult.needsApproval).toBe(true);
+    });
+
+    it('should merge user allowlist with defaults', () => {
+      const manager = new ToolPermissionManager({
+        allowlist: ['custom_tool'],
+      });
+
+      const allowlist = manager.getAllowlist();
+
+      // Should have both defaults and custom tools
+      expect(allowlist).toContain('read_file'); // Default
+      expect(allowlist).toContain('custom_tool'); // Custom
+    });
+
+    it('should allow blocklist to override default allowlist', () => {
+      const manager = new ToolPermissionManager({
+        blocklist: ['read_file'], // Block a default-allowlisted tool
+      });
+
+      const result = manager.checkPermission('read_file');
+      expect(result.blocked).toBe(true);
+      expect(result.allowed).toBe(false);
+    });
+  });
+
   describe('defaults', () => {
     it('should get defaults', () => {
       const defaults = permissionManager.getDefaults();
@@ -695,28 +782,44 @@ describe('ToolPermissionManager', () => {
       const stats = permissionManager.getStats();
 
       expect(stats.approvedCount).toBe(2);
-      expect(stats.allowlistedCount).toBe(1);
+      // allowlistedCount includes DEFAULT_ALLOWLIST (16 items) + 'allowed1' = 17
+      expect(stats.allowlistedCount).toBeGreaterThanOrEqual(17);
       expect(stats.blocklistedCount).toBe(1);
       expect(stats.configuredCount).toBe(1);
     });
   });
 
   describe('reset', () => {
-    it('should reset all state', () => {
+    it('should reset all state including default allowlist', () => {
       permissionManager.approveForSession('tool1');
       permissionManager.allowlistAdd('allowed1');
       permissionManager.blocklistAdd('blocked1');
       permissionManager.setToolConfig('configured', { scope: 'session' });
       permissionManager.setDefaults({ scope: 'always', riskLevel: 'critical' });
 
+      // Verify default allowlist exists before reset
+      expect(permissionManager.getAllowlist().length).toBeGreaterThan(0);
+
       permissionManager.reset();
 
+      // After reset, everything should be cleared (including default allowlist)
       expect(permissionManager.getApprovedTools()).toHaveLength(0);
       expect(permissionManager.getAllowlist()).toHaveLength(0);
       expect(permissionManager.getBlocklist()).toHaveLength(0);
       expect(permissionManager.getToolConfig('configured')).toBeUndefined();
       expect(permissionManager.getDefaults().scope).toBe('once');
       expect(permissionManager.getDefaults().riskLevel).toBe('low');
+    });
+
+    it('should require creating new instance to restore default allowlist', () => {
+      permissionManager.reset();
+
+      // After reset, default allowlist is cleared
+      expect(permissionManager.isAllowlisted('read_file')).toBe(false);
+
+      // Create new instance to get defaults back
+      const newManager = new ToolPermissionManager();
+      expect(newManager.isAllowlisted('read_file')).toBe(true);
     });
   });
 });

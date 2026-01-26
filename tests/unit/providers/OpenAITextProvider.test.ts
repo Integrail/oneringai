@@ -17,10 +17,8 @@ import { StreamEventType } from '@/domain/entities/StreamEvent.js';
 const { mockCreate, mockOpenAI } = vi.hoisted(() => {
   const mockCreate = vi.fn();
   const mockOpenAI = vi.fn(() => ({
-    chat: {
-      completions: {
-        create: mockCreate,
-      },
+    responses: {
+      create: mockCreate,
     },
   }));
   return { mockCreate, mockOpenAI };
@@ -125,21 +123,30 @@ describe('OpenAITextProvider', () => {
 
   describe('generate()', () => {
     const mockResponse = {
-      id: 'chatcmpl-123',
-      created: 1234567890,
+      id: 'resp-123',
+      created_at: 1234567890,
       model: 'gpt-4',
-      choices: [
+      object: 'response',
+      status: 'completed',
+      output_text: 'Hello! How can I help you?',
+      output: [
         {
-          message: {
-            role: 'assistant',
-            content: 'Hello! How can I help you?',
-          },
-          finish_reason: 'stop',
+          type: 'message',
+          id: 'msg-123',
+          role: 'assistant',
+          status: 'completed',
+          content: [
+            {
+              type: 'output_text',
+              text: 'Hello! How can I help you?',
+              annotations: [],
+            },
+          ],
         },
       ],
       usage: {
-        prompt_tokens: 10,
-        completion_tokens: 8,
+        input_tokens: 10,
+        output_tokens: 8,
         total_tokens: 18,
       },
     };
@@ -148,7 +155,7 @@ describe('OpenAITextProvider', () => {
       mockCreate.mockResolvedValue(mockResponse);
     });
 
-    it('should call chat.completions.create with correct parameters', async () => {
+    it('should call responses.create with correct parameters', async () => {
       await provider.generate({
         model: 'gpt-4',
         input: 'Hello',
@@ -157,12 +164,12 @@ describe('OpenAITextProvider', () => {
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           model: 'gpt-4',
-          messages: expect.any(Array),
+          input: expect.anything(),
         })
       );
     });
 
-    it('should convert string input to user message', async () => {
+    it('should convert string input correctly', async () => {
       await provider.generate({
         model: 'gpt-4',
         input: 'Hello world',
@@ -170,12 +177,12 @@ describe('OpenAITextProvider', () => {
 
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: [{ role: 'user', content: 'Hello world' }],
+          input: 'Hello world',
         })
       );
     });
 
-    it('should add instructions as developer message', async () => {
+    it('should pass instructions separately', async () => {
       await provider.generate({
         model: 'gpt-4',
         input: 'Hello',
@@ -184,15 +191,13 @@ describe('OpenAITextProvider', () => {
 
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: [
-            { role: 'developer', content: 'You are a helpful assistant' },
-            { role: 'user', content: 'Hello' },
-          ],
+          input: 'Hello',
+          instructions: 'You are a helpful assistant',
         })
       );
     });
 
-    it('should pass temperature and max_tokens', async () => {
+    it('should pass temperature and max_output_tokens', async () => {
       await provider.generate({
         model: 'gpt-4',
         input: 'Hello',
@@ -203,12 +208,12 @@ describe('OpenAITextProvider', () => {
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           temperature: 0.7,
-          max_tokens: 1000,
+          max_output_tokens: 1000,
         })
       );
     });
 
-    it('should pass tools in correct format', async () => {
+    it('should convert tools to Responses API format', async () => {
       const tools = [
         {
           type: 'function' as const,
@@ -231,7 +236,62 @@ describe('OpenAITextProvider', () => {
 
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          tools,
+          tools: [
+            {
+              type: 'function',
+              name: 'get_weather',
+              description: 'Get weather',
+              parameters: {
+                type: 'object',
+                properties: { city: { type: 'string' } },
+              },
+              strict: false, // Default to false for backward compatibility
+            },
+          ],
+        })
+      );
+    });
+
+    it('should enable strict mode when explicitly requested', async () => {
+      const tools = [
+        {
+          type: 'function' as const,
+          function: {
+            name: 'strict_tool',
+            description: 'A tool with strict validation',
+            parameters: {
+              type: 'object',
+              properties: { value: { type: 'string' } },
+              additionalProperties: false,
+              required: ['value'],
+            },
+            strict: true, // Explicitly enable strict mode
+          },
+        },
+      ];
+
+      await provider.generate({
+        model: 'gpt-4',
+        input: 'Test',
+        tools,
+      });
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tools: [
+            {
+              type: 'function',
+              name: 'strict_tool',
+              description: 'A tool with strict validation',
+              parameters: {
+                type: 'object',
+                properties: { value: { type: 'string' } },
+                additionalProperties: false,
+                required: ['value'],
+              },
+              strict: true,
+            },
+          ],
         })
       );
     });
@@ -244,7 +304,7 @@ describe('OpenAITextProvider', () => {
 
       expect(response).toEqual(
         expect.objectContaining({
-          id: 'chatcmpl-123',
+          id: 'resp-123',
           object: 'response',
           model: 'gpt-4',
           status: 'completed',
@@ -281,26 +341,26 @@ describe('OpenAITextProvider', () => {
 
     it('should handle tool calls in response', async () => {
       mockCreate.mockResolvedValue({
-        ...mockResponse,
-        choices: [
+        id: 'resp-456',
+        created_at: 1234567890,
+        model: 'gpt-4',
+        object: 'response',
+        status: 'completed',
+        output_text: '',
+        output: [
           {
-            message: {
-              role: 'assistant',
-              content: null,
-              tool_calls: [
-                {
-                  id: 'call_123',
-                  type: 'function',
-                  function: {
-                    name: 'get_weather',
-                    arguments: '{"city":"Paris"}',
-                  },
-                },
-              ],
-            },
-            finish_reason: 'tool_calls',
+            type: 'function_call',
+            call_id: 'call_123',
+            name: 'get_weather',
+            arguments: '{"city":"Paris"}',
+            status: 'completed',
           },
         ],
+        usage: {
+          input_tokens: 20,
+          output_tokens: 5,
+          total_tokens: 25,
+        },
       });
 
       const response = await provider.generate({
@@ -337,9 +397,9 @@ describe('OpenAITextProvider', () => {
 
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
-          messages: expect.arrayContaining([
-            expect.objectContaining({ role: 'user' }),
-            expect.objectContaining({ role: 'assistant' }),
+          input: expect.arrayContaining([
+            expect.objectContaining({ type: 'message', role: 'user' }),
+            expect.objectContaining({ type: 'message', role: 'assistant' }),
           ]),
         })
       );
@@ -351,23 +411,58 @@ describe('OpenAITextProvider', () => {
       const mockStreamResponse = {
         [Symbol.asyncIterator]: async function* () {
           yield {
-            id: 'chatcmpl-123',
-            model: 'gpt-4',
-            created: 1234567890,
-            choices: [{ delta: { content: 'Hello' }, index: 0 }],
+            type: 'response.created',
+            response: {
+              id: 'resp-123',
+              model: 'gpt-4',
+              created_at: 1234567890,
+            },
+            sequence_number: 0,
           };
           yield {
-            id: 'chatcmpl-123',
-            model: 'gpt-4',
-            created: 1234567890,
-            choices: [{ delta: { content: ' world' }, index: 0, finish_reason: 'stop' }],
+            type: 'response.output_item.added',
+            item: {
+              type: 'message',
+              id: 'msg-123',
+              role: 'assistant',
+              content: [],
+              status: 'in_progress',
+            },
+            output_index: 0,
+            sequence_number: 1,
           };
           yield {
-            id: 'chatcmpl-123',
-            model: 'gpt-4',
-            created: 1234567890,
-            choices: [],
-            usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+            type: 'response.output_text.delta',
+            delta: 'Hello',
+            item_id: 'msg-123',
+            output_index: 0,
+            content_index: 0,
+            sequence_number: 2,
+            logprobs: [],
+          };
+          yield {
+            type: 'response.output_text.delta',
+            delta: ' world',
+            item_id: 'msg-123',
+            output_index: 0,
+            content_index: 0,
+            sequence_number: 3,
+            logprobs: [],
+          };
+          yield {
+            type: 'response.completed',
+            response: {
+              id: 'resp-123',
+              model: 'gpt-4',
+              created_at: 1234567890,
+              status: 'completed',
+              usage: {
+                input_tokens: 5,
+                output_tokens: 2,
+                total_tokens: 7,
+              },
+            },
+            sequence_number: 4,
           };
         },
       };
@@ -385,7 +480,6 @@ describe('OpenAITextProvider', () => {
       expect(mockCreate).toHaveBeenCalledWith(
         expect.objectContaining({
           stream: true,
-          stream_options: { include_usage: true },
         })
       );
     });
@@ -394,23 +488,49 @@ describe('OpenAITextProvider', () => {
       const mockStreamResponse = {
         [Symbol.asyncIterator]: async function* () {
           yield {
-            id: 'chatcmpl-123',
-            model: 'gpt-4',
-            created: 1234567890,
-            choices: [{ delta: { content: 'Hi' }, index: 0 }],
+            type: 'response.created',
+            response: {
+              id: 'resp-123',
+              model: 'gpt-4',
+              created_at: 1234567890,
+            },
+            sequence_number: 0,
           };
           yield {
-            id: 'chatcmpl-123',
-            model: 'gpt-4',
-            created: 1234567890,
-            choices: [{ delta: {}, index: 0, finish_reason: 'stop' }],
+            type: 'response.output_item.added',
+            item: {
+              type: 'message',
+              id: 'msg-123',
+              role: 'assistant',
+              content: [],
+              status: 'in_progress',
+            },
+            output_index: 0,
+            sequence_number: 1,
           };
           yield {
-            id: 'chatcmpl-123',
-            model: 'gpt-4',
-            created: 1234567890,
-            choices: [],
-            usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
+            type: 'response.output_text.delta',
+            delta: 'Hi',
+            item_id: 'msg-123',
+            output_index: 0,
+            content_index: 0,
+            sequence_number: 2,
+            logprobs: [],
+          };
+          yield {
+            type: 'response.completed',
+            response: {
+              id: 'resp-123',
+              model: 'gpt-4',
+              created_at: 1234567890,
+              status: 'completed',
+              usage: {
+                input_tokens: 5,
+                output_tokens: 1,
+                total_tokens: 6,
+              },
+            },
+            sequence_number: 3,
           };
         },
       };

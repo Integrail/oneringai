@@ -235,7 +235,15 @@ export class AmosApp implements IAmosApp {
 
             case 'tool:start':
               if (event.tool && config.ui.showTiming) {
-                this.terminal.printDim(`  🔧 ${event.tool.name}...`);
+                const details = this.formatToolDetails(
+                  event.tool.name,
+                  event.tool.args || '{}'
+                );
+                if (details) {
+                  this.terminal.printDim(`  🔧 ${event.tool.name}: ${details}`);
+                } else {
+                  this.terminal.printDim(`  🔧 ${event.tool.name}...`);
+                }
               }
               break;
 
@@ -481,6 +489,63 @@ export class AmosApp implements IAmosApp {
   }
 
   /**
+   * Format tool details for display
+   */
+  private formatToolDetails(toolName: string, args: Record<string, unknown> | string): string {
+    try {
+      const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+
+      switch (toolName) {
+        case 'read_file':
+          return parsedArgs.path ? `${parsedArgs.path}` : '';
+
+        case 'write_file':
+        case 'edit_file':
+          return parsedArgs.path ? `${parsedArgs.path}` : '';
+
+        case 'bash':
+          return parsedArgs.command ? `${parsedArgs.command}` : '';
+
+        case 'glob':
+          return parsedArgs.pattern ? `${parsedArgs.pattern}` : '';
+
+        case 'grep':
+          return parsedArgs.pattern ? `"${parsedArgs.pattern}"` : '';
+
+        case 'list_directory':
+          return parsedArgs.path ? `${parsedArgs.path}` : '.';
+
+        case 'web_fetch':
+        case 'web_fetch_js':
+          return parsedArgs.url ? `${parsedArgs.url}` : '';
+
+        case 'web_search':
+          return parsedArgs.query ? `"${parsedArgs.query}"` : '';
+
+        case 'memory_store':
+        case 'memory_retrieve':
+        case 'memory_delete':
+          return parsedArgs.key ? `${parsedArgs.key}` : '';
+
+        default:
+          // For other tools, show first meaningful argument
+          const firstArg = Object.entries(parsedArgs)[0];
+          if (firstArg) {
+            const [key, value] = firstArg;
+            const valueStr = typeof value === 'string' ? value : JSON.stringify(value);
+            if (valueStr.length < 50) {
+              return `${key}=${valueStr}`;
+            }
+            return `${key}=${valueStr.slice(0, 47)}...`;
+          }
+          return '';
+      }
+    } catch {
+      return '';
+    }
+  }
+
+  /**
    * Handle interactive tool approval
    */
   private async handleToolApproval(context: ToolApprovalContext): Promise<ApprovalDecision> {
@@ -488,8 +553,14 @@ export class AmosApp implements IAmosApp {
                           context.riskLevel === 'high' ? '⚠️  HIGH RISK' :
                           context.riskLevel === 'medium' ? '⚡ MEDIUM RISK' : '';
 
+    const details = this.formatToolDetails(context.toolName, context.args || '{}');
+
     this.terminal.print('');
-    this.terminal.printWarning(`Tool "${context.toolName}" requires approval ${riskIndicator}`);
+    if (details) {
+      this.terminal.printWarning(`Tool "${context.toolName}: ${details}" requires approval ${riskIndicator}`);
+    } else {
+      this.terminal.printWarning(`Tool "${context.toolName}" requires approval ${riskIndicator}`);
+    }
 
     if (context.reason) {
       this.terminal.print(`  Reason: ${context.reason}`);

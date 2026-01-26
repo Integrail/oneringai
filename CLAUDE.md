@@ -172,13 +172,16 @@ const claude = LLM_MODELS[Vendor.Anthropic].CLAUDE_OPUS_4_5;     // 'claude-opus
 const gemini = LLM_MODELS[Vendor.Google].GEMINI_3_FLASH_PREVIEW; // 'gemini-3-flash-preview'
 
 // Get model information
-const model = getModelInfo('gpt-5.2-thinking');
+const model = getModelInfo('gpt-5.2');
 console.log(model.features.input.tokens);   // 400000
 console.log(model.features.output.tokens);  // 128000
 console.log(model.features.input.cpm);      // 1.75
 console.log(model.features.output.cpm);     // 14
 console.log(model.features.reasoning);      // true
 console.log(model.features.vision);         // true
+
+// Check parameter support (reasoning models don't support temperature)
+console.log(model.features.parameters?.temperature);  // false (GPT-5 is reasoning model)
 
 // Calculate API costs
 const cost = calculateCost('gpt-5.2-thinking', 50_000, 2_000);
@@ -206,6 +209,9 @@ const activeModels = getActiveModels();  // All 23 currently active models
 - Pricing: Input/output CPM (cost per million tokens), cached input pricing
 - Context windows: Max input/output tokens
 - Feature flags: reasoning, streaming, structuredOutput, functionCalling, vision, audio, video, extendedThinking, batchAPI, promptCaching
+- **Parameter support**: Indicates which sampling parameters are supported by the model (temperature, topP, frequencyPenalty, presencePenalty)
+  - Reasoning models (GPT-5 series, o1, o3) don't support sampling parameters
+  - If not specified, all parameters are assumed supported (backward compatibility)
 - Release date and knowledge cutoff dates
 - Active status
 
@@ -983,6 +989,123 @@ agent.tools.enable('email_tool');
 agent.addTool(newTool);
 agent.removeTool('old_tool');
 agent.listTools();
+```
+
+## Tool Permissions (NEW)
+
+### ToolPermissionManager (`src/core/permissions/ToolPermissionManager.ts`)
+
+Comprehensive permission system for controlling tool execution. Provides approval workflows, allowlists, blocklists, and session-based caching.
+
+```typescript
+import { Agent, ToolPermissionManager } from '@oneringai/agents';
+
+// Create agent with permissions
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [readFile, writeFile, bash],
+  permissions: {
+    defaultScope: 'session',      // Require approval once per session
+    blocklist: ['dangerous_tool'], // Never allow
+    allowlist: ['safe_tool'],      // Always allow
+    onApprovalRequired: async (context) => {
+      // Custom approval logic
+      console.log(`Approve ${context.toolCall.function.name}?`);
+      return { approved: true, scope: 'session' };
+    },
+  },
+});
+```
+
+**Default Allowlist (No Approval Required):**
+
+The following tools are **automatically allowlisted** and never require user confirmation:
+
+**Filesystem (Read-Only):**
+- `read_file` - Read file contents
+- `glob` - Find files by pattern
+- `grep` - Search file contents
+- `list_directory` - List directory
+
+**Memory Management (Internal State):**
+- `memory_store` - Store in working memory
+- `memory_retrieve` - Retrieve from memory
+- `memory_delete` - Delete from memory
+- `memory_list` - List memory keys
+
+**Context Introspection (Read-Only):**
+- `context_inspect` - Get context budget
+- `context_breakdown` - Get token breakdown
+- `cache_stats` - Get cache statistics
+- `memory_stats` - Get memory statistics
+
+**Meta-Tools (Internal Coordination):**
+- `_start_planning` - Start planning mode (UniversalAgent)
+- `_modify_plan` - Modify plan (UniversalAgent)
+- `_report_progress` - Report progress (UniversalAgent)
+- `_request_approval` - Request approval (CRITICAL - prevents circular dependency!)
+
+**Tools Requiring Approval (By Default):**
+- `write_file`, `edit_file` - File modifications
+- `bash` - Shell command execution
+- `web_fetch`, `web_search` - External requests
+- `execute_javascript` - Code execution
+- Any custom tools not in the default allowlist
+
+**Permission Scopes:**
+- `once` - Require approval for each call (most secure)
+- `session` - Approve once per session
+- `always` - Auto-approve (add to allowlist)
+- `never` - Always block (add to blocklist)
+
+**Permission Configuration:**
+
+```typescript
+// Per-tool configuration
+agent.permissions.setToolConfig('write_file', {
+  scope: 'session',
+  riskLevel: 'high',
+  approvalMessage: 'This will modify files on disk',
+  sensitiveArgs: ['path', 'content'],
+});
+
+// Runtime management
+agent.permissions.allowlistAdd('trusted_tool');
+agent.permissions.blocklistAdd('dangerous_tool');
+agent.permissions.approveForSession('write_file');
+
+// Check permissions
+const result = agent.permissions.checkPermission('bash');
+if (result.needsApproval) {
+  // Show approval UI
+}
+
+// State persistence
+const state = agent.permissions.getState();
+agent.permissions.loadState(state);
+```
+
+**Features:**
+- **Default allowlist** - Safe tools (read-only, introspection) auto-allowed
+- **Approval caching** - Once, session, or always scopes
+- **Allowlist/blocklist** - Fine-grained control
+- **Session persistence** - Resume with approval state
+- **Event emission** - Audit trails for compliance
+- **Risk levels** - low, medium, high, critical classifications
+
+**Integration with Agents:**
+
+All agent types support permissions:
+```typescript
+// Basic Agent
+const agent = Agent.create({ permissions: {...} });
+
+// TaskAgent
+const taskAgent = TaskAgent.create({ permissions: {...} });
+
+// UniversalAgent
+const uniAgent = UniversalAgent.create({ permissions: {...} });
 ```
 
 ## Session Management (NEW)
