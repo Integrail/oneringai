@@ -2150,7 +2150,7 @@ interface IMemoryManager {
 /**
  * History manager interface (for compaction)
  */
-interface IHistoryManager {
+interface IHistoryManager$1 {
     summarize(): Promise<void>;
     truncate?(messages: any[], limit: number): Promise<any[]>;
 }
@@ -2187,7 +2187,7 @@ declare class ContextManager$1 extends EventEmitter$2<ContextManagerEvents$1> {
     /**
      * Prepare context, compacting if necessary
      */
-    prepareContext(components: ContextComponents, memory: IMemoryManager, history: IHistoryManager): Promise<PreparedContext$1>;
+    prepareContext(components: ContextComponents, memory: IMemoryManager, history: IHistoryManager$1): Promise<PreparedContext$1>;
     /**
      * Truncate tool outputs in conversation history
      */
@@ -3581,6 +3581,386 @@ declare class ApproximateTokenEstimator implements ITokenEstimator {
  * Create token estimator from name
  */
 declare function createEstimator(name: string): ITokenEstimator;
+
+/**
+ * IContextBuilder - Interface for building LLM context from multiple sources
+ *
+ * Allows users to customize how context is assembled from:
+ * - Conversation history
+ * - Plan state
+ * - Working memory
+ * - Custom sources
+ */
+/**
+ * A source that can contribute to context
+ */
+interface ContextSource {
+    /** Unique name for this source */
+    name: string;
+    /** Priority (higher = included first if space is limited) */
+    priority: number;
+    /** Whether this source is required (error if can't fit) */
+    required: boolean;
+    /** Get content for this source */
+    getContent(): Promise<string>;
+    /** Estimate tokens for this source */
+    estimateTokens(): Promise<number>;
+}
+/**
+ * Built context ready for LLM
+ */
+interface BuiltContext {
+    /** The full context string */
+    content: string;
+    /** Estimated token count */
+    estimatedTokens: number;
+    /** Which sources were included */
+    includedSources: string[];
+    /** Which sources were excluded (due to space) */
+    excludedSources: string[];
+    /** Token breakdown by source */
+    tokenBreakdown: Record<string, number>;
+}
+/**
+ * Configuration for context building
+ */
+interface ContextBuilderConfig {
+    /** Maximum tokens for context */
+    maxTokens?: number;
+    /** Reserve space for response */
+    responseReserve?: number;
+    /** Token estimator function */
+    estimateTokens?: (text: string) => number;
+    /** Header/separator between sections */
+    sectionSeparator?: string;
+}
+/**
+ * Interface for context builder
+ * Assembles context from multiple sources with token budget management
+ */
+interface IContextBuilder {
+    /**
+     * Register a context source
+     */
+    registerSource(source: ContextSource): void;
+    /**
+     * Unregister a context source
+     */
+    unregisterSource(name: string): void;
+    /**
+     * Build context from all registered sources
+     */
+    build(input: string, options?: Partial<ContextBuilderConfig>): Promise<BuiltContext>;
+    /**
+     * Get registered source names
+     */
+    getSources(): string[];
+    /**
+     * Get current configuration
+     */
+    getConfig(): ContextBuilderConfig;
+    /**
+     * Update configuration
+     */
+    updateConfig(config: Partial<ContextBuilderConfig>): void;
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_CONTEXT_BUILDER_CONFIG: Required<ContextBuilderConfig>;
+
+/**
+ * DefaultContextBuilder - Default implementation of IContextBuilder
+ *
+ * Assembles context from multiple sources with token budget management.
+ * Users can extend this or implement IContextBuilder for custom behavior.
+ */
+
+/**
+ * Default context builder implementation
+ */
+declare class DefaultContextBuilder implements IContextBuilder {
+    private sources;
+    private config;
+    constructor(config?: Partial<ContextBuilderConfig>);
+    /**
+     * Register a context source
+     */
+    registerSource(source: ContextSource): void;
+    /**
+     * Unregister a context source
+     */
+    unregisterSource(name: string): void;
+    /**
+     * Build context from all sources
+     */
+    build(input: string, options?: Partial<ContextBuilderConfig>): Promise<BuiltContext>;
+    /**
+     * Get registered source names
+     */
+    getSources(): string[];
+    /**
+     * Get configuration
+     */
+    getConfig(): ContextBuilderConfig;
+    /**
+     * Update configuration
+     */
+    updateConfig(config: Partial<ContextBuilderConfig>): void;
+}
+
+/**
+ * IHistoryManager - Interface for conversation history management
+ *
+ * Follows the same pattern as IMemoryStorage for pluggable implementations.
+ * Users can implement this interface to use Redis, PostgreSQL, file storage, etc.
+ */
+
+/**
+ * A single message in conversation history
+ */
+interface HistoryMessage {
+    id: string;
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+    timestamp: number;
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Events emitted by IHistoryManager implementations
+ */
+interface HistoryManagerEvents {
+    'message:added': {
+        message: HistoryMessage;
+    };
+    'message:removed': {
+        messageId: string;
+    };
+    'history:cleared': {
+        reason?: string;
+    };
+    'history:compacted': {
+        removedCount: number;
+        strategy: string;
+    };
+    'history:restored': {
+        messageCount: number;
+    };
+}
+/**
+ * Configuration for history management
+ */
+interface IHistoryManagerConfig {
+    /** Maximum messages to keep (for sliding window) */
+    maxMessages?: number;
+    /** Maximum tokens to keep (estimated) */
+    maxTokens?: number;
+    /** Compaction strategy when limits are reached */
+    compactionStrategy?: 'truncate' | 'summarize' | 'sliding-window';
+    /** Number of recent messages to always preserve */
+    preserveRecentCount?: number;
+}
+/**
+ * Serialized history state for persistence
+ */
+interface SerializedHistoryState {
+    version: number;
+    messages: HistoryMessage[];
+    summaries?: Array<{
+        content: string;
+        coversCount: number;
+        timestamp: number;
+    }>;
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Interface for history storage backends
+ * Implement this to use custom storage (Redis, PostgreSQL, file, etc.)
+ */
+interface IHistoryStorage {
+    /**
+     * Store a message
+     */
+    addMessage(message: HistoryMessage): Promise<void>;
+    /**
+     * Get all messages
+     */
+    getMessages(): Promise<HistoryMessage[]>;
+    /**
+     * Get recent N messages
+     */
+    getRecentMessages(count: number): Promise<HistoryMessage[]>;
+    /**
+     * Remove a message by ID
+     */
+    removeMessage(id: string): Promise<void>;
+    /**
+     * Remove messages older than timestamp
+     */
+    removeOlderThan(timestamp: number): Promise<number>;
+    /**
+     * Clear all messages
+     */
+    clear(): Promise<void>;
+    /**
+     * Get message count
+     */
+    getCount(): Promise<number>;
+    /**
+     * Get serialized state for session persistence
+     */
+    getState(): Promise<SerializedHistoryState>;
+    /**
+     * Restore from serialized state
+     */
+    restoreState(state: SerializedHistoryState): Promise<void>;
+}
+/**
+ * Interface for history manager
+ * Manages conversation history with compaction and persistence support
+ */
+interface IHistoryManager extends EventEmitter$1<HistoryManagerEvents> {
+    /**
+     * Add a message to history
+     */
+    addMessage(role: 'user' | 'assistant' | 'system', content: string, metadata?: Record<string, unknown>): Promise<HistoryMessage>;
+    /**
+     * Get all messages (may include summaries as system messages)
+     */
+    getMessages(): Promise<HistoryMessage[]>;
+    /**
+     * Get recent messages only
+     */
+    getRecentMessages(count?: number): Promise<HistoryMessage[]>;
+    /**
+     * Get formatted history for LLM context
+     */
+    formatForContext(options?: {
+        maxTokens?: number;
+        includeMetadata?: boolean;
+    }): Promise<string>;
+    /**
+     * Compact history (apply compaction strategy)
+     */
+    compact(): Promise<void>;
+    /**
+     * Clear all history
+     */
+    clear(): Promise<void>;
+    /**
+     * Get message count
+     */
+    getMessageCount(): Promise<number>;
+    /**
+     * Get state for session persistence
+     */
+    getState(): Promise<SerializedHistoryState>;
+    /**
+     * Restore from saved state
+     */
+    restoreState(state: SerializedHistoryState): Promise<void>;
+    /**
+     * Get current configuration
+     */
+    getConfig(): IHistoryManagerConfig;
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_HISTORY_MANAGER_CONFIG: Required<IHistoryManagerConfig>;
+
+/**
+ * ConversationHistoryManager - Default implementation of IHistoryManager
+ *
+ * Features:
+ * - Pluggable storage via IHistoryStorage interface
+ * - Event emission for all operations
+ * - Configurable compaction strategies
+ * - Token-aware context formatting
+ */
+
+/**
+ * Configuration for ConversationHistoryManager
+ */
+interface ConversationHistoryManagerConfig extends IHistoryManagerConfig {
+    /** Storage backend (defaults to in-memory) */
+    storage?: IHistoryStorage;
+}
+/**
+ * Default conversation history manager implementation
+ */
+declare class ConversationHistoryManager extends EventEmitter$1<HistoryManagerEvents> implements IHistoryManager {
+    private storage;
+    private config;
+    constructor(config?: ConversationHistoryManagerConfig);
+    /**
+     * Add a message to history
+     */
+    addMessage(role: 'user' | 'assistant' | 'system', content: string, metadata?: Record<string, unknown>): Promise<HistoryMessage>;
+    /**
+     * Get all messages
+     */
+    getMessages(): Promise<HistoryMessage[]>;
+    /**
+     * Get recent messages
+     */
+    getRecentMessages(count?: number): Promise<HistoryMessage[]>;
+    /**
+     * Format history for LLM context
+     */
+    formatForContext(options?: {
+        maxTokens?: number;
+        includeMetadata?: boolean;
+    }): Promise<string>;
+    /**
+     * Compact history based on strategy
+     */
+    compact(): Promise<void>;
+    /**
+     * Clear all history
+     */
+    clear(): Promise<void>;
+    /**
+     * Get message count
+     */
+    getMessageCount(): Promise<number>;
+    /**
+     * Get state for persistence
+     */
+    getState(): Promise<SerializedHistoryState>;
+    /**
+     * Restore from saved state
+     */
+    restoreState(state: SerializedHistoryState): Promise<void>;
+    /**
+     * Get configuration
+     */
+    getConfig(): IHistoryManagerConfig;
+}
+
+/**
+ * InMemoryHistoryStorage - In-memory implementation of IHistoryStorage
+ *
+ * Default storage backend for conversation history.
+ * For production, users can implement IHistoryStorage with Redis, PostgreSQL, etc.
+ */
+
+/**
+ * In-memory history storage implementation
+ */
+declare class InMemoryHistoryStorage implements IHistoryStorage {
+    private messages;
+    private summaries;
+    addMessage(message: HistoryMessage): Promise<void>;
+    getMessages(): Promise<HistoryMessage[]>;
+    getRecentMessages(count: number): Promise<HistoryMessage[]>;
+    removeMessage(id: string): Promise<void>;
+    removeOlderThan(timestamp: number): Promise<number>;
+    clear(): Promise<void>;
+    getCount(): Promise<number>;
+    getState(): Promise<SerializedHistoryState>;
+    restoreState(state: SerializedHistoryState): Promise<void>;
+}
 
 /**
  * InMemorySessionStorage - In-memory session storage implementation
@@ -6027,6 +6407,18 @@ interface UniversalAgentConfig {
     session?: UniversalAgentSessionConfig;
     memoryConfig?: WorkingMemoryConfig;
     toolManager?: ToolManager;
+    /**
+     * Custom history manager for conversation tracking.
+     * If not provided, creates a default ConversationHistoryManager.
+     * Implement IHistoryManager interface for custom storage (Redis, PostgreSQL, etc.)
+     */
+    historyManager?: IHistoryManager;
+    /**
+     * Custom context builder for assembling LLM context.
+     * If not provided, creates a default context builder.
+     * Implement IContextBuilder interface for custom context assembly.
+     */
+    contextBuilder?: IContextBuilder;
     /** Permission configuration for tool execution approval. */
     permissions?: AgentPermissionsConfig;
 }
@@ -6244,7 +6636,8 @@ declare class UniversalAgent extends EventEmitter {
     private modeManager;
     private planningAgent?;
     private workingMemory;
-    private conversationHistory;
+    private historyManager;
+    private contextBuilder;
     private _sessionManager;
     private _session;
     private currentPlan;
@@ -6306,19 +6699,19 @@ declare class UniversalAgent extends EventEmitter {
      */
     private buildExecutionInstructions;
     /**
-     * Add a message to conversation history
+     * Register default context sources with the context builder
+     */
+    private registerDefaultContextSources;
+    /**
+     * Add a message to conversation history (using pluggable IHistoryManager)
      */
     private addToConversationHistory;
     /**
-     * Build context string from conversation history
-     */
-    private buildConversationContext;
-    /**
      * Build context about the current plan and execution state
      */
-    private buildPlanContext;
+    private buildPlanContextString;
     /**
-     * Build full context for the agent including conversation history and plan state
+     * Build full context for the agent (using pluggable IContextBuilder)
      */
     private buildFullContext;
     private buildInstructions;
@@ -6512,4 +6905,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, type BashResult, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_SHELL_CONFIG, type EditFileResult, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, type GlobResult, type GrepMatch, type GrepResult, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type ReadFileResult, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createReadFileTool, createStrategy, createTextMessage, createVideoProvider, createWriteFileTool, developerTools, editFile, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getBackgroundOutput, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isMetaTool, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, retryWithBackoff, setMetricsCollector, index as tools, validatePath, writeFile };
+export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, type BashResult, type BuiltContext, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, type ContextBuilderConfig, ContextManager, type ContextManagerConfig, type ContextSource, ConversationHistoryManager, type ConversationHistoryManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_BUILDER_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_SHELL_CONFIG, DefaultContextBuilder, type EditFileResult, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, type GlobResult, type GrepMatch, type GrepResult, HistoryManager, type HistoryManagerConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextBuilder, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type ReadFileResult, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createReadFileTool, createStrategy, createTextMessage, createVideoProvider, createWriteFileTool, developerTools, editFile, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getBackgroundOutput, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isMetaTool, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, retryWithBackoff, setMetricsCollector, index as tools, validatePath, writeFile };

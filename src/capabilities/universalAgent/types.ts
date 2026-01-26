@@ -67,6 +67,20 @@ export interface UniversalAgentConfig {
   // Advanced: provide pre-configured managers
   toolManager?: ToolManager;
 
+  /**
+   * Custom history manager for conversation tracking.
+   * If not provided, creates a default ConversationHistoryManager.
+   * Implement IHistoryManager interface for custom storage (Redis, PostgreSQL, etc.)
+   */
+  historyManager?: import('../../domain/interfaces/IHistoryManager.js').IHistoryManager;
+
+  /**
+   * Custom context builder for assembling LLM context.
+   * If not provided, creates a default context builder.
+   * Implement IContextBuilder interface for custom context assembly.
+   */
+  contextBuilder?: import('../../domain/interfaces/IContextBuilder.js').IContextBuilder;
+
   // Tool permission configuration
   /** Permission configuration for tool execution approval. */
   permissions?: import('../../core/permissions/types.js').AgentPermissionsConfig;

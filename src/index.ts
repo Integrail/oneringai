@@ -163,6 +163,30 @@ export {
   createEstimator,
 } from './infrastructure/context/index.js';
 
+// Context Builder
+export { DefaultContextBuilder } from './core/context/DefaultContextBuilder.js';
+export type {
+  IContextBuilder,
+  ContextSource,
+  BuiltContext,
+  ContextBuilderConfig,
+} from './domain/interfaces/IContextBuilder.js';
+export { DEFAULT_CONTEXT_BUILDER_CONFIG } from './domain/interfaces/IContextBuilder.js';
+
+// ============ Conversation History Management ============
+export { ConversationHistoryManager } from './core/history/index.js';
+export type {
+  IHistoryManager,
+  IHistoryStorage,
+  HistoryMessage,
+  IHistoryManagerConfig,
+  HistoryManagerEvents,
+  SerializedHistoryState,
+  ConversationHistoryManagerConfig,
+} from './core/history/index.js';
+export { DEFAULT_HISTORY_MANAGER_CONFIG } from './core/history/index.js';
+export { InMemoryHistoryStorage } from './infrastructure/storage/InMemoryHistoryStorage.js';
+
 // Task & Plan Entities
 export type {
   Task,

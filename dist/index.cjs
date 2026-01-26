@@ -15890,6 +15890,310 @@ function createEstimator(name) {
   }
 }
 
+// src/domain/interfaces/IContextBuilder.ts
+var DEFAULT_CONTEXT_BUILDER_CONFIG = {
+  maxTokens: 128e3,
+  responseReserve: 0.15,
+  estimateTokens: (text) => Math.ceil(text.length / 4),
+  sectionSeparator: "\n\n---\n\n"
+};
+
+// src/core/context/DefaultContextBuilder.ts
+var DefaultContextBuilder = class {
+  sources = /* @__PURE__ */ new Map();
+  config;
+  constructor(config = {}) {
+    this.config = {
+      ...DEFAULT_CONTEXT_BUILDER_CONFIG,
+      ...config
+    };
+  }
+  /**
+   * Register a context source
+   */
+  registerSource(source) {
+    this.sources.set(source.name, source);
+  }
+  /**
+   * Unregister a context source
+   */
+  unregisterSource(name) {
+    this.sources.delete(name);
+  }
+  /**
+   * Build context from all sources
+   */
+  async build(input, options) {
+    const maxTokens = options?.maxTokens ?? this.config.maxTokens;
+    const responseReserve = options?.responseReserve ?? this.config.responseReserve;
+    const estimateTokens = options?.estimateTokens ?? this.config.estimateTokens;
+    const separator = options?.sectionSeparator ?? this.config.sectionSeparator;
+    const availableBudget = Math.floor(maxTokens * (1 - responseReserve));
+    const sortedSources = Array.from(this.sources.values()).sort((a, b) => b.priority - a.priority);
+    const inputTokens = estimateTokens(input);
+    const includedSources = [];
+    const excludedSources = [];
+    const tokenBreakdown = { input: inputTokens };
+    const contentParts = [];
+    let usedTokens = inputTokens;
+    for (const source of sortedSources) {
+      if (!source.required) continue;
+      const content2 = await source.getContent();
+      if (!content2) continue;
+      const sourceTokens = estimateTokens(content2);
+      if (usedTokens + sourceTokens > availableBudget) {
+        throw new Error(
+          `Required context source "${source.name}" (${sourceTokens} tokens) exceeds available budget (${availableBudget - usedTokens} remaining)`
+        );
+      }
+      contentParts.push(content2);
+      includedSources.push(source.name);
+      tokenBreakdown[source.name] = sourceTokens;
+      usedTokens += sourceTokens;
+    }
+    for (const source of sortedSources) {
+      if (source.required) continue;
+      const content2 = await source.getContent();
+      if (!content2) continue;
+      const sourceTokens = estimateTokens(content2);
+      if (usedTokens + sourceTokens > availableBudget) {
+        excludedSources.push(source.name);
+        continue;
+      }
+      contentParts.push(content2);
+      includedSources.push(source.name);
+      tokenBreakdown[source.name] = sourceTokens;
+      usedTokens += sourceTokens;
+    }
+    contentParts.push(`## Current Request
+
+${input}`);
+    const content = contentParts.join(separator);
+    return {
+      content,
+      estimatedTokens: usedTokens,
+      includedSources,
+      excludedSources,
+      tokenBreakdown
+    };
+  }
+  /**
+   * Get registered source names
+   */
+  getSources() {
+    return Array.from(this.sources.keys());
+  }
+  /**
+   * Get configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+  /**
+   * Update configuration
+   */
+  updateConfig(config) {
+    this.config = { ...this.config, ...config };
+  }
+};
+
+// src/domain/interfaces/IHistoryManager.ts
+var DEFAULT_HISTORY_MANAGER_CONFIG = {
+  maxMessages: 50,
+  maxTokens: 32e3,
+  compactionStrategy: "sliding-window",
+  preserveRecentCount: 10
+};
+
+// src/infrastructure/storage/InMemoryHistoryStorage.ts
+var InMemoryHistoryStorage = class {
+  messages = [];
+  summaries = [];
+  async addMessage(message) {
+    this.messages.push(message);
+  }
+  async getMessages() {
+    return [...this.messages];
+  }
+  async getRecentMessages(count) {
+    return this.messages.slice(-count);
+  }
+  async removeMessage(id) {
+    const index = this.messages.findIndex((m) => m.id === id);
+    if (index >= 0) {
+      this.messages.splice(index, 1);
+    }
+  }
+  async removeOlderThan(timestamp) {
+    const originalLength = this.messages.length;
+    this.messages = this.messages.filter((m) => m.timestamp >= timestamp);
+    return originalLength - this.messages.length;
+  }
+  async clear() {
+    this.messages = [];
+    this.summaries = [];
+  }
+  async getCount() {
+    return this.messages.length;
+  }
+  async getState() {
+    return {
+      version: 1,
+      messages: [...this.messages],
+      summaries: [...this.summaries]
+    };
+  }
+  async restoreState(state) {
+    this.messages = [...state.messages];
+    this.summaries = state.summaries ? [...state.summaries] : [];
+  }
+};
+
+// src/core/history/ConversationHistoryManager.ts
+var ConversationHistoryManager = class extends EventEmitter.EventEmitter {
+  storage;
+  config;
+  constructor(config = {}) {
+    super();
+    this.storage = config.storage ?? new InMemoryHistoryStorage();
+    this.config = {
+      ...DEFAULT_HISTORY_MANAGER_CONFIG,
+      ...config
+    };
+  }
+  /**
+   * Add a message to history
+   */
+  async addMessage(role, content, metadata) {
+    const message = {
+      id: crypto.randomUUID(),
+      role,
+      content,
+      timestamp: Date.now(),
+      metadata
+    };
+    await this.storage.addMessage(message);
+    this.emit("message:added", { message });
+    const count = await this.storage.getCount();
+    if (count > this.config.maxMessages) {
+      await this.compact();
+    }
+    return message;
+  }
+  /**
+   * Get all messages
+   */
+  async getMessages() {
+    return this.storage.getMessages();
+  }
+  /**
+   * Get recent messages
+   */
+  async getRecentMessages(count) {
+    const limit = count ?? this.config.preserveRecentCount;
+    return this.storage.getRecentMessages(limit);
+  }
+  /**
+   * Format history for LLM context
+   */
+  async formatForContext(options) {
+    const maxTokens = options?.maxTokens ?? this.config.maxTokens;
+    const messages = await this.storage.getMessages();
+    if (messages.length === 0) {
+      return "";
+    }
+    const parts = [];
+    let estimatedTokens = 0;
+    const headerTokens = 50;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg) continue;
+      const roleLabel = msg.role === "user" ? "User" : msg.role === "assistant" ? "Assistant" : "System";
+      const line = `**${roleLabel}**: ${msg.content}`;
+      const lineTokens = Math.ceil(line.length / 4);
+      if (estimatedTokens + lineTokens + headerTokens > maxTokens) {
+        break;
+      }
+      parts.unshift(line);
+      estimatedTokens += lineTokens;
+    }
+    if (parts.length === 0) {
+      return "";
+    }
+    return `## Conversation History
+
+${parts.join("\n\n")}`;
+  }
+  /**
+   * Compact history based on strategy
+   */
+  async compact() {
+    const count = await this.storage.getCount();
+    if (count <= this.config.maxMessages) {
+      return;
+    }
+    const toRemove = count - this.config.maxMessages + this.config.preserveRecentCount;
+    switch (this.config.compactionStrategy) {
+      case "truncate":
+      case "sliding-window": {
+        const messages = await this.storage.getMessages();
+        const cutoffIndex = Math.min(toRemove, messages.length - this.config.preserveRecentCount);
+        const cutoffMsg = cutoffIndex > 0 ? messages[cutoffIndex - 1] : void 0;
+        if (cutoffMsg) {
+          const cutoffTimestamp = cutoffMsg.timestamp + 1;
+          const removed = await this.storage.removeOlderThan(cutoffTimestamp);
+          this.emit("history:compacted", { removedCount: removed, strategy: this.config.compactionStrategy });
+        }
+        break;
+      }
+      case "summarize": {
+        const messages = await this.storage.getMessages();
+        const cutoffIndex = Math.min(toRemove, messages.length - this.config.preserveRecentCount);
+        const cutoffMsg = cutoffIndex > 0 ? messages[cutoffIndex - 1] : void 0;
+        if (cutoffMsg) {
+          const cutoffTimestamp = cutoffMsg.timestamp + 1;
+          const removed = await this.storage.removeOlderThan(cutoffTimestamp);
+          this.emit("history:compacted", { removedCount: removed, strategy: "truncate" });
+        }
+        break;
+      }
+    }
+  }
+  /**
+   * Clear all history
+   */
+  async clear() {
+    await this.storage.clear();
+    this.emit("history:cleared", {});
+  }
+  /**
+   * Get message count
+   */
+  async getMessageCount() {
+    return this.storage.getCount();
+  }
+  /**
+   * Get state for persistence
+   */
+  async getState() {
+    return this.storage.getState();
+  }
+  /**
+   * Restore from saved state
+   */
+  async restoreState(state) {
+    await this.storage.restoreState(state);
+    const count = await this.storage.getCount();
+    this.emit("history:restored", { messageCount: count });
+  }
+  /**
+   * Get configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+};
+
 // src/index.ts
 init_Memory();
 
@@ -20688,8 +20992,9 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
   modeManager;
   planningAgent;
   workingMemory;
-  // Conversation history for context preservation
-  conversationHistory = [];
+  // Pluggable history and context management
+  historyManager;
+  contextBuilder;
   // Session management
   _sessionManager = null;
   _session = null;
@@ -20764,6 +21069,9 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
     this.executionAgent = this.createExecutionAgent();
     const memoryStorage = new InMemoryStorage();
     this.workingMemory = new WorkingMemory(memoryStorage, config.memoryConfig ?? exports.DEFAULT_MEMORY_CONFIG);
+    this.historyManager = config.historyManager ?? new ConversationHistoryManager();
+    this.contextBuilder = config.contextBuilder ?? new DefaultContextBuilder();
+    this.registerDefaultContextSources();
     if (config.session) {
       this._sessionManager = new SessionManager({ storage: config.session.storage });
       if (!config.session.id) {
@@ -20840,13 +21148,13 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
   // Mode Handlers
   // ============================================================================
   async handleInteractive(input, intent) {
-    this.addToConversationHistory("user", input);
+    await this.addToConversationHistory("user", input);
     const shouldPlan = this.shouldSwitchToPlanning(intent);
     if (shouldPlan) {
       this.modeManager.enterPlanning("complex_task_detected");
       return this.handlePlanning(input, intent);
     }
-    const contextualInput = this.buildFullContext(input);
+    const contextualInput = await this.buildFullContext(input);
     const response = await this.agent.run(contextualInput);
     const planningToolCall = response.output.find(
       (item) => item.type === "tool_use" && item.name === META_TOOL_NAMES.START_PLANNING
@@ -20858,7 +21166,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       return this.createPlan(args.goal, args.reasoning);
     }
     const responseText = response.output_text ?? "";
-    this.addToConversationHistory("assistant", responseText);
+    await this.addToConversationHistory("assistant", responseText);
     return {
       text: responseText,
       mode: "interactive",
@@ -20933,7 +21241,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
   // Streaming Handlers
   // ============================================================================
   async *streamInteractive(input, intent) {
-    this.addToConversationHistory("user", input);
+    await this.addToConversationHistory("user", input);
     if (this.shouldSwitchToPlanning(intent)) {
       const from = this.modeManager.getMode();
       this.modeManager.enterPlanning("complex_task_detected");
@@ -20941,7 +21249,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       yield* this.streamPlanning(input, intent);
       return;
     }
-    const contextualInput = this.buildFullContext(input);
+    const contextualInput = await this.buildFullContext(input);
     let fullText = "";
     for await (const event of this.agent.stream(contextualInput)) {
       if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
@@ -20954,18 +21262,18 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
         yield { type: "tool:complete", name: event.tool_name || "unknown", result: event.result, durationMs: event.execution_time_ms || 0 };
       }
     }
-    this.addToConversationHistory("assistant", fullText);
+    await this.addToConversationHistory("assistant", fullText);
     yield { type: "text:done", text: fullText };
   }
   async *streamPlanning(input, intent) {
     if (intent.type !== "approval") {
-      this.addToConversationHistory("user", input);
+      await this.addToConversationHistory("user", input);
     }
     if (intent.type === "approval" && this.modeManager.getPendingPlan()) {
       const plan2 = this.modeManager.getPendingPlan();
       this.modeManager.approvePlan();
       yield { type: "plan:approved", plan: plan2 };
-      this.addToConversationHistory("assistant", `Plan approved. Starting execution of ${plan2.tasks.length} tasks.`);
+      await this.addToConversationHistory("assistant", `Plan approved. Starting execution of ${plan2.tasks.length} tasks.`);
       this.modeManager.enterExecuting(plan2, "plan_approved");
       yield { type: "mode:changed", from: "planning", to: "executing", reason: "plan_approved" };
       yield* this.streamExecution();
@@ -20980,7 +21288,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       yield { type: "plan:awaiting_approval", plan };
       yield { type: "needs:approval", plan };
       const summary = this.formatPlanSummary(plan);
-      this.addToConversationHistory("assistant", summary);
+      await this.addToConversationHistory("assistant", summary);
       yield { type: "text:delta", delta: summary };
       yield { type: "text:done", text: summary };
     }
@@ -21041,14 +21349,14 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
         task.completedAt = Date.now();
         task.result = { success: true, output: taskResultText };
         completedTasks++;
-        this.addToConversationHistory("assistant", `Completed task "${task.name}": ${taskResultText.substring(0, 200)}${taskResultText.length > 200 ? "..." : ""}`);
+        await this.addToConversationHistory("assistant", `Completed task "${task.name}": ${taskResultText.substring(0, 200)}${taskResultText.length > 200 ? "..." : ""}`);
         yield { type: "task:completed", task, result: taskResultText };
       } catch (error) {
         task.status = "failed";
         const errorMsg = error instanceof Error ? error.message : String(error);
         task.result = { success: false, error: errorMsg };
         failedTasks++;
-        this.addToConversationHistory("assistant", `Task "${task.name}" failed: ${errorMsg}`);
+        await this.addToConversationHistory("assistant", `Task "${task.name}" failed: ${errorMsg}`);
         yield { type: "task:failed", task, error: errorMsg };
       }
     }
@@ -21060,7 +21368,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       skippedTasks: tasks.filter((t) => t.status === "skipped").length
     };
     const summary = `Execution completed: ${completedTasks}/${tasks.length} tasks successful${failedTasks > 0 ? `, ${failedTasks} failed` : ""}.`;
-    this.addToConversationHistory("assistant", summary);
+    await this.addToConversationHistory("assistant", summary);
     yield { type: "execution:done", result };
     this.modeManager.returnToInteractive("execution_completed");
     yield { type: "mode:changed", from: "executing", to: "interactive", reason: "execution_completed" };
@@ -21410,44 +21718,47 @@ Guidelines:
 ${this.config.instructions ?? ""}`;
   }
   // ============================================================================
-  // Conversation History & Context
+  // Conversation History & Context (Pluggable via IHistoryManager & IContextBuilder)
   // ============================================================================
   /**
-   * Add a message to conversation history
+   * Register default context sources with the context builder
    */
-  addToConversationHistory(role, content) {
-    this.conversationHistory.push({
-      role,
-      content,
-      timestamp: /* @__PURE__ */ new Date()
-    });
-    const maxHistory = 50;
-    if (this.conversationHistory.length > maxHistory) {
-      this.conversationHistory = this.conversationHistory.slice(-maxHistory);
-    }
+  registerDefaultContextSources() {
+    const historySource = {
+      name: "conversation_history",
+      priority: 80,
+      // High priority
+      required: false,
+      getContent: async () => this.historyManager.formatForContext(),
+      estimateTokens: async () => {
+        const content = await this.historyManager.formatForContext();
+        return Math.ceil(content.length / 4);
+      }
+    };
+    const planSource = {
+      name: "plan_context",
+      priority: 90,
+      // Higher priority than history
+      required: false,
+      getContent: async () => this.buildPlanContextString(),
+      estimateTokens: async () => {
+        const content = this.buildPlanContextString();
+        return Math.ceil(content.length / 4);
+      }
+    };
+    this.contextBuilder.registerSource(historySource);
+    this.contextBuilder.registerSource(planSource);
   }
   /**
-   * Build context string from conversation history
+   * Add a message to conversation history (using pluggable IHistoryManager)
    */
-  buildConversationContext() {
-    if (this.conversationHistory.length === 0) {
-      return "";
-    }
-    const recentHistory = this.conversationHistory.slice(-10);
-    let context = "## Recent Conversation Context\n\n";
-    for (const msg of recentHistory) {
-      const role = msg.role === "user" ? "User" : "Assistant";
-      const content = msg.content.length > 500 ? msg.content.substring(0, 500) + "..." : msg.content;
-      context += `**${role}**: ${content}
-
-`;
-    }
-    return context;
+  async addToConversationHistory(role, content) {
+    await this.historyManager.addMessage(role, content);
   }
   /**
    * Build context about the current plan and execution state
    */
-  buildPlanContext() {
+  buildPlanContextString() {
     if (!this.currentPlan) {
       return "";
     }
@@ -21469,17 +21780,11 @@ ${this.config.instructions ?? ""}`;
     return context + "\n";
   }
   /**
-   * Build full context for the agent including conversation history and plan state
+   * Build full context for the agent (using pluggable IContextBuilder)
    */
-  buildFullContext(currentInput) {
-    const conversationContext = this.buildConversationContext();
-    const planContext = this.buildPlanContext();
-    if (conversationContext || planContext) {
-      return `${conversationContext}${planContext}## Current Request
-
-${currentInput}`;
-    }
-    return currentInput;
+  async buildFullContext(currentInput) {
+    const built = await this.contextBuilder.build(currentInput);
+    return built.content;
   }
   // ============================================================================
   // Helpers
@@ -21611,7 +21916,7 @@ Currently working on: ${progress.current.name}`;
     }
     this._session.custom["modeState"] = this.modeManager.serialize();
     this._session.custom["executionHistory"] = this.executionHistory;
-    this._session.custom["conversationHistory"] = this.conversationHistory;
+    this._session.custom["historyState"] = await this.historyManager.getState();
     await this._sessionManager.save(this._session);
   }
   async loadSession(sessionId) {
@@ -21633,8 +21938,8 @@ Currently working on: ${progress.current.name}`;
     if (session.custom["executionHistory"]) {
       this.executionHistory = session.custom["executionHistory"];
     }
-    if (session.custom["conversationHistory"]) {
-      this.conversationHistory = session.custom["conversationHistory"];
+    if (session.custom["historyState"]) {
+      await this.historyManager.restoreState(session.custom["historyState"]);
     }
   }
   getSession() {
@@ -21726,7 +22031,8 @@ Currently working on: ${progress.current.name}`;
     this._toolManager.removeAllListeners();
     this.modeManager.removeAllListeners();
     this.removeAllListeners();
-    this.conversationHistory = [];
+    this.historyManager.clear().catch(() => {
+    });
   }
 };
 
@@ -21748,16 +22054,20 @@ exports.ConnectorConfigStore = ConnectorConfigStore;
 exports.ConsoleMetrics = ConsoleMetrics;
 exports.ContentType = ContentType;
 exports.ContextManager = ContextManager2;
+exports.ConversationHistoryManager = ConversationHistoryManager;
 exports.DEFAULT_ALLOWLIST = DEFAULT_ALLOWLIST;
 exports.DEFAULT_BACKOFF_CONFIG = DEFAULT_BACKOFF_CONFIG;
 exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
 exports.DEFAULT_CIRCUIT_BREAKER_CONFIG = DEFAULT_CIRCUIT_BREAKER_CONFIG;
+exports.DEFAULT_CONTEXT_BUILDER_CONFIG = DEFAULT_CONTEXT_BUILDER_CONFIG;
 exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG2;
 exports.DEFAULT_FILESYSTEM_CONFIG = DEFAULT_FILESYSTEM_CONFIG;
 exports.DEFAULT_HISTORY_CONFIG = DEFAULT_HISTORY_CONFIG;
+exports.DEFAULT_HISTORY_MANAGER_CONFIG = DEFAULT_HISTORY_MANAGER_CONFIG;
 exports.DEFAULT_IDEMPOTENCY_CONFIG = DEFAULT_IDEMPOTENCY_CONFIG;
 exports.DEFAULT_PERMISSION_CONFIG = DEFAULT_PERMISSION_CONFIG;
 exports.DEFAULT_SHELL_CONFIG = DEFAULT_SHELL_CONFIG;
+exports.DefaultContextBuilder = DefaultContextBuilder;
 exports.ExecutionContext = ExecutionContext;
 exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileConnectorStorage = FileConnectorStorage;
@@ -21771,6 +22081,7 @@ exports.IMAGE_MODEL_REGISTRY = IMAGE_MODEL_REGISTRY;
 exports.IdempotencyCache = IdempotencyCache;
 exports.ImageGeneration = ImageGeneration;
 exports.InMemoryAgentStateStorage = InMemoryAgentStateStorage;
+exports.InMemoryHistoryStorage = InMemoryHistoryStorage;
 exports.InMemoryMetrics = InMemoryMetrics;
 exports.InMemoryPlanStorage = InMemoryPlanStorage;
 exports.InMemorySessionStorage = InMemorySessionStorage;
