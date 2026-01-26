@@ -60,11 +60,15 @@ export class UniversalAgent extends EventEmitter {
 
   // Core components
   private config: UniversalAgentConfig;
-  private agent: Agent;
+  private agent: Agent;                    // Interactive agent (with meta-tools)
+  private executionAgent?: Agent;           // Execution agent (without meta-tools) - created on demand
   private _toolManager: ToolManager;
   private modeManager: ModeManager;
   private planningAgent?: PlanningAgent;
   private workingMemory: WorkingMemory;
+
+  // Conversation history for context preservation
+  private conversationHistory: Array<{ role: 'user' | 'assistant'; content: string; timestamp: Date }> = [];
 
   // Session management
   private _sessionManager: SessionManager | null = null;
@@ -167,6 +171,9 @@ export class UniversalAgent extends EventEmitter {
         availableTools: this._toolManager.getEnabled().filter(t => !isMetaTool(t.definition.function.name)),
       });
     }
+
+    // Create execution agent (without meta-tools) for task execution
+    this.executionAgent = this.createExecutionAgent();
 
     // Initialize working memory with in-memory storage
     const memoryStorage = new InMemoryStorage();
@@ -276,6 +283,9 @@ export class UniversalAgent extends EventEmitter {
   // ============================================================================
 
   private async handleInteractive(input: string, intent: IntentAnalysis): Promise<UniversalResponse> {
+    // Add user input to conversation history
+    this.addToConversationHistory('user', input);
+
     // Check if we should switch to planning
     const shouldPlan = this.shouldSwitchToPlanning(intent);
 
@@ -284,8 +294,11 @@ export class UniversalAgent extends EventEmitter {
       return this.handlePlanning(input, intent);
     }
 
+    // Build input with conversation context
+    const contextualInput = this.buildFullContext(input);
+
     // Execute directly with agent
-    const response = await this.agent.run(input);
+    const response = await this.agent.run(contextualInput);
 
     // Check if agent used _start_planning meta-tool
     const planningToolCall = response.output.find(
@@ -299,8 +312,12 @@ export class UniversalAgent extends EventEmitter {
       return this.createPlan(args.goal, args.reasoning);
     }
 
+    // Add assistant response to conversation history
+    const responseText = response.output_text ?? '';
+    this.addToConversationHistory('assistant', responseText);
+
     return {
-      text: response.output_text ?? '',
+      text: responseText,
       mode: 'interactive',
       usage: response.usage ? {
         inputTokens: response.usage.input_tokens,
@@ -397,6 +414,9 @@ export class UniversalAgent extends EventEmitter {
   // ============================================================================
 
   private async *streamInteractive(input: string, intent: IntentAnalysis): AsyncIterableIterator<UniversalEvent> {
+    // Add user input to conversation history
+    this.addToConversationHistory('user', input);
+
     // Check if we should switch to planning
     if (this.shouldSwitchToPlanning(intent)) {
       const from = this.modeManager.getMode();
@@ -406,9 +426,12 @@ export class UniversalAgent extends EventEmitter {
       return;
     }
 
+    // Build input with conversation context
+    const contextualInput = this.buildFullContext(input);
+
     // Stream from agent
     let fullText = '';
-    for await (const event of this.agent.stream(input)) {
+    for await (const event of this.agent.stream(contextualInput)) {
       if (event.type === StreamEventType.OUTPUT_TEXT_DELTA) {
         const delta = (event as any).delta || '';
         fullText += delta;
@@ -421,14 +444,25 @@ export class UniversalAgent extends EventEmitter {
       }
     }
 
+    // Add assistant response to conversation history
+    this.addToConversationHistory('assistant', fullText);
+
     yield { type: 'text:done', text: fullText };
   }
 
   private async *streamPlanning(input: string, intent: IntentAnalysis): AsyncIterableIterator<UniversalEvent> {
+    // Add user input to conversation history (if not already added by streamInteractive)
+    if (intent.type !== 'approval') {
+      this.addToConversationHistory('user', input);
+    }
+
     if (intent.type === 'approval' && this.modeManager.getPendingPlan()) {
       const plan = this.modeManager.getPendingPlan()!;
       this.modeManager.approvePlan();
       yield { type: 'plan:approved', plan };
+
+      // Add plan approval to history
+      this.addToConversationHistory('assistant', `Plan approved. Starting execution of ${plan.tasks.length} tasks.`);
 
       // Transition to executing
       this.modeManager.enterExecuting(plan, 'plan_approved');
@@ -452,6 +486,10 @@ export class UniversalAgent extends EventEmitter {
       yield { type: 'needs:approval', plan };
 
       const summary = this.formatPlanSummary(plan);
+
+      // Add plan to conversation history
+      this.addToConversationHistory('assistant', summary);
+
       yield { type: 'text:delta', delta: summary };
       yield { type: 'text:done', text: summary };
     }
@@ -473,6 +511,11 @@ export class UniversalAgent extends EventEmitter {
     if (!this.currentPlan) {
       yield { type: 'error', error: 'No plan to execute', recoverable: false };
       return;
+    }
+
+    // Ensure execution agent exists (without meta-tools)
+    if (!this.executionAgent) {
+      this.executionAgent = this.createExecutionAgent();
     }
 
     const tasks = this.currentPlan.tasks;
@@ -505,11 +548,12 @@ export class UniversalAgent extends EventEmitter {
       yield { type: 'task:started', task };
 
       try {
-        // Execute task with agent
-        const prompt = this.buildTaskPrompt(task);
+        // Build task prompt with context about the plan and completed tasks
+        const prompt = this.buildTaskPromptWithContext(task, i);
         let taskResultText = '';
 
-        for await (const event of this.agent.stream(prompt)) {
+        // Use execution agent (without meta-tools) instead of main agent
+        for await (const event of this.executionAgent.stream(prompt)) {
           if (event.type === StreamEventType.OUTPUT_TEXT_DELTA) {
             const delta = (event as any).delta || '';
             taskResultText += delta;
@@ -528,6 +572,9 @@ export class UniversalAgent extends EventEmitter {
         task.result = { success: true, output: taskResultText };
         completedTasks++;
 
+        // Add task completion to conversation history
+        this.addToConversationHistory('assistant', `Completed task "${task.name}": ${taskResultText.substring(0, 200)}${taskResultText.length > 200 ? '...' : ''}`);
+
         yield { type: 'task:completed', task, result: taskResultText };
 
       } catch (error) {
@@ -535,6 +582,9 @@ export class UniversalAgent extends EventEmitter {
         const errorMsg = error instanceof Error ? error.message : String(error);
         task.result = { success: false, error: errorMsg };
         failedTasks++;
+
+        // Add task failure to conversation history
+        this.addToConversationHistory('assistant', `Task "${task.name}" failed: ${errorMsg}`);
 
         yield { type: 'task:failed', task, error: errorMsg };
       }
@@ -548,6 +598,10 @@ export class UniversalAgent extends EventEmitter {
       failedTasks,
       skippedTasks: tasks.filter(t => t.status === 'skipped').length,
     };
+
+    // Add execution summary to conversation history
+    const summary = `Execution completed: ${completedTasks}/${tasks.length} tasks successful${failedTasks > 0 ? `, ${failedTasks} failed` : ''}.`;
+    this.addToConversationHistory('assistant', summary);
 
     yield { type: 'execution:done', result };
 
@@ -932,6 +986,129 @@ export class UniversalAgent extends EventEmitter {
   }
 
   // ============================================================================
+  // Execution Agent (without meta-tools)
+  // ============================================================================
+
+  /**
+   * Create a separate agent for task execution that doesn't have meta-tools.
+   * This prevents the agent from calling _start_planning during task execution.
+   */
+  private createExecutionAgent(): Agent {
+    // Get user tools only (exclude meta-tools)
+    const userTools = this._toolManager.getEnabled().filter(t => !isMetaTool(t.definition.function.name));
+
+    return Agent.create({
+      connector: this.config.connector,
+      model: this.config.model,
+      tools: userTools,
+      instructions: this.buildExecutionInstructions(),
+      temperature: this.config.temperature,
+      maxIterations: this.config.maxIterations ?? 20,
+      permissions: this.config.permissions,
+    });
+  }
+
+  /**
+   * Build instructions for the execution agent (task-focused)
+   */
+  private buildExecutionInstructions(): string {
+    return `You are an AI assistant executing specific tasks. Focus on completing the assigned task using the available tools.
+
+Guidelines:
+- Execute the task described in the prompt
+- Use the appropriate tools to accomplish the task
+- Report results clearly and concisely
+- If you encounter errors, explain what went wrong
+
+${this.config.instructions ?? ''}`;
+  }
+
+  // ============================================================================
+  // Conversation History & Context
+  // ============================================================================
+
+  /**
+   * Add a message to conversation history
+   */
+  private addToConversationHistory(role: 'user' | 'assistant', content: string): void {
+    this.conversationHistory.push({
+      role,
+      content,
+      timestamp: new Date(),
+    });
+
+    // Keep last N messages to prevent unbounded growth
+    const maxHistory = 50;
+    if (this.conversationHistory.length > maxHistory) {
+      this.conversationHistory = this.conversationHistory.slice(-maxHistory);
+    }
+  }
+
+  /**
+   * Build context string from conversation history
+   */
+  private buildConversationContext(): string {
+    if (this.conversationHistory.length === 0) {
+      return '';
+    }
+
+    // Build a summary of recent conversation
+    const recentHistory = this.conversationHistory.slice(-10); // Last 10 exchanges
+    let context = '## Recent Conversation Context\n\n';
+
+    for (const msg of recentHistory) {
+      const role = msg.role === 'user' ? 'User' : 'Assistant';
+      // Truncate long messages
+      const content = msg.content.length > 500 ? msg.content.substring(0, 500) + '...' : msg.content;
+      context += `**${role}**: ${content}\n\n`;
+    }
+
+    return context;
+  }
+
+  /**
+   * Build context about the current plan and execution state
+   */
+  private buildPlanContext(): string {
+    if (!this.currentPlan) {
+      return '';
+    }
+
+    let context = '## Current Plan Context\n\n';
+    context += `**Goal**: ${this.currentPlan.goal}\n\n`;
+    context += `**Tasks**:\n`;
+
+    for (const task of this.currentPlan.tasks) {
+      const status = task.status === 'completed' ? '✓' : task.status === 'failed' ? '✗' : '○';
+      context += `- ${status} ${task.name}: ${task.description}`;
+      if (task.result?.output) {
+        const output = typeof task.result.output === 'string'
+          ? task.result.output.substring(0, 200)
+          : JSON.stringify(task.result.output).substring(0, 200);
+        context += ` (Result: ${output}...)`;
+      }
+      context += '\n';
+    }
+
+    return context + '\n';
+  }
+
+  /**
+   * Build full context for the agent including conversation history and plan state
+   */
+  private buildFullContext(currentInput: string): string {
+    const conversationContext = this.buildConversationContext();
+    const planContext = this.buildPlanContext();
+
+    // If we have context, prepend it to the input
+    if (conversationContext || planContext) {
+      return `${conversationContext}${planContext}## Current Request\n\n${currentInput}`;
+    }
+
+    return currentInput;
+  }
+
+  // ============================================================================
   // Helpers
   // ============================================================================
 
@@ -967,6 +1144,45 @@ Always be helpful, clear, and ask for clarification when needed.`;
     }
 
     return prompt;
+  }
+
+  /**
+   * Build task prompt with full context (plan goal, completed tasks, etc.)
+   */
+  private buildTaskPromptWithContext(task: Task, taskIndex: number): string {
+    const parts: string[] = [];
+
+    // Add plan context
+    if (this.currentPlan) {
+      parts.push(`## Overall Goal\n${this.currentPlan.goal}\n`);
+
+      // Add results from completed tasks
+      const completedTasks = this.currentPlan.tasks.slice(0, taskIndex).filter(t => t.status === 'completed');
+      if (completedTasks.length > 0) {
+        parts.push(`## Previously Completed Tasks`);
+        for (const completed of completedTasks) {
+          const output = completed.result?.output
+            ? (typeof completed.result.output === 'string'
+              ? completed.result.output.substring(0, 300)
+              : JSON.stringify(completed.result.output).substring(0, 300))
+            : 'No output recorded';
+          parts.push(`- **${completed.name}**: ${completed.description}\n  Result: ${output}`);
+        }
+        parts.push('');
+      }
+    }
+
+    // Add current task
+    parts.push(`## Current Task (${taskIndex + 1}/${this.currentPlan?.tasks.length || 1})`);
+    parts.push(`**Name**: ${task.name}`);
+    parts.push(`**Description**: ${task.description}`);
+    if (task.expectedOutput) {
+      parts.push(`**Expected Output**: ${task.expectedOutput}`);
+    }
+    parts.push('');
+    parts.push('Execute this task now using the available tools. Be thorough and report results clearly.');
+
+    return parts.join('\n');
   }
 
   private formatPlanSummary(plan: Plan): string {
@@ -1043,6 +1259,7 @@ Always be helpful, clear, and ask for clarification when needed.`;
 
     this._session.custom['modeState'] = this.modeManager.serialize();
     this._session.custom['executionHistory'] = this.executionHistory;
+    this._session.custom['conversationHistory'] = this.conversationHistory;
 
     await this._sessionManager.save(this._session);
   }
@@ -1075,6 +1292,11 @@ Always be helpful, clear, and ask for clarification when needed.`;
     // Restore execution history
     if (session.custom['executionHistory']) {
       this.executionHistory = session.custom['executionHistory'] as typeof this.executionHistory;
+    }
+
+    // Restore conversation history
+    if (session.custom['conversationHistory']) {
+      this.conversationHistory = session.custom['conversationHistory'] as typeof this.conversationHistory;
     }
   }
 
@@ -1184,8 +1406,14 @@ Always be helpful, clear, and ask for clarification when needed.`;
 
     // Cleanup components
     this.agent.destroy();
+    if (this.executionAgent) {
+      this.executionAgent.destroy();
+    }
     this._toolManager.removeAllListeners();
     this.modeManager.removeAllListeners();
     this.removeAllListeners();
+
+    // Clear conversation history
+    this.conversationHistory = [];
   }
 }

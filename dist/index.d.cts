@@ -6239,10 +6239,12 @@ declare class UniversalAgent extends EventEmitter {
     readonly model: string;
     private config;
     private agent;
+    private executionAgent?;
     private _toolManager;
     private modeManager;
     private planningAgent?;
     private workingMemory;
+    private conversationHistory;
     private _sessionManager;
     private _session;
     private currentPlan;
@@ -6294,8 +6296,37 @@ declare class UniversalAgent extends EventEmitter {
     private estimateComplexity;
     private estimateSteps;
     private shouldSwitchToPlanning;
+    /**
+     * Create a separate agent for task execution that doesn't have meta-tools.
+     * This prevents the agent from calling _start_planning during task execution.
+     */
+    private createExecutionAgent;
+    /**
+     * Build instructions for the execution agent (task-focused)
+     */
+    private buildExecutionInstructions;
+    /**
+     * Add a message to conversation history
+     */
+    private addToConversationHistory;
+    /**
+     * Build context string from conversation history
+     */
+    private buildConversationContext;
+    /**
+     * Build context about the current plan and execution state
+     */
+    private buildPlanContext;
+    /**
+     * Build full context for the agent including conversation history and plan state
+     */
+    private buildFullContext;
     private buildInstructions;
     private buildTaskPrompt;
+    /**
+     * Build task prompt with full context (plan goal, completed tasks, etc.)
+     */
+    private buildTaskPromptWithContext;
     private formatPlanSummary;
     private formatProgress;
     private getTaskProgress;

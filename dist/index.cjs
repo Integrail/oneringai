@@ -20681,10 +20681,15 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
   // Core components
   config;
   agent;
+  // Interactive agent (with meta-tools)
+  executionAgent;
+  // Execution agent (without meta-tools) - created on demand
   _toolManager;
   modeManager;
   planningAgent;
   workingMemory;
+  // Conversation history for context preservation
+  conversationHistory = [];
   // Session management
   _sessionManager = null;
   _session = null;
@@ -20756,6 +20761,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
         availableTools: this._toolManager.getEnabled().filter((t) => !isMetaTool(t.definition.function.name))
       });
     }
+    this.executionAgent = this.createExecutionAgent();
     const memoryStorage = new InMemoryStorage();
     this.workingMemory = new WorkingMemory(memoryStorage, config.memoryConfig ?? exports.DEFAULT_MEMORY_CONFIG);
     if (config.session) {
@@ -20834,12 +20840,14 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
   // Mode Handlers
   // ============================================================================
   async handleInteractive(input, intent) {
+    this.addToConversationHistory("user", input);
     const shouldPlan = this.shouldSwitchToPlanning(intent);
     if (shouldPlan) {
       this.modeManager.enterPlanning("complex_task_detected");
       return this.handlePlanning(input, intent);
     }
-    const response = await this.agent.run(input);
+    const contextualInput = this.buildFullContext(input);
+    const response = await this.agent.run(contextualInput);
     const planningToolCall = response.output.find(
       (item) => item.type === "tool_use" && item.name === META_TOOL_NAMES.START_PLANNING
     );
@@ -20849,8 +20857,10 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       const args = typeof rawInput === "string" ? JSON.parse(rawInput || "{}") : rawInput || {};
       return this.createPlan(args.goal, args.reasoning);
     }
+    const responseText = response.output_text ?? "";
+    this.addToConversationHistory("assistant", responseText);
     return {
-      text: response.output_text ?? "",
+      text: responseText,
       mode: "interactive",
       usage: response.usage ? {
         inputTokens: response.usage.input_tokens,
@@ -20923,6 +20933,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
   // Streaming Handlers
   // ============================================================================
   async *streamInteractive(input, intent) {
+    this.addToConversationHistory("user", input);
     if (this.shouldSwitchToPlanning(intent)) {
       const from = this.modeManager.getMode();
       this.modeManager.enterPlanning("complex_task_detected");
@@ -20930,8 +20941,9 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       yield* this.streamPlanning(input, intent);
       return;
     }
+    const contextualInput = this.buildFullContext(input);
     let fullText = "";
-    for await (const event of this.agent.stream(input)) {
+    for await (const event of this.agent.stream(contextualInput)) {
       if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
         const delta = event.delta || "";
         fullText += delta;
@@ -20942,13 +20954,18 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
         yield { type: "tool:complete", name: event.tool_name || "unknown", result: event.result, durationMs: event.execution_time_ms || 0 };
       }
     }
+    this.addToConversationHistory("assistant", fullText);
     yield { type: "text:done", text: fullText };
   }
   async *streamPlanning(input, intent) {
+    if (intent.type !== "approval") {
+      this.addToConversationHistory("user", input);
+    }
     if (intent.type === "approval" && this.modeManager.getPendingPlan()) {
       const plan2 = this.modeManager.getPendingPlan();
       this.modeManager.approvePlan();
       yield { type: "plan:approved", plan: plan2 };
+      this.addToConversationHistory("assistant", `Plan approved. Starting execution of ${plan2.tasks.length} tasks.`);
       this.modeManager.enterExecuting(plan2, "plan_approved");
       yield { type: "mode:changed", from: "planning", to: "executing", reason: "plan_approved" };
       yield* this.streamExecution();
@@ -20963,6 +20980,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       yield { type: "plan:awaiting_approval", plan };
       yield { type: "needs:approval", plan };
       const summary = this.formatPlanSummary(plan);
+      this.addToConversationHistory("assistant", summary);
       yield { type: "text:delta", delta: summary };
       yield { type: "text:done", text: summary };
     }
@@ -20981,6 +20999,9 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
     if (!this.currentPlan) {
       yield { type: "error", error: "No plan to execute", recoverable: false };
       return;
+    }
+    if (!this.executionAgent) {
+      this.executionAgent = this.createExecutionAgent();
     }
     const tasks = this.currentPlan.tasks;
     let completedTasks = 0;
@@ -21003,9 +21024,9 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       this.modeManager.setCurrentTaskIndex(i);
       yield { type: "task:started", task };
       try {
-        const prompt = this.buildTaskPrompt(task);
+        const prompt = this.buildTaskPromptWithContext(task, i);
         let taskResultText = "";
-        for await (const event of this.agent.stream(prompt)) {
+        for await (const event of this.executionAgent.stream(prompt)) {
           if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
             const delta = event.delta || "";
             taskResultText += delta;
@@ -21020,12 +21041,14 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
         task.completedAt = Date.now();
         task.result = { success: true, output: taskResultText };
         completedTasks++;
+        this.addToConversationHistory("assistant", `Completed task "${task.name}": ${taskResultText.substring(0, 200)}${taskResultText.length > 200 ? "..." : ""}`);
         yield { type: "task:completed", task, result: taskResultText };
       } catch (error) {
         task.status = "failed";
         const errorMsg = error instanceof Error ? error.message : String(error);
         task.result = { success: false, error: errorMsg };
         failedTasks++;
+        this.addToConversationHistory("assistant", `Task "${task.name}" failed: ${errorMsg}`);
         yield { type: "task:failed", task, error: errorMsg };
       }
     }
@@ -21036,6 +21059,8 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       failedTasks,
       skippedTasks: tasks.filter((t) => t.status === "skipped").length
     };
+    const summary = `Execution completed: ${completedTasks}/${tasks.length} tasks successful${failedTasks > 0 ? `, ${failedTasks} failed` : ""}.`;
+    this.addToConversationHistory("assistant", summary);
     yield { type: "execution:done", result };
     this.modeManager.returnToInteractive("execution_completed");
     yield { type: "mode:changed", from: "executing", to: "interactive", reason: "execution_completed" };
@@ -21352,6 +21377,111 @@ ${response.output_text}`,
     return false;
   }
   // ============================================================================
+  // Execution Agent (without meta-tools)
+  // ============================================================================
+  /**
+   * Create a separate agent for task execution that doesn't have meta-tools.
+   * This prevents the agent from calling _start_planning during task execution.
+   */
+  createExecutionAgent() {
+    const userTools = this._toolManager.getEnabled().filter((t) => !isMetaTool(t.definition.function.name));
+    return Agent.create({
+      connector: this.config.connector,
+      model: this.config.model,
+      tools: userTools,
+      instructions: this.buildExecutionInstructions(),
+      temperature: this.config.temperature,
+      maxIterations: this.config.maxIterations ?? 20,
+      permissions: this.config.permissions
+    });
+  }
+  /**
+   * Build instructions for the execution agent (task-focused)
+   */
+  buildExecutionInstructions() {
+    return `You are an AI assistant executing specific tasks. Focus on completing the assigned task using the available tools.
+
+Guidelines:
+- Execute the task described in the prompt
+- Use the appropriate tools to accomplish the task
+- Report results clearly and concisely
+- If you encounter errors, explain what went wrong
+
+${this.config.instructions ?? ""}`;
+  }
+  // ============================================================================
+  // Conversation History & Context
+  // ============================================================================
+  /**
+   * Add a message to conversation history
+   */
+  addToConversationHistory(role, content) {
+    this.conversationHistory.push({
+      role,
+      content,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    const maxHistory = 50;
+    if (this.conversationHistory.length > maxHistory) {
+      this.conversationHistory = this.conversationHistory.slice(-maxHistory);
+    }
+  }
+  /**
+   * Build context string from conversation history
+   */
+  buildConversationContext() {
+    if (this.conversationHistory.length === 0) {
+      return "";
+    }
+    const recentHistory = this.conversationHistory.slice(-10);
+    let context = "## Recent Conversation Context\n\n";
+    for (const msg of recentHistory) {
+      const role = msg.role === "user" ? "User" : "Assistant";
+      const content = msg.content.length > 500 ? msg.content.substring(0, 500) + "..." : msg.content;
+      context += `**${role}**: ${content}
+
+`;
+    }
+    return context;
+  }
+  /**
+   * Build context about the current plan and execution state
+   */
+  buildPlanContext() {
+    if (!this.currentPlan) {
+      return "";
+    }
+    let context = "## Current Plan Context\n\n";
+    context += `**Goal**: ${this.currentPlan.goal}
+
+`;
+    context += `**Tasks**:
+`;
+    for (const task of this.currentPlan.tasks) {
+      const status = task.status === "completed" ? "\u2713" : task.status === "failed" ? "\u2717" : "\u25CB";
+      context += `- ${status} ${task.name}: ${task.description}`;
+      if (task.result?.output) {
+        const output = typeof task.result.output === "string" ? task.result.output.substring(0, 200) : JSON.stringify(task.result.output).substring(0, 200);
+        context += ` (Result: ${output}...)`;
+      }
+      context += "\n";
+    }
+    return context + "\n";
+  }
+  /**
+   * Build full context for the agent including conversation history and plan state
+   */
+  buildFullContext(currentInput) {
+    const conversationContext = this.buildConversationContext();
+    const planContext = this.buildPlanContext();
+    if (conversationContext || planContext) {
+      return `${conversationContext}${planContext}## Current Request
+
+${currentInput}`;
+    }
+    return currentInput;
+  }
+  // ============================================================================
   // Helpers
   // ============================================================================
   buildInstructions(userInstructions) {
@@ -21387,6 +21517,36 @@ Description: ${task.description}`;
 Expected Output: ${task.expectedOutput}`;
     }
     return prompt;
+  }
+  /**
+   * Build task prompt with full context (plan goal, completed tasks, etc.)
+   */
+  buildTaskPromptWithContext(task, taskIndex) {
+    const parts = [];
+    if (this.currentPlan) {
+      parts.push(`## Overall Goal
+${this.currentPlan.goal}
+`);
+      const completedTasks = this.currentPlan.tasks.slice(0, taskIndex).filter((t) => t.status === "completed");
+      if (completedTasks.length > 0) {
+        parts.push(`## Previously Completed Tasks`);
+        for (const completed of completedTasks) {
+          const output = completed.result?.output ? typeof completed.result.output === "string" ? completed.result.output.substring(0, 300) : JSON.stringify(completed.result.output).substring(0, 300) : "No output recorded";
+          parts.push(`- **${completed.name}**: ${completed.description}
+  Result: ${output}`);
+        }
+        parts.push("");
+      }
+    }
+    parts.push(`## Current Task (${taskIndex + 1}/${this.currentPlan?.tasks.length || 1})`);
+    parts.push(`**Name**: ${task.name}`);
+    parts.push(`**Description**: ${task.description}`);
+    if (task.expectedOutput) {
+      parts.push(`**Expected Output**: ${task.expectedOutput}`);
+    }
+    parts.push("");
+    parts.push("Execute this task now using the available tools. Be thorough and report results clearly.");
+    return parts.join("\n");
   }
   formatPlanSummary(plan) {
     let summary = `I've created a plan to: ${plan.goal}
@@ -21451,6 +21611,7 @@ Currently working on: ${progress.current.name}`;
     }
     this._session.custom["modeState"] = this.modeManager.serialize();
     this._session.custom["executionHistory"] = this.executionHistory;
+    this._session.custom["conversationHistory"] = this.conversationHistory;
     await this._sessionManager.save(this._session);
   }
   async loadSession(sessionId) {
@@ -21471,6 +21632,9 @@ Currently working on: ${progress.current.name}`;
     }
     if (session.custom["executionHistory"]) {
       this.executionHistory = session.custom["executionHistory"];
+    }
+    if (session.custom["conversationHistory"]) {
+      this.conversationHistory = session.custom["conversationHistory"];
     }
   }
   getSession() {
@@ -21556,9 +21720,13 @@ Currently working on: ${progress.current.name}`;
       this._sessionManager.destroy();
     }
     this.agent.destroy();
+    if (this.executionAgent) {
+      this.executionAgent.destroy();
+    }
     this._toolManager.removeAllListeners();
     this.modeManager.removeAllListeners();
     this.removeAllListeners();
+    this.conversationHistory = [];
   }
 };
 
