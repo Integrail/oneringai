@@ -506,6 +506,65 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
+### 11. External API Integration (NEW)
+
+Connect your AI agents to 35+ external services with enterprise-grade resilience:
+
+```typescript
+import { Connector, ConnectorTools, Services, Agent } from '@oneringai/agents';
+
+// Create a connector for an external service
+Connector.create({
+  name: 'github',
+  serviceType: Services.Github,
+  auth: { type: 'api_key', apiKey: process.env.GITHUB_TOKEN! },
+  baseURL: 'https://api.github.com',
+
+  // Enterprise resilience features
+  timeout: 30000,
+  retry: { maxRetries: 3, baseDelayMs: 1000 },
+  circuitBreaker: { enabled: true, failureThreshold: 5 },
+});
+
+// Generate tools from the connector
+const tools = ConnectorTools.for('github');
+
+// Use with an agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: tools,
+});
+
+await agent.run('List all open issues in owner/repo');
+```
+
+**Supported Services (35+):**
+- **Communication**: Slack, Discord, Microsoft Teams, Twilio
+- **Development**: GitHub, GitLab, Jira, Linear, Bitbucket
+- **Productivity**: Notion, Asana, Monday, Airtable, Trello
+- **CRM**: Salesforce, HubSpot, Zendesk, Intercom
+- **Payments**: Stripe, PayPal, Square
+- **Cloud**: AWS, Azure, GCP, DigitalOcean
+- And more...
+
+**Enterprise Features:**
+- 🔄 **Automatic retry** with exponential backoff
+- ⚡ **Circuit breaker** for failing services
+- ⏱️ **Configurable timeout**
+- 📊 **Metrics tracking** (requests, latency, success rate)
+- 🔐 **Protected auth headers** (cannot be overridden)
+
+```typescript
+// Direct fetch with connector
+const connector = Connector.get('github');
+const data = await connector.fetchJSON('/repos/owner/repo/issues');
+
+// Metrics
+const metrics = connector.getMetrics();
+console.log(`Success rate: ${metrics.successCount / metrics.requestCount * 100}%`);
+```
+
 ## MCP (Model Context Protocol) Integration
 
 Connect to MCP servers for automatic tool discovery and seamless integration:
@@ -664,6 +723,6 @@ MIT License - See [LICENSE](./LICENSE) file.
 ---
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-25
+**Last Updated:** 2026-01-26
 
 For detailed documentation on all features, see the **[Complete User Guide](./USER_GUIDE.md)**.

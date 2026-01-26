@@ -1,7 +1,7 @@
 # @oneringai/agents - Complete User Guide
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-25
+**Last Updated:** 2026-01-26
 
 A comprehensive guide to using all features of the @oneringai/agents library.
 
@@ -26,10 +26,11 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 15. [Image Generation](#image-generation) **NEW**
 16. [Video Generation](#video-generation) **NEW**
 17. [Streaming](#streaming)
-18. [OAuth for External APIs](#oauth-for-external-apis)
-19. [Model Registry](#model-registry)
-20. [Advanced Features](#advanced-features)
-21. [Production Deployment](#production-deployment)
+18. [External API Integration](#external-api-integration) **NEW**
+19. [OAuth for External APIs](#oauth-for-external-apis)
+20. [Model Registry](#model-registry)
+21. [Advanced Features](#advanced-features)
+22. [Production Deployment](#production-deployment)
 
 ---
 
@@ -4371,6 +4372,396 @@ for await (const event of agent.stream('What is the weather in Paris?')) {
     process.stdout.write(event.delta);
   }
 }
+```
+
+---
+
+## External API Integration
+
+Connect your AI agents to 35+ external services with enterprise-grade resilience. The library provides both connector-based tools and direct fetch capabilities.
+
+### Overview
+
+External API integration uses the **Connector-First Architecture** - the same pattern used for AI providers. This means:
+- Single source of truth for authentication
+- Built-in resilience (retry, timeout, circuit breaker)
+- Automatic tool generation for any service
+
+### Quick Start
+
+```typescript
+import { Connector, ConnectorTools, Services, Agent } from '@oneringai/agents';
+
+// 1. Create a connector for an external service
+Connector.create({
+  name: 'github',
+  serviceType: Services.Github,
+  auth: { type: 'api_key', apiKey: process.env.GITHUB_TOKEN! },
+  baseURL: 'https://api.github.com',
+});
+
+// 2. Generate tools from the connector
+const tools = ConnectorTools.for('github');
+
+// 3. Use with an agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: tools,
+});
+
+// 4. Agent can now call the GitHub API
+await agent.run('List all open issues in owner/repo');
+```
+
+### Connector Configuration
+
+#### Basic Configuration
+
+```typescript
+Connector.create({
+  name: 'slack',
+  serviceType: Services.Slack,  // Optional: explicit service type
+  auth: { type: 'api_key', apiKey: process.env.SLACK_TOKEN! },
+  baseURL: 'https://slack.com/api',
+});
+```
+
+#### Enterprise Resilience Features
+
+```typescript
+Connector.create({
+  name: 'stripe',
+  serviceType: Services.Stripe,
+  auth: { type: 'api_key', apiKey: process.env.STRIPE_SECRET_KEY! },
+  baseURL: 'https://api.stripe.com/v1',
+
+  // Timeout
+  timeout: 30000,  // 30 seconds (default)
+
+  // Retry with exponential backoff
+  retry: {
+    maxRetries: 3,
+    baseDelayMs: 1000,
+    maxDelayMs: 30000,
+    retryableStatuses: [429, 500, 502, 503, 504],
+  },
+
+  // Circuit breaker
+  circuitBreaker: {
+    enabled: true,
+    failureThreshold: 5,      // Open after 5 failures
+    successThreshold: 2,      // Close after 2 successes
+    resetTimeoutMs: 60000,    // Try again after 60s
+  },
+
+  // Logging
+  logging: {
+    enabled: true,
+    logBody: false,           // Don't log request/response bodies
+    logHeaders: false,        // Don't log headers
+  },
+});
+```
+
+### Supported Services (35+)
+
+The library includes built-in definitions for 35+ popular services:
+
+| Category | Services |
+|----------|----------|
+| **Communication** | Slack, Discord, Microsoft Teams, Twilio, Zoom |
+| **Development** | GitHub, GitLab, Jira, Linear, Bitbucket, CircleCI |
+| **Productivity** | Notion, Asana, Monday, Airtable, Trello, Confluence |
+| **CRM** | Salesforce, HubSpot, Zendesk, Intercom, Freshdesk |
+| **Payments** | Stripe, PayPal, Square, Braintree |
+| **Cloud** | AWS, Azure, GCP, DigitalOcean, Vercel, Netlify |
+| **Storage** | Dropbox, Box, Google Drive, OneDrive |
+| **Email** | SendGrid, Mailchimp, Mailgun, Postmark |
+| **Monitoring** | Datadog, PagerDuty, Sentry, New Relic |
+
+```typescript
+import { Services, getServiceInfo, getServicesByCategory } from '@oneringai/agents';
+
+// Use service constants
+Connector.create({
+  name: 'my-slack',
+  serviceType: Services.Slack,  // Type-safe
+  // ...
+});
+
+// Get service metadata
+const info = getServiceInfo('slack');
+console.log(info?.name);        // 'Slack'
+console.log(info?.category);    // 'communication'
+console.log(info?.docsURL);     // 'https://api.slack.com/methods'
+console.log(info?.commonScopes); // ['chat:write', 'channels:read', ...]
+
+// Filter by category
+const devServices = getServicesByCategory('development');
+// Returns: github, gitlab, jira, linear, bitbucket, ...
+```
+
+### Using Connector.fetch()
+
+For direct API calls without tools:
+
+```typescript
+const connector = Connector.get('github');
+
+// Basic fetch
+const response = await connector.fetch('/repos/owner/repo/issues', {
+  method: 'GET',
+  queryParams: { state: 'open', per_page: '10' },
+});
+
+// JSON helper with automatic parsing
+const issues = await connector.fetchJSON<Issue[]>('/repos/owner/repo/issues');
+
+// POST with body
+const newIssue = await connector.fetchJSON('/repos/owner/repo/issues', {
+  method: 'POST',
+  body: {
+    title: 'New Issue',
+    body: 'Issue description',
+    labels: ['bug'],
+  },
+});
+
+// Per-request options
+const urgent = await connector.fetch('/chat.postMessage', {
+  method: 'POST',
+  body: { channel: 'C123', text: 'Urgent!' },
+  timeout: 5000,           // Override timeout
+  skipRetry: true,         // Skip retry for this request
+  skipCircuitBreaker: true, // Bypass circuit breaker
+});
+```
+
+### ConnectorTools API
+
+#### Generate Tools for a Connector
+
+```typescript
+import { ConnectorTools } from '@oneringai/agents';
+
+// Get all tools for a connector (generic API + any registered service tools)
+const tools = ConnectorTools.for('github');
+const tools = ConnectorTools.for(connector);  // Can pass instance too
+
+// Get only the generic API tool
+const apiTool = ConnectorTools.genericAPI('github');
+
+// Custom tool name
+const customTool = ConnectorTools.genericAPI('github', {
+  toolName: 'github_api',
+});
+```
+
+#### The Generic API Tool
+
+Every connector with a `baseURL` gets a generic API tool that allows the agent to make any API call:
+
+```typescript
+// Tool schema:
+{
+  name: 'github_api',  // {connectorName}_api
+  description: 'Make API requests to api.github.com',
+  parameters: {
+    method: { enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
+    endpoint: { type: 'string' },          // e.g., '/repos/owner/repo'
+    queryParams: { type: 'object' },       // Optional query parameters
+    body: { type: 'object' },              // Optional request body
+    headers: { type: 'object' },           // Optional headers (auth protected)
+  }
+}
+```
+
+**Security:** Authorization headers cannot be overridden by the agent.
+
+#### Register Custom Service Tools
+
+For frequently-used operations, register service-specific tools:
+
+```typescript
+import { ConnectorTools, ToolFunction } from '@oneringai/agents';
+
+// Register tools for a service type
+ConnectorTools.registerService('slack', (connector) => {
+  const listChannels: ToolFunction = {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'slack_list_channels',
+        description: 'List all Slack channels',
+        parameters: {
+          type: 'object',
+          properties: {
+            types: {
+              type: 'string',
+              description: 'Filter by channel types',
+              enum: ['public_channel', 'private_channel'],
+            },
+            limit: { type: 'number', description: 'Max results' },
+          },
+        },
+      },
+    },
+    execute: async (args) => {
+      return connector.fetchJSON('/conversations.list', {
+        queryParams: { types: args.types, limit: String(args.limit || 100) },
+      });
+    },
+    describeCall: (args) => `List ${args.types || 'all'} channels`,
+  };
+
+  const postMessage: ToolFunction = {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'slack_post_message',
+        description: 'Post a message to a Slack channel',
+        parameters: {
+          type: 'object',
+          properties: {
+            channel: { type: 'string', description: 'Channel ID' },
+            text: { type: 'string', description: 'Message text' },
+          },
+          required: ['channel', 'text'],
+        },
+      },
+    },
+    execute: async (args) => {
+      return connector.fetchJSON('/chat.postMessage', {
+        method: 'POST',
+        body: { channel: args.channel, text: args.text },
+      });
+    },
+    describeCall: (args) => `Post to ${args.channel}`,
+    permission: { riskLevel: 'medium', scope: 'session' },
+  };
+
+  return [listChannels, postMessage];
+});
+
+// Now ConnectorTools.for('slack-connector') returns both generic + custom tools
+```
+
+#### Discover All Connectors
+
+```typescript
+// Get tools for all connectors with serviceType
+const allTools = ConnectorTools.discoverAll();
+// Returns: Map<connectorName, ToolFunction[]>
+
+for (const [name, tools] of allTools) {
+  console.log(`${name}: ${tools.length} tools`);
+}
+
+// Find connector by service type
+const slackConnector = ConnectorTools.findConnector(Services.Slack);
+
+// Find all connectors for a service type
+const allSlackConnectors = ConnectorTools.findConnectors(Services.Slack);
+
+// Check if service has custom tools
+if (ConnectorTools.hasServiceTools('slack')) {
+  // ...
+}
+
+// List all services with custom tools registered
+const services = ConnectorTools.listSupportedServices();
+```
+
+### Service Detection
+
+Services are detected from URL patterns or explicit `serviceType`:
+
+```typescript
+import { detectServiceFromURL, Services } from '@oneringai/agents';
+
+// Automatic detection from URL
+detectServiceFromURL('https://api.github.com/repos');     // 'github'
+detectServiceFromURL('https://slack.com/api/chat');       // 'slack'
+detectServiceFromURL('https://api.stripe.com/v1');        // 'stripe'
+detectServiceFromURL('https://company.atlassian.net');    // 'jira'
+
+// Explicit serviceType takes precedence
+Connector.create({
+  name: 'custom',
+  serviceType: Services.Jira,                        // Explicit
+  baseURL: 'https://api.github.com',                 // Ignored for detection
+});
+```
+
+### Metrics and Monitoring
+
+```typescript
+const connector = Connector.get('github');
+
+// Get metrics
+const metrics = connector.getMetrics();
+console.log(`Requests: ${metrics.requestCount}`);
+console.log(`Success: ${metrics.successCount}`);
+console.log(`Failures: ${metrics.failureCount}`);
+console.log(`Avg Latency: ${metrics.avgLatencyMs}ms`);
+console.log(`Circuit: ${metrics.circuitBreakerState}`);
+
+// Reset circuit breaker manually
+connector.resetCircuitBreaker();
+
+// Check if connector is disposed
+if (connector.isDisposed()) {
+  // Recreate connector
+}
+```
+
+### Complete Example
+
+```typescript
+import { Connector, ConnectorTools, Services, Agent, Vendor } from '@oneringai/agents';
+
+// Setup AI connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Setup GitHub connector with resilience
+Connector.create({
+  name: 'github',
+  serviceType: Services.Github,
+  auth: { type: 'api_key', apiKey: process.env.GITHUB_TOKEN! },
+  baseURL: 'https://api.github.com',
+  timeout: 15000,
+  retry: { maxRetries: 2, baseDelayMs: 500 },
+  circuitBreaker: { enabled: true, failureThreshold: 3 },
+});
+
+// Setup Slack connector
+Connector.create({
+  name: 'slack',
+  serviceType: Services.Slack,
+  auth: { type: 'api_key', apiKey: process.env.SLACK_TOKEN! },
+  baseURL: 'https://slack.com/api',
+});
+
+// Create agent with external API tools
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [
+    ...ConnectorTools.for('github'),
+    ...ConnectorTools.for('slack'),
+  ],
+});
+
+// Agent can now interact with both services
+await agent.run(`
+  Check if there are any critical issues in owner/repo,
+  and if so, post a summary to the #alerts Slack channel.
+`);
 ```
 
 ---
