@@ -104,6 +104,18 @@ export { webFetch, webFetchJS, webSearch } from './web/index.js';
 export { executeJavaScript, createExecuteJavaScriptTool } from './code/index.js';
 
 // ============================================================================
+// Connector Tools (Vendor-Dependent Tools Framework)
+// ============================================================================
+
+export {
+  ConnectorTools,
+  type ServiceToolFactory,
+  type GenericAPIToolOptions,
+  type GenericAPICallArgs,
+  type GenericAPICallResult,
+} from './connector/index.js';
+
+// ============================================================================
 // Convenience: All Developer Tools Bundle
 // ============================================================================
 

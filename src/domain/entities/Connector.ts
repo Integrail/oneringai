@@ -88,6 +88,11 @@ export interface ConnectorConfig {
   // For AI providers: specify vendor (auto-selects SDK)
   vendor?: Vendor; // e.g., Vendor.OpenAI, Vendor.Anthropic
 
+  // For external services: specify service type for tool generation
+  // If not specified, will be auto-detected from baseURL patterns
+  // Use Services constants (e.g., Services.Slack) or any string
+  serviceType?: string;
+
   // Authentication
   auth: ConnectorAuth;
 
@@ -112,14 +117,60 @@ export interface ConnectorConfig {
 
   // Vendor-specific options
   options?: {
-    timeout?: number;
-    maxRetries?: number;
     organization?: string; // OpenAI
     project?: string; // OpenAI
     anthropicVersion?: string;
     location?: string; // Google Vertex
     projectId?: string; // Google Vertex
     [key: string]: unknown;
+  };
+
+  // ============ Resilience Options (Enterprise) ============
+
+  /**
+   * Request timeout in milliseconds
+   * @default 30000 (30 seconds)
+   */
+  timeout?: number;
+
+  /**
+   * Retry configuration for transient failures
+   */
+  retry?: {
+    /** Maximum number of retry attempts @default 3 */
+    maxRetries?: number;
+    /** HTTP status codes that trigger retry @default [429, 500, 502, 503, 504] */
+    retryableStatuses?: number[];
+    /** Base delay in ms for exponential backoff @default 1000 */
+    baseDelayMs?: number;
+    /** Maximum delay in ms @default 30000 */
+    maxDelayMs?: number;
+  };
+
+  /**
+   * Circuit breaker configuration for failing services
+   */
+  circuitBreaker?: {
+    /** Enable circuit breaker @default true */
+    enabled?: boolean;
+    /** Number of failures before opening circuit @default 5 */
+    failureThreshold?: number;
+    /** Number of successes to close circuit @default 2 */
+    successThreshold?: number;
+    /** Time in ms before attempting to close circuit @default 30000 */
+    resetTimeoutMs?: number;
+  };
+
+  /**
+   * Logging configuration for requests/responses
+   */
+  logging?: {
+    /** Enable request/response logging @default false */
+    enabled?: boolean;
+    /** Log request/response bodies (security risk) @default false */
+    logBody?: boolean;
+    /** Log request/response headers (security risk) @default false */
+    logHeaders?: boolean;
   };
 }
 

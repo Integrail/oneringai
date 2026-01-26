@@ -115,11 +115,13 @@ export class MCPClient extends EventEmitter implements IMCPClient {
       // The actual capabilities are negotiated during connection
       this._capabilities = {} as MCPServerCapabilities;
 
+      // Mark as connected before refreshing tools (so ensureConnected() doesn't throw)
+      this._state = 'connected';
+      this.reconnectAttempts = 0;
+
       // List available tools
       await this.refreshTools();
 
-      this._state = 'connected';
-      this.reconnectAttempts = 0;
       this.emit('connected');
 
       // Start health check

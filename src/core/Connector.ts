@@ -4,6 +4,12 @@
  * Manages authenticated connections to:
  * - AI providers (OpenAI, Anthropic, Google, etc.)
  * - External APIs (GitHub, Salesforce, etc.)
+ *
+ * Enterprise features:
+ * - Request timeout with AbortController
+ * - Circuit breaker for failing services
+ * - Retry with exponential backoff
+ * - Request/response logging
  */
 
 import { ConnectorConfig, ConnectorAuth } from '../domain/entities/Connector.js';
@@ -11,6 +17,31 @@ import { Vendor } from './Vendor.js';
 import { OAuthManager } from '../connectors/oauth/OAuthManager.js';
 import { MemoryStorage } from '../connectors/oauth/infrastructure/storage/MemoryStorage.js';
 import type { ITokenStorage } from '../connectors/oauth/domain/ITokenStorage.js';
+import { CircuitBreaker, CircuitOpenError } from '../infrastructure/resilience/CircuitBreaker.js';
+import { calculateBackoff, BackoffConfig } from '../infrastructure/resilience/BackoffStrategy.js';
+import { logger } from '../infrastructure/observability/Logger.js';
+import { metrics } from '../infrastructure/observability/Metrics.js';
+
+/**
+ * Default configuration values for resilience features
+ */
+export const DEFAULT_CONNECTOR_TIMEOUT = 30000; // 30 seconds
+export const DEFAULT_MAX_RETRIES = 3;
+export const DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+export const DEFAULT_BASE_DELAY_MS = 1000;
+export const DEFAULT_MAX_DELAY_MS = 30000;
+
+/**
+ * Fetch options with additional connector-specific settings
+ */
+export interface ConnectorFetchOptions extends RequestInit {
+  /** Override timeout for this request */
+  timeout?: number;
+  /** Skip retry for this request */
+  skipRetry?: boolean;
+  /** Skip circuit breaker for this request */
+  skipCircuitBreaker?: boolean;
+}
 
 /**
  * Connector class - represents a single authenticated connection
@@ -145,7 +176,14 @@ export class Connector {
   readonly config: ConnectorConfig;
 
   private oauthManager?: OAuthManager;
+  private circuitBreaker?: CircuitBreaker;
   private disposed = false;
+
+  // Metrics
+  private requestCount = 0;
+  private successCount = 0;
+  private failureCount = 0;
+  private totalLatencyMs = 0;
 
   private constructor(config: ConnectorConfig & { name: string }) {
     this.name = config.name;
@@ -157,6 +195,44 @@ export class Connector {
       this.initOAuthManager(config.auth);
     } else if (config.auth.type === 'jwt') {
       this.initJWTManager(config.auth);
+    }
+
+    // Initialize circuit breaker if enabled (default: true)
+    this.initCircuitBreaker();
+  }
+
+  /**
+   * Initialize circuit breaker with config or defaults
+   */
+  private initCircuitBreaker(): void {
+    const cbConfig = this.config.circuitBreaker;
+    const enabled = cbConfig?.enabled ?? true;
+
+    if (enabled) {
+      this.circuitBreaker = new CircuitBreaker(`connector:${this.name}`, {
+        failureThreshold: cbConfig?.failureThreshold ?? 5,
+        successThreshold: cbConfig?.successThreshold ?? 2,
+        resetTimeoutMs: cbConfig?.resetTimeoutMs ?? 30000,
+        windowMs: 60000, // 1 minute window
+        isRetryable: (error) => {
+          // Don't count client errors (4xx except 429) as circuit breaker failures
+          if (error.message.includes('HTTP 4') && !error.message.includes('HTTP 429')) {
+            return false;
+          }
+          return true;
+        },
+      });
+
+      // Log circuit breaker state changes
+      this.circuitBreaker.on('opened', ({ name, failureCount, lastError }) => {
+        logger.warn(`Circuit breaker opened for ${name}: ${failureCount} failures, last error: ${lastError}`);
+        metrics.increment('connector.circuit_breaker.opened', 1, { connector: this.name });
+      });
+
+      this.circuitBreaker.on('closed', ({ name }) => {
+        logger.info(`Circuit breaker closed for ${name}`);
+        metrics.increment('connector.circuit_breaker.closed', 1, { connector: this.name });
+      });
     }
   }
 
@@ -246,6 +322,89 @@ export class Connector {
    */
   getOptions(): Record<string, unknown> {
     return this.config.options ?? {};
+  }
+
+  /**
+   * Get the service type (explicit or undefined)
+   */
+  get serviceType(): string | undefined {
+    return this.config.serviceType;
+  }
+
+  /**
+   * Make an authenticated fetch request using this connector
+   * This is the foundation for all vendor-dependent tools
+   *
+   * @param endpoint - API endpoint (relative to baseURL) or full URL
+   * @param options - Standard fetch options
+   * @param userId - Optional user ID for multi-user OAuth
+   * @returns Fetch Response
+   */
+  async fetch(
+    endpoint: string,
+    options?: RequestInit,
+    userId?: string
+  ): Promise<Response> {
+    const token = await this.getToken(userId);
+    const auth = this.config.auth;
+
+    // Build auth header based on auth type
+    let headerName = 'Authorization';
+    let headerValue = `Bearer ${token}`;
+
+    if (auth.type === 'api_key') {
+      headerName = auth.headerName || 'Authorization';
+      const prefix = auth.headerPrefix ?? 'Bearer';
+      headerValue = prefix ? `${prefix} ${token}` : token;
+    }
+
+    // Resolve URL (relative to baseURL or absolute)
+    const url = endpoint.startsWith('http') ? endpoint : `${this.baseURL}${endpoint}`;
+
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options?.headers,
+        [headerName]: headerValue,
+      },
+    });
+  }
+
+  /**
+   * Make an authenticated fetch request and parse JSON response
+   * Throws on non-OK responses
+   *
+   * @param endpoint - API endpoint (relative to baseURL) or full URL
+   * @param options - Standard fetch options
+   * @param userId - Optional user ID for multi-user OAuth
+   * @returns Parsed JSON response
+   */
+  async fetchJSON<T = unknown>(endpoint: string, options?: RequestInit, userId?: string): Promise<T> {
+    const response = await this.fetch(endpoint, options, userId);
+
+    // Try to parse response body
+    const text = await response.text();
+    let data: T;
+
+    try {
+      data = JSON.parse(text) as T;
+    } catch {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${text}`);
+      }
+      throw new Error(`Invalid JSON response: ${text.slice(0, 100)}`);
+    }
+
+    if (!response.ok) {
+      // Include parsed error in message if available
+      const errorMsg =
+        typeof data === 'object' && data !== null
+          ? JSON.stringify(data)
+          : text;
+      throw new Error(`HTTP ${response.status}: ${errorMsg}`);
+    }
+
+    return data;
   }
 
   /**

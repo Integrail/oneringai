@@ -1,4 +1,4 @@
-import { I as IProvider } from './IProvider-BP49c93d.js';
+import { I as IProvider } from './IProvider-BP49c93d.cjs';
 
 /**
  * Supported AI Vendors
@@ -99,6 +99,7 @@ interface JWTConnectorAuth {
 interface ConnectorConfig {
     name?: string;
     vendor?: Vendor;
+    serviceType?: string;
     auth: ConnectorAuth;
     displayName?: string;
     description?: string;
@@ -287,6 +288,30 @@ declare class Connector {
      * Get vendor-specific options from config
      */
     getOptions(): Record<string, unknown>;
+    /**
+     * Get the service type (explicit or undefined)
+     */
+    get serviceType(): string | undefined;
+    /**
+     * Make an authenticated fetch request using this connector
+     * This is the foundation for all vendor-dependent tools
+     *
+     * @param endpoint - API endpoint (relative to baseURL) or full URL
+     * @param options - Standard fetch options
+     * @param userId - Optional user ID for multi-user OAuth
+     * @returns Fetch Response
+     */
+    fetch(endpoint: string, options?: RequestInit, userId?: string): Promise<Response>;
+    /**
+     * Make an authenticated fetch request and parse JSON response
+     * Throws on non-OK responses
+     *
+     * @param endpoint - API endpoint (relative to baseURL) or full URL
+     * @param options - Standard fetch options
+     * @param userId - Optional user ID for multi-user OAuth
+     * @returns Parsed JSON response
+     */
+    fetchJSON<T = unknown>(endpoint: string, options?: RequestInit, userId?: string): Promise<T>;
     /**
      * Dispose of resources
      */

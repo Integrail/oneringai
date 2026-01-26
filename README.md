@@ -21,6 +21,7 @@
 - 🎯 **Context Management** - Smart strategies (proactive, aggressive, lazy, rolling-window, adaptive)
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
+- 🔌 **MCP Integration** - NEW: Model Context Protocol client for seamless tool discovery from local and remote servers
 - 👁️ **Vision Support** - Analyze images with AI across all providers
 - 📋 **Clipboard Integration** - Paste screenshots directly (like Claude Code!)
 - 🔐 **OAuth 2.0** - Full OAuth support for external APIs with encrypted token storage
@@ -505,12 +506,79 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
+## MCP (Model Context Protocol) Integration
+
+Connect to MCP servers for automatic tool discovery and seamless integration:
+
+```typescript
+import { MCPRegistry, Agent, Connector, Vendor } from '@oneringai/agents';
+
+// Setup authentication
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Connect to local MCP server (stdio)
+const fsClient = MCPRegistry.create({
+  name: 'filesystem',
+  transport: 'stdio',
+  transportConfig: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', process.cwd()],
+  },
+});
+
+// Connect to remote MCP server (HTTP/HTTPS)
+const remoteClient = MCPRegistry.create({
+  name: 'remote-api',
+  transport: 'https',
+  transportConfig: {
+    url: 'https://mcp.example.com/api',
+    token: process.env.MCP_TOKEN,
+  },
+});
+
+// Connect and discover tools
+await fsClient.connect();
+await remoteClient.connect();
+
+// Create agent and register MCP tools
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+fsClient.registerTools(agent.tools);
+remoteClient.registerTools(agent.tools);
+
+// Agent can now use tools from both MCP servers!
+await agent.run('List files and analyze them');
+```
+
+**Features:**
+- 🔌 **Stdio & HTTP/HTTPS transports** - Local and remote server support
+- 🔍 **Automatic tool discovery** - Tools are discovered and registered automatically
+- 🏷️ **Namespaced tools** - `mcp:{server}:{tool}` prevents conflicts
+- 🔄 **Auto-reconnect** - Exponential backoff with configurable retry
+- 📊 **Session management** - Persistent connections with session IDs
+- 🔐 **Permission integration** - All MCP tools require user approval
+- ⚙️ **Configuration file** - Declare servers in `oneringai.config.json`
+
+**Available MCP Servers:**
+- [@modelcontextprotocol/server-filesystem](https://github.com/modelcontextprotocol/servers) - File system access
+- [@modelcontextprotocol/server-github](https://github.com/modelcontextprotocol/servers) - GitHub API
+- [@modelcontextprotocol/server-google-drive](https://github.com/modelcontextprotocol/servers) - Google Drive
+- [@modelcontextprotocol/server-slack](https://github.com/modelcontextprotocol/servers) - Slack integration
+- [@modelcontextprotocol/server-postgres](https://github.com/modelcontextprotocol/servers) - PostgreSQL database
+- [And many more...](https://github.com/modelcontextprotocol/servers)
+
+See [MCP_INTEGRATION.md](./MCP_INTEGRATION.md) for complete documentation.
+
 ## Documentation
 
 📖 **[Complete User Guide](./USER_GUIDE.md)** - Comprehensive guide covering all features
 
 ### Additional Resources
 
+- **[MCP_INTEGRATION.md](./MCP_INTEGRATION.md)** - Model Context Protocol integration guide
 - **[CLAUDE.md](./CLAUDE.md)** - Architecture guide for AI assistants
 - **[MULTIMODAL_ARCHITECTURE.md](./MULTIMODAL_ARCHITECTURE.md)** - Multimodal implementation details
 - **[MICROSOFT_GRAPH_SETUP.md](./MICROSOFT_GRAPH_SETUP.md)** - Microsoft Graph OAuth setup

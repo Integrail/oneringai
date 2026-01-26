@@ -466,6 +466,28 @@ export type {
   IBaseModelDescription,
 } from './domain/types/SharedTypes.js';
 
+// ============ External Services & Connector Tools ============
+// Services constants for well-known external services
+export {
+  Services,
+  SERVICE_URL_PATTERNS,
+  SERVICE_INFO,
+  detectServiceFromURL,
+  getServiceInfo,
+} from './domain/entities/Services.js';
+export type { ServiceType, ServiceInfo } from './domain/entities/Services.js';
+
+// ConnectorTools framework for vendor-dependent tools
+export {
+  ConnectorTools,
+} from './tools/connector/index.js';
+export type {
+  ServiceToolFactory,
+  GenericAPIToolOptions,
+  GenericAPICallArgs,
+  GenericAPICallResult,
+} from './tools/connector/index.js';
+
 // ============ OAuth & Storage (for external APIs) ============
 export { OAuthManager, MemoryStorage, FileStorage } from './connectors/index.js';
 export { generateEncryptionKey, authenticatedFetch, createAuthenticatedFetch, generateWebAPITool } from './connectors/index.js';

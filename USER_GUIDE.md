@@ -20,15 +20,16 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 9. [Context Management](#context-management)
 10. [Tools & Function Calling](#tools--function-calling)
 11. [Dynamic Tool Management](#dynamic-tool-management)
-12. [Multimodal (Vision)](#multimodal-vision)
-13. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
-14. [Image Generation](#image-generation) **NEW**
-15. [Video Generation](#video-generation) **NEW**
-16. [Streaming](#streaming)
-17. [OAuth for External APIs](#oauth-for-external-apis)
-18. [Model Registry](#model-registry)
-19. [Advanced Features](#advanced-features)
-20. [Production Deployment](#production-deployment)
+12. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
+13. [Multimodal (Vision)](#multimodal-vision)
+14. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
+15. [Image Generation](#image-generation) **NEW**
+16. [Video Generation](#video-generation) **NEW**
+17. [Streaming](#streaming)
+18. [OAuth for External APIs](#oauth-for-external-apis)
+19. [Model Registry](#model-registry)
+20. [Advanced Features](#advanced-features)
+21. [Production Deployment](#production-deployment)
 
 ---
 
@@ -2809,6 +2810,623 @@ await sessionManager.save(session);
 const loaded = await sessionManager.load(sessionId);
 if (loaded?.customData?.toolState) {
   agent.tools.loadState(loaded.customData.toolState);
+}
+```
+
+---
+
+## MCP (Model Context Protocol)
+
+The Model Context Protocol (MCP) is an open standard that enables seamless integration between AI applications and external data sources and tools. The library provides a complete MCP client implementation with support for both local (stdio) and remote (HTTP/HTTPS) servers.
+
+### Overview
+
+MCP allows you to:
+- **Discover tools automatically** from MCP servers
+- **Connect to local servers** via stdio (process spawning)
+- **Connect to remote servers** via HTTP/HTTPS (StreamableHTTP)
+- **Manage multiple servers** simultaneously
+- **Auto-reconnect** with exponential backoff
+- **Namespace tools** to prevent conflicts
+- **Session persistence** for stateful connections
+
+### Quick Start
+
+#### 1. Install MCP SDK
+
+```bash
+npm install @modelcontextprotocol/sdk zod
+```
+
+#### 2. Connect to a Local MCP Server
+
+```typescript
+import { MCPRegistry, Agent, Connector, Vendor } from '@oneringai/agents';
+
+// Setup connector for LLM
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Create MCP client for filesystem server
+const client = MCPRegistry.create({
+  name: 'filesystem',
+  transport: 'stdio',
+  transportConfig: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', process.cwd()],
+  },
+});
+
+// Connect to the server
+await client.connect();
+console.log(`Connected! Available tools: ${client.tools.length}`);
+
+// Create agent and register MCP tools
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+client.registerTools(agent.tools);
+
+// Agent can now use MCP tools
+const response = await agent.run('List all TypeScript files in the current directory');
+console.log(response.output_text);
+```
+
+#### 3. Connect to a Remote MCP Server
+
+```typescript
+// Create HTTP/HTTPS MCP client
+const remoteClient = MCPRegistry.create({
+  name: 'remote-api',
+  transport: 'https',
+  transportConfig: {
+    url: 'https://mcp.example.com/api',
+    token: process.env.MCP_TOKEN,
+    headers: {
+      'X-Client-Version': '1.0.0',
+    },
+    reconnection: {
+      maxRetries: 5,
+      initialReconnectionDelay: 1000,
+      maxReconnectionDelay: 30000,
+    },
+  },
+});
+
+await remoteClient.connect();
+remoteClient.registerTools(agent.tools);
+```
+
+### Configuration File
+
+Create `oneringai.config.json` to declare MCP servers:
+
+```json
+{
+  "version": "1.0",
+  "mcp": {
+    "servers": [
+      {
+        "name": "filesystem",
+        "displayName": "Filesystem Server",
+        "transport": "stdio",
+        "transportConfig": {
+          "command": "npx",
+          "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/dir"]
+        },
+        "autoConnect": true,
+        "toolNamespace": "mcp:fs",
+        "permissions": {
+          "defaultScope": "session",
+          "defaultRiskLevel": "medium"
+        }
+      },
+      {
+        "name": "github",
+        "displayName": "GitHub API",
+        "transport": "https",
+        "transportConfig": {
+          "url": "https://mcp.example.com/github",
+          "token": "${GITHUB_TOKEN}"
+        },
+        "autoConnect": false,
+        "toolNamespace": "mcp:github"
+      }
+    ]
+  }
+}
+```
+
+Load and use the configuration:
+
+```typescript
+import { Config, MCPRegistry, Agent } from '@oneringai/agents';
+
+// Load configuration
+await Config.load('./oneringai.config.json');
+
+// Create all MCP clients from config
+const clients = MCPRegistry.createFromConfig(Config.getSection('mcp')!);
+
+// Connect all servers with autoConnect enabled
+await MCPRegistry.connectAll();
+
+// Create agent and register tools
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+for (const client of clients) {
+  if (client.isConnected()) {
+    client.registerTools(agent.tools);
+  }
+}
+```
+
+### MCPRegistry API
+
+The static registry manages all MCP client connections:
+
+```typescript
+// Create a client
+const client = MCPRegistry.create({
+  name: 'my-server',
+  transport: 'stdio',
+  transportConfig: { /* ... */ },
+});
+
+// Get a client
+const client = MCPRegistry.get('my-server');
+
+// Check if exists
+if (MCPRegistry.has('my-server')) {
+  // ...
+}
+
+// List all servers
+const serverNames = MCPRegistry.list();
+
+// Get server info
+const info = MCPRegistry.getInfo('my-server');
+// { name, state, connected, toolCount }
+
+// Get all server info
+const allInfo = MCPRegistry.getAllInfo();
+
+// Lifecycle management
+await MCPRegistry.connectAll();
+await MCPRegistry.disconnectAll();
+MCPRegistry.destroyAll();
+```
+
+### MCPClient API
+
+Each client manages a connection to one MCP server:
+
+#### Connection Management
+
+```typescript
+// Connect to server
+await client.connect();
+
+// Disconnect
+await client.disconnect();
+
+// Reconnect
+await client.reconnect();
+
+// Check connection status
+const isConnected = client.isConnected();
+
+// Ping server (health check)
+const alive = await client.ping();
+```
+
+#### Tool Operations
+
+```typescript
+// List available tools
+const tools = await client.listTools();
+console.log(tools.map(t => `${t.name}: ${t.description}`));
+
+// Call a tool directly
+const result = await client.callTool('read_file', {
+  path: './README.md'
+});
+console.log(result.content);
+
+// Register tools with agent
+client.registerTools(agent.tools);
+
+// Unregister tools
+client.unregisterTools(agent.tools);
+```
+
+#### Resource Operations
+
+```typescript
+// List available resources
+const resources = await client.listResources();
+
+// Read a resource
+const content = await client.readResource('file:///path/to/file');
+console.log(content.text);
+
+// Subscribe to resource updates (if supported)
+if (client.capabilities?.resources?.subscribe) {
+  client.on('resource:updated', (uri) => {
+    console.log(`Resource updated: ${uri}`);
+  });
+
+  await client.subscribeResource('file:///watch/this/file');
+}
+
+// Unsubscribe
+await client.unsubscribeResource('file:///watch/this/file');
+```
+
+#### Prompt Operations
+
+```typescript
+// List available prompts
+const prompts = await client.listPrompts();
+
+// Get a prompt
+const promptResult = await client.getPrompt('summarize', {
+  length: 'short',
+});
+
+// Use prompt messages
+for (const msg of promptResult.messages) {
+  console.log(`${msg.role}: ${msg.content.text}`);
+}
+```
+
+### Event Monitoring
+
+Listen to connection and execution events:
+
+```typescript
+// Connection events
+client.on('connected', () => {
+  console.log('Connected to MCP server');
+});
+
+client.on('disconnected', () => {
+  console.log('Disconnected from MCP server');
+});
+
+client.on('reconnecting', (attempt) => {
+  console.log(`Reconnecting... attempt ${attempt}`);
+});
+
+client.on('failed', (error) => {
+  console.error('Connection failed:', error);
+});
+
+// Tool execution events
+client.on('tool:called', (name, args) => {
+  console.log(`Tool called: ${name}`, args);
+});
+
+client.on('tool:result', (name, result) => {
+  console.log(`Tool result: ${name}`, result);
+});
+
+// Resource events
+client.on('resource:updated', (uri) => {
+  console.log(`Resource updated: ${uri}`);
+});
+
+// Error events
+client.on('error', (error) => {
+  console.error('MCP error:', error);
+});
+```
+
+### Transport Types
+
+#### Stdio Transport
+
+For local MCP servers (spawns a process):
+
+```typescript
+const client = MCPRegistry.create({
+  name: 'local-server',
+  transport: 'stdio',
+  transportConfig: {
+    command: 'npx',                                    // or 'node', 'python', etc.
+    args: ['-y', '@modelcontextprotocol/server-filesystem', '/path'],
+    env: {
+      NODE_ENV: 'production',
+      CUSTOM_VAR: 'value',
+    },
+    cwd: '/working/directory',                        // Optional working directory
+  },
+});
+```
+
+**Best for:**
+- Local file system access
+- Database connections (PostgreSQL, SQLite)
+- Development and testing
+
+#### HTTP/HTTPS Transport
+
+For remote MCP servers (StreamableHTTP with SSE):
+
+```typescript
+const client = MCPRegistry.create({
+  name: 'remote-server',
+  transport: 'https',
+  transportConfig: {
+    url: 'https://mcp.example.com/api',
+    token: process.env.MCP_TOKEN,                      // Bearer token
+    headers: {
+      'X-Client-Version': '1.0.0',
+      'X-Custom-Header': 'value',
+    },
+    timeoutMs: 30000,                                  // Request timeout (default: 30000)
+    sessionId: 'optional-session-id',                  // For reconnection
+    reconnection: {
+      maxReconnectionDelay: 30000,                     // Max delay between retries (default: 30000)
+      initialReconnectionDelay: 1000,                  // Initial delay (default: 1000)
+      reconnectionDelayGrowFactor: 1.5,                // Backoff factor (default: 1.5)
+      maxRetries: 5,                                   // Max attempts (default: 2)
+    },
+  },
+});
+```
+
+**Best for:**
+- Cloud-hosted services
+- Production deployments
+- Team collaboration
+- Remote API access
+
+### Tool Namespacing
+
+MCP tools are automatically namespaced to prevent conflicts:
+
+```typescript
+// Default namespace: mcp:{server-name}:{tool-name}
+// Example: mcp:filesystem:read_file, mcp:github:create_issue
+
+// Custom namespace
+const client = MCPRegistry.create({
+  name: 'fs',
+  toolNamespace: 'files',
+  // ...
+});
+// Tools: files:read_file, files:write_file, etc.
+
+// Check registered tools
+const toolNames = agent.listTools();
+console.log(toolNames.filter(name => name.startsWith('mcp:')));
+```
+
+### Multi-Server Example
+
+Connect to multiple MCP servers simultaneously:
+
+```typescript
+import { MCPRegistry, Agent, Connector, Vendor } from '@oneringai/agents';
+
+// Setup connector
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+// Create multiple clients
+const fsClient = MCPRegistry.create({
+  name: 'filesystem',
+  transport: 'stdio',
+  transportConfig: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', process.cwd()],
+  },
+});
+
+const githubClient = MCPRegistry.create({
+  name: 'github',
+  transport: 'https',
+  transportConfig: {
+    url: 'https://mcp.example.com/github',
+    token: process.env.GITHUB_TOKEN,
+  },
+});
+
+const dbClient = MCPRegistry.create({
+  name: 'postgres',
+  transport: 'stdio',
+  transportConfig: {
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-postgres'],
+    env: {
+      DATABASE_URL: process.env.DATABASE_URL!,
+    },
+  },
+});
+
+// Connect all
+await Promise.all([
+  fsClient.connect(),
+  githubClient.connect(),
+  dbClient.connect(),
+]);
+
+// Create agent and register all tools
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+fsClient.registerTools(agent.tools);
+githubClient.registerTools(agent.tools);
+dbClient.registerTools(agent.tools);
+
+console.log(`Total tools: ${agent.listTools().length}`);
+
+// Agent can now use tools from all servers
+await agent.run('Query the database, analyze files, and create a GitHub issue with the results');
+```
+
+### Available MCP Servers
+
+Official MCP servers from [@modelcontextprotocol](https://github.com/modelcontextprotocol/servers):
+
+- **@modelcontextprotocol/server-filesystem** - File system operations
+- **@modelcontextprotocol/server-github** - GitHub API integration
+- **@modelcontextprotocol/server-google-drive** - Google Drive access
+- **@modelcontextprotocol/server-slack** - Slack workspace integration
+- **@modelcontextprotocol/server-postgres** - PostgreSQL database access
+- **@modelcontextprotocol/server-sqlite** - SQLite database access
+- **@modelcontextprotocol/server-memory** - Simple in-memory key-value store
+- **@modelcontextprotocol/server-brave-search** - Brave Search API
+- **@modelcontextprotocol/server-fetch** - HTTP requests and web scraping
+
+Community servers:
+- Browse at [mcpservers.org](https://mcpservers.org/)
+- [Awesome MCP Servers](https://github.com/wong2/awesome-mcp-servers)
+- [Awesome MCP Servers (punkpeye)](https://github.com/punkpeye/awesome-mcp-servers)
+
+### Error Handling
+
+```typescript
+import {
+  MCPError,
+  MCPConnectionError,
+  MCPTimeoutError,
+  MCPProtocolError,
+  MCPToolError,
+  MCPResourceError,
+} from '@oneringai/agents';
+
+try {
+  await client.connect();
+} catch (error) {
+  if (error instanceof MCPConnectionError) {
+    console.error('Failed to connect:', error.message);
+    // Retry or use fallback
+  } else if (error instanceof MCPTimeoutError) {
+    console.error('Connection timed out:', error.timeoutMs);
+  } else if (error instanceof MCPToolError) {
+    console.error('Tool execution failed:', error.toolName);
+  } else if (error instanceof MCPProtocolError) {
+    console.error('Protocol error:', error.message);
+  }
+}
+```
+
+### State Persistence
+
+Save and restore MCP client state:
+
+```typescript
+// Get current state
+const state = client.getState();
+console.log(state);
+// {
+//   name: 'filesystem',
+//   state: 'connected',
+//   capabilities: {...},
+//   subscribedResources: ['file:///watch'],
+//   lastConnectedAt: 1234567890,
+//   connectionAttempts: 0
+// }
+
+// Save to storage
+await storage.save('mcp-state', state);
+
+// Load and restore
+const savedState = await storage.load('mcp-state');
+const newClient = MCPRegistry.create(config);
+newClient.loadState(savedState);
+await newClient.connect(); // Resumes with saved subscriptions
+```
+
+### Best Practices
+
+1. **Use Configuration Files** - Declare servers in `oneringai.config.json` for easier management
+2. **Handle Reconnection** - Enable `autoReconnect` for production deployments
+3. **Monitor Events** - Listen to connection events for observability
+4. **Use Namespaces** - Set custom `toolNamespace` to organize tools clearly
+5. **Error Handling** - Always wrap MCP operations in try/catch
+6. **Clean Up** - Call `client.disconnect()` when done
+7. **Health Checks** - Use `client.ping()` for monitoring
+8. **Permission Control** - Set appropriate `defaultScope` for security
+
+### Troubleshooting
+
+#### Connection Issues
+
+```typescript
+// Enable detailed error logging
+client.on('error', (error) => {
+  console.error('MCP Error:', error);
+  console.error('Stack:', error.stack);
+});
+
+// Check connection state
+console.log('State:', client.state);
+console.log('Connected:', client.isConnected());
+
+// Manual reconnect
+if (!client.isConnected()) {
+  await client.reconnect();
+}
+```
+
+#### Tool Discovery
+
+```typescript
+// List all discovered tools
+const tools = await client.listTools();
+console.log('Available tools:');
+tools.forEach(tool => {
+  console.log(`  ${tool.name}: ${tool.description}`);
+  console.log('  Input schema:', JSON.stringify(tool.inputSchema, null, 2));
+});
+
+// Check server capabilities
+console.log('Capabilities:', client.capabilities);
+```
+
+#### Debug Mode
+
+```typescript
+// Log all tool calls
+client.on('tool:called', (name, args) => {
+  console.log(`[DEBUG] Tool called: ${name}`);
+  console.log('[DEBUG] Args:', JSON.stringify(args, null, 2));
+});
+
+client.on('tool:result', (name, result) => {
+  console.log(`[DEBUG] Tool result: ${name}`);
+  console.log('[DEBUG] Result:', JSON.stringify(result, null, 2));
+});
+```
+
+### Advanced: Custom Transports
+
+While stdio and HTTP/HTTPS cover most use cases, you can implement custom transports by creating a class that implements the SDK's `Transport` interface:
+
+```typescript
+import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
+
+class CustomTransport implements Transport {
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  onmessage?: (message: JSONRPCMessage) => void;
+
+  async start(): Promise<void> {
+    // Initialize your custom transport
+  }
+
+  async close(): Promise<void> {
+    // Clean up resources
+  }
+
+  async send(message: JSONRPCMessage): Promise<void> {
+    // Send message to server
+  }
 }
 ```
 
