@@ -154,8 +154,23 @@ tests/
 - Resource limit checking
 - Cleanup
 
-#### Tools Tests (12 tests - framework ready)
-**JSON Manipulator**:
+#### Tools Tests (66 tests)
+
+**Developer Tools - Filesystem (33 tests)**:
+- `validatePath`: Path validation, blocked directories, allowed directories
+- `read_file`: Read content, line numbers, offset/limit, file not found
+- `write_file`: Create files, overwrite, parent directory creation
+- `edit_file`: Surgical replacement, uniqueness validation, replace_all
+- `glob`: Pattern matching, subdirectory search, error handling
+- `grep`: Regex search, file type filtering, output modes, context lines
+- `list_directory`: Directory listing, recursive, filter by type
+
+**Developer Tools - Shell (21 tests)**:
+- `isBlockedCommand`: rm -rf /, fork bombs, safe commands
+- `bash`: Command execution, stderr, exit codes, timeout, working directory
+- `bash`: Environment variables, piped commands, chained commands, duration tracking
+
+**JSON Manipulator (12 tests)**:
 - DELETE operation (top-level, nested, arrays)
 - ADD operation (create paths, auto-create intermediate objects)
 - REPLACE operation

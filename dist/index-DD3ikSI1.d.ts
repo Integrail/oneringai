@@ -1,5 +1,5 @@
 import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
-import { I as IProvider } from './IProvider-BP49c93d.cjs';
+import { I as IProvider } from './IProvider-BP49c93d.js';
 import { EventEmitter } from 'events';
 
 /**
@@ -459,7 +459,15 @@ declare class ToolPermissionManager extends EventEmitter {
      * Request approval for a tool call
      *
      * If an onApprovalRequired callback is set, it will be called.
-     * Otherwise, this returns a decision that requires hook-based approval.
+     * Otherwise, this auto-approves for backward compatibility.
+     *
+     * NOTE: If you want to require explicit approval, you MUST either:
+     * 1. Set onApprovalRequired callback in AgentPermissionsConfig
+     * 2. Register an 'approve:tool' hook in the AgenticLoop
+     * 3. Add tools to the blocklist if they should never run
+     *
+     * This auto-approval behavior preserves backward compatibility with
+     * existing code that doesn't use the permission system.
      */
     requestApproval(context: PermissionCheckContext): Promise<ApprovalDecision>;
     /**

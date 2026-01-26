@@ -2,8 +2,8 @@ import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as Vend
 export { l as APIKeyConnectorAuth, B as AspectRatio, k as ConnectorAuth, m as IImageModelDescription, p as IMAGE_MODELS, q as IMAGE_MODEL_REGISTRY, E as ISourceLinks, x as ImageEditOptions, w as ImageGenerateOptions, g as ImageGeneration, h as ImageGenerationCreateOptions, n as ImageModelCapabilities, o as ImageModelPricing, z as ImageResponse, y as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, D as OutputFormat, Q as QualityLevel, j as SimpleGenerateOptions, f as VENDORS, v as calculateImageCost, t as getActiveImageModels, r as getImageModelInfo, s as getImageModelsByVendor, u as getImageModelsWithFeature, i as isVendor } from './ImageModel-B_-3MdrA.js';
 import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
 import { EventEmitter } from 'events';
-import { T as ToolFunction, a as ToolPermissionConfig, S as SerializedApprovalState, A as AgenticLoopEvents, b as ToolPermissionManager, H as HookConfig, c as HistoryMode, d as AgentPermissionsConfig, I as InputItem, e as AgentResponse, f as StreamEvent, E as ExecutionContext, g as ExecutionMetrics, h as AuditEntry, C as CircuitState, i as CircuitBreakerMetrics, j as ITextProvider, k as TokenUsage, l as ToolCall, L as LLMResponse, m as StreamEventType, n as CircuitBreaker, o as TextGenerateOptions, M as ModelCapabilities, p as MessageRole } from './index-CuHIYAT9.js';
-export { x as APPROVAL_STATE_VERSION, aq as AfterToolContext, al as AgenticLoopEventName, r as ApprovalCacheEntry, u as ApprovalDecision, at as ApprovalResult, ar as ApproveToolContext, ap as BeforeToolContext, Y as BuiltInTool, aw as CircuitBreakerConfig, ax as CircuitBreakerEvents, av as CircuitOpenError, Q as CompactionItem, z as Content, y as ContentType, ay as DEFAULT_CIRCUIT_BREAKER_CONFIG, D as DEFAULT_PERMISSION_CONFIG, ab as ErrorEvent, X as FunctionToolDefinition, an as Hook, ak as HookManager, am as HookName, au as IToolExecutor, F as InputImageContent, B as InputTextContent, a9 as IterationCompleteEvent, $ as JSONSchema, K as Message, ao as ModifyingHook, N as OutputItem, O as OutputTextContent, a2 as OutputTextDeltaEvent, a3 as OutputTextDoneEvent, v as PermissionCheckContext, t as PermissionCheckResult, w as PermissionManagerEvent, P as PermissionScope, U as ReasoningItem, aa as ResponseCompleteEvent, a0 as ResponseCreatedEvent, a1 as ResponseInProgressEvent, R as RiskLevel, s as SerializedApprovalEntry, W as Tool, a5 as ToolCallArgumentsDeltaEvent, a6 as ToolCallArgumentsDoneEvent, a4 as ToolCallStartEvent, V as ToolCallState, _ as ToolExecutionContext, a8 as ToolExecutionDoneEvent, a7 as ToolExecutionStartEvent, as as ToolModification, q as ToolPermissionConfig, aj as ToolRegistry, Z as ToolResult, J as ToolResultContent, G as ToolUseContent, ai as isErrorEvent, ad as isOutputTextDelta, ah as isResponseComplete, ac as isStreamEvent, af as isToolCallArgumentsDelta, ag as isToolCallArgumentsDone, ae as isToolCallStart } from './index-CuHIYAT9.js';
+import { T as ToolFunction, a as ToolPermissionConfig, S as SerializedApprovalState, A as AgenticLoopEvents, b as ToolPermissionManager, H as HookConfig, c as HistoryMode, d as AgentPermissionsConfig, I as InputItem, e as AgentResponse, f as StreamEvent, E as ExecutionContext, g as ExecutionMetrics, h as AuditEntry, C as CircuitState, i as CircuitBreakerMetrics, j as ITextProvider, k as TokenUsage, l as ToolCall, L as LLMResponse, m as StreamEventType, n as CircuitBreaker, o as TextGenerateOptions, M as ModelCapabilities, p as MessageRole } from './index-DD3ikSI1.js';
+export { x as APPROVAL_STATE_VERSION, aq as AfterToolContext, al as AgenticLoopEventName, r as ApprovalCacheEntry, u as ApprovalDecision, at as ApprovalResult, ar as ApproveToolContext, ap as BeforeToolContext, Y as BuiltInTool, aw as CircuitBreakerConfig, ax as CircuitBreakerEvents, av as CircuitOpenError, Q as CompactionItem, z as Content, y as ContentType, ay as DEFAULT_CIRCUIT_BREAKER_CONFIG, D as DEFAULT_PERMISSION_CONFIG, ab as ErrorEvent, X as FunctionToolDefinition, an as Hook, ak as HookManager, am as HookName, au as IToolExecutor, F as InputImageContent, B as InputTextContent, a9 as IterationCompleteEvent, $ as JSONSchema, K as Message, ao as ModifyingHook, N as OutputItem, O as OutputTextContent, a2 as OutputTextDeltaEvent, a3 as OutputTextDoneEvent, v as PermissionCheckContext, t as PermissionCheckResult, w as PermissionManagerEvent, P as PermissionScope, U as ReasoningItem, aa as ResponseCompleteEvent, a0 as ResponseCreatedEvent, a1 as ResponseInProgressEvent, R as RiskLevel, s as SerializedApprovalEntry, W as Tool, a5 as ToolCallArgumentsDeltaEvent, a6 as ToolCallArgumentsDoneEvent, a4 as ToolCallStartEvent, V as ToolCallState, _ as ToolExecutionContext, a8 as ToolExecutionDoneEvent, a7 as ToolExecutionStartEvent, as as ToolModification, q as ToolPermissionConfig, aj as ToolRegistry, Z as ToolResult, J as ToolResultContent, G as ToolUseContent, ai as isErrorEvent, ad as isOutputTextDelta, ah as isResponseComplete, ac as isStreamEvent, af as isToolCallArgumentsDelta, ag as isToolCallArgumentsDone, ae as isToolCallStart } from './index-DD3ikSI1.js';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.js';
 
 /**
@@ -5242,6 +5242,500 @@ declare function readClipboardImage(): Promise<ClipboardImageResult>;
 declare function hasClipboardImage(): Promise<boolean>;
 
 /**
+ * Shell Tools - Shared Types
+ *
+ * Common types and configuration for shell command execution.
+ */
+/**
+ * Configuration for shell tools
+ */
+interface ShellToolConfig {
+    /**
+     * Working directory for command execution.
+     * Defaults to process.cwd()
+     */
+    workingDirectory?: string;
+    /**
+     * Default timeout for commands in milliseconds.
+     * Default: 120000 (2 minutes)
+     */
+    defaultTimeout?: number;
+    /**
+     * Maximum timeout allowed in milliseconds.
+     * Default: 600000 (10 minutes)
+     */
+    maxTimeout?: number;
+    /**
+     * Shell to use for command execution.
+     * Default: '/bin/bash' on Unix, 'cmd.exe' on Windows
+     */
+    shell?: string;
+    /**
+     * Environment variables to add to command execution.
+     */
+    env?: Record<string, string>;
+    /**
+     * Commands that are blocked from execution.
+     * Default: dangerous commands like rm -rf /
+     */
+    blockedCommands?: string[];
+    /**
+     * Patterns that if matched will block the command.
+     * Default: patterns that could cause data loss
+     */
+    blockedPatterns?: RegExp[];
+    /**
+     * Maximum output size in characters before truncation.
+     * Default: 100000 (100KB)
+     */
+    maxOutputSize?: number;
+    /**
+     * Whether to allow running commands in background.
+     * Default: true
+     */
+    allowBackground?: boolean;
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_SHELL_CONFIG: Required<ShellToolConfig>;
+/**
+ * Result of a bash command execution
+ */
+interface BashResult {
+    success: boolean;
+    stdout?: string;
+    stderr?: string;
+    exitCode?: number;
+    signal?: string;
+    duration?: number;
+    truncated?: boolean;
+    error?: string;
+    backgroundId?: string;
+}
+/**
+ * Check if a command should be blocked
+ */
+declare function isBlockedCommand(command: string, config?: ShellToolConfig): {
+    blocked: boolean;
+    reason?: string;
+};
+
+/**
+ * Bash Tool
+ *
+ * Executes shell commands with timeout and output handling.
+ * Provides safe command execution with configurable restrictions.
+ *
+ * Features:
+ * - Configurable timeouts
+ * - Output truncation for large outputs
+ * - Background execution support
+ * - Blocked command patterns for safety
+ * - Working directory persistence
+ */
+
+/**
+ * Arguments for the bash tool
+ */
+interface BashArgs {
+    /** The command to execute */
+    command: string;
+    /** Optional timeout in milliseconds (up to 600000ms / 10 minutes) */
+    timeout?: number;
+    /** Description of what this command does (for clarity) */
+    description?: string;
+    /** Run the command in the background */
+    run_in_background?: boolean;
+}
+/**
+ * Create a Bash tool with the given configuration
+ */
+declare function createBashTool(config?: ShellToolConfig): ToolFunction<BashArgs, BashResult>;
+/**
+ * Get output from a background process
+ */
+declare function getBackgroundOutput(bgId: string): {
+    found: boolean;
+    output?: string;
+    running?: boolean;
+};
+/**
+ * Kill a background process
+ */
+declare function killBackgroundProcess(bgId: string): boolean;
+/**
+ * Default Bash tool instance
+ */
+declare const bash: ToolFunction<BashArgs, BashResult>;
+
+/**
+ * Filesystem Tools - Shared Types
+ *
+ * Common types and configuration for filesystem operations.
+ */
+/**
+ * Configuration for filesystem tools
+ */
+interface FilesystemToolConfig {
+    /**
+     * Base working directory for all operations.
+     * All paths will be resolved relative to this directory.
+     * Defaults to process.cwd()
+     */
+    workingDirectory?: string;
+    /**
+     * Allowed directories for file operations.
+     * If specified, operations outside these directories will be blocked.
+     * Paths can be absolute or relative to workingDirectory.
+     */
+    allowedDirectories?: string[];
+    /**
+     * Blocked directories (e.g., node_modules, .git).
+     * Operations in these directories will be blocked.
+     */
+    blockedDirectories?: string[];
+    /**
+     * Maximum file size to read (in bytes).
+     * Default: 10MB
+     */
+    maxFileSize?: number;
+    /**
+     * Maximum number of results for glob/grep operations.
+     * Default: 1000
+     */
+    maxResults?: number;
+    /**
+     * Whether to follow symlinks.
+     * Default: false
+     */
+    followSymlinks?: boolean;
+    /**
+     * File extensions to exclude from search.
+     * Default: common binary extensions
+     */
+    excludeExtensions?: string[];
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_FILESYSTEM_CONFIG: Required<FilesystemToolConfig>;
+/**
+ * Result of a file read operation
+ */
+interface ReadFileResult {
+    success: boolean;
+    content?: string;
+    lines?: number;
+    truncated?: boolean;
+    encoding?: string;
+    size?: number;
+    error?: string;
+    path?: string;
+}
+/**
+ * Result of a file write operation
+ */
+interface WriteFileResult {
+    success: boolean;
+    path?: string;
+    bytesWritten?: number;
+    created?: boolean;
+    error?: string;
+}
+/**
+ * Result of a file edit operation
+ */
+interface EditFileResult {
+    success: boolean;
+    path?: string;
+    replacements?: number;
+    error?: string;
+    diff?: string;
+}
+/**
+ * Result of a glob operation
+ */
+interface GlobResult {
+    success: boolean;
+    files?: string[];
+    count?: number;
+    truncated?: boolean;
+    error?: string;
+}
+/**
+ * A single grep match
+ */
+interface GrepMatch {
+    file: string;
+    line: number;
+    column?: number;
+    content: string;
+    context?: {
+        before: string[];
+        after: string[];
+    };
+}
+/**
+ * Result of a grep operation
+ */
+interface GrepResult {
+    success: boolean;
+    matches?: GrepMatch[];
+    filesSearched?: number;
+    filesMatched?: number;
+    totalMatches?: number;
+    truncated?: boolean;
+    error?: string;
+}
+/**
+ * Validate and resolve a path within allowed boundaries
+ */
+declare function validatePath(inputPath: string, config?: FilesystemToolConfig): {
+    valid: boolean;
+    resolvedPath: string;
+    error?: string;
+};
+/**
+ * Check if a file extension should be excluded
+ */
+declare function isExcludedExtension(filePath: string, excludeExtensions?: string[]): boolean;
+
+/**
+ * List Directory Tool
+ *
+ * Lists contents of a directory on the local filesystem.
+ * Shows files and directories with metadata.
+ *
+ * Features:
+ * - Lists files and directories
+ * - Shows file sizes and modification times
+ * - Supports recursive listing
+ * - Filters by type (files only, directories only)
+ */
+
+/**
+ * Arguments for the list directory tool
+ */
+interface ListDirectoryArgs {
+    /** Path to the directory to list */
+    path: string;
+    /** Whether to list recursively */
+    recursive?: boolean;
+    /** Filter: "files" for files only, "directories" for directories only */
+    filter?: 'files' | 'directories';
+    /** Maximum depth for recursive listing (default: 3) */
+    max_depth?: number;
+}
+/**
+ * A single directory entry
+ */
+interface DirectoryEntry {
+    name: string;
+    path: string;
+    type: 'file' | 'directory';
+    size?: number;
+    modified?: string;
+}
+/**
+ * Result of a list directory operation
+ */
+interface ListDirectoryResult {
+    success: boolean;
+    entries?: DirectoryEntry[];
+    count?: number;
+    truncated?: boolean;
+    error?: string;
+}
+/**
+ * Create a List Directory tool with the given configuration
+ */
+declare function createListDirectoryTool(config?: FilesystemToolConfig): ToolFunction<ListDirectoryArgs, ListDirectoryResult>;
+/**
+ * Default List Directory tool instance
+ */
+declare const listDirectory: ToolFunction<ListDirectoryArgs, ListDirectoryResult>;
+
+/**
+ * Grep Tool
+ *
+ * Powerful search tool for finding content within files.
+ * Supports regex patterns, file filtering, and context lines.
+ *
+ * Features:
+ * - Full regex syntax support
+ * - File type filtering
+ * - Context lines (before/after match)
+ * - Multiple output modes
+ * - Case-insensitive search option
+ */
+
+/**
+ * Arguments for the grep tool
+ */
+interface GrepArgs {
+    /** The regex pattern to search for in file contents */
+    pattern: string;
+    /** File or directory to search in. Defaults to current working directory. */
+    path?: string;
+    /** Glob pattern to filter files (e.g., "*.ts", "*.{ts,tsx}") */
+    glob?: string;
+    /** File type to search (e.g., "ts", "js", "py"). More efficient than glob for standard types. */
+    type?: string;
+    /** Output mode: "content" shows lines, "files_with_matches" shows only file paths, "count" shows match counts */
+    output_mode?: 'content' | 'files_with_matches' | 'count';
+    /** Case insensitive search */
+    case_insensitive?: boolean;
+    /** Number of context lines before match */
+    context_before?: number;
+    /** Number of context lines after match */
+    context_after?: number;
+    /** Limit output to first N results */
+    limit?: number;
+}
+/**
+ * Create a Grep tool with the given configuration
+ */
+declare function createGrepTool(config?: FilesystemToolConfig): ToolFunction<GrepArgs, GrepResult>;
+/**
+ * Default Grep tool instance
+ */
+declare const grep: ToolFunction<GrepArgs, GrepResult>;
+
+/**
+ * Glob Tool
+ *
+ * Fast file pattern matching for finding files by name patterns.
+ * Supports standard glob patterns like **\/*.ts, src/**\/*.tsx, etc.
+ *
+ * Features:
+ * - Standard glob pattern syntax
+ * - Recursive directory traversal
+ * - Results sorted by modification time
+ * - Configurable result limits
+ * - Excludes common non-code directories by default
+ */
+
+/**
+ * Arguments for the glob tool
+ */
+interface GlobArgs {
+    /** The glob pattern to match files against (e.g., "**\/*.ts", "src/**\/*.tsx") */
+    pattern: string;
+    /** The directory to search in. Defaults to current working directory. */
+    path?: string;
+}
+/**
+ * Create a Glob tool with the given configuration
+ */
+declare function createGlobTool(config?: FilesystemToolConfig): ToolFunction<GlobArgs, GlobResult>;
+/**
+ * Default Glob tool instance
+ */
+declare const glob: ToolFunction<GlobArgs, GlobResult>;
+
+/**
+ * Edit File Tool
+ *
+ * Performs surgical edits to files using exact string replacement.
+ * This is the preferred way to modify existing files.
+ *
+ * Features:
+ * - Exact string matching for precise edits
+ * - Preserves file formatting and indentation
+ * - Supports replace_all for bulk changes
+ * - Validates uniqueness of old_string
+ * - Safe: only modifies what's specified
+ */
+
+/**
+ * Arguments for the edit file tool
+ */
+interface EditFileArgs {
+    /** Absolute path to the file to edit */
+    file_path: string;
+    /** The exact text to find and replace */
+    old_string: string;
+    /** The text to replace it with (must be different from old_string) */
+    new_string: string;
+    /** Replace all occurrences (default: false, which requires old_string to be unique) */
+    replace_all?: boolean;
+}
+/**
+ * Create an Edit File tool with the given configuration
+ */
+declare function createEditFileTool(config?: FilesystemToolConfig): ToolFunction<EditFileArgs, EditFileResult>;
+/**
+ * Default Edit File tool instance
+ */
+declare const editFile: ToolFunction<EditFileArgs, EditFileResult>;
+
+/**
+ * Write File Tool
+ *
+ * Writes content to files on the local filesystem.
+ * Can create new files or overwrite existing ones.
+ *
+ * Features:
+ * - Create new files with content
+ * - Overwrite existing files (with safety checks)
+ * - Automatic directory creation
+ * - Path validation for security
+ */
+
+/**
+ * Arguments for the write file tool
+ */
+interface WriteFileArgs {
+    /** Absolute path to the file to write */
+    file_path: string;
+    /** Content to write to the file */
+    content: string;
+}
+/**
+ * Create a Write File tool with the given configuration
+ */
+declare function createWriteFileTool(config?: FilesystemToolConfig): ToolFunction<WriteFileArgs, WriteFileResult>;
+/**
+ * Default Write File tool instance
+ */
+declare const writeFile: ToolFunction<WriteFileArgs, WriteFileResult>;
+
+/**
+ * Read File Tool
+ *
+ * Reads content from files on the local filesystem.
+ * Supports text files with optional line range selection.
+ *
+ * Features:
+ * - Read entire files or specific line ranges
+ * - Automatic encoding detection
+ * - Line number prefixing for easy reference
+ * - Size limits to prevent memory issues
+ * - Path validation for security
+ */
+
+/**
+ * Arguments for the read file tool
+ */
+interface ReadFileArgs {
+    /** Absolute path to the file to read */
+    file_path: string;
+    /** Line number to start reading from (1-indexed). Only provide if the file is too large. */
+    offset?: number;
+    /** Number of lines to read. Only provide if the file is too large. */
+    limit?: number;
+}
+/**
+ * Create a Read File tool with the given configuration
+ */
+declare function createReadFileTool(config?: FilesystemToolConfig): ToolFunction<ReadFileArgs, ReadFileResult>;
+/**
+ * Default Read File tool instance
+ */
+declare const readFile: ToolFunction<ReadFileArgs, ReadFileResult>;
+
+/**
  * JSON Manipulation Tool
  *
  * Allows AI agents to manipulate JSON objects using dot notation paths.
@@ -5372,29 +5866,61 @@ declare function createExecuteJavaScriptTool(): ToolFunction<ExecuteJSArgs, Exec
 declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
 
 /**
- * Pre-built tools for agents
+ * A bundle of all developer tools commonly used for coding tasks.
+ * Includes: readFile, writeFile, editFile, glob, grep, listDirectory, bash
  *
- * Import and use with your agents:
- *
+ * @example
  * ```typescript
  * import { tools } from '@oneringai/agents';
  *
- * const agent = client.agents.create({
- *   provider: 'openai',
+ * const agent = Agent.create({
+ *   connector: 'openai',
  *   model: 'gpt-4',
- *   tools: [tools.jsonManipulator, tools.webSearch, tools.webFetch]
+ *   tools: tools.developerTools,
  * });
  * ```
  */
+declare const developerTools: (ToolFunction<ReadFileArgs, ReadFileResult> | ToolFunction<WriteFileArgs, WriteFileResult> | ToolFunction<EditFileArgs, EditFileResult> | ToolFunction<GlobArgs, GlobResult> | ToolFunction<GrepArgs, GrepResult> | ToolFunction<ListDirectoryArgs, ListDirectoryResult> | ToolFunction<BashArgs, BashResult>)[];
 
+type index_BashResult = BashResult;
+declare const index_DEFAULT_FILESYSTEM_CONFIG: typeof DEFAULT_FILESYSTEM_CONFIG;
+declare const index_DEFAULT_SHELL_CONFIG: typeof DEFAULT_SHELL_CONFIG;
+type index_EditFileResult = EditFileResult;
+type index_FilesystemToolConfig = FilesystemToolConfig;
+type index_GlobResult = GlobResult;
+type index_GrepMatch = GrepMatch;
+type index_GrepResult = GrepResult;
+type index_ReadFileResult = ReadFileResult;
+type index_ShellToolConfig = ShellToolConfig;
+type index_WriteFileResult = WriteFileResult;
+declare const index_bash: typeof bash;
+declare const index_createBashTool: typeof createBashTool;
+declare const index_createEditFileTool: typeof createEditFileTool;
 declare const index_createExecuteJavaScriptTool: typeof createExecuteJavaScriptTool;
+declare const index_createGlobTool: typeof createGlobTool;
+declare const index_createGrepTool: typeof createGrepTool;
+declare const index_createListDirectoryTool: typeof createListDirectoryTool;
+declare const index_createReadFileTool: typeof createReadFileTool;
+declare const index_createWriteFileTool: typeof createWriteFileTool;
+declare const index_developerTools: typeof developerTools;
+declare const index_editFile: typeof editFile;
 declare const index_executeJavaScript: typeof executeJavaScript;
+declare const index_getBackgroundOutput: typeof getBackgroundOutput;
+declare const index_glob: typeof glob;
+declare const index_grep: typeof grep;
+declare const index_isBlockedCommand: typeof isBlockedCommand;
+declare const index_isExcludedExtension: typeof isExcludedExtension;
 declare const index_jsonManipulator: typeof jsonManipulator;
+declare const index_killBackgroundProcess: typeof killBackgroundProcess;
+declare const index_listDirectory: typeof listDirectory;
+declare const index_readFile: typeof readFile;
+declare const index_validatePath: typeof validatePath;
 declare const index_webFetch: typeof webFetch;
 declare const index_webFetchJS: typeof webFetchJS;
 declare const index_webSearch: typeof webSearch;
+declare const index_writeFile: typeof writeFile;
 declare namespace index {
-  export { index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_executeJavaScript as executeJavaScript, index_jsonManipulator as jsonManipulator, index_webFetch as webFetch, index_webFetchJS as webFetchJS, index_webSearch as webSearch };
+  export { type index_BashResult as BashResult, index_DEFAULT_FILESYSTEM_CONFIG as DEFAULT_FILESYSTEM_CONFIG, index_DEFAULT_SHELL_CONFIG as DEFAULT_SHELL_CONFIG, type index_EditFileResult as EditFileResult, type index_FilesystemToolConfig as FilesystemToolConfig, type index_GlobResult as GlobResult, type index_GrepMatch as GrepMatch, type index_GrepResult as GrepResult, type index_ReadFileResult as ReadFileResult, type index_ShellToolConfig as ShellToolConfig, type index_WriteFileResult as WriteFileResult, index_bash as bash, index_createBashTool as createBashTool, index_createEditFileTool as createEditFileTool, index_createExecuteJavaScriptTool as createExecuteJavaScriptTool, index_createGlobTool as createGlobTool, index_createGrepTool as createGrepTool, index_createListDirectoryTool as createListDirectoryTool, index_createReadFileTool as createReadFileTool, index_createWriteFileTool as createWriteFileTool, index_developerTools as developerTools, index_editFile as editFile, index_executeJavaScript as executeJavaScript, index_getBackgroundOutput as getBackgroundOutput, index_glob as glob, index_grep as grep, index_isBlockedCommand as isBlockedCommand, index_isExcludedExtension as isExcludedExtension, index_jsonManipulator as jsonManipulator, index_killBackgroundProcess as killBackgroundProcess, index_listDirectory as listDirectory, index_readFile as readFile, index_validatePath as validatePath, index_webFetch as webFetch, index_webFetchJS as webFetchJS, index_webSearch as webSearch, index_writeFile as writeFile };
 }
 
 /**
@@ -5938,4 +6464,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, createVideoProvider, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, hasClipboardImage, isMetaTool, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };
+export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, type BashResult, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_SHELL_CONFIG, type EditFileResult, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, type GlobResult, type GrepMatch, type GrepResult, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, type ReadFileResult, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createReadFileTool, createStrategy, createTextMessage, createVideoProvider, createWriteFileTool, developerTools, editFile, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getBackgroundOutput, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isMetaTool, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, retryWithBackoff, setMetricsCollector, index as tools, validatePath, writeFile };

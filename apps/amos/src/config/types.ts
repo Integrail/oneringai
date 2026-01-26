@@ -61,6 +61,22 @@ export interface AmosConfig {
     toolOverrides: Record<string, { scope?: PermissionScope; riskLevel?: RiskLevel }>;
     promptForApproval: boolean; // Interactive approval prompts
   };
+
+  // Prompt template settings
+  prompts: {
+    promptsDir: string;
+    activePrompt: string | null;
+  };
+
+  // Developer tools settings
+  developerTools: {
+    enabled: boolean;
+    workingDirectory: string;
+    allowedDirectories: string[];
+    blockedDirectories: string[];
+    blockedCommands: string[];
+    commandTimeout: number;
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,6 +149,9 @@ export interface IAmosApp {
   // Connectors
   getConnectorManager(): IConnectorManager;
 
+  // Prompts
+  getPromptManager(): IPromptManager;
+
   // Tools
   getToolLoader(): IToolLoader;
   getActiveTools(): ToolFunction[];
@@ -147,6 +166,7 @@ export interface IAmosApp {
   printError(message: string): void;
   printSuccess(message: string): void;
   printInfo(message: string): void;
+  printDim(message: string): void;
   prompt(question: string): Promise<string>;
   confirm(question: string): Promise<boolean>;
   select<T extends string>(question: string, options: T[]): Promise<T>;
@@ -183,6 +203,34 @@ export interface IToolLoader {
   disableTool(name: string): void;
   isEnabled(name: string): boolean;
   getEnabledTools(): ToolFunction[];
+}
+
+export interface IPromptManager {
+  // Loading
+  initialize(): Promise<void>;
+  reload(): Promise<void>;
+
+  // CRUD
+  list(): PromptTemplate[];
+  get(name: string): PromptTemplate | null;
+  getContent(name: string): string | null;
+  create(name: string, content: string, description?: string): Promise<void>;
+  update(name: string, content: string, description?: string): Promise<void>;
+  delete(name: string): Promise<void>;
+
+  // Selection
+  setActive(name: string | null): void;
+  getActive(): PromptTemplate | null;
+  getActiveContent(): string | null;
+}
+
+export interface PromptTemplate {
+  name: string;
+  description: string;
+  content: string;
+  filePath: string;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface IAgentRunner {
@@ -362,5 +410,19 @@ export const DEFAULT_CONFIG: AmosConfig = {
     blocklist: [],
     toolOverrides: {},
     promptForApproval: true,
+  },
+
+  prompts: {
+    promptsDir: './data/prompts',
+    activePrompt: null,
+  },
+
+  developerTools: {
+    enabled: true,
+    workingDirectory: process.cwd(),
+    allowedDirectories: [],
+    blockedDirectories: ['node_modules', '.git', 'dist', 'build'],
+    blockedCommands: ['rm -rf /', 'mkfs', 'dd if=', ':(){:|:&};:'],
+    commandTimeout: 30000,
   },
 };

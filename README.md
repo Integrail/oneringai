@@ -20,6 +20,7 @@
 - 🤖 **Task Agents** - Autonomous agents with working memory, context management, and state persistence
 - 🎯 **Context Management** - Smart strategies (proactive, aggressive, lazy, rolling-window, adaptive)
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
+- 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
 - 👁️ **Vision Support** - Analyze images with AI across all providers
 - 📋 **Clipboard Integration** - Paste screenshots directly (like Claude Code!)
 - 🔐 **OAuth 2.0** - Full OAuth support for external APIs with encrypted token storage
@@ -461,6 +462,48 @@ const oauth = new OAuthManager({
 
 const authUrl = await oauth.startAuthFlow('user123');
 ```
+
+### 10. Developer Tools (NEW)
+
+File system and shell tools for building coding assistants:
+
+```typescript
+import { developerTools } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: developerTools, // Includes all 7 tools
+});
+
+// Agent can now:
+// - Read files (read_file)
+// - Write files (write_file)
+// - Edit files with surgical precision (edit_file)
+// - Search files by pattern (glob)
+// - Search content with regex (grep)
+// - List directories (list_directory)
+// - Execute shell commands (bash)
+
+await agent.run('Read package.json and tell me the dependencies');
+await agent.run('Find all TODO comments in the src directory');
+await agent.run('Run npm test and report any failures');
+```
+
+**Available Tools:**
+- **read_file** - Read file contents with line numbers
+- **write_file** - Create/overwrite files
+- **edit_file** - Surgical find/replace edits
+- **glob** - Find files by pattern (`**/*.ts`)
+- **grep** - Search content with regex
+- **list_directory** - List directory contents
+- **bash** - Execute shell commands with safety guards
+
+**Safety Features:**
+- Blocked dangerous commands (`rm -rf /`, fork bombs)
+- Configurable blocked directories (`node_modules`, `.git`)
+- Timeout protection (default 2 min)
+- Output truncation for large outputs
 
 ## Documentation
 

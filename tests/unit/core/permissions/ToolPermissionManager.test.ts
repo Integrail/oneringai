@@ -488,7 +488,9 @@ describe('ToolPermissionManager', () => {
       expect(decision.reason).toBe('User rejected');
     });
 
-    it('should return hook-needed decision when no callback', async () => {
+    it('should auto-approve when no callback (backward compatibility)', async () => {
+      // When no approval callback is configured, tools are auto-approved
+      // for backward compatibility with existing code that doesn't use permissions
       const context: PermissionCheckContext = {
         toolCall: createToolCall('some_tool'),
         parsedArgs: {},
@@ -500,8 +502,8 @@ describe('ToolPermissionManager', () => {
 
       const decision = await permissionManager.requestApproval(context);
 
-      expect(decision.approved).toBe(false);
-      expect(decision.reason).toContain('use hooks');
+      expect(decision.approved).toBe(true);
+      expect(decision.reason).toContain('Auto-approved');
     });
   });
 

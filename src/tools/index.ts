@@ -6,22 +6,135 @@
  * ```typescript
  * import { tools } from '@oneringai/agents';
  *
- * const agent = client.agents.create({
- *   provider: 'openai',
+ * const agent = Agent.create({
+ *   connector: 'openai',
  *   model: 'gpt-4',
- *   tools: [tools.jsonManipulator, tools.webSearch, tools.webFetch]
+ *   tools: [
+ *     // Filesystem tools
+ *     tools.readFile,
+ *     tools.writeFile,
+ *     tools.editFile,
+ *     tools.glob,
+ *     tools.grep,
+ *     tools.listDirectory,
+ *     // Shell tools
+ *     tools.bash,
+ *     // Web tools
+ *     tools.webFetch,
+ *     tools.webSearch,
+ *   ]
  * });
  * ```
  */
 
-// JSON tools
+// ============================================================================
+// Filesystem Tools
+// ============================================================================
+
+export {
+  // Tools
+  readFile,
+  writeFile,
+  editFile,
+  glob,
+  grep,
+  listDirectory,
+  // Factory functions
+  createReadFileTool,
+  createWriteFileTool,
+  createEditFileTool,
+  createGlobTool,
+  createGrepTool,
+  createListDirectoryTool,
+  // Types and utilities
+  DEFAULT_FILESYSTEM_CONFIG,
+  validatePath,
+  isExcludedExtension,
+} from './filesystem/index.js';
+
+export type {
+  FilesystemToolConfig,
+  ReadFileResult,
+  WriteFileResult,
+  EditFileResult,
+  GlobResult,
+  GrepResult,
+  GrepMatch,
+} from './filesystem/index.js';
+
+// ============================================================================
+// Shell Tools
+// ============================================================================
+
+export {
+  // Tools
+  bash,
+  // Factory functions
+  createBashTool,
+  // Utilities
+  getBackgroundOutput,
+  killBackgroundProcess,
+  // Config
+  DEFAULT_SHELL_CONFIG,
+  isBlockedCommand,
+} from './shell/index.js';
+
+export type {
+  ShellToolConfig,
+  BashResult,
+} from './shell/index.js';
+
+// ============================================================================
+// JSON Tools
+// ============================================================================
+
 export { jsonManipulator } from './json/jsonManipulator.js';
 
-// Web tools
+// ============================================================================
+// Web Tools
+// ============================================================================
+
 export { webFetch, webFetchJS, webSearch } from './web/index.js';
 
-// Code execution tools
+// ============================================================================
+// Code Execution Tools
+// ============================================================================
+
 export { executeJavaScript, createExecuteJavaScriptTool } from './code/index.js';
 
-// Future tool exports
-// export { fileReader } from './file/fileReader.js';
+// ============================================================================
+// Convenience: All Developer Tools Bundle
+// ============================================================================
+
+import { readFile } from './filesystem/index.js';
+import { writeFile } from './filesystem/index.js';
+import { editFile } from './filesystem/index.js';
+import { glob } from './filesystem/index.js';
+import { grep } from './filesystem/index.js';
+import { listDirectory } from './filesystem/index.js';
+import { bash } from './shell/index.js';
+
+/**
+ * A bundle of all developer tools commonly used for coding tasks.
+ * Includes: readFile, writeFile, editFile, glob, grep, listDirectory, bash
+ *
+ * @example
+ * ```typescript
+ * import { tools } from '@oneringai/agents';
+ *
+ * const agent = Agent.create({
+ *   connector: 'openai',
+ *   model: 'gpt-4',
+ *   tools: tools.developerTools,
+ * });
+ * ```
+ */
+export const developerTools = [
+  readFile,
+  writeFile,
+  editFile,
+  glob,
+  grep,
+  listDirectory,
+  bash,
+];

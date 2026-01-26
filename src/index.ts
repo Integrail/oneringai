@@ -497,6 +497,51 @@ export type { ClipboardImageResult } from './utils/clipboardImage.js';
 export * as tools from './tools/index.js';
 export { createExecuteJavaScriptTool } from './tools/code/executeJavaScript.js';
 
+// Filesystem tools (factory functions and types)
+export {
+  readFile,
+  writeFile,
+  editFile,
+  glob,
+  grep,
+  listDirectory,
+  createReadFileTool,
+  createWriteFileTool,
+  createEditFileTool,
+  createGlobTool,
+  createGrepTool,
+  createListDirectoryTool,
+  DEFAULT_FILESYSTEM_CONFIG,
+  validatePath,
+  isExcludedExtension,
+  developerTools,
+} from './tools/index.js';
+
+export type {
+  FilesystemToolConfig,
+  ReadFileResult,
+  WriteFileResult,
+  EditFileResult,
+  GlobResult,
+  GrepResult,
+  GrepMatch,
+} from './tools/index.js';
+
+// Shell tools (factory functions and types)
+export {
+  bash,
+  createBashTool,
+  getBackgroundOutput,
+  killBackgroundProcess,
+  DEFAULT_SHELL_CONFIG,
+  isBlockedCommand,
+} from './tools/index.js';
+
+export type {
+  ShellToolConfig,
+  BashResult,
+} from './tools/index.js';
+
 // ============ Built-in Agents ============
 export { ProviderConfigAgent } from './agents/index.js';
 export type { ConnectorConfigResult } from './agents/index.js';

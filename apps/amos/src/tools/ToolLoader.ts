@@ -3,6 +3,7 @@
  *
  * Loads built-in tools and custom tools from the filesystem.
  * Manages enabled/disabled state.
+ * Includes developer tools (filesystem + shell) for coding agent capabilities.
  */
 
 import { readdir } from 'node:fs/promises';
@@ -10,15 +11,34 @@ import { existsSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ToolFunction } from '@oneringai/agents';
-import type { IToolLoader } from '../config/types.js';
+import {
+  createReadFileTool,
+  createWriteFileTool,
+  createEditFileTool,
+  createGlobTool,
+  createGrepTool,
+  createListDirectoryTool,
+  createBashTool,
+  type FilesystemToolConfig,
+  type ShellToolConfig,
+} from '@oneringai/agents';
+import type { IToolLoader, AmosConfig } from '../config/types.js';
 
 export class ToolLoader implements IToolLoader {
   private tools: Map<string, ToolFunction> = new Map();
   private enabledTools: Set<string> = new Set();
   private customToolsDir: string;
+  private config: AmosConfig | null = null;
 
   constructor(customToolsDir: string = './data/tools') {
     this.customToolsDir = customToolsDir;
+  }
+
+  /**
+   * Set configuration (allows updating config after construction)
+   */
+  setConfig(config: AmosConfig): void {
+    this.config = config;
   }
 
   /**
@@ -181,6 +201,41 @@ export class ToolLoader implements IToolLoader {
         return { echo: args.message };
       },
     });
+
+    // Developer tools (filesystem + shell) - only if enabled
+    if (this.config?.developerTools?.enabled !== false) {
+      const devToolsConfig = this.config?.developerTools;
+      const workingDir = devToolsConfig?.workingDirectory || process.cwd();
+
+      // Filesystem tool configuration
+      const fsConfig: FilesystemToolConfig = {
+        workingDirectory: workingDir,
+        allowedDirectories: devToolsConfig?.allowedDirectories || [],
+        blockedDirectories: devToolsConfig?.blockedDirectories || ['node_modules', '.git', 'dist', 'build'],
+        maxFileSize: 10 * 1024 * 1024, // 10MB
+        maxResults: 100,
+      };
+
+      // Shell tool configuration
+      const shellConfig: ShellToolConfig = {
+        workingDirectory: workingDir,
+        defaultTimeout: devToolsConfig?.commandTimeout || 30000,
+        blockedCommands: devToolsConfig?.blockedCommands || ['rm -rf /', 'mkfs', 'dd if=', ':(){:|:&};:'],
+        allowBackground: true,
+        maxOutputSize: 1024 * 1024, // 1MB
+      };
+
+      // Add filesystem tools
+      tools.push(createReadFileTool(fsConfig));
+      tools.push(createWriteFileTool(fsConfig));
+      tools.push(createEditFileTool(fsConfig));
+      tools.push(createGlobTool(fsConfig));
+      tools.push(createGrepTool(fsConfig));
+      tools.push(createListDirectoryTool(fsConfig));
+
+      // Add shell tool
+      tools.push(createBashTool(shellConfig));
+    }
 
     return tools;
   }

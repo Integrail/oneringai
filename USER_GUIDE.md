@@ -2157,6 +2157,203 @@ const response = await agent.run('Calculate the sum of numbers from 1 to 100');
 // 3. Return result: 5050
 ```
 
+### Developer Tools (Filesystem & Shell)
+
+A comprehensive set of tools for file system operations and shell command execution, inspired by Claude Code. Perfect for building coding assistants, DevOps agents, or any agent that needs to interact with the local filesystem.
+
+#### Quick Start
+
+```typescript
+import { developerTools } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: developerTools, // All 7 tools included
+});
+
+// Agent can now read, write, edit files, search, and run commands
+await agent.run('Read the package.json and tell me the version');
+```
+
+#### Individual Tools
+
+You can also import and configure tools individually:
+
+```typescript
+import {
+  createReadFileTool,
+  createWriteFileTool,
+  createEditFileTool,
+  createGlobTool,
+  createGrepTool,
+  createListDirectoryTool,
+  createBashTool,
+} from '@oneringai/agents';
+
+// Create tools with custom configuration
+const readFile = createReadFileTool({
+  workingDirectory: '/path/to/project',
+  maxFileSize: 5 * 1024 * 1024, // 5MB
+});
+
+const bash = createBashTool({
+  workingDirectory: '/path/to/project',
+  defaultTimeout: 60000, // 1 minute
+  allowBackground: true,
+});
+```
+
+#### Filesystem Tools
+
+##### read_file
+
+Read file contents with line numbers.
+
+```typescript
+read_file({
+  file_path: '/path/to/file.ts',
+  offset: 50,    // Start at line 50 (optional)
+  limit: 100,    // Read 100 lines (optional)
+});
+// Returns: { success: true, content: "1\tconst x = 1;...", lines: 100 }
+```
+
+##### write_file
+
+Create or overwrite files. Automatically creates parent directories.
+
+```typescript
+write_file({
+  file_path: '/path/to/new/file.ts',
+  content: 'export const hello = "world";',
+});
+// Returns: { success: true, created: true, bytesWritten: 29 }
+```
+
+##### edit_file
+
+Surgical find-and-replace edits. Ensures uniqueness to prevent unintended changes.
+
+```typescript
+edit_file({
+  file_path: '/path/to/file.ts',
+  old_string: 'const x = 1;',
+  new_string: 'const x = 42;',
+  replace_all: false, // Fails if old_string is not unique (default)
+});
+// Returns: { success: true, replacements: 1 }
+```
+
+##### glob
+
+Find files by pattern.
+
+```typescript
+glob({
+  pattern: '**/*.ts',
+  path: '/path/to/project', // Optional, defaults to cwd
+});
+// Returns: { success: true, files: ['src/index.ts', 'src/utils.ts', ...], count: 15 }
+```
+
+##### grep
+
+Search file contents with regex.
+
+```typescript
+grep({
+  pattern: 'function\\s+\\w+',
+  path: '/path/to/project',
+  type: 'ts',                      // Filter by file type
+  output_mode: 'content',          // 'content', 'files_with_matches', 'count'
+  case_insensitive: true,
+  context_before: 2,               // Lines before match
+  context_after: 2,                // Lines after match
+});
+// Returns: { success: true, matches: [...], filesMatched: 5, totalMatches: 23 }
+```
+
+##### list_directory
+
+List directory contents with metadata.
+
+```typescript
+list_directory({
+  path: '/path/to/project',
+  recursive: true,
+  filter: 'files',     // 'files' or 'directories'
+  max_depth: 3,
+});
+// Returns: { success: true, entries: [...], count: 42 }
+```
+
+#### Shell Tool
+
+##### bash
+
+Execute shell commands with timeout and safety features.
+
+```typescript
+bash({
+  command: 'npm install',
+  timeout: 300000,        // 5 minutes
+  description: 'Install dependencies',
+  run_in_background: false,
+});
+// Returns: { success: true, stdout: '...', exitCode: 0, duration: 5234 }
+```
+
+**Safety Features:**
+- Blocks dangerous commands (`rm -rf /`, fork bombs, etc.)
+- Configurable timeout (default 2 min, max 10 min)
+- Output truncation for large outputs
+- Background execution support
+
+**Blocked Commands:**
+- `rm -rf /` and `rm -rf /*`
+- Fork bombs (`:(){:|:&};:`)
+- `/dev/sda` writes
+- Dangerous git operations
+
+#### Configuration Options
+
+All filesystem tools share common configuration:
+
+```typescript
+interface FilesystemToolConfig {
+  workingDirectory?: string;       // Base directory (default: cwd)
+  allowedDirectories?: string[];   // Restrict to these directories
+  blockedDirectories?: string[];   // Block access (default: node_modules, .git)
+  maxFileSize?: number;            // Max read size (default: 10MB)
+  maxResults?: number;             // Max results for glob/grep (default: 1000)
+  followSymlinks?: boolean;        // Follow symlinks (default: false)
+  excludeExtensions?: string[];    // Skip binary files
+}
+```
+
+Shell tool configuration:
+
+```typescript
+interface ShellToolConfig {
+  workingDirectory?: string;       // Working directory
+  defaultTimeout?: number;         // Default timeout (default: 120000ms)
+  maxTimeout?: number;             // Max timeout (default: 600000ms)
+  maxOutputSize?: number;          // Max output size (default: 100KB)
+  allowBackground?: boolean;       // Allow background execution (default: false)
+  shell?: string;                  // Shell to use (default: /bin/bash)
+  env?: Record<string, string>;    // Environment variables
+}
+```
+
+#### Best Practices
+
+1. **Use edit_file for code changes** - Never rewrite entire files; use surgical edits
+2. **Prefer glob over bash find** - More efficient and safer
+3. **Prefer grep over bash grep** - Better output formatting and safety
+4. **Set working directory** - Restrict operations to project directory
+5. **Configure blockedDirectories** - Prevent accidental access to sensitive directories
+
 ---
 
 ## Dynamic Tool Management

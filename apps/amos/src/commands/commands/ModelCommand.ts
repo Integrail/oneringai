@@ -125,7 +125,6 @@ Release: ${modelInfo.releaseDate || 'Unknown'}
 
   private async switchModel(context: CommandContext, modelName: string): Promise<CommandResult> {
     const { app } = context;
-    const config = app.getConfig();
 
     // Validate model exists (either in registry or accept any)
     const modelInfo = getModelInfo(modelName);
@@ -133,10 +132,11 @@ Release: ${modelInfo.releaseDate || 'Unknown'}
     // Update config
     app.updateConfig({ activeModel: modelName });
 
-    // Update agent if exists
-    const agent = app.getAgent();
-    if (agent) {
-      agent.setModel(modelName);
+    // Recreate agent with new model (model change requires agent recreation)
+    try {
+      await app.createAgent();
+    } catch (error) {
+      return this.error(`Failed to switch model: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     const infoStr = modelInfo

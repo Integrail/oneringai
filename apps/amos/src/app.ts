@@ -7,9 +7,10 @@
 import { join } from 'node:path';
 import type { ToolFunction, ApprovalDecision } from '@oneringai/agents';
 import { ConfigManager } from './config/ConfigManager.js';
-import type { AmosConfig, IAmosApp, IConnectorManager, IToolLoader, IAgentRunner, ToolApprovalContext } from './config/types.js';
+import type { AmosConfig, IAmosApp, IConnectorManager, IToolLoader, IAgentRunner, IPromptManager, ToolApprovalContext } from './config/types.js';
 import { ConnectorManager } from './connectors/ConnectorManager.js';
 import { ToolLoader } from './tools/ToolLoader.js';
+import { PromptManager } from './prompts/PromptManager.js';
 import { AgentRunner } from './agent/AgentRunner.js';
 import { Terminal } from './ui/Terminal.js';
 import {
@@ -21,6 +22,7 @@ import {
   ToolCommand,
   SessionCommand,
   ConfigCommand,
+  PromptCommand,
   ClearCommand,
   ExitCommand,
   StatusCommand,
@@ -30,6 +32,7 @@ import {
 export class AmosApp implements IAmosApp {
   private configManager: ConfigManager;
   private connectorManager: ConnectorManager;
+  private promptManager!: PromptManager;
   private toolLoader: ToolLoader;
   private agentRunner: AgentRunner | null = null;
   private terminal: Terminal;
@@ -66,7 +69,12 @@ export class AmosApp implements IAmosApp {
     // Initialize connector manager
     await this.connectorManager.initialize();
 
-    // Initialize tool loader
+    // Initialize prompt manager
+    this.promptManager = new PromptManager(config);
+    await this.promptManager.initialize();
+
+    // Initialize tool loader (pass config for developer tools settings)
+    this.toolLoader.setConfig(config);
     await this.toolLoader.initialize();
     this.toolLoader.applyConfig(config.tools.enabledTools, config.tools.disabledTools);
 
@@ -330,9 +338,11 @@ export class AmosApp implements IAmosApp {
 
     const config = this.configManager.get();
     if (config.activeConnector) {
-      this.terminal.printDim(
-        `Active: ${config.activeConnector} | Model: ${config.activeModel || config.defaults.model}`
-      );
+      let statusLine = `Active: ${config.activeConnector} | Model: ${config.activeModel || config.defaults.model}`;
+      if (config.prompts.activePrompt) {
+        statusLine += ` | Prompt: ${config.prompts.activePrompt}`;
+      }
+      this.terminal.printDim(statusLine);
     }
     this.terminal.print('');
     this.terminal.print('Type /help for commands, or just start chatting!');
@@ -364,6 +374,7 @@ export class AmosApp implements IAmosApp {
       new VendorCommand(),
       new ConnectorCommand(),
       new ToolCommand(),
+      new PromptCommand(),
       new SessionCommand(),
       new ConfigCommand(),
       new ClearCommand(),
@@ -413,6 +424,10 @@ export class AmosApp implements IAmosApp {
     return this.connectorManager;
   }
 
+  getPromptManager(): IPromptManager {
+    return this.promptManager;
+  }
+
   getToolLoader(): IToolLoader {
     return this.toolLoader;
   }
@@ -446,6 +461,12 @@ export class AmosApp implements IAmosApp {
       this.toolLoader.getEnabledTools(),
       join(this.dataDir, 'sessions')
     );
+
+    // Set instructions from active prompt
+    const activePromptContent = this.promptManager.getActiveContent();
+    if (activePromptContent) {
+      this.agentRunner.setInstructions(activePromptContent);
+    }
 
     // Set up interactive approval handler
     if (config.permissions.promptForApproval) {
@@ -557,6 +578,10 @@ export class AmosApp implements IAmosApp {
 
   printInfo(message: string): void {
     this.terminal.printInfo(message);
+  }
+
+  printDim(message: string): void {
+    this.terminal.printDim(message);
   }
 
   async prompt(question: string): Promise<string> {

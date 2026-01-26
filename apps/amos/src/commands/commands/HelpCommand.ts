@@ -28,6 +28,7 @@ COMMANDS:
   /vendor [name]      Switch vendor or list available vendors
   /connector <sub>    Manage connectors (add, edit, delete, list, generate)
   /tool <sub>         Manage tools & permissions (list, enable, approve, blocklist...)
+  /prompt <sub>       Manage system prompt templates (list, use, create, edit...)
   /session <sub>      Manage sessions (save, load, list, delete)
   /config <sub>       View/edit configuration
   /clear              Clear screen
@@ -37,11 +38,16 @@ CHAT:
   Just type your message to chat with the AI agent.
   The agent supports planning mode for complex tasks.
 
+CODING AGENT:
+  AMOS includes full developer tools (filesystem + shell).
+  Use "/prompt use coding-agent" for autonomous coding capabilities.
+
 EXAMPLES:
-  /model gpt-4o       Switch to GPT-4o model
-  /vendor anthropic   Switch to Anthropic
-  /connector list     List all connectors
-  /tool list          List available tools
+  /model gpt-4o            Switch to GPT-4o model
+  /vendor anthropic        Switch to Anthropic
+  /connector list          List all connectors
+  /tool list               List available tools
+  /prompt use coding-agent Enable coding agent mode
 
 Type /help <command> for detailed help on a specific command.
 `;
@@ -119,12 +125,49 @@ PERMISSIONS:
   /tool permissions            Show permission settings
   /tool permissions <name>     Show tool's permissions
 
+BUILT-IN TOOLS:
+  Basic:      calculate, get_current_time, random_number, echo
+  Filesystem: read_file, write_file, edit_file, glob, grep, list_directory
+  Shell:      bash
+
+  Use "/prompt use coding-agent" for full coding agent capabilities.
+
 EXAMPLES:
   /tool list
   /tool enable web_search
   /tool approve execute_code
   /tool blocklist dangerous_tool
   /tool permissions
+`,
+      prompt: `
+/prompt - System Prompt Template Management
+
+USAGE:
+  /prompt                      List all prompts
+  /prompt list                 List all prompts
+  /prompt show <name>          Show a prompt's content
+  /prompt use <name>           Select a prompt for the session
+  /prompt clear                Clear active prompt (use defaults)
+  /prompt current              Show the currently active prompt
+  /prompt create <name>        Create a new prompt template
+  /prompt edit <name>          Edit an existing prompt
+  /prompt delete <name>        Delete a prompt
+  /prompt reload               Reload prompts from disk
+
+PROMPTS DIRECTORY:
+  Prompts are stored as .md files in data/prompts/
+  Each file can include YAML frontmatter with a description:
+
+  ---
+  description: A helpful coding assistant
+  ---
+  Your prompt content here...
+
+EXAMPLES:
+  /prompt list
+  /prompt use coding-assistant
+  /prompt create research-agent
+  /prompt show default
 `,
       session: `
 /session - Session Management

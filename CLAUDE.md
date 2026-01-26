@@ -570,6 +570,19 @@ src/
 │   ├── oauth/                        # OAuth 2.0 implementation
 │   └── authenticatedFetch.ts         # Authenticated fetch using Connector
 ├── tools/                            # Built-in tools
+│   ├── filesystem/                   # File system tools
+│   │   ├── index.ts                  # Exports all filesystem tools
+│   │   ├── types.ts                  # Shared types and config
+│   │   ├── readFile.ts               # read_file tool
+│   │   ├── writeFile.ts              # write_file tool
+│   │   ├── editFile.ts               # edit_file tool
+│   │   ├── glob.ts                   # glob tool
+│   │   ├── grep.ts                   # grep tool
+│   │   └── listDirectory.ts          # list_directory tool
+│   ├── shell/                        # Shell execution tools
+│   │   ├── index.ts                  # Exports shell tools
+│   │   ├── types.ts                  # Shell config and blocked commands
+│   │   └── bash.ts                   # bash tool
 │   ├── code/
 │   └── json/
 └── utils/                            # Utilities
@@ -674,6 +687,58 @@ for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
   process.stdout.write(text);
 }
 ```
+
+### Developer Tools (Filesystem & Shell)
+
+Built-in tools for file system operations and shell command execution:
+
+```typescript
+import { developerTools } from '@oneringai/agents';
+
+// Use all developer tools at once
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: developerTools,
+});
+
+// Agent can now read, write, edit files, search, and execute commands
+await agent.run('Find all TODO comments in src/**/*.ts');
+```
+
+**Available Tools:**
+- `read_file` - Read file contents with line numbers
+- `write_file` - Create/overwrite files with auto parent directory creation
+- `edit_file` - Surgical find/replace (ensures uniqueness to prevent mistakes)
+- `glob` - Find files by pattern (`**/*.ts`, `src/**/*.{ts,tsx}`)
+- `grep` - Search content with regex (supports context lines, file type filtering)
+- `list_directory` - List directory contents with recursive support
+- `bash` - Execute shell commands with timeout and safety guards
+
+**Configuration:**
+
+```typescript
+import { createReadFileTool, createBashTool } from '@oneringai/agents';
+
+// Customize tools
+const readFile = createReadFileTool({
+  workingDirectory: '/path/to/project',
+  blockedDirectories: ['node_modules', '.git', 'dist'],
+  maxFileSize: 5 * 1024 * 1024, // 5MB
+});
+
+const bash = createBashTool({
+  workingDirectory: '/path/to/project',
+  defaultTimeout: 60000, // 1 minute
+  env: { NODE_ENV: 'development' },
+});
+```
+
+**Safety Features:**
+- Blocks dangerous commands (`rm -rf /`, fork bombs, `/dev/sda` writes)
+- Configurable blocked directories (default: `node_modules`, `.git`)
+- Timeout protection (default 2 min, max 10 min)
+- Output truncation for large outputs
 
 ## Adding New Vendors
 

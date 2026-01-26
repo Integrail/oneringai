@@ -2,16 +2,17 @@ import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
 import * as fs10 from 'fs';
-import { promises } from 'fs';
+import { existsSync, promises } from 'fs';
 import EventEmitter, { EventEmitter as EventEmitter$2 } from 'eventemitter3';
 import OpenAI2 from 'openai';
 import * as path3 from 'path';
-import { join } from 'path';
+import { dirname, relative, isAbsolute, normalize, resolve, join, extname } from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { EventEmitter as EventEmitter$1 } from 'events';
 import * as fs9 from 'fs/promises';
-import { exec } from 'child_process';
+import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as os from 'os';
 import { load } from 'cheerio';
@@ -2610,11 +2611,21 @@ var AnthropicConverter = class {
           }
           break;
         case "tool_result" /* TOOL_RESULT */:
+          const isError = !!c.error;
+          let toolResultContent;
+          if (typeof c.content === "string") {
+            toolResultContent = c.content || (isError ? c.error : "");
+          } else {
+            toolResultContent = JSON.stringify(c.content);
+          }
+          if (isError && !toolResultContent) {
+            toolResultContent = c.error || "Tool execution failed";
+          }
           blocks.push({
             type: "tool_result",
             tool_use_id: c.tool_use_id,
-            content: typeof c.content === "string" ? c.content : JSON.stringify(c.content),
-            is_error: !!c.error
+            content: toolResultContent,
+            is_error: isError
           });
           break;
         case "tool_use" /* TOOL_USE */:
@@ -5040,7 +5051,15 @@ var ToolPermissionManager = class extends EventEmitter$1 {
    * Request approval for a tool call
    *
    * If an onApprovalRequired callback is set, it will be called.
-   * Otherwise, this returns a decision that requires hook-based approval.
+   * Otherwise, this auto-approves for backward compatibility.
+   *
+   * NOTE: If you want to require explicit approval, you MUST either:
+   * 1. Set onApprovalRequired callback in AgentPermissionsConfig
+   * 2. Register an 'approve:tool' hook in the AgenticLoop
+   * 3. Add tools to the blocklist if they should never run
+   *
+   * This auto-approval behavior preserves backward compatibility with
+   * existing code that doesn't use the permission system.
    */
   async requestApproval(context) {
     if (this.onApprovalRequired) {
@@ -5053,8 +5072,8 @@ var ToolPermissionManager = class extends EventEmitter$1 {
       return decision;
     }
     return {
-      approved: false,
-      reason: "No approval handler configured, use hooks"
+      approved: true,
+      reason: "Auto-approved (no approval handler configured)"
     };
   }
   // ==========================================================================
@@ -6902,13 +6921,13 @@ var AgenticLoop = class extends EventEmitter$2 {
    * Execute function with timeout
    */
   async executeWithTimeout(fn, timeoutMs) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const timer = setTimeout(() => {
         reject(new ToolTimeoutError("tool", timeoutMs));
       }, timeoutMs);
       fn().then((result) => {
         clearTimeout(timer);
-        resolve(result);
+        resolve2(result);
       }).catch((error) => {
         clearTimeout(timer);
         reject(error);
@@ -7049,8 +7068,8 @@ var AgenticLoop = class extends EventEmitter$2 {
   _doPause(reason) {
     if (this.paused) return;
     this.paused = true;
-    this.pausePromise = new Promise((resolve) => {
-      this.resumeCallback = resolve;
+    this.pausePromise = new Promise((resolve2) => {
+      this.resumeCallback = resolve2;
     });
     if (this.context) {
       this.context.paused = true;
@@ -10648,7 +10667,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
       if (status.status === "completed" || status.status === "failed") {
         return status;
       }
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
     }
     throw new ProviderError("google", `Video generation timed out after ${timeoutMs}ms`);
   }
@@ -11056,7 +11075,7 @@ var VideoGeneration = class _VideoGeneration {
           `Video generation failed: ${status.error || "Unknown error"}`
         );
       }
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
     }
     throw new ProviderError(
       this.connector.vendor || "unknown",
@@ -16760,7 +16779,7 @@ function addJitter(delay, factor = 0.1) {
 }
 async function backoffWait(attempt, config = DEFAULT_BACKOFF_CONFIG) {
   const delay = calculateBackoff(attempt, config);
-  await new Promise((resolve) => setTimeout(resolve, delay));
+  await new Promise((resolve2) => setTimeout(resolve2, delay));
   return delay;
 }
 function* backoffSequence(config = DEFAULT_BACKOFF_CONFIG, maxAttempts) {
@@ -17107,13 +17126,1354 @@ async function hasClipboardImage() {
 // src/tools/index.ts
 var tools_exports = {};
 __export(tools_exports, {
+  DEFAULT_FILESYSTEM_CONFIG: () => DEFAULT_FILESYSTEM_CONFIG,
+  DEFAULT_SHELL_CONFIG: () => DEFAULT_SHELL_CONFIG,
+  bash: () => bash,
+  createBashTool: () => createBashTool,
+  createEditFileTool: () => createEditFileTool,
   createExecuteJavaScriptTool: () => createExecuteJavaScriptTool,
+  createGlobTool: () => createGlobTool,
+  createGrepTool: () => createGrepTool,
+  createListDirectoryTool: () => createListDirectoryTool,
+  createReadFileTool: () => createReadFileTool,
+  createWriteFileTool: () => createWriteFileTool,
+  developerTools: () => developerTools,
+  editFile: () => editFile,
   executeJavaScript: () => executeJavaScript,
+  getBackgroundOutput: () => getBackgroundOutput,
+  glob: () => glob,
+  grep: () => grep,
+  isBlockedCommand: () => isBlockedCommand,
+  isExcludedExtension: () => isExcludedExtension,
   jsonManipulator: () => jsonManipulator,
+  killBackgroundProcess: () => killBackgroundProcess,
+  listDirectory: () => listDirectory,
+  readFile: () => readFile4,
+  validatePath: () => validatePath,
   webFetch: () => webFetch,
   webFetchJS: () => webFetchJS,
-  webSearch: () => webSearch
+  webSearch: () => webSearch,
+  writeFile: () => writeFile4
 });
+var DEFAULT_FILESYSTEM_CONFIG = {
+  workingDirectory: process.cwd(),
+  allowedDirectories: [],
+  blockedDirectories: ["node_modules", ".git", ".svn", ".hg", "__pycache__", ".cache"],
+  maxFileSize: 10 * 1024 * 1024,
+  // 10MB
+  maxResults: 1e3,
+  followSymlinks: false,
+  excludeExtensions: [
+    ".exe",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".bin",
+    ".obj",
+    ".o",
+    ".a",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".bz2",
+    ".7z",
+    ".rar",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".ico",
+    ".svg",
+    ".webp",
+    ".mp3",
+    ".mp4",
+    ".wav",
+    ".avi",
+    ".mov",
+    ".mkv",
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".otf"
+  ]
+};
+function validatePath(inputPath, config = {}) {
+  const workingDir = config.workingDirectory || process.cwd();
+  const allowedDirs = config.allowedDirectories || [];
+  const blockedDirs = config.blockedDirectories || DEFAULT_FILESYSTEM_CONFIG.blockedDirectories;
+  let resolvedPath;
+  if (isAbsolute(inputPath)) {
+    resolvedPath = normalize(inputPath);
+  } else {
+    resolvedPath = resolve(workingDir, inputPath);
+  }
+  const pathSegments = resolvedPath.split("/").filter(Boolean);
+  for (const blocked of blockedDirs) {
+    if (!blocked.includes("/")) {
+      if (pathSegments.includes(blocked)) {
+        return {
+          valid: false,
+          resolvedPath,
+          error: `Path is in blocked directory: ${blocked}`
+        };
+      }
+    } else {
+      const blockedPath = isAbsolute(blocked) ? blocked : resolve(workingDir, blocked);
+      if (resolvedPath.startsWith(blockedPath + "/") || resolvedPath === blockedPath) {
+        return {
+          valid: false,
+          resolvedPath,
+          error: `Path is in blocked directory: ${blocked}`
+        };
+      }
+    }
+  }
+  if (allowedDirs.length > 0) {
+    let isAllowed = false;
+    for (const allowed of allowedDirs) {
+      const allowedPath = isAbsolute(allowed) ? allowed : resolve(workingDir, allowed);
+      if (resolvedPath.startsWith(allowedPath + "/") || resolvedPath === allowedPath) {
+        isAllowed = true;
+        break;
+      }
+    }
+    if (!isAllowed) {
+      return {
+        valid: false,
+        resolvedPath,
+        error: `Path is outside allowed directories`
+      };
+    }
+  }
+  return { valid: true, resolvedPath };
+}
+function isExcludedExtension(filePath, excludeExtensions = DEFAULT_FILESYSTEM_CONFIG.excludeExtensions) {
+  const ext = filePath.toLowerCase().substring(filePath.lastIndexOf("."));
+  return excludeExtensions.includes(ext);
+}
+function createReadFileTool(config = {}) {
+  const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "read_file",
+        description: `Read content from a file on the local filesystem.
+
+USAGE:
+- The file_path parameter must be an absolute path, not a relative path
+- By default, reads up to 2000 lines starting from the beginning of the file
+- You can optionally specify a line offset and limit (especially handy for long files)
+- Any lines longer than 2000 characters will be truncated
+- Results are returned with line numbers starting at 1
+
+WHEN TO USE:
+- To read source code files before making edits
+- To understand file contents and structure
+- To read configuration files
+- To examine log files or data files
+
+IMPORTANT:
+- Always read a file before attempting to edit it
+- Use offset/limit for very large files to read in chunks
+- The tool will return an error if the file doesn't exist
+
+EXAMPLES:
+- Read entire file: { "file_path": "/path/to/file.ts" }
+- Read lines 100-200: { "file_path": "/path/to/file.ts", "offset": 100, "limit": 100 }`,
+        parameters: {
+          type: "object",
+          properties: {
+            file_path: {
+              type: "string",
+              description: "The absolute path to the file to read"
+            },
+            offset: {
+              type: "number",
+              description: "Line number to start reading from (1-indexed). Only provide if the file is too large to read at once."
+            },
+            limit: {
+              type: "number",
+              description: "Number of lines to read. Only provide if the file is too large to read at once."
+            }
+          },
+          required: ["file_path"]
+        }
+      }
+    },
+    execute: async (args) => {
+      const { file_path, offset = 1, limit = 2e3 } = args;
+      const validation = validatePath(file_path, mergedConfig);
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error,
+          path: file_path
+        };
+      }
+      const resolvedPath = validation.resolvedPath;
+      if (!existsSync(resolvedPath)) {
+        return {
+          success: false,
+          error: `File not found: ${file_path}`,
+          path: file_path
+        };
+      }
+      try {
+        const stats = await stat(resolvedPath);
+        if (!stats.isFile()) {
+          return {
+            success: false,
+            error: `Path is not a file: ${file_path}. Use list_directory to explore directories.`,
+            path: file_path
+          };
+        }
+        if (stats.size > mergedConfig.maxFileSize) {
+          return {
+            success: false,
+            error: `File is too large (${(stats.size / 1024 / 1024).toFixed(2)}MB). Maximum size is ${(mergedConfig.maxFileSize / 1024 / 1024).toFixed(2)}MB. Use offset and limit to read in chunks.`,
+            path: file_path,
+            size: stats.size
+          };
+        }
+        const content = await readFile(resolvedPath, "utf-8");
+        const allLines = content.split("\n");
+        const totalLines = allLines.length;
+        const startIndex = Math.max(0, offset - 1);
+        const endIndex = Math.min(totalLines, startIndex + limit);
+        const selectedLines = allLines.slice(startIndex, endIndex);
+        const lineNumberWidth = String(endIndex).length;
+        const formattedLines = selectedLines.map((line, i) => {
+          const lineNum = startIndex + i + 1;
+          const paddedNum = String(lineNum).padStart(lineNumberWidth, " ");
+          const truncatedLine = line.length > 2e3 ? line.substring(0, 2e3) + "..." : line;
+          return `${paddedNum}	${truncatedLine}`;
+        });
+        const truncated = endIndex < totalLines;
+        const result = formattedLines.join("\n");
+        return {
+          success: true,
+          content: result,
+          lines: totalLines,
+          truncated,
+          encoding: "utf-8",
+          size: stats.size,
+          path: file_path
+        };
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("encoding")) {
+          return {
+            success: false,
+            error: `File appears to be binary or uses an unsupported encoding: ${file_path}`,
+            path: file_path
+          };
+        }
+        return {
+          success: false,
+          error: `Failed to read file: ${error instanceof Error ? error.message : String(error)}`,
+          path: file_path
+        };
+      }
+    }
+  };
+}
+var readFile4 = createReadFileTool();
+function createWriteFileTool(config = {}) {
+  const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "write_file",
+        description: `Write content to a file on the local filesystem.
+
+USAGE:
+- This tool will overwrite the existing file if there is one at the provided path
+- If the file exists, you MUST use the read_file tool first to read its contents before writing
+- The file_path must be an absolute path, not a relative path
+- Parent directories will be created automatically if they don't exist
+
+WHEN TO USE:
+- To create new files
+- To completely replace file contents (after reading the original)
+- When the edit_file tool cannot handle the changes needed
+
+IMPORTANT:
+- ALWAYS prefer editing existing files over creating new ones
+- NEVER proactively create documentation files (*.md) or README files unless explicitly requested
+- If modifying an existing file, use edit_file instead for surgical changes
+- This tool will FAIL if you try to write to an existing file without reading it first
+
+EXAMPLES:
+- Create new file: { "file_path": "/path/to/new-file.ts", "content": "export const x = 1;" }
+- Rewrite file: { "file_path": "/path/to/existing.ts", "content": "// new content..." }`,
+        parameters: {
+          type: "object",
+          properties: {
+            file_path: {
+              type: "string",
+              description: "The absolute path to the file to write (must be absolute, not relative)"
+            },
+            content: {
+              type: "string",
+              description: "The content to write to the file"
+            }
+          },
+          required: ["file_path", "content"]
+        }
+      }
+    },
+    execute: async (args) => {
+      const { file_path, content } = args;
+      const validation = validatePath(file_path, mergedConfig);
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error,
+          path: file_path
+        };
+      }
+      const resolvedPath = validation.resolvedPath;
+      const fileExists = existsSync(resolvedPath);
+      try {
+        const parentDir = dirname(resolvedPath);
+        if (!existsSync(parentDir)) {
+          await mkdir(parentDir, { recursive: true });
+        }
+        await writeFile(resolvedPath, content, "utf-8");
+        return {
+          success: true,
+          path: file_path,
+          bytesWritten: Buffer.byteLength(content, "utf-8"),
+          created: !fileExists
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to write file: ${error instanceof Error ? error.message : String(error)}`,
+          path: file_path
+        };
+      }
+    }
+  };
+}
+var writeFile4 = createWriteFileTool();
+function createEditFileTool(config = {}) {
+  const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "edit_file",
+        description: `Perform exact string replacements in files.
+
+USAGE:
+- You MUST use read_file at least once before editing any file
+- The old_string must match EXACTLY what's in the file, including all whitespace and indentation
+- When editing text from read_file output, preserve the exact indentation as it appears AFTER the line number prefix
+- The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content
+- NEVER include any part of the line number prefix in old_string or new_string
+
+IMPORTANT RULES:
+- ALWAYS prefer editing existing files over writing new ones
+- The edit will FAIL if old_string is not found in the file
+- The edit will FAIL if old_string appears more than once (unless replace_all is true)
+- Use replace_all: true when you want to rename variables, update imports, etc.
+- old_string and new_string must be different
+
+MATCHING TIPS:
+- Include enough surrounding context to make old_string unique
+- Copy the exact whitespace from the file (spaces vs tabs matter!)
+- For indented code, include the full indentation in old_string
+
+EXAMPLES:
+- Simple edit:
+  { "file_path": "/path/to/file.ts", "old_string": "const x = 1;", "new_string": "const x = 2;" }
+
+- Edit with context for uniqueness:
+  { "file_path": "/path/to/file.ts",
+    "old_string": "function foo() {\\n  return 1;\\n}",
+    "new_string": "function foo() {\\n  return 2;\\n}" }
+
+- Replace all occurrences:
+  { "file_path": "/path/to/file.ts", "old_string": "oldName", "new_string": "newName", "replace_all": true }`,
+        parameters: {
+          type: "object",
+          properties: {
+            file_path: {
+              type: "string",
+              description: "The absolute path to the file to modify"
+            },
+            old_string: {
+              type: "string",
+              description: "The exact text to find and replace"
+            },
+            new_string: {
+              type: "string",
+              description: "The text to replace it with (must be different from old_string)"
+            },
+            replace_all: {
+              type: "boolean",
+              description: "Replace all occurrences instead of requiring uniqueness (default: false)"
+            }
+          },
+          required: ["file_path", "old_string", "new_string"]
+        }
+      }
+    },
+    execute: async (args) => {
+      const { file_path, old_string, new_string, replace_all = false } = args;
+      if (old_string === new_string) {
+        return {
+          success: false,
+          error: "old_string and new_string must be different",
+          path: file_path
+        };
+      }
+      const validation = validatePath(file_path, mergedConfig);
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error,
+          path: file_path
+        };
+      }
+      const resolvedPath = validation.resolvedPath;
+      if (!existsSync(resolvedPath)) {
+        return {
+          success: false,
+          error: `File not found: ${file_path}`,
+          path: file_path
+        };
+      }
+      try {
+        const content = await readFile(resolvedPath, "utf-8");
+        let occurrences = 0;
+        let searchIndex = 0;
+        while (true) {
+          const foundIndex = content.indexOf(old_string, searchIndex);
+          if (foundIndex === -1) break;
+          occurrences++;
+          searchIndex = foundIndex + 1;
+        }
+        if (occurrences === 0) {
+          const trimmedOld = old_string.trim();
+          const hasTrimmedMatch = content.includes(trimmedOld);
+          let errorMsg = `old_string not found in file. `;
+          if (hasTrimmedMatch && trimmedOld !== old_string) {
+            errorMsg += `A similar string was found but with different whitespace. Check your indentation matches exactly.`;
+          } else {
+            errorMsg += `Make sure you're copying the exact text from the file, including all whitespace.`;
+          }
+          return {
+            success: false,
+            error: errorMsg,
+            path: file_path,
+            replacements: 0
+          };
+        }
+        if (occurrences > 1 && !replace_all) {
+          return {
+            success: false,
+            error: `old_string appears ${occurrences} times in the file. Either provide more context to make it unique, or set replace_all: true to replace all occurrences.`,
+            path: file_path,
+            replacements: 0
+          };
+        }
+        let newContent;
+        if (replace_all) {
+          newContent = content.split(old_string).join(new_string);
+        } else {
+          newContent = content.replace(old_string, new_string);
+        }
+        await writeFile(resolvedPath, newContent, "utf-8");
+        const diffPreview = generateDiffPreview(old_string, new_string);
+        return {
+          success: true,
+          path: file_path,
+          replacements: replace_all ? occurrences : 1,
+          diff: diffPreview
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to edit file: ${error instanceof Error ? error.message : String(error)}`,
+          path: file_path
+        };
+      }
+    }
+  };
+}
+function generateDiffPreview(oldStr, newStr) {
+  const oldLines = oldStr.split("\n");
+  const newLines = newStr.split("\n");
+  const diff = [];
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  const previewLines = Math.min(maxLines, 5);
+  diff.push("--- old");
+  for (let i = 0; i < Math.min(oldLines.length, previewLines); i++) {
+    diff.push(`- ${oldLines[i]}`);
+  }
+  if (oldLines.length > previewLines) {
+    diff.push(`  ... (${oldLines.length - previewLines} more lines)`);
+  }
+  diff.push("+++ new");
+  for (let i = 0; i < Math.min(newLines.length, previewLines); i++) {
+    diff.push(`+ ${newLines[i]}`);
+  }
+  if (newLines.length > previewLines) {
+    diff.push(`  ... (${newLines.length - previewLines} more lines)`);
+  }
+  return diff.join("\n");
+}
+var editFile = createEditFileTool();
+function matchGlobPattern(pattern, filePath) {
+  let regexPattern = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*\*/g, "{{GLOBSTAR}}").replace(/\*/g, "[^/]*").replace(/\?/g, ".").replace(/\{\{GLOBSTAR\}\}/g, ".*");
+  regexPattern = "^" + regexPattern + "$";
+  try {
+    const regex = new RegExp(regexPattern);
+    return regex.test(filePath);
+  } catch {
+    return false;
+  }
+}
+async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0) {
+  if (depth > 50 || results.length >= config.maxResults) {
+    return results;
+  }
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (results.length >= config.maxResults) break;
+      const fullPath = join(dir, entry.name);
+      const relativePath = relative(baseDir, fullPath);
+      if (entry.isDirectory()) {
+        const isBlocked = config.blockedDirectories.some(
+          (blocked) => entry.name === blocked || relativePath.includes(`/${blocked}/`) || relativePath.startsWith(`${blocked}/`)
+        );
+        if (isBlocked) continue;
+        await findFiles(fullPath, pattern, baseDir, config, results, depth + 1);
+      } else if (entry.isFile()) {
+        if (matchGlobPattern(pattern, relativePath)) {
+          try {
+            const stats = await stat(fullPath);
+            results.push({
+              path: relativePath,
+              mtime: stats.mtimeMs
+            });
+          } catch {
+          }
+        }
+      }
+    }
+  } catch {
+  }
+  return results;
+}
+function createGlobTool(config = {}) {
+  const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "glob",
+        description: `Fast file pattern matching tool that finds files by name patterns.
+
+USAGE:
+- Supports glob patterns like "**/*.js", "src/**/*.ts", "*.{ts,tsx}"
+- Returns matching file paths sorted by modification time (newest first)
+- Use this tool when you need to find files by name patterns
+
+PATTERN SYNTAX:
+- * matches any characters except /
+- ** matches any characters including /
+- ? matches a single character
+- {a,b} matches either a or b
+
+EXAMPLES:
+- Find all TypeScript files: { "pattern": "**/*.ts" }
+- Find files in src folder: { "pattern": "src/**/*.{ts,tsx}" }
+- Find test files: { "pattern": "**/*.test.ts" }
+- Find specific file type in path: { "pattern": "src/components/**/*.tsx", "path": "/project" }
+
+WHEN TO USE:
+- To find files by extension or name pattern
+- To explore project structure
+- To find related files (tests, types, etc.)
+- Before using grep when you know the file pattern`,
+        parameters: {
+          type: "object",
+          properties: {
+            pattern: {
+              type: "string",
+              description: 'The glob pattern to match files against (e.g., "**/*.ts", "src/**/*.tsx")'
+            },
+            path: {
+              type: "string",
+              description: "The directory to search in. If not specified, uses the current working directory. IMPORTANT: Omit this field to use the default directory."
+            }
+          },
+          required: ["pattern"]
+        }
+      }
+    },
+    execute: async (args) => {
+      const { pattern, path: path5 } = args;
+      const searchDir = path5 || mergedConfig.workingDirectory;
+      const validation = validatePath(searchDir, {
+        ...mergedConfig,
+        blockedDirectories: []
+        // Allow searching from any valid directory
+      });
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error
+        };
+      }
+      const resolvedDir = validation.resolvedPath;
+      if (!existsSync(resolvedDir)) {
+        return {
+          success: false,
+          error: `Directory not found: ${searchDir}`
+        };
+      }
+      try {
+        const results = await findFiles(resolvedDir, pattern, resolvedDir, mergedConfig);
+        results.sort((a, b) => b.mtime - a.mtime);
+        const truncated = results.length >= mergedConfig.maxResults;
+        return {
+          success: true,
+          files: results.map((r) => r.path),
+          count: results.length,
+          truncated
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Glob search failed: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+var glob = createGlobTool();
+var FILE_TYPE_MAP = {
+  ts: [".ts", ".tsx"],
+  js: [".js", ".jsx", ".mjs", ".cjs"],
+  py: [".py", ".pyi"],
+  java: [".java"],
+  go: [".go"],
+  rust: [".rs"],
+  c: [".c", ".h"],
+  cpp: [".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx"],
+  cs: [".cs"],
+  rb: [".rb"],
+  php: [".php"],
+  swift: [".swift"],
+  kotlin: [".kt", ".kts"],
+  scala: [".scala"],
+  html: [".html", ".htm"],
+  css: [".css", ".scss", ".sass", ".less"],
+  json: [".json"],
+  yaml: [".yaml", ".yml"],
+  xml: [".xml"],
+  md: [".md", ".markdown"],
+  sql: [".sql"],
+  sh: [".sh", ".bash", ".zsh"]
+};
+async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, files = [], depth = 0) {
+  if (depth > 50 || files.length >= config.maxResults * 10) {
+    return files;
+  }
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const isBlocked = config.blockedDirectories.some(
+          (blocked) => entry.name === blocked
+        );
+        if (isBlocked) continue;
+        await findFilesToSearch(fullPath, baseDir, config, globPattern, fileType, files, depth + 1);
+      } else if (entry.isFile()) {
+        if (isExcludedExtension(entry.name, config.excludeExtensions)) continue;
+        if (fileType) {
+          const extensions = FILE_TYPE_MAP[fileType.toLowerCase()];
+          if (extensions) {
+            const ext = extname(entry.name).toLowerCase();
+            if (!extensions.includes(ext)) continue;
+          }
+        }
+        if (globPattern) {
+          const pattern = globPattern.replace(/\./g, "\\.").replace(/\*/g, ".*").replace(/\{([^}]+)\}/g, (_, p) => `(${p.split(",").join("|")})`);
+          const regex = new RegExp(pattern + "$");
+          if (!regex.test(entry.name)) continue;
+        }
+        files.push(fullPath);
+      }
+    }
+  } catch {
+  }
+  return files;
+}
+async function searchFile(filePath, regex, contextBefore, contextAfter) {
+  const matches = [];
+  try {
+    const content = await readFile(filePath, "utf-8");
+    const lines = content.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i] ?? "";
+      regex.lastIndex = 0;
+      if (regex.test(line)) {
+        const match = {
+          file: filePath,
+          line: i + 1,
+          content: line.length > 500 ? line.substring(0, 500) + "..." : line
+        };
+        if (contextBefore > 0 || contextAfter > 0) {
+          match.context = {
+            before: lines.slice(Math.max(0, i - contextBefore), i).map((l) => l.length > 200 ? l.substring(0, 200) + "..." : l),
+            after: lines.slice(i + 1, Math.min(lines.length, i + 1 + contextAfter)).map((l) => l.length > 200 ? l.substring(0, 200) + "..." : l)
+          };
+        }
+        matches.push(match);
+      }
+    }
+  } catch {
+  }
+  return matches;
+}
+function createGrepTool(config = {}) {
+  const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "grep",
+        description: `A powerful search tool for finding content within files.
+
+USAGE:
+- Search for patterns using full regex syntax (e.g., "log.*Error", "function\\s+\\w+")
+- Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py")
+- Output modes: "content" shows matching lines, "files_with_matches" shows only file paths, "count" shows match counts
+
+PATTERN SYNTAX:
+- Uses JavaScript regex syntax (not grep)
+- Literal braces need escaping (use \\{ and \\} to find { and })
+- Common patterns:
+  - "TODO" - literal text
+  - "function\\s+\\w+" - function declarations
+  - "import.*from" - import statements
+  - "\\bclass\\b" - word boundary matching
+
+OUTPUT MODES:
+- "content" - Shows matching lines with line numbers (default)
+- "files_with_matches" - Shows only file paths that contain matches
+- "count" - Shows match counts per file
+
+EXAMPLES:
+- Find TODO comments: { "pattern": "TODO|FIXME", "type": "ts" }
+- Find function calls: { "pattern": "fetchUser\\(", "glob": "*.ts" }
+- Find imports: { "pattern": "import.*react", "case_insensitive": true }
+- List files with errors: { "pattern": "error", "output_mode": "files_with_matches" }
+- Count matches: { "pattern": "console\\.log", "output_mode": "count" }
+
+WHEN TO USE:
+- To find where something is defined or used
+- To search for patterns across multiple files
+- To find all occurrences of a term
+- Before making bulk changes`,
+        parameters: {
+          type: "object",
+          properties: {
+            pattern: {
+              type: "string",
+              description: "The regex pattern to search for in file contents"
+            },
+            path: {
+              type: "string",
+              description: "File or directory to search in. Defaults to current working directory."
+            },
+            glob: {
+              type: "string",
+              description: 'Glob pattern to filter files (e.g., "*.js", "*.{ts,tsx}")'
+            },
+            type: {
+              type: "string",
+              description: 'File type to search (e.g., "ts", "js", "py", "java", "go"). More efficient than glob.'
+            },
+            output_mode: {
+              type: "string",
+              enum: ["content", "files_with_matches", "count"],
+              description: 'Output mode: "content" shows lines, "files_with_matches" shows paths, "count" shows counts. Default: "files_with_matches"'
+            },
+            case_insensitive: {
+              type: "boolean",
+              description: "Case insensitive search (default: false)"
+            },
+            context_before: {
+              type: "number",
+              description: 'Number of lines to show before each match (requires output_mode: "content")'
+            },
+            context_after: {
+              type: "number",
+              description: 'Number of lines to show after each match (requires output_mode: "content")'
+            },
+            limit: {
+              type: "number",
+              description: "Limit output to first N results. Default: unlimited."
+            }
+          },
+          required: ["pattern"]
+        }
+      }
+    },
+    execute: async (args) => {
+      const {
+        pattern,
+        path: path5,
+        glob: globPattern,
+        type: fileType,
+        output_mode = "files_with_matches",
+        case_insensitive = false,
+        context_before = 0,
+        context_after = 0,
+        limit
+      } = args;
+      const searchPath = path5 || mergedConfig.workingDirectory;
+      const validation = validatePath(searchPath, {
+        ...mergedConfig,
+        blockedDirectories: []
+        // Allow grep from any valid directory
+      });
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error
+        };
+      }
+      const resolvedPath = validation.resolvedPath;
+      if (!existsSync(resolvedPath)) {
+        return {
+          success: false,
+          error: `Path not found: ${searchPath}`
+        };
+      }
+      let regex;
+      try {
+        regex = new RegExp(pattern, case_insensitive ? "gi" : "g");
+      } catch (error) {
+        return {
+          success: false,
+          error: `Invalid regex pattern: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+      try {
+        const stats = await stat(resolvedPath);
+        let filesToSearch;
+        if (stats.isFile()) {
+          filesToSearch = [resolvedPath];
+        } else {
+          filesToSearch = await findFilesToSearch(
+            resolvedPath,
+            resolvedPath,
+            mergedConfig,
+            globPattern,
+            fileType
+          );
+        }
+        const allMatches = [];
+        const fileMatchCounts = /* @__PURE__ */ new Map();
+        let filesMatched = 0;
+        for (const file of filesToSearch) {
+          if (limit && allMatches.length >= limit) break;
+          const matches = await searchFile(
+            file,
+            regex,
+            output_mode === "content" ? context_before : 0,
+            output_mode === "content" ? context_after : 0
+          );
+          if (matches.length > 0) {
+            filesMatched++;
+            const relativePath = relative(resolvedPath, file) || file;
+            for (const match of matches) {
+              match.file = relativePath;
+            }
+            fileMatchCounts.set(relativePath, matches.length);
+            if (output_mode === "content") {
+              const remaining = limit ? limit - allMatches.length : Infinity;
+              allMatches.push(...matches.slice(0, remaining));
+            } else {
+              const firstMatch = matches[0];
+              if (firstMatch) {
+                allMatches.push(firstMatch);
+              }
+            }
+          }
+        }
+        let resultMatches;
+        switch (output_mode) {
+          case "files_with_matches":
+            const uniqueFiles = new Set(allMatches.map((m) => m.file));
+            resultMatches = Array.from(uniqueFiles).map((file) => ({
+              file,
+              line: 0,
+              content: ""
+            }));
+            break;
+          case "count":
+            resultMatches = Array.from(fileMatchCounts.entries()).map(([file, count]) => ({
+              file,
+              line: count,
+              content: `${count} matches`
+            }));
+            break;
+          case "content":
+          default:
+            resultMatches = allMatches;
+        }
+        const totalMatches = Array.from(fileMatchCounts.values()).reduce((a, b) => a + b, 0);
+        const truncated = limit ? allMatches.length >= limit : totalMatches >= mergedConfig.maxResults;
+        return {
+          success: true,
+          matches: resultMatches,
+          filesSearched: filesToSearch.length,
+          filesMatched,
+          totalMatches,
+          truncated
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Grep search failed: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+var grep = createGrepTool();
+async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, currentDepth = 0, entries = []) {
+  if (currentDepth > maxDepth || entries.length >= config.maxResults) {
+    return entries;
+  }
+  try {
+    const dirEntries = await readdir(dir, { withFileTypes: true });
+    for (const entry of dirEntries) {
+      if (entries.length >= config.maxResults) break;
+      const fullPath = join(dir, entry.name);
+      const relativePath = relative(baseDir, fullPath);
+      if (entry.isDirectory() && config.blockedDirectories.includes(entry.name)) {
+        continue;
+      }
+      const isFile = entry.isFile();
+      const isDir = entry.isDirectory();
+      if (filter === "files" && !isFile) {
+        if (isDir && recursive) {
+          await listDir(fullPath, baseDir, config, recursive, filter, maxDepth, currentDepth + 1, entries);
+        }
+        continue;
+      }
+      if (filter === "directories" && !isDir) continue;
+      try {
+        const stats = await stat(fullPath);
+        const dirEntry = {
+          name: entry.name,
+          path: relativePath,
+          type: isFile ? "file" : "directory"
+        };
+        if (isFile) {
+          dirEntry.size = stats.size;
+        }
+        dirEntry.modified = stats.mtime.toISOString();
+        entries.push(dirEntry);
+        if (isDir && recursive) {
+          await listDir(fullPath, baseDir, config, recursive, filter, maxDepth, currentDepth + 1, entries);
+        }
+      } catch {
+      }
+    }
+  } catch {
+  }
+  return entries;
+}
+function createListDirectoryTool(config = {}) {
+  const mergedConfig = { ...DEFAULT_FILESYSTEM_CONFIG, ...config };
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "list_directory",
+        description: `List the contents of a directory on the local filesystem.
+
+USAGE:
+- Shows files and directories in the specified path
+- Includes file sizes and modification times
+- Can list recursively with depth limit
+- Can filter to show only files or only directories
+
+WHEN TO USE:
+- To explore a project's structure
+- To see what files exist in a directory
+- To find files before using read_file or edit_file
+- As an alternative to glob when you want to see directory structure
+
+EXAMPLES:
+- List current directory: { "path": "." }
+- List specific directory: { "path": "/path/to/project/src" }
+- List recursively: { "path": ".", "recursive": true, "max_depth": 2 }
+- List only files: { "path": ".", "filter": "files" }
+- List only directories: { "path": ".", "filter": "directories" }`,
+        parameters: {
+          type: "object",
+          properties: {
+            path: {
+              type: "string",
+              description: "Path to the directory to list"
+            },
+            recursive: {
+              type: "boolean",
+              description: "Whether to list recursively (default: false)"
+            },
+            filter: {
+              type: "string",
+              enum: ["files", "directories"],
+              description: "Filter to show only files or only directories"
+            },
+            max_depth: {
+              type: "number",
+              description: "Maximum depth for recursive listing (default: 3)"
+            }
+          },
+          required: ["path"]
+        }
+      }
+    },
+    execute: async (args) => {
+      const { path: path5, recursive = false, filter, max_depth = 3 } = args;
+      const validation = validatePath(path5, {
+        ...mergedConfig,
+        blockedDirectories: []
+        // Allow listing any valid directory
+      });
+      if (!validation.valid) {
+        return {
+          success: false,
+          error: validation.error
+        };
+      }
+      const resolvedPath = validation.resolvedPath;
+      if (!existsSync(resolvedPath)) {
+        return {
+          success: false,
+          error: `Directory not found: ${path5}`
+        };
+      }
+      try {
+        const stats = await stat(resolvedPath);
+        if (!stats.isDirectory()) {
+          return {
+            success: false,
+            error: `Path is not a directory: ${path5}. Use read_file to read file contents.`
+          };
+        }
+        const entries = await listDir(
+          resolvedPath,
+          resolvedPath,
+          mergedConfig,
+          recursive,
+          filter,
+          max_depth
+        );
+        entries.sort((a, b) => {
+          if (a.type !== b.type) {
+            return a.type === "directory" ? -1 : 1;
+          }
+          return a.name.localeCompare(b.name);
+        });
+        const truncated = entries.length >= mergedConfig.maxResults;
+        return {
+          success: true,
+          entries,
+          count: entries.length,
+          truncated
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to list directory: ${error instanceof Error ? error.message : String(error)}`
+        };
+      }
+    }
+  };
+}
+var listDirectory = createListDirectoryTool();
+
+// src/tools/shell/types.ts
+var DEFAULT_SHELL_CONFIG = {
+  workingDirectory: process.cwd(),
+  defaultTimeout: 12e4,
+  // 2 minutes
+  maxTimeout: 6e5,
+  // 10 minutes
+  shell: process.platform === "win32" ? "cmd.exe" : "/bin/bash",
+  env: {},
+  blockedCommands: [
+    "rm -rf /",
+    "rm -rf /*",
+    "rm -rf ~",
+    "rm -rf ~/*",
+    "mkfs",
+    "dd if=/dev/zero",
+    ":(){:|:&};:"
+    // Fork bomb
+  ],
+  blockedPatterns: [
+    /rm\s+(-rf?|--recursive)\s+\/(?!\S)/i,
+    // rm -rf / variations
+    />\s*\/dev\/sd[a-z]/i,
+    // Writing to disk devices
+    /mkfs/i,
+    /dd\s+.*of=\/dev\//i
+    // dd to devices
+  ],
+  maxOutputSize: 1e5,
+  allowBackground: true
+};
+function isBlockedCommand(command, config = {}) {
+  const blockedCommands = config.blockedCommands || DEFAULT_SHELL_CONFIG.blockedCommands;
+  const blockedPatterns = config.blockedPatterns || DEFAULT_SHELL_CONFIG.blockedPatterns;
+  for (const blocked of blockedCommands) {
+    if (command.includes(blocked)) {
+      return { blocked: true, reason: `Command contains blocked sequence: "${blocked}"` };
+    }
+  }
+  for (const pattern of blockedPatterns) {
+    if (pattern.test(command)) {
+      return { blocked: true, reason: `Command matches blocked pattern` };
+    }
+  }
+  return { blocked: false };
+}
+var backgroundProcesses = /* @__PURE__ */ new Map();
+function generateBackgroundId() {
+  return `bg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+function createBashTool(config = {}) {
+  const mergedConfig = { ...DEFAULT_SHELL_CONFIG, ...config };
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "bash",
+        description: `Execute shell commands with optional timeout.
+
+USAGE:
+- Execute any shell command
+- Working directory persists between commands
+- Commands timeout after 2 minutes by default (configurable up to 10 minutes)
+- Large outputs (>100KB) will be truncated
+
+IMPORTANT: This tool is for terminal operations like git, npm, docker, etc.
+For file operations, prefer dedicated tools:
+- Use read_file instead of cat/head/tail
+- Use edit_file instead of sed/awk
+- Use write_file instead of echo with redirection
+- Use glob instead of find
+- Use grep tool instead of grep command
+
+BEST PRACTICES:
+- Always quote file paths with spaces: cd "/path with spaces"
+- Use absolute paths when possible
+- Chain dependent commands with &&: git add . && git commit -m "msg"
+- Use ; only when you don't care if earlier commands fail
+- Avoid interactive commands (no -i flags)
+
+GIT SAFETY:
+- NEVER run destructive commands (push --force, reset --hard, clean -f) without explicit permission
+- NEVER update git config
+- NEVER skip hooks (--no-verify) without permission
+- Always create NEW commits rather than amending
+- Stage specific files rather than using "git add -A"
+
+EXAMPLES:
+- Run npm install: { "command": "npm install", "description": "Install dependencies" }
+- Check git status: { "command": "git status", "description": "Show working tree status" }
+- Run tests: { "command": "npm test", "timeout": 300000, "description": "Run test suite" }
+- Build project: { "command": "npm run build", "description": "Build the project" }`,
+        parameters: {
+          type: "object",
+          properties: {
+            command: {
+              type: "string",
+              description: "The shell command to execute"
+            },
+            timeout: {
+              type: "number",
+              description: "Optional timeout in milliseconds (max 600000ms / 10 minutes)"
+            },
+            description: {
+              type: "string",
+              description: "Clear, concise description of what this command does"
+            },
+            run_in_background: {
+              type: "boolean",
+              description: "Run the command in the background. Returns immediately with a background ID."
+            }
+          },
+          required: ["command"]
+        }
+      }
+    },
+    execute: async (args) => {
+      const {
+        command,
+        timeout = mergedConfig.defaultTimeout,
+        run_in_background = false
+      } = args;
+      const blockCheck = isBlockedCommand(command, mergedConfig);
+      if (blockCheck.blocked) {
+        return {
+          success: false,
+          error: `Command blocked for safety: ${blockCheck.reason}`
+        };
+      }
+      const effectiveTimeout = Math.min(timeout, mergedConfig.maxTimeout);
+      const env = {
+        ...process.env,
+        ...mergedConfig.env
+      };
+      return new Promise((resolve2) => {
+        const startTime = Date.now();
+        const childProcess = spawn(command, [], {
+          shell: mergedConfig.shell,
+          cwd: mergedConfig.workingDirectory,
+          env,
+          stdio: ["pipe", "pipe", "pipe"]
+        });
+        if (run_in_background && mergedConfig.allowBackground) {
+          const bgId = generateBackgroundId();
+          const output = [];
+          backgroundProcesses.set(bgId, { process: childProcess, output });
+          childProcess.stdout.on("data", (data) => {
+            output.push(data.toString());
+          });
+          childProcess.stderr.on("data", (data) => {
+            output.push(data.toString());
+          });
+          childProcess.on("close", () => {
+            setTimeout(() => {
+              backgroundProcesses.delete(bgId);
+            }, 3e5);
+          });
+          resolve2({
+            success: true,
+            backgroundId: bgId,
+            stdout: `Command started in background with ID: ${bgId}`
+          });
+          return;
+        }
+        let stdout = "";
+        let stderr = "";
+        let killed = false;
+        const timeoutId = setTimeout(() => {
+          killed = true;
+          childProcess.kill("SIGTERM");
+          setTimeout(() => {
+            if (!childProcess.killed) {
+              childProcess.kill("SIGKILL");
+            }
+          }, 5e3);
+        }, effectiveTimeout);
+        childProcess.stdout.on("data", (data) => {
+          stdout += data.toString();
+          if (stdout.length > mergedConfig.maxOutputSize * 2) {
+            stdout = stdout.slice(-mergedConfig.maxOutputSize);
+          }
+        });
+        childProcess.stderr.on("data", (data) => {
+          stderr += data.toString();
+          if (stderr.length > mergedConfig.maxOutputSize * 2) {
+            stderr = stderr.slice(-mergedConfig.maxOutputSize);
+          }
+        });
+        childProcess.on("close", (code, signal) => {
+          clearTimeout(timeoutId);
+          const duration = Date.now() - startTime;
+          let truncated = false;
+          if (stdout.length > mergedConfig.maxOutputSize) {
+            stdout = stdout.slice(0, mergedConfig.maxOutputSize) + "\n... (output truncated)";
+            truncated = true;
+          }
+          if (stderr.length > mergedConfig.maxOutputSize) {
+            stderr = stderr.slice(0, mergedConfig.maxOutputSize) + "\n... (output truncated)";
+            truncated = true;
+          }
+          if (killed) {
+            resolve2({
+              success: false,
+              stdout,
+              stderr,
+              exitCode: code ?? void 0,
+              signal: signal ?? void 0,
+              duration,
+              truncated,
+              error: `Command timed out after ${effectiveTimeout}ms`
+            });
+          } else {
+            resolve2({
+              success: code === 0,
+              stdout,
+              stderr,
+              exitCode: code ?? void 0,
+              signal: signal ?? void 0,
+              duration,
+              truncated,
+              error: code !== 0 ? `Command exited with code ${code}` : void 0
+            });
+          }
+        });
+        childProcess.on("error", (error) => {
+          clearTimeout(timeoutId);
+          resolve2({
+            success: false,
+            error: `Failed to execute command: ${error.message}`,
+            duration: Date.now() - startTime
+          });
+        });
+      });
+    }
+  };
+}
+function getBackgroundOutput(bgId) {
+  const bg = backgroundProcesses.get(bgId);
+  if (!bg) {
+    return { found: false };
+  }
+  return {
+    found: true,
+    output: bg.output.join(""),
+    running: !bg.process.killed && bg.process.exitCode === null
+  };
+}
+function killBackgroundProcess(bgId) {
+  const bg = backgroundProcesses.get(bgId);
+  if (!bg) {
+    return false;
+  }
+  bg.process.kill("SIGTERM");
+  return true;
+}
+var bash = createBashTool();
 
 // src/tools/json/pathUtils.ts
 function parsePath(path5) {
@@ -18333,6 +19693,17 @@ async function executeInVM(code, input, timeout, logs) {
   const result = await resultPromise;
   return result;
 }
+
+// src/tools/index.ts
+var developerTools = [
+  readFile4,
+  writeFile4,
+  editFile,
+  glob,
+  grep,
+  listDirectory,
+  bash
+];
 
 // src/agents/ProviderConfigAgent.ts
 var ProviderConfigAgent = class {
@@ -19780,6 +21151,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, STT_MODELS, STT_MODEL_REGISTRY, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TextToSpeech, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, createVideoProvider, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, hasClipboardImage, isErrorEvent, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, tools_exports as tools };
+export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_SHELL_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, STT_MODELS, STT_MODEL_REGISTRY, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TextToSpeech, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, calculateBackoff, calculateCost, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createReadFileTool, createStrategy, createTextMessage, createVideoProvider, createWriteFileTool, developerTools, editFile, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getBackgroundOutput, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile4 as readFile, retryWithBackoff, setMetricsCollector, tools_exports as tools, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

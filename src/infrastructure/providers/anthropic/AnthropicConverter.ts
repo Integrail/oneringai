@@ -118,11 +118,28 @@ export class AnthropicConverter {
           break;
 
         case ContentType.TOOL_RESULT:
+          // Anthropic requires non-empty content when is_error is true
+          // When there's an error with empty content, use the error message as content
+          const isError = !!c.error;
+          let toolResultContent: string;
+
+          if (typeof c.content === 'string') {
+            // For error cases with empty content, use the error message
+            toolResultContent = c.content || (isError ? c.error! : '');
+          } else {
+            toolResultContent = JSON.stringify(c.content);
+          }
+
+          // Anthropic API rejects empty content when is_error is true
+          if (isError && !toolResultContent) {
+            toolResultContent = c.error || 'Tool execution failed';
+          }
+
           blocks.push({
             type: 'tool_result',
             tool_use_id: c.tool_use_id,
-            content: typeof c.content === 'string' ? c.content : JSON.stringify(c.content),
-            is_error: !!c.error,
+            content: toolResultContent,
+            is_error: isError,
           });
           break;
 

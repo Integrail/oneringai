@@ -216,12 +216,17 @@ export class Terminal {
   async readline(promptStr: string): Promise<string | null> {
     return new Promise((resolve) => {
       if (this.rl) {
-        this.rl.question(promptStr, (answer) => {
-          resolve(answer);
-        });
-
-        this.rl.once('close', () => {
+        // Create close handler that we can remove after question is answered
+        const closeHandler = () => {
           resolve(null);
+        };
+
+        this.rl.once('close', closeHandler);
+
+        this.rl.question(promptStr, (answer) => {
+          // Remove the close handler since we got an answer
+          this.rl?.removeListener('close', closeHandler);
+          resolve(answer);
         });
       } else {
         resolve(null);

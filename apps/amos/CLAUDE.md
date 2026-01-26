@@ -19,24 +19,25 @@ This document provides context for AI assistants to continue development of the 
 │  Main application class - ties all components together          │
 └────────────────┬────────────────────────────────────────────────┘
                  │
-    ┌────────────┼────────────┬────────────┬────────────┐
-    │            │            │            │            │
+    ┌────────────┼────────────┬────────────┬────────────┬────────────┐
+    │            │            │            │            │            │
+    ▼            ▼            ▼            ▼            ▼            ▼
+┌────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+│Terminal│ │Command   │ │Connector │ │Tool      │ │Prompt    │ │Agent     │
+│   UI   │ │Processor │ │Manager   │ │Loader    │ │Manager   │ │Runner    │
+└────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
+    │            │            │            │            │            │
+    │            │            │            │            │            ▼
+    │            │            │            │            │     ┌──────────────┐
+    │            │            │            │            │     │Universal     │
+    │            │            │            │            │     │Agent         │
+    │            │            │            │            │     │(@oneringai)  │
+    │            │            │            │            │     └──────────────┘
     ▼            ▼            ▼            ▼            ▼
-┌────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
-│Terminal│ │Command   │ │Connector │ │Tool      │ │Agent     │
-│   UI   │ │Processor │ │Manager   │ │Loader    │ │Runner    │
-└────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘
-    │            │            │            │            │
-    │            │            │            │            ▼
-    │            │            │            │     ┌──────────────┐
-    │            │            │            │     │Universal     │
-    │            │            │            │     │Agent         │
-    │            │            │            │     │(@oneringai)  │
-    │            │            │            │     └──────────────┘
-    ▼            ▼            ▼            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      data/ (filesystem)                          │
 │  config.json | connectors/*.json | sessions/ | tools/*.js       │
+│  prompts/*.md                                                    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,6 +64,7 @@ apps/amos/
 │   │       ├── VendorCommand.ts    # /vendor - uses Vendor enum
 │   │       ├── ConnectorCommand.ts # /connector add|edit|delete|generate|use
 │   │       ├── ToolCommand.ts      # /tool list|enable|disable|reload
+│   │       ├── PromptCommand.ts    # /prompt list|show|use|clear|create|edit|delete
 │   │       ├── SessionCommand.ts   # /session save|load|list|new
 │   │       ├── ConfigCommand.ts    # /config get|set|reset
 │   │       ├── UtilCommands.ts     # /clear, /exit, /status, /history
@@ -74,6 +76,10 @@ apps/amos/
 │   │
 │   ├── tools/
 │   │   ├── ToolLoader.ts           # Built-in + custom tool loading
+│   │   └── index.ts
+│   │
+│   ├── prompts/
+│   │   ├── PromptManager.ts        # Prompt template management
 │   │   └── index.ts
 │   │
 │   ├── agent/
@@ -90,6 +96,12 @@ apps/amos/
 │   ├── sessions/                   # Session persistence
 │   ├── tools/                      # Custom tools (.js files)
 │   │   └── example-tool.js
+│   ├── prompts/                    # System prompt templates (.md files)
+│   │   ├── default.md              # Default helpful assistant
+│   │   ├── coding-assistant.md     # Expert coding assistant (basic)
+│   │   ├── coding-agent.md         # Autonomous coding agent with full tools
+│   │   ├── research-analyst.md     # Research and analysis
+│   │   └── writing-editor.md       # Writing and editing
 │   └── logs/                       # Log files (dev mode)
 │
 ├── package.json
@@ -115,6 +127,7 @@ interface IAmosApp {
   // Component access
   getConnectorManager(): IConnectorManager;
   getToolLoader(): IToolLoader;
+  getPromptManager(): IPromptManager;
   getActiveTools(): ToolFunction[];
   getAgent(): IAgentRunner | null;
 
@@ -127,6 +140,7 @@ interface IAmosApp {
   printError(message: string): void;
   printSuccess(message: string): void;
   printInfo(message: string): void;
+  printDim(message: string): void;
   prompt(question: string): Promise<string>;
   confirm(question: string): Promise<boolean>;
   select<T extends string>(question: string, options: T[]): Promise<T>;
@@ -190,12 +204,15 @@ connectorManager.isRegistered(name): boolean
 
 ### 4. ToolLoader (`src/tools/ToolLoader.ts`)
 
-Dynamic tool loading:
+Dynamic tool loading with built-in developer tools:
 
 ```typescript
 // Loading
-toolLoader.loadBuiltinTools(): ToolFunction[]    // calculate, get_current_time, etc.
+toolLoader.loadBuiltinTools(): ToolFunction[]    // Basic tools + developer tools
 toolLoader.loadCustomTools(dir): Promise<ToolFunction[]>
+
+// Configuration
+toolLoader.setConfig(config): void              // Set config for developer tools
 
 // Management
 toolLoader.enableTool(name): void
@@ -207,9 +224,60 @@ toolLoader.getEnabledTools(): ToolFunction[]
 toolLoader.reloadTools(): Promise<void>
 ```
 
+**Built-in Tools:**
+- **Basic:** `calculate`, `get_current_time`, `random_number`, `echo`
+- **Developer (Filesystem):** `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `list_directory`
+- **Developer (Shell):** `bash`
+
 **Custom tools:** Export default `ToolFunction` from `.js` files in `data/tools/`
 
-### 5. AgentRunner (`src/agent/AgentRunner.ts`)
+### 5. PromptManager (`src/prompts/PromptManager.ts`)
+
+System prompt template management:
+
+```typescript
+// Loading
+promptManager.initialize(): Promise<void>    // Load prompts from disk
+promptManager.reload(): Promise<void>         // Reload prompts
+
+// CRUD
+promptManager.list(): PromptTemplate[]        // Get all prompts
+promptManager.get(name): PromptTemplate | null
+promptManager.getContent(name): string | null
+promptManager.create(name, content, description?): Promise<void>
+promptManager.update(name, content, description?): Promise<void>
+promptManager.delete(name): Promise<void>
+
+// Selection
+promptManager.setActive(name | null): void
+promptManager.getActive(): PromptTemplate | null
+promptManager.getActiveContent(): string | null
+```
+
+**PromptTemplate structure:**
+```typescript
+interface PromptTemplate {
+  name: string;        // Derived from filename (without .md)
+  description: string; // From YAML frontmatter
+  content: string;     // Main content (after frontmatter)
+  filePath: string;    // Full path to .md file
+  createdAt: number;   // File creation time
+  updatedAt: number;   // File modification time
+}
+```
+
+**Storage format:** Markdown files with optional YAML frontmatter:
+```markdown
+---
+description: Expert coding assistant for software development
+---
+
+You are an expert software developer...
+```
+
+**Integration with agent:** Active prompt content is passed to `UniversalAgent.create()` via the `instructions` config field.
+
+### 6. AgentRunner (`src/agent/AgentRunner.ts`)
 
 Wrapper around `UniversalAgent`:
 
@@ -241,7 +309,7 @@ agentRunner.loadSession(id): Promise<void>
 
 **Note:** Model/temperature changes require agent recreation via `app.createAgent()`.
 
-### 6. Terminal (`src/ui/Terminal.ts`)
+### 7. Terminal (`src/ui/Terminal.ts`)
 
 Terminal UI utilities:
 
@@ -315,6 +383,22 @@ interface AmosConfig {
     enabledTools: string[];
     disabledTools: string[];
     customToolsDir: string;  // './data/tools'
+  };
+
+  // Prompts
+  prompts: {
+    promptsDir: string;           // './data/prompts'
+    activePrompt: string | null;  // Currently selected prompt name
+  };
+
+  // Developer Tools (filesystem + shell)
+  developerTools: {
+    enabled: boolean;             // true - enable coding agent tools
+    workingDirectory: string;     // process.cwd()
+    allowedDirectories: string[]; // [] - if set, restricts access
+    blockedDirectories: string[]; // ['node_modules', '.git', 'dist', 'build']
+    blockedCommands: string[];    // dangerous shell commands
+    commandTimeout: number;       // 30000ms
   };
 }
 ```
@@ -393,6 +477,28 @@ tools.push({
 });
 ```
 
+### Adding a New Prompt Template
+
+1. Create `data/prompts/my-prompt.md`:
+
+```markdown
+---
+description: Short description for listing
+---
+
+Your system prompt content here.
+Instruct the AI on personality, capabilities, constraints, etc.
+```
+
+2. Use via command: `/prompt use my-prompt`
+
+Or programmatically:
+```typescript
+await promptManager.create('my-prompt', content, description);
+promptManager.setActive('my-prompt');
+await app.createAgent();  // Recreates agent with new instructions
+```
+
 ### Adding a New Config Section
 
 1. Update `AmosConfig` interface in `src/config/types.ts`
@@ -428,8 +534,13 @@ import {
 ### UniversalAgent API
 
 ```typescript
-// Create
-const agent = UniversalAgent.create(config);
+// Create (with optional instructions from prompt template)
+const agent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4o',
+  instructions: promptManager.getActiveContent() || undefined,
+  // ... other config
+});
 const agent = await UniversalAgent.resume(sessionId, config);
 
 // Chat
@@ -506,6 +617,9 @@ npm run dev
 /model list
 /vendor list
 /tool list
+/prompt list
+/prompt use coding-assistant
+/prompt current
 ```
 
 ## Common Tasks
@@ -522,10 +636,23 @@ User runs `/vendor anthropic` → `VendorCommand` finds connectors for vendor �
 ### AI-assisted connector generation
 User runs `/connector generate` → Uses current agent to generate config JSON → prompts for API key → saves connector
 
+### Switch prompt template
+User runs `/prompt use coding-assistant` → `PromptCommand` calls `promptManager.setActive()` → updates config → calls `app.createAgent()` to recreate agent with new instructions
+
+### Create new prompt template
+User runs `/prompt create research` → Prompted for content (type END to finish) → `promptManager.create()` saves to `data/prompts/research.md`
+
+### Enable coding agent mode
+User runs `/prompt use coding-agent` → AMOS becomes an autonomous coding agent with:
+- Full filesystem access (read, write, edit, glob, grep, list)
+- Shell command execution (bash)
+- Intelligent code analysis and modification
+- Git-aware workflow
+
 ## Future Improvements
 
 - [ ] MCP (Model Context Protocol) server integration
-- [ ] File system tools (read, write, search)
+- [x] File system tools (read, write, search) ✓ Implemented
 - [ ] Web browsing tools
 - [ ] Image input support (vision models)
 - [ ] Plugin system for command extensions
@@ -537,4 +664,4 @@ User runs `/connector generate` → Uses current agent to generate config JSON �
 ---
 
 **Version**: 0.1.0
-**Last Updated**: 2026-01-24
+**Last Updated**: 2026-01-26

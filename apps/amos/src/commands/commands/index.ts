@@ -9,4 +9,5 @@ export { ConnectorCommand } from './ConnectorCommand.js';
 export { ToolCommand } from './ToolCommand.js';
 export { SessionCommand } from './SessionCommand.js';
 export { ConfigCommand } from './ConfigCommand.js';
+export { PromptCommand } from './PromptCommand.js';
 export { ClearCommand, ExitCommand, StatusCommand, HistoryCommand } from './UtilCommands.js';

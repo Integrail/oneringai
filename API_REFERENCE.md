@@ -11355,6 +11355,212 @@ export function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent
 
 ---
 
+## Developer Tools (Filesystem & Shell)
+
+Built-in tools for file system operations and shell command execution. Perfect for building coding assistants.
+
+### developerTools `const`
+
+📍 [`src/tools/index.ts`](src/tools/index.ts)
+
+Array of all developer tools bundled together for convenience.
+
+```typescript
+export const developerTools: ToolFunction[]
+```
+
+**Includes:** `readFile`, `writeFile`, `editFile`, `glob`, `grep`, `listDirectory`, `bash`
+
+---
+
+### Filesystem Tools
+
+#### createReadFileTool `function`
+
+📍 [`src/tools/filesystem/readFile.ts`](src/tools/filesystem/readFile.ts)
+
+Create a read_file tool with optional configuration.
+
+```typescript
+export function createReadFileTool(config?: FilesystemToolConfig): ToolFunction<ReadFileArgs, ReadFileResult>
+```
+
+**Tool Name:** `read_file`
+
+**Parameters:**
+- `file_path`: `string` - Absolute path to the file
+- `offset`: `number` *(optional)* - Line to start reading from
+- `limit`: `number` *(optional)* - Number of lines to read
+
+---
+
+#### createWriteFileTool `function`
+
+📍 [`src/tools/filesystem/writeFile.ts`](src/tools/filesystem/writeFile.ts)
+
+Create a write_file tool with optional configuration.
+
+```typescript
+export function createWriteFileTool(config?: FilesystemToolConfig): ToolFunction<WriteFileArgs, WriteFileResult>
+```
+
+**Tool Name:** `write_file`
+
+**Parameters:**
+- `file_path`: `string` - Absolute path to the file
+- `content`: `string` - Content to write
+
+---
+
+#### createEditFileTool `function`
+
+📍 [`src/tools/filesystem/editFile.ts`](src/tools/filesystem/editFile.ts)
+
+Create an edit_file tool for surgical find/replace edits.
+
+```typescript
+export function createEditFileTool(config?: FilesystemToolConfig): ToolFunction<EditFileArgs, EditFileResult>
+```
+
+**Tool Name:** `edit_file`
+
+**Parameters:**
+- `file_path`: `string` - Absolute path to the file
+- `old_string`: `string` - Text to replace
+- `new_string`: `string` - Replacement text
+- `replace_all`: `boolean` *(optional)* - Replace all occurrences (default: false)
+
+---
+
+#### createGlobTool `function`
+
+📍 [`src/tools/filesystem/glob.ts`](src/tools/filesystem/glob.ts)
+
+Create a glob tool for finding files by pattern.
+
+```typescript
+export function createGlobTool(config?: FilesystemToolConfig): ToolFunction<GlobArgs, GlobResult>
+```
+
+**Tool Name:** `glob`
+
+**Parameters:**
+- `pattern`: `string` - Glob pattern (e.g., `**/*.ts`, `src/**/*.{ts,tsx}`)
+- `path`: `string` *(optional)* - Directory to search in
+
+---
+
+#### createGrepTool `function`
+
+📍 [`src/tools/filesystem/grep.ts`](src/tools/filesystem/grep.ts)
+
+Create a grep tool for searching file contents with regex.
+
+```typescript
+export function createGrepTool(config?: FilesystemToolConfig): ToolFunction<GrepArgs, GrepResult>
+```
+
+**Tool Name:** `grep`
+
+**Parameters:**
+- `pattern`: `string` - Regex pattern to search for
+- `path`: `string` *(optional)* - File or directory to search
+- `type`: `string` *(optional)* - File type filter (e.g., `ts`, `js`, `py`)
+- `glob`: `string` *(optional)* - Glob pattern filter
+- `output_mode`: `'content' | 'files_with_matches' | 'count'` *(optional)*
+- `case_insensitive`: `boolean` *(optional)*
+- `context_before`: `number` *(optional)* - Lines before match
+- `context_after`: `number` *(optional)* - Lines after match
+
+---
+
+#### createListDirectoryTool `function`
+
+📍 [`src/tools/filesystem/listDirectory.ts`](src/tools/filesystem/listDirectory.ts)
+
+Create a list_directory tool for listing directory contents.
+
+```typescript
+export function createListDirectoryTool(config?: FilesystemToolConfig): ToolFunction<ListDirectoryArgs, ListDirectoryResult>
+```
+
+**Tool Name:** `list_directory`
+
+**Parameters:**
+- `path`: `string` - Path to the directory
+- `recursive`: `boolean` *(optional)* - List recursively
+- `filter`: `'files' | 'directories'` *(optional)* - Filter by type
+- `max_depth`: `number` *(optional)* - Maximum recursion depth
+
+---
+
+### Shell Tools
+
+#### createBashTool `function`
+
+📍 [`src/tools/shell/bash.ts`](src/tools/shell/bash.ts)
+
+Create a bash tool for executing shell commands.
+
+```typescript
+export function createBashTool(config?: ShellToolConfig): ToolFunction<BashArgs, BashResult>
+```
+
+**Tool Name:** `bash`
+
+**Parameters:**
+- `command`: `string` - Shell command to execute
+- `timeout`: `number` *(optional)* - Timeout in milliseconds (max 600000)
+- `description`: `string` *(optional)* - Description of the command
+- `run_in_background`: `boolean` *(optional)* - Run in background
+
+**Safety Features:**
+- Blocks dangerous commands (`rm -rf /`, fork bombs)
+- Configurable timeout (default 2 min, max 10 min)
+- Output truncation for large outputs
+
+---
+
+### Configuration Types
+
+#### FilesystemToolConfig `interface`
+
+📍 [`src/tools/filesystem/types.ts`](src/tools/filesystem/types.ts)
+
+```typescript
+interface FilesystemToolConfig {
+  workingDirectory?: string;       // Base directory (default: cwd)
+  allowedDirectories?: string[];   // Restrict to these directories
+  blockedDirectories?: string[];   // Block access (default: node_modules, .git)
+  maxFileSize?: number;            // Max read size (default: 10MB)
+  maxResults?: number;             // Max results for glob/grep (default: 1000)
+  followSymlinks?: boolean;        // Follow symlinks (default: false)
+  excludeExtensions?: string[];    // Skip binary files
+}
+```
+
+---
+
+#### ShellToolConfig `interface`
+
+📍 [`src/tools/shell/types.ts`](src/tools/shell/types.ts)
+
+```typescript
+interface ShellToolConfig {
+  workingDirectory?: string;       // Working directory
+  defaultTimeout?: number;         // Default timeout (default: 120000ms)
+  maxTimeout?: number;             // Max timeout (default: 600000ms)
+  maxOutputSize?: number;          // Max output size (default: 100KB)
+  allowBackground?: boolean;       // Allow background execution (default: false)
+  shell?: string;                  // Shell to use (default: /bin/bash)
+  env?: Record<string, string>;    // Environment variables
+  blockedCommands?: string[];      // Additional blocked commands
+  blockedPatterns?: RegExp[];      // Additional blocked patterns
+}
+```
+
+---
+
 ## Streaming
 
 Real-time streaming of agent responses

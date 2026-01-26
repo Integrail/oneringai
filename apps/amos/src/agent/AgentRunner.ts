@@ -31,6 +31,7 @@ export class AgentRunner implements IAgentRunner {
   private _currentModel: string;
   private _currentTemperature: number;
   private _connectorName: string = '';
+  private _instructions: string | null = null;
 
   // For interactive tool approval
   private _pendingApprovalResolve: ((decision: ApprovalDecision) => void) | null = null;
@@ -46,6 +47,21 @@ export class AgentRunner implements IAgentRunner {
     this.sessionDir = sessionDir;
     this._currentModel = config.activeModel || config.defaults.model;
     this._currentTemperature = config.defaults.temperature;
+  }
+
+  /**
+   * Set the system instructions (from prompt template)
+   */
+  setInstructions(instructions: string | null): void {
+    this._instructions = instructions;
+    // Note: Instruction changes require agent recreation
+  }
+
+  /**
+   * Get the current instructions
+   */
+  getInstructions(): string | null {
+    return this._instructions;
   }
 
   /**
@@ -100,6 +116,7 @@ export class AgentRunner implements IAgentRunner {
             model: model,
             tools: this.tools,
             temperature: this._currentTemperature,
+            instructions: this._instructions || undefined,
             planning: {
               enabled: this.config.planning.enabled,
               autoDetect: this.config.planning.autoDetect,
@@ -145,6 +162,7 @@ export class AgentRunner implements IAgentRunner {
       model: model,
       tools: this.tools,
       temperature: this._currentTemperature,
+      instructions: this._instructions || undefined,
 
       planning: {
         enabled: this.config.planning.enabled,

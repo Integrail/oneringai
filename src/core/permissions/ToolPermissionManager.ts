@@ -402,7 +402,15 @@ export class ToolPermissionManager extends EventEmitter {
    * Request approval for a tool call
    *
    * If an onApprovalRequired callback is set, it will be called.
-   * Otherwise, this returns a decision that requires hook-based approval.
+   * Otherwise, this auto-approves for backward compatibility.
+   *
+   * NOTE: If you want to require explicit approval, you MUST either:
+   * 1. Set onApprovalRequired callback in AgentPermissionsConfig
+   * 2. Register an 'approve:tool' hook in the AgenticLoop
+   * 3. Add tools to the blocklist if they should never run
+   *
+   * This auto-approval behavior preserves backward compatibility with
+   * existing code that doesn't use the permission system.
    */
   async requestApproval(context: PermissionCheckContext): Promise<ApprovalDecision> {
     if (this.onApprovalRequired) {
@@ -418,10 +426,13 @@ export class ToolPermissionManager extends EventEmitter {
       return decision;
     }
 
-    // No callback - signal that external approval (hooks) is needed
+    // No callback - auto-approve for backward compatibility
+    // This preserves the pre-permission-system behavior where all tools
+    // were automatically allowed to execute. Users who want to require
+    // explicit approval must set onApprovalRequired or use approve:tool hooks.
     return {
-      approved: false,
-      reason: 'No approval handler configured, use hooks',
+      approved: true,
+      reason: 'Auto-approved (no approval handler configured)',
     };
   }
 
