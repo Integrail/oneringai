@@ -4087,9 +4087,11 @@ var ToolManager = class extends EventEmitter$1 {
       }
       if (options.priority !== void 0) existing.priority = options.priority;
       if (options.conditions !== void 0) existing.conditions = options.conditions;
+      if (options.permission !== void 0) existing.permission = options.permission;
       return;
     }
     const namespace = options.namespace ?? "default";
+    const effectivePermission = options.permission ?? tool.permission;
     const registration = {
       tool,
       enabled: options.enabled ?? true,
@@ -4103,7 +4105,8 @@ var ToolManager = class extends EventEmitter$1 {
         avgExecutionMs: 0,
         successCount: 0,
         failureCount: 0
-      }
+      },
+      permission: effectivePermission
     };
     this.registry.set(name, registration);
     this.addToNamespace(name, namespace);
@@ -4260,6 +4263,21 @@ var ToolManager = class extends EventEmitter$1 {
    */
   getPriority(name) {
     return this.registry.get(name)?.priority;
+  }
+  /**
+   * Get permission config for a tool
+   */
+  getPermission(name) {
+    return this.registry.get(name)?.permission;
+  }
+  /**
+   * Set permission config for a tool
+   */
+  setPermission(name, permission) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    registration.permission = permission;
+    return true;
   }
   // ==========================================================================
   // Query
@@ -4427,15 +4445,19 @@ var ToolManager = class extends EventEmitter$1 {
     const enabled = {};
     const namespaces = {};
     const priorities = {};
+    const permissions = {};
     for (const [name, reg] of this.registry) {
       enabled[name] = reg.enabled;
       namespaces[name] = reg.namespace;
       priorities[name] = reg.priority;
+      if (reg.permission) {
+        permissions[name] = reg.permission;
+      }
     }
-    return { enabled, namespaces, priorities };
+    return { enabled, namespaces, priorities, permissions };
   }
   /**
-   * Load state (restores enabled/disabled, namespaces, priorities)
+   * Load state (restores enabled/disabled, namespaces, priorities, permissions)
    * Note: Tools must be re-registered separately (they contain functions)
    */
   loadState(state) {
@@ -4450,6 +4472,11 @@ var ToolManager = class extends EventEmitter$1 {
     }
     for (const [name, priority] of Object.entries(state.priorities)) {
       this.setPriority(name, priority);
+    }
+    if (state.permissions) {
+      for (const [name, permission] of Object.entries(state.permissions)) {
+        this.setPermission(name, permission);
+      }
     }
   }
   // ==========================================================================
@@ -4718,6 +4745,458 @@ function addHistoryEntry(history, type, content, metadata) {
     metadata
   });
 }
+
+// src/core/permissions/types.ts
+var APPROVAL_STATE_VERSION = 1;
+var DEFAULT_PERMISSION_CONFIG = {
+  scope: "once",
+  riskLevel: "low"
+};
+
+// src/core/permissions/ToolPermissionManager.ts
+var ToolPermissionManager = class extends EventEmitter$1 {
+  // Approval cache (session-level)
+  approvalCache = /* @__PURE__ */ new Map();
+  // Allow/block lists
+  allowlist = /* @__PURE__ */ new Set();
+  blocklist = /* @__PURE__ */ new Set();
+  // Per-tool configurations
+  toolConfigs = /* @__PURE__ */ new Map();
+  // Defaults
+  defaultScope;
+  defaultRiskLevel;
+  // Optional approval callback
+  onApprovalRequired;
+  constructor(config) {
+    super();
+    this.defaultScope = config?.defaultScope ?? DEFAULT_PERMISSION_CONFIG.scope;
+    this.defaultRiskLevel = config?.defaultRiskLevel ?? DEFAULT_PERMISSION_CONFIG.riskLevel;
+    if (config?.allowlist) {
+      for (const toolName of config.allowlist) {
+        this.allowlist.add(toolName);
+      }
+    }
+    if (config?.blocklist) {
+      for (const toolName of config.blocklist) {
+        this.blocklist.add(toolName);
+      }
+    }
+    if (config?.tools) {
+      for (const [toolName, toolConfig] of Object.entries(config.tools)) {
+        this.toolConfigs.set(toolName, toolConfig);
+      }
+    }
+    this.onApprovalRequired = config?.onApprovalRequired;
+  }
+  // ==========================================================================
+  // Core Permission Checking
+  // ==========================================================================
+  /**
+   * Check if a tool needs approval before execution
+   *
+   * @param toolName - Name of the tool
+   * @param _args - Optional arguments (for args-specific approval, reserved for future use)
+   * @returns PermissionCheckResult with allowed/needsApproval/blocked status
+   */
+  checkPermission(toolName, _args) {
+    const config = this.getEffectiveConfig(toolName);
+    if (this.blocklist.has(toolName)) {
+      return {
+        allowed: false,
+        needsApproval: false,
+        blocked: true,
+        reason: "Tool is blocklisted",
+        config
+      };
+    }
+    if (this.allowlist.has(toolName)) {
+      return {
+        allowed: true,
+        needsApproval: false,
+        blocked: false,
+        reason: "Tool is allowlisted",
+        config
+      };
+    }
+    const scope = config.scope ?? this.defaultScope;
+    switch (scope) {
+      case "always":
+        return {
+          allowed: true,
+          needsApproval: false,
+          blocked: false,
+          reason: 'Tool scope is "always"',
+          config
+        };
+      case "never":
+        return {
+          allowed: false,
+          needsApproval: false,
+          blocked: true,
+          reason: 'Tool scope is "never"',
+          config
+        };
+      case "session":
+        if (this.isApprovedForSession(toolName)) {
+          return {
+            allowed: true,
+            needsApproval: false,
+            blocked: false,
+            reason: "Tool approved for session",
+            config
+          };
+        }
+        return {
+          allowed: false,
+          needsApproval: true,
+          blocked: false,
+          reason: "Session approval required",
+          config
+        };
+      case "once":
+      default:
+        return {
+          allowed: false,
+          needsApproval: true,
+          blocked: false,
+          reason: "Per-call approval required",
+          config
+        };
+    }
+  }
+  /**
+   * Check if a tool call needs approval (uses ToolCall object)
+   */
+  needsApproval(toolCall) {
+    const result = this.checkPermission(toolCall.function.name);
+    return result.needsApproval;
+  }
+  /**
+   * Check if a tool is blocked
+   */
+  isBlocked(toolName) {
+    return this.checkPermission(toolName).blocked;
+  }
+  /**
+   * Check if a tool is approved (either allowlisted or session-approved)
+   */
+  isApproved(toolName) {
+    return this.checkPermission(toolName).allowed;
+  }
+  // ==========================================================================
+  // Approval Management
+  // ==========================================================================
+  /**
+   * Approve a tool (record approval)
+   *
+   * @param toolName - Name of the tool
+   * @param decision - Approval decision with scope
+   */
+  approve(toolName, decision) {
+    const scope = decision?.scope ?? "session";
+    const config = this.getEffectiveConfig(toolName);
+    let expiresAt;
+    if (scope === "session" && config.sessionTTLMs) {
+      expiresAt = new Date(Date.now() + config.sessionTTLMs);
+    }
+    const entry = {
+      toolName,
+      scope,
+      approvedAt: /* @__PURE__ */ new Date(),
+      approvedBy: decision?.approvedBy,
+      expiresAt
+    };
+    this.approvalCache.set(toolName, entry);
+    this.emit("tool:approved", {
+      toolName,
+      scope,
+      approvedBy: decision?.approvedBy
+    });
+  }
+  /**
+   * Approve a tool for the entire session
+   */
+  approveForSession(toolName, approvedBy) {
+    this.approve(toolName, { scope: "session", approvedBy });
+  }
+  /**
+   * Revoke a tool's approval
+   */
+  revoke(toolName) {
+    if (this.approvalCache.has(toolName)) {
+      this.approvalCache.delete(toolName);
+      this.emit("tool:revoked", { toolName });
+    }
+  }
+  /**
+   * Deny a tool execution (for audit trail)
+   */
+  deny(toolName, reason) {
+    this.emit("tool:denied", { toolName, reason });
+  }
+  /**
+   * Check if a tool has been approved for the current session
+   */
+  isApprovedForSession(toolName) {
+    const entry = this.approvalCache.get(toolName);
+    if (!entry) return false;
+    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+      this.approvalCache.delete(toolName);
+      return false;
+    }
+    return entry.scope === "session" || entry.scope === "always";
+  }
+  // ==========================================================================
+  // Allowlist / Blocklist Management
+  // ==========================================================================
+  /**
+   * Add a tool to the allowlist (always allowed)
+   */
+  allowlistAdd(toolName) {
+    this.blocklist.delete(toolName);
+    this.allowlist.add(toolName);
+    this.emit("allowlist:added", { toolName });
+  }
+  /**
+   * Remove a tool from the allowlist
+   */
+  allowlistRemove(toolName) {
+    if (this.allowlist.delete(toolName)) {
+      this.emit("allowlist:removed", { toolName });
+    }
+  }
+  /**
+   * Check if a tool is in the allowlist
+   */
+  isAllowlisted(toolName) {
+    return this.allowlist.has(toolName);
+  }
+  /**
+   * Get all allowlisted tools
+   */
+  getAllowlist() {
+    return Array.from(this.allowlist);
+  }
+  /**
+   * Add a tool to the blocklist (always blocked)
+   */
+  blocklistAdd(toolName) {
+    this.allowlist.delete(toolName);
+    this.blocklist.add(toolName);
+    this.emit("blocklist:added", { toolName });
+  }
+  /**
+   * Remove a tool from the blocklist
+   */
+  blocklistRemove(toolName) {
+    if (this.blocklist.delete(toolName)) {
+      this.emit("blocklist:removed", { toolName });
+    }
+  }
+  /**
+   * Check if a tool is in the blocklist
+   */
+  isBlocklisted(toolName) {
+    return this.blocklist.has(toolName);
+  }
+  /**
+   * Get all blocklisted tools
+   */
+  getBlocklist() {
+    return Array.from(this.blocklist);
+  }
+  // ==========================================================================
+  // Tool Configuration
+  // ==========================================================================
+  /**
+   * Set permission config for a specific tool
+   */
+  setToolConfig(toolName, config) {
+    this.toolConfigs.set(toolName, config);
+  }
+  /**
+   * Get permission config for a specific tool
+   */
+  getToolConfig(toolName) {
+    return this.toolConfigs.get(toolName);
+  }
+  /**
+   * Get effective config (tool-specific or defaults)
+   */
+  getEffectiveConfig(toolName) {
+    const toolConfig = this.toolConfigs.get(toolName);
+    return {
+      scope: toolConfig?.scope ?? this.defaultScope,
+      riskLevel: toolConfig?.riskLevel ?? this.defaultRiskLevel,
+      approvalMessage: toolConfig?.approvalMessage,
+      sensitiveArgs: toolConfig?.sensitiveArgs,
+      sessionTTLMs: toolConfig?.sessionTTLMs
+    };
+  }
+  // ==========================================================================
+  // Approval Request Handler
+  // ==========================================================================
+  /**
+   * Request approval for a tool call
+   *
+   * If an onApprovalRequired callback is set, it will be called.
+   * Otherwise, this returns a decision that requires hook-based approval.
+   */
+  async requestApproval(context) {
+    if (this.onApprovalRequired) {
+      const decision = await this.onApprovalRequired(context);
+      if (decision.approved) {
+        this.approve(context.toolCall.function.name, decision);
+      } else {
+        this.deny(context.toolCall.function.name, decision.reason ?? "User denied");
+      }
+      return decision;
+    }
+    return {
+      approved: false,
+      reason: "No approval handler configured, use hooks"
+    };
+  }
+  // ==========================================================================
+  // Query Methods
+  // ==========================================================================
+  /**
+   * Get all tools that have session approvals
+   */
+  getApprovedTools() {
+    const approved = [];
+    for (const [toolName, entry] of this.approvalCache) {
+      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+        continue;
+      }
+      approved.push(toolName);
+    }
+    return approved;
+  }
+  /**
+   * Get the approval entry for a tool
+   */
+  getApprovalEntry(toolName) {
+    const entry = this.approvalCache.get(toolName);
+    if (!entry) return void 0;
+    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+      this.approvalCache.delete(toolName);
+      return void 0;
+    }
+    return entry;
+  }
+  // ==========================================================================
+  // Session Management
+  // ==========================================================================
+  /**
+   * Clear all session approvals
+   */
+  clearSession() {
+    this.approvalCache.clear();
+    this.emit("session:cleared", {});
+  }
+  // ==========================================================================
+  // Persistence (for Session integration)
+  // ==========================================================================
+  /**
+   * Serialize approval state for persistence
+   */
+  getState() {
+    const approvals = {};
+    for (const [toolName, entry] of this.approvalCache) {
+      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+        continue;
+      }
+      approvals[toolName] = {
+        toolName: entry.toolName,
+        scope: entry.scope,
+        approvedAt: entry.approvedAt.toISOString(),
+        approvedBy: entry.approvedBy,
+        expiresAt: entry.expiresAt?.toISOString(),
+        argsHash: entry.argsHash
+      };
+    }
+    return {
+      version: APPROVAL_STATE_VERSION,
+      approvals,
+      blocklist: Array.from(this.blocklist),
+      allowlist: Array.from(this.allowlist)
+    };
+  }
+  /**
+   * Load approval state from persistence
+   */
+  loadState(state) {
+    this.approvalCache.clear();
+    if (state.version !== APPROVAL_STATE_VERSION) {
+      console.warn(`ToolPermissionManager: Unknown state version ${state.version}, ignoring`);
+      return;
+    }
+    for (const [toolName, entry] of Object.entries(state.approvals)) {
+      const approvedAt = new Date(entry.approvedAt);
+      const expiresAt = entry.expiresAt ? new Date(entry.expiresAt) : void 0;
+      if (expiresAt && expiresAt < /* @__PURE__ */ new Date()) {
+        continue;
+      }
+      this.approvalCache.set(toolName, {
+        toolName: entry.toolName,
+        scope: entry.scope,
+        approvedAt,
+        approvedBy: entry.approvedBy,
+        expiresAt,
+        argsHash: entry.argsHash
+      });
+    }
+    for (const toolName of state.blocklist) {
+      this.blocklist.add(toolName);
+    }
+    for (const toolName of state.allowlist) {
+      this.blocklist.delete(toolName);
+      this.allowlist.add(toolName);
+    }
+  }
+  // ==========================================================================
+  // Utility Methods
+  // ==========================================================================
+  /**
+   * Get defaults
+   */
+  getDefaults() {
+    return {
+      scope: this.defaultScope,
+      riskLevel: this.defaultRiskLevel
+    };
+  }
+  /**
+   * Set defaults
+   */
+  setDefaults(defaults) {
+    if (defaults.scope) this.defaultScope = defaults.scope;
+    if (defaults.riskLevel) this.defaultRiskLevel = defaults.riskLevel;
+  }
+  /**
+   * Get summary statistics
+   */
+  getStats() {
+    return {
+      approvedCount: this.getApprovedTools().length,
+      allowlistedCount: this.allowlist.size,
+      blocklistedCount: this.blocklist.size,
+      configuredCount: this.toolConfigs.size
+    };
+  }
+  /**
+   * Reset to initial state
+   */
+  reset() {
+    this.approvalCache.clear();
+    this.allowlist.clear();
+    this.blocklist.clear();
+    this.toolConfigs.clear();
+    this.defaultScope = DEFAULT_PERMISSION_CONFIG.scope;
+    this.defaultRiskLevel = DEFAULT_PERMISSION_CONFIG.riskLevel;
+  }
+};
 
 // src/capabilities/agents/ToolRegistry.ts
 var ToolRegistry = class {
@@ -6031,6 +6510,52 @@ var AgenticLoop = class extends EventEmitter$2 {
     }
   }
   /**
+   * Check tool permission before execution
+   * Returns true if approved, throws if blocked/rejected
+   * @private
+   */
+  async checkToolPermission(toolCall, iteration, executionId, config) {
+    const permissionManager = config.permissionManager;
+    if (!permissionManager) {
+      return true;
+    }
+    const toolName = toolCall.function.name;
+    if (permissionManager.isBlocked(toolName)) {
+      this.context?.audit("tool_blocked", { reason: "Tool is blocklisted" }, void 0, toolName);
+      throw new Error(`Tool "${toolName}" is blocked and cannot be executed`);
+    }
+    if (permissionManager.isApproved(toolName)) {
+      return true;
+    }
+    const checkResult = permissionManager.checkPermission(toolName);
+    if (!checkResult.needsApproval) {
+      return true;
+    }
+    let parsedArgs = {};
+    try {
+      parsedArgs = JSON.parse(toolCall.function.arguments);
+    } catch {
+    }
+    const context = {
+      toolCall,
+      parsedArgs,
+      config: checkResult.config || {},
+      executionId,
+      iteration,
+      agentType: config.agentType || "agent",
+      taskName: config.taskName
+    };
+    const decision = await permissionManager.requestApproval(context);
+    if (decision.approved) {
+      this.context?.audit("tool_permission_approved", {
+        scope: decision.scope,
+        approvedBy: decision.approvedBy
+      }, void 0, toolName);
+      return true;
+    }
+    return false;
+  }
+  /**
    * Execute single tool with hooks
    * @private
    */
@@ -6045,14 +6570,15 @@ var AgenticLoop = class extends EventEmitter$2 {
       context: this.context,
       timestamp: /* @__PURE__ */ new Date()
     }, {});
-    if (this.hookManager.hasHooks("approve:tool")) {
+    const permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId, config);
+    if (!permissionApproved || this.hookManager.hasHooks("approve:tool")) {
       const approval = await this.hookManager.executeHooks("approve:tool", {
         executionId,
         iteration,
         toolCall,
         context: this.context,
         timestamp: /* @__PURE__ */ new Date()
-      }, { approved: true });
+      }, { approved: permissionApproved });
       if (!approval.approved) {
         throw new Error(`Tool execution rejected: ${approval.reason || "No reason provided"}`);
       }
@@ -6210,14 +6736,29 @@ var AgenticLoop = class extends EventEmitter$2 {
         Object.assign(toolCall, beforeTool.modified);
         this.context?.audit("tool_modified", { modifications: beforeTool.modified }, void 0, toolCall.function.name);
       }
-      if (this.hookManager.hasHooks("approve:tool")) {
+      let permissionApproved = true;
+      try {
+        permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId, config);
+      } catch (error) {
+        this.context?.audit("tool_blocked", { reason: error.message }, void 0, toolCall.function.name);
+        const blockedResult = {
+          tool_use_id: toolCall.id,
+          content: "",
+          error: error.message,
+          state: "failed" /* FAILED */
+        };
+        results.push(blockedResult);
+        this.context?.addToolResult(blockedResult);
+        continue;
+      }
+      if (!permissionApproved || this.hookManager.hasHooks("approve:tool")) {
         const approval = await this.hookManager.executeHooks("approve:tool", {
           executionId,
           iteration,
           toolCall,
           context: this.context,
           timestamp: /* @__PURE__ */ new Date()
-        }, { approved: true });
+        }, { approved: permissionApproved });
         if (!approval.approved) {
           this.context?.audit("tool_rejected", { reason: approval.reason }, void 0, toolCall.function.name);
           const rejectedResult = {
@@ -6626,6 +7167,7 @@ var Agent = class _Agent extends EventEmitter$2 {
   logger;
   // === NEW: Tool and Session Management ===
   _toolManager;
+  _permissionManager;
   _sessionManager = null;
   _session = null;
   _pendingSessionLoad = null;
@@ -6638,6 +7180,13 @@ var Agent = class _Agent extends EventEmitter$2 {
    */
   get tools() {
     return this._toolManager;
+  }
+  /**
+   * Permission management. Returns ToolPermissionManager for approval control.
+   * Use for runtime permission management, approval caching, and allowlist/blocklist.
+   */
+  get permissions() {
+    return this._permissionManager;
   }
   // ============ Static Factory ============
   /**
@@ -6701,11 +7250,21 @@ var Agent = class _Agent extends EventEmitter$2 {
     });
     this.provider = createProvider(this.connector);
     this._toolManager = config.toolManager ?? new ToolManager();
+    this._permissionManager = new ToolPermissionManager(config.permissions);
     if (config.tools) {
       for (const tool of config.tools) {
         this._toolManager.register(tool);
+        if (tool.permission) {
+          this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+        }
       }
     }
+    this._toolManager.on("tool:registered", ({ name }) => {
+      const permission = this._toolManager.getPermission(name);
+      if (permission) {
+        this._permissionManager.setToolConfig(name, permission);
+      }
+    });
     this.toolRegistry = new ToolRegistry();
     if (config.tools) {
       for (const tool of config.tools) {
@@ -6757,6 +7316,10 @@ var Agent = class _Agent extends EventEmitter$2 {
         if (session.toolState) {
           this._toolManager.loadState(session.toolState);
         }
+        const inheritFromSession = this.config.permissions?.inheritFromSession !== false;
+        if (inheritFromSession && session.custom["approvalState"]) {
+          this._permissionManager.loadState(session.custom["approvalState"]);
+        }
         this.logger.info({ sessionId }, "Session loaded");
         if (this.config.session?.autoSave) {
           const interval = this.config.session.autoSaveIntervalMs ?? 3e4;
@@ -6802,7 +7365,9 @@ var Agent = class _Agent extends EventEmitter$2 {
         hooks: this.config.hooks,
         historyMode: this.config.historyMode,
         limits: this.config.limits,
-        errorHandling: this.config.errorHandling
+        errorHandling: this.config.errorHandling,
+        permissionManager: this._permissionManager,
+        agentType: "agent"
       };
       const response = await this.agenticLoop.execute(loopConfig);
       const duration = Date.now() - startTime;
@@ -6861,7 +7426,9 @@ var Agent = class _Agent extends EventEmitter$2 {
         hooks: this.config.hooks,
         historyMode: this.config.historyMode,
         limits: this.config.limits,
-        errorHandling: this.config.errorHandling
+        errorHandling: this.config.errorHandling,
+        permissionManager: this._permissionManager,
+        agentType: "agent"
       };
       yield* this.agenticLoop.executeStreaming(loopConfig);
       const duration = Date.now() - startTime;
@@ -6930,8 +7497,57 @@ var Agent = class _Agent extends EventEmitter$2 {
     for (const tool of tools) {
       this._toolManager.register(tool);
       this.toolRegistry.registerTool(tool);
+      if (tool.permission) {
+        this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+      }
     }
     this.config.tools = [...tools];
+  }
+  // ============ Permission Management (NEW) ============
+  /**
+   * Approve a tool for the current session.
+   * Tool will not require further approval until session ends or approval is revoked.
+   */
+  approveToolForSession(toolName) {
+    this._permissionManager.approveForSession(toolName);
+  }
+  /**
+   * Revoke a tool's session approval.
+   * Tool will require approval again on next use.
+   */
+  revokeToolApproval(toolName) {
+    this._permissionManager.revoke(toolName);
+  }
+  /**
+   * Get list of tools that have been approved for this session.
+   */
+  getApprovedTools() {
+    return this._permissionManager.getApprovedTools();
+  }
+  /**
+   * Check if a tool needs approval before execution.
+   */
+  toolNeedsApproval(toolName) {
+    const result = this._permissionManager.checkPermission(toolName);
+    return result.needsApproval;
+  }
+  /**
+   * Check if a tool is blocked (cannot execute at all).
+   */
+  toolIsBlocked(toolName) {
+    return this._permissionManager.isBlocked(toolName);
+  }
+  /**
+   * Add a tool to the allowlist (always allowed, no approval needed).
+   */
+  allowlistTool(toolName) {
+    this._permissionManager.allowlistAdd(toolName);
+  }
+  /**
+   * Add a tool to the blocklist (always blocked, cannot execute).
+   */
+  blocklistTool(toolName) {
+    this._permissionManager.blocklistAdd(toolName);
   }
   // ============ Session Management (NEW) ============
   /**
@@ -6955,6 +7571,7 @@ var Agent = class _Agent extends EventEmitter$2 {
       throw new Error("Session not enabled. Configure session in AgentConfig to use this feature.");
     }
     this._session.toolState = this._toolManager.getState();
+    this._session.custom["approvalState"] = this._permissionManager.getState();
     await this._sessionManager.save(this._session);
     this.logger.debug({ sessionId: this._session.id }, "Session saved");
   }
@@ -7088,6 +7705,7 @@ var Agent = class _Agent extends EventEmitter$2 {
       this._sessionManager.destroy();
     }
     this._toolManager.removeAllListeners();
+    this._permissionManager.removeAllListeners();
     for (const callback of this.cleanupCallbacks) {
       try {
         callback();
@@ -13310,6 +13928,13 @@ var TaskAgent = class _TaskAgent extends EventEmitter {
   get tools() {
     return this._toolManager;
   }
+  /**
+   * Permission management. Returns ToolPermissionManager for approval control.
+   * Delegates to internal Agent's permission manager.
+   */
+  get permissions() {
+    return this.agent?.permissions;
+  }
   constructor(id, state, storage, memory, config, hooks) {
     super();
     this.id = id;
@@ -13403,7 +14028,8 @@ var TaskAgent = class _TaskAgent extends EventEmitter {
       tools: cachedTools,
       instructions: config.instructions,
       temperature: config.temperature,
-      maxIterations: config.maxIterations ?? 10
+      maxIterations: config.maxIterations ?? 10,
+      permissions: config.permissions
     });
     const modelInfo = getModelInfo(config.model);
     const contextTokens = modelInfo?.features.input.tokens ?? 128e3;
@@ -18333,7 +18959,8 @@ var UniversalAgent = class _UniversalAgent extends EventEmitter$1 {
       tools: allTools,
       instructions: this.buildInstructions(config.instructions),
       temperature: config.temperature,
-      maxIterations: config.maxIterations ?? 20
+      maxIterations: config.maxIterations ?? 20,
+      permissions: config.permissions
     });
     this.modeManager = new ModeManager("interactive");
     this.modeManager.on("mode:changed", (data) => {
@@ -19085,6 +19712,13 @@ Currently working on: ${progress.current.name}`;
   get toolManager() {
     return this._toolManager;
   }
+  /**
+   * Permission management. Returns ToolPermissionManager for approval control.
+   * Delegates to internal Agent's permission manager.
+   */
+  get permissions() {
+    return this.agent.permissions;
+  }
   // ============================================================================
   // Runtime Configuration
   // ============================================================================
@@ -19146,6 +19780,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, STT_MODELS, STT_MODEL_REGISTRY, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TextToSpeech, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, createVideoProvider, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, hasClipboardImage, isErrorEvent, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, tools_exports as tools };
+export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConsoleMetrics, ContentType, ContextManager2 as ContextManager, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG2 as DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HistoryManager, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, STT_MODELS, STT_MODEL_REGISTRY, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TextToSpeech, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, createVideoProvider, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, hasClipboardImage, isErrorEvent, isMetaTool, isOutputTextDelta, isResponseComplete, isStreamEvent, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, tools_exports as tools };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

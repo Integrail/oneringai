@@ -1,5 +1,6 @@
-import EventEmitter$1, { EventEmitter } from 'eventemitter3';
+import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
 import { I as IProvider } from './IProvider-BP49c93d.cjs';
+import { EventEmitter } from 'events';
 
 /**
  * Tool entities with blocking/non-blocking execution support
@@ -87,6 +88,40 @@ interface ToolIdempotency {
     ttlMs?: number;
 }
 /**
+ * Permission configuration for a tool
+ *
+ * Controls when approval is required for tool execution.
+ * Used by the ToolPermissionManager.
+ */
+interface ToolPermissionConfig$1 {
+    /**
+     * When approval is required.
+     * - 'once' - Require approval for each call
+     * - 'session' - Approve once per session
+     * - 'always' - Auto-approve (no prompts)
+     * - 'never' - Always blocked
+     * @default 'once'
+     */
+    scope?: 'once' | 'session' | 'always' | 'never';
+    /**
+     * Risk level classification.
+     * @default 'low'
+     */
+    riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+    /**
+     * Custom message shown in approval UI.
+     */
+    approvalMessage?: string;
+    /**
+     * Argument names that should be highlighted as sensitive.
+     */
+    sensitiveArgs?: string[];
+    /**
+     * TTL for session approvals (milliseconds).
+     */
+    sessionTTLMs?: number;
+}
+/**
  * User-provided tool function
  */
 interface ToolFunction<TArgs = any, TResult = any> {
@@ -94,6 +129,386 @@ interface ToolFunction<TArgs = any, TResult = any> {
     execute: (args: TArgs, context?: ToolContext) => Promise<TResult>;
     idempotency?: ToolIdempotency;
     output?: ToolOutputHints;
+    /** Permission settings for this tool. If not set, defaults are used. */
+    permission?: ToolPermissionConfig$1;
+}
+
+/**
+ * Tool Permission Types
+ *
+ * Defines permission scopes, risk levels, and approval state for tool execution control.
+ *
+ * Works with ALL agent types:
+ * - Agent (basic)
+ * - TaskAgent (task-based)
+ * - UniversalAgent (mode-fluid)
+ */
+
+/**
+ * Permission scope defines when approval is required for a tool
+ *
+ * - `once` - Require approval for each tool call (most restrictive)
+ * - `session` - Approve once, valid for entire session
+ * - `always` - Auto-approve (allowlisted, no prompts)
+ * - `never` - Always blocked (blocklisted, tool cannot execute)
+ */
+type PermissionScope = 'once' | 'session' | 'always' | 'never';
+/**
+ * Risk level classification for tools
+ *
+ * Used to help users understand the potential impact of approving a tool.
+ * Can be used by UI to show different approval dialogs.
+ */
+type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+/**
+ * Permission configuration for a tool
+ *
+ * Can be set on the tool definition or overridden at registration time.
+ */
+interface ToolPermissionConfig {
+    /**
+     * When approval is required.
+     * @default 'once'
+     */
+    scope?: PermissionScope;
+    /**
+     * Risk classification for the tool.
+     * @default 'low'
+     */
+    riskLevel?: RiskLevel;
+    /**
+     * Custom message shown in approval UI.
+     * Should explain what the tool does and any potential risks.
+     */
+    approvalMessage?: string;
+    /**
+     * Argument names that should be highlighted in approval UI.
+     * E.g., ['path', 'url'] for file/network operations.
+     */
+    sensitiveArgs?: string[];
+    /**
+     * Optional expiration time for session approvals (milliseconds).
+     * If set, session approvals expire after this duration.
+     */
+    sessionTTLMs?: number;
+}
+/**
+ * Context passed to approval callbacks/hooks
+ */
+interface PermissionCheckContext {
+    /** The tool call being checked */
+    toolCall: ToolCall;
+    /** Parsed arguments (for display/inspection) */
+    parsedArgs: Record<string, unknown>;
+    /** The tool's permission config */
+    config: ToolPermissionConfig;
+    /** Current execution context ID */
+    executionId: string;
+    /** Current iteration (if in agentic loop) */
+    iteration: number;
+    /** Agent type (for context-specific handling) */
+    agentType: 'agent' | 'task-agent' | 'universal-agent';
+    /** Optional task name (for TaskAgent/UniversalAgent) */
+    taskName?: string;
+}
+/**
+ * Entry in the approval cache representing an approved tool
+ */
+interface ApprovalCacheEntry {
+    /** Name of the approved tool */
+    toolName: string;
+    /** The scope that was approved */
+    scope: PermissionScope;
+    /** When the approval was granted */
+    approvedAt: Date;
+    /** Optional identifier of who approved (for audit) */
+    approvedBy?: string;
+    /** When this approval expires (for session/TTL approvals) */
+    expiresAt?: Date;
+    /** Arguments hash if approval was for specific arguments */
+    argsHash?: string;
+}
+/**
+ * Serialized approval state for session persistence
+ */
+interface SerializedApprovalState {
+    /** Version for future migrations */
+    version: number;
+    /** Map of tool name to approval entry */
+    approvals: Record<string, SerializedApprovalEntry>;
+    /** Tools that are always blocked (persisted blocklist) */
+    blocklist: string[];
+    /** Tools that are always allowed (persisted allowlist) */
+    allowlist: string[];
+}
+/**
+ * Serialized version of ApprovalCacheEntry (with ISO date strings)
+ */
+interface SerializedApprovalEntry {
+    toolName: string;
+    scope: PermissionScope;
+    approvedAt: string;
+    approvedBy?: string;
+    expiresAt?: string;
+    argsHash?: string;
+}
+/**
+ * Result of checking if a tool needs approval
+ */
+interface PermissionCheckResult {
+    /** Whether the tool can execute without prompting */
+    allowed: boolean;
+    /** Whether approval is needed (user should be prompted) */
+    needsApproval: boolean;
+    /** Whether the tool is blocked (cannot execute at all) */
+    blocked: boolean;
+    /** Reason for the decision */
+    reason: string;
+    /** The tool's permission config (for UI display) */
+    config?: ToolPermissionConfig;
+}
+/**
+ * Result from approval UI/hook
+ */
+interface ApprovalDecision {
+    /** Whether the tool was approved */
+    approved: boolean;
+    /** Scope of the approval (may differ from requested) */
+    scope?: PermissionScope;
+    /** Reason for denial (if not approved) */
+    reason?: string;
+    /** Optional identifier of who approved */
+    approvedBy?: string;
+    /** Whether to remember this decision for future calls */
+    remember?: boolean;
+}
+/**
+ * Permission configuration for any agent type.
+ *
+ * Used in:
+ * - Agent.create({ permissions: {...} })
+ * - TaskAgent.create({ permissions: {...} })
+ * - UniversalAgent.create({ permissions: {...} })
+ */
+interface AgentPermissionsConfig {
+    /**
+     * Default permission scope for tools without explicit config.
+     * @default 'once'
+     */
+    defaultScope?: PermissionScope;
+    /**
+     * Default risk level for tools without explicit config.
+     * @default 'low'
+     */
+    defaultRiskLevel?: RiskLevel;
+    /**
+     * Tools that are always allowed (never prompt).
+     * Array of tool names.
+     */
+    allowlist?: string[];
+    /**
+     * Tools that are always blocked (cannot execute).
+     * Array of tool names.
+     */
+    blocklist?: string[];
+    /**
+     * Per-tool permission overrides.
+     * Keys are tool names, values are permission configs.
+     */
+    tools?: Record<string, ToolPermissionConfig>;
+    /**
+     * Callback invoked when a tool needs approval.
+     * Return an ApprovalDecision to approve/deny.
+     *
+     * If not provided, the existing `approve:tool` hook system is used.
+     * This callback runs BEFORE hooks, providing a first-pass check.
+     */
+    onApprovalRequired?: (context: PermissionCheckContext) => Promise<ApprovalDecision>;
+    /**
+     * Whether to inherit permission state from parent session.
+     * Only applies when resuming from a session.
+     * @default true
+     */
+    inheritFromSession?: boolean;
+}
+/**
+ * Events emitted by ToolPermissionManager
+ */
+type PermissionManagerEvent = 'tool:approved' | 'tool:denied' | 'tool:blocked' | 'tool:revoked' | 'allowlist:added' | 'allowlist:removed' | 'blocklist:added' | 'blocklist:removed' | 'session:cleared';
+/**
+ * Current version of serialized approval state
+ */
+declare const APPROVAL_STATE_VERSION = 1;
+/**
+ * Default permission config applied when no config is specified
+ */
+declare const DEFAULT_PERMISSION_CONFIG: Required<Pick<ToolPermissionConfig, 'scope' | 'riskLevel'>>;
+
+/**
+ * ToolPermissionManager - Core class for managing tool permissions
+ *
+ * Features:
+ * - Approval caching (once, session, always, never scopes)
+ * - Allowlist/blocklist management
+ * - Session state persistence
+ * - Event emission for audit trails
+ *
+ * Works with ALL agent types:
+ * - Agent (basic)
+ * - TaskAgent (task-based)
+ * - UniversalAgent (mode-fluid)
+ */
+
+declare class ToolPermissionManager extends EventEmitter {
+    private approvalCache;
+    private allowlist;
+    private blocklist;
+    private toolConfigs;
+    private defaultScope;
+    private defaultRiskLevel;
+    private onApprovalRequired?;
+    constructor(config?: AgentPermissionsConfig);
+    /**
+     * Check if a tool needs approval before execution
+     *
+     * @param toolName - Name of the tool
+     * @param _args - Optional arguments (for args-specific approval, reserved for future use)
+     * @returns PermissionCheckResult with allowed/needsApproval/blocked status
+     */
+    checkPermission(toolName: string, _args?: Record<string, unknown>): PermissionCheckResult;
+    /**
+     * Check if a tool call needs approval (uses ToolCall object)
+     */
+    needsApproval(toolCall: ToolCall): boolean;
+    /**
+     * Check if a tool is blocked
+     */
+    isBlocked(toolName: string): boolean;
+    /**
+     * Check if a tool is approved (either allowlisted or session-approved)
+     */
+    isApproved(toolName: string): boolean;
+    /**
+     * Approve a tool (record approval)
+     *
+     * @param toolName - Name of the tool
+     * @param decision - Approval decision with scope
+     */
+    approve(toolName: string, decision?: Partial<ApprovalDecision>): void;
+    /**
+     * Approve a tool for the entire session
+     */
+    approveForSession(toolName: string, approvedBy?: string): void;
+    /**
+     * Revoke a tool's approval
+     */
+    revoke(toolName: string): void;
+    /**
+     * Deny a tool execution (for audit trail)
+     */
+    deny(toolName: string, reason: string): void;
+    /**
+     * Check if a tool has been approved for the current session
+     */
+    isApprovedForSession(toolName: string): boolean;
+    /**
+     * Add a tool to the allowlist (always allowed)
+     */
+    allowlistAdd(toolName: string): void;
+    /**
+     * Remove a tool from the allowlist
+     */
+    allowlistRemove(toolName: string): void;
+    /**
+     * Check if a tool is in the allowlist
+     */
+    isAllowlisted(toolName: string): boolean;
+    /**
+     * Get all allowlisted tools
+     */
+    getAllowlist(): string[];
+    /**
+     * Add a tool to the blocklist (always blocked)
+     */
+    blocklistAdd(toolName: string): void;
+    /**
+     * Remove a tool from the blocklist
+     */
+    blocklistRemove(toolName: string): void;
+    /**
+     * Check if a tool is in the blocklist
+     */
+    isBlocklisted(toolName: string): boolean;
+    /**
+     * Get all blocklisted tools
+     */
+    getBlocklist(): string[];
+    /**
+     * Set permission config for a specific tool
+     */
+    setToolConfig(toolName: string, config: ToolPermissionConfig): void;
+    /**
+     * Get permission config for a specific tool
+     */
+    getToolConfig(toolName: string): ToolPermissionConfig | undefined;
+    /**
+     * Get effective config (tool-specific or defaults)
+     */
+    getEffectiveConfig(toolName: string): ToolPermissionConfig;
+    /**
+     * Request approval for a tool call
+     *
+     * If an onApprovalRequired callback is set, it will be called.
+     * Otherwise, this returns a decision that requires hook-based approval.
+     */
+    requestApproval(context: PermissionCheckContext): Promise<ApprovalDecision>;
+    /**
+     * Get all tools that have session approvals
+     */
+    getApprovedTools(): string[];
+    /**
+     * Get the approval entry for a tool
+     */
+    getApprovalEntry(toolName: string): ApprovalCacheEntry | undefined;
+    /**
+     * Clear all session approvals
+     */
+    clearSession(): void;
+    /**
+     * Serialize approval state for persistence
+     */
+    getState(): SerializedApprovalState;
+    /**
+     * Load approval state from persistence
+     */
+    loadState(state: SerializedApprovalState): void;
+    /**
+     * Get defaults
+     */
+    getDefaults(): {
+        scope: PermissionScope;
+        riskLevel: RiskLevel;
+    };
+    /**
+     * Set defaults
+     */
+    setDefaults(defaults: {
+        scope?: PermissionScope;
+        riskLevel?: RiskLevel;
+    }): void;
+    /**
+     * Get summary statistics
+     */
+    getStats(): {
+        approvedCount: number;
+        allowlistedCount: number;
+        blocklistedCount: number;
+        configuredCount: number;
+    };
+    /**
+     * Reset to initial state
+     */
+    reset(): void;
 }
 
 /**
@@ -471,7 +886,7 @@ interface ExecutionMetrics {
 }
 interface AuditEntry {
     timestamp: Date;
-    type: 'hook_executed' | 'tool_modified' | 'tool_skipped' | 'execution_paused' | 'execution_resumed' | 'tool_approved' | 'tool_rejected';
+    type: 'hook_executed' | 'tool_modified' | 'tool_skipped' | 'execution_paused' | 'execution_resumed' | 'tool_approved' | 'tool_rejected' | 'tool_blocked' | 'tool_permission_approved';
     hookName?: string;
     toolName?: string;
     details: any;
@@ -792,8 +1207,22 @@ interface AgenticLoopConfig {
      * @default 30000 (30 seconds)
      */
     toolTimeout?: number;
+    /**
+     * Permission manager for tool approval/blocking.
+     * If provided, permission checks run BEFORE approve:tool hooks.
+     */
+    permissionManager?: ToolPermissionManager;
+    /**
+     * Agent type for permission context (used by TaskAgent/UniversalAgent).
+     * @default 'agent'
+     */
+    agentType?: 'agent' | 'task-agent' | 'universal-agent';
+    /**
+     * Current task name (used for TaskAgent/UniversalAgent context).
+     */
+    taskName?: string;
 }
-declare class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
+declare class AgenticLoop extends EventEmitter$1<AgenticLoopEvents> {
     private provider;
     private toolExecutor;
     private hookManager;
@@ -819,6 +1248,12 @@ declare class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
      * @private
      */
     private streamGenerateWithHooks;
+    /**
+     * Check tool permission before execution
+     * Returns true if approved, throws if blocked/rejected
+     * @private
+     */
+    private checkToolPermission;
     /**
      * Execute single tool with hooks
      * @private
@@ -1133,7 +1568,7 @@ declare class CircuitOpenError extends Error {
 /**
  * Generic circuit breaker for any async operation
  */
-declare class CircuitBreaker<T = any> extends EventEmitter$1<CircuitBreakerEvents> {
+declare class CircuitBreaker<T = any> extends EventEmitter$2<CircuitBreakerEvents> {
     readonly name: string;
     private state;
     private config;
@@ -1255,7 +1690,7 @@ declare class HookManager {
     private disabledHooks;
     private maxConsecutiveErrors;
     private emitter;
-    constructor(config: HookConfig | undefined, emitter: EventEmitter, errorHandling?: {
+    constructor(config: HookConfig | undefined, emitter: EventEmitter$1, errorHandling?: {
         maxConsecutiveErrors?: number;
     });
     /**
@@ -1308,4 +1743,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { isToolCallStart as $, type AgenticLoopEvents as A, type BuiltInTool as B, type CircuitState as C, type ResponseInProgressEvent as D, ExecutionContext as E, type FunctionToolDefinition as F, type OutputTextDeltaEvent as G, type HookConfig as H, type InputItem as I, type JSONSchema as J, type OutputTextDoneEvent as K, type LLMResponse as L, type ModelCapabilities as M, type ToolCallStartEvent as N, type OutputTextContent as O, type ToolCallArgumentsDeltaEvent as P, type ToolCallArgumentsDoneEvent as Q, type ReasoningItem as R, type StreamEvent as S, type ToolFunction as T, type ToolExecutionStartEvent as U, type ToolExecutionDoneEvent as V, type IterationCompleteEvent$1 as W, type ResponseCompleteEvent as X, type ErrorEvent as Y, isStreamEvent as Z, isOutputTextDelta as _, type HistoryMode as a, isToolCallArgumentsDelta as a0, isToolCallArgumentsDone as a1, isResponseComplete as a2, isErrorEvent as a3, ToolRegistry as a4, HookManager as a5, type AgenticLoopEventName as a6, type HookName as a7, type Hook as a8, type ModifyingHook as a9, type BeforeToolContext as aa, type AfterToolContext as ab, type ApproveToolContext as ac, type ToolModification as ad, type ApprovalResult as ae, type IToolExecutor as af, CircuitOpenError as ag, type CircuitBreakerConfig as ah, type CircuitBreakerEvents as ai, DEFAULT_CIRCUIT_BREAKER_CONFIG as aj, AgenticLoop as ak, type AgenticLoopConfig as al, type ExecutionStartEvent as am, type ExecutionCompleteEvent as an, type ToolStartEvent as ao, type ToolCompleteEvent as ap, type LLMRequestEvent as aq, type LLMResponseEvent as ar, type AgentResponse as b, type ExecutionMetrics as c, type AuditEntry as d, type CircuitBreakerMetrics as e, type ITextProvider as f, type TokenUsage as g, type ToolCall as h, StreamEventType as i, CircuitBreaker as j, type TextGenerateOptions as k, MessageRole as l, ContentType as m, type Content as n, type InputTextContent as o, type InputImageContent as p, type ToolUseContent as q, type ToolResultContent as r, type Message as s, type OutputItem as t, type CompactionItem as u, ToolCallState as v, type Tool as w, type ToolResult as x, type ToolExecutionContext as y, type ResponseCreatedEvent as z };
+export { type JSONSchema as $, type AgenticLoopEvents as A, type InputTextContent as B, type CircuitState as C, DEFAULT_PERMISSION_CONFIG as D, ExecutionContext as E, type InputImageContent as F, type ToolUseContent as G, type HookConfig as H, type InputItem as I, type ToolResultContent as J, type Message as K, type LLMResponse as L, type ModelCapabilities as M, type OutputItem as N, type OutputTextContent as O, type PermissionScope as P, type CompactionItem as Q, type RiskLevel as R, type SerializedApprovalState as S, type ToolFunction as T, type ReasoningItem as U, ToolCallState as V, type Tool as W, type FunctionToolDefinition as X, type BuiltInTool as Y, type ToolResult as Z, type ToolExecutionContext as _, type ToolPermissionConfig$1 as a, type ResponseCreatedEvent as a0, type ResponseInProgressEvent as a1, type OutputTextDeltaEvent as a2, type OutputTextDoneEvent as a3, type ToolCallStartEvent as a4, type ToolCallArgumentsDeltaEvent as a5, type ToolCallArgumentsDoneEvent as a6, type ToolExecutionStartEvent as a7, type ToolExecutionDoneEvent as a8, type IterationCompleteEvent$1 as a9, type AgenticLoopConfig as aA, type ExecutionStartEvent as aB, type ExecutionCompleteEvent as aC, type ToolStartEvent as aD, type ToolCompleteEvent as aE, type LLMRequestEvent as aF, type LLMResponseEvent as aG, type ResponseCompleteEvent as aa, type ErrorEvent as ab, isStreamEvent as ac, isOutputTextDelta as ad, isToolCallStart as ae, isToolCallArgumentsDelta as af, isToolCallArgumentsDone as ag, isResponseComplete as ah, isErrorEvent as ai, ToolRegistry as aj, HookManager as ak, type AgenticLoopEventName as al, type HookName as am, type Hook as an, type ModifyingHook as ao, type BeforeToolContext as ap, type AfterToolContext as aq, type ApproveToolContext as ar, type ToolModification as as, type ApprovalResult as at, type IToolExecutor as au, CircuitOpenError as av, type CircuitBreakerConfig as aw, type CircuitBreakerEvents as ax, DEFAULT_CIRCUIT_BREAKER_CONFIG as ay, AgenticLoop as az, ToolPermissionManager as b, type HistoryMode as c, type AgentPermissionsConfig as d, type AgentResponse as e, type StreamEvent as f, type ExecutionMetrics as g, type AuditEntry as h, type CircuitBreakerMetrics as i, type ITextProvider as j, type TokenUsage as k, type ToolCall as l, StreamEventType as m, CircuitBreaker as n, type TextGenerateOptions as o, MessageRole as p, type ToolPermissionConfig as q, type ApprovalCacheEntry as r, type SerializedApprovalEntry as s, type PermissionCheckResult as t, type ApprovalDecision as u, type PermissionCheckContext as v, type PermissionManagerEvent as w, APPROVAL_STATE_VERSION as x, ContentType as y, type Content as z };

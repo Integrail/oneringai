@@ -2,8 +2,8 @@ import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as Vend
 export { l as APIKeyConnectorAuth, B as AspectRatio, k as ConnectorAuth, m as IImageModelDescription, p as IMAGE_MODELS, q as IMAGE_MODEL_REGISTRY, E as ISourceLinks, x as ImageEditOptions, w as ImageGenerateOptions, g as ImageGeneration, h as ImageGenerationCreateOptions, n as ImageModelCapabilities, o as ImageModelPricing, z as ImageResponse, y as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, D as OutputFormat, Q as QualityLevel, j as SimpleGenerateOptions, f as VENDORS, v as calculateImageCost, t as getActiveImageModels, r as getImageModelInfo, s as getImageModelsByVendor, u as getImageModelsWithFeature, i as isVendor } from './ImageModel-B_-3MdrA.js';
 import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
 import { EventEmitter } from 'events';
-import { T as ToolFunction, A as AgenticLoopEvents, H as HookConfig, a as HistoryMode, I as InputItem, b as AgentResponse, S as StreamEvent, E as ExecutionContext, c as ExecutionMetrics, d as AuditEntry, C as CircuitState, e as CircuitBreakerMetrics, f as ITextProvider, g as TokenUsage, h as ToolCall, L as LLMResponse, i as StreamEventType, j as CircuitBreaker, k as TextGenerateOptions, M as ModelCapabilities, l as MessageRole } from './index-D7o2HKb0.js';
-export { ab as AfterToolContext, a6 as AgenticLoopEventName, ae as ApprovalResult, ac as ApproveToolContext, aa as BeforeToolContext, B as BuiltInTool, ah as CircuitBreakerConfig, ai as CircuitBreakerEvents, ag as CircuitOpenError, u as CompactionItem, n as Content, m as ContentType, aj as DEFAULT_CIRCUIT_BREAKER_CONFIG, Y as ErrorEvent, F as FunctionToolDefinition, a8 as Hook, a5 as HookManager, a7 as HookName, af as IToolExecutor, p as InputImageContent, o as InputTextContent, W as IterationCompleteEvent, J as JSONSchema, s as Message, a9 as ModifyingHook, t as OutputItem, O as OutputTextContent, G as OutputTextDeltaEvent, K as OutputTextDoneEvent, R as ReasoningItem, X as ResponseCompleteEvent, z as ResponseCreatedEvent, D as ResponseInProgressEvent, w as Tool, P as ToolCallArgumentsDeltaEvent, Q as ToolCallArgumentsDoneEvent, N as ToolCallStartEvent, v as ToolCallState, y as ToolExecutionContext, V as ToolExecutionDoneEvent, U as ToolExecutionStartEvent, ad as ToolModification, a4 as ToolRegistry, x as ToolResult, r as ToolResultContent, q as ToolUseContent, a3 as isErrorEvent, _ as isOutputTextDelta, a2 as isResponseComplete, Z as isStreamEvent, a0 as isToolCallArgumentsDelta, a1 as isToolCallArgumentsDone, $ as isToolCallStart } from './index-D7o2HKb0.js';
+import { T as ToolFunction, a as ToolPermissionConfig, S as SerializedApprovalState, A as AgenticLoopEvents, b as ToolPermissionManager, H as HookConfig, c as HistoryMode, d as AgentPermissionsConfig, I as InputItem, e as AgentResponse, f as StreamEvent, E as ExecutionContext, g as ExecutionMetrics, h as AuditEntry, C as CircuitState, i as CircuitBreakerMetrics, j as ITextProvider, k as TokenUsage, l as ToolCall, L as LLMResponse, m as StreamEventType, n as CircuitBreaker, o as TextGenerateOptions, M as ModelCapabilities, p as MessageRole } from './index-CuHIYAT9.js';
+export { x as APPROVAL_STATE_VERSION, aq as AfterToolContext, al as AgenticLoopEventName, r as ApprovalCacheEntry, u as ApprovalDecision, at as ApprovalResult, ar as ApproveToolContext, ap as BeforeToolContext, Y as BuiltInTool, aw as CircuitBreakerConfig, ax as CircuitBreakerEvents, av as CircuitOpenError, Q as CompactionItem, z as Content, y as ContentType, ay as DEFAULT_CIRCUIT_BREAKER_CONFIG, D as DEFAULT_PERMISSION_CONFIG, ab as ErrorEvent, X as FunctionToolDefinition, an as Hook, ak as HookManager, am as HookName, au as IToolExecutor, F as InputImageContent, B as InputTextContent, a9 as IterationCompleteEvent, $ as JSONSchema, K as Message, ao as ModifyingHook, N as OutputItem, O as OutputTextContent, a2 as OutputTextDeltaEvent, a3 as OutputTextDoneEvent, v as PermissionCheckContext, t as PermissionCheckResult, w as PermissionManagerEvent, P as PermissionScope, U as ReasoningItem, aa as ResponseCompleteEvent, a0 as ResponseCreatedEvent, a1 as ResponseInProgressEvent, R as RiskLevel, s as SerializedApprovalEntry, W as Tool, a5 as ToolCallArgumentsDeltaEvent, a6 as ToolCallArgumentsDoneEvent, a4 as ToolCallStartEvent, V as ToolCallState, _ as ToolExecutionContext, a8 as ToolExecutionDoneEvent, a7 as ToolExecutionStartEvent, as as ToolModification, q as ToolPermissionConfig, aj as ToolRegistry, Z as ToolResult, J as ToolResultContent, G as ToolUseContent, ai as isErrorEvent, ad as isOutputTextDelta, ah as isResponseComplete, ac as isStreamEvent, af as isToolCallArgumentsDelta, ag as isToolCallArgumentsDone, ae as isToolCallStart } from './index-CuHIYAT9.js';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.js';
 
 /**
@@ -28,6 +28,8 @@ interface ToolOptions {
     priority?: number;
     /** Conditions for auto-enable/disable */
     conditions?: ToolCondition[];
+    /** Permission configuration override. If not set, uses tool's config or defaults. */
+    permission?: ToolPermissionConfig;
 }
 interface ToolCondition {
     type: 'mode' | 'context' | 'custom';
@@ -54,6 +56,8 @@ interface ToolRegistration {
     priority: number;
     conditions: ToolCondition[];
     metadata: ToolMetadata;
+    /** Effective permission config (merged from tool.permission and options.permission) */
+    permission?: ToolPermissionConfig;
 }
 interface ToolMetadata {
     registeredAt: Date;
@@ -80,6 +84,8 @@ interface SerializedToolState {
     enabled: Record<string, boolean>;
     namespaces: Record<string, string>;
     priorities: Record<string, number>;
+    /** Permission configs by tool name */
+    permissions?: Record<string, ToolPermissionConfig>;
 }
 type ToolManagerEvent = 'tool:registered' | 'tool:unregistered' | 'tool:enabled' | 'tool:disabled' | 'tool:executed' | 'namespace:enabled' | 'namespace:disabled';
 declare class ToolManager extends EventEmitter {
@@ -151,6 +157,14 @@ declare class ToolManager extends EventEmitter {
      */
     getPriority(name: string): number | undefined;
     /**
+     * Get permission config for a tool
+     */
+    getPermission(name: string): ToolPermissionConfig | undefined;
+    /**
+     * Set permission config for a tool
+     */
+    setPermission(name: string, permission: ToolPermissionConfig): boolean;
+    /**
      * Get a tool by name
      */
     get(name: string): ToolFunction | undefined;
@@ -211,7 +225,7 @@ declare class ToolManager extends EventEmitter {
      */
     getState(): SerializedToolState;
     /**
-     * Load state (restores enabled/disabled, namespaces, priorities)
+     * Load state (restores enabled/disabled, namespaces, priorities, permissions)
      * Note: Tools must be re-registered separately (they contain functions)
      */
     loadState(state: SerializedToolState): void;
@@ -257,6 +271,8 @@ interface Session {
     mode?: string;
     /** Execution metrics */
     metrics?: SessionMetrics;
+    /** Tool permission approval state (all agent types) */
+    approvalState?: SerializedApprovalState;
     /** Agent-specific custom data */
     custom: Record<string, unknown>;
     metadata: SessionMetadata;
@@ -528,6 +544,11 @@ interface AgentConfig$1 {
     session?: AgentSessionConfig;
     /** Provide a pre-configured ToolManager (advanced) */
     toolManager?: ToolManager;
+    /**
+     * Permission configuration for tool execution approval.
+     * Controls allowlist/blocklist, default scopes, and approval callbacks.
+     */
+    permissions?: AgentPermissionsConfig;
 }
 /**
  * Agent class - represents an AI assistant with tool calling capabilities
@@ -545,6 +566,7 @@ declare class Agent extends EventEmitter$1<AgenticLoopEvents> implements IDispos
     private _isDestroyed;
     private logger;
     private _toolManager;
+    private _permissionManager;
     private _sessionManager;
     private _session;
     private _pendingSessionLoad;
@@ -554,6 +576,11 @@ declare class Agent extends EventEmitter$1<AgenticLoopEvents> implements IDispos
      * For simple cases, use addTool/removeTool instead.
      */
     get tools(): ToolManager;
+    /**
+     * Permission management. Returns ToolPermissionManager for approval control.
+     * Use for runtime permission management, approval caching, and allowlist/blocklist.
+     */
+    get permissions(): ToolPermissionManager;
     /**
      * Create a new agent
      *
@@ -614,6 +641,36 @@ declare class Agent extends EventEmitter$1<AgenticLoopEvents> implements IDispos
      * Replace all tools with a new array
      */
     setTools(tools: ToolFunction[]): void;
+    /**
+     * Approve a tool for the current session.
+     * Tool will not require further approval until session ends or approval is revoked.
+     */
+    approveToolForSession(toolName: string): void;
+    /**
+     * Revoke a tool's session approval.
+     * Tool will require approval again on next use.
+     */
+    revokeToolApproval(toolName: string): void;
+    /**
+     * Get list of tools that have been approved for this session.
+     */
+    getApprovedTools(): string[];
+    /**
+     * Check if a tool needs approval before execution.
+     */
+    toolNeedsApproval(toolName: string): boolean;
+    /**
+     * Check if a tool is blocked (cannot execute at all).
+     */
+    toolIsBlocked(toolName: string): boolean;
+    /**
+     * Add a tool to the allowlist (always allowed, no approval needed).
+     */
+    allowlistTool(toolName: string): void;
+    /**
+     * Add a tool to the blocklist (always blocked, cannot execute).
+     */
+    blocklistTool(toolName: string): void;
     /**
      * Get the current session ID (if session is enabled)
      */
@@ -2690,10 +2747,6 @@ declare class PlanExecutor extends EventEmitter$2<PlanExecutorEvents> {
 }
 
 /**
- * TaskAgent - autonomous task-based agent
- */
-
-/**
  * TaskAgent hooks for customization
  */
 interface TaskAgentHooks {
@@ -2808,6 +2861,12 @@ interface TaskAgentConfig {
     session?: TaskAgentSessionConfig;
     /** Provide a pre-configured ToolManager (advanced) */
     toolManager?: ToolManager;
+    /**
+     * Permission configuration for tool execution approval.
+     * Controls allowlist/blocklist, default scopes, and approval callbacks.
+     * Passed through to the internal Agent.
+     */
+    permissions?: AgentPermissionsConfig;
 }
 /**
  * TaskAgent events
@@ -2880,6 +2939,11 @@ declare class TaskAgent extends EventEmitter$2<TaskAgentEvents> {
      * Advanced tool management. Returns ToolManager for fine-grained control.
      */
     get tools(): ToolManager;
+    /**
+     * Permission management. Returns ToolPermissionManager for approval control.
+     * Delegates to internal Agent's permission manager.
+     */
+    get permissions(): ToolPermissionManager | undefined;
     protected constructor(id: string, state: AgentState, storage: IAgentStorage, memory: WorkingMemory, config: TaskAgentConfig, hooks?: TaskAgentHooks);
     /**
      * Create a new TaskAgent
@@ -5385,10 +5449,6 @@ declare class ProviderConfigAgent {
     reset(): void;
 }
 
-/**
- * UniversalAgent types and interfaces
- */
-
 type AgentMode = 'interactive' | 'planning' | 'executing';
 interface UniversalAgentSessionConfig {
     /** Storage backend for sessions */
@@ -5424,6 +5484,8 @@ interface UniversalAgentConfig {
     session?: UniversalAgentSessionConfig;
     memoryConfig?: WorkingMemoryConfig;
     toolManager?: ToolManager;
+    /** Permission configuration for tool execution approval. */
+    permissions?: AgentPermissionsConfig;
 }
 interface TaskProgress {
     completed: number;
@@ -5593,17 +5655,6 @@ interface ModeState {
     pauseReason?: string;
 }
 
-/**
- * UniversalAgent - Unified agent combining interactive, planning, and task execution
- *
- * Features:
- * - Mode-fluid: Automatically switches between interactive, planning, and executing
- * - User intervention: Users can interrupt, modify plans, provide feedback
- * - Smart detection: Auto-detects complex tasks that need planning
- * - Session persistence: Save and resume conversations
- * - Dynamic tools: Enable/disable tools at runtime
- */
-
 interface UniversalAgentEvents {
     'mode:changed': {
         from: AgentMode;
@@ -5714,6 +5765,11 @@ declare class UniversalAgent extends EventEmitter {
     getPlan(): Plan | null;
     getProgress(): TaskProgress | null;
     get toolManager(): ToolManager;
+    /**
+     * Permission management. Returns ToolPermissionManager for approval control.
+     * Delegates to internal Agent's permission manager.
+     */
+    get permissions(): ToolPermissionManager;
     setAutoApproval(value: boolean): void;
     setPlanningEnabled(value: boolean): void;
     private _isPaused;
@@ -5882,4 +5938,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, createVideoProvider, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, hasClipboardImage, isMetaTool, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };
+export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CONTEXT_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, type ErrorContext, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, FrameworkLogger, HistoryManager, type HistoryManagerConfig, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RollingWindowStrategy, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type ToolContext as TaskToolContext, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig, type UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, createAgentStorage, createAuthenticatedFetch, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createImageProvider, createMemoryTools, createMessageWithImages, createMetricsCollector, createProvider, createStrategy, createTextMessage, createVideoProvider, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getMetaTools, getModelInfo, getModelsByVendor, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, hasClipboardImage, isMetaTool, logger, metrics, readClipboardImage, retryWithBackoff, setMetricsCollector, index as tools };

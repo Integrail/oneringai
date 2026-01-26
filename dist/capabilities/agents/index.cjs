@@ -1970,6 +1970,52 @@ var AgenticLoop = class extends EventEmitter.EventEmitter {
     }
   }
   /**
+   * Check tool permission before execution
+   * Returns true if approved, throws if blocked/rejected
+   * @private
+   */
+  async checkToolPermission(toolCall, iteration, executionId, config) {
+    const permissionManager = config.permissionManager;
+    if (!permissionManager) {
+      return true;
+    }
+    const toolName = toolCall.function.name;
+    if (permissionManager.isBlocked(toolName)) {
+      this.context?.audit("tool_blocked", { reason: "Tool is blocklisted" }, void 0, toolName);
+      throw new Error(`Tool "${toolName}" is blocked and cannot be executed`);
+    }
+    if (permissionManager.isApproved(toolName)) {
+      return true;
+    }
+    const checkResult = permissionManager.checkPermission(toolName);
+    if (!checkResult.needsApproval) {
+      return true;
+    }
+    let parsedArgs = {};
+    try {
+      parsedArgs = JSON.parse(toolCall.function.arguments);
+    } catch {
+    }
+    const context = {
+      toolCall,
+      parsedArgs,
+      config: checkResult.config || {},
+      executionId,
+      iteration,
+      agentType: config.agentType || "agent",
+      taskName: config.taskName
+    };
+    const decision = await permissionManager.requestApproval(context);
+    if (decision.approved) {
+      this.context?.audit("tool_permission_approved", {
+        scope: decision.scope,
+        approvedBy: decision.approvedBy
+      }, void 0, toolName);
+      return true;
+    }
+    return false;
+  }
+  /**
    * Execute single tool with hooks
    * @private
    */
@@ -1984,14 +2030,15 @@ var AgenticLoop = class extends EventEmitter.EventEmitter {
       context: this.context,
       timestamp: /* @__PURE__ */ new Date()
     }, {});
-    if (this.hookManager.hasHooks("approve:tool")) {
+    const permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId, config);
+    if (!permissionApproved || this.hookManager.hasHooks("approve:tool")) {
       const approval = await this.hookManager.executeHooks("approve:tool", {
         executionId,
         iteration,
         toolCall,
         context: this.context,
         timestamp: /* @__PURE__ */ new Date()
-      }, { approved: true });
+      }, { approved: permissionApproved });
       if (!approval.approved) {
         throw new Error(`Tool execution rejected: ${approval.reason || "No reason provided"}`);
       }
@@ -2149,14 +2196,29 @@ var AgenticLoop = class extends EventEmitter.EventEmitter {
         Object.assign(toolCall, beforeTool.modified);
         this.context?.audit("tool_modified", { modifications: beforeTool.modified }, void 0, toolCall.function.name);
       }
-      if (this.hookManager.hasHooks("approve:tool")) {
+      let permissionApproved = true;
+      try {
+        permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId, config);
+      } catch (error) {
+        this.context?.audit("tool_blocked", { reason: error.message }, void 0, toolCall.function.name);
+        const blockedResult = {
+          tool_use_id: toolCall.id,
+          content: "",
+          error: error.message,
+          state: "failed" /* FAILED */
+        };
+        results.push(blockedResult);
+        this.context?.addToolResult(blockedResult);
+        continue;
+      }
+      if (!permissionApproved || this.hookManager.hasHooks("approve:tool")) {
         const approval = await this.hookManager.executeHooks("approve:tool", {
           executionId,
           iteration,
           toolCall,
           context: this.context,
           timestamp: /* @__PURE__ */ new Date()
-        }, { approved: true });
+        }, { approved: permissionApproved });
         if (!approval.approved) {
           this.context?.audit("tool_rejected", { reason: approval.reason }, void 0, toolCall.function.name);
           const rejectedResult = {

@@ -65,7 +65,9 @@ export interface AuditEntry {
     | 'execution_paused'
     | 'execution_resumed'
     | 'tool_approved'
-    | 'tool_rejected';
+    | 'tool_rejected'
+    | 'tool_blocked'
+    | 'tool_permission_approved';
   hookName?: string;
   toolName?: string;
   details: any;
