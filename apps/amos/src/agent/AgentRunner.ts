@@ -9,6 +9,9 @@ import {
   FileSessionStorage,
   type ToolFunction,
   type UniversalAgentConfig,
+  type AgentPermissionsConfig,
+  type PermissionCheckContext,
+  type ApprovalDecision,
 } from '@oneringai/agents';
 import type {
   IAgentRunner,
@@ -16,6 +19,7 @@ import type {
   StreamEvent,
   AmosConfig,
   TokenUsage,
+  ToolApprovalContext,
 } from '../config/types.js';
 
 export class AgentRunner implements IAgentRunner {
@@ -27,6 +31,10 @@ export class AgentRunner implements IAgentRunner {
   private _currentModel: string;
   private _currentTemperature: number;
   private _connectorName: string = '';
+
+  // For interactive tool approval
+  private _pendingApprovalResolve: ((decision: ApprovalDecision) => void) | null = null;
+  private _onApprovalRequired: ((context: ToolApprovalContext) => Promise<ApprovalDecision>) | null = null;
 
   constructor(
     config: AmosConfig,
@@ -63,6 +71,28 @@ export class AgentRunner implements IAgentRunner {
     // If we have a session to resume, use resume method
     if (this.config.session.activeSessionId && sessionConfig) {
       try {
+        // Build permissions config for resume
+        const resumePermissionsConfig: AgentPermissionsConfig = {
+          defaultScope: this.config.permissions.defaultScope,
+          defaultRiskLevel: this.config.permissions.defaultRiskLevel,
+          allowlist: this.config.permissions.allowlist,
+          blocklist: this.config.permissions.blocklist,
+          tools: this.config.permissions.toolOverrides,
+          onApprovalRequired: this.config.permissions.promptForApproval
+            ? async (context: PermissionCheckContext): Promise<ApprovalDecision> => {
+                if (this._onApprovalRequired) {
+                  return this._onApprovalRequired({
+                    toolName: context.toolCall.function.name,
+                    args: context.toolCall.function.arguments,
+                    riskLevel: context.config?.riskLevel,
+                    reason: context.config?.approvalMessage || 'Tool requires approval',
+                  });
+                }
+                return { approved: true, scope: 'session' };
+              }
+            : undefined,
+        };
+
         this.agent = await UniversalAgent.resume(
           this.config.session.activeSessionId,
           {
@@ -76,6 +106,7 @@ export class AgentRunner implements IAgentRunner {
               requireApproval: this.config.planning.requireApproval,
             },
             session: sessionConfig,
+            permissions: resumePermissionsConfig,
           }
         );
         return;
@@ -83,6 +114,30 @@ export class AgentRunner implements IAgentRunner {
         // Session might not exist, create new agent
       }
     }
+
+    // Build permissions config from app config
+    const permissionsConfig: AgentPermissionsConfig = {
+      defaultScope: this.config.permissions.defaultScope,
+      defaultRiskLevel: this.config.permissions.defaultRiskLevel,
+      allowlist: this.config.permissions.allowlist,
+      blocklist: this.config.permissions.blocklist,
+      tools: this.config.permissions.toolOverrides,
+      onApprovalRequired: this.config.permissions.promptForApproval
+        ? async (context: PermissionCheckContext): Promise<ApprovalDecision> => {
+            // If we have an approval handler set, use it
+            if (this._onApprovalRequired) {
+              return this._onApprovalRequired({
+                toolName: context.toolCall.function.name,
+                args: context.toolCall.function.arguments,
+                riskLevel: context.config?.riskLevel,
+                reason: context.config?.approvalMessage || 'Tool requires approval',
+              });
+            }
+            // Default: approve with session scope
+            return { approved: true, scope: 'session' };
+          }
+        : undefined,
+    };
 
     // Create new agent
     const agentConfig: UniversalAgentConfig = {
@@ -98,6 +153,8 @@ export class AgentRunner implements IAgentRunner {
       },
 
       session: sessionConfig,
+
+      permissions: permissionsConfig,
     };
 
     this.agent = UniversalAgent.create(agentConfig);
@@ -297,6 +354,108 @@ export class AgentRunner implements IAgentRunner {
       this.agent = null;
     }
     this._isRunning = false;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Permission Management
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Set the callback for interactive tool approval
+   */
+  setApprovalHandler(
+    handler: ((context: ToolApprovalContext) => Promise<ApprovalDecision>) | null
+  ): void {
+    this._onApprovalRequired = handler;
+  }
+
+  /**
+   * Approve a tool for the current session
+   */
+  approveToolForSession(toolName: string): void {
+    if (this.agent) {
+      this.agent.permissions.approveForSession(toolName);
+    }
+  }
+
+  /**
+   * Revoke a tool's approval
+   */
+  revokeToolApproval(toolName: string): void {
+    if (this.agent) {
+      this.agent.permissions.revoke(toolName);
+    }
+  }
+
+  /**
+   * Add a tool to the allowlist (always allowed)
+   */
+  allowlistTool(toolName: string): void {
+    if (this.agent) {
+      this.agent.permissions.allowlistAdd(toolName);
+    }
+  }
+
+  /**
+   * Add a tool to the blocklist (always blocked)
+   */
+  blocklistTool(toolName: string): void {
+    if (this.agent) {
+      this.agent.permissions.blocklistAdd(toolName);
+    }
+  }
+
+  /**
+   * Remove a tool from the allowlist
+   */
+  removeFromAllowlist(toolName: string): void {
+    if (this.agent) {
+      this.agent.permissions.allowlistRemove(toolName);
+    }
+  }
+
+  /**
+   * Remove a tool from the blocklist
+   */
+  removeFromBlocklist(toolName: string): void {
+    if (this.agent) {
+      this.agent.permissions.blocklistRemove(toolName);
+    }
+  }
+
+  /**
+   * Get all tools that have been approved for this session
+   */
+  getApprovedTools(): string[] {
+    return this.agent?.permissions.getApprovedTools() ?? [];
+  }
+
+  /**
+   * Get the current allowlist
+   */
+  getAllowlist(): string[] {
+    return this.agent?.permissions.getAllowlist() ?? [];
+  }
+
+  /**
+   * Get the current blocklist
+   */
+  getBlocklist(): string[] {
+    return this.agent?.permissions.getBlocklist() ?? [];
+  }
+
+  /**
+   * Check if a tool needs approval
+   */
+  toolNeedsApproval(toolName: string): boolean {
+    return this.agent?.permissions.checkPermission(toolName).needsApproval ?? false;
+  }
+
+  /**
+   * Check if a tool is blocked
+   */
+  toolIsBlocked(toolName: string): boolean {
+    return this.agent?.permissions.isBlocked(toolName) ?? false;
   }
 
   /**

@@ -3,7 +3,7 @@
  * Type definitions for the app configuration and state
  */
 
-import type { Vendor, ToolFunction } from '@oneringai/agents';
+import type { Vendor, ToolFunction, PermissionScope, RiskLevel } from '@oneringai/agents';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // App Configuration
@@ -50,6 +50,16 @@ export interface AmosConfig {
     enabledTools: string[];
     disabledTools: string[];
     customToolsDir: string;
+  };
+
+  // Tool permission settings
+  permissions: {
+    defaultScope: PermissionScope;
+    defaultRiskLevel: RiskLevel;
+    allowlist: string[];
+    blocklist: string[];
+    toolOverrides: Record<string, { scope?: PermissionScope; riskLevel?: RiskLevel }>;
+    promptForApproval: boolean; // Interactive approval prompts
   };
 }
 
@@ -200,6 +210,19 @@ export interface IAgentRunner {
   saveSession(): Promise<string>;
   loadSession(sessionId: string): Promise<void>;
   getSessionId(): string | null;
+
+  // Permission Management
+  approveToolForSession(toolName: string): void;
+  revokeToolApproval(toolName: string): void;
+  allowlistTool(toolName: string): void;
+  blocklistTool(toolName: string): void;
+  removeFromAllowlist(toolName: string): void;
+  removeFromBlocklist(toolName: string): void;
+  getApprovedTools(): string[];
+  getAllowlist(): string[];
+  getBlocklist(): string[];
+  toolNeedsApproval(toolName: string): boolean;
+  toolIsBlocked(toolName: string): boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -245,7 +268,8 @@ export interface TokenUsage {
 export interface StreamEvent {
   type: 'text:delta' | 'text:done' | 'mode:changed' | 'plan:created' |
         'plan:approved' | 'task:started' | 'task:completed' | 'task:failed' |
-        'tool:start' | 'tool:complete' | 'error' | 'done';
+        'tool:start' | 'tool:complete' | 'tool:approval_required' |
+        'tool:blocked' | 'tool:approved' | 'error' | 'done';
   delta?: string;
   text?: string;
   mode?: string;
@@ -256,6 +280,15 @@ export interface StreamEvent {
   tool?: { name: string; args?: unknown; result?: unknown };
   error?: Error;
   usage?: TokenUsage;
+  // Permission-related fields
+  permissionContext?: ToolApprovalContext;
+}
+
+export interface ToolApprovalContext {
+  toolName: string;
+  args?: unknown;
+  riskLevel?: RiskLevel;
+  reason?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -320,5 +353,14 @@ export const DEFAULT_CONFIG: AmosConfig = {
     enabledTools: [],
     disabledTools: [],
     customToolsDir: './data/tools',
+  },
+
+  permissions: {
+    defaultScope: 'session',
+    defaultRiskLevel: 'low',
+    allowlist: [],
+    blocklist: [],
+    toolOverrides: {},
+    promptForApproval: true,
   },
 };

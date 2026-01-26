@@ -5,9 +5,9 @@
  */
 
 import { join } from 'node:path';
-import type { ToolFunction } from '@oneringai/agents';
+import type { ToolFunction, ApprovalDecision } from '@oneringai/agents';
 import { ConfigManager } from './config/ConfigManager.js';
-import type { AmosConfig, IAmosApp, IConnectorManager, IToolLoader, IAgentRunner } from './config/types.js';
+import type { AmosConfig, IAmosApp, IConnectorManager, IToolLoader, IAgentRunner, ToolApprovalContext } from './config/types.js';
 import { ConnectorManager } from './connectors/ConnectorManager.js';
 import { ToolLoader } from './tools/ToolLoader.js';
 import { AgentRunner } from './agent/AgentRunner.js';
@@ -447,7 +447,93 @@ export class AmosApp implements IAmosApp {
       join(this.dataDir, 'sessions')
     );
 
+    // Set up interactive approval handler
+    if (config.permissions.promptForApproval) {
+      this.agentRunner.setApprovalHandler(
+        async (context: ToolApprovalContext): Promise<ApprovalDecision> => {
+          return this.handleToolApproval(context);
+        }
+      );
+    }
+
     await this.agentRunner.initialize(config.activeConnector, model);
+  }
+
+  /**
+   * Handle interactive tool approval
+   */
+  private async handleToolApproval(context: ToolApprovalContext): Promise<ApprovalDecision> {
+    const riskIndicator = context.riskLevel === 'critical' ? '⚠️  CRITICAL' :
+                          context.riskLevel === 'high' ? '⚠️  HIGH RISK' :
+                          context.riskLevel === 'medium' ? '⚡ MEDIUM RISK' : '';
+
+    this.terminal.print('');
+    this.terminal.printWarning(`Tool "${context.toolName}" requires approval ${riskIndicator}`);
+
+    if (context.reason) {
+      this.terminal.print(`  Reason: ${context.reason}`);
+    }
+
+    if (context.args) {
+      try {
+        const argsStr = typeof context.args === 'string'
+          ? context.args
+          : JSON.stringify(context.args, null, 2);
+        if (argsStr.length < 500) {
+          this.terminal.printDim(`  Arguments: ${argsStr}`);
+        } else {
+          this.terminal.printDim(`  Arguments: ${argsStr.slice(0, 200)}...`);
+        }
+      } catch {
+        // Ignore JSON stringify errors
+      }
+    }
+
+    const options = ['yes', 'yes-session', 'yes-always', 'no', 'no-block'] as const;
+    type ApprovalOption = typeof options[number];
+
+    this.terminal.print('');
+    this.terminal.print('Options:');
+    this.terminal.print('  yes         - Allow this call only');
+    this.terminal.print('  yes-session - Allow for this session');
+    this.terminal.print('  yes-always  - Always allow (add to allowlist)');
+    this.terminal.print('  no          - Deny this call');
+    this.terminal.print('  no-block    - Always block (add to blocklist)');
+
+    const answer = await this.terminal.select<ApprovalOption>(
+      'Allow tool execution?',
+      [...options]
+    );
+
+    switch (answer) {
+      case 'yes':
+        return { approved: true, scope: 'once' };
+
+      case 'yes-session':
+        return { approved: true, scope: 'session' };
+
+      case 'yes-always':
+        // Also add to allowlist in config
+        const configAllow = this.configManager.get();
+        if (!configAllow.permissions.allowlist.includes(context.toolName)) {
+          configAllow.permissions.allowlist.push(context.toolName);
+          this.configManager.update({ permissions: configAllow.permissions });
+        }
+        return { approved: true, scope: 'always' };
+
+      case 'no-block':
+        // Add to blocklist in config
+        const configBlock = this.configManager.get();
+        if (!configBlock.permissions.blocklist.includes(context.toolName)) {
+          configBlock.permissions.blocklist.push(context.toolName);
+          this.configManager.update({ permissions: configBlock.permissions });
+        }
+        return { approved: false, reason: 'User blocked tool' };
+
+      case 'no':
+      default:
+        return { approved: false, reason: 'User denied' };
+    }
   }
 
   destroyAgent(): void {

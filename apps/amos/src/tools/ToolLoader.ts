@@ -7,7 +7,7 @@
 
 import { readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, isAbsolute } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { ToolFunction } from '@oneringai/agents';
 import type { IToolLoader } from '../config/types.js';
@@ -202,7 +202,9 @@ export class ToolLoader implements IToolLoader {
         if (!file.endsWith('.js') && !file.endsWith('.mjs')) continue;
 
         try {
-          const filePath = join(process.cwd(), directory, file);
+          // Handle both absolute and relative paths
+          const baseDir = isAbsolute(directory) ? directory : resolve(process.cwd(), directory);
+          const filePath = join(baseDir, file);
           const fileUrl = pathToFileURL(filePath).href;
           const module = await import(fileUrl);
 

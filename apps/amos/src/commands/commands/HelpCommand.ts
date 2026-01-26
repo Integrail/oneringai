@@ -27,7 +27,7 @@ COMMANDS:
   /model [name]       Switch model or list available models
   /vendor [name]      Switch vendor or list available vendors
   /connector <sub>    Manage connectors (add, edit, delete, list, generate)
-  /tool <sub>         Manage tools (list, enable, disable, reload)
+  /tool <sub>         Manage tools & permissions (list, enable, approve, blocklist...)
   /session <sub>      Manage sessions (save, load, list, delete)
   /config <sub>       View/edit configuration
   /clear              Clear screen
@@ -100,7 +100,7 @@ EXAMPLES:
   /connector generate
 `,
       tool: `
-/tool - Tool Management
+/tool - Tool Management & Permissions
 
 USAGE:
   /tool list                   List all tools
@@ -109,10 +109,22 @@ USAGE:
   /tool info <name>            Show tool details
   /tool reload                 Reload custom tools
 
+PERMISSIONS:
+  /tool approve <name>         Approve tool for session
+  /tool revoke <name>          Revoke tool approval
+  /tool allowlist <name>       Always allow a tool
+  /tool allowlist remove <n>   Remove from allowlist
+  /tool blocklist <name>       Always block a tool
+  /tool blocklist remove <n>   Remove from blocklist
+  /tool permissions            Show permission settings
+  /tool permissions <name>     Show tool's permissions
+
 EXAMPLES:
   /tool list
   /tool enable web_search
-  /tool disable file_write
+  /tool approve execute_code
+  /tool blocklist dangerous_tool
+  /tool permissions
 `,
       session: `
 /session - Session Management
@@ -147,6 +159,8 @@ CONFIG KEYS:
   planning.requireApproval     Require approval for plans
   ui.showTokenUsage            Show token usage
   ui.streamResponses           Stream responses
+  permissions.defaultScope     Default permission scope (once|session|always|never)
+  permissions.promptForApproval  Interactive approval prompts (true|false)
 
 EXAMPLES:
   /config get defaults.temperature
