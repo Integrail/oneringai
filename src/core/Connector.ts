@@ -17,7 +17,7 @@ import { Vendor } from './Vendor.js';
 import { OAuthManager } from '../connectors/oauth/OAuthManager.js';
 import { MemoryStorage } from '../connectors/oauth/infrastructure/storage/MemoryStorage.js';
 import type { ITokenStorage } from '../connectors/oauth/domain/ITokenStorage.js';
-import { CircuitBreaker, CircuitOpenError } from '../infrastructure/resilience/CircuitBreaker.js';
+import { CircuitBreaker } from '../infrastructure/resilience/CircuitBreaker.js';
 import { calculateBackoff, BackoffConfig } from '../infrastructure/resilience/BackoffStrategy.js';
 import { logger } from '../infrastructure/observability/Logger.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
@@ -332,42 +332,217 @@ export class Connector {
   }
 
   /**
+   * Get connector metrics
+   */
+  getMetrics(): {
+    requestCount: number;
+    successCount: number;
+    failureCount: number;
+    avgLatencyMs: number;
+    circuitBreakerState?: string;
+  } {
+    return {
+      requestCount: this.requestCount,
+      successCount: this.successCount,
+      failureCount: this.failureCount,
+      avgLatencyMs: this.requestCount > 0 ? this.totalLatencyMs / this.requestCount : 0,
+      circuitBreakerState: this.circuitBreaker?.getState(),
+    };
+  }
+
+  /**
+   * Reset circuit breaker (force close)
+   */
+  resetCircuitBreaker(): void {
+    this.circuitBreaker?.reset();
+  }
+
+  /**
    * Make an authenticated fetch request using this connector
    * This is the foundation for all vendor-dependent tools
    *
+   * Features:
+   * - Timeout with AbortController
+   * - Circuit breaker protection
+   * - Retry with exponential backoff
+   * - Request/response logging
+   *
    * @param endpoint - API endpoint (relative to baseURL) or full URL
-   * @param options - Standard fetch options
+   * @param options - Fetch options with connector-specific settings
    * @param userId - Optional user ID for multi-user OAuth
    * @returns Fetch Response
    */
   async fetch(
     endpoint: string,
-    options?: RequestInit,
+    options?: ConnectorFetchOptions,
     userId?: string
   ): Promise<Response> {
-    const token = await this.getToken(userId);
-    const auth = this.config.auth;
-
-    // Build auth header based on auth type
-    let headerName = 'Authorization';
-    let headerValue = `Bearer ${token}`;
-
-    if (auth.type === 'api_key') {
-      headerName = auth.headerName || 'Authorization';
-      const prefix = auth.headerPrefix ?? 'Bearer';
-      headerValue = prefix ? `${prefix} ${token}` : token;
+    // Check if disposed
+    if (this.disposed) {
+      throw new Error(`Connector '${this.name}' has been disposed`);
     }
 
-    // Resolve URL (relative to baseURL or absolute)
+    const startTime = Date.now();
+    this.requestCount++;
+
+    // Resolve URL
     const url = endpoint.startsWith('http') ? endpoint : `${this.baseURL}${endpoint}`;
 
-    return fetch(url, {
-      ...options,
-      headers: {
-        ...options?.headers,
-        [headerName]: headerValue,
-      },
-    });
+    // Get timeout
+    const timeout = options?.timeout ?? this.config.timeout ?? DEFAULT_CONNECTOR_TIMEOUT;
+
+    // Log request if enabled
+    if (this.config.logging?.enabled) {
+      this.logRequest(url, options);
+    }
+
+    // Build the actual fetch function
+    const doFetch = async (): Promise<Response> => {
+      // Get token (may involve refresh)
+      const token = await this.getToken(userId);
+      const auth = this.config.auth;
+
+      // Build auth header
+      let headerName = 'Authorization';
+      let headerValue = `Bearer ${token}`;
+
+      if (auth.type === 'api_key') {
+        headerName = auth.headerName || 'Authorization';
+        const prefix = auth.headerPrefix ?? 'Bearer';
+        headerValue = prefix ? `${prefix} ${token}` : token;
+      }
+
+      // Create abort controller for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            ...options?.headers,
+            [headerName]: headerValue,
+          },
+        });
+
+        return response;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    // Build retry wrapper
+    const doFetchWithRetry = async (): Promise<Response> => {
+      const retryConfig = this.config.retry;
+      const maxRetries = retryConfig?.maxRetries ?? DEFAULT_MAX_RETRIES;
+      const retryableStatuses = retryConfig?.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES;
+      const baseDelayMs = retryConfig?.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
+      const maxDelayMs = retryConfig?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
+
+      const backoffConfig: BackoffConfig = {
+        strategy: 'exponential',
+        initialDelayMs: baseDelayMs,
+        maxDelayMs: maxDelayMs,
+        multiplier: 2,
+        jitter: true,
+        jitterFactor: 0.1,
+      };
+
+      let lastError: Error | undefined;
+      let lastResponse: Response | undefined;
+
+      for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+        try {
+          const response = await doFetch();
+
+          // Check if we should retry based on status code
+          if (!response.ok && retryableStatuses.includes(response.status) && attempt <= maxRetries) {
+            lastResponse = response;
+            const delay = calculateBackoff(attempt, backoffConfig);
+
+            if (this.config.logging?.enabled) {
+              logger.debug(`Connector ${this.name}: Retry ${attempt}/${maxRetries} after ${delay}ms (status ${response.status})`);
+            }
+
+            await this.sleep(delay);
+            continue;
+          }
+
+          return response;
+        } catch (error) {
+          lastError = error as Error;
+
+          // Don't retry on abort (timeout)
+          if (lastError.name === 'AbortError') {
+            throw new Error(`Request timeout after ${timeout}ms: ${url}`);
+          }
+
+          // Retry on network errors
+          if (attempt <= maxRetries && !options?.skipRetry) {
+            const delay = calculateBackoff(attempt, backoffConfig);
+
+            if (this.config.logging?.enabled) {
+              logger.debug(`Connector ${this.name}: Retry ${attempt}/${maxRetries} after ${delay}ms (error: ${lastError.message})`);
+            }
+
+            await this.sleep(delay);
+            continue;
+          }
+
+          throw lastError;
+        }
+      }
+
+      // If we exhausted retries with a response, return it
+      if (lastResponse) {
+        return lastResponse;
+      }
+
+      // Otherwise throw the last error
+      throw lastError ?? new Error('Unknown error during fetch');
+    };
+
+    try {
+      let response: Response;
+
+      // Wrap with circuit breaker if enabled and not skipped
+      if (this.circuitBreaker && !options?.skipCircuitBreaker) {
+        response = await this.circuitBreaker.execute(doFetchWithRetry);
+      } else {
+        response = await doFetchWithRetry();
+      }
+
+      // Record success
+      const latency = Date.now() - startTime;
+      this.successCount++;
+      this.totalLatencyMs += latency;
+      metrics.timing('connector.latency', latency, { connector: this.name });
+      metrics.increment('connector.success', 1, { connector: this.name });
+
+      // Log response if enabled
+      if (this.config.logging?.enabled) {
+        this.logResponse(url, response, latency);
+      }
+
+      return response;
+    } catch (error) {
+      // Record failure
+      const latency = Date.now() - startTime;
+      this.failureCount++;
+      this.totalLatencyMs += latency;
+      metrics.increment('connector.failure', 1, { connector: this.name, error: (error as Error).name });
+
+      // Log error
+      if (this.config.logging?.enabled) {
+        logger.error(
+          { connector: this.name, url, latency, error: (error as Error).message },
+          `Connector ${this.name} fetch failed: ${(error as Error).message}`
+        );
+      }
+
+      throw error;
+    }
   }
 
   /**
@@ -375,11 +550,15 @@ export class Connector {
    * Throws on non-OK responses
    *
    * @param endpoint - API endpoint (relative to baseURL) or full URL
-   * @param options - Standard fetch options
+   * @param options - Fetch options with connector-specific settings
    * @param userId - Optional user ID for multi-user OAuth
    * @returns Parsed JSON response
    */
-  async fetchJSON<T = unknown>(endpoint: string, options?: RequestInit, userId?: string): Promise<T> {
+  async fetchJSON<T = unknown>(
+    endpoint: string,
+    options?: ConnectorFetchOptions,
+    userId?: string
+  ): Promise<T> {
     const response = await this.fetch(endpoint, options, userId);
 
     // Try to parse response body
@@ -397,14 +576,50 @@ export class Connector {
 
     if (!response.ok) {
       // Include parsed error in message if available
-      const errorMsg =
-        typeof data === 'object' && data !== null
-          ? JSON.stringify(data)
-          : text;
+      const errorMsg = typeof data === 'object' && data !== null ? JSON.stringify(data) : text;
       throw new Error(`HTTP ${response.status}: ${errorMsg}`);
     }
 
     return data;
+  }
+
+  // ============ Private Helpers ============
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private logRequest(url: string, options?: RequestInit): void {
+    const logData: Record<string, unknown> = {
+      connector: this.name,
+      method: options?.method ?? 'GET',
+      url,
+    };
+
+    if (this.config.logging?.logHeaders && options?.headers) {
+      // Redact sensitive headers
+      const headers = { ...options.headers } as Record<string, string>;
+      if (headers['Authorization']) {
+        headers['Authorization'] = '[REDACTED]';
+      }
+      if (headers['authorization']) {
+        headers['authorization'] = '[REDACTED]';
+      }
+      logData.headers = headers;
+    }
+
+    if (this.config.logging?.logBody && options?.body) {
+      logData.body = typeof options.body === 'string' ? options.body.slice(0, 1000) : '[non-string body]';
+    }
+
+    logger.debug(logData, `Connector ${this.name} request`);
+  }
+
+  private logResponse(url: string, response: Response, latency: number): void {
+    logger.debug(
+      { connector: this.name, url, status: response.status, latency },
+      `Connector ${this.name} response`
+    );
   }
 
   /**
@@ -413,8 +628,16 @@ export class Connector {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
-    // OAuthManager doesn't need explicit disposal
+    // Clean up resources
     this.oauthManager = undefined;
+    this.circuitBreaker = undefined;
+  }
+
+  /**
+   * Check if connector is disposed
+   */
+  isDisposed(): boolean {
+    return this.disposed;
   }
 
   // ============ Private ============

@@ -1,139 +1,475 @@
 /**
- * Services - Constants for well-known external services
+ * Services - Single source of truth for external service definitions
  *
- * These are just helpful constants for serviceType, not a type system.
- * You can use any string as serviceType - these are for convenience.
+ * All service metadata is defined in one place (SERVICE_DEFINITIONS).
+ * Other exports are derived from this to maintain DRY principles.
  */
 
 /**
- * Well-known external service identifiers
- * Use with ConnectorConfig.serviceType
+ * Service category type
  */
-export const Services = {
-  // Communication
-  Slack: 'slack',
-  Discord: 'discord',
-  MicrosoftTeams: 'microsoft-teams',
-  Telegram: 'telegram',
-
-  // Development & Project Management
-  GitHub: 'github',
-  GitLab: 'gitlab',
-  Bitbucket: 'bitbucket',
-  Jira: 'jira',
-  Linear: 'linear',
-  Asana: 'asana',
-  Trello: 'trello',
-
-  // Productivity & Collaboration
-  Notion: 'notion',
-  Airtable: 'airtable',
-  GoogleWorkspace: 'google-workspace',
-  Microsoft365: 'microsoft-365',
-  Confluence: 'confluence',
-
-  // CRM & Sales
-  Salesforce: 'salesforce',
-  HubSpot: 'hubspot',
-  Pipedrive: 'pipedrive',
-
-  // Payments & Finance
-  Stripe: 'stripe',
-  PayPal: 'paypal',
-
-  // Cloud Providers
-  AWS: 'aws',
-  GCP: 'gcp',
-  Azure: 'azure',
-
-  // Storage
-  Dropbox: 'dropbox',
-  Box: 'box',
-  GoogleDrive: 'google-drive',
-  OneDrive: 'onedrive',
-
-  // Email
-  SendGrid: 'sendgrid',
-  Mailchimp: 'mailchimp',
-  Postmark: 'postmark',
-
-  // Monitoring & Observability
-  Datadog: 'datadog',
-  PagerDuty: 'pagerduty',
-  Sentry: 'sentry',
-
-  // Other
-  Twilio: 'twilio',
-  Zendesk: 'zendesk',
-  Intercom: 'intercom',
-  Shopify: 'shopify',
-} as const;
-
-export type ServiceType = (typeof Services)[keyof typeof Services];
+export type ServiceCategory =
+  | 'communication'
+  | 'development'
+  | 'productivity'
+  | 'crm'
+  | 'payments'
+  | 'cloud'
+  | 'storage'
+  | 'email'
+  | 'monitoring'
+  | 'other';
 
 /**
- * URL patterns for auto-detecting service type from baseURL
- * Order matters - more specific patterns should come first
+ * Complete service definition - single source of truth
  */
-export const SERVICE_URL_PATTERNS: Array<{ service: string; pattern: RegExp }> = [
-  // Communication
-  { service: Services.Slack, pattern: /slack\.com/i },
-  { service: Services.Discord, pattern: /discord\.com|discordapp\.com/i },
-  { service: Services.MicrosoftTeams, pattern: /teams\.microsoft\.com|graph\.microsoft\.com.*teams/i },
-  { service: Services.Telegram, pattern: /api\.telegram\.org/i },
+export interface ServiceDefinition {
+  /** Unique identifier (e.g., 'slack', 'github') */
+  id: string;
+  /** Human-readable name (e.g., 'Slack', 'GitHub') */
+  name: string;
+  /** Service category */
+  category: ServiceCategory;
+  /** URL pattern for auto-detection from baseURL */
+  urlPattern: RegExp;
+  /** Default base URL for API calls */
+  baseURL: string;
+  /** Documentation URL */
+  docsURL?: string;
+  /** Common OAuth scopes */
+  commonScopes?: string[];
+}
 
-  // Development & Project Management
-  { service: Services.GitHub, pattern: /api\.github\.com/i },
-  { service: Services.GitLab, pattern: /gitlab\.com|gitlab\./i },
-  { service: Services.Bitbucket, pattern: /api\.bitbucket\.org|bitbucket\.org/i },
-  { service: Services.Jira, pattern: /atlassian\.net.*jira|jira\./i },
-  { service: Services.Linear, pattern: /api\.linear\.app/i },
-  { service: Services.Asana, pattern: /api\.asana\.com/i },
-  { service: Services.Trello, pattern: /api\.trello\.com/i },
+/**
+ * Master list of all service definitions
+ * This is the SINGLE SOURCE OF TRUTH - all other exports derive from this
+ */
+export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
+  // ============ Communication ============
+  {
+    id: 'slack',
+    name: 'Slack',
+    category: 'communication',
+    urlPattern: /slack\.com/i,
+    baseURL: 'https://slack.com/api',
+    docsURL: 'https://api.slack.com/methods',
+    commonScopes: ['chat:write', 'channels:read', 'users:read'],
+  },
+  {
+    id: 'discord',
+    name: 'Discord',
+    category: 'communication',
+    urlPattern: /discord\.com|discordapp\.com/i,
+    baseURL: 'https://discord.com/api/v10',
+    docsURL: 'https://discord.com/developers/docs',
+    commonScopes: ['bot', 'messages.read'],
+  },
+  {
+    id: 'microsoft-teams',
+    name: 'Microsoft Teams',
+    category: 'communication',
+    urlPattern: /teams\.microsoft\.com|graph\.microsoft\.com.*teams/i,
+    baseURL: 'https://graph.microsoft.com/v1.0',
+    docsURL: 'https://learn.microsoft.com/en-us/graph/teams-concept-overview',
+    commonScopes: ['ChannelMessage.Send', 'Team.ReadBasic.All'],
+  },
+  {
+    id: 'telegram',
+    name: 'Telegram',
+    category: 'communication',
+    urlPattern: /api\.telegram\.org/i,
+    baseURL: 'https://api.telegram.org',
+    docsURL: 'https://core.telegram.org/bots/api',
+  },
 
-  // Productivity & Collaboration
-  { service: Services.Notion, pattern: /api\.notion\.com/i },
-  { service: Services.Airtable, pattern: /api\.airtable\.com/i },
-  { service: Services.Confluence, pattern: /atlassian\.net.*wiki|confluence\./i },
-  { service: Services.GoogleWorkspace, pattern: /googleapis\.com.*(drive|docs|sheets|calendar)/i },
-  { service: Services.Microsoft365, pattern: /graph\.microsoft\.com/i },
+  // ============ Development & Project Management ============
+  {
+    id: 'github',
+    name: 'GitHub',
+    category: 'development',
+    urlPattern: /api\.github\.com/i,
+    baseURL: 'https://api.github.com',
+    docsURL: 'https://docs.github.com/en/rest',
+    commonScopes: ['repo', 'read:user', 'read:org'],
+  },
+  {
+    id: 'gitlab',
+    name: 'GitLab',
+    category: 'development',
+    urlPattern: /gitlab\.com|gitlab\./i,
+    baseURL: 'https://gitlab.com/api/v4',
+    docsURL: 'https://docs.gitlab.com/ee/api/',
+    commonScopes: ['api', 'read_user', 'read_repository'],
+  },
+  {
+    id: 'bitbucket',
+    name: 'Bitbucket',
+    category: 'development',
+    urlPattern: /api\.bitbucket\.org|bitbucket\.org/i,
+    baseURL: 'https://api.bitbucket.org/2.0',
+    docsURL: 'https://developer.atlassian.com/cloud/bitbucket/rest/',
+    commonScopes: ['repository', 'pullrequest'],
+  },
+  {
+    id: 'jira',
+    name: 'Jira',
+    category: 'development',
+    urlPattern: /atlassian\.net.*jira|jira\./i,
+    baseURL: 'https://your-domain.atlassian.net/rest/api/3',
+    docsURL: 'https://developer.atlassian.com/cloud/jira/platform/rest/v3/',
+    commonScopes: ['read:jira-work', 'write:jira-work'],
+  },
+  {
+    id: 'linear',
+    name: 'Linear',
+    category: 'development',
+    urlPattern: /api\.linear\.app/i,
+    baseURL: 'https://api.linear.app/graphql',
+    docsURL: 'https://developers.linear.app/docs',
+    commonScopes: ['read', 'write'],
+  },
+  {
+    id: 'asana',
+    name: 'Asana',
+    category: 'development',
+    urlPattern: /api\.asana\.com/i,
+    baseURL: 'https://app.asana.com/api/1.0',
+    docsURL: 'https://developers.asana.com/docs',
+  },
+  {
+    id: 'trello',
+    name: 'Trello',
+    category: 'development',
+    urlPattern: /api\.trello\.com/i,
+    baseURL: 'https://api.trello.com/1',
+    docsURL: 'https://developer.atlassian.com/cloud/trello/rest/',
+    commonScopes: ['read', 'write'],
+  },
 
-  // CRM & Sales
-  { service: Services.Salesforce, pattern: /salesforce\.com|force\.com/i },
-  { service: Services.HubSpot, pattern: /api\.hubapi\.com|api\.hubspot\.com/i },
-  { service: Services.Pipedrive, pattern: /api\.pipedrive\.com/i },
+  // ============ Productivity & Collaboration ============
+  {
+    id: 'notion',
+    name: 'Notion',
+    category: 'productivity',
+    urlPattern: /api\.notion\.com/i,
+    baseURL: 'https://api.notion.com/v1',
+    docsURL: 'https://developers.notion.com/reference',
+  },
+  {
+    id: 'airtable',
+    name: 'Airtable',
+    category: 'productivity',
+    urlPattern: /api\.airtable\.com/i,
+    baseURL: 'https://api.airtable.com/v0',
+    docsURL: 'https://airtable.com/developers/web/api',
+    commonScopes: ['data.records:read', 'data.records:write'],
+  },
+  {
+    id: 'google-workspace',
+    name: 'Google Workspace',
+    category: 'productivity',
+    urlPattern: /googleapis\.com.*(drive|docs|sheets|calendar)/i,
+    baseURL: 'https://www.googleapis.com',
+    docsURL: 'https://developers.google.com/workspace',
+    commonScopes: [
+      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/calendar',
+    ],
+  },
+  {
+    id: 'microsoft-365',
+    name: 'Microsoft 365',
+    category: 'productivity',
+    urlPattern: /graph\.microsoft\.com/i,
+    baseURL: 'https://graph.microsoft.com/v1.0',
+    docsURL: 'https://learn.microsoft.com/en-us/graph/',
+    commonScopes: ['User.Read', 'Files.ReadWrite', 'Mail.Read'],
+  },
+  {
+    id: 'confluence',
+    name: 'Confluence',
+    category: 'productivity',
+    urlPattern: /atlassian\.net.*wiki|confluence\./i,
+    baseURL: 'https://your-domain.atlassian.net/wiki/rest/api',
+    docsURL: 'https://developer.atlassian.com/cloud/confluence/rest/',
+    commonScopes: ['read:confluence-content.all', 'write:confluence-content'],
+  },
 
-  // Payments & Finance
-  { service: Services.Stripe, pattern: /api\.stripe\.com/i },
-  { service: Services.PayPal, pattern: /api\.paypal\.com|api-m\.paypal\.com/i },
+  // ============ CRM & Sales ============
+  {
+    id: 'salesforce',
+    name: 'Salesforce',
+    category: 'crm',
+    urlPattern: /salesforce\.com|force\.com/i,
+    baseURL: 'https://your-instance.salesforce.com/services/data/v58.0',
+    docsURL: 'https://developer.salesforce.com/docs/apis',
+    commonScopes: ['api', 'refresh_token'],
+  },
+  {
+    id: 'hubspot',
+    name: 'HubSpot',
+    category: 'crm',
+    urlPattern: /api\.hubapi\.com|api\.hubspot\.com/i,
+    baseURL: 'https://api.hubapi.com',
+    docsURL: 'https://developers.hubspot.com/docs/api',
+    commonScopes: ['crm.objects.contacts.read', 'crm.objects.contacts.write'],
+  },
+  {
+    id: 'pipedrive',
+    name: 'Pipedrive',
+    category: 'crm',
+    urlPattern: /api\.pipedrive\.com/i,
+    baseURL: 'https://api.pipedrive.com/v1',
+    docsURL: 'https://developers.pipedrive.com/docs/api/v1',
+  },
 
-  // Cloud Providers
-  { service: Services.AWS, pattern: /amazonaws\.com/i },
-  { service: Services.GCP, pattern: /googleapis\.com/i },
-  { service: Services.Azure, pattern: /azure\.com|microsoft\.com.*azure/i },
+  // ============ Payments & Finance ============
+  {
+    id: 'stripe',
+    name: 'Stripe',
+    category: 'payments',
+    urlPattern: /api\.stripe\.com/i,
+    baseURL: 'https://api.stripe.com/v1',
+    docsURL: 'https://stripe.com/docs/api',
+  },
+  {
+    id: 'paypal',
+    name: 'PayPal',
+    category: 'payments',
+    urlPattern: /api\.paypal\.com|api-m\.paypal\.com/i,
+    baseURL: 'https://api-m.paypal.com/v2',
+    docsURL: 'https://developer.paypal.com/docs/api/',
+  },
 
-  // Storage
-  { service: Services.Dropbox, pattern: /api\.dropboxapi\.com|dropbox\.com/i },
-  { service: Services.Box, pattern: /api\.box\.com/i },
-  { service: Services.GoogleDrive, pattern: /googleapis\.com.*drive/i },
-  { service: Services.OneDrive, pattern: /graph\.microsoft\.com.*drive/i },
+  // ============ Cloud Providers ============
+  {
+    id: 'aws',
+    name: 'Amazon Web Services',
+    category: 'cloud',
+    urlPattern: /amazonaws\.com/i,
+    baseURL: 'https://aws.amazon.com',
+    docsURL: 'https://docs.aws.amazon.com/',
+  },
+  {
+    id: 'gcp',
+    name: 'Google Cloud Platform',
+    category: 'cloud',
+    urlPattern: /googleapis\.com/i,
+    baseURL: 'https://www.googleapis.com',
+    docsURL: 'https://cloud.google.com/apis/docs/',
+  },
+  {
+    id: 'azure',
+    name: 'Microsoft Azure',
+    category: 'cloud',
+    urlPattern: /azure\.com|microsoft\.com.*azure/i,
+    baseURL: 'https://management.azure.com',
+    docsURL: 'https://learn.microsoft.com/en-us/azure/',
+  },
 
-  // Email
-  { service: Services.SendGrid, pattern: /api\.sendgrid\.com/i },
-  { service: Services.Mailchimp, pattern: /api\.mailchimp\.com|mandrillapp\.com/i },
-  { service: Services.Postmark, pattern: /api\.postmarkapp\.com/i },
+  // ============ Storage ============
+  {
+    id: 'dropbox',
+    name: 'Dropbox',
+    category: 'storage',
+    urlPattern: /api\.dropboxapi\.com|dropbox\.com/i,
+    baseURL: 'https://api.dropboxapi.com/2',
+    docsURL: 'https://www.dropbox.com/developers/documentation',
+    commonScopes: ['files.content.read', 'files.content.write'],
+  },
+  {
+    id: 'box',
+    name: 'Box',
+    category: 'storage',
+    urlPattern: /api\.box\.com/i,
+    baseURL: 'https://api.box.com/2.0',
+    docsURL: 'https://developer.box.com/reference/',
+  },
+  {
+    id: 'google-drive',
+    name: 'Google Drive',
+    category: 'storage',
+    urlPattern: /googleapis\.com.*drive/i,
+    baseURL: 'https://www.googleapis.com/drive/v3',
+    docsURL: 'https://developers.google.com/drive/api',
+    commonScopes: ['https://www.googleapis.com/auth/drive'],
+  },
+  {
+    id: 'onedrive',
+    name: 'OneDrive',
+    category: 'storage',
+    urlPattern: /graph\.microsoft\.com.*drive/i,
+    baseURL: 'https://graph.microsoft.com/v1.0/me/drive',
+    docsURL: 'https://learn.microsoft.com/en-us/onedrive/developer/',
+    commonScopes: ['Files.ReadWrite'],
+  },
 
-  // Monitoring & Observability
-  { service: Services.Datadog, pattern: /api\.datadoghq\.com/i },
-  { service: Services.PagerDuty, pattern: /api\.pagerduty\.com/i },
-  { service: Services.Sentry, pattern: /sentry\.io/i },
+  // ============ Email ============
+  {
+    id: 'sendgrid',
+    name: 'SendGrid',
+    category: 'email',
+    urlPattern: /api\.sendgrid\.com/i,
+    baseURL: 'https://api.sendgrid.com/v3',
+    docsURL: 'https://docs.sendgrid.com/api-reference',
+  },
+  {
+    id: 'mailchimp',
+    name: 'Mailchimp',
+    category: 'email',
+    urlPattern: /api\.mailchimp\.com|mandrillapp\.com/i,
+    baseURL: 'https://server.api.mailchimp.com/3.0',
+    docsURL: 'https://mailchimp.com/developer/marketing/api/',
+  },
+  {
+    id: 'postmark',
+    name: 'Postmark',
+    category: 'email',
+    urlPattern: /api\.postmarkapp\.com/i,
+    baseURL: 'https://api.postmarkapp.com',
+    docsURL: 'https://postmarkapp.com/developer',
+  },
 
-  // Other
-  { service: Services.Twilio, pattern: /api\.twilio\.com/i },
-  { service: Services.Zendesk, pattern: /zendesk\.com/i },
-  { service: Services.Intercom, pattern: /api\.intercom\.io/i },
-  { service: Services.Shopify, pattern: /shopify\.com.*admin/i },
-];
+  // ============ Monitoring & Observability ============
+  {
+    id: 'datadog',
+    name: 'Datadog',
+    category: 'monitoring',
+    urlPattern: /api\.datadoghq\.com/i,
+    baseURL: 'https://api.datadoghq.com/api/v2',
+    docsURL: 'https://docs.datadoghq.com/api/',
+  },
+  {
+    id: 'pagerduty',
+    name: 'PagerDuty',
+    category: 'monitoring',
+    urlPattern: /api\.pagerduty\.com/i,
+    baseURL: 'https://api.pagerduty.com',
+    docsURL: 'https://developer.pagerduty.com/api-reference/',
+  },
+  {
+    id: 'sentry',
+    name: 'Sentry',
+    category: 'monitoring',
+    urlPattern: /sentry\.io/i,
+    baseURL: 'https://sentry.io/api/0',
+    docsURL: 'https://docs.sentry.io/api/',
+  },
+
+  // ============ Other ============
+  {
+    id: 'twilio',
+    name: 'Twilio',
+    category: 'other',
+    urlPattern: /api\.twilio\.com/i,
+    baseURL: 'https://api.twilio.com/2010-04-01',
+    docsURL: 'https://www.twilio.com/docs/usage/api',
+  },
+  {
+    id: 'zendesk',
+    name: 'Zendesk',
+    category: 'other',
+    urlPattern: /zendesk\.com/i,
+    baseURL: 'https://your-subdomain.zendesk.com/api/v2',
+    docsURL: 'https://developer.zendesk.com/api-reference/',
+    commonScopes: ['read', 'write'],
+  },
+  {
+    id: 'intercom',
+    name: 'Intercom',
+    category: 'other',
+    urlPattern: /api\.intercom\.io/i,
+    baseURL: 'https://api.intercom.io',
+    docsURL: 'https://developers.intercom.com/docs/',
+  },
+  {
+    id: 'shopify',
+    name: 'Shopify',
+    category: 'other',
+    urlPattern: /shopify\.com.*admin/i,
+    baseURL: 'https://your-store.myshopify.com/admin/api/2024-01',
+    docsURL: 'https://shopify.dev/docs/api',
+    commonScopes: ['read_products', 'write_products', 'read_orders'],
+  },
+] as const;
+
+// ============ Derived Exports (all from SERVICE_DEFINITIONS) ============
+
+/**
+ * Service type - union of all service IDs
+ */
+export type ServiceType = (typeof SERVICE_DEFINITIONS)[number]['id'];
+
+/**
+ * Services constant object for easy access
+ * Usage: Services.Slack, Services.GitHub, etc.
+ */
+export const Services = Object.fromEntries(
+  SERVICE_DEFINITIONS.map((def) => [
+    // Convert kebab-case to PascalCase for object key
+    def.id
+      .split('-')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(''),
+    def.id,
+  ])
+) as { [K in string]: ServiceType };
+
+/**
+ * URL patterns for auto-detection (derived from SERVICE_DEFINITIONS)
+ */
+export const SERVICE_URL_PATTERNS: ReadonlyArray<{ service: string; pattern: RegExp }> =
+  SERVICE_DEFINITIONS.map((def) => ({
+    service: def.id,
+    pattern: def.urlPattern,
+  }));
+
+/**
+ * Service info lookup (derived from SERVICE_DEFINITIONS)
+ */
+export interface ServiceInfo {
+  id: string;
+  name: string;
+  category: ServiceCategory;
+  baseURL: string;
+  docsURL?: string;
+  commonScopes?: string[];
+}
+
+/**
+ * Service info map (derived from SERVICE_DEFINITIONS)
+ */
+export const SERVICE_INFO: Record<string, ServiceInfo> = Object.fromEntries(
+  SERVICE_DEFINITIONS.map((def) => [
+    def.id,
+    {
+      id: def.id,
+      name: def.name,
+      category: def.category,
+      baseURL: def.baseURL,
+      docsURL: def.docsURL,
+      commonScopes: def.commonScopes,
+    },
+  ])
+);
+
+// ============ Utility Functions ============
+
+// Pre-compiled pattern cache for faster detection
+let compiledPatterns: Array<{ service: string; pattern: RegExp }> | null = null;
+
+/**
+ * Get compiled patterns (lazy initialization)
+ */
+function getCompiledPatterns(): Array<{ service: string; pattern: RegExp }> {
+  if (!compiledPatterns) {
+    compiledPatterns = SERVICE_DEFINITIONS.map((def) => ({
+      service: def.id,
+      pattern: def.urlPattern,
+    }));
+  }
+  return compiledPatterns;
+}
 
 /**
  * Detect service type from a URL
@@ -141,10 +477,10 @@ export const SERVICE_URL_PATTERNS: Array<{ service: string; pattern: RegExp }> =
  * @returns Service type string or undefined if not recognized
  */
 export function detectServiceFromURL(url: string): string | undefined {
-  const normalizedUrl = url.toLowerCase();
+  const patterns = getCompiledPatterns();
 
-  for (const { service, pattern } of SERVICE_URL_PATTERNS) {
-    if (pattern.test(normalizedUrl)) {
+  for (const { service, pattern } of patterns) {
+    if (pattern.test(url)) {
       return service;
     }
   }
@@ -153,72 +489,36 @@ export function detectServiceFromURL(url: string): string | undefined {
 }
 
 /**
- * Service metadata for documentation and tooling
- */
-export interface ServiceInfo {
-  id: string;
-  name: string;
-  category:
-    | 'communication'
-    | 'development'
-    | 'productivity'
-    | 'crm'
-    | 'payments'
-    | 'cloud'
-    | 'storage'
-    | 'email'
-    | 'monitoring'
-    | 'other';
-  baseURL: string;
-  docsURL?: string;
-}
-
-/**
- * Metadata for well-known services
- * Useful for documentation, UI generation, and tooling
- */
-export const SERVICE_INFO: Record<string, ServiceInfo> = {
-  [Services.Slack]: {
-    id: Services.Slack,
-    name: 'Slack',
-    category: 'communication',
-    baseURL: 'https://slack.com/api',
-    docsURL: 'https://api.slack.com/methods',
-  },
-  [Services.GitHub]: {
-    id: Services.GitHub,
-    name: 'GitHub',
-    category: 'development',
-    baseURL: 'https://api.github.com',
-    docsURL: 'https://docs.github.com/en/rest',
-  },
-  [Services.Jira]: {
-    id: Services.Jira,
-    name: 'Jira',
-    category: 'development',
-    baseURL: 'https://your-domain.atlassian.net/rest/api/3',
-    docsURL: 'https://developer.atlassian.com/cloud/jira/platform/rest/v3/',
-  },
-  [Services.Notion]: {
-    id: Services.Notion,
-    name: 'Notion',
-    category: 'productivity',
-    baseURL: 'https://api.notion.com/v1',
-    docsURL: 'https://developers.notion.com/reference',
-  },
-  [Services.Stripe]: {
-    id: Services.Stripe,
-    name: 'Stripe',
-    category: 'payments',
-    baseURL: 'https://api.stripe.com/v1',
-    docsURL: 'https://stripe.com/docs/api',
-  },
-  // Add more as needed
-};
-
-/**
  * Get service info by service type
  */
 export function getServiceInfo(serviceType: string): ServiceInfo | undefined {
   return SERVICE_INFO[serviceType];
+}
+
+/**
+ * Get service definition by service type
+ */
+export function getServiceDefinition(serviceType: string): ServiceDefinition | undefined {
+  return SERVICE_DEFINITIONS.find((def) => def.id === serviceType);
+}
+
+/**
+ * Get all services in a category
+ */
+export function getServicesByCategory(category: ServiceCategory): ServiceDefinition[] {
+  return SERVICE_DEFINITIONS.filter((def) => def.category === category);
+}
+
+/**
+ * Get all service IDs
+ */
+export function getAllServiceIds(): string[] {
+  return SERVICE_DEFINITIONS.map((def) => def.id);
+}
+
+/**
+ * Check if a service ID is known
+ */
+export function isKnownService(serviceId: string): boolean {
+  return SERVICE_DEFINITIONS.some((def) => def.id === serviceId);
 }

@@ -470,12 +470,27 @@ export type {
 // Services constants for well-known external services
 export {
   Services,
+  SERVICE_DEFINITIONS,
   SERVICE_URL_PATTERNS,
   SERVICE_INFO,
   detectServiceFromURL,
   getServiceInfo,
+  getServiceDefinition,
+  getServicesByCategory,
+  getAllServiceIds,
+  isKnownService,
 } from './domain/entities/Services.js';
-export type { ServiceType, ServiceInfo } from './domain/entities/Services.js';
+export type { ServiceType, ServiceInfo, ServiceDefinition, ServiceCategory } from './domain/entities/Services.js';
+
+// Connector resilience defaults
+export {
+  DEFAULT_CONNECTOR_TIMEOUT,
+  DEFAULT_MAX_RETRIES,
+  DEFAULT_RETRYABLE_STATUSES,
+  DEFAULT_BASE_DELAY_MS,
+  DEFAULT_MAX_DELAY_MS,
+} from './core/Connector.js';
+export type { ConnectorFetchOptions } from './core/Connector.js';
 
 // ConnectorTools framework for vendor-dependent tools
 export {

@@ -113,14 +113,54 @@ interface ConnectorConfig {
     documentation?: string;
     tags?: string[];
     options?: {
-        timeout?: number;
-        maxRetries?: number;
         organization?: string;
         project?: string;
         anthropicVersion?: string;
         location?: string;
         projectId?: string;
         [key: string]: unknown;
+    };
+    /**
+     * Request timeout in milliseconds
+     * @default 30000 (30 seconds)
+     */
+    timeout?: number;
+    /**
+     * Retry configuration for transient failures
+     */
+    retry?: {
+        /** Maximum number of retry attempts @default 3 */
+        maxRetries?: number;
+        /** HTTP status codes that trigger retry @default [429, 500, 502, 503, 504] */
+        retryableStatuses?: number[];
+        /** Base delay in ms for exponential backoff @default 1000 */
+        baseDelayMs?: number;
+        /** Maximum delay in ms @default 30000 */
+        maxDelayMs?: number;
+    };
+    /**
+     * Circuit breaker configuration for failing services
+     */
+    circuitBreaker?: {
+        /** Enable circuit breaker @default true */
+        enabled?: boolean;
+        /** Number of failures before opening circuit @default 5 */
+        failureThreshold?: number;
+        /** Number of successes to close circuit @default 2 */
+        successThreshold?: number;
+        /** Time in ms before attempting to close circuit @default 30000 */
+        resetTimeoutMs?: number;
+    };
+    /**
+     * Logging configuration for requests/responses
+     */
+    logging?: {
+        /** Enable request/response logging @default false */
+        enabled?: boolean;
+        /** Log request/response bodies (security risk) @default false */
+        logBody?: boolean;
+        /** Log request/response headers (security risk) @default false */
+        logHeaders?: boolean;
     };
 }
 /**
@@ -187,8 +227,33 @@ interface ITokenStorage {
  * Manages authenticated connections to:
  * - AI providers (OpenAI, Anthropic, Google, etc.)
  * - External APIs (GitHub, Salesforce, etc.)
+ *
+ * Enterprise features:
+ * - Request timeout with AbortController
+ * - Circuit breaker for failing services
+ * - Retry with exponential backoff
+ * - Request/response logging
  */
 
+/**
+ * Default configuration values for resilience features
+ */
+declare const DEFAULT_CONNECTOR_TIMEOUT = 30000;
+declare const DEFAULT_MAX_RETRIES = 3;
+declare const DEFAULT_RETRYABLE_STATUSES: number[];
+declare const DEFAULT_BASE_DELAY_MS = 1000;
+declare const DEFAULT_MAX_DELAY_MS = 30000;
+/**
+ * Fetch options with additional connector-specific settings
+ */
+interface ConnectorFetchOptions extends RequestInit {
+    /** Override timeout for this request */
+    timeout?: number;
+    /** Skip retry for this request */
+    skipRetry?: boolean;
+    /** Skip circuit breaker for this request */
+    skipCircuitBreaker?: boolean;
+}
 /**
  * Connector class - represents a single authenticated connection
  */
@@ -251,8 +316,17 @@ declare class Connector {
     readonly vendor?: Vendor;
     readonly config: ConnectorConfig;
     private oauthManager?;
+    private circuitBreaker?;
     private disposed;
+    private requestCount;
+    private successCount;
+    private failureCount;
+    private totalLatencyMs;
     private constructor();
+    /**
+     * Initialize circuit breaker with config or defaults
+     */
+    private initCircuitBreaker;
     /**
      * Human-readable display name
      */
@@ -293,29 +367,56 @@ declare class Connector {
      */
     get serviceType(): string | undefined;
     /**
+     * Get connector metrics
+     */
+    getMetrics(): {
+        requestCount: number;
+        successCount: number;
+        failureCount: number;
+        avgLatencyMs: number;
+        circuitBreakerState?: string;
+    };
+    /**
+     * Reset circuit breaker (force close)
+     */
+    resetCircuitBreaker(): void;
+    /**
      * Make an authenticated fetch request using this connector
      * This is the foundation for all vendor-dependent tools
      *
+     * Features:
+     * - Timeout with AbortController
+     * - Circuit breaker protection
+     * - Retry with exponential backoff
+     * - Request/response logging
+     *
      * @param endpoint - API endpoint (relative to baseURL) or full URL
-     * @param options - Standard fetch options
+     * @param options - Fetch options with connector-specific settings
      * @param userId - Optional user ID for multi-user OAuth
      * @returns Fetch Response
      */
-    fetch(endpoint: string, options?: RequestInit, userId?: string): Promise<Response>;
+    fetch(endpoint: string, options?: ConnectorFetchOptions, userId?: string): Promise<Response>;
     /**
      * Make an authenticated fetch request and parse JSON response
      * Throws on non-OK responses
      *
      * @param endpoint - API endpoint (relative to baseURL) or full URL
-     * @param options - Standard fetch options
+     * @param options - Fetch options with connector-specific settings
      * @param userId - Optional user ID for multi-user OAuth
      * @returns Parsed JSON response
      */
-    fetchJSON<T = unknown>(endpoint: string, options?: RequestInit, userId?: string): Promise<T>;
+    fetchJSON<T = unknown>(endpoint: string, options?: ConnectorFetchOptions, userId?: string): Promise<T>;
+    private sleep;
+    private logRequest;
+    private logResponse;
     /**
      * Dispose of resources
      */
     dispose(): void;
+    /**
+     * Check if connector is disposed
+     */
+    isDisposed(): boolean;
     private initOAuthManager;
     private initJWTManager;
 }
@@ -633,4 +734,4 @@ declare function getImageModelsWithFeature(feature: keyof IImageModelDescription
  */
 declare function calculateImageCost(modelName: string, imageCount: number, quality?: 'standard' | 'hd'): number | null;
 
-export { type AudioFormat as A, type AspectRatio$1 as B, Connector as C, type OutputFormat as D, type ISourceLinks as E, type IBaseModelDescription as I, type JWTConnectorAuth as J, type OAuthConnectorAuth as O, type QualityLevel as Q, type StoredToken as S, type VendorOptionSchema as V, Vendor as a, type IImageProvider as b, type ITokenStorage as c, type ConnectorConfig as d, type ConnectorConfigResult as e, VENDORS as f, ImageGeneration as g, type ImageGenerationCreateOptions as h, isVendor as i, type SimpleGenerateOptions as j, type ConnectorAuth as k, type APIKeyConnectorAuth as l, type IImageModelDescription as m, type ImageModelCapabilities as n, type ImageModelPricing as o, IMAGE_MODELS as p, IMAGE_MODEL_REGISTRY as q, getImageModelInfo as r, getImageModelsByVendor as s, getActiveImageModels as t, getImageModelsWithFeature as u, calculateImageCost as v, type ImageGenerateOptions as w, type ImageEditOptions as x, type ImageVariationOptions as y, type ImageResponse as z };
+export { type AudioFormat as A, type AspectRatio$1 as B, Connector as C, type OutputFormat as D, type ISourceLinks as E, DEFAULT_CONNECTOR_TIMEOUT as F, DEFAULT_MAX_RETRIES as G, DEFAULT_RETRYABLE_STATUSES as H, type IBaseModelDescription as I, type JWTConnectorAuth as J, DEFAULT_BASE_DELAY_MS as K, DEFAULT_MAX_DELAY_MS as L, type ConnectorFetchOptions as M, type OAuthConnectorAuth as O, type QualityLevel as Q, type StoredToken as S, type VendorOptionSchema as V, Vendor as a, type IImageProvider as b, type ITokenStorage as c, type ConnectorConfig as d, type ConnectorConfigResult as e, VENDORS as f, ImageGeneration as g, type ImageGenerationCreateOptions as h, isVendor as i, type SimpleGenerateOptions as j, type ConnectorAuth as k, type APIKeyConnectorAuth as l, type IImageModelDescription as m, type ImageModelCapabilities as n, type ImageModelPricing as o, IMAGE_MODELS as p, IMAGE_MODEL_REGISTRY as q, getImageModelInfo as r, getImageModelsByVendor as s, getActiveImageModels as t, getImageModelsWithFeature as u, calculateImageCost as v, type ImageGenerateOptions as w, type ImageEditOptions as x, type ImageVariationOptions as y, type ImageResponse as z };

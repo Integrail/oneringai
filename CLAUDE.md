@@ -83,6 +83,203 @@ const names = Connector.list();
 Connector.clear();
 ```
 
+#### Connector Fetch (External API Integration)
+
+Connectors can make authenticated HTTP requests to external services:
+
+```typescript
+import { Connector, Services } from '@oneringai/agents';
+
+// Create a connector for an external service
+Connector.create({
+  name: 'slack',
+  serviceType: Services.Slack,  // Optional: explicit service type
+  auth: { type: 'api_key', apiKey: process.env.SLACK_TOKEN! },
+  baseURL: 'https://slack.com/api',
+
+  // Optional: Enterprise resilience features
+  timeout: 30000,  // 30s timeout (default)
+  retry: {
+    maxRetries: 3,
+    baseDelayMs: 1000,
+    maxDelayMs: 30000,
+    retryableStatuses: [429, 500, 502, 503, 504],
+  },
+  circuitBreaker: {
+    enabled: true,
+    failureThreshold: 5,
+    resetTimeoutMs: 60000,
+  },
+});
+
+const connector = Connector.get('slack');
+
+// Make authenticated requests
+const response = await connector.fetch('/conversations.list', {
+  method: 'GET',
+  queryParams: { limit: '100' },
+});
+
+// JSON helper with automatic parsing
+const data = await connector.fetchJSON<SlackResponse>('/users.list');
+
+// Per-request options
+const urgent = await connector.fetch('/chat.postMessage', {
+  method: 'POST',
+  body: { channel: 'C123', text: 'Hello!' },
+  timeout: 5000,      // Override timeout
+  skipRetry: true,    // Skip retry for this request
+});
+
+// Metrics and introspection
+const metrics = connector.getMetrics();
+console.log(metrics.requestCount, metrics.avgLatencyMs);
+
+// Manual circuit breaker control
+connector.resetCircuitBreaker();
+```
+
+**Resilience Features:**
+- **Timeout** - AbortController-based with configurable timeout
+- **Retry** - Exponential backoff with jitter for 429/5xx errors
+- **Circuit Breaker** - Fail-fast when service is unhealthy
+- **Metrics** - Request count, success/failure rate, latency tracking
+
+### Services (`src/domain/entities/Services.ts`)
+
+Well-known external service definitions (35+ services):
+
+```typescript
+import { Services, detectServiceFromURL, getServiceInfo, getServicesByCategory } from '@oneringai/agents';
+
+// Service constants for type-safe configuration
+Connector.create({
+  name: 'github',
+  serviceType: Services.Github,  // 'github'
+  // ...
+});
+
+// Auto-detect service from URL
+const service = detectServiceFromURL('https://api.github.com/repos');  // 'github'
+
+// Get service metadata
+const info = getServiceInfo('slack');
+console.log(info?.name);       // 'Slack'
+console.log(info?.category);   // 'communication'
+console.log(info?.docsURL);    // 'https://api.slack.com/methods'
+
+// Filter by category
+const devServices = getServicesByCategory('development');  // github, jira, gitlab, etc.
+```
+
+**Service Categories:**
+- `communication` - Slack, Discord, Microsoft Teams, Twilio
+- `development` - GitHub, GitLab, Jira, Linear, Bitbucket
+- `productivity` - Notion, Asana, Monday, Airtable, Trello
+- `crm` - Salesforce, HubSpot, Zendesk, Intercom
+- `payments` - Stripe, PayPal, Square, Braintree
+- `cloud` - AWS, Azure, GCP, DigitalOcean
+- `storage` - Dropbox, Box, Google Drive, OneDrive
+- `email` - SendGrid, Mailchimp, Mailgun, Postmark
+- `monitoring` - Datadog, PagerDuty, Sentry, New Relic
+
+### ConnectorTools (`src/tools/connector/ConnectorTools.ts`)
+
+Generate AI agent tools from Connectors:
+
+```typescript
+import { Agent, Connector, ConnectorTools, Services } from '@oneringai/agents';
+
+// Create a connector
+Connector.create({
+  name: 'github',
+  serviceType: Services.Github,
+  auth: { type: 'api_key', apiKey: process.env.GITHUB_TOKEN! },
+  baseURL: 'https://api.github.com',
+});
+
+// Get tools for the connector
+const tools = ConnectorTools.for('github');
+
+// Use with an agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: tools,  // Agent can now call GitHub API
+});
+
+await agent.run('List all open issues in repo owner/name');
+```
+
+**Generic API Tool:**
+
+Every connector with a `baseURL` gets a generic API tool:
+
+```typescript
+const tool = ConnectorTools.genericAPI('github');
+
+// Tool allows agent to make any API call:
+// - method: GET, POST, PUT, PATCH, DELETE
+// - endpoint: /repos/owner/name/issues
+// - queryParams: { state: 'open' }
+// - body: { title: 'New issue' }
+// - headers: { 'X-Custom': 'value' } (auth headers protected)
+```
+
+**Custom Tool Factory:**
+
+Register service-specific tools:
+
+```typescript
+import { ConnectorTools, ToolFunction } from '@oneringai/agents';
+
+// Register a factory for Slack-specific tools
+ConnectorTools.registerService('slack', (connector) => {
+  const listChannels: ToolFunction = {
+    definition: {
+      type: 'function',
+      function: {
+        name: 'slack_list_channels',
+        description: 'List Slack channels',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+    execute: async () => {
+      return connector.fetchJSON('/conversations.list');
+    },
+    describeCall: () => 'List Slack channels',
+  };
+
+  return [listChannels];
+});
+
+// Now ConnectorTools.for('slack-connector') returns both generic + custom tools
+```
+
+**Discovery and Introspection:**
+
+```typescript
+// Discover all connectors with serviceType
+const allTools = ConnectorTools.discoverAll();
+// Returns: Map<connectorName, ToolFunction[]>
+
+// Find connector by service
+const slackConnector = ConnectorTools.findConnector(Services.Slack);
+
+// Check if service has custom tools
+if (ConnectorTools.hasServiceTools('slack')) {
+  // ...
+}
+
+// List all services with custom tools
+const services = ConnectorTools.listSupportedServices();
+```
+
+**Security Features:**
+- Auth headers (Authorization, X-API-Key) cannot be overridden
+- Safe JSON stringify handles circular references
+- Service detection caching for performance
+
 ### Agent (`src/core/Agent.ts`)
 
 Creates agents from connectors:
@@ -507,7 +704,8 @@ src/
 │   │   ├── RegistryUtils.ts          # Generic registry helpers
 │   │   ├── Task.ts                   # Task & Plan entities
 │   │   ├── Memory.ts                 # Memory entities
-│   │   └── Response.ts               # LLMResponse
+│   │   ├── Response.ts               # LLMResponse
+│   │   └── Services.ts               # External service definitions (35+)
 │   ├── interfaces/                   # Contracts
 │   │   ├── IProvider.ts
 │   │   ├── ITextProvider.ts
@@ -589,6 +787,9 @@ src/
 │   │   ├── index.ts                  # Exports shell tools
 │   │   ├── types.ts                  # Shell config and blocked commands
 │   │   └── bash.ts                   # bash tool
+│   ├── connector/                    # Connector-based tools (external APIs)
+│   │   ├── index.ts                  # Exports connector tools
+│   │   └── ConnectorTools.ts         # Generic API tool + service registry
 │   ├── code/
 │   └── json/
 └── utils/                            # Utilities
@@ -1805,17 +2006,19 @@ These are handled internally and don't require manual implementation.
 15. `src/domain/entities/STTModel.ts` - STT model registry
 16. `src/domain/entities/ImageModel.ts` - Image model registry
 17. `src/domain/entities/VideoModel.ts` - Video model registry (6 models)
-18. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
-19. `src/capabilities/taskAgent/` - Task agent implementation
-20. `src/capabilities/universalAgent/` - Universal agent
-21. `src/capabilities/images/` - Image generation capability
-22. `src/capabilities/video/` - Video generation capability
-23. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
-24. `src/infrastructure/context/` - Context strategies, compactors, providers
-25. `src/infrastructure/storage/` - Session and data storage
+18. `src/domain/entities/Services.ts` - External service definitions (35+ services)
+19. `src/tools/connector/ConnectorTools.ts` - Connector-based tools for external APIs
+20. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
+21. `src/capabilities/taskAgent/` - Task agent implementation
+22. `src/capabilities/universalAgent/` - Universal agent
+23. `src/capabilities/images/` - Image generation capability
+24. `src/capabilities/video/` - Video generation capability
+25. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
+26. `src/infrastructure/context/` - Context strategies, compactors, providers
+27. `src/infrastructure/storage/` - Session and data storage
 
 ---
 
 **Version**: 0.2.0
-**Last Updated**: 2026-01-25
+**Last Updated**: 2026-01-26
 **Architecture**: Connector-First (v2)

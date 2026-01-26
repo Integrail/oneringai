@@ -3,11 +3,53 @@
  *
  * This is the main API for vendor-dependent tools.
  * Tools are thin wrappers around Connector.fetch() for specific operations.
+ *
+ * Enterprise features:
+ * - Service detection caching
+ * - Tool instance caching
+ * - Security: prevents auth header override
+ * - Safe JSON serialization
  */
 
 import { Connector } from '../../core/Connector.js';
 import { ToolFunction, ToolPermissionConfig } from '../../domain/entities/Tool.js';
 import { detectServiceFromURL } from '../../domain/entities/Services.js';
+
+/**
+ * Headers that are protected and cannot be overridden by tool arguments
+ */
+const PROTECTED_HEADERS = ['authorization', 'x-api-key', 'api-key', 'bearer'];
+
+/**
+ * Safely stringify an object, handling circular references
+ */
+function safeStringify(obj: unknown): string {
+  const seen = new WeakSet();
+  return JSON.stringify(obj, (_key, value) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) {
+        return '[Circular]';
+      }
+      seen.add(value);
+    }
+    return value;
+  });
+}
+
+/**
+ * Filter out protected headers from user-provided headers
+ */
+function filterProtectedHeaders(headers?: Record<string, string>): Record<string, string> {
+  if (!headers) return {};
+
+  const filtered: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (!PROTECTED_HEADERS.includes(key.toLowerCase())) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
 
 /**
  * Factory function type for creating service-specific tools
@@ -68,6 +110,36 @@ export interface GenericAPICallResult {
 export class ConnectorTools {
   /** Registry of service-specific tool factories */
   private static factories = new Map<string, ServiceToolFactory>();
+
+  /** Cache for detected service types (connector name -> service type) */
+  private static serviceTypeCache = new Map<string, string | undefined>();
+
+  /** Cache for generated tools (cacheKey -> tools) */
+  private static toolCache = new Map<string, ToolFunction[]>();
+
+  /** Maximum cache size to prevent memory issues */
+  private static readonly MAX_CACHE_SIZE = 100;
+
+  /**
+   * Clear all caches (useful for testing or when connectors change)
+   */
+  static clearCache(): void {
+    this.serviceTypeCache.clear();
+    this.toolCache.clear();
+  }
+
+  /**
+   * Invalidate cache for a specific connector
+   */
+  static invalidateCache(connectorName: string): void {
+    this.serviceTypeCache.delete(connectorName);
+    // Remove all tool cache entries for this connector
+    for (const key of this.toolCache.keys()) {
+      if (key.startsWith(`${connectorName}:`)) {
+        this.toolCache.delete(key);
+      }
+    }
+  }
 
   /**
    * Register a tool factory for a service type
@@ -240,19 +312,45 @@ export class ConnectorTools {
   /**
    * Detect the service type for a connector
    * Uses explicit serviceType if set, otherwise infers from baseURL
+   * Results are cached for performance
    */
   static detectService(connector: Connector): string | undefined {
+    // Check cache first
+    const cacheKey = connector.name;
+    if (this.serviceTypeCache.has(cacheKey)) {
+      return this.serviceTypeCache.get(cacheKey);
+    }
+
+    let result: string | undefined;
+
     // 1. Explicit serviceType takes precedence
     if (connector.config.serviceType) {
-      return connector.config.serviceType;
+      result = connector.config.serviceType;
     }
-
     // 2. Infer from baseURL patterns
-    if (connector.baseURL) {
-      return detectServiceFromURL(connector.baseURL);
+    else if (connector.baseURL) {
+      result = detectServiceFromURL(connector.baseURL);
     }
 
-    return undefined;
+    // Cache the result (even if undefined)
+    this.maintainCacheSize(this.serviceTypeCache);
+    this.serviceTypeCache.set(cacheKey, result);
+
+    return result;
+  }
+
+  /**
+   * Maintain cache size to prevent memory leaks
+   */
+  private static maintainCacheSize<K, V>(cache: Map<K, V>): void {
+    if (cache.size >= this.MAX_CACHE_SIZE) {
+      // Remove oldest entries (first 10%)
+      const toRemove = Math.ceil(this.MAX_CACHE_SIZE * 0.1);
+      const keys = Array.from(cache.keys()).slice(0, toRemove);
+      for (const key of keys) {
+        cache.delete(key);
+      }
+    }
   }
 
   // ============ Private Methods ============
@@ -321,6 +419,22 @@ export class ConnectorTools {
           url += (url.includes('?') ? '&' : '?') + params.toString();
         }
 
+        // Filter out protected headers (security: prevent auth header override)
+        const safeHeaders = filterProtectedHeaders(args.headers);
+
+        // Safely stringify body (handles circular references)
+        let bodyStr: string | undefined;
+        if (args.body) {
+          try {
+            bodyStr = safeStringify(args.body);
+          } catch (e) {
+            return {
+              success: false,
+              error: `Failed to serialize request body: ${e instanceof Error ? e.message : String(e)}`,
+            };
+          }
+        }
+
         try {
           const response = await connector.fetch(
             url,
@@ -328,9 +442,9 @@ export class ConnectorTools {
               method: args.method,
               headers: {
                 'Content-Type': 'application/json',
-                ...args.headers,
+                ...safeHeaders,
               },
-              body: args.body ? JSON.stringify(args.body) : undefined,
+              body: bodyStr,
             },
             userId
           );
@@ -349,7 +463,7 @@ export class ConnectorTools {
             success: response.ok,
             status: response.status,
             data: response.ok ? data : undefined,
-            error: response.ok ? undefined : typeof data === 'string' ? data : JSON.stringify(data),
+            error: response.ok ? undefined : typeof data === 'string' ? data : safeStringify(data),
           };
         } catch (error) {
           return {
