@@ -2469,7 +2469,8 @@ var OpenAIResponsesConverter = class {
             case "input_image_url":
               messageContent.push({
                 type: "input_image",
-                image_url: content.image_url
+                image_url: content.image_url.url,
+                ...content.image_url.detail && { detail: content.image_url.detail }
               });
               break;
             case "output_text":
