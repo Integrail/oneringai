@@ -13,6 +13,7 @@ import {
 } from '@/capabilities/taskAgent/memoryTools.js';
 import { ToolFunction } from '@/domain/entities/Tool.js';
 import { ToolContext, WorkingMemoryAccess } from '@/domain/interfaces/IToolContext.js';
+import { ToolExecutionError } from '@/domain/errors/AIErrors.js';
 
 describe('Memory Tools', () => {
   let mockMemory: WorkingMemoryAccess;
@@ -122,27 +123,37 @@ describe('Memory Tools', () => {
       expect(result).toEqual({ success: true, key: 'user.profile', scope: 'session' });
     });
 
-    it('should return error without context', async () => {
-      const result = await storeTool.execute({
-        key: 'test',
-        description: 'Test',
-        value: {},
-      });
-
-      expect(result).toHaveProperty('error');
-    });
-
-    it('should return error without memory access', async () => {
-      const result = await storeTool.execute(
-        {
+    it('should throw ToolExecutionError without context', async () => {
+      await expect(
+        storeTool.execute({
           key: 'test',
           description: 'Test',
           value: {},
-        },
-        { agentId: 'test' } // No memory
-      );
+        })
+      ).rejects.toThrow(ToolExecutionError);
+    });
 
-      expect(result).toHaveProperty('error');
+    it('should throw ToolExecutionError without memory access', async () => {
+      await expect(
+        storeTool.execute(
+          {
+            key: 'test',
+            description: 'Test',
+            value: {},
+          },
+          { agentId: 'test' } // No memory
+        )
+      ).rejects.toThrow(ToolExecutionError);
+    });
+
+    it('should include tool name in error message', async () => {
+      await expect(
+        storeTool.execute({
+          key: 'test',
+          description: 'Test',
+          value: {},
+        })
+      ).rejects.toThrow(/memory_store/);
     });
 
     it('should be marked as idempotent', () => {

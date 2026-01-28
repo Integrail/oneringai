@@ -51,7 +51,8 @@ describe('ContextManager', () => {
     it('should estimate tokens for string (approximate)', () => {
       const text = 'Hello, world!'; // 13 chars
       const tokens = manager.estimateTokens(text);
-      expect(tokens).toBe(4); // ceil(13/4)
+      // Default is 'mixed' which uses 3.5 chars/token
+      expect(tokens).toBe(4); // ceil(13/3.5)
     });
 
     it('should handle empty string', () => {
@@ -60,7 +61,8 @@ describe('ContextManager', () => {
 
     it('should handle long text', () => {
       const text = 'a'.repeat(1000);
-      expect(manager.estimateTokens(text)).toBe(250);
+      // 'mixed' uses 3.5 chars/token
+      expect(manager.estimateTokens(text)).toBe(286); // ceil(1000/3.5)
     });
 
     it('should handle text with special characters', () => {
@@ -73,6 +75,42 @@ describe('ContextManager', () => {
       const text = '你好世界'; // Chinese characters
       const tokens = manager.estimateTokens(text);
       expect(tokens).toBeGreaterThan(0);
+    });
+
+    it('should use 3 chars/token for code content', () => {
+      const code = 'function foo() { return "bar"; }'; // 33 chars
+      const tokens = manager.estimateTokens(code, 'code');
+      expect(tokens).toBe(11); // ceil(33/3)
+    });
+
+    it('should use 4 chars/token for prose content', () => {
+      const prose = 'The quick brown fox jumps over the lazy dog.'; // 44 chars
+      const tokens = manager.estimateTokens(prose, 'prose');
+      expect(tokens).toBe(11); // ceil(44/4)
+    });
+
+    it('should use 3.5 chars/token for mixed content', () => {
+      const mixed = 'Call function foo() to process the data.'; // 41 chars
+      const tokens = manager.estimateTokens(mixed, 'mixed');
+      expect(tokens).toBe(12); // ceil(41/3.5)
+    });
+
+    it('should estimate more tokens for code than prose with same text length', () => {
+      const text = 'a'.repeat(100);
+      const codeTokens = manager.estimateTokens(text, 'code');
+      const proseTokens = manager.estimateTokens(text, 'prose');
+
+      expect(codeTokens).toBeGreaterThan(proseTokens);
+      expect(codeTokens).toBe(34); // ceil(100/3)
+      expect(proseTokens).toBe(25); // ceil(100/4)
+    });
+
+    it('should default to mixed content type for backward compatibility', () => {
+      const text = 'a'.repeat(100);
+      const defaultTokens = manager.estimateTokens(text);
+      const mixedTokens = manager.estimateTokens(text, 'mixed');
+
+      expect(defaultTokens).toBe(mixedTokens);
     });
   });
 
@@ -194,13 +232,16 @@ describe('ContextManager', () => {
     });
 
     it('should compact when over threshold', async () => {
+      // With 3.5 chars/token (mixed):
+      // 1400/3.5 = 400 tokens, 700/3.5 = 200 tokens, 350/3.5 = 100 tokens (x2)
+      // Total: ~800 tokens, which is over 75% threshold (750) but under hard limit
       const components: ContextComponents = {
-        systemPrompt: 'x'.repeat(2000), // Large
-        instructions: 'x'.repeat(1000),
+        systemPrompt: 'x'.repeat(1400), // ~400 tokens
+        instructions: 'x'.repeat(700), // ~200 tokens
         memoryIndex: '',
         conversationHistory: [
-          { role: 'user', content: 'x'.repeat(500) },
-          { role: 'assistant', content: 'x'.repeat(500) },
+          { role: 'user', content: 'x'.repeat(350) }, // ~100 tokens
+          { role: 'assistant', content: 'x'.repeat(350) }, // ~100 tokens
         ],
         currentInput: 'Hi',
       };

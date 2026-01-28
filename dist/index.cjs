@@ -51,124 +51,16 @@ var fs10__namespace = /*#__PURE__*/_interopNamespace(fs10);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
 
 var __defProp = Object.defineProperty;
-var __getOwnPropNames = Object.getOwnPropertyNames;
 var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
   get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
 }) : x)(function(x) {
   if (typeof require !== "undefined") return require.apply(this, arguments);
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
-var __esm = (fn, res) => function __init() {
-  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
-};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-
-// src/domain/entities/Memory.ts
-var Memory_exports = {};
-__export(Memory_exports, {
-  DEFAULT_MEMORY_CONFIG: () => exports.DEFAULT_MEMORY_CONFIG,
-  calculateEntrySize: () => calculateEntrySize,
-  createMemoryEntry: () => createMemoryEntry,
-  formatMemoryIndex: () => formatMemoryIndex,
-  formatSizeHuman: () => formatSizeHuman,
-  validateMemoryKey: () => validateMemoryKey
-});
-function validateMemoryKey(key) {
-  if (!key || key.length === 0) {
-    throw new Error("Memory key cannot be empty");
-  }
-  if (key.startsWith(".") || key.endsWith(".") || key.includes("..")) {
-    throw new Error("Invalid memory key format: keys cannot start/end with dots or contain consecutive dots");
-  }
-  if (!/^[a-zA-Z0-9._-]+$/.test(key)) {
-    throw new Error("Invalid memory key format: only alphanumeric, dots, dashes, and underscores allowed");
-  }
-}
-function calculateEntrySize(value) {
-  if (value === void 0) {
-    return 0;
-  }
-  const serialized = JSON.stringify(value);
-  return serialized.length;
-}
-function createMemoryEntry(input, config = exports.DEFAULT_MEMORY_CONFIG) {
-  validateMemoryKey(input.key);
-  if (input.description.length > config.descriptionMaxLength) {
-    throw new Error(`Description exceeds maximum length of ${config.descriptionMaxLength} characters`);
-  }
-  const now = Date.now();
-  const sizeBytes = calculateEntrySize(input.value);
-  return {
-    key: input.key,
-    description: input.description,
-    value: input.value,
-    sizeBytes,
-    scope: input.scope ?? "task",
-    createdAt: now,
-    lastAccessedAt: now,
-    accessCount: 0
-  };
-}
-function formatSizeHuman(bytes) {
-  if (bytes === 0) return "0B";
-  if (bytes < 1024) return `${bytes}B`;
-  const kb = bytes / 1024;
-  if (bytes < 1024 * 1024) {
-    return `${kb.toFixed(1).replace(/\.0$/, "")}KB`;
-  }
-  const mb = bytes / (1024 * 1024);
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${mb.toFixed(1).replace(/\.0$/, "")}MB`;
-  }
-  const gb = bytes / (1024 * 1024 * 1024);
-  return `${gb.toFixed(1).replace(/\.0$/, "")}GB`;
-}
-function formatMemoryIndex(index) {
-  const lines = [];
-  const utilPercent = Number.isInteger(index.utilizationPercent) ? index.utilizationPercent.toString() : index.utilizationPercent.toFixed(1).replace(/\.0$/, "");
-  lines.push(`## Working Memory (${index.totalSizeHuman} / ${index.limitHuman} - ${utilPercent}%)`);
-  lines.push("");
-  if (index.entries.length === 0) {
-    lines.push("Memory is empty.");
-  } else {
-    const persistent = index.entries.filter((e) => e.scope === "persistent");
-    const task = index.entries.filter((e) => e.scope === "task");
-    if (persistent.length > 0) {
-      lines.push("**Persistent:**");
-      for (const entry of persistent) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [scope: persistent]`);
-      }
-      lines.push("");
-    }
-    if (task.length > 0) {
-      lines.push("**Task-scoped:**");
-      for (const entry of task) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [scope: task]`);
-      }
-      lines.push("");
-    }
-    if (index.utilizationPercent > 80) {
-      lines.push("\u26A0\uFE0F **Warning:** Memory utilization is high. Consider deleting unused entries.");
-      lines.push("");
-    }
-  }
-  lines.push('Use `memory_retrieve("key")` to load full content.');
-  lines.push('Use `memory_persist("key")` to keep data after task completion.');
-  return lines.join("\n");
-}
-exports.DEFAULT_MEMORY_CONFIG = void 0;
-var init_Memory = __esm({
-  "src/domain/entities/Memory.ts"() {
-    exports.DEFAULT_MEMORY_CONFIG = {
-      descriptionMaxLength: 150,
-      softLimitPercent: 80,
-      contextAllocationPercent: 20
-    };
-  }
-});
 var ALGORITHM = "aes-256-gcm";
 var IV_LENGTH = 16;
 var SALT_LENGTH = 64;
@@ -2238,6 +2130,72 @@ var ProviderError = class _ProviderError extends AIError {
     this.providerName = providerName;
     this.name = "ProviderError";
     Object.setPrototypeOf(this, _ProviderError.prototype);
+  }
+};
+var DependencyCycleError = class _DependencyCycleError extends AIError {
+  constructor(cycle, planId) {
+    super(
+      `Dependency cycle detected: ${cycle.join(" -> ")}`,
+      "DEPENDENCY_CYCLE",
+      400
+    );
+    this.cycle = cycle;
+    this.planId = planId;
+    this.name = "DependencyCycleError";
+    Object.setPrototypeOf(this, _DependencyCycleError.prototype);
+  }
+};
+var TaskTimeoutError = class _TaskTimeoutError extends AIError {
+  constructor(taskId, taskName, timeoutMs) {
+    super(
+      `Task '${taskName}' (${taskId}) timed out after ${timeoutMs}ms`,
+      "TASK_TIMEOUT",
+      408
+    );
+    this.taskId = taskId;
+    this.taskName = taskName;
+    this.timeoutMs = timeoutMs;
+    this.name = "TaskTimeoutError";
+    Object.setPrototypeOf(this, _TaskTimeoutError.prototype);
+  }
+};
+var TaskValidationError = class _TaskValidationError extends AIError {
+  constructor(taskId, taskName, reason) {
+    super(
+      `Task '${taskName}' (${taskId}) validation failed: ${reason}`,
+      "TASK_VALIDATION_ERROR",
+      422
+    );
+    this.taskId = taskId;
+    this.taskName = taskName;
+    this.reason = reason;
+    this.name = "TaskValidationError";
+    Object.setPrototypeOf(this, _TaskValidationError.prototype);
+  }
+};
+var ParallelTasksError = class _ParallelTasksError extends AIError {
+  constructor(failures) {
+    const names = failures.map((f) => f.taskName).join(", ");
+    super(
+      `Multiple tasks failed in parallel execution: ${names}`,
+      "PARALLEL_TASKS_ERROR",
+      500
+    );
+    this.failures = failures;
+    this.name = "ParallelTasksError";
+    Object.setPrototypeOf(this, _ParallelTasksError.prototype);
+  }
+  /**
+   * Get all failure errors
+   */
+  getErrors() {
+    return this.failures.map((f) => f.error);
+  }
+  /**
+   * Get failed task IDs
+   */
+  getFailedTaskIds() {
+    return this.failures.map((f) => f.taskId);
   }
 };
 
@@ -12951,6 +12909,10 @@ var VideoGeneration = class _VideoGeneration {
 };
 
 // src/domain/entities/Task.ts
+var TERMINAL_TASK_STATUSES = ["completed", "failed", "skipped", "cancelled"];
+function isTerminalStatus(status) {
+  return TERMINAL_TASK_STATUSES.includes(status);
+}
 function createTask(input) {
   const now = Date.now();
   const id = input.id ?? `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -12963,6 +12925,7 @@ function createTask(input) {
     externalDependency: input.externalDependency,
     condition: input.condition,
     execution: input.execution,
+    validation: input.validation,
     expectedOutput: input.expectedOutput,
     attempts: 0,
     maxAttempts: input.maxAttempts ?? 3,
@@ -12993,6 +12956,16 @@ function createPlan(input) {
         }
         return resolvedId;
       });
+    }
+  }
+  if (!input.skipCycleCheck) {
+    const cycle = detectDependencyCycle(tasks);
+    if (cycle) {
+      const cycleNames = cycle.map((taskId) => {
+        const task = tasks.find((t) => t.id === taskId);
+        return task ? task.name : taskId;
+      });
+      throw new DependencyCycleError(cycleNames, id);
     }
   }
   return {
@@ -13096,6 +13069,83 @@ function updateTaskStatus(task, status) {
   }
   return updated;
 }
+function isTaskBlocked(task, allTasks) {
+  if (task.dependsOn.length === 0) {
+    return false;
+  }
+  for (const depId of task.dependsOn) {
+    const depTask = allTasks.find((t) => t.id === depId);
+    if (!depTask) {
+      return true;
+    }
+    if (depTask.status !== "completed") {
+      return true;
+    }
+  }
+  return false;
+}
+function getTaskDependencies(task, allTasks) {
+  if (task.dependsOn.length === 0) {
+    return [];
+  }
+  return task.dependsOn.map((depId) => allTasks.find((t) => t.id === depId)).filter((t) => t !== void 0);
+}
+function resolveDependencies(taskInputs, tasks) {
+  const nameToId = /* @__PURE__ */ new Map();
+  for (const task of tasks) {
+    nameToId.set(task.name, task.id);
+  }
+  for (const input of taskInputs) {
+    if (input.dependsOn && input.dependsOn.length > 0) {
+      input.dependsOn = input.dependsOn.map((dep) => {
+        if (dep.startsWith("task-")) {
+          return dep;
+        }
+        const resolvedId = nameToId.get(dep);
+        if (!resolvedId) {
+          throw new Error(`Task dependency "${dep}" not found`);
+        }
+        return resolvedId;
+      });
+    }
+  }
+}
+function detectDependencyCycle(tasks) {
+  const visited = /* @__PURE__ */ new Set();
+  const recStack = /* @__PURE__ */ new Set();
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+  function dfs(taskId, path5) {
+    if (recStack.has(taskId)) {
+      const cycleStart = path5.indexOf(taskId);
+      return [...path5.slice(cycleStart), taskId];
+    }
+    if (visited.has(taskId)) {
+      return null;
+    }
+    visited.add(taskId);
+    recStack.add(taskId);
+    const task = taskMap.get(taskId);
+    if (task) {
+      for (const depId of task.dependsOn) {
+        const cycle = dfs(depId, [...path5, taskId]);
+        if (cycle) {
+          return cycle;
+        }
+      }
+    }
+    recStack.delete(taskId);
+    return null;
+  }
+  for (const task of tasks) {
+    if (!visited.has(task.id)) {
+      const cycle = dfs(task.id, []);
+      if (cycle) {
+        return cycle;
+      }
+    }
+  }
+  return null;
+}
 
 // src/domain/entities/AgentState.ts
 function createAgentState(id, config, plan) {
@@ -13136,8 +13186,238 @@ function updateAgentStatus(state, status) {
   return updated;
 }
 
-// src/capabilities/taskAgent/TaskAgent.ts
-init_Memory();
+// src/domain/entities/Memory.ts
+function isTaskAwareScope(scope) {
+  return typeof scope === "object" && scope !== null && "type" in scope;
+}
+function isSimpleScope(scope) {
+  return scope === "session" || scope === "persistent";
+}
+function scopeEquals(a, b) {
+  if (isSimpleScope(a) && isSimpleScope(b)) {
+    return a === b;
+  }
+  if (isTaskAwareScope(a) && isTaskAwareScope(b)) {
+    if (a.type !== b.type) return false;
+    if (a.type === "task" && b.type === "task") {
+      if (a.taskIds.length !== b.taskIds.length) return false;
+      const sortedA = [...a.taskIds].sort();
+      const sortedB = [...b.taskIds].sort();
+      return sortedA.every((id, i) => id === sortedB[i]);
+    }
+    return true;
+  }
+  return false;
+}
+function scopeMatches(entryScope, filterScope) {
+  if (scopeEquals(entryScope, filterScope)) return true;
+  if (isSimpleScope(filterScope)) return false;
+  if (isTaskAwareScope(entryScope) && isTaskAwareScope(filterScope)) {
+    return entryScope.type === filterScope.type;
+  }
+  return false;
+}
+var MEMORY_PRIORITY_VALUES = {
+  critical: 4,
+  high: 3,
+  normal: 2,
+  low: 1
+};
+var TERMINAL_MEMORY_STATUSES = ["completed", "failed", "skipped", "cancelled"];
+function isTerminalMemoryStatus(status) {
+  return TERMINAL_MEMORY_STATUSES.includes(status);
+}
+var staticPriorityCalculator = (entry) => {
+  if (entry.pinned) return "critical";
+  return entry.basePriority;
+};
+function detectStaleEntries(entries, completedTaskId, taskStates) {
+  const stale = [];
+  for (const entry of entries) {
+    if (entry.pinned) continue;
+    const scope = entry.scope;
+    if (!isTaskAwareScope(scope) || scope.type !== "task") continue;
+    if (!scope.taskIds.includes(completedTaskId)) continue;
+    const allTerminal = scope.taskIds.every((taskId) => {
+      const status = taskStates.get(taskId);
+      return status ? isTerminalMemoryStatus(status) : false;
+    });
+    if (allTerminal) {
+      stale.push({
+        key: entry.key,
+        description: entry.description,
+        reason: "task_completed",
+        previousPriority: entry.basePriority,
+        newPriority: "low",
+        taskIds: scope.taskIds
+      });
+    }
+  }
+  return stale;
+}
+function forTasks(key, description, value, taskIds, options) {
+  return {
+    key,
+    description,
+    value,
+    scope: { type: "task", taskIds },
+    priority: options?.priority,
+    pinned: options?.pinned
+  };
+}
+function forPlan(key, description, value, options) {
+  return {
+    key,
+    description,
+    value,
+    scope: { type: "plan" },
+    priority: options?.priority,
+    pinned: options?.pinned
+  };
+}
+var DEFAULT_MEMORY_CONFIG = {
+  descriptionMaxLength: 150,
+  softLimitPercent: 80,
+  contextAllocationPercent: 20
+};
+function validateMemoryKey(key) {
+  if (!key || key.length === 0) {
+    throw new Error("Memory key cannot be empty");
+  }
+  if (key.startsWith(".") || key.endsWith(".") || key.includes("..")) {
+    throw new Error("Invalid memory key format: keys cannot start/end with dots or contain consecutive dots");
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(key)) {
+    throw new Error("Invalid memory key format: only alphanumeric, dots, dashes, and underscores allowed");
+  }
+}
+function calculateEntrySize(value) {
+  if (value === void 0) {
+    return 0;
+  }
+  const serialized = JSON.stringify(value);
+  if (typeof Buffer !== "undefined") {
+    return Buffer.byteLength(serialized, "utf8");
+  }
+  return new Blob([serialized]).size;
+}
+function createMemoryEntry(input, config = DEFAULT_MEMORY_CONFIG) {
+  validateMemoryKey(input.key);
+  if (input.description.length > config.descriptionMaxLength) {
+    throw new Error(`Description exceeds maximum length of ${config.descriptionMaxLength} characters`);
+  }
+  if (input.scope && isTaskAwareScope(input.scope) && input.scope.type === "task") {
+    if (input.scope.taskIds.length === 0) {
+      console.warn(`Memory entry "${input.key}" has empty taskIds array - will have low priority`);
+    }
+  }
+  const now = Date.now();
+  const sizeBytes = calculateEntrySize(input.value);
+  const pinned = input.pinned ?? false;
+  const priority = pinned ? "critical" : input.priority ?? "normal";
+  return {
+    key: input.key,
+    description: input.description,
+    value: input.value,
+    sizeBytes,
+    scope: input.scope ?? "session",
+    basePriority: priority,
+    pinned,
+    createdAt: now,
+    lastAccessedAt: now,
+    accessCount: 0
+  };
+}
+function formatSizeHuman(bytes) {
+  if (bytes === 0) return "0B";
+  if (bytes < 1024) return `${bytes}B`;
+  const kb = bytes / 1024;
+  if (bytes < 1024 * 1024) {
+    return `${kb.toFixed(1).replace(/\.0$/, "")}KB`;
+  }
+  const mb = bytes / (1024 * 1024);
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${mb.toFixed(1).replace(/\.0$/, "")}MB`;
+  }
+  const gb = bytes / (1024 * 1024 * 1024);
+  return `${gb.toFixed(1).replace(/\.0$/, "")}GB`;
+}
+function formatScope(scope) {
+  if (isSimpleScope(scope)) {
+    return scope;
+  }
+  if (scope.type === "task") {
+    return `task:${scope.taskIds.join(",")}`;
+  }
+  return scope.type;
+}
+function formatEntryFlags(entry) {
+  const flags = [];
+  if (entry.pinned) {
+    flags.push("pinned");
+  } else if (entry.effectivePriority !== "normal") {
+    flags.push(entry.effectivePriority);
+  }
+  flags.push(formatScope(entry.scope));
+  return flags.join(", ");
+}
+function formatMemoryIndex(index) {
+  const lines = [];
+  const utilPercent = Number.isInteger(index.utilizationPercent) ? index.utilizationPercent.toString() : index.utilizationPercent.toFixed(1).replace(/\.0$/, "");
+  lines.push(`## Working Memory (${index.totalSizeHuman} / ${index.limitHuman} - ${utilPercent}%)`);
+  lines.push("");
+  if (index.entries.length === 0) {
+    lines.push("Memory is empty.");
+  } else {
+    const pinned = index.entries.filter((e) => e.pinned);
+    const critical = index.entries.filter((e) => !e.pinned && e.effectivePriority === "critical");
+    const high = index.entries.filter((e) => !e.pinned && e.effectivePriority === "high");
+    const normal = index.entries.filter((e) => !e.pinned && e.effectivePriority === "normal");
+    const low = index.entries.filter((e) => !e.pinned && e.effectivePriority === "low");
+    if (pinned.length > 0) {
+      lines.push("**Pinned (never evicted):**");
+      for (const entry of pinned) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (critical.length > 0) {
+      lines.push("**Critical priority:**");
+      for (const entry of critical) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (high.length > 0) {
+      lines.push("**High priority:**");
+      for (const entry of high) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (normal.length > 0) {
+      lines.push("**Normal priority:**");
+      for (const entry of normal) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (low.length > 0) {
+      lines.push("**Low priority (evicted first):**");
+      for (const entry of low) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (index.utilizationPercent > 80) {
+      lines.push("Warning: Memory utilization is high. Consider deleting unused entries.");
+      lines.push("");
+    }
+  }
+  lines.push('Use `memory_retrieve("key")` to load full content.');
+  lines.push('Use `memory_persist("key")` to keep data after task completion.');
+  return lines.join("\n");
+}
 
 // src/infrastructure/storage/InMemoryStorage.ts
 var InMemoryStorage = class {
@@ -13158,12 +13438,12 @@ var InMemoryStorage = class {
     return Array.from(this.store.values());
   }
   async getByScope(scope) {
-    return Array.from(this.store.values()).filter((entry) => entry.scope === scope);
+    return Array.from(this.store.values()).filter((entry) => scopeMatches(entry.scope, scope));
   }
   async clearScope(scope) {
     const toDelete = [];
     for (const [key, entry] of this.store.entries()) {
-      if (entry.scope === scope) {
+      if (scopeMatches(entry.scope, scope)) {
         toDelete.push(key);
       }
     }
@@ -13267,23 +13547,97 @@ function createAgentStorage(options = {}) {
     agent: options.agent ?? new InMemoryAgentStateStorage()
   };
 }
-
-// src/capabilities/taskAgent/WorkingMemory.ts
-init_Memory();
 var WorkingMemory = class extends EventEmitter__default.default {
   storage;
   config;
-  constructor(storage, config = exports.DEFAULT_MEMORY_CONFIG) {
+  priorityCalculator;
+  priorityContext;
+  /**
+   * Create a WorkingMemory instance
+   *
+   * @param storage - Storage backend for memory entries
+   * @param config - Memory configuration (limits, etc.)
+   * @param priorityCalculator - Strategy for computing effective priority (default: static)
+   */
+  constructor(storage, config = DEFAULT_MEMORY_CONFIG, priorityCalculator = staticPriorityCalculator) {
     super();
     this.storage = storage;
     this.config = config;
+    this.priorityCalculator = priorityCalculator;
+    this.priorityContext = {};
+  }
+  /**
+   * Set the priority calculator (for switching strategies at runtime)
+   */
+  setPriorityCalculator(calculator) {
+    this.priorityCalculator = calculator;
+  }
+  /**
+   * Update priority context (e.g., task states for TaskAgent)
+   */
+  setPriorityContext(context) {
+    this.priorityContext = context;
+  }
+  /**
+   * Get the current priority context
+   */
+  getPriorityContext() {
+    return this.priorityContext;
+  }
+  /**
+   * Compute effective priority for an entry using the current calculator
+   */
+  computeEffectivePriority(entry) {
+    return this.priorityCalculator(entry, this.priorityContext);
+  }
+  /**
+   * Get all entries with their computed effective priorities
+   * This is a performance optimization to avoid repeated getAll() + map() calls
+   */
+  async getEntriesWithPriority() {
+    const entries = await this.storage.getAll();
+    return entries.map((entry) => ({
+      entry,
+      effectivePriority: this.computeEffectivePriority(entry)
+    }));
+  }
+  /**
+   * Get evictable entries sorted by eviction priority
+   * Filters out pinned and critical entries, sorts by priority then by strategy
+   */
+  getEvictableEntries(entriesWithPriority, strategy) {
+    return entriesWithPriority.filter(({ entry, effectivePriority }) => {
+      if (entry.pinned) return false;
+      if (effectivePriority === "critical") return false;
+      return true;
+    }).sort((a, b) => {
+      const priorityDiff = MEMORY_PRIORITY_VALUES[a.effectivePriority] - MEMORY_PRIORITY_VALUES[b.effectivePriority];
+      if (priorityDiff !== 0) return priorityDiff;
+      if (strategy === "lru") {
+        return a.entry.lastAccessedAt - b.entry.lastAccessedAt;
+      } else {
+        return b.entry.sizeBytes - a.entry.sizeBytes;
+      }
+    });
   }
   /**
    * Store a value in working memory
+   *
+   * @param key - Unique key for the entry
+   * @param description - Short description for the index (max 150 chars)
+   * @param value - The data to store
+   * @param options - Optional scope, priority, and pinned settings
    */
-  async store(key, description, value, scope = "task") {
-    const { createMemoryEntry: createMemoryEntry2 } = await Promise.resolve().then(() => (init_Memory(), Memory_exports));
-    const entry = createMemoryEntry2({ key, description, value, scope }, this.config);
+  async store(key, description, value, options) {
+    const input = {
+      key,
+      description,
+      value,
+      scope: options?.scope ?? "session",
+      priority: options?.priority,
+      pinned: options?.pinned
+    };
+    const entry = createMemoryEntry(input, this.config);
     const currentSize = await this.storage.getTotalSize();
     const existing = await this.storage.get(key);
     const existingSize = existing?.sizeBytes ?? 0;
@@ -13297,21 +13651,51 @@ var WorkingMemory = class extends EventEmitter__default.default {
       this.emit("limit_warning", { utilizationPercent: utilization });
     }
     await this.storage.set(key, entry);
-    this.emit("stored", { key, description });
+    this.emit("stored", { key, description, scope: entry.scope });
+  }
+  /**
+   * Store a value scoped to specific tasks
+   * Convenience method for task-aware memory
+   */
+  async storeForTasks(key, description, value, taskIds, options) {
+    await this.store(key, description, value, {
+      scope: { type: "task", taskIds },
+      priority: options?.priority,
+      pinned: options?.pinned
+    });
+  }
+  /**
+   * Store a value scoped to the entire plan
+   * Convenience method for plan-scoped memory
+   */
+  async storeForPlan(key, description, value, options) {
+    await this.store(key, description, value, {
+      scope: { type: "plan" },
+      priority: options?.priority,
+      pinned: options?.pinned
+    });
   }
   /**
    * Retrieve a value from working memory
+   *
+   * Note: Access stats update is not strictly atomic. Under very high concurrency,
+   * accessCount may be slightly inaccurate. This is acceptable for memory management
+   * purposes where exact counts are not critical.
    */
   async retrieve(key) {
     const entry = await this.storage.get(key);
     if (!entry) {
       return void 0;
     }
-    entry.lastAccessedAt = Date.now();
-    entry.accessCount += 1;
-    await this.storage.set(key, entry);
+    const value = entry.value;
+    const freshEntry = await this.storage.get(key);
+    if (freshEntry) {
+      freshEntry.lastAccessedAt = Date.now();
+      freshEntry.accessCount += 1;
+      await this.storage.set(key, freshEntry);
+    }
     this.emit("retrieved", { key });
-    return entry.value;
+    return value;
   }
   /**
    * Retrieve multiple values
@@ -13340,17 +13724,89 @@ var WorkingMemory = class extends EventEmitter__default.default {
     return this.storage.has(key);
   }
   /**
-   * Promote a task-scoped entry to persistent
+   * Promote an entry to persistent scope
+   * Works with both simple and task-aware scopes
    */
   async persist(key) {
     const entry = await this.storage.get(key);
     if (!entry) {
       throw new Error(`Key "${key}" not found in memory`);
     }
-    if (entry.scope !== "persistent") {
-      entry.scope = "persistent";
+    const isPersistent = isSimpleScope(entry.scope) ? entry.scope === "persistent" : isTaskAwareScope(entry.scope) && entry.scope.type === "persistent";
+    if (!isPersistent) {
+      entry.scope = { type: "persistent" };
       await this.storage.set(key, entry);
     }
+  }
+  /**
+   * Pin an entry (never evicted)
+   */
+  async pin(key) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    if (!entry.pinned) {
+      entry.pinned = true;
+      entry.basePriority = "critical";
+      await this.storage.set(key, entry);
+    }
+  }
+  /**
+   * Unpin an entry
+   */
+  async unpin(key, newPriority = "normal") {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    if (entry.pinned) {
+      entry.pinned = false;
+      entry.basePriority = newPriority;
+      await this.storage.set(key, entry);
+    }
+  }
+  /**
+   * Set the base priority of an entry
+   */
+  async setPriority(key, priority) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    entry.basePriority = priority;
+    await this.storage.set(key, entry);
+  }
+  /**
+   * Update the scope of an entry without re-storing the value
+   */
+  async updateScope(key, scope) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    entry.scope = scope;
+    await this.storage.set(key, entry);
+  }
+  /**
+   * Add task IDs to an existing task-scoped entry
+   * If entry is not task-scoped, converts it to task-scoped
+   */
+  async addTasksToScope(key, taskIds) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    if (isTaskAwareScope(entry.scope) && entry.scope.type === "task") {
+      const existingIds = new Set(entry.scope.taskIds);
+      for (const id of taskIds) {
+        existingIds.add(id);
+      }
+      entry.scope = { type: "task", taskIds: Array.from(existingIds) };
+    } else {
+      entry.scope = { type: "task", taskIds };
+    }
+    await this.storage.set(key, entry);
   }
   /**
    * Clear all entries of a specific scope
@@ -13365,30 +13821,33 @@ var WorkingMemory = class extends EventEmitter__default.default {
     await this.storage.clear();
   }
   /**
-   * Get memory index
+   * Get memory index with computed effective priorities
    */
   async getIndex() {
-    const { formatSizeHuman: formatSizeHuman2 } = await Promise.resolve().then(() => (init_Memory(), Memory_exports));
-    const entries = await this.storage.getAll();
+    const entriesWithPriority = await this.getEntriesWithPriority();
     const totalSizeBytes = await this.storage.getTotalSize();
     const limitBytes = this.getLimit();
-    const sortedEntries = entries.sort((a, b) => {
-      if (a.scope === "persistent" && b.scope !== "persistent") return -1;
-      if (a.scope !== "persistent" && b.scope === "persistent") return 1;
-      return 0;
+    const sortedEntries = [...entriesWithPriority].sort((a, b) => {
+      if (a.entry.pinned && !b.entry.pinned) return -1;
+      if (!a.entry.pinned && b.entry.pinned) return 1;
+      const priorityDiff = MEMORY_PRIORITY_VALUES[b.effectivePriority] - MEMORY_PRIORITY_VALUES[a.effectivePriority];
+      if (priorityDiff !== 0) return priorityDiff;
+      return b.entry.lastAccessedAt - a.entry.lastAccessedAt;
     });
-    const indexEntries = sortedEntries.map((entry) => ({
+    const indexEntries = sortedEntries.map(({ entry, effectivePriority }) => ({
       key: entry.key,
       description: entry.description,
-      size: formatSizeHuman2(entry.sizeBytes),
-      scope: entry.scope
+      size: formatSizeHuman(entry.sizeBytes),
+      scope: entry.scope,
+      effectivePriority,
+      pinned: entry.pinned
     }));
     return {
       entries: indexEntries,
       totalSizeBytes,
-      totalSizeHuman: formatSizeHuman2(totalSizeBytes),
+      totalSizeHuman: formatSizeHuman(totalSizeBytes),
       limitBytes,
-      limitHuman: formatSizeHuman2(limitBytes),
+      limitHuman: formatSizeHuman(limitBytes),
       utilizationPercent: totalSizeBytes / limitBytes * 100
     };
   }
@@ -13396,51 +13855,146 @@ var WorkingMemory = class extends EventEmitter__default.default {
    * Format index for context injection
    */
   async formatIndex() {
-    const { formatMemoryIndex: formatMemoryIndex2 } = await Promise.resolve().then(() => (init_Memory(), Memory_exports));
     const index = await this.getIndex();
-    return formatMemoryIndex2(index);
+    return formatMemoryIndex(index);
   }
   /**
-   * Evict least recently used entries
+   * Evict entries using specified strategy
+   *
+   * Eviction order:
+   * 1. Never evict pinned entries
+   * 2. Evict low priority first, then normal, then high (never critical)
+   * 3. Within same priority, use strategy (LRU or largest size)
+   *
+   * @param count - Number of entries to evict
+   * @param strategy - Eviction strategy ('lru' or 'size')
+   * @returns Keys of evicted entries
    */
-  async evictLRU(count) {
-    const entries = await this.storage.getAll();
-    const evictable = entries.filter((entry) => entry.scope === "task").sort((a, b) => a.lastAccessedAt - b.lastAccessedAt);
+  async evict(count, strategy = "lru") {
+    const entriesWithPriority = await this.getEntriesWithPriority();
+    const evictable = this.getEvictableEntries(entriesWithPriority, strategy);
     const toEvict = evictable.slice(0, count);
     const evictedKeys = [];
-    for (const entry of toEvict) {
+    for (const { entry } of toEvict) {
       await this.storage.delete(entry.key);
       evictedKeys.push(entry.key);
+    }
+    if (evictedKeys.length > 0) {
+      this.emit("evicted", { keys: evictedKeys, reason: strategy });
     }
     return evictedKeys;
   }
   /**
-   * Evict largest entries first
+   * Evict entries using priority-aware LRU algorithm
+   * @deprecated Use evict(count, 'lru') instead
+   */
+  async evictLRU(count) {
+    return this.evict(count, "lru");
+  }
+  /**
+   * Evict largest entries first (priority-aware)
+   * @deprecated Use evict(count, 'size') instead
    */
   async evictBySize(count) {
+    return this.evict(count, "size");
+  }
+  /**
+   * Handle task completion - detect and notify about stale entries
+   *
+   * Call this when a task completes to:
+   * 1. Update priority context with new task state
+   * 2. Detect entries that became stale
+   * 3. Emit event to notify LLM about stale entries
+   *
+   * @param taskId - The completed task ID
+   * @param taskStates - Current task states map
+   * @returns Information about stale entries
+   */
+  async onTaskComplete(taskId, taskStates) {
+    this.priorityContext.taskStates = taskStates;
     const entries = await this.storage.getAll();
-    const evictable = entries.filter((entry) => entry.scope === "task").sort((a, b) => b.sizeBytes - a.sizeBytes);
-    const toEvict = evictable.slice(0, count);
+    const staleEntries = detectStaleEntries(entries, taskId, taskStates);
+    if (staleEntries.length > 0) {
+      this.emit("stale_entries", { entries: staleEntries });
+    }
+    return staleEntries;
+  }
+  /**
+   * Evict entries for completed tasks
+   *
+   * Removes entries that were scoped only to completed tasks.
+   * Use after onTaskComplete() if you want automatic cleanup.
+   *
+   * @param taskStates - Current task states map
+   * @returns Keys of evicted entries
+   */
+  async evictCompletedTaskEntries(taskStates) {
+    const entries = await this.storage.getAll();
     const evictedKeys = [];
-    for (const entry of toEvict) {
-      await this.storage.delete(entry.key);
-      evictedKeys.push(entry.key);
+    for (const entry of entries) {
+      if (entry.pinned) continue;
+      if (!isTaskAwareScope(entry.scope) || entry.scope.type !== "task") continue;
+      const allTerminal = entry.scope.taskIds.every((taskId) => {
+        const status = taskStates.get(taskId);
+        return status ? isTerminalMemoryStatus(status) : false;
+      });
+      if (allTerminal) {
+        await this.storage.delete(entry.key);
+        evictedKeys.push(entry.key);
+      }
+    }
+    if (evictedKeys.length > 0) {
+      this.emit("evicted", { keys: evictedKeys, reason: "task_completed" });
     }
     return evictedKeys;
   }
   /**
    * Get limited memory access for tools
+   *
+   * This provides a simplified interface for tools to interact with memory
+   * without exposing the full WorkingMemory API.
    */
   getAccess() {
     return {
       get: async (key) => this.retrieve(key),
-      set: async (key, description, value) => this.store(key, description, value),
+      set: async (key, description, value, options) => this.store(key, description, value, options),
       delete: async (key) => this.delete(key),
       has: async (key) => this.has(key),
       list: async () => {
         const index = await this.getIndex();
-        return index.entries.map((e) => ({ key: e.key, description: e.description }));
+        return index.entries.map((e) => ({
+          key: e.key,
+          description: e.description,
+          effectivePriority: e.effectivePriority,
+          pinned: e.pinned
+        }));
       }
+    };
+  }
+  /**
+   * Get statistics about memory usage
+   */
+  async getStats() {
+    const entriesWithPriority = await this.getEntriesWithPriority();
+    const totalSizeBytes = await this.storage.getTotalSize();
+    const limit = this.getLimit();
+    const byPriority = {
+      critical: 0,
+      high: 0,
+      normal: 0,
+      low: 0
+    };
+    let pinnedCount = 0;
+    for (const { entry, effectivePriority } of entriesWithPriority) {
+      byPriority[effectivePriority]++;
+      if (entry.pinned) pinnedCount++;
+    }
+    return {
+      totalEntries: entriesWithPriority.length,
+      totalSizeBytes,
+      utilizationPercent: totalSizeBytes / limit * 100,
+      byPriority,
+      pinnedCount
     };
   }
   /**
@@ -13448,6 +14002,14 @@ var WorkingMemory = class extends EventEmitter__default.default {
    */
   getLimit() {
     return this.config.maxSizeBytes ?? 512 * 1024;
+  }
+  /**
+   * Destroy the WorkingMemory instance
+   * Removes all event listeners and clears internal state
+   */
+  destroy() {
+    this.removeAllListeners();
+    this.priorityContext = {};
   }
 };
 var DEFAULT_CONTEXT_CONFIG = {
@@ -13474,13 +14036,21 @@ var ContextManager = class extends EventEmitter__default.default {
   }
   /**
    * Estimate token count for text
+   *
+   * @param text - The text to estimate tokens for
+   * @param contentType - Type of content for more accurate estimation:
+   *   - 'code': Code is typically denser (~3 chars/token)
+   *   - 'prose': Natural language text (~4 chars/token)
+   *   - 'mixed': Mix of code and prose (~3.5 chars/token)
+   * @returns Estimated token count
    */
-  estimateTokens(text) {
+  estimateTokens(text, contentType = "mixed") {
     if (!text || text.length === 0) {
       return 0;
     }
     if (this.config.tokenEstimator === "approximate") {
-      return Math.ceil(text.length / 4);
+      const charsPerToken = contentType === "code" ? 3 : contentType === "prose" ? 4 : 3.5;
+      return Math.ceil(text.length / charsPerToken);
     }
     return Math.ceil(text.length / 4);
   }
@@ -13712,10 +14282,30 @@ var IdempotencyCache = class {
     }, 3e5);
   }
   /**
+   * Check if a tool's results should be cached.
+   * Prefers 'cacheable' field, falls back to inverted 'safe' for backward compatibility.
+   *
+   * Logic:
+   * - If 'cacheable' is defined, use it directly
+   * - If only 'safe' is defined, cache when safe=false (backward compat)
+   * - If neither defined, don't cache
+   */
+  shouldCache(tool) {
+    const idempotency = tool.idempotency;
+    if (!idempotency) return false;
+    if (idempotency.cacheable !== void 0) {
+      return idempotency.cacheable;
+    }
+    if (idempotency.safe !== void 0) {
+      return !idempotency.safe;
+    }
+    return false;
+  }
+  /**
    * Get cached result for tool call
    */
   async get(tool, args) {
-    if (!tool.idempotency || tool.idempotency.safe) {
+    if (!this.shouldCache(tool)) {
       this.misses++;
       return void 0;
     }
@@ -13737,11 +14327,11 @@ var IdempotencyCache = class {
    * Cache result for tool call
    */
   async set(tool, args, result) {
-    if (!tool.idempotency || tool.idempotency.safe) {
+    if (!this.shouldCache(tool)) {
       return;
     }
     const key = this.generateKey(tool, args);
-    const ttl = tool.idempotency.ttlMs ?? this.config.defaultTtlMs;
+    const ttl = tool.idempotency?.ttlMs ?? this.config.defaultTtlMs;
     const expiresAt = Date.now() + ttl;
     this.cache.set(key, { value: result, expiresAt });
     if (this.cache.size > this.config.maxEntries) {
@@ -13755,7 +14345,7 @@ var IdempotencyCache = class {
    * Check if tool call is cached
    */
   async has(tool, args) {
-    if (!tool.idempotency || tool.idempotency.safe) {
+    if (!this.shouldCache(tool)) {
       return false;
     }
     const key = this.generateKey(tool, args);
@@ -13868,14 +14458,37 @@ var DEFAULT_HISTORY_CONFIG = {
   maxDetailedMessages: 20,
   compressionStrategy: "summarize",
   summarizeBatchSize: 10,
-  preserveToolCalls: true
+  preserveToolCalls: true,
+  summarizationMode: "truncate"
 };
+var DEFAULT_SUMMARIZATION_PROMPT = `Summarize the following conversation concisely, preserving:
+1. Key decisions and outcomes
+2. Important data/values mentioned
+3. Any errors or failures and their resolutions
+4. Critical context needed for future tasks
+
+Keep the summary under 500 tokens. Focus on information that would be needed to continue the conversation.`;
 var HistoryManager = class {
   messages = [];
   summaries = [];
   config;
-  constructor(config = DEFAULT_HISTORY_CONFIG) {
-    this.config = config;
+  summarizer;
+  constructor(config = {}) {
+    this.config = { ...DEFAULT_HISTORY_CONFIG, ...config };
+  }
+  /**
+   * Set the summarizer function (typically injected by TaskAgent)
+   *
+   * @param fn - Function that takes messages and returns a summary string
+   */
+  setSummarizer(fn) {
+    this.summarizer = fn;
+  }
+  /**
+   * Check if summarizer is configured
+   */
+  hasSummarizer() {
+    return !!this.summarizer;
   }
   /**
    * Add a message to history
@@ -13925,10 +14538,56 @@ ${summary.content}`,
     }
   }
   /**
-   * Summarize history (requires LLM - placeholder)
+   * Summarize history using configured mode
+   *
+   * Modes:
+   * - 'truncate': Just truncate old messages (fast, no LLM)
+   * - 'llm': Use injected summarizer (requires setSummarizer())
+   * - 'hybrid': Try LLM, fall back to truncate on error
    */
   async summarize() {
-    this.compact();
+    const mode = this.config.summarizationMode ?? "truncate";
+    if (mode === "truncate") {
+      this.compact();
+      return;
+    }
+    if (mode === "llm" || mode === "hybrid") {
+      if (!this.summarizer) {
+        if (mode === "hybrid") {
+          this.compact();
+          return;
+        }
+        throw new Error("Summarizer not configured. Call setSummarizer() first.");
+      }
+      try {
+        await this.summarizeWithLLM();
+      } catch (error) {
+        if (mode === "hybrid") {
+          console.warn("LLM summarization failed, falling back to truncate:", error);
+          this.compact();
+        } else {
+          throw error;
+        }
+      }
+    }
+  }
+  /**
+   * Perform LLM-based summarization on oldest messages
+   * @internal
+   */
+  async summarizeWithLLM() {
+    if (!this.summarizer || this.messages.length < this.config.summarizeBatchSize) {
+      return;
+    }
+    const toSummarize = this.messages.slice(0, this.config.summarizeBatchSize);
+    const toKeep = this.messages.slice(this.config.summarizeBatchSize);
+    const summary = await this.summarizer(toSummarize);
+    this.summaries.push({
+      content: summary,
+      coversMessages: toSummarize.length,
+      timestamp: Date.now()
+    });
+    this.messages = toKeep;
   }
   /**
    * Truncate messages to a limit
@@ -13969,6 +14628,8 @@ ${summary.content}`,
 var ExternalDependencyHandler = class extends EventEmitter__default.default {
   activePolls = /* @__PURE__ */ new Map();
   activeScheduled = /* @__PURE__ */ new Map();
+  cancelledPolls = /* @__PURE__ */ new Set();
+  // Track cancelled polls
   tools;
   constructor(tools = []) {
     super();
@@ -14000,9 +14661,10 @@ var ExternalDependencyHandler = class extends EventEmitter__default.default {
     if (!task.externalDependency) {
       return;
     }
+    this.cancelledPolls.add(task.id);
     const pollTimer = this.activePolls.get(task.id);
     if (pollTimer) {
-      clearInterval(pollTimer);
+      clearTimeout(pollTimer);
       this.activePolls.delete(task.id);
     }
     const scheduleTimer = this.activeScheduled.get(task.id);
@@ -14024,37 +14686,58 @@ var ExternalDependencyHandler = class extends EventEmitter__default.default {
     this.emit("manual:completed", { taskId, data });
   }
   /**
-   * Start polling for a task
+   * Start polling for a task with exponential backoff
    */
   startPolling(task) {
     const dep = task.externalDependency;
     const pollConfig = dep.pollConfig;
-    let attempts = 0;
-    const poll = async () => {
-      attempts++;
-      try {
-        const tool = this.tools.get(pollConfig.toolName);
-        if (!tool) {
-          console.error(`Poll tool ${pollConfig.toolName} not found`);
+    const backoffConfig = {
+      strategy: "exponential",
+      initialDelayMs: pollConfig.intervalMs,
+      maxDelayMs: pollConfig.intervalMs * 4,
+      // Cap at 4x initial interval
+      jitter: true,
+      jitterFactor: 0.1
+      // ±10% jitter to prevent thundering herd
+    };
+    this.cancelledPolls.delete(task.id);
+    (async () => {
+      let attempts = 0;
+      while (attempts < pollConfig.maxAttempts) {
+        if (this.cancelledPolls.has(task.id)) {
+          this.cancelledPolls.delete(task.id);
           return;
         }
-        const result = await tool.execute(pollConfig.toolArgs);
-        if (result) {
-          this.emit("poll:success", { taskId: task.id, data: result });
-          this.stopWaiting(task);
-          return;
+        attempts++;
+        try {
+          const tool = this.tools.get(pollConfig.toolName);
+          if (!tool) {
+            console.error(`Poll tool ${pollConfig.toolName} not found`);
+            return;
+          }
+          const result = await tool.execute(pollConfig.toolArgs);
+          if (result) {
+            this.emit("poll:success", { taskId: task.id, data: result });
+            return;
+          }
+        } catch (error) {
+          console.error(`Poll error for task ${task.id}:`, error);
         }
         if (attempts >= pollConfig.maxAttempts) {
           this.emit("poll:timeout", { taskId: task.id });
-          this.stopWaiting(task);
+          return;
         }
-      } catch (error) {
-        console.error(`Poll error for task ${task.id}:`, error);
+        const delay = calculateBackoff(attempts, backoffConfig);
+        await new Promise((resolve3) => {
+          const timer = setTimeout(resolve3, delay);
+          this.activePolls.set(task.id, timer);
+        });
+        if (this.cancelledPolls.has(task.id)) {
+          this.cancelledPolls.delete(task.id);
+          return;
+        }
       }
-    };
-    const timer = setInterval(poll, pollConfig.intervalMs);
-    this.activePolls.set(task.id, timer);
-    poll();
+    })();
   }
   /**
    * Schedule a task to trigger at a specific time
@@ -14077,8 +14760,11 @@ var ExternalDependencyHandler = class extends EventEmitter__default.default {
    * Cleanup all active dependencies
    */
   cleanup() {
+    for (const taskId of this.activePolls.keys()) {
+      this.cancelledPolls.add(taskId);
+    }
     for (const timer of this.activePolls.values()) {
-      clearInterval(timer);
+      clearTimeout(timer);
     }
     this.activePolls.clear();
     for (const timer of this.activeScheduled.values()) {
@@ -14093,6 +14779,368 @@ var ExternalDependencyHandler = class extends EventEmitter__default.default {
     this.tools = new Map(tools.map((t) => [t.definition.function.name, t]));
   }
 };
+
+// src/infrastructure/resilience/RateLimiter.ts
+var RateLimitError = class _RateLimitError extends AIError {
+  constructor(retryAfterMs, message) {
+    super(message ?? `Rate limited. Retry after ${retryAfterMs}ms`, "RATE_LIMIT_ERROR", 429);
+    this.retryAfterMs = retryAfterMs;
+    this.name = "RateLimitError";
+    Object.setPrototypeOf(this, _RateLimitError.prototype);
+  }
+};
+var DEFAULT_RATE_LIMITER_CONFIG = {
+  maxRequests: 60,
+  windowMs: 6e4,
+  onLimit: "wait",
+  maxWaitMs: 6e4
+};
+var TokenBucketRateLimiter = class {
+  tokens;
+  lastRefill;
+  config;
+  waitQueue = [];
+  // Metrics
+  totalRequests = 0;
+  throttledRequests = 0;
+  totalWaitMs = 0;
+  constructor(config = {}) {
+    this.config = {
+      maxRequests: config.maxRequests ?? DEFAULT_RATE_LIMITER_CONFIG.maxRequests,
+      windowMs: config.windowMs ?? DEFAULT_RATE_LIMITER_CONFIG.windowMs,
+      onLimit: config.onLimit ?? DEFAULT_RATE_LIMITER_CONFIG.onLimit,
+      maxWaitMs: config.maxWaitMs ?? DEFAULT_RATE_LIMITER_CONFIG.maxWaitMs
+    };
+    this.tokens = this.config.maxRequests;
+    this.lastRefill = Date.now();
+  }
+  /**
+   * Acquire a token (request permission to make an LLM call)
+   * @returns Promise that resolves when token is acquired
+   * @throws RateLimitError if onLimit='throw' and no tokens available
+   */
+  async acquire() {
+    this.totalRequests++;
+    this.refill();
+    if (this.tokens > 0) {
+      this.tokens--;
+      return;
+    }
+    this.throttledRequests++;
+    const waitTime = this.getWaitTime();
+    if (this.config.onLimit === "throw") {
+      throw new RateLimitError(waitTime);
+    }
+    if (waitTime > this.config.maxWaitMs) {
+      throw new RateLimitError(
+        waitTime,
+        `Wait time ${waitTime}ms exceeds max ${this.config.maxWaitMs}ms`
+      );
+    }
+    const startWait = Date.now();
+    await this.waitForToken(waitTime);
+    this.totalWaitMs += Date.now() - startWait;
+  }
+  /**
+   * Try to acquire without waiting
+   * @returns true if acquired, false if rate limited
+   */
+  tryAcquire() {
+    this.totalRequests++;
+    this.refill();
+    if (this.tokens > 0) {
+      this.tokens--;
+      return true;
+    }
+    this.throttledRequests++;
+    return false;
+  }
+  /**
+   * Get current available tokens
+   */
+  getAvailableTokens() {
+    this.refill();
+    return this.tokens;
+  }
+  /**
+   * Get time until next token is available
+   */
+  getWaitTime() {
+    this.refill();
+    if (this.tokens > 0) return 0;
+    const elapsed = Date.now() - this.lastRefill;
+    return Math.max(0, this.config.windowMs - elapsed);
+  }
+  /**
+   * Get rate limiter metrics
+   */
+  getMetrics() {
+    return {
+      totalRequests: this.totalRequests,
+      throttledRequests: this.throttledRequests,
+      totalWaitMs: this.totalWaitMs,
+      avgWaitMs: this.throttledRequests > 0 ? this.totalWaitMs / this.throttledRequests : 0
+    };
+  }
+  /**
+   * Reset the rate limiter state
+   */
+  reset() {
+    this.tokens = this.config.maxRequests;
+    this.lastRefill = Date.now();
+    for (const waiter of this.waitQueue) {
+      if (waiter.timeout) {
+        clearTimeout(waiter.timeout);
+      }
+    }
+    this.waitQueue = [];
+  }
+  /**
+   * Reset metrics
+   */
+  resetMetrics() {
+    this.totalRequests = 0;
+    this.throttledRequests = 0;
+    this.totalWaitMs = 0;
+  }
+  /**
+   * Get the current configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+  /**
+   * Refill tokens if window has expired
+   */
+  refill() {
+    const now = Date.now();
+    const elapsed = now - this.lastRefill;
+    if (elapsed >= this.config.windowMs) {
+      this.tokens = this.config.maxRequests;
+      this.lastRefill = now;
+      this.processWaitQueue();
+    }
+  }
+  /**
+   * Wait for a token to become available
+   */
+  async waitForToken(waitTime) {
+    return new Promise((resolve3, reject) => {
+      const timeout = setTimeout(() => {
+        const index = this.waitQueue.findIndex((w) => w.timeout === timeout);
+        if (index !== -1) {
+          this.waitQueue.splice(index, 1);
+        }
+        this.refill();
+        if (this.tokens > 0) {
+          this.tokens--;
+          resolve3();
+        } else {
+          reject(new RateLimitError(this.getWaitTime(), "Token still unavailable after wait"));
+        }
+      }, waitTime);
+      this.waitQueue.push({ resolve: resolve3, reject, timeout });
+    });
+  }
+  /**
+   * Process waiting requests when tokens become available
+   */
+  processWaitQueue() {
+    while (this.waitQueue.length > 0 && this.tokens > 0) {
+      const waiter = this.waitQueue.shift();
+      if (waiter) {
+        if (waiter.timeout) {
+          clearTimeout(waiter.timeout);
+        }
+        this.tokens--;
+        waiter.resolve();
+      }
+    }
+  }
+};
+
+// src/utils/jsonExtractor.ts
+function extractJSON(text) {
+  if (!text || typeof text !== "string") {
+    return {
+      success: false,
+      error: "Input is empty or not a string"
+    };
+  }
+  const trimmedText = text.trim();
+  const codeBlockResult = extractFromCodeBlock(trimmedText);
+  if (codeBlockResult.success) {
+    return codeBlockResult;
+  }
+  const inlineResult = extractInlineJSON(trimmedText);
+  if (inlineResult.success) {
+    return inlineResult;
+  }
+  try {
+    const data = JSON.parse(trimmedText);
+    return {
+      success: true,
+      data,
+      rawJson: trimmedText,
+      method: "raw"
+    };
+  } catch (e) {
+    return {
+      success: false,
+      error: `Could not extract JSON from text: ${e instanceof Error ? e.message : String(e)}`
+    };
+  }
+}
+function extractFromCodeBlock(text) {
+  const codeBlockRegex = /```(?:json)?\s*([\s\S]*?)```/g;
+  let match;
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    const content = match[1];
+    if (content) {
+      const trimmed = content.trim();
+      try {
+        const data = JSON.parse(trimmed);
+        return {
+          success: true,
+          data,
+          rawJson: trimmed,
+          method: "code_block"
+        };
+      } catch {
+        continue;
+      }
+    }
+  }
+  return { success: false };
+}
+function extractInlineJSON(text) {
+  const objectMatch = findJSONObject(text);
+  if (objectMatch) {
+    try {
+      const data = JSON.parse(objectMatch);
+      return {
+        success: true,
+        data,
+        rawJson: objectMatch,
+        method: "inline"
+      };
+    } catch {
+    }
+  }
+  const arrayMatch = findJSONArray(text);
+  if (arrayMatch) {
+    try {
+      const data = JSON.parse(arrayMatch);
+      return {
+        success: true,
+        data,
+        rawJson: arrayMatch,
+        method: "inline"
+      };
+    } catch {
+    }
+  }
+  return { success: false };
+}
+function findJSONObject(text) {
+  const startIndex = text.indexOf("{");
+  if (startIndex === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") {
+      depth++;
+    } else if (char === "}") {
+      depth--;
+      if (depth === 0) {
+        return text.slice(startIndex, i + 1);
+      }
+    }
+  }
+  return null;
+}
+function findJSONArray(text) {
+  const startIndex = text.indexOf("[");
+  if (startIndex === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = startIndex; i < text.length; i++) {
+    const char = text[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "[") {
+      depth++;
+    } else if (char === "]") {
+      depth--;
+      if (depth === 0) {
+        return text.slice(startIndex, i + 1);
+      }
+    }
+  }
+  return null;
+}
+function extractJSONField(text, field, defaultValue) {
+  const result = extractJSON(text);
+  if (result.success && result.data && field in result.data) {
+    return result.data[field];
+  }
+  return defaultValue;
+}
+function extractNumber(text, patterns = [
+  /(\d{1,3})%?\s*(?:complete|score|percent)/i,
+  /(?:score|completion|rating)[:\s]+(\d{1,3})/i,
+  /(\d{1,3})\s*(?:out of|\/)\s*100/i
+], defaultValue = 0) {
+  const jsonResult = extractJSON(text);
+  if (jsonResult.success && jsonResult.data) {
+    const scoreFields = ["score", "completionScore", "completion_score", "rating", "percent", "value"];
+    for (const field of scoreFields) {
+      if (field in jsonResult.data && typeof jsonResult.data[field] === "number") {
+        return jsonResult.data[field];
+      }
+    }
+  }
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num)) {
+        return num;
+      }
+    }
+  }
+  return defaultValue;
+}
+
+// src/capabilities/taskAgent/PlanExecutor.ts
+var DEFAULT_TASK_TIMEOUT_MS = 3e5;
 var PlanExecutor = class extends EventEmitter__default.default {
   agent;
   memory;
@@ -14105,6 +15153,7 @@ var PlanExecutor = class extends EventEmitter__default.default {
   hooks;
   config;
   abortController;
+  rateLimiter;
   // Current execution metrics
   currentMetrics = {
     totalLLMCalls: 0,
@@ -14126,6 +15175,40 @@ var PlanExecutor = class extends EventEmitter__default.default {
     this.hooks = hooks;
     this.config = config;
     this.abortController = new AbortController();
+    if (config.rateLimiter) {
+      this.rateLimiter = new TokenBucketRateLimiter({
+        maxRequests: config.rateLimiter.maxRequestsPerMinute ?? 60,
+        windowMs: 6e4,
+        // 1 minute window
+        onLimit: config.rateLimiter.onLimit ?? "wait",
+        maxWaitMs: config.rateLimiter.maxWaitMs ?? 6e4
+      });
+    }
+  }
+  /**
+   * Build a map of task states for memory priority calculation
+   */
+  buildTaskStatesMap(plan) {
+    const taskStates = /* @__PURE__ */ new Map();
+    for (const task of plan.tasks) {
+      const status = task.status;
+      if (["pending", "in_progress", "completed", "failed", "skipped", "cancelled"].includes(status)) {
+        taskStates.set(task.id, status);
+      } else {
+        taskStates.set(task.id, "pending");
+      }
+    }
+    return taskStates;
+  }
+  /**
+   * Notify memory about task completion and detect stale entries
+   */
+  async notifyMemoryOfTaskCompletion(plan, taskId) {
+    const taskStates = this.buildTaskStatesMap(plan);
+    const staleEntries = await this.memory.onTaskComplete(taskId, taskStates);
+    if (staleEntries.length > 0) {
+      this.emit("memory:stale_entries", { entries: staleEntries, taskId });
+    }
   }
   /**
    * Execute a plan
@@ -14158,9 +15241,7 @@ var PlanExecutor = class extends EventEmitter__default.default {
       if (nextTasks.length === 0) {
         break;
       }
-      await Promise.all(
-        nextTasks.map((task) => this.executeTask(plan, task))
-      );
+      await this.executeParallelTasks(plan, nextTasks);
     }
     const hasFailures = plan.tasks.some((t) => t.status === "failed");
     const allComplete = plan.tasks.every(
@@ -14175,13 +15256,88 @@ var PlanExecutor = class extends EventEmitter__default.default {
     };
   }
   /**
-   * Execute a single task
+   * Execute tasks in parallel with configurable failure handling
+   *
+   * Note on failure modes:
+   * - 'fail-fast' (default): Uses Promise.all - stops batch on first rejection (current behavior)
+   *   Individual task failures don't reject, they just set task.status = 'failed'
+   * - 'continue': Uses Promise.allSettled - all tasks run regardless of failures
+   * - 'fail-all': Uses Promise.allSettled, then throws ParallelTasksError if any failed
+   *
+   * @param plan - The plan being executed
+   * @param tasks - Tasks to execute in parallel
+   * @returns Result containing succeeded and failed tasks
+   */
+  async executeParallelTasks(plan, tasks) {
+    const failureMode = plan.concurrency?.failureMode ?? "fail-fast";
+    const succeeded = [];
+    const failed = [];
+    if (failureMode === "fail-fast") {
+      await Promise.all(tasks.map((task) => this.executeTask(plan, task)));
+      for (const task of tasks) {
+        if (task.status === "completed") {
+          succeeded.push(task);
+        } else if (task.status === "failed") {
+          const errorMsg = typeof task.result?.error === "string" ? task.result.error : "Task failed";
+          failed.push({
+            taskId: task.id,
+            taskName: task.name,
+            error: new Error(errorMsg)
+          });
+        }
+      }
+      return { succeeded, failed };
+    }
+    await Promise.allSettled(
+      tasks.map(async (task) => {
+        await this.executeTask(plan, task);
+      })
+    );
+    for (const task of tasks) {
+      if (task.status === "completed") {
+        succeeded.push(task);
+      } else if (task.status === "failed") {
+        const errorMsg = typeof task.result?.error === "string" ? task.result.error : "Task failed";
+        failed.push({
+          taskId: task.id,
+          taskName: task.name,
+          error: new Error(errorMsg)
+        });
+      }
+    }
+    if (failureMode === "fail-all" && failed.length > 0) {
+      throw new ParallelTasksError(failed);
+    }
+    return { succeeded, failed };
+  }
+  /**
+   * Check if task condition is met
+   * @returns true if condition is met or no condition exists
+   */
+  async checkCondition(task) {
+    if (!task.condition) {
+      return true;
+    }
+    return evaluateCondition(task.condition, {
+      get: (key) => this.memory.retrieve(key)
+    });
+  }
+  /**
+   * Get the timeout for a task (per-task override or config default)
+   */
+  getTaskTimeout(task) {
+    const perTaskTimeout = task.metadata?.timeoutMs;
+    if (typeof perTaskTimeout === "number" && perTaskTimeout > 0) {
+      return perTaskTimeout;
+    }
+    return this.config.taskTimeout ?? DEFAULT_TASK_TIMEOUT_MS;
+  }
+  /**
+   * Execute a single task with timeout support
    */
   async executeTask(plan, task) {
     if (task.condition) {
-      const conditionMet = await evaluateCondition(task.condition, {
-        get: (key) => this.memory.retrieve(key)
-      });
+      const conditionMet = await this.checkCondition(task);
       if (!conditionMet) {
         if (task.condition.onFalse === "skip") {
           task.status = "skipped";
@@ -14212,72 +15368,13 @@ var PlanExecutor = class extends EventEmitter__default.default {
     const updatedTask = updateTaskStatus(task, "in_progress");
     Object.assign(task, updatedTask);
     this.emit("task:start", { task });
+    const timeoutMs = this.getTaskTimeout(task);
     try {
-      const taskPrompt = this.buildTaskPrompt(plan, task);
-      await this.contextManager.prepareContext(
-        {
-          systemPrompt: this.buildSystemPrompt(plan),
-          instructions: "",
-          memoryIndex: await this.memory.formatIndex(),
-          conversationHistory: this.historyManager.getRecentMessages().map((m) => ({
-            role: m.role,
-            content: m.content
-          })),
-          currentInput: taskPrompt
-        },
-        this.memory,
-        this.historyManager
-      );
-      this.historyManager.addMessage("user", taskPrompt);
-      this.emit("llm:call", { iteration: task.attempts });
-      let messages = [{ role: "user", content: taskPrompt }];
-      if (this.hooks?.beforeLLMCall) {
-        messages = await this.hooks.beforeLLMCall(messages, {
-          model: this.agent.model,
-          temperature: 0.7
-          // Default temperature
-        });
-      }
-      const response = await this.agent.run(taskPrompt);
-      if (response.usage) {
-        this.currentMetrics.totalLLMCalls++;
-        this.currentMetrics.totalTokensUsed += response.usage.total_tokens || 0;
-        if (this.agent.model && response.usage.input_tokens && response.usage.output_tokens) {
-          const cost = calculateCost(this.agent.model, response.usage.input_tokens, response.usage.output_tokens);
-          if (cost !== null) {
-            this.currentMetrics.totalCost += cost;
-          }
-        }
-      }
-      if (this.hooks?.afterLLMCall) {
-        await this.hooks.afterLLMCall(response);
-      }
-      if (this.currentState) {
-        await this.checkpointManager.onLLMCall(this.currentState);
-      }
-      this.historyManager.addMessage("assistant", response.output_text || "");
-      const completedTask = updateTaskStatus(task, "completed");
-      completedTask.result = {
-        success: true,
-        output: response.output_text
-      };
-      Object.assign(task, completedTask);
-      this.emit("task:complete", { task, result: response });
-      if (this.hooks?.afterTask) {
-        await this.hooks.afterTask(task, {
-          success: true,
-          output: response.output_text
-        });
-      }
-      if (task.externalDependency) {
-        task.status = "waiting_external";
-        if (this.currentState) {
-          await this.checkpointManager.checkpoint(this.currentState, "before_external_wait");
-        }
-        await this.externalHandler.startWaiting(task);
-        this.emit("task:waiting_external", { task });
-      }
+      await this.executeTaskWithTimeout(plan, task, timeoutMs);
     } catch (error) {
+      if (error instanceof TaskTimeoutError) {
+        this.emit("task:timeout", { task, timeoutMs });
+      }
       const err = error instanceof Error ? error : new Error(String(error));
       let errorAction = "retry";
       if (this.hooks?.onError) {
@@ -14314,6 +15411,128 @@ var PlanExecutor = class extends EventEmitter__default.default {
         Object.assign(task, failedTask);
         this.emit("task:failed", { task, error: err });
       }
+    }
+  }
+  /**
+   * Execute task core logic with timeout
+   */
+  async executeTaskWithTimeout(plan, task, timeoutMs) {
+    return new Promise((resolve3, reject) => {
+      const timeoutId = setTimeout(() => {
+        reject(new TaskTimeoutError(task.id, task.name, timeoutMs));
+      }, timeoutMs);
+      this.executeTaskCore(plan, task).then(() => {
+        clearTimeout(timeoutId);
+        resolve3();
+      }).catch((error) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      });
+    });
+  }
+  /**
+   * Core task execution logic (called by executeTaskWithTimeout)
+   */
+  async executeTaskCore(plan, task) {
+    const taskPrompt = this.buildTaskPrompt(plan, task);
+    await this.contextManager.prepareContext(
+      {
+        systemPrompt: this.buildSystemPrompt(plan),
+        instructions: "",
+        memoryIndex: await this.memory.formatIndex(),
+        conversationHistory: this.historyManager.getRecentMessages().map((m) => ({
+          role: m.role,
+          content: m.content
+        })),
+        currentInput: taskPrompt
+      },
+      this.memory,
+      this.historyManager
+    );
+    this.historyManager.addMessage("user", taskPrompt);
+    this.emit("llm:call", { iteration: task.attempts });
+    let messages = [{ role: "user", content: taskPrompt }];
+    if (this.hooks?.beforeLLMCall) {
+      messages = await this.hooks.beforeLLMCall(messages, {
+        model: this.agent.model,
+        temperature: 0.7
+        // Default temperature
+      });
+    }
+    const raceProtection = task.execution?.raceProtection !== false;
+    if (task.condition && raceProtection) {
+      const stillMet = await this.checkCondition(task);
+      if (!stillMet) {
+        task.status = "skipped";
+        this.emit("task:skipped", { task, reason: "condition_changed" });
+        return;
+      }
+    }
+    if (this.rateLimiter) {
+      await this.rateLimiter.acquire();
+    }
+    const response = await this.agent.run(taskPrompt);
+    if (response.usage) {
+      this.currentMetrics.totalLLMCalls++;
+      this.currentMetrics.totalTokensUsed += response.usage.total_tokens || 0;
+      if (this.agent.model && response.usage.input_tokens && response.usage.output_tokens) {
+        const cost = calculateCost(this.agent.model, response.usage.input_tokens, response.usage.output_tokens);
+        if (cost !== null) {
+          this.currentMetrics.totalCost += cost;
+        }
+      }
+    }
+    if (this.hooks?.afterLLMCall) {
+      await this.hooks.afterLLMCall(response);
+    }
+    if (this.currentState) {
+      await this.checkpointManager.onLLMCall(this.currentState);
+    }
+    this.historyManager.addMessage("assistant", response.output_text || "");
+    const validationResult = await this.validateTaskCompletion(task, response.output_text || "");
+    task.metadata = task.metadata || {};
+    task.metadata.validationResult = validationResult;
+    if (validationResult.requiresUserApproval) {
+      this.emit("task:validation_uncertain", { task, validation: validationResult });
+      if (task.validation?.mode === "strict") {
+        return;
+      }
+    }
+    if (!validationResult.isComplete) {
+      if (task.validation?.mode === "strict") {
+        this.emit("task:validation_failed", { task, validation: validationResult });
+        throw new TaskValidationError(
+          task.id,
+          task.name,
+          `Completion score ${validationResult.completionScore}% below threshold. ${validationResult.explanation}`
+        );
+      } else {
+        this.emit("task:validation_failed", { task, validation: validationResult });
+      }
+    }
+    const completedTask = updateTaskStatus(task, "completed");
+    completedTask.result = {
+      success: true,
+      output: response.output_text,
+      validationScore: validationResult.completionScore,
+      validationExplanation: validationResult.explanation
+    };
+    Object.assign(task, completedTask);
+    this.emit("task:complete", { task, result: response });
+    await this.notifyMemoryOfTaskCompletion(plan, task.id);
+    if (this.hooks?.afterTask) {
+      await this.hooks.afterTask(task, {
+        success: true,
+        output: response.output_text
+      });
+    }
+    if (task.externalDependency) {
+      task.status = "waiting_external";
+      if (this.currentState) {
+        await this.checkpointManager.checkpoint(this.currentState, "before_external_wait");
+      }
+      await this.externalHandler.startWaiting(task);
+      this.emit("task:waiting_external", { task });
     }
   }
   /**
@@ -14354,6 +15573,176 @@ ${plan.context ? `**Context:** ${plan.context}
     return prompt.join("\n");
   }
   /**
+   * Validate task completion using LLM self-reflection or custom hook
+   *
+   * @param task - The task to validate
+   * @param output - The LLM response output
+   * @returns TaskValidationResult with completion score and details
+   */
+  async validateTaskCompletion(task, output) {
+    if (!task.validation || task.validation.skipReflection) {
+      return {
+        isComplete: true,
+        completionScore: 100,
+        explanation: "No validation configured, task marked complete",
+        requiresUserApproval: false
+      };
+    }
+    if (this.hooks?.validateTask) {
+      const taskResult = { success: true, output };
+      const hookResult = await this.hooks.validateTask(task, taskResult, this.memory);
+      if (typeof hookResult === "boolean") {
+        return {
+          isComplete: hookResult,
+          completionScore: hookResult ? 100 : 0,
+          explanation: hookResult ? "Validated by custom hook" : "Rejected by custom hook",
+          requiresUserApproval: false
+        };
+      } else if (typeof hookResult === "string") {
+        return {
+          isComplete: false,
+          completionScore: 0,
+          explanation: hookResult,
+          requiresUserApproval: false
+        };
+      } else {
+        return hookResult;
+      }
+    }
+    if (task.validation.requiredMemoryKeys && task.validation.requiredMemoryKeys.length > 0) {
+      const missingKeys = [];
+      for (const key of task.validation.requiredMemoryKeys) {
+        const value = await this.memory.retrieve(key);
+        if (value === void 0) {
+          missingKeys.push(key);
+        }
+      }
+      if (missingKeys.length > 0) {
+        return {
+          isComplete: false,
+          completionScore: 0,
+          explanation: `Required memory keys not found: ${missingKeys.join(", ")}`,
+          requiresUserApproval: false
+        };
+      }
+    }
+    if (!task.validation.completionCriteria || task.validation.completionCriteria.length === 0) {
+      return {
+        isComplete: true,
+        completionScore: 100,
+        explanation: "No completion criteria specified, task marked complete",
+        requiresUserApproval: false
+      };
+    }
+    const validationPrompt = this.buildValidationPrompt(task, output);
+    this.emit("llm:call", { iteration: task.attempts });
+    const validationResponse = await this.agent.run(validationPrompt);
+    if (validationResponse.usage) {
+      this.currentMetrics.totalLLMCalls++;
+      this.currentMetrics.totalTokensUsed += validationResponse.usage.total_tokens || 0;
+      if (this.agent.model && validationResponse.usage.input_tokens && validationResponse.usage.output_tokens) {
+        const cost = calculateCost(
+          this.agent.model,
+          validationResponse.usage.input_tokens,
+          validationResponse.usage.output_tokens
+        );
+        if (cost !== null) {
+          this.currentMetrics.totalCost += cost;
+        }
+      }
+    }
+    return this.parseValidationResponse(
+      task,
+      validationResponse.output_text || ""
+    );
+  }
+  /**
+   * Build prompt for LLM self-reflection validation
+   */
+  buildValidationPrompt(task, output) {
+    const criteria = task.validation?.completionCriteria || [];
+    const minScore = task.validation?.minCompletionScore ?? 80;
+    return `You are a task completion validator. Your job is to evaluate whether a task was completed successfully.
+
+## Task Information
+**Task Name:** ${task.name}
+**Task Description:** ${task.description}
+${task.expectedOutput ? `**Expected Output:** ${task.expectedOutput}` : ""}
+
+## Completion Criteria
+The task is considered complete if it meets these criteria:
+${criteria.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+
+## Task Output
+The following was the output from executing the task:
+---
+${output}
+---
+
+## Your Evaluation
+Please evaluate the task completion and respond in the following JSON format:
+\`\`\`json
+{
+  "completionScore": <number 0-100>,
+  "isComplete": <true if score >= ${minScore}>,
+  "explanation": "<brief explanation of your evaluation>",
+  "criteriaResults": [
+    {
+      "criterion": "<criterion text>",
+      "met": <true/false>,
+      "evidence": "<brief evidence from output>"
+    }
+  ]
+}
+\`\`\`
+
+Be honest and thorough in your evaluation. A score of 100 means all criteria are fully met. A score below ${minScore} means the task needs more work.`;
+  }
+  /**
+   * Parse LLM validation response into TaskValidationResult
+   */
+  parseValidationResponse(task, responseText) {
+    const minScore = task.validation?.minCompletionScore ?? 80;
+    const requireApproval = task.validation?.requireUserApproval ?? "never";
+    const extractionResult = extractJSON(responseText);
+    if (extractionResult.success && extractionResult.data) {
+      const parsed = extractionResult.data;
+      const completionScore = typeof parsed.completionScore === "number" ? Math.max(0, Math.min(100, parsed.completionScore)) : 0;
+      const isComplete = completionScore >= minScore;
+      let requiresUserApproval = false;
+      let approvalReason;
+      if (requireApproval === "always") {
+        requiresUserApproval = true;
+        approvalReason = "User approval required for all task completions";
+      } else if (requireApproval === "uncertain") {
+        const uncertainThreshold = Math.max(minScore - 20, 50);
+        if (completionScore >= uncertainThreshold && completionScore < minScore) {
+          requiresUserApproval = true;
+          approvalReason = `Completion score (${completionScore}%) is uncertain - below threshold but potentially acceptable`;
+        }
+      }
+      return {
+        isComplete,
+        completionScore,
+        explanation: parsed.explanation || "No explanation provided",
+        criteriaResults: parsed.criteriaResults,
+        requiresUserApproval,
+        approvalReason
+      };
+    }
+    const score = extractNumber(responseText, [
+      /(\d{1,3})%?\s*(?:complete|score)/i,
+      /(?:score|completion|rating)[:\s]+(\d{1,3})/i
+    ], 50);
+    return {
+      isComplete: score >= minScore,
+      completionScore: score,
+      explanation: `Could not parse structured response. Estimated score: ${score}%`,
+      requiresUserApproval: requireApproval === "always" || requireApproval === "uncertain",
+      approvalReason: "Could not parse validation response accurately"
+    };
+  }
+  /**
    * Check if plan is complete
    */
   isPlanComplete(plan) {
@@ -14382,6 +15771,21 @@ ${plan.context ? `**Context:** ${plan.context}
    */
   getIdempotencyCache() {
     return this.idempotencyCache;
+  }
+  /**
+   * Get rate limiter metrics (if rate limiting is enabled)
+   */
+  getRateLimiterMetrics() {
+    if (!this.rateLimiter) {
+      return null;
+    }
+    return this.rateLimiter.getMetrics();
+  }
+  /**
+   * Reset rate limiter state (for testing or manual control)
+   */
+  resetRateLimiter() {
+    this.rateLimiter?.reset();
   }
 };
 
@@ -14492,7 +15896,7 @@ var memoryStoreDefinition = {
   type: "function",
   function: {
     name: "memory_store",
-    description: "Store data in working memory for later use. Use this to save important information from tool outputs.",
+    description: "Store data in working memory for later use. Use this to save important information from tool outputs. You can scope data to specific tasks so it gets cleaned up when those tasks complete.",
     parameters: {
       type: "object",
       properties: {
@@ -14506,6 +15910,25 @@ var memoryStoreDefinition = {
         },
         value: {
           description: "The data to store (can be any JSON value)"
+        },
+        neededForTasks: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: Task IDs that need this data. Data will be auto-cleaned when all tasks complete."
+        },
+        scope: {
+          type: "string",
+          enum: ["session", "plan", "persistent"],
+          description: 'Optional: Lifecycle scope. "session" (default), "plan" (kept for entire plan), or "persistent" (never auto-cleaned)'
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "normal", "high", "critical"],
+          description: "Optional: Eviction priority. Lower priority evicted first when memory is full."
+        },
+        pinned: {
+          type: "boolean",
+          description: "Optional: If true, this data will never be evicted."
         }
       },
       required: ["key", "description", "value"]
@@ -14565,15 +15988,30 @@ function createMemoryTools() {
       definition: memoryStoreDefinition,
       execute: async (args, context) => {
         if (!context || !context.memory) {
-          return { error: "Memory tools require TaskAgent context" };
+          throw new ToolExecutionError("memory_store", "Memory tools require TaskAgent context");
         }
         try {
+          let scope;
+          if (args.neededForTasks && Array.isArray(args.neededForTasks) && args.neededForTasks.length > 0) {
+            scope = { type: "task", taskIds: args.neededForTasks };
+          } else if (args.scope === "plan") {
+            scope = { type: "plan" };
+          } else if (args.scope === "persistent") {
+            scope = { type: "persistent" };
+          } else {
+            scope = "session";
+          }
           await context.memory.set(
             args.key,
             args.description,
-            args.value
+            args.value,
+            {
+              scope,
+              priority: args.priority,
+              pinned: args.pinned
+            }
           );
-          return { success: true, key: args.key };
+          return { success: true, key: args.key, scope: typeof scope === "string" ? scope : scope.type };
         } catch (error) {
           return { error: error instanceof Error ? error.message : String(error) };
         }
@@ -14586,7 +16024,7 @@ function createMemoryTools() {
       definition: memoryRetrieveDefinition,
       execute: async (args, context) => {
         if (!context || !context.memory) {
-          return { error: "Memory tools require TaskAgent context" };
+          throw new ToolExecutionError("memory_retrieve", "Memory tools require TaskAgent context");
         }
         const value = await context.memory.get(args.key);
         if (value === void 0) {
@@ -14602,7 +16040,7 @@ function createMemoryTools() {
       definition: memoryDeleteDefinition,
       execute: async (args, context) => {
         if (!context || !context.memory) {
-          return { error: "Memory tools require TaskAgent context" };
+          throw new ToolExecutionError("memory_delete", "Memory tools require TaskAgent context");
         }
         await context.memory.delete(args.key);
         return { success: true, deleted: args.key };
@@ -14615,7 +16053,7 @@ function createMemoryTools() {
       definition: memoryListDefinition,
       execute: async (_args, context) => {
         if (!context || !context.memory) {
-          return { error: "Memory tools require TaskAgent context" };
+          throw new ToolExecutionError("memory_list", "Memory tools require TaskAgent context");
         }
         return await context.memory.list();
       },
@@ -14893,7 +16331,7 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
       throw new Error(`Connector "${config.connector}" not found`);
     }
     const storage = config.storage ?? createAgentStorage({});
-    const memoryConfig = config.memoryConfig ?? exports.DEFAULT_MEMORY_CONFIG;
+    const memoryConfig = config.memoryConfig ?? DEFAULT_MEMORY_CONFIG;
     const memory = new WorkingMemory(storage.memory, memoryConfig);
     const id = `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const emptyPlan = createPlan({ goal: "", tasks: [] });
@@ -14991,16 +16429,21 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
     const taskFailedHandler = (data) => this.emit("task:failed", data);
     const taskSkippedHandler = (data) => this.emit("task:failed", { task: data.task, error: new Error(data.reason) });
     const taskWaitingExternalHandler = (data) => this.emit("task:waiting", { task: data.task, dependency: data.task.externalDependency });
+    const taskValidationFailedHandler = (data) => this.emit("task:validation_failed", data);
     this.planExecutor.on("task:start", taskStartHandler);
     this.planExecutor.on("task:complete", taskCompleteHandler);
     this.planExecutor.on("task:failed", taskFailedHandler);
     this.planExecutor.on("task:skipped", taskSkippedHandler);
     this.planExecutor.on("task:waiting_external", taskWaitingExternalHandler);
+    this.planExecutor.on("task:validation_failed", taskValidationFailedHandler);
+    this.planExecutor.on("task:validation_uncertain", taskValidationFailedHandler);
     this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:start", taskStartHandler));
     this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:complete", taskCompleteHandler));
     this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:failed", taskFailedHandler));
     this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:skipped", taskSkippedHandler));
     this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:waiting_external", taskWaitingExternalHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:validation_failed", taskValidationFailedHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:validation_uncertain", taskValidationFailedHandler));
   }
   /**
    * Resume an existing agent from storage
@@ -15009,6 +16452,22 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
     const state = await options.storage.agent.load(agentId);
     if (!state) {
       throw new Error(`Agent ${agentId} not found in storage`);
+    }
+    const stateToolNames = new Set(state.config.toolNames ?? []);
+    const currentToolNames = new Set(
+      (options.tools ?? []).map((t) => t.definition.function.name)
+    );
+    const missing = [...stateToolNames].filter((n) => !currentToolNames.has(n));
+    const added = [...currentToolNames].filter((n) => !stateToolNames.has(n));
+    if (missing.length > 0) {
+      console.warn(
+        `[TaskAgent.resume] Warning: Missing tools from saved state: ${missing.join(", ")}. Tasks requiring these tools may fail.`
+      );
+    }
+    if (added.length > 0) {
+      console.info(
+        `[TaskAgent.resume] Info: New tools not in saved state: ${added.join(", ")}`
+      );
     }
     const config = {
       connector: state.config.connectorName,
@@ -15019,7 +16478,7 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
       storage: options.storage,
       hooks: options.hooks
     };
-    const memory = new WorkingMemory(options.storage.memory, exports.DEFAULT_MEMORY_CONFIG);
+    const memory = new WorkingMemory(options.storage.memory, DEFAULT_MEMORY_CONFIG);
     const taskAgent = new _TaskAgent(agentId, state, options.storage, memory, config, options.hooks);
     taskAgent.initializeComponents(config);
     return taskAgent;
@@ -15117,15 +16576,32 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
     task.externalDependency.receivedAt = Date.now();
   }
   /**
-   * Update the plan
+   * Update the plan with validation
+   *
+   * @param updates - The updates to apply to the plan
+   * @param options - Validation options
+   * @throws Error if validation fails
    */
-  async updatePlan(updates) {
+  async updatePlan(updates, options) {
     const plan = this.state.plan;
     if (!plan) {
       throw new Error("No plan running");
     }
     if (!plan.allowDynamicTasks && (updates.addTasks || updates.removeTasks)) {
       throw new Error("Dynamic tasks are disabled for this plan");
+    }
+    const opts = {
+      allowRemoveActiveTasks: options?.allowRemoveActiveTasks ?? false,
+      validateCycles: options?.validateCycles ?? true
+    };
+    if (!opts.allowRemoveActiveTasks && updates.removeTasks && updates.removeTasks.length > 0) {
+      const activeTasks = plan.tasks.filter(
+        (t) => t.status === "in_progress" && updates.removeTasks.includes(t.id)
+      );
+      if (activeTasks.length > 0) {
+        const names = activeTasks.map((t) => t.name).join(", ");
+        throw new Error(`Cannot remove active tasks: ${names}. Set allowRemoveActiveTasks: true to override.`);
+      }
     }
     if (updates.addTasks) {
       for (const taskInput of updates.addTasks) {
@@ -15143,6 +16619,16 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
     }
     if (updates.removeTasks) {
       plan.tasks = plan.tasks.filter((t) => !updates.removeTasks.includes(t.id));
+    }
+    if (opts.validateCycles) {
+      const cycle = detectDependencyCycle(plan.tasks);
+      if (cycle) {
+        const cycleNames = cycle.map((taskId) => {
+          const task = plan.tasks.find((t) => t.id === taskId);
+          return task ? task.name : taskId;
+        });
+        throw new DependencyCycleError(cycleNames, plan.id);
+      }
     }
     plan.lastUpdatedAt = Date.now();
     this.emit("plan:updated", { plan });
@@ -15205,8 +16691,11 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
         value: null,
         // Don't serialize full values, they're in storage
         scope: e.scope,
-        sizeBytes: 0
+        sizeBytes: 0,
         // Size is stored as human-readable in index
+        basePriority: e.effectivePriority,
+        // Store computed priority
+        pinned: e.pinned
       }))
     };
     await this._sessionManager.save(this._session);
@@ -15319,8 +16808,9 @@ var PLANNING_SYSTEM_PROMPT = `You are an AI planning agent. Your job is to analy
 1. Analyze the user's goal and context
 2. Break down the goal into logical, atomic tasks
 3. Identify dependencies between tasks
-4. Structure tasks for optimal execution (parallel where possible)
-5. Use the planning tools to create the plan
+4. Define completion criteria for each task (how we know the task is done)
+5. Structure tasks for optimal execution (parallel where possible)
+6. Use the planning tools to create the plan
 
 **Planning Principles:**
 - Each task should have a single, clear responsibility
@@ -15330,10 +16820,25 @@ var PLANNING_SYSTEM_PROMPT = `You are an AI planning agent. Your job is to analy
 - Task names should be descriptive snake_case (e.g., "fetch_user_data")
 - Descriptions should be clear and actionable
 
+**Completion Criteria Guidelines:**
+Each task should have clear, natural language completion criteria that describe how to verify the task is complete. These criteria should be:
+- Specific and measurable (e.g., "response contains at least 5 items")
+- Flexible, not rigid (avoid exact JSON schemas or exact string matches)
+- Focused on outcomes, not implementation (e.g., "user data is stored in memory" not "memory_store was called")
+
+Examples of good completion criteria:
+- "The response contains weather data for the requested location"
+- "At least 3 relevant search results were found"
+- "The user's email address has been validated and stored"
+- "The file was created with content matching the user's request"
+
+Examples of bad completion criteria (too rigid):
+- "Response matches exact JSON format {temp: number, city: string}"
+- "Output contains exactly the string 'SUCCESS'"
+- "Function returned status code 200"
+
 **Available Planning Tools:**
-- create_task: Add a task to the plan
-- add_dependency: Link tasks with dependencies
-- mark_parallel: Mark tasks that can run in parallel
+- create_task: Add a task to the plan with completion criteria
 - finalize_plan: Complete the planning phase
 
 Always start by analyzing the goal, then create tasks one by one, building dependencies as you go.`;
@@ -15371,7 +16876,7 @@ var PlanningAgent = class _PlanningAgent {
           type: "function",
           function: {
             name: "create_task",
-            description: "Create a new task in the plan with name, description, and optional dependencies",
+            description: "Create a new task in the plan with name, description, completion criteria, and optional dependencies",
             parameters: {
               type: "object",
               properties: {
@@ -15382,6 +16887,11 @@ var PlanningAgent = class _PlanningAgent {
                 description: {
                   type: "string",
                   description: "Clear, actionable description of what this task does"
+                },
+                completion_criteria: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: 'Array of natural language criteria to verify task completion (e.g., "response contains weather data", "at least 3 results found")'
                 },
                 depends_on: {
                   type: "array",
@@ -15395,6 +16905,15 @@ var PlanningAgent = class _PlanningAgent {
                 expected_output: {
                   type: "string",
                   description: "Description of expected output (optional)"
+                },
+                required_memory_keys: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Memory keys that must exist after task completion (optional)"
+                },
+                min_completion_score: {
+                  type: "number",
+                  description: "Minimum completion score (0-100) to consider task complete (default: 80)"
                 }
               },
               required: ["name", "description"]
@@ -15404,19 +16923,35 @@ var PlanningAgent = class _PlanningAgent {
         execute: async (args) => {
           const name = args.name;
           const description = args.description;
+          const completionCriteria = args.completion_criteria;
           const dependsOn = args.depends_on;
           const parallel = args.parallel;
           const expectedOutput = args.expected_output;
+          const requiredMemoryKeys = args.required_memory_keys;
+          const minCompletionScore = args.min_completion_score;
+          let validation;
+          if (completionCriteria || requiredMemoryKeys || minCompletionScore) {
+            validation = {
+              completionCriteria,
+              requiredMemoryKeys,
+              minCompletionScore: minCompletionScore ?? 80,
+              requireUserApproval: "uncertain",
+              // Default: ask user in uncertain cases
+              mode: "warn"
+              // Default: warn but complete
+            };
+          }
           this.addTask({
             name,
             description,
             dependsOn,
             execution: parallel ? { parallel: true } : void 0,
-            expectedOutput
+            expectedOutput,
+            validation
           });
           return {
             success: true,
-            message: `Task '${name}' created`,
+            message: `Task '${name}' created${completionCriteria ? ` with ${completionCriteria.length} completion criteria` : ""}`,
             taskCount: this.currentTasks.length
           };
         },
@@ -16705,9 +18240,6 @@ ${parts.join("\n\n")}`;
     return { ...this.config };
   }
 };
-
-// src/index.ts
-init_Memory();
 
 // src/infrastructure/storage/InMemorySessionStorage.ts
 var InMemorySessionStorage = class {
@@ -21833,7 +23365,6 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
     this.agent = null;
   }
 };
-init_Memory();
 var ModeManager = class extends events.EventEmitter {
   state;
   transitionHistory = [];
@@ -22303,7 +23834,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
     }
     this.executionAgent = this.createExecutionAgent();
     const memoryStorage = new InMemoryStorage();
-    this.workingMemory = new WorkingMemory(memoryStorage, config.memoryConfig ?? exports.DEFAULT_MEMORY_CONFIG);
+    this.workingMemory = new WorkingMemory(memoryStorage, config.memoryConfig ?? DEFAULT_MEMORY_CONFIG);
     this.historyManager = config.historyManager ?? new ConversationHistoryManager();
     this.contextBuilder = config.contextBuilder ?? new DefaultContextBuilder();
     this.registerDefaultContextSources();
@@ -22453,7 +23984,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
         `user_feedback_${Date.now()}`,
         "User feedback during execution",
         input,
-        "persistent"
+        { scope: "persistent" }
       );
       return {
         text: "Noted. I'll keep that in mind as I continue.",
@@ -23305,10 +24836,14 @@ exports.DEFAULT_HISTORY_MANAGER_CONFIG = DEFAULT_HISTORY_MANAGER_CONFIG;
 exports.DEFAULT_IDEMPOTENCY_CONFIG = DEFAULT_IDEMPOTENCY_CONFIG;
 exports.DEFAULT_MAX_DELAY_MS = DEFAULT_MAX_DELAY_MS;
 exports.DEFAULT_MAX_RETRIES = DEFAULT_MAX_RETRIES;
+exports.DEFAULT_MEMORY_CONFIG = DEFAULT_MEMORY_CONFIG;
 exports.DEFAULT_PERMISSION_CONFIG = DEFAULT_PERMISSION_CONFIG;
+exports.DEFAULT_RATE_LIMITER_CONFIG = DEFAULT_RATE_LIMITER_CONFIG;
 exports.DEFAULT_RETRYABLE_STATUSES = DEFAULT_RETRYABLE_STATUSES;
 exports.DEFAULT_SHELL_CONFIG = DEFAULT_SHELL_CONFIG;
+exports.DEFAULT_SUMMARIZATION_PROMPT = DEFAULT_SUMMARIZATION_PROMPT;
 exports.DefaultContextBuilder = DefaultContextBuilder;
+exports.DependencyCycleError = DependencyCycleError;
 exports.ExecutionContext = ExecutionContext;
 exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileConnectorStorage = FileConnectorStorage;
@@ -23331,6 +24866,7 @@ exports.InvalidConfigError = InvalidConfigError;
 exports.InvalidToolArgumentsError = InvalidToolArgumentsError;
 exports.LLM_MODELS = LLM_MODELS;
 exports.LazyCompactionStrategy = LazyCompactionStrategy;
+exports.MEMORY_PRIORITY_VALUES = MEMORY_PRIORITY_VALUES;
 exports.META_TOOL_NAMES = META_TOOL_NAMES;
 exports.MODEL_REGISTRY = MODEL_REGISTRY;
 exports.MemoryConnectorStorage = MemoryConnectorStorage;
@@ -23342,6 +24878,7 @@ exports.ModeManager = ModeManager;
 exports.ModelNotSupportedError = ModelNotSupportedError;
 exports.NoOpMetrics = NoOpMetrics;
 exports.OAuthManager = OAuthManager;
+exports.ParallelTasksError = ParallelTasksError;
 exports.PlanExecutor = PlanExecutor;
 exports.ProactiveCompactionStrategy = ProactiveCompactionStrategy;
 exports.ProviderAuthError = ProviderAuthError;
@@ -23351,6 +24888,7 @@ exports.ProviderError = ProviderError;
 exports.ProviderErrorMapper = ProviderErrorMapper;
 exports.ProviderNotFoundError = ProviderNotFoundError;
 exports.ProviderRateLimitError = ProviderRateLimitError;
+exports.RateLimitError = RateLimitError;
 exports.RollingWindowStrategy = RollingWindowStrategy;
 exports.SERVICE_DEFINITIONS = SERVICE_DEFINITIONS;
 exports.SERVICE_INFO = SERVICE_INFO;
@@ -23364,11 +24902,15 @@ exports.StreamEventType = StreamEventType;
 exports.StreamHelpers = StreamHelpers;
 exports.StreamState = StreamState;
 exports.SummarizeCompactor = SummarizeCompactor;
+exports.TERMINAL_TASK_STATUSES = TERMINAL_TASK_STATUSES;
 exports.TTS_MODELS = TTS_MODELS;
 exports.TTS_MODEL_REGISTRY = TTS_MODEL_REGISTRY;
 exports.TaskAgent = TaskAgent;
 exports.TaskAgentContextProvider = TaskAgentContextProvider;
+exports.TaskTimeoutError = TaskTimeoutError;
+exports.TaskValidationError = TaskValidationError;
 exports.TextToSpeech = TextToSpeech;
+exports.TokenBucketRateLimiter = TokenBucketRateLimiter;
 exports.ToolCallState = ToolCallState;
 exports.ToolExecutionError = ToolExecutionError;
 exports.ToolManager = ToolManager;
@@ -23393,10 +24935,12 @@ exports.backoffWait = backoffWait;
 exports.bash = bash;
 exports.calculateBackoff = calculateBackoff;
 exports.calculateCost = calculateCost;
+exports.calculateEntrySize = calculateEntrySize;
 exports.calculateImageCost = calculateImageCost;
 exports.calculateSTTCost = calculateSTTCost;
 exports.calculateTTSCost = calculateTTSCost;
 exports.calculateVideoCost = calculateVideoCost;
+exports.canTaskExecute = canTaskExecute;
 exports.createAgentStorage = createAgentStorage;
 exports.createAuthenticatedFetch = createAuthenticatedFetch;
 exports.createBashTool = createBashTool;
@@ -23412,16 +24956,25 @@ exports.createListDirectoryTool = createListDirectoryTool;
 exports.createMemoryTools = createMemoryTools;
 exports.createMessageWithImages = createMessageWithImages;
 exports.createMetricsCollector = createMetricsCollector;
+exports.createPlan = createPlan;
 exports.createProvider = createProvider;
 exports.createReadFileTool = createReadFileTool;
 exports.createStrategy = createStrategy;
+exports.createTask = createTask;
 exports.createTextMessage = createTextMessage;
 exports.createVideoProvider = createVideoProvider;
 exports.createWriteFileTool = createWriteFileTool;
 exports.defaultDescribeCall = defaultDescribeCall;
+exports.detectDependencyCycle = detectDependencyCycle;
 exports.detectServiceFromURL = detectServiceFromURL;
 exports.developerTools = developerTools;
 exports.editFile = editFile;
+exports.evaluateCondition = evaluateCondition;
+exports.extractJSON = extractJSON;
+exports.extractJSONField = extractJSONField;
+exports.extractNumber = extractNumber;
+exports.forPlan = forPlan;
+exports.forTasks = forTasks;
 exports.generateEncryptionKey = generateEncryptionKey;
 exports.generateWebAPITool = generateWebAPITool;
 exports.getActiveImageModels = getActiveImageModels;
@@ -23437,6 +24990,7 @@ exports.getImageModelsWithFeature = getImageModelsWithFeature;
 exports.getMetaTools = getMetaTools;
 exports.getModelInfo = getModelInfo;
 exports.getModelsByVendor = getModelsByVendor;
+exports.getNextExecutableTasks = getNextExecutableTasks;
 exports.getSTTModelInfo = getSTTModelInfo;
 exports.getSTTModelsByVendor = getSTTModelsByVendor;
 exports.getSTTModelsWithFeature = getSTTModelsWithFeature;
@@ -23446,6 +25000,7 @@ exports.getServicesByCategory = getServicesByCategory;
 exports.getTTSModelInfo = getTTSModelInfo;
 exports.getTTSModelsByVendor = getTTSModelsByVendor;
 exports.getTTSModelsWithFeature = getTTSModelsWithFeature;
+exports.getTaskDependencies = getTaskDependencies;
 exports.getToolCallDescription = getToolCallDescription;
 exports.getVideoModelInfo = getVideoModelInfo;
 exports.getVideoModelsByVendor = getVideoModelsByVendor;
@@ -23461,7 +25016,12 @@ exports.isKnownService = isKnownService;
 exports.isMetaTool = isMetaTool;
 exports.isOutputTextDelta = isOutputTextDelta;
 exports.isResponseComplete = isResponseComplete;
+exports.isSimpleScope = isSimpleScope;
 exports.isStreamEvent = isStreamEvent;
+exports.isTaskAwareScope = isTaskAwareScope;
+exports.isTaskBlocked = isTaskBlocked;
+exports.isTerminalMemoryStatus = isTerminalMemoryStatus;
+exports.isTerminalStatus = isTerminalStatus;
 exports.isToolCallArgumentsDelta = isToolCallArgumentsDelta;
 exports.isToolCallArgumentsDone = isToolCallArgumentsDone;
 exports.isToolCallStart = isToolCallStart;
@@ -23472,9 +25032,13 @@ exports.logger = logger;
 exports.metrics = metrics;
 exports.readClipboardImage = readClipboardImage;
 exports.readFile = readFile4;
+exports.resolveDependencies = resolveDependencies;
 exports.retryWithBackoff = retryWithBackoff;
+exports.scopeEquals = scopeEquals;
+exports.scopeMatches = scopeMatches;
 exports.setMetricsCollector = setMetricsCollector;
 exports.tools = tools_exports;
+exports.updateTaskStatus = updateTaskStatus;
 exports.validatePath = validatePath;
 exports.writeFile = writeFile4;
 //# sourceMappingURL=index.cjs.map

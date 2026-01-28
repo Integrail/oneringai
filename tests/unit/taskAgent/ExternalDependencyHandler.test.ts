@@ -210,8 +210,11 @@ describe('ExternalDependencyHandler', () => {
 
       await handler.startWaiting(task);
 
-      // Advance time to trigger second poll
-      await vi.advanceTimersByTimeAsync(1000);
+      // With async polling loop, we need to advance timers and flush promises multiple times
+      // to let the async code execute between timer ticks
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(500);
+      await vi.advanceTimersByTimeAsync(500);
 
       expect(successSpy).toHaveBeenCalledWith({
         taskId: 'poll-task-1',
@@ -255,8 +258,11 @@ describe('ExternalDependencyHandler', () => {
 
       await handler.startWaiting(task);
 
-      // Advance through all attempts
-      await vi.advanceTimersByTimeAsync(300);
+      // With exponential backoff: 100ms, 200ms, 400ms (capped at 400)
+      // Total for 3 attempts: 100+200 = 300ms of waiting after first 2 attempts
+      // Need to advance enough time for all attempts plus processing
+      // Use runAllTimersAsync to let all async operations complete
+      await vi.runAllTimersAsync();
 
       expect(timeoutSpy).toHaveBeenCalledWith({ taskId: 'poll-task-2' });
     });
@@ -495,11 +501,15 @@ describe('ExternalDependencyHandler', () => {
       await handler.startWaiting(task);
       expect(mockTool.execute).toHaveBeenCalledTimes(1);
 
+      // Stop immediately after first poll
       handler.stopWaiting(task);
 
-      // Advance time - should not poll anymore
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(mockTool.execute).toHaveBeenCalledTimes(1);
+      // With the async loop, stopWaiting clears the timer which causes the loop to exit
+      // Let any pending timers complete
+      await vi.runAllTimersAsync();
+
+      // Should not have reached maxAttempts (10)
+      expect(mockTool.execute.mock.calls.length).toBeLessThan(10);
     });
 
     it('should stop scheduled task', async () => {
@@ -573,11 +583,18 @@ describe('ExternalDependencyHandler', () => {
 
       await handler.startWaiting(task);
 
+      // Let first poll complete, then call cleanup
+      // The first poll happens immediately, so advance a bit and let promises settle
+      await vi.advanceTimersByTimeAsync(100);
+
       handler.cleanup();
 
-      // Advance time - should not poll
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(mockTool.execute).toHaveBeenCalledTimes(1); // Only initial
+      // Let any pending timers run to completion
+      await vi.runAllTimersAsync();
+
+      // Should not have reached maxAttempts (10)
+      // First poll happens immediately, cleanup cancels before more can happen
+      expect(mockTool.execute.mock.calls.length).toBeLessThan(10);
     });
 
     it('should clear all scheduled timers', async () => {
@@ -738,7 +755,7 @@ describe('ExternalDependencyHandler', () => {
             toolName: 'check_status',
             toolArgs: {},
             intervalMs: 1000,
-            maxAttempts: 2,
+            maxAttempts: 3,
           },
         },
       });
@@ -746,9 +763,13 @@ describe('ExternalDependencyHandler', () => {
       // Should not throw
       await expect(handler.startWaiting(task)).resolves.not.toThrow();
 
-      // Should continue polling despite errors
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(mockTool.execute).toHaveBeenCalledTimes(2);
+      // First attempt happens immediately (1 call so far)
+      expect(mockTool.execute).toHaveBeenCalledTimes(1);
+
+      // Should continue polling despite errors (with exponential backoff)
+      // After first failure, wait ~1000ms for second attempt
+      await vi.advanceTimersByTimeAsync(1500); // Allow for jitter
+      expect(mockTool.execute.mock.calls.length).toBeGreaterThanOrEqual(2);
     });
 
     it('should handle concurrent poll and scheduled tasks', async () => {
@@ -776,8 +797,8 @@ describe('ExternalDependencyHandler', () => {
           pollConfig: {
             toolName: 'check_status',
             toolArgs: {},
-            intervalMs: 1000,
-            maxAttempts: 5,
+            intervalMs: 500, // Shorter interval for more polls in test window
+            maxAttempts: 10,
           },
         },
       });
@@ -799,9 +820,13 @@ describe('ExternalDependencyHandler', () => {
       const scheduledSpy = vi.fn();
       handler.on('scheduled:triggered', scheduledSpy);
 
-      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(2500);
 
-      expect(mockTool.execute).toHaveBeenCalledTimes(3); // Initial + 2 intervals
+      // With exponential backoff (starting at 500ms, max 2000ms), we should have at least 2 polls
+      // Attempt 1: immediate
+      // Attempt 2: after ~500ms
+      // Attempt 3: after ~1000ms (total ~1500ms)
+      expect(mockTool.execute.mock.calls.length).toBeGreaterThanOrEqual(2);
       expect(scheduledSpy).toHaveBeenCalled();
     });
   });

@@ -149,15 +149,25 @@ export class ContextManager extends EventEmitter<ContextManagerEvents> {
 
   /**
    * Estimate token count for text
+   *
+   * @param text - The text to estimate tokens for
+   * @param contentType - Type of content for more accurate estimation:
+   *   - 'code': Code is typically denser (~3 chars/token)
+   *   - 'prose': Natural language text (~4 chars/token)
+   *   - 'mixed': Mix of code and prose (~3.5 chars/token)
+   * @returns Estimated token count
    */
-  estimateTokens(text: string): number {
+  estimateTokens(text: string, contentType: 'code' | 'prose' | 'mixed' = 'mixed'): number {
     if (!text || text.length === 0) {
       return 0;
     }
 
     if (this.config.tokenEstimator === 'approximate') {
-      // Approximate: 1 token ≈ 4 characters
-      return Math.ceil(text.length / 4);
+      // Code averages ~3 chars/token (more symbols, shorter words)
+      // Prose averages ~4 chars/token (natural language)
+      // Mixed averages ~3.5 chars/token
+      const charsPerToken = contentType === 'code' ? 3 : contentType === 'prose' ? 4 : 3.5;
+      return Math.ceil(text.length / charsPerToken);
     }
 
     // TODO: Implement tiktoken when needed

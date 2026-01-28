@@ -59,11 +59,37 @@ export class IdempotencyCache {
   }
 
   /**
+   * Check if a tool's results should be cached.
+   * Prefers 'cacheable' field, falls back to inverted 'safe' for backward compatibility.
+   *
+   * Logic:
+   * - If 'cacheable' is defined, use it directly
+   * - If only 'safe' is defined, cache when safe=false (backward compat)
+   * - If neither defined, don't cache
+   */
+  private shouldCache(tool: ToolFunction): boolean {
+    const idempotency = tool.idempotency;
+    if (!idempotency) return false;
+
+    // Prefer 'cacheable' if defined
+    if (idempotency.cacheable !== undefined) {
+      return idempotency.cacheable;
+    }
+
+    // Fall back to deprecated 'safe' (cache when safe=false)
+    if (idempotency.safe !== undefined) {
+      return !idempotency.safe;
+    }
+
+    return false;
+  }
+
+  /**
    * Get cached result for tool call
    */
   async get(tool: ToolFunction, args: Record<string, unknown>): Promise<unknown> {
-    // Don't cache if no idempotency config or if tool is safe
-    if (!tool.idempotency || tool.idempotency.safe) {
+    // Don't cache if tool doesn't need caching
+    if (!this.shouldCache(tool)) {
       this.misses++;
       return undefined;
     }
@@ -91,13 +117,13 @@ export class IdempotencyCache {
    * Cache result for tool call
    */
   async set(tool: ToolFunction, args: Record<string, unknown>, result: unknown): Promise<void> {
-    // Don't cache if no idempotency config or if tool is safe
-    if (!tool.idempotency || tool.idempotency.safe) {
+    // Don't cache if tool doesn't need caching
+    if (!this.shouldCache(tool)) {
       return;
     }
 
     const key = this.generateKey(tool, args);
-    const ttl = tool.idempotency.ttlMs ?? this.config.defaultTtlMs;
+    const ttl = tool.idempotency?.ttlMs ?? this.config.defaultTtlMs;
     const expiresAt = Date.now() + ttl;
 
     this.cache.set(key, { value: result, expiresAt });
@@ -115,7 +141,8 @@ export class IdempotencyCache {
    * Check if tool call is cached
    */
   async has(tool: ToolFunction, args: Record<string, unknown>): Promise<boolean> {
-    if (!tool.idempotency || tool.idempotency.safe) {
+    // Don't check cache if tool doesn't need caching
+    if (!this.shouldCache(tool)) {
       return false;
     }
 

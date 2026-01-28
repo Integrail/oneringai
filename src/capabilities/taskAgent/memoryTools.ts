@@ -4,6 +4,7 @@
 
 import { ToolFunction, FunctionToolDefinition } from '../../domain/entities/Tool.js';
 import { ToolContext } from '../../domain/interfaces/IToolContext.js';
+import { ToolExecutionError } from '../../domain/errors/AIErrors.js';
 
 /**
  * Tool definition for memory_store
@@ -122,7 +123,7 @@ export function createMemoryTools(): ToolFunction[] {
       definition: memoryStoreDefinition,
       execute: async (args: Record<string, unknown>, context?: ToolContext) => {
         if (!context || !context.memory) {
-          return { error: 'Memory tools require TaskAgent context' };
+          throw new ToolExecutionError('memory_store', 'Memory tools require TaskAgent context');
         }
 
         try {
@@ -164,7 +165,7 @@ export function createMemoryTools(): ToolFunction[] {
       definition: memoryRetrieveDefinition,
       execute: async (args: Record<string, unknown>, context?: ToolContext) => {
         if (!context || !context.memory) {
-          return { error: 'Memory tools require TaskAgent context' };
+          throw new ToolExecutionError('memory_retrieve', 'Memory tools require TaskAgent context');
         }
 
         const value = await context.memory.get(args.key as string);
@@ -182,7 +183,7 @@ export function createMemoryTools(): ToolFunction[] {
       definition: memoryDeleteDefinition,
       execute: async (args: Record<string, unknown>, context?: ToolContext) => {
         if (!context || !context.memory) {
-          return { error: 'Memory tools require TaskAgent context' };
+          throw new ToolExecutionError('memory_delete', 'Memory tools require TaskAgent context');
         }
 
         await context.memory.delete(args.key as string);
@@ -197,7 +198,7 @@ export function createMemoryTools(): ToolFunction[] {
       definition: memoryListDefinition,
       execute: async (_args: Record<string, unknown>, context?: ToolContext) => {
         if (!context || !context.memory) {
-          return { error: 'Memory tools require TaskAgent context' };
+          throw new ToolExecutionError('memory_list', 'Memory tools require TaskAgent context');
         }
 
         return await context.memory.list();

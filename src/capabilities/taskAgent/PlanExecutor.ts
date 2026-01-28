@@ -8,7 +8,8 @@ import { Plan, Task, TaskValidationResult, updateTaskStatus, evaluateCondition, 
 import type { StaleEntryInfo, TaskStatusForMemory } from '../../domain/entities/Memory.js';
 import { AgentState } from '../../domain/entities/AgentState.js';
 import { calculateCost } from '../../domain/entities/Model.js';
-import { TaskTimeoutError, TaskValidationError } from '../../domain/errors/AIErrors.js';
+import { TaskTimeoutError, TaskValidationError, ParallelTasksError, TaskFailure } from '../../domain/errors/AIErrors.js';
+import { TokenBucketRateLimiter } from '../../infrastructure/resilience/index.js';
 import { WorkingMemory } from './WorkingMemory.js';
 import { ContextManager } from './ContextManager.js';
 import { IdempotencyCache } from './IdempotencyCache.js';
@@ -24,6 +25,16 @@ const DEFAULT_TASK_TIMEOUT_MS = 300000;
 export interface PlanExecutorConfig {
   maxIterations: number;
   taskTimeout?: number;
+
+  /** Rate limiting configuration for LLM calls */
+  rateLimiter?: {
+    /** Max requests per minute (default: 60) */
+    maxRequestsPerMinute?: number;
+    /** What to do when rate limited: 'wait' or 'throw' (default: 'wait') */
+    onLimit?: 'wait' | 'throw';
+    /** Max wait time in ms (for 'wait' mode, default: 60000) */
+    maxWaitMs?: number;
+  };
 }
 
 export interface PlanExecutorEvents {
@@ -69,6 +80,7 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
   private hooks: TaskAgentHooks | undefined;
   private config: PlanExecutorConfig;
   private abortController: AbortController;
+  private rateLimiter?: TokenBucketRateLimiter;
 
   // Current execution metrics
   private currentMetrics = {
@@ -103,6 +115,16 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     this.hooks = hooks;
     this.config = config;
     this.abortController = new AbortController();
+
+    // Initialize rate limiter if configured
+    if (config.rateLimiter) {
+      this.rateLimiter = new TokenBucketRateLimiter({
+        maxRequests: config.rateLimiter.maxRequestsPerMinute ?? 60,
+        windowMs: 60000, // 1 minute window
+        onLimit: config.rateLimiter.onLimit ?? 'wait',
+        maxWaitMs: config.rateLimiter.maxWaitMs ?? 60000,
+      });
+    }
   }
 
   /**
@@ -183,9 +205,7 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
       }
 
       // Execute tasks (parallel if configured)
-      await Promise.all(
-        nextTasks.map((task) => this.executeTask(plan, task))
-      );
+      await this.executeParallelTasks(plan, nextTasks);
     }
 
     // Determine final status
@@ -201,6 +221,95 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
       skippedTasks: plan.tasks.filter((t) => t.status === 'skipped').length,
       metrics: this.currentMetrics,
     };
+  }
+
+  /**
+   * Execute tasks in parallel with configurable failure handling
+   *
+   * Note on failure modes:
+   * - 'fail-fast' (default): Uses Promise.all - stops batch on first rejection (current behavior)
+   *   Individual task failures don't reject, they just set task.status = 'failed'
+   * - 'continue': Uses Promise.allSettled - all tasks run regardless of failures
+   * - 'fail-all': Uses Promise.allSettled, then throws ParallelTasksError if any failed
+   *
+   * @param plan - The plan being executed
+   * @param tasks - Tasks to execute in parallel
+   * @returns Result containing succeeded and failed tasks
+   */
+  private async executeParallelTasks(
+    plan: Plan,
+    tasks: Task[]
+  ): Promise<{ succeeded: Task[]; failed: TaskFailure[] }> {
+    const failureMode = plan.concurrency?.failureMode ?? 'fail-fast';
+    const succeeded: Task[] = [];
+    const failed: TaskFailure[] = [];
+
+    if (failureMode === 'fail-fast') {
+      // Original behavior - Promise.all executes in parallel
+      // Individual executeTask() calls handle errors internally (set task.status)
+      // Promise.all only rejects if executeTask throws (which it doesn't for normal failures)
+      await Promise.all(tasks.map((task) => this.executeTask(plan, task)));
+
+      // Categorize results
+      for (const task of tasks) {
+        if (task.status === 'completed') {
+          succeeded.push(task);
+        } else if (task.status === 'failed') {
+          const errorMsg = typeof task.result?.error === 'string' ? task.result.error : 'Task failed';
+          failed.push({
+            taskId: task.id,
+            taskName: task.name,
+            error: new Error(errorMsg),
+          });
+        }
+      }
+
+      return { succeeded, failed };
+    }
+
+    // Use Promise.allSettled for 'continue' and 'fail-all' modes
+    // Execute all tasks in parallel, don't stop on failures
+    await Promise.allSettled(
+      tasks.map(async (task) => {
+        await this.executeTask(plan, task);
+      })
+    );
+
+    // Categorize results based on task status
+    for (const task of tasks) {
+      if (task.status === 'completed') {
+        succeeded.push(task);
+      } else if (task.status === 'failed') {
+        const errorMsg = typeof task.result?.error === 'string' ? task.result.error : 'Task failed';
+        failed.push({
+          taskId: task.id,
+          taskName: task.name,
+          error: new Error(errorMsg),
+        });
+      }
+      // 'pending', 'skipped', 'in_progress' are not categorized as succeeded or failed
+    }
+
+    // For 'fail-all' mode, throw aggregate error if any failed
+    if (failureMode === 'fail-all' && failed.length > 0) {
+      throw new ParallelTasksError(failed);
+    }
+
+    // For 'continue' mode, we just return the results and continue execution
+    return { succeeded, failed };
+  }
+
+  /**
+   * Check if task condition is met
+   * @returns true if condition is met or no condition exists
+   */
+  private async checkCondition(task: Task): Promise<boolean> {
+    if (!task.condition) {
+      return true;
+    }
+    return evaluateCondition(task.condition, {
+      get: (key: string) => this.memory.retrieve(key),
+    });
   }
 
   /**
@@ -220,11 +329,9 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
    * Execute a single task with timeout support
    */
   private async executeTask(plan: Plan, task: Task): Promise<void> {
-    // Check condition if present (before timeout wrapper - fast check)
+    // Initial condition check (before timeout wrapper - fast check)
     if (task.condition) {
-      const conditionMet = await evaluateCondition(task.condition, {
-        get: (key: string) => this.memory.retrieve(key),
-      });
+      const conditionMet = await this.checkCondition(task);
 
       if (!conditionMet) {
         if (task.condition.onFalse === 'skip') {
@@ -381,6 +488,24 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
         model: this.agent.model,
         temperature: 0.7, // Default temperature
       });
+    }
+
+    // Re-check condition immediately before LLM call (race condition protection)
+    // This prevents stale condition evaluation when parallel tasks modify memory
+    const raceProtection = task.execution?.raceProtection !== false; // Default to true
+    if (task.condition && raceProtection) {
+      const stillMet = await this.checkCondition(task);
+      if (!stillMet) {
+        // Condition changed - skip task to avoid wasted LLM call
+        task.status = 'skipped';
+        this.emit('task:skipped', { task, reason: 'condition_changed' });
+        return;
+      }
+    }
+
+    // Apply rate limiting if configured (before LLM call to prevent overloading provider)
+    if (this.rateLimiter) {
+      await this.rateLimiter.acquire();
     }
 
     // Call LLM through the agent (tools already wrapped with cache in TaskAgent)
@@ -790,5 +915,22 @@ Be honest and thorough in your evaluation. A score of 100 means all criteria are
    */
   getIdempotencyCache(): IdempotencyCache {
     return this.idempotencyCache;
+  }
+
+  /**
+   * Get rate limiter metrics (if rate limiting is enabled)
+   */
+  getRateLimiterMetrics(): { totalRequests: number; throttledRequests: number; totalWaitMs: number; avgWaitMs: number } | null {
+    if (!this.rateLimiter) {
+      return null;
+    }
+    return this.rateLimiter.getMetrics();
+  }
+
+  /**
+   * Reset rate limiter state (for testing or manual control)
+   */
+  resetRateLimiter(): void {
+    this.rateLimiter?.reset();
   }
 }

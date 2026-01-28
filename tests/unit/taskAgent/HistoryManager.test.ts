@@ -470,4 +470,153 @@ describe('HistoryManager', () => {
       expect(messages.length).toBeGreaterThan(0);
     });
   });
+
+  describe('summarization modes', () => {
+    it('should default to truncate mode', async () => {
+      const truncateManager = new HistoryManager({
+        maxDetailedMessages: 5,
+        compressionStrategy: 'truncate', // For compact() to reduce messages
+        summarizeBatchSize: 3,
+        // No summarizationMode set - defaults to 'truncate'
+      });
+
+      for (let i = 0; i < 10; i++) {
+        truncateManager.addMessage('user', `Message ${i}`);
+      }
+
+      // Auto-compaction already happened via addMessage, so count is already <= 5
+      expect(truncateManager.getMessageCount()).toBeLessThanOrEqual(5);
+
+      // Calling summarize() in truncate mode should work without error
+      await truncateManager.summarize();
+      expect(truncateManager.getMessageCount()).toBeLessThanOrEqual(5);
+    });
+
+    it('should throw error in llm mode without summarizer', async () => {
+      const llmManager = new HistoryManager({
+        maxDetailedMessages: 5,
+        summarizeBatchSize: 3,
+        summarizationMode: 'llm',
+      });
+
+      await expect(llmManager.summarize()).rejects.toThrow('Summarizer not configured');
+    });
+
+    it('should fall back to truncate in hybrid mode without summarizer', async () => {
+      const hybridManager = new HistoryManager({
+        maxDetailedMessages: 5,
+        summarizeBatchSize: 3,
+        summarizationMode: 'hybrid',
+      });
+
+      for (let i = 0; i < 10; i++) {
+        hybridManager.addMessage('user', `Message ${i}`);
+      }
+
+      // Should not throw - falls back to truncate
+      await expect(hybridManager.summarize()).resolves.not.toThrow();
+    });
+
+    it('should use summarizer in llm mode', async () => {
+      const llmManager = new HistoryManager({
+        maxDetailedMessages: 10,
+        summarizeBatchSize: 5,
+        summarizationMode: 'llm',
+      });
+
+      // Add messages
+      for (let i = 0; i < 10; i++) {
+        llmManager.addMessage('user', `Message ${i}`);
+      }
+
+      // Set summarizer
+      llmManager.setSummarizer(async (messages) => {
+        return `Summary of ${messages.length} messages`;
+      });
+
+      expect(llmManager.hasSummarizer()).toBe(true);
+
+      await llmManager.summarize();
+
+      // Should have created a summary and reduced messages
+      const state = llmManager.getState();
+      expect(state.summaries.length).toBe(1);
+      expect(state.summaries[0].content).toBe('Summary of 5 messages');
+      expect(state.messages.length).toBe(5); // Remaining messages
+    });
+
+    it('should fall back to truncate in hybrid mode when summarizer fails', async () => {
+      const hybridManager = new HistoryManager({
+        maxDetailedMessages: 5,
+        summarizeBatchSize: 3,
+        summarizationMode: 'hybrid',
+      });
+
+      for (let i = 0; i < 10; i++) {
+        hybridManager.addMessage('user', `Message ${i}`);
+      }
+
+      // Set failing summarizer
+      hybridManager.setSummarizer(async () => {
+        throw new Error('LLM API error');
+      });
+
+      // Should not throw - falls back to truncate
+      await expect(hybridManager.summarize()).resolves.not.toThrow();
+    });
+
+    it('should propagate error in llm mode when summarizer fails', async () => {
+      const llmManager = new HistoryManager({
+        maxDetailedMessages: 5,
+        summarizeBatchSize: 3,
+        summarizationMode: 'llm',
+      });
+
+      for (let i = 0; i < 10; i++) {
+        llmManager.addMessage('user', `Message ${i}`);
+      }
+
+      // Set failing summarizer
+      llmManager.setSummarizer(async () => {
+        throw new Error('LLM API error');
+      });
+
+      await expect(llmManager.summarize()).rejects.toThrow('LLM API error');
+    });
+
+    it('should skip summarization if not enough messages', async () => {
+      const llmManager = new HistoryManager({
+        maxDetailedMessages: 10,
+        summarizeBatchSize: 5,
+        summarizationMode: 'llm',
+      });
+
+      // Add fewer messages than batch size
+      for (let i = 0; i < 3; i++) {
+        llmManager.addMessage('user', `Message ${i}`);
+      }
+
+      let summarizerCalled = false;
+      llmManager.setSummarizer(async () => {
+        summarizerCalled = true;
+        return 'Summary';
+      });
+
+      await llmManager.summarize();
+
+      // Summarizer should not be called (not enough messages)
+      expect(summarizerCalled).toBe(false);
+      expect(llmManager.getState().summaries.length).toBe(0);
+    });
+
+    it('should track hasSummarizer correctly', () => {
+      const manager = new HistoryManager();
+
+      expect(manager.hasSummarizer()).toBe(false);
+
+      manager.setSummarizer(async () => 'Summary');
+
+      expect(manager.hasSummarizer()).toBe(true);
+    });
+  });
 });

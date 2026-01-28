@@ -12,7 +12,8 @@ import {
   ISessionStorage,
 } from '../../core/SessionManager.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
-import { Plan, PlanInput, Task, TaskInput, TaskValidationResult, createPlan, createTask } from '../../domain/entities/Task.js';
+import { Plan, PlanInput, Task, TaskInput, TaskValidationResult, createPlan, createTask, detectDependencyCycle } from '../../domain/entities/Task.js';
+import { DependencyCycleError } from '../../domain/errors/AIErrors.js';
 import { AgentState, AgentStatus, createAgentState, updateAgentStatus } from '../../domain/entities/AgentState.js';
 import type { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
 import { DEFAULT_MEMORY_CONFIG } from '../../domain/entities/Memory.js';
@@ -136,12 +137,29 @@ export interface AgentHandle {
 }
 
 /**
- * Plan update options
+ * Plan updates specification
  */
 export interface PlanUpdates {
   addTasks?: TaskInput[];
   updateTasks?: Array<{ id: string } & Partial<Task>>;
   removeTasks?: string[];
+}
+
+/**
+ * Options for plan update validation
+ */
+export interface PlanUpdateOptions {
+  /**
+   * Allow removing tasks that are currently in_progress.
+   * @default false
+   */
+  allowRemoveActiveTasks?: boolean;
+
+  /**
+   * Validate that no dependency cycles exist after the update.
+   * @default true
+   */
+  validateCycles?: boolean;
 }
 
 /**
@@ -502,6 +520,28 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
       throw new Error(`Agent ${agentId} not found in storage`);
     }
 
+    // Validate tool names match saved state
+    const stateToolNames = new Set(state.config.toolNames ?? []);
+    const currentToolNames = new Set(
+      (options.tools ?? []).map((t) => t.definition.function.name)
+    );
+
+    const missing = [...stateToolNames].filter((n) => !currentToolNames.has(n));
+    const added = [...currentToolNames].filter((n) => !stateToolNames.has(n));
+
+    if (missing.length > 0) {
+      console.warn(
+        `[TaskAgent.resume] Warning: Missing tools from saved state: ${missing.join(', ')}. ` +
+          `Tasks requiring these tools may fail.`
+      );
+    }
+
+    if (added.length > 0) {
+      console.info(
+        `[TaskAgent.resume] Info: New tools not in saved state: ${added.join(', ')}`
+      );
+    }
+
     // Recreate config from state
     const config: TaskAgentConfig = {
       connector: state.config.connectorName,
@@ -652,9 +692,13 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
   }
 
   /**
-   * Update the plan
+   * Update the plan with validation
+   *
+   * @param updates - The updates to apply to the plan
+   * @param options - Validation options
+   * @throws Error if validation fails
    */
-  async updatePlan(updates: PlanUpdates): Promise<void> {
+  async updatePlan(updates: PlanUpdates, options?: PlanUpdateOptions): Promise<void> {
     const plan = this.state.plan;
     if (!plan) {
       throw new Error('No plan running');
@@ -662,6 +706,22 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
 
     if (!plan.allowDynamicTasks && (updates.addTasks || updates.removeTasks)) {
       throw new Error('Dynamic tasks are disabled for this plan');
+    }
+
+    const opts = {
+      allowRemoveActiveTasks: options?.allowRemoveActiveTasks ?? false,
+      validateCycles: options?.validateCycles ?? true,
+    };
+
+    // Validate: don't remove in_progress tasks unless explicitly allowed
+    if (!opts.allowRemoveActiveTasks && updates.removeTasks && updates.removeTasks.length > 0) {
+      const activeTasks = plan.tasks.filter(
+        (t) => t.status === 'in_progress' && updates.removeTasks!.includes(t.id)
+      );
+      if (activeTasks.length > 0) {
+        const names = activeTasks.map((t) => t.name).join(', ');
+        throw new Error(`Cannot remove active tasks: ${names}. Set allowRemoveActiveTasks: true to override.`);
+      }
     }
 
     // Add tasks
@@ -685,6 +745,19 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     // Remove tasks
     if (updates.removeTasks) {
       plan.tasks = plan.tasks.filter((t) => !updates.removeTasks!.includes(t.id));
+    }
+
+    // Validate: check for cycles after update
+    if (opts.validateCycles) {
+      const cycle = detectDependencyCycle(plan.tasks);
+      if (cycle) {
+        // Convert task IDs to names for better error message
+        const cycleNames = cycle.map((taskId) => {
+          const task = plan.tasks.find((t) => t.id === taskId);
+          return task ? task.name : taskId;
+        });
+        throw new DependencyCycleError(cycleNames, plan.id);
+      }
     }
 
     plan.lastUpdatedAt = Date.now();

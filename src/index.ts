@@ -114,6 +114,7 @@ export type {
   AgentHandle,
   PlanResult,
   PlanUpdates,
+  PlanUpdateOptions,
   TaskContext,
   TaskResult,
   ErrorContext,
@@ -128,7 +129,8 @@ export type {
   PlanExecutionResult,
   CheckpointStrategy,
 } from './capabilities/taskAgent/index.js';
-export { DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY } from './capabilities/taskAgent/index.js';
+export { DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_SUMMARIZATION_PROMPT } from './capabilities/taskAgent/index.js';
+export type { SummarizerFunction } from './capabilities/taskAgent/index.js';
 
 // ============ Context Management (Universal) ============
 export { ContextManager } from './core/context/index.js';
@@ -447,7 +449,9 @@ export {
   DependencyCycleError,
   TaskTimeoutError,
   TaskValidationError,
+  ParallelTasksError,
 } from './domain/errors/AIErrors.js';
+export type { TaskFailure } from './domain/errors/AIErrors.js';
 
 // ============ Interfaces (for extensibility) ============
 export type { IProvider, ProviderCapabilities } from './domain/interfaces/IProvider.js';
@@ -579,6 +583,10 @@ export {
 } from './infrastructure/resilience/index.js';
 export type { BackoffConfig, BackoffStrategyType } from './infrastructure/resilience/index.js';
 export { DEFAULT_BACKOFF_CONFIG } from './infrastructure/resilience/index.js';
+
+export { TokenBucketRateLimiter, RateLimitError } from './infrastructure/resilience/index.js';
+export type { RateLimiterConfig, RateLimiterMetrics } from './infrastructure/resilience/index.js';
+export { DEFAULT_RATE_LIMITER_CONFIG } from './infrastructure/resilience/index.js';
 
 export { FrameworkLogger, logger } from './infrastructure/observability/index.js';
 export type { LogLevel, LoggerConfig, LogEntry } from './infrastructure/observability/index.js';

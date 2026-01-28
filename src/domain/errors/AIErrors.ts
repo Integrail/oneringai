@@ -228,3 +228,45 @@ export class TaskValidationError extends AIError {
     Object.setPrototypeOf(this, TaskValidationError.prototype);
   }
 }
+
+/**
+ * Task failure info for parallel execution
+ */
+export interface TaskFailure {
+  taskId: string;
+  taskName: string;
+  error: Error;
+}
+
+/**
+ * Error thrown when multiple tasks fail in parallel execution (fail-all mode)
+ */
+export class ParallelTasksError extends AIError {
+  constructor(
+    /** Array of task failures */
+    public readonly failures: TaskFailure[]
+  ) {
+    const names = failures.map((f) => f.taskName).join(', ');
+    super(
+      `Multiple tasks failed in parallel execution: ${names}`,
+      'PARALLEL_TASKS_ERROR',
+      500
+    );
+    this.name = 'ParallelTasksError';
+    Object.setPrototypeOf(this, ParallelTasksError.prototype);
+  }
+
+  /**
+   * Get all failure errors
+   */
+  getErrors(): Error[] {
+    return this.failures.map((f) => f.error);
+  }
+
+  /**
+   * Get failed task IDs
+   */
+  getFailedTaskIds(): string[] {
+    return this.failures.map((f) => f.taskId);
+  }
+}

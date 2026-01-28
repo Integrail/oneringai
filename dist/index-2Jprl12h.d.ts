@@ -1,5 +1,5 @@
 import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
-import { I as IProvider } from './IProvider-BP49c93d.cjs';
+import { I as IProvider } from './IProvider-BP49c93d.js';
 import { EventEmitter } from 'events';
 
 /**
@@ -83,7 +83,19 @@ interface ToolOutputHints {
  * Idempotency configuration for tool caching
  */
 interface ToolIdempotency {
-    safe: boolean;
+    /**
+     * @deprecated Use 'cacheable' instead. Will be removed in a future version.
+     * If true, tool is naturally idempotent (e.g., read-only) and doesn't need caching.
+     * If false, tool results should be cached based on arguments.
+     */
+    safe?: boolean;
+    /**
+     * If true, tool results can be cached based on arguments.
+     * Use this for tools that return deterministic results for the same inputs.
+     * Takes precedence over the deprecated 'safe' field.
+     * @default false
+     */
+    cacheable?: boolean;
     keyFn?: (args: Record<string, unknown>) => string;
     ttlMs?: number;
 }

@@ -11,6 +11,7 @@ export type {
   AgentHandle,
   PlanResult,
   PlanUpdates,
+  PlanUpdateOptions,
   TaskContext,
   TaskResult,
   ErrorContext,
@@ -36,8 +37,8 @@ export type { IdempotencyCacheConfig, CacheStats } from './IdempotencyCache.js';
 export { DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
 
 export { HistoryManager } from './HistoryManager.js';
-export type { HistoryManagerConfig } from './HistoryManager.js';
-export { DEFAULT_HISTORY_CONFIG } from './HistoryManager.js';
+export type { HistoryManagerConfig, SummarizerFunction } from './HistoryManager.js';
+export { DEFAULT_HISTORY_CONFIG, DEFAULT_SUMMARIZATION_PROMPT } from './HistoryManager.js';
 
 export { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 export type { ExternalDependencyEvents } from './ExternalDependencyHandler.js';

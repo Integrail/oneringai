@@ -16,7 +16,7 @@ import { TaskAgentHooks } from '@/capabilities/taskAgent/TaskAgent.js';
 import { createPlan, createTask, TaskValidation, TaskValidationResult } from '@/domain/entities/Task.js';
 import { createAgentState } from '@/domain/entities/AgentState.js';
 import { createAgentStorage } from '@/infrastructure/storage/InMemoryStorage.js';
-import { TaskTimeoutError, TaskValidationError } from '@/domain/errors/AIErrors.js';
+import { TaskTimeoutError, TaskValidationError, ParallelTasksError } from '@/domain/errors/AIErrors.js';
 
 describe('PlanExecutor', () => {
   let executor: PlanExecutor;
@@ -1455,6 +1455,501 @@ describe('PlanExecutor', () => {
       const eventData = uncertainSpy.mock.calls[0][0];
       expect(eventData.validation.requiresUserApproval).toBe(true);
       expect(eventData.validation.approvalReason).toContain('User approval required');
+    });
+  });
+
+  describe('parallel execution failure modes', () => {
+    it('should use fail-fast mode by default', async () => {
+      // Override onError hook to return 'fail' so errors aren't retried
+      hooks.onError = vi.fn().mockResolvedValue('fail');
+
+      let callCount = 0;
+      mockAgent.run.mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('First task failed');
+        }
+        return {
+          output_text: 'Task completed',
+          usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+        };
+      });
+
+      // Create plan with parallel tasks (no dependencies)
+      // Tasks must have execution.parallel = true to run in parallel
+      const plan = createPlan({
+        goal: 'Test fail-fast',
+        tasks: [
+          createTask({ name: 'task1', description: 'Task 1', maxAttempts: 1, execution: { parallel: true } }),
+          createTask({ name: 'task2', description: 'Task 2', maxAttempts: 1, execution: { parallel: true } }),
+        ],
+        concurrency: {
+          maxParallelTasks: 2,
+          strategy: 'fifo',
+          // No failureMode specified - should default to fail-fast
+        },
+      });
+
+      const state = createAgentState('test-agent', {} as any, plan);
+
+      // In fail-fast mode with Promise.all, errors are handled internally by executeTask
+      // which sets task.status = 'failed' but doesn't throw
+      // The execute() method returns a result with status: 'failed'
+      const result = await executor.execute(plan, state);
+
+      expect(result.status).toBe('failed');
+      expect(result.failedTasks).toBe(1);
+      // Task 2 should complete successfully since task 1's error doesn't abort it
+      expect(result.completedTasks).toBe(1);
+    });
+
+    it('should continue other tasks in continue mode', async () => {
+      // Override onError hook to return 'fail' so errors aren't retried
+      hooks.onError = vi.fn().mockResolvedValue('fail');
+
+      let callCount = 0;
+      mockAgent.run.mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('First task failed');
+        }
+        return {
+          output_text: 'Task completed',
+          usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+        };
+      });
+
+      const plan = createPlan({
+        goal: 'Test continue mode',
+        tasks: [
+          createTask({ name: 'task1', description: 'Task 1', maxAttempts: 1, execution: { parallel: true } }),
+          createTask({ name: 'task2', description: 'Task 2', maxAttempts: 1, execution: { parallel: true } }),
+        ],
+        concurrency: {
+          maxParallelTasks: 2,
+          strategy: 'fifo',
+          failureMode: 'continue',
+        },
+      });
+
+      const state = createAgentState('test-agent', {} as any, plan);
+      const result = await executor.execute(plan, state);
+
+      // Should have completed task2 even though task1 failed
+      expect(result.completedTasks).toBe(1);
+      expect(result.failedTasks).toBe(1);
+      expect(result.status).toBe('failed'); // Overall status is failed
+    });
+
+    it('should aggregate errors in fail-all mode', async () => {
+      // Override onError hook to return 'fail' so errors aren't retried
+      hooks.onError = vi.fn().mockResolvedValue('fail');
+
+      mockAgent.run.mockImplementation(async () => {
+        // Both tasks fail
+        throw new Error('Task execution failed');
+      });
+
+      const plan = createPlan({
+        goal: 'Test fail-all mode',
+        tasks: [
+          createTask({ name: 'task1', description: 'Task 1', maxAttempts: 1, execution: { parallel: true } }),
+          createTask({ name: 'task2', description: 'Task 2', maxAttempts: 1, execution: { parallel: true } }),
+        ],
+        concurrency: {
+          maxParallelTasks: 2,
+          strategy: 'fifo',
+          failureMode: 'fail-all',
+        },
+      });
+
+      const state = createAgentState('test-agent', {} as any, plan);
+
+      try {
+        await executor.execute(plan, state);
+        expect.fail('Should have thrown ParallelTasksError');
+      } catch (error: any) {
+        expect(error.name).toBe('ParallelTasksError');
+        expect(error.failures).toHaveLength(2);
+        expect(error.getFailedTaskIds()).toContain(plan.tasks[0].id);
+        expect(error.getFailedTaskIds()).toContain(plan.tasks[1].id);
+      }
+    });
+
+    it('should throw in fail-all mode when at least one task fails', async () => {
+      // Override onError hook to return 'fail' so errors aren't retried
+      hooks.onError = vi.fn().mockResolvedValue('fail');
+
+      let callCount = 0;
+      mockAgent.run.mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('First task failed');
+        }
+        return {
+          output_text: 'Task completed',
+          usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+        };
+      });
+
+      const plan = createPlan({
+        goal: 'Test partial fail-all',
+        tasks: [
+          createTask({ name: 'task1', description: 'Task 1', maxAttempts: 1, execution: { parallel: true } }),
+          createTask({ name: 'task2', description: 'Task 2', maxAttempts: 1, execution: { parallel: true } }),
+        ],
+        concurrency: {
+          maxParallelTasks: 2,
+          strategy: 'fifo',
+          failureMode: 'fail-all',
+        },
+      });
+
+      const state = createAgentState('test-agent', {} as any, plan);
+
+      // Should throw because at least one task failed
+      try {
+        await executor.execute(plan, state);
+        expect.fail('Should have thrown ParallelTasksError');
+      } catch (error: any) {
+        expect(error.name).toBe('ParallelTasksError');
+        expect(error.failures).toHaveLength(1);
+      }
+    });
+
+    it('should complete successfully with all modes when no failures', async () => {
+      mockAgent.run.mockResolvedValue({
+        output_text: 'Task completed',
+        usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+      });
+
+      for (const failureMode of ['fail-fast', 'continue', 'fail-all'] as const) {
+        const plan = createPlan({
+          goal: `Test ${failureMode} success`,
+          tasks: [
+            createTask({ name: 'task1', description: 'Task 1', execution: { parallel: true } }),
+            createTask({ name: 'task2', description: 'Task 2', execution: { parallel: true } }),
+          ],
+          concurrency: {
+            maxParallelTasks: 2,
+            strategy: 'fifo',
+            failureMode,
+          },
+        });
+
+        const state = createAgentState('test-agent', {} as any, plan);
+        const result = await executor.execute(plan, state);
+
+        expect(result.status).toBe('completed');
+        expect(result.completedTasks).toBe(2);
+        expect(result.failedTasks).toBe(0);
+      }
+    });
+
+    it('should not execute dependent tasks when dependency fails in continue mode', async () => {
+      // Override onError hook to return 'fail' so errors aren't retried
+      hooks.onError = vi.fn().mockResolvedValue('fail');
+
+      let callCount = 0;
+      mockAgent.run.mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('First task failed');
+        }
+        return {
+          output_text: 'Task completed',
+          usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+        };
+      });
+
+      // Task2 depends on task1 - should not execute if task1 fails
+      const plan = createPlan({
+        goal: 'Test sequential continue',
+        tasks: [
+          createTask({ name: 'task1', description: 'Task 1', maxAttempts: 1 }),
+          createTask({ name: 'task2', description: 'Task 2', maxAttempts: 1, dependsOn: ['task1'] }),
+        ],
+        concurrency: {
+          maxParallelTasks: 1,
+          strategy: 'fifo',
+          failureMode: 'continue',
+        },
+      });
+
+      const state = createAgentState('test-agent', {} as any, plan);
+      const result = await executor.execute(plan, state);
+
+      // task1 failed
+      expect(result.failedTasks).toBe(1);
+      // task2 remains pending because its dependency failed
+      expect(plan.tasks[1].status).toBe('pending');
+      // Only 1 LLM call was made (task2 never started)
+      expect(mockAgent.run).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('rate limiting', () => {
+    it('should initialize rate limiter when configured', () => {
+      const rateLimitedExecutor = new PlanExecutor(
+        mockAgent,
+        memory,
+        contextManager,
+        idempotencyCache,
+        historyManager,
+        externalHandler,
+        checkpointManager,
+        hooks,
+        {
+          maxIterations: 10,
+          rateLimiter: {
+            maxRequestsPerMinute: 30,
+            onLimit: 'throw',
+          },
+        }
+      );
+
+      expect(rateLimitedExecutor.getRateLimiterMetrics()).not.toBeNull();
+    });
+
+    it('should return null metrics when rate limiter not configured', () => {
+      expect(executor.getRateLimiterMetrics()).toBeNull();
+    });
+
+    it('should track rate limiter metrics during execution', async () => {
+      const rateLimitedExecutor = new PlanExecutor(
+        mockAgent,
+        memory,
+        contextManager,
+        idempotencyCache,
+        historyManager,
+        externalHandler,
+        checkpointManager,
+        hooks,
+        {
+          maxIterations: 10,
+          rateLimiter: {
+            maxRequestsPerMinute: 100,
+            onLimit: 'wait',
+          },
+        }
+      );
+
+      const plan = createPlan({
+        goal: 'Test rate limiting',
+        tasks: [
+          createTask({ name: 'task1', description: 'Task 1' }),
+          createTask({ name: 'task2', description: 'Task 2', dependsOn: ['task1'] }),
+        ],
+      });
+
+      const state = createAgentState('test-agent', {} as any, plan);
+      await rateLimitedExecutor.execute(plan, state);
+
+      const metrics = rateLimitedExecutor.getRateLimiterMetrics();
+      expect(metrics).not.toBeNull();
+      expect(metrics!.totalRequests).toBe(2); // 2 tasks = 2 LLM calls
+    });
+
+    it('should reset rate limiter state', async () => {
+      const rateLimitedExecutor = new PlanExecutor(
+        mockAgent,
+        memory,
+        contextManager,
+        idempotencyCache,
+        historyManager,
+        externalHandler,
+        checkpointManager,
+        hooks,
+        {
+          maxIterations: 10,
+          rateLimiter: {
+            maxRequestsPerMinute: 100,
+            onLimit: 'wait',
+          },
+        }
+      );
+
+      const plan = createPlan({
+        goal: 'Test reset',
+        tasks: [createTask({ name: 'task1', description: 'Task 1' })],
+      });
+
+      const state = createAgentState('test-agent', {} as any, plan);
+      await rateLimitedExecutor.execute(plan, state);
+
+      let metrics = rateLimitedExecutor.getRateLimiterMetrics();
+      expect(metrics!.totalRequests).toBe(1);
+
+      rateLimitedExecutor.resetRateLimiter();
+      // Note: resetRateLimiter resets the bucket but not metrics
+      // Metrics are internal to the limiter
+    });
+
+    it('should use default values when partial config provided', () => {
+      const rateLimitedExecutor = new PlanExecutor(
+        mockAgent,
+        memory,
+        contextManager,
+        idempotencyCache,
+        historyManager,
+        externalHandler,
+        checkpointManager,
+        hooks,
+        {
+          maxIterations: 10,
+          rateLimiter: {}, // Empty config, use defaults
+        }
+      );
+
+      const metrics = rateLimitedExecutor.getRateLimiterMetrics();
+      expect(metrics).not.toBeNull();
+      expect(metrics!.totalRequests).toBe(0);
+    });
+  });
+
+  describe('race condition protection', () => {
+    it('should skip task if condition changes before LLM call', async () => {
+      // Task with a condition that will be modified by the mock
+      let conditionValue = true;
+      let llmCallCount = 0;
+
+      mockAgent.run.mockImplementation(async () => {
+        llmCallCount++;
+        return {
+          output_text: 'Task completed',
+          usage: { input_tokens: 100, output_tokens: 50, total_tokens: 150 },
+        };
+      });
+
+      // Store initial value for condition
+      await memory.store('check_value', true, { scope: { type: 'session' } });
+
+      const plan = createPlan({
+        goal: 'Test race condition',
+        tasks: [
+          createTask({
+            name: 'task1',
+            description: 'Task with condition',
+            condition: {
+              memoryKey: 'check_value',
+              operator: 'equals',
+              value: true,
+              onFalse: 'skip',
+            },
+          }),
+        ],
+      });
+
+      // Before execute, change the memory value so condition fails on re-check
+      // We need to do this after the initial condition check but before LLM call
+      // For testing, we'll mock the memory.retrieve to return different values
+      const originalRetrieve = memory.retrieve.bind(memory);
+      let retrieveCallCount = 0;
+      vi.spyOn(memory, 'retrieve').mockImplementation(async (key) => {
+        retrieveCallCount++;
+        // First call (initial check) returns true, second call (re-check) returns false
+        if (key === 'check_value') {
+          return retrieveCallCount <= 1 ? true : false;
+        }
+        return originalRetrieve(key);
+      });
+
+      const skippedSpy = vi.fn();
+      executor.on('task:skipped', skippedSpy);
+
+      const state = createAgentState('test-agent', {} as any, plan);
+      await executor.execute(plan, state);
+
+      // Task should be skipped due to condition change
+      expect(skippedSpy).toHaveBeenCalled();
+      expect(skippedSpy.mock.calls[0][0].reason).toBe('condition_changed');
+      // LLM should NOT have been called because we detected condition change
+      expect(llmCallCount).toBe(0);
+    });
+
+    it('should allow disabling race protection per task', async () => {
+      await memory.store('check_value', true, { scope: { type: 'session' } });
+
+      const plan = createPlan({
+        goal: 'Test race protection disabled',
+        tasks: [
+          createTask({
+            name: 'task1',
+            description: 'Task with race protection disabled',
+            condition: {
+              memoryKey: 'check_value',
+              operator: 'equals',
+              value: true,
+              onFalse: 'skip',
+            },
+            execution: {
+              raceProtection: false, // Disable race protection
+            },
+          }),
+        ],
+      });
+
+      // Mock retrieve to return different values on each call
+      let retrieveCallCount = 0;
+      vi.spyOn(memory, 'retrieve').mockImplementation(async (key) => {
+        retrieveCallCount++;
+        // First call returns true, second would return false
+        // But with raceProtection: false, second check shouldn't happen
+        if (key === 'check_value') {
+          return retrieveCallCount <= 1 ? true : false;
+        }
+        return undefined;
+      });
+
+      const state = createAgentState('test-agent', {} as any, plan);
+      await executor.execute(plan, state);
+
+      // Task should complete successfully because race protection is disabled
+      // (no re-check before LLM call)
+      expect(plan.tasks[0].status).toBe('completed');
+      // Should only check condition once (initial check only)
+      // Note: The memory index might cause additional retrievals, so we just check
+      // that the task completed without being skipped
+    });
+
+    it('should enable race protection by default', async () => {
+      await memory.store('check_value', true, { scope: { type: 'session' } });
+
+      const plan = createPlan({
+        goal: 'Test race protection default',
+        tasks: [
+          createTask({
+            name: 'task1',
+            description: 'Task without explicit raceProtection setting',
+            condition: {
+              memoryKey: 'check_value',
+              operator: 'equals',
+              value: true,
+              onFalse: 'skip',
+            },
+            // No execution.raceProtection set - should default to true
+          }),
+        ],
+      });
+
+      // Mock retrieve to return different values
+      let retrieveCallCount = 0;
+      vi.spyOn(memory, 'retrieve').mockImplementation(async (key) => {
+        retrieveCallCount++;
+        if (key === 'check_value') {
+          return retrieveCallCount <= 1 ? true : false;
+        }
+        return undefined;
+      });
+
+      const skippedSpy = vi.fn();
+      executor.on('task:skipped', skippedSpy);
+
+      const state = createAgentState('test-agent', {} as any, plan);
+      await executor.execute(plan, state);
+
+      // Task should be skipped due to condition change (default race protection)
+      expect(skippedSpy).toHaveBeenCalled();
     });
   });
 });

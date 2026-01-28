@@ -34,8 +34,8 @@ export function createMCPToolAdapter(
         const result = await client.callTool(tool.name, args);
 
         // If the result is a simple text response, return just the text
-        if (result.content.length === 1 && result.content[0].type === 'text') {
-          return result.content[0].text || '';
+        if (result.content?.length === 1 && result.content[0]?.type === 'text') {
+          return result.content[0].text ?? '';
         }
 
         // Otherwise return the full result for complex responses

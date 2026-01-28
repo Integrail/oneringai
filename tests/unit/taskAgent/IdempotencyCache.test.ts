@@ -379,4 +379,48 @@ describe('IdempotencyCache', () => {
       expect(key).toContain('custom:123');
     });
   });
+
+  describe('cacheable field (new API)', () => {
+    it('should cache when cacheable: true', async () => {
+      const tool = createTool('test', { cacheable: true });
+      await cache.set(tool, { arg: 1 }, { result: 'cached' });
+
+      const result = await cache.get(tool, { arg: 1 });
+      expect(result).toEqual({ result: 'cached' });
+    });
+
+    it('should not cache when cacheable: false', async () => {
+      const tool = createTool('test', { cacheable: false });
+      await cache.set(tool, { arg: 1 }, { result: 'cached' });
+
+      const result = await cache.get(tool, { arg: 1 });
+      expect(result).toBeUndefined();
+    });
+
+    it('should use cacheable over deprecated safe field', async () => {
+      // cacheable: true takes precedence over safe: true
+      const tool = createTool('test', { cacheable: true, safe: true });
+      await cache.set(tool, { arg: 1 }, { result: 'cached' });
+
+      const result = await cache.get(tool, { arg: 1 });
+      expect(result).toEqual({ result: 'cached' });
+    });
+
+    it('should fallback to safe field when cacheable is not defined', async () => {
+      // safe: false means cacheable (backward compat)
+      const tool = createTool('test', { safe: false });
+      await cache.set(tool, { arg: 1 }, { result: 'cached' });
+
+      const result = await cache.get(tool, { arg: 1 });
+      expect(result).toEqual({ result: 'cached' });
+    });
+
+    it('safe: true should not cache (backward compat)', async () => {
+      const tool = createTool('test', { safe: true });
+      await cache.set(tool, { arg: 1 }, { result: 'cached' });
+
+      const result = await cache.get(tool, { arg: 1 });
+      expect(result).toBeUndefined();
+    });
+  });
 });

@@ -110,6 +110,13 @@ export interface TaskExecution {
 
   /** Priority (higher = executed first) */
   priority?: number;
+
+  /**
+   * If true (default), re-check condition immediately before LLM call
+   * to protect against race conditions when parallel tasks modify memory.
+   * Set to false to skip re-check for performance if you know condition won't change.
+   */
+  raceProtection?: boolean;
 }
 
 /**
@@ -282,6 +289,14 @@ export interface TaskInput {
 export interface PlanConcurrency {
   maxParallelTasks: number;
   strategy: 'fifo' | 'priority' | 'shortest-first';
+
+  /**
+   * How to handle failures when executing tasks in parallel
+   * - 'fail-fast': Stop on first failure (Promise.all behavior) - DEFAULT
+   * - 'continue': Continue other tasks on failure, mark failed ones
+   * - 'fail-all': Wait for all to complete, then report all failures together
+   */
+  failureMode?: 'fail-fast' | 'continue' | 'fail-all';
 }
 
 /**
