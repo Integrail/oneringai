@@ -113,10 +113,13 @@ describe('Memory Tools', () => {
         mockContext
       );
 
-      expect(mockMemory.set).toHaveBeenCalledWith('user.profile', 'User profile data', {
-        name: 'John',
-      });
-      expect(result).toEqual({ success: true, key: 'user.profile' });
+      expect(mockMemory.set).toHaveBeenCalledWith(
+        'user.profile',
+        'User profile data',
+        { name: 'John' },
+        { scope: 'session', priority: undefined, pinned: undefined }
+      );
+      expect(result).toEqual({ success: true, key: 'user.profile', scope: 'session' });
     });
 
     it('should return error without context', async () => {

@@ -168,3 +168,63 @@ export class ProviderError extends AIError {
     Object.setPrototypeOf(this, ProviderError.prototype);
   }
 }
+
+// ============ TaskAgent Errors ============
+
+/**
+ * Error thrown when a dependency cycle is detected in a plan
+ */
+export class DependencyCycleError extends AIError {
+  constructor(
+    /** Task IDs forming the cycle (e.g., ['A', 'B', 'C', 'A']) */
+    public readonly cycle: string[],
+    /** Plan ID where the cycle was detected */
+    public readonly planId?: string
+  ) {
+    super(
+      `Dependency cycle detected: ${cycle.join(' -> ')}`,
+      'DEPENDENCY_CYCLE',
+      400
+    );
+    this.name = 'DependencyCycleError';
+    Object.setPrototypeOf(this, DependencyCycleError.prototype);
+  }
+}
+
+/**
+ * Error thrown when a task execution times out
+ */
+export class TaskTimeoutError extends AIError {
+  constructor(
+    public readonly taskId: string,
+    public readonly taskName: string,
+    public readonly timeoutMs: number
+  ) {
+    super(
+      `Task '${taskName}' (${taskId}) timed out after ${timeoutMs}ms`,
+      'TASK_TIMEOUT',
+      408
+    );
+    this.name = 'TaskTimeoutError';
+    Object.setPrototypeOf(this, TaskTimeoutError.prototype);
+  }
+}
+
+/**
+ * Error thrown when task completion validation fails
+ */
+export class TaskValidationError extends AIError {
+  constructor(
+    public readonly taskId: string,
+    public readonly taskName: string,
+    public readonly reason: string
+  ) {
+    super(
+      `Task '${taskName}' (${taskId}) validation failed: ${reason}`,
+      'TASK_VALIDATION_ERROR',
+      422
+    );
+    this.name = 'TaskValidationError';
+    Object.setPrototypeOf(this, TaskValidationError.prototype);
+  }
+}

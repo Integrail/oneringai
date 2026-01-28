@@ -14,6 +14,8 @@ import {
   PlanInput,
   PlanStatus,
   PlanConcurrency,
+  TaskValidation,
+  TaskValidationResult,
   createTask,
   createPlan,
   canTaskExecute,
@@ -23,7 +25,9 @@ import {
   isTaskBlocked,
   getTaskDependencies,
   resolveDependencies,
+  detectDependencyCycle,
 } from '@/domain/entities/Task.js';
+import { DependencyCycleError } from '@/domain/errors/AIErrors.js';
 
 describe('Task Entities', () => {
   describe('createTask', () => {
@@ -872,6 +876,251 @@ describe('Task Entities', () => {
         const plan: Plan = { ...createPlan({ goal: 'Test', tasks: [] }), status };
         expect(plan.status).toBe(status);
       });
+    });
+  });
+
+  // ============ Phase 1: Dependency Cycle Detection Tests ============
+  describe('detectDependencyCycle', () => {
+    it('should return null for tasks with no dependencies', () => {
+      const tasks = [
+        createTask({ id: 'task-1', name: 'Task 1', description: 'First' }),
+        createTask({ id: 'task-2', name: 'Task 2', description: 'Second' }),
+        createTask({ id: 'task-3', name: 'Task 3', description: 'Third' }),
+      ];
+
+      const cycle = detectDependencyCycle(tasks);
+      expect(cycle).toBeNull();
+    });
+
+    it('should return null for valid DAG (no cycles)', () => {
+      const tasks = [
+        createTask({ id: 'task-1', name: 'Task 1', description: 'First', dependsOn: [] }),
+        createTask({ id: 'task-2', name: 'Task 2', description: 'Second', dependsOn: ['task-1'] }),
+        createTask({ id: 'task-3', name: 'Task 3', description: 'Third', dependsOn: ['task-1', 'task-2'] }),
+      ];
+
+      const cycle = detectDependencyCycle(tasks);
+      expect(cycle).toBeNull();
+    });
+
+    it('should detect simple A -> B -> A cycle', () => {
+      const tasks = [
+        createTask({ id: 'task-a', name: 'Task A', description: 'A', dependsOn: ['task-b'] }),
+        createTask({ id: 'task-b', name: 'Task B', description: 'B', dependsOn: ['task-a'] }),
+      ];
+
+      const cycle = detectDependencyCycle(tasks);
+      expect(cycle).not.toBeNull();
+      expect(cycle).toHaveLength(3); // A -> B -> A
+      expect(cycle![0]).toBe(cycle![cycle!.length - 1]); // Cycle starts and ends with same task
+    });
+
+    it('should detect A -> B -> C -> A cycle', () => {
+      const tasks = [
+        createTask({ id: 'task-a', name: 'Task A', description: 'A', dependsOn: ['task-c'] }),
+        createTask({ id: 'task-b', name: 'Task B', description: 'B', dependsOn: ['task-a'] }),
+        createTask({ id: 'task-c', name: 'Task C', description: 'C', dependsOn: ['task-b'] }),
+      ];
+
+      const cycle = detectDependencyCycle(tasks);
+      expect(cycle).not.toBeNull();
+      expect(cycle!.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('should detect self-referencing task', () => {
+      const tasks = [
+        createTask({ id: 'task-self', name: 'Self', description: 'Self-ref', dependsOn: ['task-self'] }),
+      ];
+
+      const cycle = detectDependencyCycle(tasks);
+      expect(cycle).not.toBeNull();
+      expect(cycle).toContain('task-self');
+    });
+
+    it('should handle complex graph with partial cycle', () => {
+      // Graph: A -> B -> C (no cycle)
+      //        D -> E -> F -> D (cycle)
+      const tasks = [
+        createTask({ id: 'task-a', name: 'A', description: 'A', dependsOn: [] }),
+        createTask({ id: 'task-b', name: 'B', description: 'B', dependsOn: ['task-a'] }),
+        createTask({ id: 'task-c', name: 'C', description: 'C', dependsOn: ['task-b'] }),
+        createTask({ id: 'task-d', name: 'D', description: 'D', dependsOn: ['task-f'] }),
+        createTask({ id: 'task-e', name: 'E', description: 'E', dependsOn: ['task-d'] }),
+        createTask({ id: 'task-f', name: 'F', description: 'F', dependsOn: ['task-e'] }),
+      ];
+
+      const cycle = detectDependencyCycle(tasks);
+      expect(cycle).not.toBeNull();
+      // Cycle should be in D, E, F
+      const cycleIds = new Set(cycle);
+      expect(cycleIds.has('task-d') || cycleIds.has('task-e') || cycleIds.has('task-f')).toBe(true);
+    });
+
+    it('should handle dependencies on non-existent tasks gracefully', () => {
+      const tasks = [
+        createTask({ id: 'task-1', name: 'Task 1', description: 'First', dependsOn: ['non-existent'] }),
+      ];
+
+      // Should not throw, non-existent dependencies are just skipped
+      const cycle = detectDependencyCycle(tasks);
+      expect(cycle).toBeNull();
+    });
+
+    it('should handle empty task list', () => {
+      const cycle = detectDependencyCycle([]);
+      expect(cycle).toBeNull();
+    });
+
+    it('should detect cycle in diamond dependency with back-edge', () => {
+      //     A
+      //    / \
+      //   B   C
+      //    \ /
+      //     D -> A (creates cycle)
+      const tasks = [
+        createTask({ id: 'task-a', name: 'A', description: 'A', dependsOn: ['task-d'] }),
+        createTask({ id: 'task-b', name: 'B', description: 'B', dependsOn: ['task-a'] }),
+        createTask({ id: 'task-c', name: 'C', description: 'C', dependsOn: ['task-a'] }),
+        createTask({ id: 'task-d', name: 'D', description: 'D', dependsOn: ['task-b', 'task-c'] }),
+      ];
+
+      const cycle = detectDependencyCycle(tasks);
+      expect(cycle).not.toBeNull();
+    });
+  });
+
+  describe('createPlan with cycle detection', () => {
+    it('should throw DependencyCycleError when cycle is detected', () => {
+      const taskInputs = [
+        { id: 'task-a', name: 'A', description: 'A', dependsOn: ['task-b'] },
+        { id: 'task-b', name: 'B', description: 'B', dependsOn: ['task-a'] },
+      ];
+
+      expect(() => createPlan({ goal: 'Test', tasks: taskInputs })).toThrow(DependencyCycleError);
+    });
+
+    it('should include cycle path in error', () => {
+      const taskInputs = [
+        { id: 'task-a', name: 'A', description: 'A', dependsOn: ['task-b'] },
+        { id: 'task-b', name: 'B', description: 'B', dependsOn: ['task-a'] },
+      ];
+
+      try {
+        createPlan({ goal: 'Test', tasks: taskInputs });
+        expect.fail('Should have thrown DependencyCycleError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(DependencyCycleError);
+        const cycleError = error as DependencyCycleError;
+        expect(cycleError.cycle).toBeDefined();
+        expect(cycleError.cycle.length).toBeGreaterThanOrEqual(2);
+        expect(cycleError.message).toContain('Dependency cycle detected');
+      }
+    });
+
+    it('should allow cycle detection to be skipped', () => {
+      const taskInputs = [
+        { id: 'task-a', name: 'A', description: 'A', dependsOn: ['task-b'] },
+        { id: 'task-b', name: 'B', description: 'B', dependsOn: ['task-a'] },
+      ];
+
+      // Should not throw when skipCycleCheck is true
+      const plan = createPlan({ goal: 'Test', tasks: taskInputs, skipCycleCheck: true });
+      expect(plan).toBeDefined();
+      expect(plan.tasks).toHaveLength(2);
+    });
+
+    it('should succeed for valid plan without cycles', () => {
+      const taskInputs = [
+        { id: 'task-a', name: 'A', description: 'A', dependsOn: [] },
+        { id: 'task-b', name: 'B', description: 'B', dependsOn: ['task-a'] },
+        { id: 'task-c', name: 'C', description: 'C', dependsOn: ['task-a', 'task-b'] },
+      ];
+
+      const plan = createPlan({ goal: 'Test', tasks: taskInputs });
+      expect(plan).toBeDefined();
+      expect(plan.tasks).toHaveLength(3);
+    });
+  });
+
+  // ============ Phase 1: Task Validation Types Tests ============
+  describe('TaskValidation types', () => {
+    it('should create task with validation config', () => {
+      const validation: TaskValidation = {
+        completionCriteria: [
+          'Response contains weather data',
+          'Temperature is included in the response',
+        ],
+        minCompletionScore: 85,
+        requireUserApproval: 'uncertain',
+        mode: 'strict',
+      };
+
+      const task = createTask({
+        name: 'get_weather',
+        description: 'Get weather data',
+        validation,
+      });
+
+      expect(task.validation).toBeDefined();
+      expect(task.validation!.completionCriteria).toHaveLength(2);
+      expect(task.validation!.minCompletionScore).toBe(85);
+      expect(task.validation!.requireUserApproval).toBe('uncertain');
+      expect(task.validation!.mode).toBe('strict');
+    });
+
+    it('should create task with required memory keys', () => {
+      const task = createTask({
+        name: 'process_data',
+        description: 'Process data',
+        validation: {
+          requiredMemoryKeys: ['user_data', 'processed_results'],
+        },
+      });
+
+      expect(task.validation!.requiredMemoryKeys).toEqual(['user_data', 'processed_results']);
+    });
+
+    it('should create task with skipReflection', () => {
+      const task = createTask({
+        name: 'simple_task',
+        description: 'Simple task',
+        validation: {
+          skipReflection: true,
+        },
+      });
+
+      expect(task.validation!.skipReflection).toBe(true);
+    });
+
+    it('should support all requireUserApproval modes', () => {
+      const modes: Array<'never' | 'uncertain' | 'always'> = ['never', 'uncertain', 'always'];
+
+      modes.forEach((mode) => {
+        const task = createTask({
+          name: 'test',
+          description: 'Test',
+          validation: { requireUserApproval: mode },
+        });
+        expect(task.validation!.requireUserApproval).toBe(mode);
+      });
+    });
+
+    it('should support validation result fields in task result', () => {
+      const task = createTask({
+        name: 'test',
+        description: 'Test',
+      });
+
+      // Simulate completed task with validation result
+      task.result = {
+        success: true,
+        output: 'Task completed',
+        validationScore: 92,
+        validationExplanation: 'All criteria met',
+      };
+
+      expect(task.result.validationScore).toBe(92);
+      expect(task.result.validationExplanation).toBe('All criteria met');
     });
   });
 });

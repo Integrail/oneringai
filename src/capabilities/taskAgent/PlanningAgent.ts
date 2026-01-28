@@ -8,7 +8,7 @@
 import { Agent } from '../../core/Agent.js';
 import { Connector } from '../../core/Connector.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
-import { Plan, TaskInput, createPlan } from '../../domain/entities/Task.js';
+import { Plan, TaskInput, TaskValidation, createPlan } from '../../domain/entities/Task.js';
 
 /**
  * PlanningAgent configuration
@@ -49,8 +49,9 @@ const PLANNING_SYSTEM_PROMPT = `You are an AI planning agent. Your job is to ana
 1. Analyze the user's goal and context
 2. Break down the goal into logical, atomic tasks
 3. Identify dependencies between tasks
-4. Structure tasks for optimal execution (parallel where possible)
-5. Use the planning tools to create the plan
+4. Define completion criteria for each task (how we know the task is done)
+5. Structure tasks for optimal execution (parallel where possible)
+6. Use the planning tools to create the plan
 
 **Planning Principles:**
 - Each task should have a single, clear responsibility
@@ -60,10 +61,25 @@ const PLANNING_SYSTEM_PROMPT = `You are an AI planning agent. Your job is to ana
 - Task names should be descriptive snake_case (e.g., "fetch_user_data")
 - Descriptions should be clear and actionable
 
+**Completion Criteria Guidelines:**
+Each task should have clear, natural language completion criteria that describe how to verify the task is complete. These criteria should be:
+- Specific and measurable (e.g., "response contains at least 5 items")
+- Flexible, not rigid (avoid exact JSON schemas or exact string matches)
+- Focused on outcomes, not implementation (e.g., "user data is stored in memory" not "memory_store was called")
+
+Examples of good completion criteria:
+- "The response contains weather data for the requested location"
+- "At least 3 relevant search results were found"
+- "The user's email address has been validated and stored"
+- "The file was created with content matching the user's request"
+
+Examples of bad completion criteria (too rigid):
+- "Response matches exact JSON format {temp: number, city: string}"
+- "Output contains exactly the string 'SUCCESS'"
+- "Function returned status code 200"
+
 **Available Planning Tools:**
-- create_task: Add a task to the plan
-- add_dependency: Link tasks with dependencies
-- mark_parallel: Mark tasks that can run in parallel
+- create_task: Add a task to the plan with completion criteria
 - finalize_plan: Complete the planning phase
 
 Always start by analyzing the goal, then create tasks one by one, building dependencies as you go.`;
@@ -111,7 +127,7 @@ export class PlanningAgent {
           type: 'function',
           function: {
             name: 'create_task',
-            description: 'Create a new task in the plan with name, description, and optional dependencies',
+            description: 'Create a new task in the plan with name, description, completion criteria, and optional dependencies',
             parameters: {
               type: 'object',
               properties: {
@@ -122,6 +138,11 @@ export class PlanningAgent {
                 description: {
                   type: 'string',
                   description: 'Clear, actionable description of what this task does',
+                },
+                completion_criteria: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Array of natural language criteria to verify task completion (e.g., "response contains weather data", "at least 3 results found")',
                 },
                 depends_on: {
                   type: 'array',
@@ -136,6 +157,15 @@ export class PlanningAgent {
                   type: 'string',
                   description: 'Description of expected output (optional)',
                 },
+                required_memory_keys: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'Memory keys that must exist after task completion (optional)',
+                },
+                min_completion_score: {
+                  type: 'number',
+                  description: 'Minimum completion score (0-100) to consider task complete (default: 80)',
+                },
               },
               required: ['name', 'description'],
             },
@@ -144,9 +174,24 @@ export class PlanningAgent {
         execute: async (args: Record<string, unknown>) => {
           const name = args.name as string;
           const description = args.description as string;
+          const completionCriteria = args.completion_criteria as string[] | undefined;
           const dependsOn = args.depends_on as string[] | undefined;
           const parallel = args.parallel as boolean | undefined;
           const expectedOutput = args.expected_output as string | undefined;
+          const requiredMemoryKeys = args.required_memory_keys as string[] | undefined;
+          const minCompletionScore = args.min_completion_score as number | undefined;
+
+          // Build validation config if criteria provided
+          let validation: TaskValidation | undefined;
+          if (completionCriteria || requiredMemoryKeys || minCompletionScore) {
+            validation = {
+              completionCriteria,
+              requiredMemoryKeys,
+              minCompletionScore: minCompletionScore ?? 80,
+              requireUserApproval: 'uncertain', // Default: ask user in uncertain cases
+              mode: 'warn', // Default: warn but complete
+            };
+          }
 
           // Actually add the task to the plan
           this.addTask({
@@ -155,11 +200,12 @@ export class PlanningAgent {
             dependsOn,
             execution: parallel ? { parallel: true } : undefined,
             expectedOutput,
+            validation,
           });
 
           return {
             success: true,
-            message: `Task '${name}' created`,
+            message: `Task '${name}' created${completionCriteria ? ` with ${completionCriteria.length} completion criteria` : ''}`,
             taskCount: this.currentTasks.length,
           };
         },

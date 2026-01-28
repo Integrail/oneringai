@@ -99,18 +99,33 @@ describe('WorkingMemory', () => {
       );
     });
 
-    it('should set default scope as task', async () => {
+    it('should set default scope as session', async () => {
       await memory.store('test', 'Test', { v: 1 });
 
       const entry = await storage.get('test');
-      expect(entry?.scope).toBe('task');
+      expect(entry?.scope).toBe('session');
     });
 
-    it('should allow specifying scope', async () => {
-      await memory.store('test', 'Test', { v: 1 }, 'persistent');
+    it('should allow specifying scope via options', async () => {
+      await memory.store('test', 'Test', { v: 1 }, { scope: 'persistent' });
 
       const entry = await storage.get('test');
       expect(entry?.scope).toBe('persistent');
+    });
+
+    it('should allow specifying priority', async () => {
+      await memory.store('test', 'Test', { v: 1 }, { priority: 'high' });
+
+      const entry = await storage.get('test');
+      expect(entry?.basePriority).toBe('high');
+    });
+
+    it('should allow pinning entries', async () => {
+      await memory.store('test', 'Test', { v: 1 }, { pinned: true });
+
+      const entry = await storage.get('test');
+      expect(entry?.pinned).toBe(true);
+      expect(entry?.basePriority).toBe('critical');
     });
 
     it('should validate key format', async () => {
@@ -264,16 +279,17 @@ describe('WorkingMemory', () => {
   });
 
   describe('persist', () => {
-    it('should change scope from task to persistent', async () => {
+    it('should change scope from session to persistent', async () => {
       await memory.store('key', 'Test', { value: 1 });
 
       const before = await storage.get('key');
-      expect(before!.scope).toBe('task');
+      expect(before!.scope).toBe('session');
 
       await memory.persist('key');
 
       const after = await storage.get('key');
-      expect(after!.scope).toBe('persistent');
+      // Now uses task-aware scope object
+      expect(after!.scope).toEqual({ type: 'persistent' });
     });
 
     it('should throw for nonexistent key', async () => {
@@ -281,46 +297,72 @@ describe('WorkingMemory', () => {
     });
 
     it('should be idempotent', async () => {
-      await memory.store('key', 'Test', { value: 1 }, 'persistent');
+      await memory.store('key', 'Test', { value: 1 }, { scope: { type: 'persistent' } });
 
       // Should not throw when already persistent
       await expect(memory.persist('key')).resolves.not.toThrow();
 
       const entry = await storage.get('key');
-      expect(entry!.scope).toBe('persistent');
+      expect(entry!.scope).toEqual({ type: 'persistent' });
+    });
+  });
+
+  describe('pin/unpin', () => {
+    it('should pin an entry', async () => {
+      await memory.store('key', 'Test', { value: 1 });
+
+      await memory.pin('key');
+
+      const entry = await storage.get('key');
+      expect(entry!.pinned).toBe(true);
+      expect(entry!.basePriority).toBe('critical');
+    });
+
+    it('should throw for nonexistent key', async () => {
+      await expect(memory.pin('nonexistent')).rejects.toThrow();
+    });
+
+    it('should unpin an entry', async () => {
+      await memory.store('key', 'Test', { value: 1 }, { pinned: true });
+
+      await memory.unpin('key', 'normal');
+
+      const entry = await storage.get('key');
+      expect(entry!.pinned).toBe(false);
+      expect(entry!.basePriority).toBe('normal');
     });
   });
 
   describe('clearScope', () => {
-    it('should clear only task-scoped entries', async () => {
-      await memory.store('task1', 'Task 1', 1);
-      await memory.store('task2', 'Task 2', 2);
-      await memory.store('persist1', 'Persist', 3, 'persistent');
+    it('should clear only session-scoped entries', async () => {
+      await memory.store('session1', 'Session 1', 1);
+      await memory.store('session2', 'Session 2', 2);
+      await memory.store('persist1', 'Persist', 3, { scope: 'persistent' });
 
-      await memory.clearScope('task');
+      await memory.clearScope('session');
 
-      expect(await memory.retrieve('task1')).toBeUndefined();
-      expect(await memory.retrieve('task2')).toBeUndefined();
+      expect(await memory.retrieve('session1')).toBeUndefined();
+      expect(await memory.retrieve('session2')).toBeUndefined();
       expect(await memory.retrieve('persist1')).toBe(3);
     });
 
     it('should clear only persistent entries', async () => {
-      await memory.store('task1', 'Task 1', 1);
-      await memory.store('persist1', 'Persist 1', 2, 'persistent');
-      await memory.store('persist2', 'Persist 2', 3, 'persistent');
+      await memory.store('session1', 'Session 1', 1);
+      await memory.store('persist1', 'Persist 1', 2, { scope: 'persistent' });
+      await memory.store('persist2', 'Persist 2', 3, { scope: 'persistent' });
 
       await memory.clearScope('persistent');
 
-      expect(await memory.retrieve('task1')).toBe(1);
+      expect(await memory.retrieve('session1')).toBe(1);
       expect(await memory.retrieve('persist1')).toBeUndefined();
       expect(await memory.retrieve('persist2')).toBeUndefined();
     });
 
     it('should update index after clear', async () => {
-      await memory.store('task1', 'Task 1', 1);
-      await memory.store('task2', 'Task 2', 2);
+      await memory.store('session1', 'Session 1', 1);
+      await memory.store('session2', 'Session 2', 2);
 
-      await memory.clearScope('task');
+      await memory.clearScope('session');
 
       const index = await memory.getIndex();
       expect(index.entries).toHaveLength(0);
@@ -329,12 +371,12 @@ describe('WorkingMemory', () => {
 
   describe('clear', () => {
     it('should clear all entries', async () => {
-      await memory.store('task1', 'Task 1', 1);
-      await memory.store('persist1', 'Persist', 2, 'persistent');
+      await memory.store('session1', 'Session 1', 1);
+      await memory.store('persist1', 'Persist', 2, { scope: 'persistent' });
 
       await memory.clear();
 
-      expect(await memory.retrieve('task1')).toBeUndefined();
+      expect(await memory.retrieve('session1')).toBeUndefined();
       expect(await memory.retrieve('persist1')).toBeUndefined();
 
       const index = await memory.getIndex();
@@ -355,14 +397,27 @@ describe('WorkingMemory', () => {
       expect(index.utilizationPercent).toBeGreaterThan(0);
     });
 
-    it('should sort by scope (persistent first)', async () => {
-      await memory.store('task1', 'Task', 1);
-      await memory.store('persist1', 'Persist', 2, 'persistent');
+    it('should sort by priority (higher priority first)', async () => {
+      await memory.store('low', 'Low priority', 1, { priority: 'low' });
+      await memory.store('high', 'High priority', 2, { priority: 'high' });
+      await memory.store('normal', 'Normal priority', 3);
 
       const index = await memory.getIndex();
 
-      expect(index.entries[0].scope).toBe('persistent');
-      expect(index.entries[1].scope).toBe('task');
+      // High > normal > low
+      expect(index.entries[0].effectivePriority).toBe('high');
+      expect(index.entries[1].effectivePriority).toBe('normal');
+      expect(index.entries[2].effectivePriority).toBe('low');
+    });
+
+    it('should put pinned entries first', async () => {
+      await memory.store('normal', 'Normal', 1);
+      await memory.store('pinned', 'Pinned', 2, { pinned: true });
+
+      const index = await memory.getIndex();
+
+      expect(index.entries[0].pinned).toBe(true);
+      expect(index.entries[0].key).toBe('pinned');
     });
 
     it('should include human-readable sizes', async () => {
@@ -392,14 +447,34 @@ describe('WorkingMemory', () => {
       expect(await memory.retrieve('new')).toEqual({ v: 2 });
     });
 
-    it('should not evict persistent entries during LRU eviction', async () => {
-      await memory.store('persistent', 'Persist', { v: 1 }, 'persistent');
-      await memory.store('task', 'Task', { v: 2 });
+    it('should not evict high priority entries before low priority', async () => {
+      await memory.store('high', 'High priority', { v: 1 }, { priority: 'high' });
+      await memory.store('low', 'Low priority', { v: 2 }, { priority: 'low' });
 
       const evicted = await memory.evictLRU(1);
 
-      expect(evicted).toEqual(['task']);
-      expect(await memory.retrieve('persistent')).toEqual({ v: 1 });
+      expect(evicted).toEqual(['low']);
+      expect(await memory.retrieve('high')).toEqual({ v: 1 });
+    });
+
+    it('should not evict pinned entries', async () => {
+      await memory.store('pinned', 'Pinned', { v: 1 }, { pinned: true });
+      await memory.store('normal', 'Normal', { v: 2 });
+
+      const evicted = await memory.evictLRU(1);
+
+      expect(evicted).toEqual(['normal']);
+      expect(await memory.retrieve('pinned')).toEqual({ v: 1 });
+    });
+
+    it('should not evict critical priority entries', async () => {
+      await memory.store('critical', 'Critical', { v: 1 }, { priority: 'critical' });
+      await memory.store('normal', 'Normal', { v: 2 });
+
+      const evicted = await memory.evictLRU(1);
+
+      expect(evicted).toEqual(['normal']);
+      expect(await memory.retrieve('critical')).toEqual({ v: 1 });
     });
 
     it('should evict multiple entries when requested', async () => {
@@ -442,14 +517,24 @@ describe('WorkingMemory', () => {
       expect(evicted).toEqual(['large']);
     });
 
-    it('should not evict persistent entries', async () => {
-      await memory.store('large', 'Large', { data: 'x'.repeat(1000) }, 'persistent');
+    it('should not evict pinned entries even if largest', async () => {
+      await memory.store('large', 'Large pinned', { data: 'x'.repeat(1000) }, { pinned: true });
       await memory.store('small', 'Small', 'x');
 
       const evicted = await memory.evictBySize(1);
 
       expect(evicted).toEqual(['small']);
       expect(await memory.retrieve('large')).toBeDefined();
+    });
+
+    it('should respect priority when evicting by size', async () => {
+      await memory.store('large-high', 'Large high', { data: 'x'.repeat(1000) }, { priority: 'high' });
+      await memory.store('small-low', 'Small low', 'x', { priority: 'low' });
+
+      const evicted = await memory.evictBySize(1);
+
+      // Should evict low priority first regardless of size
+      expect(evicted).toEqual(['small-low']);
     });
   });
 
@@ -490,13 +575,27 @@ describe('WorkingMemory', () => {
   });
 
   describe('events', () => {
-    it('should emit stored event', async () => {
+    it('should emit stored event with scope', async () => {
       const onStored = vi.fn();
       memory.on('stored', onStored);
 
       await memory.store('key', 'Test', { v: 1 });
 
-      expect(onStored).toHaveBeenCalledWith({ key: 'key', description: 'Test' });
+      expect(onStored).toHaveBeenCalledWith({ key: 'key', description: 'Test', scope: 'session' });
+    });
+
+    it('should emit evicted event', async () => {
+      const onEvicted = vi.fn();
+      memory.on('evicted', onEvicted);
+
+      await memory.store('a', 'A', 1);
+      await memory.store('b', 'B', 2);
+      await memory.evictLRU(1);
+
+      expect(onEvicted).toHaveBeenCalledWith({
+        keys: expect.any(Array),
+        reason: 'lru',
+      });
     });
 
     it('should emit retrieved event', async () => {

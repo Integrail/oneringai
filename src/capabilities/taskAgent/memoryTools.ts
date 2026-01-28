@@ -13,7 +13,7 @@ export const memoryStoreDefinition: FunctionToolDefinition = {
   function: {
     name: 'memory_store',
     description:
-      'Store data in working memory for later use. Use this to save important information from tool outputs.',
+      'Store data in working memory for later use. Use this to save important information from tool outputs. You can scope data to specific tasks so it gets cleaned up when those tasks complete.',
     parameters: {
       type: 'object',
       properties: {
@@ -27,6 +27,25 @@ export const memoryStoreDefinition: FunctionToolDefinition = {
         },
         value: {
           description: 'The data to store (can be any JSON value)',
+        },
+        neededForTasks: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional: Task IDs that need this data. Data will be auto-cleaned when all tasks complete.',
+        },
+        scope: {
+          type: 'string',
+          enum: ['session', 'plan', 'persistent'],
+          description: 'Optional: Lifecycle scope. "session" (default), "plan" (kept for entire plan), or "persistent" (never auto-cleaned)',
+        },
+        priority: {
+          type: 'string',
+          enum: ['low', 'normal', 'high', 'critical'],
+          description: 'Optional: Eviction priority. Lower priority evicted first when memory is full.',
+        },
+        pinned: {
+          type: 'boolean',
+          description: 'Optional: If true, this data will never be evicted.',
         },
       },
       required: ['key', 'description', 'value'],
@@ -107,12 +126,31 @@ export function createMemoryTools(): ToolFunction[] {
         }
 
         try {
+          // Build scope from arguments
+          let scope: import('../../domain/entities/Memory.js').MemoryScope | undefined;
+
+          if (args.neededForTasks && Array.isArray(args.neededForTasks) && args.neededForTasks.length > 0) {
+            // Task-scoped memory
+            scope = { type: 'task', taskIds: args.neededForTasks as string[] };
+          } else if (args.scope === 'plan') {
+            scope = { type: 'plan' };
+          } else if (args.scope === 'persistent') {
+            scope = { type: 'persistent' };
+          } else {
+            scope = 'session'; // default
+          }
+
           await context.memory.set(
             args.key as string,
             args.description as string,
-            args.value
+            args.value,
+            {
+              scope,
+              priority: args.priority as import('../../domain/entities/Memory.js').MemoryPriority | undefined,
+              pinned: args.pinned as boolean | undefined,
+            }
           );
-          return { success: true, key: args.key };
+          return { success: true, key: args.key, scope: typeof scope === 'string' ? scope : scope.type };
         } catch (error) {
           return { error: error instanceof Error ? error.message : String(error) };
         }

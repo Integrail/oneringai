@@ -17,7 +17,7 @@ export type {
 } from './TaskAgent.js';
 
 export { WorkingMemory } from './WorkingMemory.js';
-export type { WorkingMemoryEvents } from './WorkingMemory.js';
+export type { WorkingMemoryEvents, EvictionStrategy } from './WorkingMemory.js';
 
 export { ContextManager } from './ContextManager.js';
 export type {

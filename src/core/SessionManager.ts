@@ -13,6 +13,7 @@
 import { EventEmitter } from 'events';
 import type { SerializedToolState } from './ToolManager.js';
 import type { SerializedApprovalState } from './permissions/types.js';
+import type { MemoryScope, MemoryPriority } from '../domain/entities/Memory.js';
 
 // ============================================================================
 // Types
@@ -101,8 +102,10 @@ export interface SerializedMemoryEntry {
   key: string;
   description: string;
   value: unknown;
-  scope: 'task' | 'persistent';
+  scope: MemoryScope;
   sizeBytes: number;
+  basePriority?: MemoryPriority;
+  pinned?: boolean;
 }
 
 export interface SerializedPlan {

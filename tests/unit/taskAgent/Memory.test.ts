@@ -30,7 +30,7 @@ describe('Memory Entities', () => {
       expect(entry.key).toBe('user.profile');
       expect(entry.description).toBe('User profile data');
       expect(entry.value).toEqual({ id: '123', name: 'John' });
-      expect(entry.scope).toBe('task'); // default
+      expect(entry.scope).toBe('session'); // default
       expect(entry.sizeBytes).toBeGreaterThan(0);
       expect(entry.createdAt).toBeDefined();
       expect(entry.lastAccessedAt).toBeDefined();
@@ -255,8 +255,8 @@ describe('Memory Entities', () => {
     it('should format index with entries', () => {
       const index: MemoryIndex = {
         entries: [
-          { key: 'user.profile', description: 'User data', size: '1.2KB', scope: 'persistent' },
-          { key: 'order.current', description: 'Current order', size: '3.5KB', scope: 'task' },
+          { key: 'user.profile', description: 'User data', size: '1.2KB', scope: 'persistent', effectivePriority: 'high', pinned: false },
+          { key: 'order.current', description: 'Current order', size: '3.5KB', scope: 'session', effectivePriority: 'normal', pinned: false },
         ],
         totalSizeBytes: 4812,
         totalSizeHuman: '4.7KB',
@@ -271,14 +271,14 @@ describe('Memory Entities', () => {
       expect(formatted).toContain('1.2KB');
       expect(formatted).toContain('persistent');
       expect(formatted).toContain('order.current');
-      expect(formatted).toContain('task');
+      expect(formatted).toContain('session');
     });
 
-    it('should group by scope with persistent first', () => {
+    it('should group by priority with higher priority first', () => {
       const index: MemoryIndex = {
         entries: [
-          { key: 'task1', description: 'Task', size: '100B', scope: 'task' },
-          { key: 'persist1', description: 'Persist', size: '200B', scope: 'persistent' },
+          { key: 'low1', description: 'Low', size: '100B', scope: 'session', effectivePriority: 'low', pinned: false },
+          { key: 'high1', description: 'High', size: '200B', scope: 'session', effectivePriority: 'high', pinned: false },
         ],
         totalSizeBytes: 300,
         totalSizeHuman: '300B',
@@ -288,14 +288,33 @@ describe('Memory Entities', () => {
       };
 
       const formatted = formatMemoryIndex(index);
-      const persistentIndex = formatted.indexOf('Persistent');
-      const taskIndex = formatted.indexOf('Task-scoped');
-      expect(persistentIndex).toBeLessThan(taskIndex);
+      const highIndex = formatted.indexOf('High priority');
+      const lowIndex = formatted.indexOf('Low priority');
+      expect(highIndex).toBeLessThan(lowIndex);
+    });
+
+    it('should put pinned entries first', () => {
+      const index: MemoryIndex = {
+        entries: [
+          { key: 'normal', description: 'Normal', size: '100B', scope: 'session', effectivePriority: 'normal', pinned: false },
+          { key: 'pinned', description: 'Pinned', size: '200B', scope: 'session', effectivePriority: 'critical', pinned: true },
+        ],
+        totalSizeBytes: 300,
+        totalSizeHuman: '300B',
+        limitBytes: 1024,
+        limitHuman: '1KB',
+        utilizationPercent: 29.3,
+      };
+
+      const formatted = formatMemoryIndex(index);
+      const pinnedIndex = formatted.indexOf('Pinned (never evicted)');
+      const normalIndex = formatted.indexOf('Normal priority');
+      expect(pinnedIndex).toBeLessThan(normalIndex);
     });
 
     it('should include utilization percentage', () => {
       const index: MemoryIndex = {
-        entries: [{ key: 'test', description: 'Test', size: '512KB', scope: 'task' }],
+        entries: [{ key: 'test', description: 'Test', size: '512KB', scope: 'session', effectivePriority: 'normal', pinned: false }],
         totalSizeBytes: 524288,
         totalSizeHuman: '512KB',
         limitBytes: 1048576,

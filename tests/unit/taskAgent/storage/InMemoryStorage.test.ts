@@ -20,7 +20,10 @@ describe('InMemoryStorage', () => {
     storage = new InMemoryStorage();
   });
 
-  const createTestEntry = (key: string, scope: MemoryScope = 'task'): MemoryEntry => ({
+  const createTestEntry = (
+    key: string,
+    scope: MemoryScope = { type: 'task', taskIds: ['default-task'] }
+  ): MemoryEntry => ({
     key,
     description: `Test entry: ${key}`,
     value: { data: key },
@@ -111,17 +114,22 @@ describe('InMemoryStorage', () => {
 
   describe('getByScope', () => {
     it('should return only task-scoped entries', async () => {
-      await storage.set('task1', createTestEntry('task1', 'task'));
-      await storage.set('task2', createTestEntry('task2', 'task'));
+      const taskScope = { type: 'task' as const, taskIds: ['test-task'] };
+      await storage.set('task1', createTestEntry('task1', taskScope));
+      await storage.set('task2', createTestEntry('task2', taskScope));
       await storage.set('persist', createTestEntry('persist', 'persistent'));
 
-      const result = await storage.getByScope('task');
+      // Filter by type - should match all task-scoped entries regardless of taskIds
+      const result = await storage.getByScope({ type: 'task', taskIds: [] });
       expect(result).toHaveLength(2);
-      expect(result.every((e) => e.scope === 'task')).toBe(true);
+      expect(
+        result.every((e) => typeof e.scope === 'object' && e.scope.type === 'task')
+      ).toBe(true);
     });
 
     it('should return only persistent entries', async () => {
-      await storage.set('task', createTestEntry('task', 'task'));
+      const taskScope = { type: 'task' as const, taskIds: ['test-task'] };
+      await storage.set('task', createTestEntry('task', taskScope));
       await storage.set('persist1', createTestEntry('persist1', 'persistent'));
       await storage.set('persist2', createTestEntry('persist2', 'persistent'));
 
@@ -133,11 +141,13 @@ describe('InMemoryStorage', () => {
 
   describe('clearScope', () => {
     it('should clear only task-scoped entries', async () => {
-      await storage.set('task1', createTestEntry('task1', 'task'));
-      await storage.set('task2', createTestEntry('task2', 'task'));
+      const taskScope = { type: 'task' as const, taskIds: ['test-task'] };
+      await storage.set('task1', createTestEntry('task1', taskScope));
+      await storage.set('task2', createTestEntry('task2', taskScope));
       await storage.set('persist', createTestEntry('persist', 'persistent'));
 
-      await storage.clearScope('task');
+      // Clear all task-scoped entries
+      await storage.clearScope({ type: 'task', taskIds: [] });
 
       expect(await storage.has('task1')).toBe(false);
       expect(await storage.has('task2')).toBe(false);
@@ -145,7 +155,8 @@ describe('InMemoryStorage', () => {
     });
 
     it('should clear only persistent entries', async () => {
-      await storage.set('task', createTestEntry('task', 'task'));
+      const taskScope = { type: 'task' as const, taskIds: ['test-task'] };
+      await storage.set('task', createTestEntry('task', taskScope));
       await storage.set('persist1', createTestEntry('persist1', 'persistent'));
 
       await storage.clearScope('persistent');

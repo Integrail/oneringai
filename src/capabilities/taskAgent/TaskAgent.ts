@@ -12,7 +12,7 @@ import {
   ISessionStorage,
 } from '../../core/SessionManager.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
-import { Plan, PlanInput, Task, TaskInput, createPlan, createTask } from '../../domain/entities/Task.js';
+import { Plan, PlanInput, Task, TaskInput, TaskValidationResult, createPlan, createTask } from '../../domain/entities/Task.js';
 import { AgentState, AgentStatus, createAgentState, updateAgentStatus } from '../../domain/entities/AgentState.js';
 import type { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
 import { DEFAULT_MEMORY_CONFIG } from '../../domain/entities/Memory.js';
@@ -40,6 +40,25 @@ export interface TaskAgentHooks {
 
   /** After each task completes */
   afterTask?: (task: Task, result: TaskResult) => Promise<void>;
+
+  /**
+   * Validate task completion with custom logic.
+   * Called after task execution to verify the task achieved its goal.
+   *
+   * Return values:
+   * - `TaskValidationResult`: Full validation result with score and details
+   * - `true`: Task is complete
+   * - `false`: Task failed validation (will use default error message)
+   * - `string`: Task failed validation with custom reason
+   *
+   * If not provided, the default LLM self-reflection validation is used
+   * (when task.validation is configured).
+   */
+  validateTask?: (
+    task: Task,
+    result: TaskResult,
+    memory: WorkingMemory
+  ) => Promise<TaskValidationResult | boolean | string>;
 
   /** Before each LLM call */
   beforeLLMCall?: (messages: any[], options: any) => Promise<any[]>;
@@ -183,6 +202,7 @@ export interface TaskAgentEvents {
   'task:start': { task: Task };
   'task:complete': { task: Task; result: TaskResult };
   'task:failed': { task: Task; error: Error };
+  'task:validation_failed': { task: Task; validation: TaskValidationResult };
   'task:waiting': { task: Task; dependency: any };
   'plan:updated': { plan: Plan };
   'agent:suspended': { reason: string };
@@ -450,12 +470,15 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     const taskFailedHandler = (data: any) => this.emit('task:failed', data);
     const taskSkippedHandler = (data: any) => this.emit('task:failed', { task: data.task, error: new Error(data.reason) });
     const taskWaitingExternalHandler = (data: any) => this.emit('task:waiting', { task: data.task, dependency: data.task.externalDependency });
+    const taskValidationFailedHandler = (data: any) => this.emit('task:validation_failed', data);
 
     this.planExecutor.on('task:start', taskStartHandler);
     this.planExecutor.on('task:complete', taskCompleteHandler);
     this.planExecutor.on('task:failed', taskFailedHandler);
     this.planExecutor.on('task:skipped', taskSkippedHandler);
     this.planExecutor.on('task:waiting_external', taskWaitingExternalHandler);
+    this.planExecutor.on('task:validation_failed', taskValidationFailedHandler);
+    this.planExecutor.on('task:validation_uncertain', taskValidationFailedHandler); // Reuse same handler for uncertain
 
     // Track cleanup functions
     this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:start', taskStartHandler));
@@ -463,6 +486,8 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:failed', taskFailedHandler));
     this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:skipped', taskSkippedHandler));
     this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:waiting_external', taskWaitingExternalHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:validation_failed', taskValidationFailedHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:validation_uncertain', taskValidationFailedHandler));
   }
 
   /**
@@ -737,6 +762,8 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
         value: null, // Don't serialize full values, they're in storage
         scope: e.scope,
         sizeBytes: 0, // Size is stored as human-readable in index
+        basePriority: e.effectivePriority, // Store computed priority
+        pinned: e.pinned,
       })),
     };
 

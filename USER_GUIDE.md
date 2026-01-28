@@ -1,7 +1,7 @@
 # @oneringai/agents - Complete User Guide
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-26
+**Last Updated:** 2026-01-28
 
 A comprehensive guide to using all features of the @oneringai/agents library.
 
@@ -1290,7 +1290,7 @@ TaskAgents have indexed working memory that the agent can use to store and retri
 
 ```typescript
 // The agent automatically has access to memory tools:
-// - memory_store(key, description, value)
+// - memory_store(key, description, value, options?)
 // - memory_retrieve(key)
 // - memory_delete(key)
 // - memory_list()
@@ -1329,22 +1329,147 @@ await agent.start({
 
 #### Memory Scopes
 
+Memory entries can have different lifecycle scopes:
+
 ```typescript
-// Task-scoped memory (cleared after task completes)
+// Session-scoped memory (default - cleared when agent ends)
 memory_store({
   key: 'temp.calculation',
   description: 'Intermediate result',
   value: 12345,
-  scope: 'task',
+  scope: 'session',
 });
 
-// Persistent memory (survives across tasks)
+// Plan-scoped memory (kept for entire plan execution)
+memory_store({
+  key: 'plan.config',
+  description: 'Configuration for this plan',
+  value: { timeout: 30000 },
+  scope: 'plan',
+});
+
+// Persistent memory (never auto-cleaned)
 memory_store({
   key: 'user.session',
   description: 'Session token',
   value: 'token-xyz',
   scope: 'persistent',
 });
+
+// Task-scoped memory (auto-cleaned when specific tasks complete)
+memory_store({
+  key: 'task.intermediate',
+  description: 'Data needed only by specific tasks',
+  value: { step: 1 },
+  neededForTasks: ['task-id-1', 'task-id-2'], // Auto-cleaned when both complete
+});
+```
+
+#### Memory Priority & Pinning
+
+Control eviction behavior when memory is full:
+
+```typescript
+// Priority levels: 'low' | 'normal' | 'high' | 'critical'
+// Lower priority entries are evicted first
+memory_store({
+  key: 'cache.results',
+  description: 'Cached API results',
+  value: cachedData,
+  priority: 'low', // Evict first when memory is full
+});
+
+memory_store({
+  key: 'user.credentials',
+  description: 'Authentication credentials',
+  value: credentials,
+  priority: 'critical', // Never evicted (unless pinned=false)
+});
+
+// Pinned entries are NEVER evicted, regardless of priority
+memory_store({
+  key: 'system.config',
+  description: 'Critical system configuration',
+  value: config,
+  pinned: true, // Never evicted
+});
+```
+
+#### Programmatic Memory Access
+
+```typescript
+import { WorkingMemory, forTasks, forPlan } from '@oneringai/agents';
+
+// Create working memory instance
+const memory = new WorkingMemory(storage, config);
+
+// Store with full options
+await memory.set('user.profile', 'User profile data', userData, {
+  scope: { type: 'task', taskIds: ['fetch-user', 'process-user'] },
+  priority: 'high',
+  pinned: false,
+});
+
+// Factory functions for common patterns
+const taskEntry = forTasks('temp.data', 'Temporary data', value, ['task-1', 'task-2']);
+const planEntry = forPlan('plan.state', 'Plan state', planState, { priority: 'high' });
+
+// Retrieve data
+const profile = await memory.get('user.profile');
+
+// Update scope dynamically
+await memory.updateScope('temp.data', { type: 'plan' });
+await memory.addTasksToScope('temp.data', ['task-3']); // Add more tasks
+
+// Eviction control
+await memory.evict(5, 'lru');  // Evict 5 entries using LRU strategy
+await memory.evict(3, 'size'); // Evict 3 largest entries
+
+// Cleanup
+memory.destroy(); // Remove all listeners
+```
+
+#### Eviction Strategies
+
+When memory reaches capacity, entries are evicted based on:
+
+1. **Pinned status** - Pinned entries are never evicted
+2. **Priority** - Lower priority evicted first (`low` → `normal` → `high` → `critical`)
+3. **Strategy** - Either LRU (least recently used) or size-based (largest first)
+
+```typescript
+// LRU eviction (default) - evicts least recently accessed entries
+await memory.evict(5, 'lru');
+
+// Size-based eviction - evicts largest entries first
+await memory.evict(5, 'size');
+```
+
+#### Scope Utilities
+
+```typescript
+import {
+  scopeEquals,
+  scopeMatches,
+  isSimpleScope,
+  isTaskAwareScope,
+  isTerminalMemoryStatus,
+} from '@oneringai/agents';
+
+// Check if scopes are exactly equal
+scopeEquals('session', 'session'); // true
+scopeEquals(
+  { type: 'task', taskIds: ['a', 'b'] },
+  { type: 'task', taskIds: ['b', 'a'] }
+); // true (order-independent)
+
+// Check if entry scope matches a filter
+scopeMatches({ type: 'task', taskIds: ['a'] }, { type: 'task', taskIds: [] }); // true (type match)
+scopeMatches('persistent', 'persistent'); // true
+
+// Type guards
+isSimpleScope('session'); // true
+isTaskAwareScope({ type: 'task', taskIds: [] }); // true
 ```
 
 ### External Dependencies
@@ -5449,5 +5574,5 @@ MIT License - see LICENSE file for details.
 
 ---
 
-**Last Updated:** 2026-01-24
+**Last Updated:** 2026-01-28
 **Version:** 0.2.0

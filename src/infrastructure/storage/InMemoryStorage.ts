@@ -2,7 +2,7 @@
  * In-memory storage implementations (default, non-persistent)
  */
 
-import { MemoryEntry, MemoryScope } from '../../domain/entities/Memory.js';
+import { MemoryEntry, MemoryScope, scopeMatches } from '../../domain/entities/Memory.js';
 import { Plan, Task, PlanStatus } from '../../domain/entities/Task.js';
 import { AgentState, AgentStatus } from '../../domain/entities/AgentState.js';
 import { IMemoryStorage } from '../../domain/interfaces/IMemoryStorage.js';
@@ -36,13 +36,13 @@ export class InMemoryStorage implements IMemoryStorage {
   }
 
   async getByScope(scope: MemoryScope): Promise<MemoryEntry[]> {
-    return Array.from(this.store.values()).filter((entry) => entry.scope === scope);
+    return Array.from(this.store.values()).filter((entry) => scopeMatches(entry.scope, scope));
   }
 
   async clearScope(scope: MemoryScope): Promise<void> {
     const toDelete: string[] = [];
     for (const [key, entry] of this.store.entries()) {
-      if (entry.scope === scope) {
+      if (scopeMatches(entry.scope, scope)) {
         toDelete.push(key);
       }
     }

@@ -4,16 +4,56 @@
 
 import type { ContextManager } from '../../capabilities/taskAgent/ContextManager.js';
 import type { IdempotencyCache } from '../../capabilities/taskAgent/IdempotencyCache.js';
+import type { MemoryScope, MemoryPriority } from '../entities/Memory.js';
 
 /**
  * Limited memory access for tools
+ *
+ * This interface is designed to work with all agent types:
+ * - Basic agents: Use simple scopes ('session', 'persistent')
+ * - TaskAgent: Use task-aware scopes ({ type: 'task', taskIds: [...] })
+ * - UniversalAgent: Switches between simple and task-aware based on mode
  */
 export interface WorkingMemoryAccess {
   get(key: string): Promise<unknown>;
-  set(key: string, description: string, value: unknown): Promise<void>;
+
+  /**
+   * Store a value in memory
+   *
+   * @param key - Unique key for the entry
+   * @param description - Short description (max 150 chars)
+   * @param value - Data to store
+   * @param options - Optional scope, priority, and pinning
+   */
+  set(
+    key: string,
+    description: string,
+    value: unknown,
+    options?: {
+      /** Scope determines lifecycle - defaults to 'session' */
+      scope?: MemoryScope;
+      /** Base priority for eviction ordering */
+      priority?: MemoryPriority;
+      /** If true, entry is never evicted */
+      pinned?: boolean;
+    }
+  ): Promise<void>;
+
   delete(key: string): Promise<void>;
   has(key: string): Promise<boolean>;
-  list(): Promise<Array<{ key: string; description: string }>>;
+
+  /**
+   * List all memory entries
+   * Returns key, description, and computed priority info
+   */
+  list(): Promise<
+    Array<{
+      key: string;
+      description: string;
+      effectivePriority?: MemoryPriority;
+      pinned?: boolean;
+    }>
+  >;
 }
 
 /**

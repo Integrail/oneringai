@@ -398,7 +398,7 @@ export class UniversalAgent extends EventEmitter {
         `user_feedback_${Date.now()}`,
         'User feedback during execution',
         input,
-        'persistent'
+        { scope: 'persistent' }
       );
       return {
         text: "Noted. I'll keep that in mind as I continue.",

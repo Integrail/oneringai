@@ -4,6 +4,8 @@
  * Defines the data structures for task-based autonomous agents.
  */
 
+import { DependencyCycleError } from '../errors/AIErrors.js';
+
 /**
  * Task status lifecycle
  */
@@ -16,6 +18,18 @@ export type TaskStatus =
   | 'failed'            // Failed after max retries
   | 'skipped'           // Skipped (condition not met)
   | 'cancelled';        // Manually cancelled
+
+/**
+ * Terminal statuses - task will not progress further
+ */
+export const TERMINAL_TASK_STATUSES: TaskStatus[] = ['completed', 'failed', 'skipped', 'cancelled'];
+
+/**
+ * Check if a task status is terminal (task will not progress further)
+ */
+export function isTerminalStatus(status: TaskStatus): boolean {
+  return TERMINAL_TASK_STATUSES.includes(status);
+}
 
 /**
  * Plan status
@@ -99,6 +113,101 @@ export interface TaskExecution {
 }
 
 /**
+ * Task completion validation settings
+ *
+ * Used to verify that a task actually achieved its goal before marking it complete.
+ * Supports multiple validation approaches:
+ * - Programmatic checks (memory keys, hooks)
+ * - LLM self-reflection with completeness scoring
+ * - Natural language criteria evaluation
+ */
+export interface TaskValidation {
+  /**
+   * Natural language completion criteria.
+   * These are evaluated by LLM self-reflection to determine if the task is complete.
+   * Examples:
+   * - "The response contains at least 3 specific examples"
+   * - "User's email has been validated and stored in memory"
+   * - "All requested data fields are present in the output"
+   *
+   * This is the RECOMMENDED approach for flexible, intelligent validation.
+   */
+  completionCriteria?: string[];
+
+  /**
+   * Minimum completeness score (0-100) to consider task successful.
+   * LLM self-reflection returns a score; if below this threshold:
+   * - If requireUserApproval is set, ask user
+   * - Otherwise, follow the mode setting (strict = fail, warn = continue)
+   * Default: 80
+   */
+  minCompletionScore?: number;
+
+  /**
+   * When to require user approval:
+   * - 'never': Never ask user, use automated decision (default)
+   * - 'uncertain': Ask user when score is between minCompletionScore and minCompletionScore + 15
+   * - 'always': Always ask user to confirm task completion
+   */
+  requireUserApproval?: 'never' | 'uncertain' | 'always';
+
+  /**
+   * Memory keys that must exist after task completion.
+   * If the task should store data in memory, list the required keys here.
+   * This is a hard requirement checked BEFORE LLM reflection.
+   */
+  requiredMemoryKeys?: string[];
+
+  /**
+   * Custom validation function name (registered via validateTask hook).
+   * The hook will be called with this identifier to dispatch to the right validator.
+   * Runs AFTER LLM reflection, can override the result.
+   */
+  customValidator?: string;
+
+  /**
+   * Validation mode:
+   * - 'strict': Validation failure marks task as failed (default)
+   * - 'warn': Validation failure logs warning but task still completes
+   */
+  mode?: 'strict' | 'warn';
+
+  /**
+   * Skip LLM self-reflection validation.
+   * Set to true if you only want programmatic validation (memory keys, hooks).
+   * Default: false (reflection is enabled when completionCriteria is set)
+   */
+  skipReflection?: boolean;
+}
+
+/**
+ * Result of task validation (returned by LLM reflection)
+ */
+export interface TaskValidationResult {
+  /** Whether the task is considered complete */
+  isComplete: boolean;
+
+  /** Completeness score from 0-100 */
+  completionScore: number;
+
+  /** LLM's explanation of why the task is/isn't complete */
+  explanation: string;
+
+  /** Per-criterion evaluation results */
+  criteriaResults?: Array<{
+    criterion: string;
+    met: boolean;
+    evidence?: string;
+  }>;
+
+  /** Whether user approval is needed */
+  requiresUserApproval: boolean;
+
+  /** Reason for requiring user approval */
+  approvalReason?: string;
+}
+
+/**
  * A single unit of work
  */
 export interface Task {
@@ -119,6 +228,9 @@ export interface Task {
   /** Execution settings */
   execution?: TaskExecution;
 
+  /** Completion validation settings */
+  validation?: TaskValidation;
+
   /** Optional expected output description */
   expectedOutput?: string;
 
@@ -127,6 +239,10 @@ export interface Task {
     success: boolean;
     output?: unknown;
     error?: string;
+    /** Validation score (0-100) if validation was performed */
+    validationScore?: number;
+    /** Explanation of validation result */
+    validationExplanation?: string;
   };
 
   /** Timestamps */
@@ -154,6 +270,7 @@ export interface TaskInput {
   externalDependency?: ExternalDependency;
   condition?: TaskCondition;
   execution?: TaskExecution;
+  validation?: TaskValidation;
   expectedOutput?: string;
   maxAttempts?: number;
   metadata?: Record<string, unknown>;
@@ -216,6 +333,8 @@ export interface PlanInput {
   concurrency?: PlanConcurrency;
   allowDynamicTasks?: boolean;
   metadata?: Record<string, unknown>;
+  /** Skip dependency cycle detection (default: false) */
+  skipCycleCheck?: boolean;
 }
 
 /**
@@ -243,6 +362,7 @@ export function createTask(input: TaskInput): Task {
     externalDependency: input.externalDependency,
     condition: input.condition,
     execution: input.execution,
+    validation: input.validation,
     expectedOutput: input.expectedOutput,
     attempts: 0,
     maxAttempts: input.maxAttempts ?? 3,
@@ -254,6 +374,7 @@ export function createTask(input: TaskInput): Task {
 
 /**
  * Create a plan with tasks
+ * @throws {DependencyCycleError} If circular dependencies detected (unless skipCycleCheck is true)
  */
 export function createPlan(input: PlanInput): Plan {
   const now = Date.now();
@@ -287,6 +408,19 @@ export function createPlan(input: PlanInput): Plan {
         }
         return resolvedId;
       });
+    }
+  }
+
+  // Check for dependency cycles (unless explicitly skipped)
+  if (!input.skipCycleCheck) {
+    const cycle = detectDependencyCycle(tasks);
+    if (cycle) {
+      // Convert task IDs to names for better error message
+      const cycleNames = cycle.map((taskId) => {
+        const task = tasks.find((t) => t.id === taskId);
+        return task ? task.name : taskId;
+      });
+      throw new DependencyCycleError(cycleNames, id);
     }
   }
 
@@ -509,4 +643,65 @@ export function resolveDependencies(taskInputs: TaskInput[], tasks: Task[]): voi
       });
     }
   }
+}
+
+/**
+ * Detect dependency cycles in tasks using depth-first search
+ * @param tasks Array of tasks with resolved dependencies (IDs, not names)
+ * @returns Array of task IDs forming the cycle (e.g., ['A', 'B', 'C', 'A']), or null if no cycle
+ */
+export function detectDependencyCycle(tasks: Task[]): string[] | null {
+  const visited = new Set<string>();
+  const recStack = new Set<string>();
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
+  /**
+   * DFS to detect back edges (cycles)
+   * @param taskId Current task being visited
+   * @param path Path from root to current node
+   * @returns Cycle path if found, null otherwise
+   */
+  function dfs(taskId: string, path: string[]): string[] | null {
+    // If taskId is in recursion stack, we found a cycle
+    if (recStack.has(taskId)) {
+      const cycleStart = path.indexOf(taskId);
+      return [...path.slice(cycleStart), taskId];
+    }
+
+    // If already fully visited, no cycle through this node
+    if (visited.has(taskId)) {
+      return null;
+    }
+
+    // Mark as being visited (in current DFS path)
+    visited.add(taskId);
+    recStack.add(taskId);
+
+    // Visit all dependencies (edges go from task to its dependencies)
+    const task = taskMap.get(taskId);
+    if (task) {
+      for (const depId of task.dependsOn) {
+        const cycle = dfs(depId, [...path, taskId]);
+        if (cycle) {
+          return cycle;
+        }
+      }
+    }
+
+    // Done with this node, remove from recursion stack
+    recStack.delete(taskId);
+    return null;
+  }
+
+  // Start DFS from each unvisited node
+  for (const task of tasks) {
+    if (!visited.has(task.id)) {
+      const cycle = dfs(task.id, []);
+      if (cycle) {
+        return cycle;
+      }
+    }
+  }
+
+  return null;
 }

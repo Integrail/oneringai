@@ -4,9 +4,11 @@
 
 import EventEmitter from 'eventemitter3';
 import { Agent } from '../../core/Agent.js';
-import { Plan, Task, updateTaskStatus, evaluateCondition, getNextExecutableTasks } from '../../domain/entities/Task.js';
+import { Plan, Task, TaskValidationResult, updateTaskStatus, evaluateCondition, getNextExecutableTasks } from '../../domain/entities/Task.js';
+import type { StaleEntryInfo, TaskStatusForMemory } from '../../domain/entities/Memory.js';
 import { AgentState } from '../../domain/entities/AgentState.js';
 import { calculateCost } from '../../domain/entities/Model.js';
+import { TaskTimeoutError, TaskValidationError } from '../../domain/errors/AIErrors.js';
 import { WorkingMemory } from './WorkingMemory.js';
 import { ContextManager } from './ContextManager.js';
 import { IdempotencyCache } from './IdempotencyCache.js';
@@ -14,6 +16,10 @@ import { HistoryManager } from './HistoryManager.js';
 import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { CheckpointManager } from './CheckpointManager.js';
 import type { TaskAgentHooks, TaskContext, ErrorContext } from './TaskAgent.js';
+import { extractJSON, extractNumber } from '../../utils/jsonExtractor.js';
+
+/** Default task timeout: 5 minutes */
+const DEFAULT_TASK_TIMEOUT_MS = 300000;
 
 export interface PlanExecutorConfig {
   maxIterations: number;
@@ -25,7 +31,11 @@ export interface PlanExecutorEvents {
   'task:complete': { task: Task; result: any };
   'task:failed': { task: Task; error: Error };
   'task:skipped': { task: Task; reason: string };
+  'task:timeout': { task: Task; timeoutMs: number };
+  'task:validation_failed': { task: Task; validation: TaskValidationResult };
+  'task:validation_uncertain': { task: Task; validation: TaskValidationResult };
   'task:waiting_external': { task: Task };
+  'memory:stale_entries': { entries: StaleEntryInfo[]; taskId: string };
   'llm:call': { iteration: number };
   'tool:call': { toolName: string; args: any };
   'tool:result': { toolName: string; result: any };
@@ -93,6 +103,36 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     this.hooks = hooks;
     this.config = config;
     this.abortController = new AbortController();
+  }
+
+  /**
+   * Build a map of task states for memory priority calculation
+   */
+  private buildTaskStatesMap(plan: Plan): Map<string, TaskStatusForMemory> {
+    const taskStates = new Map<string, TaskStatusForMemory>();
+    for (const task of plan.tasks) {
+      // Map TaskStatus to TaskStatusForMemory (they're compatible for terminal states)
+      const status = task.status as TaskStatusForMemory;
+      if (['pending', 'in_progress', 'completed', 'failed', 'skipped', 'cancelled'].includes(status)) {
+        taskStates.set(task.id, status);
+      } else {
+        // Map other statuses to pending for memory priority purposes
+        taskStates.set(task.id, 'pending');
+      }
+    }
+    return taskStates;
+  }
+
+  /**
+   * Notify memory about task completion and detect stale entries
+   */
+  private async notifyMemoryOfTaskCompletion(plan: Plan, taskId: string): Promise<void> {
+    const taskStates = this.buildTaskStatesMap(plan);
+    const staleEntries = await this.memory.onTaskComplete(taskId, taskStates);
+
+    if (staleEntries.length > 0) {
+      this.emit('memory:stale_entries', { entries: staleEntries, taskId });
+    }
   }
 
   /**
@@ -164,10 +204,23 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
   }
 
   /**
-   * Execute a single task
+   * Get the timeout for a task (per-task override or config default)
+   */
+  private getTaskTimeout(task: Task): number {
+    // Check for per-task override in metadata
+    const perTaskTimeout = task.metadata?.timeoutMs;
+    if (typeof perTaskTimeout === 'number' && perTaskTimeout > 0) {
+      return perTaskTimeout;
+    }
+    // Use config timeout or default
+    return this.config.taskTimeout ?? DEFAULT_TASK_TIMEOUT_MS;
+  }
+
+  /**
+   * Execute a single task with timeout support
    */
   private async executeTask(plan: Plan, task: Task): Promise<void> {
-    // Check condition if present
+    // Check condition if present (before timeout wrapper - fast check)
     if (task.condition) {
       const conditionMet = await evaluateCondition(task.condition, {
         get: (key: string) => this.memory.retrieve(key),
@@ -189,7 +242,7 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
       }
     }
 
-    // Call beforeTask hook
+    // Call beforeTask hook (before timeout wrapper - user control)
     if (this.hooks?.beforeTask) {
       const taskContext: TaskContext = {
         taskId: task.id,
@@ -209,101 +262,19 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     Object.assign(task, updatedTask);
     this.emit('task:start', { task });
 
+    // Get timeout for this task
+    const timeoutMs = this.getTaskTimeout(task);
+
     try {
-      // Build task prompt
-      const taskPrompt = this.buildTaskPrompt(plan, task);
-
-      // Prepare context (check for compaction needs)
-      await this.contextManager.prepareContext(
-        {
-          systemPrompt: this.buildSystemPrompt(plan),
-          instructions: '',
-          memoryIndex: await this.memory.formatIndex(),
-          conversationHistory: this.historyManager.getRecentMessages().map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-          currentInput: taskPrompt,
-        },
-        this.memory as any,
-        this.historyManager
-      );
-
-      // Add task prompt to history
-      this.historyManager.addMessage('user', taskPrompt);
-
-      this.emit('llm:call', { iteration: task.attempts });
-
-      // Call beforeLLMCall hook
-      let messages: any[] = [{ role: 'user', content: taskPrompt }];
-      if (this.hooks?.beforeLLMCall) {
-        messages = await this.hooks.beforeLLMCall(messages, {
-          model: this.agent.model,
-          temperature: 0.7, // Default temperature
-        });
-      }
-
-      // Call LLM through the agent (tools already wrapped with cache in TaskAgent)
-      const response = await this.agent.run(taskPrompt);
-
-      // Track metrics from response
-      if (response.usage) {
-        this.currentMetrics.totalLLMCalls++;
-        this.currentMetrics.totalTokensUsed += response.usage.total_tokens || 0;
-
-        // Calculate cost if model info available
-        if (this.agent.model && response.usage.input_tokens && response.usage.output_tokens) {
-          const cost = calculateCost(this.agent.model, response.usage.input_tokens, response.usage.output_tokens);
-          if (cost !== null) {
-            this.currentMetrics.totalCost += cost;
-          }
-        }
-      }
-
-      // Call afterLLMCall hook
-      if (this.hooks?.afterLLMCall) {
-        await this.hooks.afterLLMCall(response);
-      }
-
-      // Checkpoint after LLM call
-      if (this.currentState) {
-        await this.checkpointManager.onLLMCall(this.currentState);
-      }
-
-      // Add response to history
-      this.historyManager.addMessage('assistant', response.output_text || '');
-
-      // Mark task as complete
-      const completedTask = updateTaskStatus(task, 'completed');
-      completedTask.result = {
-        success: true,
-        output: response.output_text,
-      };
-      Object.assign(task, completedTask);
-
-      this.emit('task:complete', { task, result: response });
-
-      // Call afterTask hook
-      if (this.hooks?.afterTask) {
-        await this.hooks.afterTask(task, {
-          success: true,
-          output: response.output_text,
-        });
-      }
-
-      // Check for external dependency
-      if (task.externalDependency) {
-        task.status = 'waiting_external';
-
-        // Checkpoint before external wait
-        if (this.currentState) {
-          await this.checkpointManager.checkpoint(this.currentState, 'before_external_wait');
-        }
-
-        await this.externalHandler.startWaiting(task);
-        this.emit('task:waiting_external', { task });
-      }
+      // Execute task with timeout
+      await this.executeTaskWithTimeout(plan, task, timeoutMs);
     } catch (error) {
+      // Check if this is a timeout error
+      if (error instanceof TaskTimeoutError) {
+        this.emit('task:timeout', { task, timeoutMs });
+        // Timeout errors still go through error handling (may retry)
+      }
+
       // Handle task failure
       const err = error instanceof Error ? error : new Error(String(error));
 
@@ -353,6 +324,169 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
   }
 
   /**
+   * Execute task core logic with timeout
+   */
+  private async executeTaskWithTimeout(plan: Plan, task: Task, timeoutMs: number): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      // Setup timeout
+      const timeoutId = setTimeout(() => {
+        reject(new TaskTimeoutError(task.id, task.name, timeoutMs));
+      }, timeoutMs);
+
+      // Execute the task core logic
+      this.executeTaskCore(plan, task)
+        .then(() => {
+          clearTimeout(timeoutId);
+          resolve();
+        })
+        .catch((error) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        });
+    });
+  }
+
+  /**
+   * Core task execution logic (called by executeTaskWithTimeout)
+   */
+  private async executeTaskCore(plan: Plan, task: Task): Promise<void> {
+    // Build task prompt
+    const taskPrompt = this.buildTaskPrompt(plan, task);
+
+    // Prepare context (check for compaction needs)
+    await this.contextManager.prepareContext(
+      {
+        systemPrompt: this.buildSystemPrompt(plan),
+        instructions: '',
+        memoryIndex: await this.memory.formatIndex(),
+        conversationHistory: this.historyManager.getRecentMessages().map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+        currentInput: taskPrompt,
+      },
+      this.memory as any,
+      this.historyManager
+    );
+
+    // Add task prompt to history
+    this.historyManager.addMessage('user', taskPrompt);
+
+    this.emit('llm:call', { iteration: task.attempts });
+
+    // Call beforeLLMCall hook
+    let messages: any[] = [{ role: 'user', content: taskPrompt }];
+    if (this.hooks?.beforeLLMCall) {
+      messages = await this.hooks.beforeLLMCall(messages, {
+        model: this.agent.model,
+        temperature: 0.7, // Default temperature
+      });
+    }
+
+    // Call LLM through the agent (tools already wrapped with cache in TaskAgent)
+    const response = await this.agent.run(taskPrompt);
+
+    // Track metrics from response
+    if (response.usage) {
+      this.currentMetrics.totalLLMCalls++;
+      this.currentMetrics.totalTokensUsed += response.usage.total_tokens || 0;
+
+      // Calculate cost if model info available
+      if (this.agent.model && response.usage.input_tokens && response.usage.output_tokens) {
+        const cost = calculateCost(this.agent.model, response.usage.input_tokens, response.usage.output_tokens);
+        if (cost !== null) {
+          this.currentMetrics.totalCost += cost;
+        }
+      }
+    }
+
+    // Call afterLLMCall hook
+    if (this.hooks?.afterLLMCall) {
+      await this.hooks.afterLLMCall(response);
+    }
+
+    // Checkpoint after LLM call
+    if (this.currentState) {
+      await this.checkpointManager.onLLMCall(this.currentState);
+    }
+
+    // Add response to history
+    this.historyManager.addMessage('assistant', response.output_text || '');
+
+    // Validate task completion (unless validation is disabled or not configured)
+    const validationResult = await this.validateTaskCompletion(task, response.output_text || '');
+
+    // Store validation result in task metadata
+    task.metadata = task.metadata || {};
+    task.metadata.validationResult = validationResult;
+
+    // Handle validation result
+    if (validationResult.requiresUserApproval) {
+      // Emit event for user decision - task stays in progress
+      this.emit('task:validation_uncertain', { task, validation: validationResult });
+
+      // If mode is 'strict', wait for user approval (task remains in_progress)
+      // The user can complete the task manually via completeTaskManually()
+      if (task.validation?.mode === 'strict') {
+        return; // Don't complete, wait for user input
+      }
+    }
+
+    if (!validationResult.isComplete) {
+      // Validation failed
+      if (task.validation?.mode === 'strict') {
+        // In strict mode, fail the task
+        this.emit('task:validation_failed', { task, validation: validationResult });
+        throw new TaskValidationError(
+          task.id,
+          task.name,
+          `Completion score ${validationResult.completionScore}% below threshold. ${validationResult.explanation}`
+        );
+      } else {
+        // In warn mode (default), log warning but complete the task
+        this.emit('task:validation_failed', { task, validation: validationResult });
+        // Continue to mark as complete with warning
+      }
+    }
+
+    // Mark task as complete
+    const completedTask = updateTaskStatus(task, 'completed');
+    completedTask.result = {
+      success: true,
+      output: response.output_text,
+      validationScore: validationResult.completionScore,
+      validationExplanation: validationResult.explanation,
+    };
+    Object.assign(task, completedTask);
+
+    this.emit('task:complete', { task, result: response });
+
+    // Notify memory of task completion to detect stale entries
+    await this.notifyMemoryOfTaskCompletion(plan, task.id);
+
+    // Call afterTask hook
+    if (this.hooks?.afterTask) {
+      await this.hooks.afterTask(task, {
+        success: true,
+        output: response.output_text,
+      });
+    }
+
+    // Check for external dependency
+    if (task.externalDependency) {
+      task.status = 'waiting_external';
+
+      // Checkpoint before external wait
+      if (this.currentState) {
+        await this.checkpointManager.checkpoint(this.currentState, 'before_external_wait');
+      }
+
+      await this.externalHandler.startWaiting(task);
+      this.emit('task:waiting_external', { task });
+    }
+  }
+
+  /**
    * Build system prompt for task execution
    */
   private buildSystemPrompt(plan: Plan): string {
@@ -395,6 +529,232 @@ ${plan.context ? `**Context:** ${plan.context}\n` : ''}
     prompt.push('Please complete this task using the available tools.');
 
     return prompt.join('\n');
+  }
+
+  /**
+   * Validate task completion using LLM self-reflection or custom hook
+   *
+   * @param task - The task to validate
+   * @param output - The LLM response output
+   * @returns TaskValidationResult with completion score and details
+   */
+  private async validateTaskCompletion(
+    task: Task,
+    output: string
+  ): Promise<TaskValidationResult> {
+    // If task has no validation config and skipReflection is not explicitly false,
+    // default to successful completion (backward compatibility)
+    if (!task.validation || task.validation.skipReflection) {
+      return {
+        isComplete: true,
+        completionScore: 100,
+        explanation: 'No validation configured, task marked complete',
+        requiresUserApproval: false,
+      };
+    }
+
+    // First, check if a custom validateTask hook is provided
+    if (this.hooks?.validateTask) {
+      const taskResult = { success: true, output };
+      const hookResult = await this.hooks.validateTask(task, taskResult, this.memory);
+
+      // Handle different return types from hook
+      if (typeof hookResult === 'boolean') {
+        return {
+          isComplete: hookResult,
+          completionScore: hookResult ? 100 : 0,
+          explanation: hookResult ? 'Validated by custom hook' : 'Rejected by custom hook',
+          requiresUserApproval: false,
+        };
+      } else if (typeof hookResult === 'string') {
+        return {
+          isComplete: false,
+          completionScore: 0,
+          explanation: hookResult,
+          requiresUserApproval: false,
+        };
+      } else {
+        // Full TaskValidationResult
+        return hookResult;
+      }
+    }
+
+    // Check required memory keys if specified
+    if (task.validation.requiredMemoryKeys && task.validation.requiredMemoryKeys.length > 0) {
+      const missingKeys: string[] = [];
+      for (const key of task.validation.requiredMemoryKeys) {
+        const value = await this.memory.retrieve(key);
+        if (value === undefined) {
+          missingKeys.push(key);
+        }
+      }
+      if (missingKeys.length > 0) {
+        return {
+          isComplete: false,
+          completionScore: 0,
+          explanation: `Required memory keys not found: ${missingKeys.join(', ')}`,
+          requiresUserApproval: false,
+        };
+      }
+    }
+
+    // If no completion criteria, skip LLM validation
+    if (!task.validation.completionCriteria || task.validation.completionCriteria.length === 0) {
+      return {
+        isComplete: true,
+        completionScore: 100,
+        explanation: 'No completion criteria specified, task marked complete',
+        requiresUserApproval: false,
+      };
+    }
+
+    // Use LLM self-reflection to validate task completion
+    const validationPrompt = this.buildValidationPrompt(task, output);
+
+    // Call LLM for validation (separate call from task execution)
+    this.emit('llm:call', { iteration: task.attempts });
+    const validationResponse = await this.agent.run(validationPrompt);
+
+    // Track metrics
+    if (validationResponse.usage) {
+      this.currentMetrics.totalLLMCalls++;
+      this.currentMetrics.totalTokensUsed += validationResponse.usage.total_tokens || 0;
+
+      if (this.agent.model && validationResponse.usage.input_tokens && validationResponse.usage.output_tokens) {
+        const cost = calculateCost(
+          this.agent.model,
+          validationResponse.usage.input_tokens,
+          validationResponse.usage.output_tokens
+        );
+        if (cost !== null) {
+          this.currentMetrics.totalCost += cost;
+        }
+      }
+    }
+
+    // Parse validation response
+    return this.parseValidationResponse(
+      task,
+      validationResponse.output_text || ''
+    );
+  }
+
+  /**
+   * Build prompt for LLM self-reflection validation
+   */
+  private buildValidationPrompt(task: Task, output: string): string {
+    const criteria = task.validation?.completionCriteria || [];
+    const minScore = task.validation?.minCompletionScore ?? 80;
+
+    return `You are a task completion validator. Your job is to evaluate whether a task was completed successfully.
+
+## Task Information
+**Task Name:** ${task.name}
+**Task Description:** ${task.description}
+${task.expectedOutput ? `**Expected Output:** ${task.expectedOutput}` : ''}
+
+## Completion Criteria
+The task is considered complete if it meets these criteria:
+${criteria.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+
+## Task Output
+The following was the output from executing the task:
+---
+${output}
+---
+
+## Your Evaluation
+Please evaluate the task completion and respond in the following JSON format:
+\`\`\`json
+{
+  "completionScore": <number 0-100>,
+  "isComplete": <true if score >= ${minScore}>,
+  "explanation": "<brief explanation of your evaluation>",
+  "criteriaResults": [
+    {
+      "criterion": "<criterion text>",
+      "met": <true/false>,
+      "evidence": "<brief evidence from output>"
+    }
+  ]
+}
+\`\`\`
+
+Be honest and thorough in your evaluation. A score of 100 means all criteria are fully met. A score below ${minScore} means the task needs more work.`;
+  }
+
+  /**
+   * Parse LLM validation response into TaskValidationResult
+   */
+  private parseValidationResponse(
+    task: Task,
+    responseText: string
+  ): TaskValidationResult {
+    const minScore = task.validation?.minCompletionScore ?? 80;
+    const requireApproval = task.validation?.requireUserApproval ?? 'never';
+
+    // Use extractJSON utility to handle markdown code blocks and inline JSON
+    interface ValidationResponse {
+      completionScore?: number;
+      isComplete?: boolean;
+      explanation?: string;
+      criteriaResults?: Array<{
+        criterion: string;
+        met: boolean;
+        evidence?: string;
+      }>;
+    }
+
+    const extractionResult = extractJSON<ValidationResponse>(responseText);
+
+    if (extractionResult.success && extractionResult.data) {
+      const parsed = extractionResult.data;
+
+      const completionScore = typeof parsed.completionScore === 'number'
+        ? Math.max(0, Math.min(100, parsed.completionScore))
+        : 0;
+
+      const isComplete = completionScore >= minScore;
+
+      // Determine if user approval is needed
+      let requiresUserApproval = false;
+      let approvalReason: string | undefined;
+
+      if (requireApproval === 'always') {
+        requiresUserApproval = true;
+        approvalReason = 'User approval required for all task completions';
+      } else if (requireApproval === 'uncertain') {
+        // Uncertain range: score is between 60% and minScore
+        const uncertainThreshold = Math.max(minScore - 20, 50);
+        if (completionScore >= uncertainThreshold && completionScore < minScore) {
+          requiresUserApproval = true;
+          approvalReason = `Completion score (${completionScore}%) is uncertain - below threshold but potentially acceptable`;
+        }
+      }
+
+      return {
+        isComplete,
+        completionScore,
+        explanation: parsed.explanation || 'No explanation provided',
+        criteriaResults: parsed.criteriaResults,
+        requiresUserApproval,
+        approvalReason,
+      };
+    }
+
+    // Failed to parse JSON - try to extract score from text using utility
+    const score = extractNumber(responseText, [
+      /(\d{1,3})%?\s*(?:complete|score)/i,
+      /(?:score|completion|rating)[:\s]+(\d{1,3})/i,
+    ], 50);
+
+    return {
+      isComplete: score >= minScore,
+      completionScore: score,
+      explanation: `Could not parse structured response. Estimated score: ${score}%`,
+      requiresUserApproval: requireApproval === 'always' || requireApproval === 'uncertain',
+      approvalReason: 'Could not parse validation response accurately',
+    };
   }
 
   /**

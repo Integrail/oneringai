@@ -335,7 +335,7 @@ await agent.start({
 ```
 
 **Features:**
-- 📝 **Working Memory** - Store and retrieve data across tasks
+- 📝 **Working Memory** - Store and retrieve data with priority-based eviction, task-aware scoping, and pinning
 - 🧠 **Context Management** - Automatic handling of context limits
 - ⏸️ **State Persistence** - Resume after crashes or long waits
 - 🔗 **External Dependencies** - Wait for webhooks, polling, manual input

@@ -1624,13 +1624,138 @@ await agent.start({
 ```
 
 **Features:**
-- **Working Memory** - Indexed key-value store with lazy loading
+- **Working Memory** - Indexed key-value store with priority-based eviction
 - **Context Management** - Automatic compaction with strategies
 - **Tool Idempotency** - Cache tool results to prevent duplicates
 - **State Persistence** - Resume after crashes
 - **External Dependencies** - Wait for webhooks, polling, manual input
 
 **See:** `USER_GUIDE.md` for complete TaskAgent documentation.
+
+## Working Memory
+
+### WorkingMemory (`src/capabilities/taskAgent/WorkingMemory.ts`)
+
+Indexed key-value memory store with priority-based eviction, task-aware scoping, and lazy loading.
+
+```typescript
+import { WorkingMemory, forTasks, forPlan } from '@oneringai/agents';
+
+// Create memory instance
+const memory = new WorkingMemory(storage, {
+  maxSizeBytes: 1024 * 1024,  // 1MB limit
+  softLimitPercent: 80,       // Warn at 80%
+});
+
+// Store with full options
+await memory.set('user.profile', 'User profile data', userData, {
+  scope: { type: 'task', taskIds: ['task-1', 'task-2'] },
+  priority: 'high',
+  pinned: false,
+});
+
+// Factory functions for common patterns
+const taskEntry = forTasks('temp', 'Temp data', value, ['task-1']);
+const planEntry = forPlan('config', 'Plan config', config);
+
+// Retrieve and delete
+const data = await memory.get('user.profile');
+await memory.delete('user.profile');
+
+// Update scope dynamically
+await memory.updateScope('key', { type: 'plan' });
+await memory.addTasksToScope('key', ['task-3']);
+
+// Eviction
+await memory.evict(5, 'lru');   // Evict 5 least-recently-used
+await memory.evict(5, 'size');  // Evict 5 largest entries
+
+// Cleanup
+memory.destroy();
+```
+
+### Memory Scopes
+
+```typescript
+// Simple scopes (for basic agents)
+type SimpleScope = 'session' | 'persistent';
+
+// Task-aware scopes (for TaskAgent)
+type TaskAwareScope =
+  | { type: 'session' }           // Cleared when agent ends
+  | { type: 'plan' }              // Kept for entire plan
+  | { type: 'persistent' }        // Never auto-cleaned
+  | { type: 'task'; taskIds: string[] }; // Cleaned when tasks complete
+```
+
+### Memory Priority
+
+Priority levels control eviction order (lowest priority evicted first):
+
+```typescript
+type MemoryPriority = 'low' | 'normal' | 'high' | 'critical';
+
+// Priority values (higher = harder to evict)
+// low: 1, normal: 2, high: 3, critical: 4
+```
+
+### Memory Tools (for LLM)
+
+The `memory_store` tool exposes all options to the LLM:
+
+```typescript
+// Tool parameters
+{
+  key: string;           // Required: namespaced key
+  description: string;   // Required: what the data contains
+  value: any;            // Required: the data to store
+  neededForTasks?: string[];  // Optional: task IDs that need this data
+  scope?: 'session' | 'plan' | 'persistent';  // Optional: lifecycle
+  priority?: 'low' | 'normal' | 'high' | 'critical';  // Optional: eviction priority
+  pinned?: boolean;      // Optional: never evict if true
+}
+```
+
+### Scope Utilities
+
+```typescript
+import {
+  scopeEquals,
+  scopeMatches,
+  isSimpleScope,
+  isTaskAwareScope,
+  calculateEntrySize,
+  isTerminalStatus,
+  isTerminalMemoryStatus,
+} from '@oneringai/agents';
+
+// Compare scopes (order-independent for taskIds)
+scopeEquals({ type: 'task', taskIds: ['a', 'b'] },
+            { type: 'task', taskIds: ['b', 'a'] }); // true
+
+// Match scope against filter (type-based matching)
+scopeMatches(entryScope, filterScope);
+
+// Type guards
+isSimpleScope('session');  // true
+isTaskAwareScope({ type: 'task', taskIds: [] });  // true
+
+// Calculate UTF-8 byte size
+const bytes = calculateEntrySize({ data: 'hello' });  // Correct for multi-byte chars
+```
+
+### Events
+
+```typescript
+memory.on('evicted', ({ keys, reason }) => {
+  console.log(`Evicted ${keys.length} entries (${reason})`);
+});
+
+// PlanExecutor emits stale entry notifications
+executor.on('memory:stale_entries', ({ entries, taskId }) => {
+  console.log(`${entries.length} entries became stale after task ${taskId}`);
+});
+```
 
 ## Tool Management (NEW)
 
@@ -2006,19 +2131,20 @@ These are handled internally and don't require manual implementation.
 15. `src/domain/entities/STTModel.ts` - STT model registry
 16. `src/domain/entities/ImageModel.ts` - Image model registry
 17. `src/domain/entities/VideoModel.ts` - Video model registry (6 models)
-18. `src/domain/entities/Services.ts` - External service definitions (35+ services)
-19. `src/tools/connector/ConnectorTools.ts` - Connector-based tools for external APIs
-20. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
-21. `src/capabilities/taskAgent/` - Task agent implementation
-22. `src/capabilities/universalAgent/` - Universal agent
-23. `src/capabilities/images/` - Image generation capability
-24. `src/capabilities/video/` - Video generation capability
-25. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
-26. `src/infrastructure/context/` - Context strategies, compactors, providers
-27. `src/infrastructure/storage/` - Session and data storage
+18. `src/domain/entities/Memory.ts` - Memory entities, scopes, priorities, utilities
+19. `src/domain/entities/Services.ts` - External service definitions (35+ services)
+20. `src/tools/connector/ConnectorTools.ts` - Connector-based tools for external APIs
+21. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
+22. `src/capabilities/taskAgent/` - Task agent implementation (WorkingMemory, PlanExecutor, etc.)
+23. `src/capabilities/universalAgent/` - Universal agent
+24. `src/capabilities/images/` - Image generation capability
+25. `src/capabilities/video/` - Video generation capability
+26. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
+27. `src/infrastructure/context/` - Context strategies, compactors, providers
+28. `src/infrastructure/storage/` - Session and data storage
 
 ---
 
 **Version**: 0.2.0
-**Last Updated**: 2026-01-26
+**Last Updated**: 2026-01-28
 **Architecture**: Connector-First (v2)

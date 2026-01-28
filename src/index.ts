@@ -118,6 +118,7 @@ export type {
   TaskResult,
   ErrorContext,
   WorkingMemoryEvents,
+  EvictionStrategy,
   IdempotencyCacheConfig,
   CacheStats,
   HistoryManagerConfig,
@@ -194,6 +195,8 @@ export type {
   TaskStatus,
   TaskCondition,
   TaskExecution,
+  TaskValidation,
+  TaskValidationResult,
   ExternalDependency,
   Plan,
   PlanInput,
@@ -201,15 +204,47 @@ export type {
   PlanConcurrency,
 } from './domain/entities/Task.js';
 
+// Task & Plan Utilities
+export {
+  createTask,
+  createPlan,
+  detectDependencyCycle,
+  canTaskExecute,
+  getNextExecutableTasks,
+  evaluateCondition,
+  updateTaskStatus,
+  isTaskBlocked,
+  getTaskDependencies,
+  resolveDependencies,
+  isTerminalStatus,
+  TERMINAL_TASK_STATUSES,
+} from './domain/entities/Task.js';
+
 // Memory Entities
 export type {
   MemoryEntry,
+  MemoryEntryInput,
   MemoryIndex,
   MemoryIndexEntry,
   MemoryScope,
+  MemoryPriority,
+  TaskAwareScope,
+  SimpleScope,
+  TaskStatusForMemory,
   WorkingMemoryConfig,
 } from './domain/entities/Memory.js';
-export { DEFAULT_MEMORY_CONFIG } from './domain/entities/Memory.js';
+export {
+  DEFAULT_MEMORY_CONFIG,
+  forTasks,
+  forPlan,
+  scopeEquals,
+  scopeMatches,
+  isSimpleScope,
+  isTaskAwareScope,
+  isTerminalMemoryStatus,
+  calculateEntrySize,
+  MEMORY_PRIORITY_VALUES,
+} from './domain/entities/Memory.js';
 
 // Agent State
 export type {
@@ -408,6 +443,10 @@ export {
   InvalidConfigError,
   InvalidToolArgumentsError,
   ProviderError,
+  // TaskAgent errors
+  DependencyCycleError,
+  TaskTimeoutError,
+  TaskValidationError,
 } from './domain/errors/AIErrors.js';
 
 // ============ Interfaces (for extensibility) ============
@@ -558,6 +597,8 @@ export type { MetricsCollector, MetricTags, MetricsCollectorType } from './infra
 export { MessageBuilder, createTextMessage, createMessageWithImages } from './utils/messageBuilder.js';
 export { readClipboardImage, hasClipboardImage } from './utils/clipboardImage.js';
 export type { ClipboardImageResult } from './utils/clipboardImage.js';
+export { extractJSON, extractJSONField, extractNumber } from './utils/jsonExtractor.js';
+export type { JSONExtractionResult } from './utils/jsonExtractor.js';
 
 // ============ Pre-built Tools ============
 export * as tools from './tools/index.js';
