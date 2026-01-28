@@ -2,7 +2,7 @@
  * ContextManager - manages context window size and compaction
  */
 
-import EventEmitter from 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
 
 /**
  * Context manager configuration

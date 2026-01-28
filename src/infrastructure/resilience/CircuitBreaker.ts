@@ -5,7 +5,7 @@
  * Works for any async operation (LLM calls, tool execution, etc.)
  */
 
-import EventEmitter from 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
 
 /**
  * Circuit breaker states

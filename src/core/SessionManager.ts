@@ -10,7 +10,7 @@
  * Works with Agent, TaskAgent, and UniversalAgent
  */
 
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'eventemitter3';
 import type { SerializedToolState } from './ToolManager.js';
 import type { SerializedApprovalState } from './permissions/types.js';
 import type { MemoryScope, MemoryPriority } from '../domain/entities/Memory.js';

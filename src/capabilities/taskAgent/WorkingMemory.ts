@@ -10,7 +10,7 @@
  * different eviction behaviors without changing the core WorkingMemory logic.
  */
 
-import EventEmitter from 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
 import { IMemoryStorage } from '../../domain/interfaces/IMemoryStorage.js';
 import { WorkingMemoryAccess } from '../../domain/interfaces/IToolContext.js';
 import type {

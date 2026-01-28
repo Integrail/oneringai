@@ -94,3 +94,11 @@ export type {
   PermissionManagerEvent,
 } from './permissions/types.js';
 export { APPROVAL_STATE_VERSION, DEFAULT_PERMISSION_CONFIG } from './permissions/types.js';
+
+// Error Handling
+export { ErrorHandler, globalErrorHandler } from './ErrorHandler.js';
+export type {
+  ErrorContext,
+  ErrorHandlerConfig,
+  ErrorHandlerEvents,
+} from './ErrorHandler.js';

@@ -349,6 +349,12 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
   async run(input: string | InputItem[]): Promise<AgentResponse> {
     assertNotDestroyed(this, 'run agent');
 
+    // Ensure any pending session load is complete before executing
+    if (this._pendingSessionLoad) {
+      await this._pendingSessionLoad;
+      this._pendingSessionLoad = null;
+    }
+
     const inputPreview = typeof input === 'string'
       ? input.substring(0, 100)
       : `${input.length} messages`;
@@ -429,6 +435,12 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
    */
   async *stream(input: string | InputItem[]): AsyncIterableIterator<StreamEvent> {
     assertNotDestroyed(this, 'stream from agent');
+
+    // Ensure any pending session load is complete before streaming
+    if (this._pendingSessionLoad) {
+      await this._pendingSessionLoad;
+      this._pendingSessionLoad = null;
+    }
 
     const inputPreview = typeof input === 'string'
       ? input.substring(0, 100)
@@ -631,6 +643,12 @@ export class Agent extends EventEmitter<AgenticLoopEvents> implements IDisposabl
    * @throws Error if session is not enabled
    */
   async saveSession(): Promise<void> {
+    // Ensure any pending session load is complete
+    if (this._pendingSessionLoad) {
+      await this._pendingSessionLoad;
+      this._pendingSessionLoad = null;
+    }
+
     if (!this._sessionManager || !this._session) {
       throw new Error('Session not enabled. Configure session in AgentConfig to use this feature.');
     }

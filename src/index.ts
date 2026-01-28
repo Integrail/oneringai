@@ -96,6 +96,14 @@ export type {
   SessionManagerEvent,
 } from './core/index.js';
 
+// ============ Error Handling ============
+export { ErrorHandler, globalErrorHandler } from './core/index.js';
+export type {
+  ErrorContext,
+  ErrorHandlerConfig,
+  ErrorHandlerEvents,
+} from './core/index.js';
+
 // ============ Task-Based Agents ============
 export {
   TaskAgent,
@@ -117,7 +125,7 @@ export type {
   PlanUpdateOptions,
   TaskContext,
   TaskResult,
-  ErrorContext,
+  ErrorContext as TaskAgentErrorContext,
   WorkingMemoryEvents,
   EvictionStrategy,
   IdempotencyCacheConfig,

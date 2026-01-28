@@ -2,7 +2,7 @@
  * ExternalDependencyHandler - handles external dependencies
  */
 
-import EventEmitter from 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
 import { Task } from '../../domain/entities/Task.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import { calculateBackoff, BackoffConfig } from '../../infrastructure/resilience/BackoffStrategy.js';

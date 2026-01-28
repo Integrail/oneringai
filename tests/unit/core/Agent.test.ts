@@ -752,4 +752,174 @@ describe('Agent', () => {
       expect(agent).toBeDefined();
     });
   });
+
+  describe('Session Loading Race Condition', () => {
+    it('should wait for session load before run()', async () => {
+      // Create a mock storage that simulates slow loading
+      let resolveLoad: () => void;
+      const loadPromise = new Promise<void>((resolve) => {
+        resolveLoad = resolve;
+      });
+
+      const mockStorage = {
+        save: vi.fn().mockResolvedValue(undefined),
+        load: vi.fn().mockImplementation(async () => {
+          await loadPromise;
+          return {
+            id: 'test-session',
+            agentType: 'agent',
+            createdAt: Date.now(),
+            lastAccessedAt: Date.now(),
+            metadata: { name: 'Test' },
+            history: { messages: [], summaries: [] },
+            toolState: { enabled: {}, namespaces: {}, priorities: {}, permissions: {} },
+            custom: {},
+            metrics: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
+          };
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        exists: vi.fn().mockResolvedValue(true),
+        list: vi.fn().mockResolvedValue([]),
+      };
+
+      // Mock response
+      mockGenerate.mockResolvedValue({
+        output_text: 'Hello!',
+        output: [],
+        usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+      });
+
+      const agent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+        session: {
+          storage: mockStorage,
+          id: 'test-session', // Resume existing session
+        },
+      });
+
+      // Start run immediately (before session loads)
+      const runPromise = agent.run('Hello');
+
+      // Verify load was called
+      expect(mockStorage.load).toHaveBeenCalledWith('test-session');
+
+      // Resolve the load after a delay
+      await new Promise((r) => setTimeout(r, 10));
+      resolveLoad!();
+
+      // Run should complete successfully
+      const response = await runPromise;
+      expect(response.output_text).toBe('Hello!');
+    });
+
+    it('should wait for session load before stream()', async () => {
+      let resolveLoad: () => void;
+      const loadPromise = new Promise<void>((resolve) => {
+        resolveLoad = resolve;
+      });
+
+      const mockStorage = {
+        save: vi.fn().mockResolvedValue(undefined),
+        load: vi.fn().mockImplementation(async () => {
+          await loadPromise;
+          return {
+            id: 'test-session',
+            agentType: 'agent',
+            createdAt: Date.now(),
+            lastAccessedAt: Date.now(),
+            metadata: { name: 'Test' },
+            history: { messages: [], summaries: [] },
+            toolState: { enabled: {}, namespaces: {}, priorities: {}, permissions: {} },
+            custom: {},
+            metrics: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
+          };
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        exists: vi.fn().mockResolvedValue(true),
+        list: vi.fn().mockResolvedValue([]),
+      };
+
+      // Mock streaming response
+      async function* mockStream() {
+        yield { type: 'text_delta', delta: 'Hello' };
+        yield { type: 'done' };
+      }
+      mockStreamGenerate.mockReturnValue(mockStream());
+
+      const agent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+        session: {
+          storage: mockStorage,
+          id: 'test-session',
+        },
+      });
+
+      // Start stream immediately
+      const streamIterator = agent.stream('Hello');
+
+      // Verify load was called
+      expect(mockStorage.load).toHaveBeenCalledWith('test-session');
+
+      // Resolve the load
+      await new Promise((r) => setTimeout(r, 10));
+      resolveLoad!();
+
+      // Stream should work
+      const events = [];
+      for await (const event of streamIterator) {
+        events.push(event);
+      }
+      expect(events.length).toBeGreaterThan(0);
+    });
+
+    it('should wait for session load before saveSession()', async () => {
+      let resolveLoad: () => void;
+      const loadPromise = new Promise<void>((resolve) => {
+        resolveLoad = resolve;
+      });
+
+      const mockStorage = {
+        save: vi.fn().mockResolvedValue(undefined),
+        load: vi.fn().mockImplementation(async () => {
+          await loadPromise;
+          return {
+            id: 'test-session',
+            agentType: 'agent',
+            createdAt: Date.now(),
+            lastAccessedAt: Date.now(),
+            metadata: { name: 'Test' },
+            history: { messages: [], summaries: [] },
+            toolState: { enabled: {}, namespaces: {}, priorities: {}, permissions: {} },
+            custom: {},
+            metrics: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
+          };
+        }),
+        delete: vi.fn().mockResolvedValue(undefined),
+        exists: vi.fn().mockResolvedValue(true),
+        list: vi.fn().mockResolvedValue([]),
+      };
+
+      const agent = Agent.create({
+        connector: 'test-openai',
+        model: 'gpt-4',
+        session: {
+          storage: mockStorage,
+          id: 'test-session',
+        },
+      });
+
+      // Start save immediately
+      const savePromise = agent.saveSession();
+
+      // Resolve the load
+      await new Promise((r) => setTimeout(r, 10));
+      resolveLoad!();
+
+      // Save should complete without error
+      await expect(savePromise).resolves.toBeUndefined();
+      expect(mockStorage.save).toHaveBeenCalled();
+    });
+  });
 });

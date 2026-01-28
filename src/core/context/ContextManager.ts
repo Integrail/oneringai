@@ -2,7 +2,7 @@
  * ContextManager - Universal context management with strategy support
  */
 
-import EventEmitter from 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
 import type {
   IContextProvider,
   ITokenEstimator,

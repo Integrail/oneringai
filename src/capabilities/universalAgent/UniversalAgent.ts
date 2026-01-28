@@ -9,7 +9,7 @@
  * - Dynamic tools: Enable/disable tools at runtime
  */
 
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'eventemitter3';
 import { Connector } from '../../core/Connector.js';
 import { Agent } from '../../core/Agent.js';
 import { ToolManager } from '../../core/ToolManager.js';

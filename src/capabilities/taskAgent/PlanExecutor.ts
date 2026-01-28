@@ -2,7 +2,7 @@
  * PlanExecutor - executes plans with LLM integration
  */
 
-import EventEmitter from 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
 import { Agent } from '../../core/Agent.js';
 import { Plan, Task, TaskValidationResult, updateTaskStatus, evaluateCondition, getNextExecutableTasks } from '../../domain/entities/Task.js';
 import type { StaleEntryInfo, TaskStatusForMemory } from '../../domain/entities/Memory.js';

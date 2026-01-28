@@ -11,7 +11,7 @@
  * Backward compatible: Works with existing ToolFunction interface
  */
 
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'eventemitter3';
 import type { ToolFunction, ToolPermissionConfig } from '../domain/entities/Tool.js';
 
 // ============================================================================

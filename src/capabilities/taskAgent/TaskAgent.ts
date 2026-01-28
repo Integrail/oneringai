@@ -2,7 +2,7 @@
  * TaskAgent - autonomous task-based agent
  */
 
-import EventEmitter from 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
 import { Connector } from '../../core/Connector.js';
 import { Agent } from '../../core/Agent.js';
 import { ToolManager } from '../../core/ToolManager.js';

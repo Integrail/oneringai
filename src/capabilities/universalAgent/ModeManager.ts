@@ -7,7 +7,7 @@
  * - executing: Running through a plan
  */
 
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'eventemitter3';
 import type { Plan } from '../../domain/entities/Task.js';
 import type { AgentMode, ModeState, IntentAnalysis } from './types.js';
 

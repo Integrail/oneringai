@@ -5,7 +5,7 @@
  * This wraps the @modelcontextprotocol/sdk Client class.
  */
 
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'eventemitter3';
 import type {
   MCPTool,
   MCPToolResult,
