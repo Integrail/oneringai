@@ -1514,6 +1514,8 @@ await agent.triggerExternal('approval-123', { approved: true, managerName: 'Alic
 
 #### Polling
 
+Polling uses exponential backoff to reduce load on external services:
+
 ```typescript
 {
   name: 'wait_for_job',
@@ -1523,13 +1525,20 @@ await agent.triggerExternal('approval-123', { approved: true, managerName: 'Alic
     pollConfig: {
       toolName: 'check_job_status',
       toolArgs: { jobId: 'job-456' },
-      intervalMs: 30000,  // Poll every 30 seconds
-      maxAttempts: 60,    // Max 30 minutes
+      intervalMs: 30000,  // Initial interval (30 seconds)
+      maxAttempts: 60,    // Max attempts before timeout
     },
     state: 'waiting',
   },
 }
 ```
+
+**Exponential Backoff Behavior:**
+- First poll at `intervalMs`
+- Subsequent polls increase delay with exponential backoff
+- Maximum delay capped at `4 × intervalMs` (e.g., 2 minutes for 30s interval)
+- Small jitter (±10%) added to prevent thundering herd
+- Polling can be cancelled mid-wait via `stopWaiting()`
 
 #### Manual Input
 
@@ -1565,6 +1574,59 @@ await agent.completeTaskManually(taskId, {
 }
 ```
 
+### Plan Updates
+
+Dynamically modify plans during execution with safety validations:
+
+```typescript
+import { PlanUpdateOptions } from '@oneringai/agents';
+
+// Update plan with validation options
+await agent.updatePlan({
+  addTasks: [
+    { name: 'new_task', description: 'Newly added task' },
+  ],
+  removeTasks: ['old_task'],
+  updateTasks: [
+    { id: 'existing_task', description: 'Updated description' },
+  ],
+}, {
+  allowRemoveActiveTasks: false,  // Default: false - throws if removing in_progress tasks
+  validateCycles: true,           // Default: true - throws if update creates dependency cycle
+});
+```
+
+**PlanUpdateOptions:**
+
+```typescript
+interface PlanUpdateOptions {
+  /** Allow removing in_progress tasks. Default: false */
+  allowRemoveActiveTasks?: boolean;
+
+  /** Validate no dependency cycles after update. Default: true */
+  validateCycles?: boolean;
+}
+```
+
+**Safety Features:**
+- **Active task protection** - Cannot remove tasks that are currently `in_progress` unless explicitly allowed
+- **Cycle detection** - Updates that would create dependency cycles are rejected
+- **Atomic updates** - Either all changes succeed or none are applied
+
+```typescript
+// This throws: "Cannot remove active tasks: processing_task"
+await agent.updatePlan({
+  removeTasks: ['processing_task'],  // Task is in_progress
+});
+
+// Explicitly allow it
+await agent.updatePlan({
+  removeTasks: ['processing_task'],
+}, {
+  allowRemoveActiveTasks: true,
+});
+```
+
 ### Tool Idempotency
 
 Prevent duplicate side effects when tools are called multiple times:
@@ -1572,7 +1634,7 @@ Prevent duplicate side effects when tools are called multiple times:
 ```typescript
 import { ToolFunction } from '@oneringai/agents';
 
-// Safe tool (naturally idempotent)
+// Cacheable tool (results can be cached)
 const getWeatherTool: ToolFunction = {
   definition: {
     type: 'function',
@@ -1592,11 +1654,11 @@ const getWeatherTool: ToolFunction = {
     return { temp: 72, location: args.location };
   },
   idempotency: {
-    safe: true, // GET requests, pure functions
+    cacheable: true, // Results can be cached based on arguments
   },
 };
 
-// Non-safe tool with caching
+// Non-cacheable tool with custom cache key
 const sendEmailTool: ToolFunction = {
   definition: {
     type: 'function',
@@ -1619,7 +1681,7 @@ const sendEmailTool: ToolFunction = {
     return { sent: true, messageId: 'msg-123' };
   },
   idempotency: {
-    safe: false,
+    cacheable: true,  // Enable caching
     keyFn: (args) => `email:${args.to}:${args.subject}`, // Custom cache key
     ttlMs: 3600000, // Cache for 1 hour
   },
@@ -1629,6 +1691,26 @@ const sendEmailTool: ToolFunction = {
 // - First call: Email sent
 // - Second call: Returns cached result, no duplicate email
 ```
+
+**Idempotency Options:**
+
+```typescript
+interface ToolIdempotency {
+  /** If true, tool results can be cached based on arguments. Default: false */
+  cacheable?: boolean;
+
+  /** @deprecated Use 'cacheable' instead. Will be removed in a future version. */
+  safe?: boolean;
+
+  /** Custom function to generate cache key from arguments */
+  keyFn?: (args: Record<string, unknown>) => string;
+
+  /** Time-to-live for cached results in milliseconds */
+  ttlMs?: number;
+}
+```
+
+> **Note:** The `safe` field is deprecated. Use `cacheable` instead. Both fields work, but `cacheable` takes precedence if both are specified.
 
 ### Persistence & Resume
 
@@ -1687,6 +1769,24 @@ await resumedAgent.triggerExternal('approval-123', { approved: true });
 
 // Agent continues from where it left off
 ```
+
+**Tool Validation on Resume:**
+
+When resuming, TaskAgent validates that provided tools match the saved state:
+
+```typescript
+const resumed = await TaskAgent.resume(agentId, {
+  storage,
+  tools: [toolA, toolB], // Different from saved state
+});
+
+// Console warnings if tools don't match:
+// [TaskAgent.resume] Warning: Missing tools from saved state: tool_c, tool_d.
+//   Tasks requiring these tools may fail.
+// [TaskAgent.resume] Info: New tools not in saved state: tool_b
+```
+
+Resume succeeds even with mismatched tools, but warnings help identify potential issues.
 
 ### Hooks
 
@@ -2218,6 +2318,8 @@ memory_delete({ key: 'user.profile' });
 // List all keys
 const index = memory_list();
 ```
+
+> **Note:** Memory tools require TaskAgent context. If called outside TaskAgent (e.g., in a regular Agent), they throw `ToolExecutionError` with message "Memory tools require TaskAgent context".
 
 #### Context Inspection Tools (TaskAgent only)
 

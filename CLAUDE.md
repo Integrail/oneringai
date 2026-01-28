@@ -1599,6 +1599,17 @@ contextManager.setStrategy('aggressive');
 - `rolling-window` - Fixed-size window, no compaction
 - `adaptive` - Learns and adapts based on usage
 
+**Token Estimation with Content Type:**
+
+The `estimateTokens` method supports content-type-aware estimation:
+
+```typescript
+// Estimate with content type for better accuracy
+contextManager.estimateTokens(codeString, 'code');    // ~3 chars/token
+contextManager.estimateTokens(proseText, 'prose');    // ~4 chars/token
+contextManager.estimateTokens(mixedContent, 'mixed'); // ~3.5 chars/token (default)
+```
+
 **See:** `USER_GUIDE.md` for complete documentation.
 
 ## Task Agents
@@ -1627,8 +1638,47 @@ await agent.start({
 - **Working Memory** - Indexed key-value store with priority-based eviction
 - **Context Management** - Automatic compaction with strategies
 - **Tool Idempotency** - Cache tool results to prevent duplicates
-- **State Persistence** - Resume after crashes
-- **External Dependencies** - Wait for webhooks, polling, manual input
+- **State Persistence** - Resume after crashes with tool validation
+- **External Dependencies** - Wait for webhooks, polling (with exponential backoff), manual input
+- **Plan Updates** - Dynamic plan modification with validation options
+
+### Plan Update Validation
+
+Update plans safely with validation options:
+
+```typescript
+export interface PlanUpdateOptions {
+  /** Allow removing in_progress tasks. Default: false */
+  allowRemoveActiveTasks?: boolean;
+  /** Validate no dependency cycles after update. Default: true */
+  validateCycles?: boolean;
+}
+
+// Update plan with safety checks
+await agent.updatePlan({
+  addTasks: [{ name: 'new_task', description: 'New task' }],
+  removeTasks: ['old_task'],
+}, {
+  allowRemoveActiveTasks: false,  // Throws if trying to remove active tasks
+  validateCycles: true,           // Throws if update creates dependency cycle
+});
+```
+
+### Resume Validation
+
+When resuming a TaskAgent, tool availability is validated:
+
+```typescript
+// Resume validates tool names
+const resumed = await TaskAgent.resume(agentId, {
+  storage,
+  tools: [weatherTool], // Warning logged if savedState had emailTool
+});
+
+// Console output:
+// [TaskAgent.resume] Warning: Missing tools from saved state: email_tool. Tasks requiring these tools may fail.
+// [TaskAgent.resume] Info: New tools not in saved state: new_tool
+```
 
 **See:** `USER_GUIDE.md` for complete TaskAgent documentation.
 
@@ -1714,6 +1764,15 @@ The `memory_store` tool exposes all options to the LLM:
   priority?: 'low' | 'normal' | 'high' | 'critical';  // Optional: eviction priority
   pinned?: boolean;      // Optional: never evict if true
 }
+```
+
+**Error Handling:** Memory tools throw `ToolExecutionError` when called without TaskAgent context:
+
+```typescript
+import { ToolExecutionError } from '@oneringai/agents';
+
+// Memory tools require TaskAgent context
+// Throws: ToolExecutionError('memory_store', 'Memory tools require TaskAgent context')
 ```
 
 ### Scope Utilities
