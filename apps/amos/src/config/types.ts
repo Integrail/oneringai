@@ -77,6 +77,9 @@ export interface AmosConfig {
     blockedCommands: string[];
     commandTimeout: number;
   };
+
+  // External tools settings (connector-dependent tools)
+  externalTools: ExternalToolsConfig;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -384,6 +387,50 @@ export interface MemoryEntryInfo {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// External Tools Configuration (connector-dependent tools like search, scrape)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Types of external tool providers that require API connectors
+ */
+export type ExternalProviderType = 'search' | 'scrape';
+
+/**
+ * Available search providers
+ */
+export type SearchProvider = 'serper' | 'brave' | 'tavily' | 'rapidapi';
+
+/**
+ * Available scrape providers
+ */
+export type ScrapeProvider = 'zenrows';
+
+/**
+ * Configuration for a specific external provider
+ */
+export interface ExternalProviderConfig {
+  /** The connector name to use (references a connector in data/connectors/) */
+  connectorName: string;
+  /** Whether this provider is enabled */
+  enabled: boolean;
+}
+
+/**
+ * External tools configuration
+ * Manages tools that require external API connectors
+ */
+export interface ExternalToolsConfig {
+  /** Global enable/disable for all external tools */
+  enabled: boolean;
+  /** Search provider configuration (webSearch tool) */
+  search: ExternalProviderConfig | null;
+  /** Scrape provider configuration (webScrape tool) */
+  scrape: ExternalProviderConfig | null;
+  /** webFetch is always available (no connector needed) - this flag controls if it's enabled */
+  webFetchEnabled: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Agent Response Types
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -534,5 +581,12 @@ export const DEFAULT_CONFIG: AmosConfig = {
     blockedDirectories: ['node_modules', '.git', 'dist', 'build'],
     blockedCommands: ['rm -rf /', 'mkfs', 'dd if=', ':(){:|:&};:'],
     commandTimeout: 30000,
+  },
+
+  externalTools: {
+    enabled: true,
+    search: null,      // No search provider configured by default
+    scrape: null,      // No scrape provider configured by default
+    webFetchEnabled: true, // webFetch is free and always available
   },
 };

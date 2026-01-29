@@ -125,7 +125,14 @@ describe('Memory Tools', () => {
         { name: 'John' },
         { scope: 'session', priority: undefined, pinned: undefined }
       );
-      expect(result).toEqual({ success: true, key: 'user.profile', scope: 'session' });
+      expect(result).toEqual({
+        success: true,
+        key: 'user.profile',
+        tier: 'none',
+        scope: 'session',
+        priority: 'normal',
+        derivedFrom: [],
+      });
     });
 
     it('should throw ToolExecutionError without context', async () => {
@@ -261,10 +268,11 @@ describe('Memory Tools', () => {
 
       expect(result).toEqual({
         entries: [
-          { key: 'user.profile', description: 'User profile data', priority: 'normal', pinned: false },
-          { key: 'order.items', description: 'Order items', priority: 'normal', pinned: false },
+          { key: 'user.profile', description: 'User profile data', priority: 'normal', tier: 'none', pinned: false },
+          { key: 'order.items', description: 'Order items', priority: 'normal', tier: 'none', pinned: false },
         ],
         count: 2,
+        tierFilter: 'all',
       });
     });
 
@@ -273,6 +281,7 @@ describe('Memory Tools', () => {
       expect(result).toEqual({
         entries: [],
         count: 0,
+        tierFilter: 'all',
       });
     });
 

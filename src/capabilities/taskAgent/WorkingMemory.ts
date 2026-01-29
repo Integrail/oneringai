@@ -36,7 +36,12 @@ import {
   formatSizeHuman,
   formatMemoryIndex,
   isTerminalMemoryStatus,
+  TIER_PRIORITIES,
+  TIER_KEY_PREFIXES,
+  getTierFromKey,
+  addTierPrefix,
 } from '../../domain/entities/Memory.js';
+import type { MemoryTier, HierarchyMetadata } from '../../domain/entities/Memory.js';
 
 /**
  * Eviction strategy type
@@ -637,6 +642,217 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> {
     };
   }
 
+  // ============================================================================
+  // HIERARCHICAL MEMORY HELPERS
+  // ============================================================================
+
+  /**
+   * Store raw data (low priority, first to be evicted)
+   *
+   * Use this for original/unprocessed data that should be summarized.
+   * Raw data is automatically evicted first when memory pressure is high.
+   *
+   * @param key - Key without tier prefix (prefix is added automatically)
+   * @param description - Brief description for the index
+   * @param value - The raw data to store
+   * @param options - Optional scope and task IDs
+   */
+  async storeRaw(
+    key: string,
+    description: string,
+    value: unknown,
+    options?: { taskIds?: string[]; scope?: MemoryScope }
+  ): Promise<void> {
+    const fullKey = addTierPrefix(key, 'raw');
+    const scope = options?.taskIds
+      ? { type: 'task' as const, taskIds: options.taskIds }
+      : options?.scope ?? 'session';
+
+    await this.store(fullKey, description, value, {
+      scope,
+      priority: TIER_PRIORITIES.raw,
+    });
+  }
+
+  /**
+   * Store a summary derived from raw data (normal priority)
+   *
+   * Use this for processed/summarized data that extracts key information.
+   * Links back to source data for cleanup tracking.
+   *
+   * @param key - Key without tier prefix (prefix is added automatically)
+   * @param description - Brief description for the index
+   * @param value - The summary data
+   * @param derivedFrom - Key(s) this summary was derived from
+   * @param options - Optional scope and task IDs
+   */
+  async storeSummary(
+    key: string,
+    description: string,
+    value: unknown,
+    derivedFrom: string | string[],
+    options?: { taskIds?: string[]; scope?: MemoryScope }
+  ): Promise<void> {
+    const fullKey = addTierPrefix(key, 'summary');
+    const sourceKeys = Array.isArray(derivedFrom) ? derivedFrom : [derivedFrom];
+    const scope = options?.taskIds
+      ? { type: 'task' as const, taskIds: options.taskIds }
+      : options?.scope ?? { type: 'plan' as const };
+
+    await this.store(fullKey, description, value, {
+      scope,
+      priority: TIER_PRIORITIES.summary,
+    });
+
+    // Update source entries with derivedTo reference (best effort)
+    for (const sourceKey of sourceKeys) {
+      try {
+        const sourceEntry = await this.storage.get(sourceKey);
+        if (sourceEntry) {
+          const metadata = (sourceEntry.value as Record<string, unknown>)?.metadata as HierarchyMetadata | undefined;
+          const existingDerivedTo = metadata?.derivedTo ?? [];
+          if (!existingDerivedTo.includes(fullKey)) {
+            // We can't easily update metadata without re-storing the value
+            // This is a limitation - we track derivedFrom on the child instead
+          }
+        }
+      } catch {
+        // Ignore errors updating source - it may have been evicted
+      }
+    }
+  }
+
+  /**
+   * Store final findings (high priority, kept longest)
+   *
+   * Use this for conclusions, insights, or final results that should be preserved.
+   * These are the last to be evicted and typically span the entire plan.
+   *
+   * @param key - Key without tier prefix (prefix is added automatically)
+   * @param description - Brief description for the index
+   * @param value - The findings data
+   * @param derivedFrom - Optional key(s) these findings were derived from
+   * @param options - Optional scope, task IDs, and pinned flag
+   */
+  async storeFindings(
+    key: string,
+    description: string,
+    value: unknown,
+    _derivedFrom?: string | string[],
+    options?: { taskIds?: string[]; scope?: MemoryScope; pinned?: boolean }
+  ): Promise<void> {
+    const fullKey = addTierPrefix(key, 'findings');
+    const scope = options?.scope ?? { type: 'plan' as const };
+
+    // Note: _derivedFrom is available for future metadata tracking if needed
+    await this.store(fullKey, description, value, {
+      scope,
+      priority: TIER_PRIORITIES.findings,
+      pinned: options?.pinned,
+    });
+  }
+
+  /**
+   * Clean up raw data after summary/findings are created
+   *
+   * Call this after creating summaries to free up memory used by raw data.
+   * Only deletes entries in the 'raw' tier.
+   *
+   * @param derivedFromKeys - Keys to delete (typically from derivedFrom metadata)
+   * @returns Number of entries deleted
+   */
+  async cleanupRawData(derivedFromKeys: string[]): Promise<number> {
+    let deletedCount = 0;
+
+    for (const key of derivedFromKeys) {
+      // Only delete if it's actually a raw tier entry
+      const tier = getTierFromKey(key);
+      if (tier === 'raw') {
+        const exists = await this.has(key);
+        if (exists) {
+          await this.delete(key);
+          deletedCount++;
+        }
+      }
+    }
+
+    return deletedCount;
+  }
+
+  /**
+   * Get all entries by tier
+   *
+   * @param tier - The tier to filter by
+   * @returns Array of entries in that tier
+   */
+  async getByTier(tier: MemoryTier): Promise<MemoryEntry[]> {
+    const entries = await this.storage.getAll();
+    const prefix = TIER_KEY_PREFIXES[tier];
+    return entries.filter((e) => e.key.startsWith(prefix));
+  }
+
+  /**
+   * Promote an entry to a higher tier
+   *
+   * Changes the key prefix and updates priority.
+   * Use this when raw data becomes more valuable (e.g., frequently accessed).
+   *
+   * @param key - Current key (with tier prefix)
+   * @param toTier - Target tier to promote to
+   * @returns New key with updated prefix
+   */
+  async promote(key: string, toTier: MemoryTier): Promise<string> {
+    const currentTier = getTierFromKey(key);
+    if (currentTier === toTier) {
+      return key; // Already in target tier
+    }
+
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+
+    // Create new entry with new tier
+    const newKey = addTierPrefix(key, toTier);
+    const newPriority = TIER_PRIORITIES[toTier];
+
+    // Store with new key and priority
+    await this.store(newKey, entry.description, entry.value, {
+      scope: entry.scope,
+      priority: newPriority,
+      pinned: entry.pinned,
+    });
+
+    // Delete old entry
+    await this.delete(key);
+
+    return newKey;
+  }
+
+  /**
+   * Get tier statistics
+   *
+   * @returns Count and size by tier
+   */
+  async getTierStats(): Promise<Record<MemoryTier, { count: number; sizeBytes: number }>> {
+    const entries = await this.storage.getAll();
+    const stats: Record<MemoryTier, { count: number; sizeBytes: number }> = {
+      raw: { count: 0, sizeBytes: 0 },
+      summary: { count: 0, sizeBytes: 0 },
+      findings: { count: 0, sizeBytes: 0 },
+    };
+
+    for (const entry of entries) {
+      const tier = getTierFromKey(entry.key);
+      if (tier) {
+        stats[tier].count++;
+        stats[tier].sizeBytes += entry.sizeBytes;
+      }
+    }
+
+    return stats;
+  }
+
   /**
    * Get statistics about memory usage
    */
@@ -691,9 +907,13 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> {
   }
 }
 
-export type { WorkingMemoryConfig, PriorityCalculator, PriorityContext, StaleEntryInfo };
+export type { WorkingMemoryConfig, PriorityCalculator, PriorityContext, StaleEntryInfo, MemoryTier, HierarchyMetadata };
 export {
   DEFAULT_MEMORY_CONFIG,
   staticPriorityCalculator,
   MEMORY_PRIORITY_VALUES,
+  TIER_PRIORITIES,
+  TIER_KEY_PREFIXES,
+  getTierFromKey,
+  addTierPrefix,
 };

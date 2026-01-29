@@ -1,6 +1,17 @@
 # AMOS - Advanced Multimodal Orchestration System
 
-A terminal-based agentic application powered by `@oneringai/agents`. Features runtime vendor/model switching, dynamic connector management, and extensible tools.
+A powerful terminal-based AI assistant powered by `@oneringai/agents`. Features multi-vendor support, runtime model switching, tool permissions, session management, and comprehensive context inspection.
+
+## Features
+
+- **Multi-Vendor Support** - OpenAI, Anthropic, Google, Groq, Mistral, and more
+- **Runtime Configuration** - Switch models, vendors, and prompts without restart
+- **Tool System** - Built-in developer tools + custom tool support
+- **Permission System** - Granular control over tool execution
+- **Session Management** - Save and resume conversations
+- **Context Inspection** - Monitor token usage and context budget
+- **Coding Agent Mode** - Autonomous coding with filesystem and shell access
+- **Extensible Commands** - Easy-to-add custom commands
 
 ## Quick Start
 
@@ -8,51 +19,86 @@ A terminal-based agentic application powered by `@oneringai/agents`. Features ru
 # Install dependencies
 npm install
 
-# Run in dev mode (logs to file)
+# Run in development mode
 npm run dev
 
-# Or with console logging
-npm run dev:console
+# Or production mode
+npm run start
 ```
 
-On first run, you'll be prompted to configure a connector (API key).
+On first run, you'll be prompted to configure an API key.
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/help` | Show help |
-| `/model [name]` | List or switch models |
-| `/vendor [name]` | List or switch vendors |
-| `/connector <sub>` | Manage connectors (add, edit, delete, generate) |
-| `/tool <sub>` | Manage tools (list, enable, disable) |
-| `/session <sub>` | Manage sessions (save, load, list) |
-| `/config` | View/edit configuration |
-| `/status` | Show current status |
-| `/clear` | Clear screen |
-| `/exit` | Exit |
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `/help` | | Show all commands |
+| `/model [name]` | `/m` | List or switch models |
+| `/vendor [name]` | | List or switch vendors |
+| `/connector <sub>` | | Manage API keys (add, edit, delete) |
+| `/prompt <sub>` | | Manage system prompts |
+| `/tool <sub>` | | Manage tools (list, enable, disable) |
+| `/context [sub]` | `/ctx` | Context inspection (budget, breakdown, memory) |
+| `/session <sub>` | | Session management (save, load, list) |
+| `/config [sub]` | | View/edit configuration |
+| `/status` | `/st` | Show current status |
+| `/history [n]` | `/hist` | Show conversation history |
+| `/clear` | `/cls` | Clear screen |
+| `/exit` | `/q` | Exit AMOS |
 
-## Scripts
+## Context Inspection
 
-```bash
-npm run dev          # Dev mode, logs to data/logs/amos.log
-npm run dev:verbose  # Dev mode with trace logging
-npm run dev:console  # Dev mode with console logging
-npm run build        # Build for production
-npm run start        # Run production build
+Monitor your context usage in real-time:
+
+```
+/context                 # Overview with utilization bar
+/context budget          # Detailed token budget
+/context breakdown       # Per-component token usage
+/context memory          # Working memory entries
 ```
 
-## Environment Variables
+Example output:
+```
+Context Overview
+────────────────────────────────────
+Utilization: ████████░░ 78% (warning)
+Tokens: 45,600 / 108,800 available
 
-| Variable | Description |
-|----------|-------------|
-| `AMOS_DATA_DIR` | Data directory (default: `./data`) |
-| `LOG_FILE` | Log file path |
-| `LOG_LEVEL` | `trace`, `debug`, `info`, `warn`, `error`, `silent` |
+Status: ⚠️  Warning - approaching limit
+Mode: 💬 interactive
+```
+
+## Coding Agent Mode
+
+Enable autonomous coding with full tool access:
+
+```
+/prompt use coding-agent
+```
+
+Features:
+- File system tools (read, write, edit, glob, grep)
+- Shell command execution
+- Git-aware workflow
+- Plan approval workflow
+
+## Prompt Templates
+
+Built-in prompts for different use cases:
+
+| Prompt | Description |
+|--------|-------------|
+| `default` | General helpful assistant |
+| `coding-assistant` | Expert coding assistant |
+| `coding-agent` | Autonomous coding agent |
+| `research-analyst` | Research and analysis |
+| `writing-editor` | Writing and editing |
+
+Use: `/prompt use coding-agent`
 
 ## Custom Tools
 
-Add `.js` files to `data/tools/`:
+Add tools to `data/tools/`:
 
 ```javascript
 // data/tools/my-tool.js
@@ -66,6 +112,7 @@ export default {
     },
   },
   execute: async (args) => ({ result: 'done' }),
+  describeCall: (args) => 'description for logging',
 };
 ```
 
@@ -75,12 +122,37 @@ Then run `/tool reload`.
 
 ```
 data/
-├── config.json      # App configuration
-├── connectors/      # Connector configs (API keys)
-├── sessions/        # Saved sessions
-├── tools/           # Custom tools
-└── logs/            # Log files (dev mode)
+├── config.json       # App configuration
+├── connectors/       # API key configurations
+├── sessions/         # Saved sessions
+├── tools/            # Custom tools
+├── prompts/          # System prompt templates
+└── logs/             # Log files (dev mode)
 ```
+
+## Scripts
+
+```bash
+npm run dev          # Development (logs to file)
+npm run dev:verbose  # Development with trace logging
+npm run dev:console  # Development with console logging
+npm run build        # Build for production
+npm run start        # Run production build
+npm run typecheck    # Type checking
+```
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AMOS_DATA_DIR` | Data directory | `./data` |
+| `LOG_FILE` | Log file path | `./data/logs/amos.log` |
+| `LOG_LEVEL` | `trace`, `debug`, `info`, `warn`, `error`, `silent` | `info` |
+
+## Documentation
+
+- **[User Guide](docs/USER_GUIDE.md)** - Comprehensive usage documentation
+- **[CLAUDE.md](CLAUDE.md)** - Developer documentation for AI assistants
 
 ## License
 

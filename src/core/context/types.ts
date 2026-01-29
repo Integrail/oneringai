@@ -157,6 +157,38 @@ export interface ITokenEstimator {
 }
 
 /**
+ * Hook context for beforeCompaction callback
+ */
+export interface CompactionHookContext {
+  /** Agent identifier (if available) */
+  agentId?: string;
+  /** Current context budget info */
+  currentBudget: ContextBudget;
+  /** Compaction strategy being used */
+  strategy: string;
+  /** Current context components (read-only summaries) */
+  components: ReadonlyArray<{
+    name: string;
+    priority: number;
+    compactable: boolean;
+  }>;
+  /** Estimated tokens to be freed */
+  estimatedTokensToFree: number;
+}
+
+/**
+ * Hooks for context management events
+ */
+export interface ContextManagerHooks {
+  /**
+   * Called before compaction occurs.
+   * Use this to save important data before it gets compacted.
+   * This is the last chance to preserve critical information.
+   */
+  beforeCompaction?: (context: CompactionHookContext) => Promise<void>;
+}
+
+/**
  * Abstract interface for compaction strategies
  */
 export interface IContextCompactor {

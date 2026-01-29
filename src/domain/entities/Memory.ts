@@ -120,6 +120,84 @@ export const MEMORY_PRIORITY_VALUES: Record<MemoryPriority, number> = {
 };
 
 // ============================================================================
+// MEMORY TIER SYSTEM (Hierarchical Memory)
+// ============================================================================
+
+/**
+ * Memory tier for hierarchical data management
+ *
+ * The tier system provides a structured approach to managing research/analysis data:
+ * - raw: Original data, low priority, first to be evicted
+ * - summary: Processed summaries, normal priority
+ * - findings: Final conclusions/insights, high priority, kept longest
+ *
+ * Workflow: raw → summary → findings (data gets more refined, priority increases)
+ */
+export type MemoryTier = 'raw' | 'summary' | 'findings';
+
+/**
+ * Default priorities for each tier
+ */
+export const TIER_PRIORITIES: Record<MemoryTier, MemoryPriority> = {
+  raw: 'low',
+  summary: 'normal',
+  findings: 'high',
+};
+
+/**
+ * Key prefixes for tiered data (used by helper methods)
+ */
+export const TIER_KEY_PREFIXES: Record<MemoryTier, string> = {
+  raw: 'raw.',
+  summary: 'summary.',
+  findings: 'findings.',
+};
+
+/**
+ * Hierarchy metadata for tracking data relationships
+ */
+export interface HierarchyMetadata {
+  /** Memory tier (raw, summary, or findings) */
+  tier: MemoryTier;
+  /** Keys this entry was derived from (e.g., findings derived from summaries) */
+  derivedFrom?: string[];
+  /** Keys derived from this entry (e.g., summaries derived from raw data) */
+  derivedTo?: string[];
+}
+
+/**
+ * Check if a key has a tier prefix
+ */
+export function getTierFromKey(key: string): MemoryTier | undefined {
+  if (key.startsWith(TIER_KEY_PREFIXES.raw)) return 'raw';
+  if (key.startsWith(TIER_KEY_PREFIXES.summary)) return 'summary';
+  if (key.startsWith(TIER_KEY_PREFIXES.findings)) return 'findings';
+  return undefined;
+}
+
+/**
+ * Strip tier prefix from key
+ */
+export function stripTierPrefix(key: string): string {
+  const tier = getTierFromKey(key);
+  if (!tier) return key;
+  return key.substring(TIER_KEY_PREFIXES[tier].length);
+}
+
+/**
+ * Add tier prefix to key (if not already present)
+ */
+export function addTierPrefix(key: string, tier: MemoryTier): string {
+  const existingTier = getTierFromKey(key);
+  if (existingTier) {
+    // Already has a tier prefix - replace it
+    const baseKey = stripTierPrefix(key);
+    return TIER_KEY_PREFIXES[tier] + baseKey;
+  }
+  return TIER_KEY_PREFIXES[tier] + key;
+}
+
+// ============================================================================
 // PRIORITY CALCULATOR (Strategy Pattern)
 // ============================================================================
 

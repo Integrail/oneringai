@@ -12,6 +12,7 @@ import type {
   ContextBudget,
   PreparedContext,
   IContextComponent,
+  ContextManagerHooks,
 } from './types.js';
 import { DEFAULT_CONTEXT_CONFIG } from './types.js';
 import { createStrategy as createStrategyFn } from './strategies/index.js';
@@ -41,13 +42,17 @@ export class ContextManager extends EventEmitter<ContextManagerEvents> {
   private compactors: IContextCompactor[];
   private strategy: IContextStrategy;
   private lastBudget?: ContextBudget;
+  private hooks: ContextManagerHooks;
+  private agentId?: string;
 
   constructor(
     provider: IContextProvider,
     config: Partial<ContextManagerConfig> = {},
     compactors: IContextCompactor[] = [],
     estimator?: ITokenEstimator,
-    strategy?: IContextStrategy
+    strategy?: IContextStrategy,
+    hooks?: ContextManagerHooks,
+    agentId?: string
   ) {
     super();
     this.provider = provider;
@@ -70,6 +75,24 @@ export class ContextManager extends EventEmitter<ContextManagerEvents> {
     } else {
       this.strategy = this.createStrategy(this.config.strategy || 'proactive');
     }
+
+    // Store hooks and agent ID
+    this.hooks = hooks ?? {};
+    this.agentId = agentId;
+  }
+
+  /**
+   * Set hooks at runtime
+   */
+  setHooks(hooks: ContextManagerHooks): void {
+    this.hooks = { ...this.hooks, ...hooks };
+  }
+
+  /**
+   * Set agent ID at runtime
+   */
+  setAgentId(agentId: string): void {
+    this.agentId = agentId;
   }
 
   /**
@@ -118,6 +141,36 @@ export class ContextManager extends EventEmitter<ContextManagerEvents> {
     components: IContextComponent[],
     budget: ContextBudget
   ): Promise<PreparedContext> {
+    // Calculate estimated tokens to free (target is compaction threshold)
+    const targetUtilization = this.config.compactionThreshold * 0.9; // Target below threshold
+    const targetTokens = Math.floor(
+      (budget.total - budget.reserved) * targetUtilization
+    );
+    const estimatedTokensToFree = Math.max(0, budget.used - targetTokens);
+
+    // Call beforeCompaction hook to give agent chance to save important data
+    if (this.hooks.beforeCompaction) {
+      try {
+        await this.hooks.beforeCompaction({
+          agentId: this.agentId,
+          currentBudget: budget,
+          strategy: this.strategy.name,
+          components: components.map((c) => ({
+            name: c.name,
+            priority: c.priority,
+            compactable: c.compactable,
+          })),
+          estimatedTokensToFree,
+        });
+      } catch (error) {
+        // Log but don't fail compaction
+        console.warn(
+          'beforeCompaction hook failed:',
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+    }
+
     this.emit('compacting', {
       reason: `Context at ${budget.utilizationPercent.toFixed(1)}%`,
       currentBudget: budget,

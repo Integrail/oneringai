@@ -77,6 +77,32 @@ export interface ToolExecutionResult {
 }
 
 /**
+ * Context passed to beforeCompaction hook
+ */
+export interface BeforeCompactionContext {
+  /** Agent identifier */
+  agentId: string;
+  /** Current context budget info */
+  currentBudget: {
+    total: number;
+    used: number;
+    available: number;
+    utilizationPercent: number;
+    status: 'ok' | 'warning' | 'critical';
+  };
+  /** Compaction strategy being used */
+  strategy: string;
+  /** Current context components (read-only) */
+  components: ReadonlyArray<{
+    name: string;
+    priority: number;
+    compactable: boolean;
+  }>;
+  /** Estimated tokens to be freed */
+  estimatedTokensToFree: number;
+}
+
+/**
  * Agent lifecycle hooks for customization.
  * These hooks allow external code to observe and modify agent behavior
  * at key points in the execution lifecycle.
@@ -109,6 +135,17 @@ export interface AgentLifecycleHooks {
    * @returns Promise that resolves when hook completes
    */
   beforeContextPrepare?: (agentId: string) => Promise<void>;
+
+  /**
+   * Called before context compaction occurs.
+   * Use this hook to save important data to working memory before it's compacted.
+   * This is your last chance to preserve critical information from tool outputs
+   * or conversation history that would otherwise be lost.
+   *
+   * @param context - Compaction context with budget info and components
+   * @returns Promise that resolves when hook completes
+   */
+  beforeCompaction?: (context: BeforeCompactionContext) => Promise<void>;
 
   /**
    * Called after context compaction occurs.
@@ -646,6 +683,29 @@ export abstract class BaseAgent<
           'beforeContextPrepare hook failed'
         );
         // Don't re-throw - allow context preparation to continue
+      }
+    }
+  }
+
+  /**
+   * Invoke beforeCompaction hook if defined.
+   * Call this before context compaction occurs.
+   * Gives the agent a chance to save important data to memory.
+   */
+  protected async invokeBeforeCompaction(context: BeforeCompactionContext): Promise<void> {
+    if (this._lifecycleHooks.beforeCompaction) {
+      try {
+        await this._lifecycleHooks.beforeCompaction(context);
+      } catch (error) {
+        this._logger.error(
+          {
+            error: (error as Error).message,
+            strategy: context.strategy,
+            estimatedTokensToFree: context.estimatedTokensToFree,
+          },
+          'beforeCompaction hook failed'
+        );
+        // Don't re-throw - allow compaction to continue
       }
     }
   }

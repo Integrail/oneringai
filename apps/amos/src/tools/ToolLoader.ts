@@ -4,9 +4,12 @@
  * Loads built-in tools and custom tools from the filesystem.
  * Manages enabled/disabled state.
  * Includes developer tools (filesystem + shell) for coding agent capabilities.
+ * Includes external tools (web search, scrape, fetch) with connector support.
  *
  * Phase 1.3 Improvements:
  * - Extracted developer tools config building to dedicated function (DRY)
+ * Phase 2: External Tools
+ * - Added external tools integration (webSearch, webScrape, webFetch)
  */
 
 import { readdir } from 'node:fs/promises';
@@ -24,8 +27,12 @@ import {
   createBashTool,
   type FilesystemToolConfig,
   type ShellToolConfig,
+  webFetch,
+  webSearch,
 } from '@oneringai/agents';
-import type { IToolLoader, AmosConfig } from '../config/types.js';
+// Note: webScrape needs to be imported separately as it may not be in main exports
+import type { IToolLoader, AmosConfig, IConnectorManager } from '../config/types.js';
+import { ExternalToolManager, type ExternalToolInfo } from './ExternalToolManager.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Developer Tools Configuration (Phase 1.3 - Extracted)
@@ -92,6 +99,7 @@ export class ToolLoader implements IToolLoader {
   private enabledTools: Set<string> = new Set();
   private customToolsDir: string;
   private config: AmosConfig | null = null;
+  private externalToolManager: ExternalToolManager | null = null;
 
   constructor(customToolsDir: string = './data/tools') {
     this.customToolsDir = customToolsDir;
@@ -102,6 +110,31 @@ export class ToolLoader implements IToolLoader {
    */
   setConfig(config: AmosConfig): void {
     this.config = config;
+    // Update external tool manager config if it exists
+    if (this.externalToolManager && config.externalTools) {
+      this.externalToolManager.updateConfig(config.externalTools);
+    }
+  }
+
+  /**
+   * Set the external tool manager
+   */
+  setExternalToolManager(manager: ExternalToolManager): void {
+    this.externalToolManager = manager;
+  }
+
+  /**
+   * Get external tool info (for status display)
+   */
+  getExternalToolInfo(): ExternalToolInfo[] {
+    return this.externalToolManager?.getAllToolInfo() || [];
+  }
+
+  /**
+   * Get the external tool manager
+   */
+  getExternalToolManager(): ExternalToolManager | null {
+    return this.externalToolManager;
   }
 
   /**
@@ -272,7 +305,52 @@ export class ToolLoader implements IToolLoader {
       tools.push(...devTools);
     }
 
+    // External tools (web search, scrape, fetch) - based on config
+    this.loadExternalTools(tools);
+
     return tools;
+  }
+
+  /**
+   * Load external tools based on configuration
+   * External tools require connectors to be configured
+   */
+  private loadExternalTools(tools: ToolFunction[]): void {
+    const externalConfig = this.config?.externalTools;
+    if (!externalConfig?.enabled) return;
+
+    // web_fetch - Always available (no connector needed)
+    if (externalConfig.webFetchEnabled) {
+      tools.push(webFetch);
+    }
+
+    // web_search - Requires connector
+    if (this.externalToolManager) {
+      const searchTool = this.externalToolManager.createSearchTool(webSearch);
+      if (searchTool) {
+        tools.push(searchTool);
+      } else if (externalConfig.search === null) {
+        // Add unconfigured tool so user can see it exists
+        // but mark it as disabled
+        tools.push(webSearch);
+        // Don't enable it - will be filtered out
+      }
+    } else if (externalConfig.search?.enabled && externalConfig.search?.connectorName) {
+      // Direct config without manager (fallback)
+      const connectorName = externalConfig.search.connectorName;
+      tools.push({
+        ...webSearch,
+        execute: async (args: any) => {
+          return webSearch.execute({
+            ...args,
+            connectorName: args.connectorName || connectorName,
+          });
+        },
+      });
+    }
+
+    // Note: webScrape would be added here similarly when available
+    // For now, we only support webFetch and webSearch
   }
 
   /**

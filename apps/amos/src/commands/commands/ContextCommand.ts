@@ -1,0 +1,309 @@
+/**
+ * ContextCommand - Detailed context inspection
+ *
+ * Phase 3: Exposes the library's rich context inspection APIs through AMOS.
+ *
+ * Subcommands:
+ *   /context            - Show overview (budget + utilization)
+ *   /context budget     - Detailed token budget
+ *   /context breakdown  - Per-component token breakdown
+ *   /context cache      - Cache statistics
+ *   /context memory     - Memory entries
+ *   /context history    - Alias for /history
+ */
+
+import { BaseCommand } from '../BaseCommand.js';
+import type { CommandContext, CommandResult } from '../../config/types.js';
+
+/**
+ * Format bytes to human-readable string
+ */
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+}
+
+/**
+ * Format number with commas
+ */
+function formatNumber(n: number): string {
+  return n.toLocaleString();
+}
+
+/**
+ * Create a progress bar
+ */
+function createProgressBar(percent: number, width: number = 10): string {
+  const filled = Math.round((percent / 100) * width);
+  const empty = width - filled;
+  return '█'.repeat(filled) + '░'.repeat(empty);
+}
+
+export class ContextCommand extends BaseCommand {
+  readonly name = 'context';
+  readonly aliases = ['ctx'];
+  readonly description = 'Show context inspection details';
+  readonly usage = '/context [budget|breakdown|cache|memory|history]';
+
+  async execute(context: CommandContext): Promise<CommandResult> {
+    const { app, args } = context;
+    const agent = app.getAgent();
+
+    if (!agent?.isReady()) {
+      return this.error('Agent not initialized. Start a conversation first.');
+    }
+
+    const { subcommand } = this.parseSubcommand(args);
+
+    switch (subcommand) {
+      case null:
+      case 'overview':
+        return this.showOverview(context);
+      case 'budget':
+        return this.showBudget(context);
+      case 'breakdown':
+        return this.showBreakdown(context);
+      case 'cache':
+        return this.showCache(context);
+      case 'memory':
+        return this.showMemory(context);
+      case 'history':
+        // Delegate to /history command
+        return this.showHistory(context);
+      default:
+        return this.error(`Unknown subcommand: ${subcommand}\n\nUsage: ${this.usage}`);
+    }
+  }
+
+  /**
+   * Show context overview (budget + utilization)
+   */
+  private async showOverview(context: CommandContext): Promise<CommandResult> {
+    const { app } = context;
+    const agent = app.getAgent()!;
+
+    const budget = await agent.getContextBudget();
+    const metrics = await agent.getContextMetrics();
+
+    if (!budget) {
+      return this.error('Unable to retrieve context budget.');
+    }
+
+    const statusIcon = budget.status === 'ok' ? '✅' : budget.status === 'warning' ? '⚠️' : '🔴';
+    const statusText = budget.status === 'ok' ? 'OK' : budget.status === 'warning' ? 'Warning - approaching limit' : 'Critical - at limit';
+
+    const modeIcon = metrics?.mode === 'planning' ? '📋' :
+                     metrics?.mode === 'executing' ? '⚡' : '💬';
+
+    const progressBar = createProgressBar(budget.utilizationPercent, 10);
+
+    const lines = [
+      'Context Overview',
+      '────────────────────────────────────',
+      `Utilization: ${progressBar} ${budget.utilizationPercent.toFixed(0)}% (${budget.status})`,
+      `Tokens: ${formatNumber(budget.used)} / ${formatNumber(budget.available + budget.used)} available`,
+      '',
+      `Status: ${statusIcon}  ${statusText}`,
+    ];
+
+    if (metrics) {
+      lines.push(`Mode: ${modeIcon} ${metrics.mode}${metrics.hasPlan ? ' (plan active)' : ''}`);
+    }
+
+    lines.push('');
+    lines.push('Use /context budget for detailed budget');
+    lines.push('Use /context breakdown for token breakdown');
+
+    return this.success(lines.join('\n'));
+  }
+
+  /**
+   * Show detailed context budget
+   */
+  private async showBudget(context: CommandContext): Promise<CommandResult> {
+    const { app } = context;
+    const agent = app.getAgent()!;
+
+    const budget = await agent.getContextBudget();
+
+    if (!budget) {
+      return this.error('Unable to retrieve context budget.');
+    }
+
+    const statusIcon = budget.status === 'ok' ? '✅' : budget.status === 'warning' ? '⚠️' : '🔴';
+    const reservePercent = budget.total > 0 ? (budget.reserved / budget.total) * 100 : 0;
+
+    const lines = [
+      'Context Budget',
+      '────────────────────────────────────',
+      `Total:      ${formatNumber(budget.total).padStart(10)} tokens`,
+      `Reserved:   ${formatNumber(budget.reserved).padStart(10)} tokens (${reservePercent.toFixed(0)}% for response)`,
+      `Used:       ${formatNumber(budget.used).padStart(10)} tokens`,
+      `Available:  ${formatNumber(budget.available).padStart(10)} tokens`,
+      `Utilization: ${budget.utilizationPercent.toFixed(1).padStart(9)}%`,
+      `Status:     ${statusIcon} ${budget.status.toUpperCase()}`,
+    ];
+
+    return this.success(lines.join('\n'));
+  }
+
+  /**
+   * Show per-component token breakdown
+   */
+  private async showBreakdown(context: CommandContext): Promise<CommandResult> {
+    const { app } = context;
+    const agent = app.getAgent()!;
+
+    const breakdown = await agent.getContextBreakdown();
+
+    if (!breakdown) {
+      return this.error('Unable to retrieve context breakdown.');
+    }
+
+    if (breakdown.components.length === 0) {
+      return this.success('Token Breakdown by Component\n────────────────────────────────────\nNo components in context.');
+    }
+
+    const lines = [
+      'Token Breakdown by Component',
+      '────────────────────────────────────',
+    ];
+
+    for (const comp of breakdown.components) {
+      const bar = createProgressBar(comp.percent, 20);
+      const nameFormatted = comp.name.padEnd(20);
+      const tokensFormatted = formatNumber(comp.tokens).padStart(7);
+      const percentFormatted = `(${comp.percent.toFixed(1)}%)`.padStart(8);
+      lines.push(`${nameFormatted} ${tokensFormatted}  ${percentFormatted}  ${bar}`);
+    }
+
+    lines.push('────────────────────────────────────');
+    lines.push(`${'Total:'.padEnd(20)} ${formatNumber(breakdown.totalUsed).padStart(7)} tokens`);
+
+    return this.success(lines.join('\n'));
+  }
+
+  /**
+   * Show cache statistics
+   */
+  private async showCache(context: CommandContext): Promise<CommandResult> {
+    const { app } = context;
+    const agent = app.getAgent()!;
+
+    const cacheStats = await agent.getCacheStats();
+
+    if (!cacheStats) {
+      // UniversalAgent doesn't expose cache
+      const lines = [
+        'Cache Statistics',
+        '────────────────────────────────────',
+        'Cache statistics are not available for this agent type.',
+        '',
+        'Note: Tool result caching is available in TaskAgent but not',
+        'exposed through UniversalAgent\'s context interface.',
+      ];
+      return this.success(lines.join('\n'));
+    }
+
+    const hitRatePercent = cacheStats.hitRate * 100;
+    const effectiveness = hitRatePercent >= 50 ? 'high effectiveness' :
+                          hitRatePercent >= 20 ? 'moderate effectiveness' : 'low effectiveness';
+
+    const lines = [
+      'Cache Statistics',
+      '────────────────────────────────────',
+      `Entries:   ${formatNumber(cacheStats.entries)}`,
+      `Hits:      ${formatNumber(cacheStats.hits)}`,
+      `Misses:    ${formatNumber(cacheStats.misses)}`,
+      `Hit Rate:  ${hitRatePercent.toFixed(0)}% (${effectiveness})`,
+    ];
+
+    return this.success(lines.join('\n'));
+  }
+
+  /**
+   * Show memory entries
+   */
+  private async showMemory(context: CommandContext): Promise<CommandResult> {
+    const { app } = context;
+    const agent = app.getAgent()!;
+
+    const entries = await agent.getMemoryEntries();
+    const metrics = await agent.getContextMetrics();
+
+    const totalBytes = entries.reduce((sum, e) => sum + e.sizeBytes, 0);
+
+    const lines = [
+      `Memory Entries (${entries.length} total, ${formatBytes(totalBytes)})`,
+      '────────────────────────────────────',
+    ];
+
+    if (entries.length === 0) {
+      lines.push('No memory entries stored.');
+      lines.push('');
+      lines.push('Memory is populated as the agent stores intermediate');
+      lines.push('results during task execution.');
+    } else {
+      for (const entry of entries) {
+        const keyFormatted = entry.key.length > 18 ? entry.key.slice(0, 15) + '...' : entry.key.padEnd(18);
+        const descFormatted = entry.description.length > 25 ? entry.description.slice(0, 22) + '...' : entry.description;
+        const sizeFormatted = `(${formatBytes(entry.sizeBytes)})`;
+        lines.push(`• ${keyFormatted}  ${descFormatted.padEnd(25)}  ${sizeFormatted}`);
+      }
+
+      if (metrics) {
+        lines.push('');
+        lines.push(`Total: ${metrics.memoryStats.totalEntries} entries, ${formatBytes(metrics.memoryStats.totalSizeBytes)}`);
+      }
+    }
+
+    return this.success(lines.join('\n'));
+  }
+
+  /**
+   * Show conversation history (delegates to /history behavior)
+   */
+  private async showHistory(context: CommandContext): Promise<CommandResult> {
+    const { app, args } = context;
+    const agent = app.getAgent()!;
+
+    // Parse count from args (skip 'history' subcommand)
+    const countArg = args[1];
+    const count = countArg ? parseInt(countArg) : 10;
+
+    const history = await agent.getConversationHistory(count);
+
+    if (history.length === 0) {
+      return this.success('No conversation history yet.\n\nStart a conversation to see history here.');
+    }
+
+    const lines: string[] = [
+      `Last ${history.length} message${history.length !== 1 ? 's' : ''}:`,
+      '',
+    ];
+
+    for (const entry of history) {
+      const roleIcon = entry.role === 'user' ? '👤' :
+                       entry.role === 'assistant' ? '🤖' : '⚙️';
+      const roleLabel = entry.role.charAt(0).toUpperCase() + entry.role.slice(1);
+      const time = entry.timestamp.toLocaleTimeString();
+
+      // Truncate long content
+      const maxLength = 200;
+      const content = entry.content.length > maxLength
+        ? entry.content.substring(0, maxLength) + '...'
+        : entry.content;
+
+      lines.push(`${roleIcon} [${time}] ${roleLabel}:`);
+      lines.push(`   ${content.replace(/\n/g, '\n   ')}`);
+      lines.push('');
+    }
+
+    lines.push('Use /context history [count] to show more or fewer messages');
+
+    return this.success(lines.join('\n'));
+  }
+}

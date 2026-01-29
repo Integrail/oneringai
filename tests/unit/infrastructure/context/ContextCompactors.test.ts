@@ -258,6 +258,7 @@ describe('MemoryEvictionCompactor', () => {
 describe('SummarizeCompactor', () => {
   let compactor: SummarizeCompactor;
   let mockEstimator: ITokenEstimator;
+  let mockTextProvider: { generate: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     mockEstimator = {
@@ -270,7 +271,17 @@ describe('SummarizeCompactor', () => {
       }),
     };
 
-    compactor = new SummarizeCompactor(mockEstimator);
+    // Mock text provider for LLM summarization
+    mockTextProvider = {
+      generate: vi.fn().mockResolvedValue({
+        output_text: 'Summarized content here.',
+      }),
+    };
+
+    compactor = new SummarizeCompactor(mockEstimator, {
+      textProvider: mockTextProvider as unknown as import('@/domain/interfaces/ITextProvider.js').ITextProvider,
+      fallbackToTruncate: true,
+    });
   });
 
   describe('Properties', () => {
@@ -322,10 +333,52 @@ describe('SummarizeCompactor', () => {
   });
 
   describe('compact', () => {
-    it('should return component unchanged (not yet implemented)', async () => {
+    it('should return component unchanged if already under target', async () => {
       const component: IContextComponent = {
         name: 'conversation_history',
-        content: 'Long conversation text that should be summarized',
+        content: 'Short', // Only ~1 token
+        priority: 6,
+        compactable: true,
+        metadata: {
+          strategy: 'summarize',
+        },
+      };
+
+      const result = await compactor.compact(component, 100);
+
+      // Should return unchanged since content is already under target
+      expect(result).toBe(component);
+      // Should NOT call LLM
+      expect(mockTextProvider.generate).not.toHaveBeenCalled();
+    });
+
+    it('should summarize large content using LLM', async () => {
+      const longContent = 'A'.repeat(2000); // ~500 tokens
+      const component: IContextComponent = {
+        name: 'conversation_history',
+        content: longContent,
+        priority: 6,
+        compactable: true,
+        metadata: {
+          strategy: 'summarize',
+        },
+      };
+
+      const result = await compactor.compact(component, 50);
+
+      // Should call LLM for summarization
+      expect(mockTextProvider.generate).toHaveBeenCalled();
+      // Result should have summarized flag
+      expect(result.metadata?.summarized).toBe(true);
+    });
+
+    it('should fallback to truncation on LLM failure', async () => {
+      mockTextProvider.generate.mockRejectedValueOnce(new Error('LLM error'));
+
+      const longContent = 'A'.repeat(2000);
+      const component: IContextComponent = {
+        name: 'conversation_history',
+        content: longContent,
         priority: 6,
         compactable: true,
         metadata: {
@@ -335,30 +388,11 @@ describe('SummarizeCompactor', () => {
 
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-      const result = await compactor.compact(component, 100);
+      const result = await compactor.compact(component, 50);
 
-      expect(result).toBe(component);
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('SummarizeCompactor not yet implemented')
-      );
-
-      consoleSpy.mockRestore();
-    });
-
-    it('should warn about unimplemented feature', async () => {
-      const component: IContextComponent = {
-        name: 'history',
-        content: 'Content',
-        priority: 6,
-        compactable: true,
-        metadata: { strategy: 'summarize' },
-      };
-
-      const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      await compactor.compact(component, 50);
-
-      expect(consoleSpy).toHaveBeenCalled();
+      // Should have truncated flag
+      expect(result.metadata?.truncated).toBe(true);
+      expect(result.metadata?.summarizationFailed).toBe(true);
       consoleSpy.mockRestore();
     });
   });
