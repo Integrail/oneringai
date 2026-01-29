@@ -22,11 +22,11 @@ import { Session, ISessionStorage, SerializedPlan } from '../../core/SessionMana
 import { Plan, Task, createPlan, createTask, TaskInput } from '../../domain/entities/Task.js';
 import { StreamEventType } from '../../domain/entities/StreamEvent.js';
 import type { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
-import { InMemoryStorage } from '../../infrastructure/storage/InMemoryStorage.js';
+// InMemoryStorage no longer needed - memory is managed by inherited AgentContext
 import { PlanningAgent } from '../taskAgent/PlanningAgent.js';
 import { ModeManager } from './ModeManager.js';
 import { getMetaTools, isMetaTool, META_TOOL_NAMES } from './metaTools.js';
-import { AgentContext } from '../../core/AgentContext.js';
+// AgentContext is inherited from BaseAgent, import only for type reference if needed
 import type { AgentContextConfig } from '../../core/AgentContext.js';
 import { PlanPlugin } from '../../core/context/plugins/PlanPlugin.js';
 import { MemoryPlugin } from '../../core/context/plugins/MemoryPlugin.js';
@@ -129,8 +129,8 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
   private modeManager: ModeManager;
   private planningAgent?: PlanningAgent;
 
-  // Unified context management (replaces historyManager, workingMemory, contextBuilder)
-  private _agentContext: AgentContext;
+  // Plugins for inherited AgentContext (from BaseAgent)
+  // Note: _agentContext is inherited from BaseAgent (single source of truth)
   private _planPlugin: PlanPlugin;
   private _memoryPlugin: MemoryPlugin;
 
@@ -175,20 +175,20 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
   // ============================================================================
 
   private constructor(config: UniversalAgentConfig) {
-    // Call BaseAgent constructor - handles connector, tool manager, permission manager init
+    // Call BaseAgent constructor - handles connector, tool manager (via AgentContext), permission manager init
     super(config, 'UniversalAgent');
 
-    // Register user tools with namespace
-    if (config.tools) {
-      this.registerTools(this._toolManager, config.tools, { namespace: 'user' });
+    // Register meta-tools for mode transitions (user tools already registered by BaseAgent)
+    const metaTools = getMetaTools();
+    for (const tool of metaTools) {
+      this._agentContext.tools.register(tool, { namespace: '_meta' });
     }
 
-    // Register meta-tools for mode transitions
-    const metaTools = getMetaTools();
-    this.registerTools(this._toolManager, metaTools, { namespace: '_meta' });
+    // Set system prompt on inherited AgentContext
+    this._agentContext.systemPrompt = this.buildInstructions(config.instructions);
 
-    // Create base agent for LLM calls
-    const allTools = this._toolManager.getEnabled();
+    // Create base agent for LLM calls (shares inherited AgentContext)
+    const allTools = this._agentContext.tools.getEnabled();
     this.agent = Agent.create({
       connector: config.connector,
       model: config.model,
@@ -197,6 +197,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       temperature: config.temperature,
       maxIterations: config.maxIterations ?? 20,
       permissions: config.permissions,
+      context: this._agentContext,  // Share inherited AgentContext
     });
 
     // Initialize mode manager
@@ -211,30 +212,14 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       this.planningAgent = PlanningAgent.create({
         connector: config.connector,
         model: config.planning?.model ?? config.model,
-        availableTools: this._toolManager.getEnabled().filter(t => !isMetaTool(t.definition.function.name)),
+        availableTools: this._agentContext.tools.getEnabled().filter(t => !isMetaTool(t.definition.function.name)),
       });
     }
 
     // Create execution agent (without meta-tools) for task execution
     this.executionAgent = this.createExecutionAgent();
 
-    // Initialize unified AgentContext (replaces historyManager, workingMemory, contextBuilder)
-    this._agentContext = AgentContext.create({
-      model: config.model,
-      systemPrompt: this.buildInstructions(config.instructions),
-      tools: this._toolManager.getEnabled(),
-      permissions: config.permissions,
-      memory: config.memoryConfig ? {
-        ...config.memoryConfig,
-        storage: new InMemoryStorage(),
-      } : {
-        storage: new InMemoryStorage(),
-      },
-      strategy: 'proactive',
-      autoDetectTaskType: true,  // Auto-detect from plan
-    });
-
-    // Register PlanPlugin and MemoryPlugin
+    // Register PlanPlugin and MemoryPlugin with inherited AgentContext
     this._planPlugin = new PlanPlugin();
     this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
     this._agentContext.registerPlugin(this._planPlugin);
@@ -278,7 +263,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       this.executionHistory = session.custom['executionHistory'] as typeof this.executionHistory;
     }
 
-    // Restore AgentContext state (includes history)
+    // Restore inherited AgentContext state (includes history)
     if (session.custom['agentContextState']) {
       await this._agentContext.restoreState(session.custom['agentContextState'] as any);
     }
@@ -307,8 +292,8 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       );
     }
 
-    // Update common session state
-    this._session.toolState = this._toolManager.getState();
+    // Update common session state (use inherited _agentContext.tools)
+    this._session.toolState = this._agentContext.tools.getState();
     this._session.custom['approvalState'] = this._permissionManager.getState();
 
     // Get plan state
@@ -1221,8 +1206,8 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
    * This prevents the agent from calling _start_planning during task execution.
    */
   private createExecutionAgent(): Agent {
-    // Get user tools only (exclude meta-tools)
-    const userTools = this._toolManager.getEnabled().filter(t => !isMetaTool(t.definition.function.name));
+    // Get user tools only (exclude meta-tools) from inherited _agentContext
+    const userTools = this._agentContext.tools.getEnabled().filter(t => !isMetaTool(t.definition.function.name));
 
     return Agent.create({
       connector: this._config.connector,
@@ -1232,6 +1217,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       temperature: this._config.temperature,
       maxIterations: this._config.maxIterations ?? 20,
       permissions: this._config.permissions,
+      // Note: Execution agent uses its own context, not shared
     });
   }
 
@@ -1437,38 +1423,18 @@ Always be helpful, clear, and ask for clarification when needed.`;
    * @deprecated Use `tools` instead for consistency with other agents
    */
   get toolManager() {
-    return this._toolManager;
+    return this._agentContext.tools;  // Use inherited AgentContext.tools
   }
 
   // ============================================================================
   // Unified Context Access
   // ============================================================================
 
-  /**
-   * Get unified AgentContext.
-   *
-   * Returns the AgentContext instance directly, providing the same API
-   * across all agent types (Agent, TaskAgent, UniversalAgent).
-   *
-   * @example
-   * ```typescript
-   * const agent = UniversalAgent.create({ ... });
-   *
-   * // Access context features
-   * agent.context.addMessage('user', 'Hello');
-   * const metrics = await agent.context.getMetrics();
-   *
-   * // Direct access to managers
-   * await agent.context.memory.store('key', 'desc', value);
-   * const budget = await agent.context.getBudget();
-   * ```
-   */
-  get context(): AgentContext {
-    return this._agentContext;
-  }
+  // Note: `context` getter is inherited from BaseAgent (returns _agentContext)
+  // The inherited getter returns the AgentContext which is always available after BaseAgent constructor
 
   /**
-   * Check if context is available (always true for UniversalAgent)
+   * Check if context is available (always true since AgentContext is created by BaseAgent)
    */
   hasContext(): boolean {
     return true;
@@ -1551,10 +1517,9 @@ Always be helpful, clear, and ask for clarification when needed.`;
     }
     this.modeManager.removeAllListeners();
 
-    // Cleanup AgentContext (handles history, memory, cache, plugins)
-    this._agentContext.destroy();
+    // Note: AgentContext cleanup is handled by baseDestroy() in BaseAgent
 
-    // Call base destroy (handles session, tool manager, permission manager cleanup)
+    // Call base destroy (handles session, AgentContext, permission manager cleanup)
     this.baseDestroy();
 
     this._logger.debug('UniversalAgent destroyed');

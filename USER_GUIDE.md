@@ -2928,12 +2928,12 @@ AgentContext composes these existing managers (DRY - no duplication!):
 
 #### Using AgentContext with Agent
 
-You can enable AgentContext-based tracking in the base Agent class:
+**AgentContext is always available** - BaseAgent creates it in the constructor, making it the single source of truth for ToolManager:
 
 ```typescript
 import { Agent, AgentContext } from '@oneringai/agents';
 
-// Option 1: Pass config to auto-create AgentContext
+// AgentContext is auto-created with default config
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
@@ -2945,22 +2945,31 @@ const agent = Agent.create({
   },
 });
 
+// UNIFIED TOOL MANAGEMENT: agent.tools and agent.context.tools are the SAME instance
+console.log(agent.tools === agent.context.tools);  // true
+console.log(agent.hasContext());  // Always true
+
+// Tool changes via either path are immediately reflected
+agent.tools.disable('weather_tool');
+console.log(agent.context.tools.listEnabled().includes('weather_tool'));  // false
+
+agent.context.tools.enable('weather_tool');
+console.log(agent.tools.listEnabled().includes('weather_tool'));  // true
+
 // Agent automatically tracks messages and tool calls
 await agent.run('What is the weather?');
 
-// Access the context
+// Access the context (never null)
 const ctx = agent.context;
-if (ctx) {
-  const history = ctx.getHistory();
-  const metrics = await ctx.getMetrics();
-  console.log(`Messages: ${metrics.historyMessageCount}`);
-}
+const history = ctx.getHistory();
+const metrics = await ctx.getMetrics();
+console.log(`Messages: ${metrics.historyMessageCount}`);
 
 // Option 2: Pass existing AgentContext instance
 const sharedContext = AgentContext.create({ model: 'gpt-4' });
 const agent1 = Agent.create({ connector: 'openai', model: 'gpt-4', context: sharedContext });
 const agent2 = Agent.create({ connector: 'anthropic', model: 'claude', context: sharedContext });
-// Both agents share the same context state
+// Both agents share the same context state and ToolManager!
 ```
 
 #### AgentContext Configuration
@@ -4652,6 +4661,15 @@ interface ShellToolConfig {
 
 Control tools at runtime for all agent types. Enable, disable, organize, and select tools dynamically.
 
+### Unified Tool Management Architecture
+
+**AgentContext is the single source of truth** for ToolManager. All agents access tools through a single ToolManager instance owned by AgentContext:
+
+- `agent.tools === agent.context.tools` - Same ToolManager instance
+- `agent.hasContext()` always returns `true`
+- Tool changes via either API are immediately reflected in the other
+- No duplicate tool storage or sync issues
+
 ### Quick Start
 
 ```typescript
@@ -4663,10 +4681,18 @@ const agent = Agent.create({
   tools: [weatherTool, emailTool, databaseTool],
 });
 
+// UNIFIED: agent.tools and agent.context.tools are the SAME instance
+console.log(agent.tools === agent.context.tools);  // true
+
 // Disable tool temporarily
 agent.tools.disable('database_tool');
 
+// Changes via agent.context.tools are immediately reflected
+agent.context.tools.enable('database_tool');
+console.log(agent.tools.listEnabled().includes('database_tool'));  // true
+
 // Run without database access
+agent.tools.disable('database_tool');
 await agent.run('Check weather and email me');
 
 // Re-enable later
@@ -4675,7 +4701,7 @@ agent.tools.enable('database_tool');
 
 ### ToolManager API
 
-Every agent has a `tools` property that returns a `ToolManager`:
+Every agent has a `tools` property that returns the ToolManager owned by AgentContext. Both `agent.tools` and `agent.context.tools` return the same instance:
 
 ```typescript
 const agent = Agent.create({
@@ -4684,8 +4710,12 @@ const agent = Agent.create({
   tools: [tool1, tool2],
 });
 
-// Access ToolManager
+// UNIFIED: Both access paths return the same ToolManager instance
+console.log(agent.tools === agent.context.tools);  // true
+
+// Access ToolManager via either path
 const toolManager = agent.tools;
+// OR: const toolManager = agent.context.tools;  // Same instance!
 
 // Register new tool
 toolManager.register(tool3, {
@@ -4968,6 +4998,8 @@ class PluginManager {
 
 ### Usage with TaskAgent
 
+TaskAgent inherits AgentContext from BaseAgent - same unified architecture:
+
 ```typescript
 import { TaskAgent } from '@oneringai/agents';
 
@@ -4977,8 +5009,12 @@ const agent = TaskAgent.create({
   tools: [tool1, tool2, tool3],
 });
 
-// Same ToolManager API
+// UNIFIED: Same ToolManager instance as AgentContext
+console.log(agent.tools === agent.context.tools);  // true
+
+// Same ToolManager API - changes reflect across both paths
 agent.tools.disable('risky_tool');
+agent.context.tools.enable('risky_tool');  // Same effect
 
 await agent.start({
   goal: 'Process data safely',
@@ -4991,6 +5027,8 @@ await agent.start({
 
 ### Usage with UniversalAgent
 
+UniversalAgent also inherits AgentContext from BaseAgent:
+
 ```typescript
 import { UniversalAgent } from '@oneringai/agents';
 
@@ -5000,12 +5038,15 @@ const agent = UniversalAgent.create({
   tools: [safeTools...],
 });
 
+// UNIFIED: Same ToolManager instance as AgentContext
+console.log(agent.tools === agent.context.tools);  // true
+
 // Disable tools during execution
 agent.on('mode:changed', ({ from, to }) => {
   if (to === 'executing') {
-    agent.toolManager.disable('destructive_tool');
+    agent.tools.disable('destructive_tool');
   } else if (to === 'interactive') {
-    agent.toolManager.enable('destructive_tool');
+    agent.tools.enable('destructive_tool');
   }
 });
 ```

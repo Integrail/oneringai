@@ -1887,12 +1887,11 @@ await ctx.restoreState(savedState);    // Restore from saved state
 
 ### Using AgentContext with Agent
 
-Enable context tracking in the base Agent class:
+**AgentContext is always available** in all agent types. BaseAgent creates AgentContext in its constructor, making it the single source of truth for ToolManager:
 
 ```typescript
 import { Agent } from '@oneringai/agents';
 
-// Pass config to auto-create AgentContext
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
@@ -1904,22 +1903,38 @@ const agent = Agent.create({
   },
 });
 
+// AgentContext is ALWAYS available (hasContext() always returns true)
+console.log(agent.hasContext());  // true
+
+// UNIFIED TOOL MANAGEMENT: agent.tools and agent.context.tools are the SAME instance
+console.log(agent.tools === agent.context.tools);  // true
+
+// Tool changes via either path are immediately reflected
+agent.tools.disable('my_tool');
+console.log(agent.context.tools.listEnabled().includes('my_tool'));  // false
+
+agent.context.tools.enable('my_tool');
+console.log(agent.tools.listEnabled().includes('my_tool'));  // true
+
 // Agent automatically tracks messages and tool calls
 await agent.run('What is the weather?');
 
-// Access context
+// Access context (never null)
 const ctx = agent.context;
-const history = ctx?.getHistory();
-const metrics = await ctx?.getMetrics();
+const history = ctx.getHistory();
+const metrics = await ctx.getMetrics();
 ```
 
 ### Context Access in TaskAgent and UniversalAgent
 
-TaskAgent and UniversalAgent use AgentContext directly, providing unified context access:
+TaskAgent and UniversalAgent inherit AgentContext from BaseAgent. All agent types share the same unified tool management architecture:
 
 ```typescript
-// TaskAgent - uses AgentContext with PlanPlugin and MemoryPlugin
+// TaskAgent - inherits AgentContext from BaseAgent
 const taskAgent = TaskAgent.create({ connector: 'openai', model: 'gpt-4' });
+
+// UNIFIED: agent.tools and agent.context.tools are the SAME instance
+console.log(taskAgent.tools === taskAgent.context.tools);  // true
 
 // Access AgentContext directly
 taskAgent.context.addMessage('user', 'Hello');
@@ -1930,8 +1945,10 @@ const metrics = await taskAgent.context.getMetrics();
 // Access WorkingMemory (managed separately in TaskAgent)
 taskAgent.memory.set('key', 'desc', value);
 
-// UniversalAgent - also uses AgentContext with plugins
+// UniversalAgent - also inherits AgentContext from BaseAgent
 const uniAgent = UniversalAgent.create({ connector: 'openai', model: 'gpt-4' });
+console.log(uniAgent.tools === uniAgent.context.tools);  // true
+
 uniAgent.context.addMessage('system', 'New instructions');
 const uniMetrics = await uniAgent.context.getMetrics();
 ```
@@ -2516,6 +2533,31 @@ PRIORITY_PROFILES.general = {
 
 ## Tool Management
 
+### Unified Tool Management Architecture
+
+**AgentContext owns the ToolManager** - all agents access tools through a single ToolManager instance owned by AgentContext. This eliminates duplicate tool storage and ensures consistent tool state across all access paths.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Agent / TaskAgent / UniversalAgent                           │
+│                                                              │
+│  └── _agentContext (AgentContext) ←── ALWAYS CREATED         │
+│           │                                                  │
+│           └── _tools (ToolManager) ←── SINGLE SOURCE         │
+│                    ↑                                         │
+│           ┌───────┴───────┐                                  │
+│           │               │                                  │
+│       AgenticLoop     agent.tools (getter)                   │
+│      (IToolExecutor)                                         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Properties:**
+- `agent.tools === agent.context.tools` - Same ToolManager instance
+- `agent.hasContext()` always returns `true`
+- Tool changes via either API are immediately reflected in the other
+- No duplicate tool storage or sync issues
+
 ### ToolManager (`src/core/ToolManager.ts`)
 
 **Unified tool management and execution** for all agent types. ToolManager is the single source of truth for tool registration, execution, and lifecycle management. It implements `IToolExecutor` interface and includes circuit breaker protection.
@@ -2589,9 +2631,16 @@ const agent = Agent.create({
   tools: [weatherTool, emailTool],
 });
 
-// Access ToolManager
+// UNIFIED: agent.tools and agent.context.tools are the SAME instance
+console.log(agent.tools === agent.context.tools);  // true
+
+// Access ToolManager via either path
 agent.tools.disable('email_tool');
-agent.tools.enable('email_tool');
+agent.context.tools.enable('email_tool');  // Same effect
+
+// Changes are immediately reflected across both access paths
+agent.context.tools.disable('weather_tool');
+console.log(agent.tools.listEnabled().includes('weather_tool'));  // false
 
 // Circuit breaker introspection
 const cbStates = agent.getToolCircuitBreakerStates();

@@ -21,6 +21,8 @@ import type { AgentPermissionsConfig, SerializedApprovalState } from './permissi
 import type { ToolFunction } from '../domain/entities/Tool.js';
 import type { SerializedToolState } from './ToolManager.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
+import { AgentContext } from './AgentContext.js';
+import type { AgentContextConfig } from './AgentContext.js';
 
 /**
  * Options for tool registration
@@ -195,6 +197,14 @@ export interface BaseAgentConfig {
 
   /** Lifecycle hooks for customization */
   lifecycleHooks?: AgentLifecycleHooks;
+
+  /**
+   * Optional AgentContext configuration.
+   * If provided as AgentContext instance, it will be used directly.
+   * If provided as config object, a new AgentContext will be created.
+   * If not provided, a default AgentContext will be created.
+   */
+  context?: AgentContext | AgentContextConfig;
 }
 
 /**
@@ -227,7 +237,7 @@ export abstract class BaseAgent<
 
   // ===== Protected State =====
   protected _config: TConfig;
-  protected _toolManager: ToolManager;
+  protected _agentContext: AgentContext;  // SINGLE SOURCE OF TRUTH for tools
   protected _permissionManager: ToolPermissionManager;
   protected _sessionManager: SessionManager | null = null;
   protected _session: Session | null = null;
@@ -258,10 +268,17 @@ export abstract class BaseAgent<
       connector: this.connector.name,
     });
 
-    // Initialize tool manager
-    this._toolManager = this.initializeToolManager(config.toolManager, config.tools);
+    // Initialize AgentContext FIRST (single source of truth for tools)
+    this._agentContext = this.initializeAgentContext(config);
 
-    // Initialize permission manager
+    // Register tools with AgentContext if provided
+    if (config.tools) {
+      for (const tool of config.tools) {
+        this._agentContext.tools.register(tool);
+      }
+    }
+
+    // Initialize permission manager (uses tools from AgentContext)
     this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
 
     // Initialize lifecycle hooks
@@ -327,7 +344,31 @@ export abstract class BaseAgent<
   }
 
   /**
+   * Initialize AgentContext (single source of truth for tools).
+   * If AgentContext is provided, use it directly.
+   * Otherwise, create a new one with the provided configuration.
+   */
+  protected initializeAgentContext(config: TConfig): AgentContext {
+    // If AgentContext instance is provided, use it directly
+    if (config.context instanceof AgentContext) {
+      return config.context;
+    }
+
+    // Create new AgentContext with merged config
+    // NOTE: Don't pass tools here - they're registered separately after creation
+    // to allow subclasses to wrap or modify tools before registration
+    const contextConfig: AgentContextConfig = {
+      model: config.model,
+      // Subclasses can add systemPrompt via their config
+      ...(typeof config.context === 'object' && config.context !== null ? config.context : {}),
+    };
+
+    return AgentContext.create(contextConfig);
+  }
+
+  /**
    * Initialize tool manager with provided tools
+   * @deprecated Use _agentContext.tools instead. This method is kept for backward compatibility.
    */
   protected initializeToolManager(
     existingManager?: ToolManager,
@@ -428,7 +469,7 @@ export abstract class BaseAgent<
 
         // Restore tool state
         if (session.toolState) {
-          this._toolManager.loadState(session.toolState as SerializedToolState);
+          this._agentContext.tools.loadState(session.toolState as SerializedToolState);
         }
 
         // Restore approval state (if permission inheritance is enabled)
@@ -502,7 +543,7 @@ export abstract class BaseAgent<
     }
 
     // Update common session state
-    this._session.toolState = this._toolManager.getState();
+    this._session.toolState = this._agentContext.tools.getState();
     this._session.custom['approvalState'] = this._permissionManager.getState();
 
     // Get plan and memory state from subclass hooks
@@ -544,9 +585,18 @@ export abstract class BaseAgent<
 
   /**
    * Advanced tool management. Returns ToolManager for fine-grained control.
+   * This is delegated to AgentContext.tools (single source of truth).
    */
   get tools(): ToolManager {
-    return this._toolManager;
+    return this._agentContext.tools;
+  }
+
+  /**
+   * Get the AgentContext (unified context management).
+   * This is the primary way to access tools, memory, cache, permissions, and history.
+   */
+  get context(): AgentContext {
+    return this._agentContext;
   }
 
   /**
@@ -559,14 +609,11 @@ export abstract class BaseAgent<
   // ===== Tool Management =====
 
   /**
-   * Add a tool to the agent
+   * Add a tool to the agent.
+   * Tools are registered with AgentContext (single source of truth).
    */
   addTool(tool: ToolFunction): void {
-    this._toolManager.register(tool);
-    if (!this._config.tools) {
-      this._config.tools = [];
-    }
-    this._config.tools.push(tool);
+    this._agentContext.tools.register(tool);
 
     // Sync permission config if tool has one
     if (tool.permission) {
@@ -575,36 +622,31 @@ export abstract class BaseAgent<
   }
 
   /**
-   * Remove a tool from the agent
+   * Remove a tool from the agent.
+   * Tools are unregistered from AgentContext (single source of truth).
    */
   removeTool(toolName: string): void {
-    this._toolManager.unregister(toolName);
-    if (this._config.tools) {
-      this._config.tools = this._config.tools.filter(
-        (t) => t.definition.function.name !== toolName
-      );
-    }
+    this._agentContext.tools.unregister(toolName);
   }
 
   /**
    * List registered tools (returns enabled tool names)
    */
   listTools(): string[] {
-    return this._toolManager.listEnabled();
+    return this._agentContext.tools.listEnabled();
   }
 
   /**
    * Replace all tools with a new array
    */
   setTools(tools: ToolFunction[]): void {
-    this._toolManager.clear();
+    this._agentContext.tools.clear();
     for (const tool of tools) {
-      this._toolManager.register(tool);
+      this._agentContext.tools.register(tool);
       if (tool.permission) {
         this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
       }
     }
-    this._config.tools = [...tools];
   }
 
   /**
@@ -612,7 +654,7 @@ export abstract class BaseAgent<
    * This is a helper that extracts definitions from enabled tools.
    */
   protected getEnabledToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[] {
-    return this._toolManager.getEnabled().map((t) => t.definition);
+    return this._agentContext.tools.getEnabled().map((t) => t.definition);
   }
 
   // ===== Lifecycle Hooks =====
@@ -779,8 +821,8 @@ export abstract class BaseAgent<
       this._sessionManager.destroy();
     }
 
-    // Cleanup tool manager listeners
-    this._toolManager.removeAllListeners();
+    // Cleanup AgentContext (handles tools, memory, cache, plugins)
+    this._agentContext.destroy();
 
     // Cleanup permission manager listeners
     this._permissionManager.removeAllListeners();

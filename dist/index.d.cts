@@ -1449,416 +1449,6 @@ declare class FrameworkLogger {
 declare const logger: FrameworkLogger;
 
 /**
- * Options for tool registration
- */
-interface ToolRegistrationOptions {
-    /** Namespace for the tool (e.g., 'user', '_meta', 'mcp:fs') */
-    namespace?: string;
-    /** Whether the tool is enabled by default */
-    enabled?: boolean;
-}
-/**
- * Base session configuration (shared by all agent types)
- */
-interface BaseSessionConfig {
-    /** Storage backend for sessions */
-    storage: ISessionStorage;
-    /** Resume existing session by ID */
-    id?: string;
-    /** Auto-save session after each interaction */
-    autoSave?: boolean;
-    /** Auto-save interval in milliseconds */
-    autoSaveIntervalMs?: number;
-}
-/**
- * Tool execution context passed to lifecycle hooks
- */
-interface ToolExecutionHookContext {
-    /** Name of the tool being executed */
-    toolName: string;
-    /** Arguments passed to the tool */
-    args: Record<string, unknown>;
-    /** Agent ID */
-    agentId: string;
-    /** Task ID (if running in TaskAgent) */
-    taskId?: string;
-}
-/**
- * Tool execution result passed to afterToolExecution hook
- */
-interface ToolExecutionResult {
-    /** Name of the tool that was executed */
-    toolName: string;
-    /** Result returned by the tool */
-    result: unknown;
-    /** Execution duration in milliseconds */
-    durationMs: number;
-    /** Whether the execution was successful */
-    success: boolean;
-    /** Error if execution failed */
-    error?: Error;
-}
-/**
- * Context passed to beforeCompaction hook
- */
-interface BeforeCompactionContext {
-    /** Agent identifier */
-    agentId: string;
-    /** Current context budget info */
-    currentBudget: {
-        total: number;
-        used: number;
-        available: number;
-        utilizationPercent: number;
-        status: 'ok' | 'warning' | 'critical';
-    };
-    /** Compaction strategy being used */
-    strategy: string;
-    /** Current context components (read-only) */
-    components: ReadonlyArray<{
-        name: string;
-        priority: number;
-        compactable: boolean;
-    }>;
-    /** Estimated tokens to be freed */
-    estimatedTokensToFree: number;
-}
-/**
- * Agent lifecycle hooks for customization.
- * These hooks allow external code to observe and modify agent behavior
- * at key points in the execution lifecycle.
- */
-interface AgentLifecycleHooks {
-    /**
-     * Called before a tool is executed.
-     * Can be used for logging, validation, or rate limiting.
-     * Throw an error to prevent tool execution.
-     *
-     * @param context - Tool execution context
-     * @returns Promise that resolves when hook completes
-     */
-    beforeToolExecution?: (context: ToolExecutionHookContext) => Promise<void>;
-    /**
-     * Called after a tool execution completes (success or failure).
-     * Can be used for logging, metrics, or cleanup.
-     *
-     * @param result - Tool execution result
-     * @returns Promise that resolves when hook completes
-     */
-    afterToolExecution?: (result: ToolExecutionResult) => Promise<void>;
-    /**
-     * Called before context is prepared for LLM call.
-     * Can be used to inject additional context or modify components.
-     *
-     * @param agentId - Agent identifier
-     * @returns Promise that resolves when hook completes
-     */
-    beforeContextPrepare?: (agentId: string) => Promise<void>;
-    /**
-     * Called before context compaction occurs.
-     * Use this hook to save important data to working memory before it's compacted.
-     * This is your last chance to preserve critical information from tool outputs
-     * or conversation history that would otherwise be lost.
-     *
-     * @param context - Compaction context with budget info and components
-     * @returns Promise that resolves when hook completes
-     */
-    beforeCompaction?: (context: BeforeCompactionContext) => Promise<void>;
-    /**
-     * Called after context compaction occurs.
-     * Can be used for logging or monitoring context management.
-     *
-     * @param log - Compaction log messages
-     * @param tokensFreed - Number of tokens freed
-     * @returns Promise that resolves when hook completes
-     */
-    afterCompaction?: (log: string[], tokensFreed: number) => Promise<void>;
-    /**
-     * Called when agent encounters an error.
-     * Can be used for custom error handling or recovery logic.
-     *
-     * @param error - The error that occurred
-     * @param context - Additional context about where the error occurred
-     * @returns Promise that resolves when hook completes
-     */
-    onError?: (error: Error, context: {
-        phase: string;
-        agentId: string;
-    }) => Promise<void>;
-}
-/**
- * Base configuration shared by all agent types
- */
-interface BaseAgentConfig {
-    /** Connector name or instance */
-    connector: string | Connector;
-    /** Model identifier */
-    model: string;
-    /** Agent name (optional, auto-generated if not provided) */
-    name?: string;
-    /** Tools available to the agent */
-    tools?: ToolFunction[];
-    /** Provide a pre-configured ToolManager (advanced) */
-    toolManager?: ToolManager;
-    /** Session configuration */
-    session?: BaseSessionConfig;
-    /** Permission configuration */
-    permissions?: AgentPermissionsConfig;
-    /** Lifecycle hooks for customization */
-    lifecycleHooks?: AgentLifecycleHooks;
-}
-/**
- * Base events emitted by all agent types.
- * Agent subclasses typically extend their own event interfaces.
- */
-interface BaseAgentEvents {
-    'session:saved': {
-        sessionId: string;
-    };
-    'session:loaded': {
-        sessionId: string;
-    };
-    destroyed: void;
-}
-/**
- * Abstract base class for all agent types.
- *
- * @internal This class is not exported in the public API.
- *
- * Note: TEvents is not constrained to BaseAgentEvents to allow subclasses
- * to define their own event interfaces (e.g., AgenticLoopEvents for Agent).
- */
-declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConfig, TEvents extends Record<string, any> = BaseAgentEvents> extends EventEmitter<TEvents> {
-    readonly name: string;
-    readonly connector: Connector;
-    readonly model: string;
-    protected _config: TConfig;
-    protected _toolManager: ToolManager;
-    protected _permissionManager: ToolPermissionManager;
-    protected _sessionManager: SessionManager | null;
-    protected _session: Session | null;
-    protected _pendingSessionLoad: Promise<void> | null;
-    protected _isDestroyed: boolean;
-    protected _cleanupCallbacks: Array<() => void | Promise<void>>;
-    protected _logger: FrameworkLogger;
-    protected _lifecycleHooks: AgentLifecycleHooks;
-    constructor(config: TConfig, loggerComponent: string);
-    /**
-     * Get the agent type identifier for session serialization
-     */
-    protected abstract getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
-    /**
-     * Prepare session state before saving.
-     * Subclasses override to add their specific state (plan, memory, etc.)
-     *
-     * Default implementation does nothing - override in subclasses.
-     */
-    protected prepareSessionState(): void;
-    /**
-     * Restore session state after loading.
-     * Subclasses override to restore their specific state (plan, memory, etc.)
-     * Called after tool state and approval state are restored.
-     *
-     * Default implementation does nothing - override in subclasses.
-     */
-    protected restoreSessionState(_session: Session): Promise<void>;
-    /**
-     * Get plan state for session serialization.
-     * Subclasses with plans override this.
-     */
-    protected getSerializedPlan(): SerializedPlan | undefined;
-    /**
-     * Get memory state for session serialization.
-     * Subclasses with working memory override this.
-     */
-    protected getSerializedMemory(): SerializedMemory | undefined;
-    /**
-     * Resolve connector from string name or instance
-     */
-    protected resolveConnector(ref: string | Connector): Connector;
-    /**
-     * Initialize tool manager with provided tools
-     */
-    protected initializeToolManager(existingManager?: ToolManager, tools?: ToolFunction[], options?: ToolRegistrationOptions): ToolManager;
-    /**
-     * Register multiple tools with the tool manager
-     * Utility method to avoid code duplication across agent types
-     */
-    protected registerTools(manager: ToolManager, tools: ToolFunction[], options?: ToolRegistrationOptions): void;
-    /**
-     * Initialize permission manager
-     */
-    protected initializePermissionManager(config?: AgentPermissionsConfig, tools?: ToolFunction[]): ToolPermissionManager;
-    /**
-     * Initialize session management (call from subclass constructor after other setup)
-     */
-    protected initializeSession(sessionConfig?: BaseSessionConfig): void;
-    /**
-     * Ensure any pending session load is complete
-     */
-    protected ensureSessionLoaded(): Promise<void>;
-    /**
-     * Internal method to load session
-     */
-    protected loadSessionInternal(sessionId: string): Promise<void>;
-    /**
-     * Get the current session ID (if session is enabled)
-     */
-    getSessionId(): string | null;
-    /**
-     * Check if this agent has session support enabled
-     */
-    hasSession(): boolean;
-    /**
-     * Get the current session (for advanced use)
-     */
-    getSession(): Session | null;
-    /**
-     * Save the current session to storage
-     * @throws Error if session is not enabled
-     */
-    saveSession(): Promise<void>;
-    /**
-     * Update session custom data
-     */
-    updateSessionData(key: string, value: unknown): void;
-    /**
-     * Get session custom data
-     */
-    getSessionData<T = unknown>(key: string): T | undefined;
-    /**
-     * Advanced tool management. Returns ToolManager for fine-grained control.
-     */
-    get tools(): ToolManager;
-    /**
-     * Permission management. Returns ToolPermissionManager for approval control.
-     */
-    get permissions(): ToolPermissionManager;
-    /**
-     * Add a tool to the agent
-     */
-    addTool(tool: ToolFunction): void;
-    /**
-     * Remove a tool from the agent
-     */
-    removeTool(toolName: string): void;
-    /**
-     * List registered tools (returns enabled tool names)
-     */
-    listTools(): string[];
-    /**
-     * Replace all tools with a new array
-     */
-    setTools(tools: ToolFunction[]): void;
-    /**
-     * Get enabled tool definitions (for passing to LLM).
-     * This is a helper that extracts definitions from enabled tools.
-     */
-    protected getEnabledToolDefinitions(): FunctionToolDefinition[];
-    /**
-     * Get the current lifecycle hooks configuration
-     */
-    get lifecycleHooks(): AgentLifecycleHooks;
-    /**
-     * Set or update lifecycle hooks at runtime
-     */
-    setLifecycleHooks(hooks: Partial<AgentLifecycleHooks>): void;
-    /**
-     * Invoke beforeToolExecution hook if defined.
-     * Call this before executing a tool.
-     *
-     * @throws Error if hook throws (prevents tool execution)
-     */
-    protected invokeBeforeToolExecution(context: ToolExecutionHookContext): Promise<void>;
-    /**
-     * Invoke afterToolExecution hook if defined.
-     * Call this after tool execution completes (success or failure).
-     */
-    protected invokeAfterToolExecution(result: ToolExecutionResult): Promise<void>;
-    /**
-     * Invoke beforeContextPrepare hook if defined.
-     * Call this before preparing context for LLM.
-     */
-    protected invokeBeforeContextPrepare(): Promise<void>;
-    /**
-     * Invoke beforeCompaction hook if defined.
-     * Call this before context compaction occurs.
-     * Gives the agent a chance to save important data to memory.
-     */
-    protected invokeBeforeCompaction(context: BeforeCompactionContext): Promise<void>;
-    /**
-     * Invoke afterCompaction hook if defined.
-     * Call this after context compaction occurs.
-     */
-    protected invokeAfterCompaction(log: string[], tokensFreed: number): Promise<void>;
-    /**
-     * Invoke onError hook if defined.
-     * Call this when the agent encounters an error.
-     */
-    protected invokeOnError(error: Error, phase: string): Promise<void>;
-    get isDestroyed(): boolean;
-    /**
-     * Register a cleanup callback
-     */
-    onCleanup(callback: () => void | Promise<void>): void;
-    /**
-     * Base cleanup for session and listeners.
-     * Subclasses should call super.baseDestroy() in their destroy() method.
-     */
-    protected baseDestroy(): void;
-    /**
-     * Run cleanup callbacks
-     */
-    protected runCleanupCallbacks(): Promise<void>;
-}
-
-/**
- * Interface for objects that manage resources and need explicit cleanup.
- *
- * Implementing classes should release all resources (event listeners, timers,
- * connections, etc.) when destroy() is called. After destruction, the instance
- * should not be used.
- */
-interface IDisposable {
-    /**
-     * Releases all resources held by this instance.
-     *
-     * After calling destroy():
-     * - All event listeners should be removed
-     * - All timers/intervals should be cleared
-     * - All internal state should be cleaned up
-     * - The instance should not be reused
-     *
-     * Multiple calls to destroy() should be safe (idempotent).
-     */
-    destroy(): void;
-    /**
-     * Returns true if destroy() has been called.
-     * Methods should check this before performing operations.
-     */
-    readonly isDestroyed: boolean;
-}
-/**
- * Async version of IDisposable for resources requiring async cleanup.
- */
-interface IAsyncDisposable {
-    /**
-     * Asynchronously releases all resources held by this instance.
-     */
-    destroy(): Promise<void>;
-    /**
-     * Returns true if destroy() has been called.
-     */
-    readonly isDestroyed: boolean;
-}
-/**
- * Helper to check if an object is destroyed and throw if so.
- * @param obj - The disposable object to check
- * @param operation - Name of the operation being attempted
- */
-declare function assertNotDestroyed(obj: IDisposable | IAsyncDisposable, operation: string): void;
-
-/**
  * Memory storage interface for working memory persistence.
  *
  * Implement this interface to provide custom persistence:
@@ -2756,6 +2346,438 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
 }
 
 /**
+ * Options for tool registration
+ */
+interface ToolRegistrationOptions {
+    /** Namespace for the tool (e.g., 'user', '_meta', 'mcp:fs') */
+    namespace?: string;
+    /** Whether the tool is enabled by default */
+    enabled?: boolean;
+}
+/**
+ * Base session configuration (shared by all agent types)
+ */
+interface BaseSessionConfig {
+    /** Storage backend for sessions */
+    storage: ISessionStorage;
+    /** Resume existing session by ID */
+    id?: string;
+    /** Auto-save session after each interaction */
+    autoSave?: boolean;
+    /** Auto-save interval in milliseconds */
+    autoSaveIntervalMs?: number;
+}
+/**
+ * Tool execution context passed to lifecycle hooks
+ */
+interface ToolExecutionHookContext {
+    /** Name of the tool being executed */
+    toolName: string;
+    /** Arguments passed to the tool */
+    args: Record<string, unknown>;
+    /** Agent ID */
+    agentId: string;
+    /** Task ID (if running in TaskAgent) */
+    taskId?: string;
+}
+/**
+ * Tool execution result passed to afterToolExecution hook
+ */
+interface ToolExecutionResult {
+    /** Name of the tool that was executed */
+    toolName: string;
+    /** Result returned by the tool */
+    result: unknown;
+    /** Execution duration in milliseconds */
+    durationMs: number;
+    /** Whether the execution was successful */
+    success: boolean;
+    /** Error if execution failed */
+    error?: Error;
+}
+/**
+ * Context passed to beforeCompaction hook
+ */
+interface BeforeCompactionContext {
+    /** Agent identifier */
+    agentId: string;
+    /** Current context budget info */
+    currentBudget: {
+        total: number;
+        used: number;
+        available: number;
+        utilizationPercent: number;
+        status: 'ok' | 'warning' | 'critical';
+    };
+    /** Compaction strategy being used */
+    strategy: string;
+    /** Current context components (read-only) */
+    components: ReadonlyArray<{
+        name: string;
+        priority: number;
+        compactable: boolean;
+    }>;
+    /** Estimated tokens to be freed */
+    estimatedTokensToFree: number;
+}
+/**
+ * Agent lifecycle hooks for customization.
+ * These hooks allow external code to observe and modify agent behavior
+ * at key points in the execution lifecycle.
+ */
+interface AgentLifecycleHooks {
+    /**
+     * Called before a tool is executed.
+     * Can be used for logging, validation, or rate limiting.
+     * Throw an error to prevent tool execution.
+     *
+     * @param context - Tool execution context
+     * @returns Promise that resolves when hook completes
+     */
+    beforeToolExecution?: (context: ToolExecutionHookContext) => Promise<void>;
+    /**
+     * Called after a tool execution completes (success or failure).
+     * Can be used for logging, metrics, or cleanup.
+     *
+     * @param result - Tool execution result
+     * @returns Promise that resolves when hook completes
+     */
+    afterToolExecution?: (result: ToolExecutionResult) => Promise<void>;
+    /**
+     * Called before context is prepared for LLM call.
+     * Can be used to inject additional context or modify components.
+     *
+     * @param agentId - Agent identifier
+     * @returns Promise that resolves when hook completes
+     */
+    beforeContextPrepare?: (agentId: string) => Promise<void>;
+    /**
+     * Called before context compaction occurs.
+     * Use this hook to save important data to working memory before it's compacted.
+     * This is your last chance to preserve critical information from tool outputs
+     * or conversation history that would otherwise be lost.
+     *
+     * @param context - Compaction context with budget info and components
+     * @returns Promise that resolves when hook completes
+     */
+    beforeCompaction?: (context: BeforeCompactionContext) => Promise<void>;
+    /**
+     * Called after context compaction occurs.
+     * Can be used for logging or monitoring context management.
+     *
+     * @param log - Compaction log messages
+     * @param tokensFreed - Number of tokens freed
+     * @returns Promise that resolves when hook completes
+     */
+    afterCompaction?: (log: string[], tokensFreed: number) => Promise<void>;
+    /**
+     * Called when agent encounters an error.
+     * Can be used for custom error handling or recovery logic.
+     *
+     * @param error - The error that occurred
+     * @param context - Additional context about where the error occurred
+     * @returns Promise that resolves when hook completes
+     */
+    onError?: (error: Error, context: {
+        phase: string;
+        agentId: string;
+    }) => Promise<void>;
+}
+/**
+ * Base configuration shared by all agent types
+ */
+interface BaseAgentConfig {
+    /** Connector name or instance */
+    connector: string | Connector;
+    /** Model identifier */
+    model: string;
+    /** Agent name (optional, auto-generated if not provided) */
+    name?: string;
+    /** Tools available to the agent */
+    tools?: ToolFunction[];
+    /** Provide a pre-configured ToolManager (advanced) */
+    toolManager?: ToolManager;
+    /** Session configuration */
+    session?: BaseSessionConfig;
+    /** Permission configuration */
+    permissions?: AgentPermissionsConfig;
+    /** Lifecycle hooks for customization */
+    lifecycleHooks?: AgentLifecycleHooks;
+    /**
+     * Optional AgentContext configuration.
+     * If provided as AgentContext instance, it will be used directly.
+     * If provided as config object, a new AgentContext will be created.
+     * If not provided, a default AgentContext will be created.
+     */
+    context?: AgentContext | AgentContextConfig;
+}
+/**
+ * Base events emitted by all agent types.
+ * Agent subclasses typically extend their own event interfaces.
+ */
+interface BaseAgentEvents {
+    'session:saved': {
+        sessionId: string;
+    };
+    'session:loaded': {
+        sessionId: string;
+    };
+    destroyed: void;
+}
+/**
+ * Abstract base class for all agent types.
+ *
+ * @internal This class is not exported in the public API.
+ *
+ * Note: TEvents is not constrained to BaseAgentEvents to allow subclasses
+ * to define their own event interfaces (e.g., AgenticLoopEvents for Agent).
+ */
+declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConfig, TEvents extends Record<string, any> = BaseAgentEvents> extends EventEmitter<TEvents> {
+    readonly name: string;
+    readonly connector: Connector;
+    readonly model: string;
+    protected _config: TConfig;
+    protected _agentContext: AgentContext;
+    protected _permissionManager: ToolPermissionManager;
+    protected _sessionManager: SessionManager | null;
+    protected _session: Session | null;
+    protected _pendingSessionLoad: Promise<void> | null;
+    protected _isDestroyed: boolean;
+    protected _cleanupCallbacks: Array<() => void | Promise<void>>;
+    protected _logger: FrameworkLogger;
+    protected _lifecycleHooks: AgentLifecycleHooks;
+    constructor(config: TConfig, loggerComponent: string);
+    /**
+     * Get the agent type identifier for session serialization
+     */
+    protected abstract getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
+    /**
+     * Prepare session state before saving.
+     * Subclasses override to add their specific state (plan, memory, etc.)
+     *
+     * Default implementation does nothing - override in subclasses.
+     */
+    protected prepareSessionState(): void;
+    /**
+     * Restore session state after loading.
+     * Subclasses override to restore their specific state (plan, memory, etc.)
+     * Called after tool state and approval state are restored.
+     *
+     * Default implementation does nothing - override in subclasses.
+     */
+    protected restoreSessionState(_session: Session): Promise<void>;
+    /**
+     * Get plan state for session serialization.
+     * Subclasses with plans override this.
+     */
+    protected getSerializedPlan(): SerializedPlan | undefined;
+    /**
+     * Get memory state for session serialization.
+     * Subclasses with working memory override this.
+     */
+    protected getSerializedMemory(): SerializedMemory | undefined;
+    /**
+     * Resolve connector from string name or instance
+     */
+    protected resolveConnector(ref: string | Connector): Connector;
+    /**
+     * Initialize AgentContext (single source of truth for tools).
+     * If AgentContext is provided, use it directly.
+     * Otherwise, create a new one with the provided configuration.
+     */
+    protected initializeAgentContext(config: TConfig): AgentContext;
+    /**
+     * Initialize tool manager with provided tools
+     * @deprecated Use _agentContext.tools instead. This method is kept for backward compatibility.
+     */
+    protected initializeToolManager(existingManager?: ToolManager, tools?: ToolFunction[], options?: ToolRegistrationOptions): ToolManager;
+    /**
+     * Register multiple tools with the tool manager
+     * Utility method to avoid code duplication across agent types
+     */
+    protected registerTools(manager: ToolManager, tools: ToolFunction[], options?: ToolRegistrationOptions): void;
+    /**
+     * Initialize permission manager
+     */
+    protected initializePermissionManager(config?: AgentPermissionsConfig, tools?: ToolFunction[]): ToolPermissionManager;
+    /**
+     * Initialize session management (call from subclass constructor after other setup)
+     */
+    protected initializeSession(sessionConfig?: BaseSessionConfig): void;
+    /**
+     * Ensure any pending session load is complete
+     */
+    protected ensureSessionLoaded(): Promise<void>;
+    /**
+     * Internal method to load session
+     */
+    protected loadSessionInternal(sessionId: string): Promise<void>;
+    /**
+     * Get the current session ID (if session is enabled)
+     */
+    getSessionId(): string | null;
+    /**
+     * Check if this agent has session support enabled
+     */
+    hasSession(): boolean;
+    /**
+     * Get the current session (for advanced use)
+     */
+    getSession(): Session | null;
+    /**
+     * Save the current session to storage
+     * @throws Error if session is not enabled
+     */
+    saveSession(): Promise<void>;
+    /**
+     * Update session custom data
+     */
+    updateSessionData(key: string, value: unknown): void;
+    /**
+     * Get session custom data
+     */
+    getSessionData<T = unknown>(key: string): T | undefined;
+    /**
+     * Advanced tool management. Returns ToolManager for fine-grained control.
+     * This is delegated to AgentContext.tools (single source of truth).
+     */
+    get tools(): ToolManager;
+    /**
+     * Get the AgentContext (unified context management).
+     * This is the primary way to access tools, memory, cache, permissions, and history.
+     */
+    get context(): AgentContext;
+    /**
+     * Permission management. Returns ToolPermissionManager for approval control.
+     */
+    get permissions(): ToolPermissionManager;
+    /**
+     * Add a tool to the agent.
+     * Tools are registered with AgentContext (single source of truth).
+     */
+    addTool(tool: ToolFunction): void;
+    /**
+     * Remove a tool from the agent.
+     * Tools are unregistered from AgentContext (single source of truth).
+     */
+    removeTool(toolName: string): void;
+    /**
+     * List registered tools (returns enabled tool names)
+     */
+    listTools(): string[];
+    /**
+     * Replace all tools with a new array
+     */
+    setTools(tools: ToolFunction[]): void;
+    /**
+     * Get enabled tool definitions (for passing to LLM).
+     * This is a helper that extracts definitions from enabled tools.
+     */
+    protected getEnabledToolDefinitions(): FunctionToolDefinition[];
+    /**
+     * Get the current lifecycle hooks configuration
+     */
+    get lifecycleHooks(): AgentLifecycleHooks;
+    /**
+     * Set or update lifecycle hooks at runtime
+     */
+    setLifecycleHooks(hooks: Partial<AgentLifecycleHooks>): void;
+    /**
+     * Invoke beforeToolExecution hook if defined.
+     * Call this before executing a tool.
+     *
+     * @throws Error if hook throws (prevents tool execution)
+     */
+    protected invokeBeforeToolExecution(context: ToolExecutionHookContext): Promise<void>;
+    /**
+     * Invoke afterToolExecution hook if defined.
+     * Call this after tool execution completes (success or failure).
+     */
+    protected invokeAfterToolExecution(result: ToolExecutionResult): Promise<void>;
+    /**
+     * Invoke beforeContextPrepare hook if defined.
+     * Call this before preparing context for LLM.
+     */
+    protected invokeBeforeContextPrepare(): Promise<void>;
+    /**
+     * Invoke beforeCompaction hook if defined.
+     * Call this before context compaction occurs.
+     * Gives the agent a chance to save important data to memory.
+     */
+    protected invokeBeforeCompaction(context: BeforeCompactionContext): Promise<void>;
+    /**
+     * Invoke afterCompaction hook if defined.
+     * Call this after context compaction occurs.
+     */
+    protected invokeAfterCompaction(log: string[], tokensFreed: number): Promise<void>;
+    /**
+     * Invoke onError hook if defined.
+     * Call this when the agent encounters an error.
+     */
+    protected invokeOnError(error: Error, phase: string): Promise<void>;
+    get isDestroyed(): boolean;
+    /**
+     * Register a cleanup callback
+     */
+    onCleanup(callback: () => void | Promise<void>): void;
+    /**
+     * Base cleanup for session and listeners.
+     * Subclasses should call super.baseDestroy() in their destroy() method.
+     */
+    protected baseDestroy(): void;
+    /**
+     * Run cleanup callbacks
+     */
+    protected runCleanupCallbacks(): Promise<void>;
+}
+
+/**
+ * Interface for objects that manage resources and need explicit cleanup.
+ *
+ * Implementing classes should release all resources (event listeners, timers,
+ * connections, etc.) when destroy() is called. After destruction, the instance
+ * should not be used.
+ */
+interface IDisposable {
+    /**
+     * Releases all resources held by this instance.
+     *
+     * After calling destroy():
+     * - All event listeners should be removed
+     * - All timers/intervals should be cleared
+     * - All internal state should be cleaned up
+     * - The instance should not be reused
+     *
+     * Multiple calls to destroy() should be safe (idempotent).
+     */
+    destroy(): void;
+    /**
+     * Returns true if destroy() has been called.
+     * Methods should check this before performing operations.
+     */
+    readonly isDestroyed: boolean;
+}
+/**
+ * Async version of IDisposable for resources requiring async cleanup.
+ */
+interface IAsyncDisposable {
+    /**
+     * Asynchronously releases all resources held by this instance.
+     */
+    destroy(): Promise<void>;
+    /**
+     * Returns true if destroy() has been called.
+     */
+    readonly isDestroyed: boolean;
+}
+/**
+ * Helper to check if an object is destroyed and throw if so.
+ * @param obj - The disposable object to check
+ * @param operation - Name of the operation being attempted
+ */
+declare function assertNotDestroyed(obj: IDisposable | IAsyncDisposable, operation: string): void;
+
+/**
  * Session configuration for Agent (same as BaseSessionConfig)
  */
 type AgentSessionConfig = BaseSessionConfig;
@@ -2810,7 +2832,6 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgenticLoopEvents> implemen
     private provider;
     private agenticLoop;
     private boundListeners;
-    private _context;
     /**
      * Create a new agent
      *
@@ -2846,38 +2867,16 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgenticLoopEvents> implemen
     protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
     protected prepareSessionState(): void;
     /**
-     * Get the optional AgentContext (if configured).
-     * Returns null if context management was not enabled.
-     *
-     * @example
-     * ```typescript
-     * const agent = Agent.create({
-     *   connector: 'openai',
-     *   model: 'gpt-4',
-     *   context: { autoCompact: true },
-     * });
-     *
-     * // Access context features
-     * if (agent.context) {
-     *   const history = agent.context.getHistory();
-     *   const budget = await agent.context.getBudget();
-     *   agent.context.memory.store('key', 'desc', value);
-     * }
-     * ```
-     */
-    get context(): AgentContext | null;
-    /**
-     * Check if context management is enabled
+     * Check if context management is enabled.
+     * Always returns true since AgentContext is always created by BaseAgent.
      */
     hasContext(): boolean;
     /**
      * Get context state for session persistence.
-     * Returns null if context is not enabled.
      */
-    getContextState(): Promise<SerializedAgentContextState | null>;
+    getContextState(): Promise<SerializedAgentContextState>;
     /**
      * Restore context from saved state.
-     * No-op if context is not enabled.
      */
     restoreContextState(state: SerializedAgentContextState): Promise<void>;
     /**
@@ -5568,7 +5567,6 @@ declare class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     protected hooks?: TaskAgentHooks;
     protected executionPromise?: Promise<PlanResult>;
     protected agent?: Agent;
-    protected _agentContext?: AgentContext;
     protected _planPlugin?: PlanPlugin;
     protected _memoryPlugin?: MemoryPlugin;
     protected idempotencyCache?: IdempotencyCache;
@@ -5600,7 +5598,8 @@ declare class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     protected getSerializedMemory(): SerializedMemory | undefined;
     saveSession(): Promise<void>;
     /**
-     * Wrap a tool with idempotency cache and enhanced context
+     * Wrap a tool with idempotency cache and enhanced context.
+     * Uses inherited _agentContext from BaseAgent.
      */
     private wrapToolWithCache;
     /**
@@ -5612,26 +5611,8 @@ declare class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
      */
     private setupPlanExecutorEvents;
     /**
-     * Get unified AgentContext.
-     *
-     * AgentContext provides the unified API for context management across all agent types.
-     *
-     * @example
-     * ```typescript
-     * const taskAgent = TaskAgent.create({ ... });
-     *
-     * // Access context features
-     * taskAgent.context.addMessage('user', 'Hello');
-     * const budget = await taskAgent.context.getBudget();
-     * const metrics = await taskAgent.context.getMetrics();
-     *
-     * // Direct access to composed managers
-     * await taskAgent.context.memory.set('key', 'desc', value);
-     * ```
-     */
-    get context(): AgentContext;
-    /**
-     * Check if context is available (components initialized)
+     * Check if context is available (components initialized).
+     * Always true since AgentContext is created by BaseAgent constructor.
      */
     hasContext(): boolean;
     /**
@@ -9492,7 +9473,6 @@ declare class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAg
     private executionAgent?;
     private modeManager;
     private planningAgent?;
-    private _agentContext;
     private _planPlugin;
     private _memoryPlugin;
     private currentPlan;
@@ -9594,27 +9574,7 @@ declare class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAg
      */
     get toolManager(): ToolManager;
     /**
-     * Get unified AgentContext.
-     *
-     * Returns the AgentContext instance directly, providing the same API
-     * across all agent types (Agent, TaskAgent, UniversalAgent).
-     *
-     * @example
-     * ```typescript
-     * const agent = UniversalAgent.create({ ... });
-     *
-     * // Access context features
-     * agent.context.addMessage('user', 'Hello');
-     * const metrics = await agent.context.getMetrics();
-     *
-     * // Direct access to managers
-     * await agent.context.memory.store('key', 'desc', value);
-     * const budget = await agent.context.getBudget();
-     * ```
-     */
-    get context(): AgentContext;
-    /**
-     * Check if context is available (always true for UniversalAgent)
+     * Check if context is available (always true since AgentContext is created by BaseAgent)
      */
     hasContext(): boolean;
     setAutoApproval(value: boolean): void;

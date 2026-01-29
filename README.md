@@ -333,7 +333,7 @@ const progress = agent.getProgress();
 
 ### 2. Dynamic Tool Management (NEW)
 
-Control tools at runtime for all agent types:
+Control tools at runtime for all agent types. **AgentContext is the single source of truth** - `agent.tools` and `agent.context.tools` are the same ToolManager instance:
 
 ```typescript
 import { Agent } from '@oneringai/agents';
@@ -349,6 +349,13 @@ agent.tools.disable('database_tool');
 
 // Enable later
 agent.tools.enable('database_tool');
+
+// UNIFIED ACCESS: Both paths access the same ToolManager
+console.log(agent.tools === agent.context.tools);  // true
+
+// Changes via either path are immediately reflected
+agent.context.tools.disable('email_tool');
+console.log(agent.tools.listEnabled().includes('email_tool'));  // false
 
 // Context-aware selection
 const selected = agent.tools.selectForContext({

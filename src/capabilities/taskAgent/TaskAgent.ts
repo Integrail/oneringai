@@ -29,8 +29,7 @@ import type { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
 import { DEFAULT_MEMORY_CONFIG } from '../../domain/entities/Memory.js';
 import { IAgentStorage, createAgentStorage } from '../../infrastructure/storage/InMemoryStorage.js';
 import { WorkingMemory } from './WorkingMemory.js';
-// Unified AgentContext
-import { AgentContext } from '../../core/AgentContext.js';
+// Unified AgentContext (inherited from BaseAgent, import only for type reference if needed)
 import { PlanPlugin } from '../../core/context/plugins/PlanPlugin.js';
 import { MemoryPlugin } from '../../core/context/plugins/MemoryPlugin.js';
 import { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
@@ -259,7 +258,7 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
 
   // Internal components
   protected agent?: Agent;
-  protected _agentContext?: AgentContext;
+  // Note: _agentContext is inherited from BaseAgent (single source of truth)
   protected _planPlugin?: PlanPlugin;
   protected _memoryPlugin?: MemoryPlugin;
   protected idempotencyCache?: IdempotencyCache;
@@ -460,8 +459,8 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
       );
     }
 
-    // Update common session state
-    this._session.toolState = this._toolManager.getState();
+    // Update common session state (use inherited _agentContext.tools)
+    this._session.toolState = this._agentContext.tools.getState();
     this._session.custom['approvalState'] = this._permissionManager.getState();
 
     // Get plan state
@@ -495,17 +494,19 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
   // ===== Component Initialization =====
 
   /**
-   * Wrap a tool with idempotency cache and enhanced context
+   * Wrap a tool with idempotency cache and enhanced context.
+   * Uses inherited _agentContext from BaseAgent.
    */
   private wrapToolWithCache(tool: ToolFunction): ToolFunction {
     return {
       ...tool,
       execute: async (args: any, context?: any) => {
         // Enhance context with TaskAgent-specific properties
+        // Use inherited _agentContext from BaseAgent
         const enhancedContext = {
           ...context,
           memory: this.memory.getAccess(),    // Add memory access for memory tools
-          agentContext: this._agentContext,
+          agentContext: this._agentContext,   // Inherited from BaseAgent
           idempotencyCache: this.idempotencyCache,
           agentId: this.id,
         };
@@ -540,17 +541,20 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     const contextTools = createContextTools();
     this._allTools = [...(config.tools ?? []), ...memoryTools, ...contextTools];
 
-    // Register tools with ToolManager (use inherited method from BaseAgent)
-    this.registerTools(this._toolManager, this._allTools);
+    // Register memory and context tools with inherited AgentContext.tools
+    // (user tools are already registered by BaseAgent constructor)
+    for (const tool of [...memoryTools, ...contextTools]) {
+      this._agentContext.tools.register(tool);
+    }
 
     // Create idempotency cache first (needed for wrapping tools)
     this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
 
-    // Get enabled tools from ToolManager and wrap with cache
-    const enabledTools = this._toolManager.getEnabled();
+    // Get enabled tools from inherited AgentContext and wrap with cache
+    const enabledTools = this._agentContext.tools.getEnabled();
     const cachedTools = enabledTools.map((tool) => this.wrapToolWithCache(tool));
 
-    // Create base Agent for LLM calls
+    // Create base Agent for LLM calls (shares the inherited AgentContext)
     this.agent = Agent.create({
       connector: config.connector,
       model: config.model,
@@ -559,32 +563,24 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
       temperature: config.temperature,
       maxIterations: config.maxIterations ?? 10,
       permissions: config.permissions,
+      context: this._agentContext,  // Share inherited AgentContext
     });
 
-    // Calculate context limit from model
+    // Calculate context limit from model and update inherited AgentContext
     const modelInfo = getModelInfo(config.model);
     const contextTokens = modelInfo?.features.input.tokens ?? CONTEXT_DEFAULTS.MAX_TOKENS;
+    this._agentContext.setMaxContextTokens(contextTokens);
 
-    // Create plugins for unified AgentContext
+    // Set system prompt on inherited AgentContext
+    if (config.instructions) {
+      this._agentContext.systemPrompt = config.instructions;
+    }
+
+    // Create plugins for the inherited AgentContext
     this._planPlugin = new PlanPlugin();
     this._memoryPlugin = new MemoryPlugin(this.memory);
 
-    // Create unified AgentContext (replaces contextManager, contextProvider, historyManager)
-    this._agentContext = AgentContext.create({
-      model: config.model,
-      systemPrompt: config.instructions ?? '',
-      tools: cachedTools,
-      maxContextTokens: contextTokens,
-      responseReserve: 0.15,
-      autoCompact: true,
-      strategy: 'proactive',
-      history: {
-        maxMessages: 50,
-        preserveRecent: 10,
-      },
-    });
-
-    // Register plugins with AgentContext
+    // Register plugins with inherited AgentContext
     this._agentContext.registerPlugin(this._planPlugin);
     this._agentContext.registerPlugin(this._memoryPlugin);
 
@@ -597,7 +593,7 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     // Create checkpoint manager
     this.checkpointManager = new CheckpointManager(this.agentStorage, DEFAULT_CHECKPOINT_STRATEGY);
 
-    // Create plan executor with unified AgentContext
+    // Create plan executor with inherited AgentContext
     this.planExecutor = new PlanExecutor(
       this.agent,
       this.memory,
@@ -660,36 +656,15 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
 
   // ===== Unified Context Access =====
 
-  /**
-   * Get unified AgentContext.
-   *
-   * AgentContext provides the unified API for context management across all agent types.
-   *
-   * @example
-   * ```typescript
-   * const taskAgent = TaskAgent.create({ ... });
-   *
-   * // Access context features
-   * taskAgent.context.addMessage('user', 'Hello');
-   * const budget = await taskAgent.context.getBudget();
-   * const metrics = await taskAgent.context.getMetrics();
-   *
-   * // Direct access to composed managers
-   * await taskAgent.context.memory.set('key', 'desc', value);
-   * ```
-   */
-  get context(): AgentContext {
-    if (!this._agentContext) {
-      throw new Error('TaskAgent components not initialized. Call start() first or use create().');
-    }
-    return this._agentContext;
-  }
+  // Note: `context` getter is inherited from BaseAgent (returns _agentContext)
+  // The inherited getter returns the AgentContext which is always available after BaseAgent constructor
 
   /**
-   * Check if context is available (components initialized)
+   * Check if context is available (components initialized).
+   * Always true since AgentContext is created by BaseAgent constructor.
    */
   hasContext(): boolean {
-    return !!this._agentContext;
+    return true;
   }
 
   /**
