@@ -203,7 +203,7 @@ export function createMemoryTools(): ToolFunction[] {
 
         const entries = await context.memory.list();
         return {
-          entries: entries.map((e: { key: string; description: string; effectivePriority?: import('../../domain/entities/Memory.js').MemoryPriority; pinned?: boolean }) => ({
+          entries: entries.map((e) => ({
             key: e.key,
             description: e.description,
             priority: e.effectivePriority,

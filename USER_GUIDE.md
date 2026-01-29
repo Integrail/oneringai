@@ -33,12 +33,13 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 14. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
 15. [Image Generation](#image-generation) **NEW**
 16. [Video Generation](#video-generation) **NEW**
-17. [Streaming](#streaming)
-18. [External API Integration](#external-api-integration) **NEW**
-19. [OAuth for External APIs](#oauth-for-external-apis)
-20. [Model Registry](#model-registry)
-21. [Advanced Features](#advanced-features)
-22. [Production Deployment](#production-deployment)
+17. [Web Search](#web-search) **NEW**
+18. [Streaming](#streaming)
+19. [External API Integration](#external-api-integration) **NEW**
+20. [OAuth for External APIs](#oauth-for-external-apis)
+21. [Model Registry](#model-registry)
+22. [Advanced Features](#advanced-features)
+23. [Production Deployment](#production-deployment)
 
 ---
 
@@ -5821,6 +5822,437 @@ const job = await videoGen.generate({ prompt: '...', duration: 8 });
 const cancelled = await videoGen.cancel(job.jobId);
 console.log('Cancelled:', cancelled);  // true
 ```
+
+---
+
+## Web Search
+
+Web search capabilities with Connector-based authentication. Supports multiple providers: Serper, Brave, Tavily, and RapidAPI.
+
+### Quick Start
+
+```typescript
+import { Connector, SearchProvider, Services } from '@oneringai/agents';
+
+// Create search connector
+Connector.create({
+  name: 'serper-main',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Create search provider
+const search = SearchProvider.create({ connector: 'serper-main' });
+
+// Perform search
+const results = await search.search('latest AI developments 2026', {
+  numResults: 10,
+  country: 'us',
+  language: 'en',
+});
+
+if (results.success) {
+  console.log(`Found ${results.count} results:`);
+  results.results.forEach((result, i) => {
+    console.log(`${i + 1}. ${result.title}`);
+    console.log(`   ${result.url}`);
+    console.log(`   ${result.snippet}\n`);
+  });
+}
+```
+
+### Search Providers
+
+#### Serper (Google Search)
+
+Fast Google search results via Serper.dev API:
+
+```typescript
+Connector.create({
+  name: 'serper-main',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+const search = SearchProvider.create({ connector: 'serper-main' });
+const results = await search.search('query', {
+  numResults: 10,
+  country: 'us',
+  language: 'en',
+});
+```
+
+**Features:**
+- Fast (1-2 second response time)
+- 2,500 free queries, then $0.30/1k
+- Google search quality
+- Up to 100 results per query
+
+#### Brave Search
+
+Independent search index (privacy-focused):
+
+```typescript
+Connector.create({
+  name: 'brave-main',
+  serviceType: Services.BraveSearch,
+  auth: { type: 'api_key', apiKey: process.env.BRAVE_API_KEY! },
+  baseURL: 'https://api.search.brave.com/res/v1',
+});
+
+const search = SearchProvider.create({ connector: 'brave-main' });
+const results = await search.search('query', {
+  numResults: 10,
+});
+```
+
+**Features:**
+- Privacy-focused (no Google)
+- Independent search index
+- 2,000 free queries, then $3/1k
+- Up to 20 results per query
+
+#### Tavily
+
+AI-optimized search with summaries:
+
+```typescript
+Connector.create({
+  name: 'tavily-main',
+  serviceType: Services.Tavily,
+  auth: { type: 'api_key', apiKey: process.env.TAVILY_API_KEY! },
+  baseURL: 'https://api.tavily.com',
+});
+
+const search = SearchProvider.create({ connector: 'tavily-main' });
+const results = await search.search('query', {
+  numResults: 10,
+  vendorOptions: {
+    search_depth: 'advanced',  // 'basic' or 'advanced'
+    include_answer: true,
+    include_raw_content: false,
+  },
+});
+```
+
+**Features:**
+- AI-optimized for LLMs
+- Includes summaries
+- 1,000 free queries, then $1/1k
+- Up to 20 results per query
+
+#### RapidAPI
+
+Real-time web search via RapidAPI:
+
+```typescript
+Connector.create({
+  name: 'rapidapi-search',
+  serviceType: Services.RapidapiSearch,
+  auth: { type: 'api_key', apiKey: process.env.RAPIDAPI_KEY! },
+  baseURL: 'https://real-time-web-search.p.rapidapi.com',
+});
+
+const search = SearchProvider.create({ connector: 'rapidapi-search' });
+const results = await search.search('query', {
+  numResults: 50,
+  country: 'us',
+  language: 'en',
+  vendorOptions: {
+    start: 0,                  // Pagination offset
+    fetch_ai_overviews: false,
+    deduplicate: false,
+    nfpr: 0,                   // No auto-correct
+    tbs: 'qdr:d',             // Time-based search (d=day, w=week, m=month, y=year)
+    location: 'New York',      // Search origin
+  },
+});
+```
+
+**Features:**
+- Real-time web results
+- Up to 100 results per query
+- Advanced filtering options
+- Various pricing plans
+
+### Using with Agent (webSearch Tool)
+
+The webSearch tool is available for agents:
+
+```typescript
+import { Agent, webSearch } from '@oneringai/agents';
+
+// Create agent with webSearch tool
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webSearch],
+});
+
+// Agent automatically uses available search connectors
+const response = await agent.run(
+  'Search for the latest AI news from 2026 and summarize the top 3 results'
+);
+```
+
+**Tool Parameters:**
+- `query` (required) - Search query string
+- `connectorName` - Connector name to use (recommended)
+- `numResults` - Number of results (default: 10)
+- `country` - Country/region code (e.g., 'us', 'gb')
+- `language` - Language code (e.g., 'en', 'fr')
+- `provider` - Legacy parameter ('serper', 'brave', 'tavily') for backward compatibility
+
+**Example with specific connector:**
+
+```typescript
+await webSearch.execute({
+  query: 'quantum computing breakthroughs',
+  connectorName: 'serper-main',
+  numResults: 5,
+  country: 'us',
+});
+```
+
+### Multiple Keys (Failover)
+
+Support for backup keys:
+
+```typescript
+// Main connector
+Connector.create({
+  name: 'serper-main',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY_MAIN! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Backup connector
+Connector.create({
+  name: 'serper-backup',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY_BACKUP! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Use with failover
+try {
+  const search = SearchProvider.create({ connector: 'serper-main' });
+  const results = await search.search('query');
+} catch (error) {
+  console.log('Main failed, trying backup...');
+  const backup = SearchProvider.create({ connector: 'serper-backup' });
+  const results = await backup.search('query');
+}
+```
+
+### Enterprise Resilience
+
+All Connector features automatically apply:
+
+```typescript
+Connector.create({
+  name: 'serper-main',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+
+  // Resilience features
+  timeout: 30000,  // 30 second timeout
+  retry: {
+    maxRetries: 3,
+    baseDelayMs: 1000,
+    maxDelayMs: 30000,
+    retryableStatuses: [429, 500, 502, 503, 504],
+  },
+  circuitBreaker: {
+    enabled: true,
+    failureThreshold: 5,
+    resetTimeoutMs: 60000,
+  },
+});
+
+const search = SearchProvider.create({ connector: 'serper-main' });
+// Automatically includes retry, circuit breaker, and timeout!
+const results = await search.search('query');
+```
+
+### Metrics and Monitoring
+
+```typescript
+const connector = Connector.get('serper-main');
+
+// Get metrics
+const metrics = connector.getMetrics();
+console.log(`Requests: ${metrics.requestCount}`);
+console.log(`Success rate: ${(metrics.successRate * 100).toFixed(1)}%`);
+console.log(`Avg latency: ${metrics.avgLatencyMs.toFixed(0)}ms`);
+
+// Circuit breaker state
+const cbState = connector.getCircuitBreakerState();
+console.log(`Circuit breaker: ${cbState}`);  // 'closed' | 'open' | 'half-open'
+```
+
+### Backward Compatibility
+
+Old environment variable approach still works:
+
+```typescript
+// Set environment variable
+process.env.SERPER_API_KEY = 'your-key';
+
+// Use without connector (legacy)
+await webSearch.execute({
+  query: 'search term',
+  provider: 'serper',  // 'serper' | 'brave' | 'tavily'
+  numResults: 10
+});
+```
+
+### Best Practices
+
+1. **Use Connectors** - Preferred over environment variables
+2. **Setup Backup Keys** - For production resilience
+3. **Monitor Metrics** - Track usage and performance
+4. **Cache Results** - Reduce API costs by caching
+5. **Handle Errors** - Always check `results.success`
+6. **Respect Rate Limits** - Each provider has different limits
+
+### Error Handling
+
+```typescript
+const results = await search.search('query');
+
+if (!results.success) {
+  console.error('Search failed:', results.error);
+
+  // Check error type
+  if (results.error?.includes('API key')) {
+    console.error('Authentication failed - check API key');
+  } else if (results.error?.includes('429')) {
+    console.error('Rate limit exceeded - try backup connector');
+  } else if (results.error?.includes('timeout')) {
+    console.error('Request timed out - increase timeout setting');
+  }
+} else {
+  console.log(`Success: ${results.count} results`);
+}
+```
+
+---
+
+## Web Scraping
+
+The library provides enterprise web scraping with automatic fallback chains and bot protection bypass.
+
+### Quick Start
+
+```typescript
+import { Connector, ScrapeProvider, Services } from '@oneringai/agents';
+
+// Create ZenRows connector
+Connector.create({
+  name: 'zenrows',
+  serviceType: Services.Zenrows,
+  auth: { type: 'api_key', apiKey: process.env.ZENROWS_API_KEY! },
+  baseURL: 'https://api.zenrows.com/v1',
+});
+
+// Create scrape provider
+const scraper = ScrapeProvider.create({ connector: 'zenrows' });
+
+// Scrape a URL
+const result = await scraper.scrape('https://example.com', {
+  includeMarkdown: true,
+  includeLinks: true,
+});
+
+if (result.success) {
+  console.log(result.result?.title);
+  console.log(result.result?.content);
+  console.log(result.finalUrl);
+}
+```
+
+### ZenRows Provider
+
+ZenRows provides enterprise-grade scraping with:
+- JavaScript rendering for SPAs
+- Premium proxies (residential IPs)
+- Anti-bot and CAPTCHA bypass
+- Markdown conversion
+- Screenshot capture
+
+```typescript
+import { ScrapeProvider, ZenRowsOptions } from '@oneringai/agents';
+
+const scraper = ScrapeProvider.create({ connector: 'zenrows' });
+
+// Full control with ZenRows options
+const result = await scraper.scrape('https://protected-site.com', {
+  includeMarkdown: true,
+  includeScreenshot: true,
+  vendorOptions: {
+    jsRender: true,           // Enable JS rendering (default: true)
+    premiumProxy: true,       // Use residential IPs (default: true)
+    wait: 5000,               // Wait 5s before scraping
+    waitFor: '.content',      // Wait for CSS selector
+    device: 'mobile',         // Mobile user agent
+    proxyCountry: 'us',       // Use US proxies
+    autoparse: true,          // Auto-structure data
+  } as ZenRowsOptions,
+});
+```
+
+### Using webScrape Tool with Agent
+
+The webScrape tool provides guaranteed URL reading with automatic fallback:
+
+```typescript
+import { Agent, webScrape } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webScrape],
+});
+
+// Agent uses automatic fallback: native → JS → API
+await agent.run('Scrape https://example.com and summarize');
+```
+
+### Scraping Strategies
+
+The webScrape tool supports different strategies:
+
+```typescript
+await webScrape.execute({
+  url: 'https://example.com',
+  strategy: 'auto',           // 'auto' | 'native' | 'js' | 'api' | 'api-first'
+  connectorName: 'zenrows',   // Optional: specify API connector
+  minQualityScore: 50,        // Minimum quality score to accept
+  includeMarkdown: true,      // Convert to markdown
+  includeLinks: true,         // Extract links
+  waitForSelector: '.main',   // Wait for selector (JS/API only)
+});
+```
+
+**Strategy Options:**
+- `auto` (default) - Tries native → JS → API until one succeeds
+- `native` - Only native HTTP fetch (fast, free, static sites only)
+- `js` - Only JavaScript rendering (handles SPAs, needs Puppeteer)
+- `api` - Only external API provider (handles bot protection)
+- `api-first` - Tries API first, then falls back to native
+
+### Best Practices
+
+1. **Start with `auto` strategy** - Let the tool figure out the best approach
+2. **Use API for protected sites** - ZenRows handles bot protection
+3. **Set quality thresholds** - Increase `minQualityScore` for better content
+4. **Request markdown** - Cleaner output for LLM processing
+5. **Handle errors** - Check `result.success` and `result.error`
 
 ---
 

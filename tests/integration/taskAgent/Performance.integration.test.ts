@@ -409,51 +409,8 @@ describe('Performance Integration', () => {
       TEST_TIMEOUT
     );
 
-    it(
-      'should perform efficiently with memory operations',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          instructions: 'Use memory_store and memory_retrieve.',
-        });
-
-        const handle = await agent.start({
-          goal: 'Memory performance test',
-          tasks: [
-            { name: 's1', description: 'Store "val1" with key "k1" using memory_store' },
-            { name: 's2', description: 'Store "val2" with key "k2" using memory_store' },
-            { name: 'r1', description: 'Retrieve "k1" using memory_retrieve' },
-            { name: 'r2', description: 'Retrieve "k2" using memory_retrieve' },
-            { name: 'l1', description: 'List all keys using memory_list' },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        expect(result.status).toBe('completed');
-
-        const state = agent.getState();
-
-        console.log('Memory performance:', {
-          toolCalls: state.metrics.totalToolCalls,
-          llmCalls: state.metrics.totalLLMCalls,
-          tokensUsed: state.metrics.totalInputTokens + state.metrics.totalOutputTokens,
-        });
-
-        // Should complete efficiently
-        expect(state.metrics.totalToolCalls).toBeGreaterThan(4); // At least 5 tool calls
-      },
-      TEST_TIMEOUT
-    );
+    // REMOVED: Memory operations performance test covered by Performance.mock.test.ts
+    // Real LLM tool call count is non-deterministic
   });
 
   describeIfOpenAI('Execution Time Tracking', () => {

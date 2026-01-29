@@ -503,11 +503,13 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     return {
       ...tool,
       execute: async (args: any, context?: any) => {
-        // Enhance context with contextManager and idempotencyCache
+        // Enhance context with TaskAgent-specific properties
         const enhancedContext = {
           ...context,
+          memory: this.memory.getAccess(),    // Add memory access for memory tools
           contextManager: this.contextManager,
           idempotencyCache: this.idempotencyCache,
+          agentId: this.id,
         };
 
         if (!this.idempotencyCache) {

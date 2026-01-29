@@ -18,11 +18,11 @@ export function createMockConnector(name: string = 'mock-test'): MockLLMProvider
   const mockProvider = new MockLLMProvider();
   mockProviders.set(name, mockProvider);
 
-  // Register a custom provider factory that returns our mock
-  // We'll use the Vendor.Custom type and inject the provider directly
+  // Register a connector that injects our mock provider
+  // The provider option will be picked up by createProvider()
   Connector.create({
     name,
-    vendor: Vendor.Custom,
+    vendor: Vendor.OpenAI, // Vendor doesn't matter since we inject provider
     auth: { type: 'none' },
     options: {
       provider: mockProvider,

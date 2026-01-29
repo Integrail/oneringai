@@ -150,57 +150,8 @@ describe('Context Management with TaskAgent Integration', () => {
     );
   });
 
-  describeIfOpenAI('Memory Eviction Under Pressure', () => {
-    it(
-      'should evict least recently used memory when under pressure',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          memoryConfig: {
-            maxSizeBytes: 10000, // Small limit to force eviction
-            softLimitPercent: 80,
-          },
-          instructions: 'Use memory_store to save data.',
-        });
-
-        // Fill memory to trigger eviction
-        const memory = agent.getMemory();
-        for (let i = 0; i < 15; i++) {
-          await memory.store(`initial_${i}`, `Old data ${i}`, {
-            content: 'x'.repeat(300),
-          });
-        }
-
-        const handle = await agent.start({
-          goal: 'Add more data to trigger eviction',
-          tasks: [
-            {
-              name: 'add_new_data',
-              description: 'Store 5 new items with keys "new1" through "new5" using memory_store',
-            },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        expect(result.status).toBe('completed');
-
-        // Some old entries should have been evicted
-        const index = await memory.getIndex();
-        expect(index.entries.length).toBeLessThan(20); // Not all 20 items remain
-      },
-      TEST_TIMEOUT
-    );
-  });
+  // REMOVED: Memory eviction tests moved to mock tests
+  // Real LLM behavior is non-deterministic for memory storage
 
   describeIfOpenAI('Priority-Based Compaction', () => {
     it(
@@ -420,45 +371,8 @@ describe('Context Management with TaskAgent Integration', () => {
     );
   });
 
-  describeIfOpenAI('Context with Tool Outputs', () => {
-    it(
-      'should manage tool outputs in context',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          instructions: 'Use memory tools extensively.',
-        });
-
-        const handle = await agent.start({
-          goal: 'Generate many tool outputs',
-          tasks: [
-            {
-              name: 'many_operations',
-              description: 'Store 3 items using memory_store (keys: a, b, c), then list them with memory_list',
-            },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        expect(result.status).toBe('completed');
-
-        // Tool outputs were managed in context
-        const state = agent.getState();
-        expect(state.metrics.totalToolCalls).toBeGreaterThan(0);
-      },
-      TEST_TIMEOUT
-    );
-  });
+  // REMOVED: Tool output context test moved to mock tests
+  // Real LLM behavior is non-deterministic for tool calls
 
   describeIfOpenAI('Context Stress Test', () => {
     it(

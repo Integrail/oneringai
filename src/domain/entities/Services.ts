@@ -18,6 +18,8 @@ export type ServiceCategory =
   | 'storage'
   | 'email'
   | 'monitoring'
+  | 'search'
+  | 'scrape'
   | 'other';
 
 /**
@@ -354,6 +356,50 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     urlPattern: /sentry\.io/i,
     baseURL: 'https://sentry.io/api/0',
     docsURL: 'https://docs.sentry.io/api/',
+  },
+
+  // ============ Search ============
+  {
+    id: 'serper',
+    name: 'Serper',
+    category: 'search',
+    urlPattern: /serper\.dev/i,
+    baseURL: 'https://google.serper.dev',
+    docsURL: 'https://serper.dev/docs',
+  },
+  {
+    id: 'brave-search',
+    name: 'Brave Search',
+    category: 'search',
+    urlPattern: /api\.search\.brave\.com/i,
+    baseURL: 'https://api.search.brave.com/res/v1',
+    docsURL: 'https://brave.com/search/api/',
+  },
+  {
+    id: 'tavily',
+    name: 'Tavily',
+    category: 'search',
+    urlPattern: /api\.tavily\.com/i,
+    baseURL: 'https://api.tavily.com',
+    docsURL: 'https://tavily.com/docs',
+  },
+  {
+    id: 'rapidapi-search',
+    name: 'RapidAPI Search',
+    category: 'search',
+    urlPattern: /real-time-web-search\.p\.rapidapi\.com/i,
+    baseURL: 'https://real-time-web-search.p.rapidapi.com',
+    docsURL: 'https://rapidapi.com/letscrape-6bRBa3QguO5/api/real-time-web-search',
+  },
+
+  // ============ Scraping ============
+  {
+    id: 'zenrows',
+    name: 'ZenRows',
+    category: 'scrape',
+    urlPattern: /api\.zenrows\.com/i,
+    baseURL: 'https://api.zenrows.com/v1',
+    docsURL: 'https://docs.zenrows.com/universal-scraper-api/api-reference',
   },
 
   // ============ Other ============

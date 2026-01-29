@@ -1,5 +1,5 @@
-import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ITokenStorage, S as StoredToken$1, d as ConnectorConfig, e as ConnectorConfigResult } from './ImageModel-CEmo8yja.js';
-export { l as APIKeyConnectorAuth, B as AspectRatio, k as ConnectorAuth, M as ConnectorFetchOptions, K as DEFAULT_BASE_DELAY_MS, F as DEFAULT_CONNECTOR_TIMEOUT, L as DEFAULT_MAX_DELAY_MS, G as DEFAULT_MAX_RETRIES, H as DEFAULT_RETRYABLE_STATUSES, m as IImageModelDescription, p as IMAGE_MODELS, q as IMAGE_MODEL_REGISTRY, E as ISourceLinks, x as ImageEditOptions, w as ImageGenerateOptions, g as ImageGeneration, h as ImageGenerationCreateOptions, n as ImageModelCapabilities, o as ImageModelPricing, z as ImageResponse, y as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, D as OutputFormat, Q as QualityLevel, j as SimpleGenerateOptions, f as VENDORS, v as calculateImageCost, t as getActiveImageModels, r as getImageModelInfo, s as getImageModelsByVendor, u as getImageModelsWithFeature, i as isVendor } from './ImageModel-CEmo8yja.js';
+import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ConnectorFetchOptions, d as ITokenStorage, S as StoredToken$1, e as ConnectorConfig, f as ConnectorConfigResult } from './ImageModel-BkWFy986.js';
+export { m as APIKeyConnectorAuth, D as AspectRatio, l as ConnectorAuth, L as DEFAULT_BASE_DELAY_MS, G as DEFAULT_CONNECTOR_TIMEOUT, M as DEFAULT_MAX_DELAY_MS, H as DEFAULT_MAX_RETRIES, K as DEFAULT_RETRYABLE_STATUSES, n as IImageModelDescription, q as IMAGE_MODELS, r as IMAGE_MODEL_REGISTRY, F as ISourceLinks, y as ImageEditOptions, x as ImageGenerateOptions, h as ImageGeneration, j as ImageGenerationCreateOptions, o as ImageModelCapabilities, p as ImageModelPricing, B as ImageResponse, z as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, E as OutputFormat, Q as QualityLevel, k as SimpleGenerateOptions, g as VENDORS, w as calculateImageCost, u as getActiveImageModels, s as getImageModelInfo, t as getImageModelsByVendor, v as getImageModelsWithFeature, i as isVendor } from './ImageModel-BkWFy986.js';
 import { T as ToolFunction, I as IToolExecutor, a as ToolPermissionConfig, b as Tool, S as SerializedApprovalState, A as AgentPermissionsConfig, c as ToolPermissionManager, F as FunctionToolDefinition, H as HookConfig, d as HistoryMode, e as AgenticLoopEvents, f as InputItem, g as AgentResponse, h as StreamEvent, E as ExecutionContext, i as ExecutionMetrics, j as AuditEntry, k as ITextProvider, l as TokenUsage, m as ToolCall, L as LLMResponse, n as StreamEventType, o as TextGenerateOptions, M as ModelCapabilities, p as MessageRole } from './index-CGaZn76e.js';
 export { x as APPROVAL_STATE_VERSION, ar as AfterToolContext, am as AgenticLoopEventName, r as ApprovalCacheEntry, u as ApprovalDecision, au as ApprovalResult, as as ApproveToolContext, aq as BeforeToolContext, _ as BuiltInTool, V as CompactionItem, B as Content, C as ContentType, y as DEFAULT_ALLOWLIST, D as DEFAULT_PERMISSION_CONFIG, z as DefaultAllowlistedTool, ad as ErrorEvent, ao as Hook, al as HookManager, an as HookName, J as InputImageContent, G as InputTextContent, ab as IterationCompleteEvent, a1 as JSONSchema, Q as Message, ap as ModifyingHook, U as OutputItem, O as OutputTextContent, a4 as OutputTextDeltaEvent, a5 as OutputTextDoneEvent, v as PermissionCheckContext, t as PermissionCheckResult, w as PermissionManagerEvent, P as PermissionScope, W as ReasoningItem, ac as ResponseCompleteEvent, a2 as ResponseCreatedEvent, a3 as ResponseInProgressEvent, R as RiskLevel, s as SerializedApprovalEntry, a7 as ToolCallArgumentsDeltaEvent, a8 as ToolCallArgumentsDoneEvent, a6 as ToolCallStartEvent, X as ToolCallState, a0 as ToolExecutionContext, aa as ToolExecutionDoneEvent, a9 as ToolExecutionStartEvent, at as ToolModification, q as ToolPermissionConfig, $ as ToolResult, N as ToolResultContent, K as ToolUseContent, Y as defaultDescribeCall, Z as getToolCallDescription, ak as isErrorEvent, af as isOutputTextDelta, aj as isResponseComplete, ae as isStreamEvent, ah as isToolCallArgumentsDelta, ai as isToolCallArgumentsDone, ag as isToolCallStart } from './index-CGaZn76e.js';
 import { EventEmitter } from 'eventemitter3';
@@ -2921,6 +2921,418 @@ declare class VideoGeneration {
  * Create a video provider from a connector
  */
 declare function createVideoProvider(connector: Connector): IVideoProvider;
+
+/**
+ * SearchProvider - Unified search interface with connector support
+ *
+ * Provides a consistent API for web search across multiple vendors.
+ * Uses Connector-First architecture for authentication.
+ */
+
+/**
+ * Search result interface
+ */
+interface SearchResult {
+    /** Page title */
+    title: string;
+    /** Direct URL to the page */
+    url: string;
+    /** Short description/excerpt */
+    snippet: string;
+    /** Search ranking position */
+    position: number;
+}
+/**
+ * Search options
+ */
+interface SearchOptions {
+    /** Number of results to return (default: 10, max provider-specific) */
+    numResults?: number;
+    /** Language code (e.g., 'en', 'fr') */
+    language?: string;
+    /** Country/region code (e.g., 'us', 'gb') */
+    country?: string;
+    /** Time range filter (e.g., 'day', 'week', 'month', 'year') */
+    timeRange?: string;
+    /** Vendor-specific options */
+    vendorOptions?: Record<string, any>;
+}
+/**
+ * Search response
+ */
+interface SearchResponse {
+    /** Whether the search succeeded */
+    success: boolean;
+    /** Search query */
+    query: string;
+    /** Provider name */
+    provider: string;
+    /** Search results */
+    results: SearchResult[];
+    /** Number of results */
+    count: number;
+    /** Error message if failed */
+    error?: string;
+}
+/**
+ * Base SearchProvider interface
+ */
+interface ISearchProvider {
+    /** Provider name */
+    readonly name: string;
+    /** Connector used for authentication */
+    readonly connector: Connector;
+    /**
+     * Search the web
+     * @param query - Search query string
+     * @param options - Search options
+     */
+    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+}
+/**
+ * SearchProvider factory configuration
+ */
+interface SearchProviderConfig {
+    /** Connector name or instance */
+    connector: string | Connector;
+}
+/**
+ * SearchProvider factory
+ */
+declare class SearchProvider {
+    /**
+     * Create a search provider from a connector
+     * @param config - Provider configuration
+     * @returns Search provider instance
+     */
+    static create(config: SearchProviderConfig): ISearchProvider;
+}
+
+/**
+ * Serper.dev Search Provider
+ * Google search results via Serper.dev API
+ */
+
+declare class SerperProvider implements ISearchProvider {
+    readonly connector: Connector;
+    readonly name = "serper";
+    constructor(connector: Connector);
+    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+}
+
+/**
+ * Brave Search Provider
+ * Independent search index (privacy-focused)
+ */
+
+declare class BraveProvider implements ISearchProvider {
+    readonly connector: Connector;
+    readonly name = "brave";
+    constructor(connector: Connector);
+    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+}
+
+/**
+ * Tavily AI Search Provider
+ * AI-optimized search results with summaries
+ */
+
+declare class TavilyProvider implements ISearchProvider {
+    readonly connector: Connector;
+    readonly name = "tavily";
+    constructor(connector: Connector);
+    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+}
+
+/**
+ * RapidAPI Real-Time Web Search Provider
+ * Real-time web search via RapidAPI
+ */
+
+declare class RapidAPIProvider implements ISearchProvider {
+    readonly connector: Connector;
+    readonly name = "rapidapi";
+    constructor(connector: Connector);
+    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+}
+
+/**
+ * Shared types for Connector-based capabilities
+ *
+ * This module provides common types and utilities that can be reused
+ * across all capabilities that use the Connector-First architecture.
+ */
+
+/**
+ * Base configuration for all capability providers
+ */
+interface BaseProviderConfig$1 {
+    /** Connector name or instance */
+    connector: string | Connector;
+}
+/**
+ * Base response for all capability providers
+ */
+interface BaseProviderResponse {
+    /** Whether the operation succeeded */
+    success: boolean;
+    /** Provider name */
+    provider: string;
+    /** Error message if failed */
+    error?: string;
+}
+/**
+ * Base interface for all capability providers
+ */
+interface ICapabilityProvider {
+    /** Provider name */
+    readonly name: string;
+    /** Connector used for authentication */
+    readonly connector: Connector;
+}
+/**
+ * Extended fetch options with JSON body and query params support
+ * Usable by any capability that makes HTTP requests via Connector
+ */
+interface ExtendedFetchOptions extends Omit<ConnectorFetchOptions, 'body'> {
+    /** JSON body (will be stringified automatically) */
+    body?: Record<string, any>;
+    /** Query parameters (will be appended to URL automatically) */
+    queryParams?: Record<string, string | number | boolean>;
+}
+/**
+ * Build query string from params
+ * @param params - Key-value pairs to convert to query string
+ * @returns URL-encoded query string (without leading ?)
+ */
+declare function buildQueryString(params: Record<string, string | number | boolean>): string;
+/**
+ * Convert ExtendedFetchOptions to standard ConnectorFetchOptions
+ * Handles body stringification and query param building
+ *
+ * @param options - Extended options with body/queryParams
+ * @returns Standard ConnectorFetchOptions ready for Connector.fetch()
+ */
+declare function toConnectorOptions(options: ExtendedFetchOptions): ConnectorFetchOptions;
+/**
+ * Build endpoint URL with query parameters
+ * @param endpoint - Base endpoint path
+ * @param queryParams - Query parameters to append
+ * @returns Endpoint with query string
+ */
+declare function buildEndpointWithQuery(endpoint: string, queryParams?: Record<string, string | number | boolean>): string;
+/**
+ * Resolve connector from config (name or instance)
+ * Shared logic for all provider factories
+ *
+ * @param connectorOrName - Connector name string or Connector instance
+ * @returns Resolved Connector instance
+ * @throws Error if connector not found
+ */
+declare function resolveConnector(connectorOrName: string | Connector): Connector;
+
+/**
+ * ScrapeProvider - Unified web scraping interface with connector support
+ *
+ * Provides a consistent API for web scraping across multiple vendors.
+ * Uses Connector-First architecture for authentication.
+ *
+ * This is the surface API - actual scraping is delegated to vendor-specific
+ * providers based on the Connector's serviceType.
+ *
+ * DESIGN PATTERN:
+ * - IScrapeProvider: Interface all providers implement
+ * - ScrapeProvider.create(): Factory that returns the right provider
+ * - ScrapeProvider.createWithFallback(): Factory with fallback chain
+ *
+ * FALLBACK STRATEGY:
+ * The webScrape tool uses this provider with a fallback chain:
+ * 1. Try native fetch (webFetch) - fastest, free
+ * 2. Try JS rendering (webFetchJS) - handles SPAs
+ * 3. Try external API provider - handles bot protection, etc.
+ */
+
+/**
+ * Scraped content result
+ */
+interface ScrapeResult {
+    /** Page title */
+    title: string;
+    /** Extracted text content (cleaned) */
+    content: string;
+    /** Raw HTML (if available) */
+    html?: string;
+    /** Markdown version (if provider supports it) */
+    markdown?: string;
+    /** Metadata extracted from the page */
+    metadata?: {
+        description?: string;
+        author?: string;
+        publishedDate?: string;
+        siteName?: string;
+        favicon?: string;
+        ogImage?: string;
+        [key: string]: any;
+    };
+    /** Screenshot as base64 (if requested and supported) */
+    screenshot?: string;
+    /** Links found on the page */
+    links?: Array<{
+        url: string;
+        text: string;
+    }>;
+}
+/**
+ * Scrape options
+ */
+interface ScrapeOptions {
+    /** Timeout in milliseconds (default: 30000) */
+    timeout?: number;
+    /** Whether to wait for JavaScript to render (if supported) */
+    waitForJS?: boolean;
+    /** CSS selector to wait for before scraping */
+    waitForSelector?: string;
+    /** Whether to include raw HTML in response */
+    includeHtml?: boolean;
+    /** Whether to convert to markdown (if supported) */
+    includeMarkdown?: boolean;
+    /** Whether to extract links */
+    includeLinks?: boolean;
+    /** Whether to take a screenshot (if supported) */
+    includeScreenshot?: boolean;
+    /** Custom headers to send */
+    headers?: Record<string, string>;
+    /** Vendor-specific options */
+    vendorOptions?: Record<string, any>;
+}
+/**
+ * Scrape response
+ */
+interface ScrapeResponse extends BaseProviderResponse {
+    /** The URL that was scraped */
+    url: string;
+    /** Final URL after redirects */
+    finalUrl?: string;
+    /** Scraped content */
+    result?: ScrapeResult;
+    /** HTTP status code */
+    statusCode?: number;
+    /** Time taken in milliseconds */
+    durationMs?: number;
+    /** Whether the content required JavaScript rendering */
+    requiredJS?: boolean;
+    /** Suggested fallback if this provider failed */
+    suggestedFallback?: string;
+}
+/**
+ * Base ScrapeProvider interface
+ * All scraping providers must implement this interface
+ */
+interface IScrapeProvider {
+    /** Provider name (e.g., 'jina', 'firecrawl', 'scrapingbee') */
+    readonly name: string;
+    /** Connector used for authentication */
+    readonly connector: Connector;
+    /**
+     * Scrape a URL and extract content
+     * @param url - URL to scrape
+     * @param options - Scrape options
+     * @returns Scrape response with content or error
+     */
+    scrape(url: string, options?: ScrapeOptions): Promise<ScrapeResponse>;
+    /**
+     * Check if this provider supports a specific feature
+     * @param feature - Feature name
+     */
+    supportsFeature?(feature: ScrapeFeature): boolean;
+}
+/**
+ * Features that scrape providers may support
+ */
+type ScrapeFeature = 'javascript' | 'markdown' | 'screenshot' | 'links' | 'metadata' | 'proxy' | 'stealth' | 'pdf' | 'dynamic';
+/**
+ * Provider constructor type
+ */
+type ProviderConstructor = new (connector: Connector) => IScrapeProvider;
+/**
+ * Register a scrape provider for a service type
+ * Called by provider implementations to register themselves
+ *
+ * @param serviceType - Service type (e.g., 'jina', 'firecrawl')
+ * @param providerClass - Provider constructor
+ */
+declare function registerScrapeProvider(serviceType: string, providerClass: ProviderConstructor): void;
+/**
+ * Get registered service types
+ */
+declare function getRegisteredScrapeProviders(): string[];
+/**
+ * ScrapeProvider factory configuration
+ */
+interface ScrapeProviderConfig {
+    /** Connector name or instance */
+    connector: string | Connector;
+}
+/**
+ * Fallback chain configuration
+ */
+interface ScrapeProviderFallbackConfig {
+    /** Primary connector to try first */
+    primary: string | Connector;
+    /** Fallback connectors to try in order */
+    fallbacks?: Array<string | Connector>;
+    /** Whether to try native fetch before API providers */
+    tryNativeFirst?: boolean;
+}
+/**
+ * ScrapeProvider factory
+ *
+ * Creates the appropriate provider based on Connector's serviceType.
+ * Use createWithFallback() for automatic fallback on failure.
+ */
+declare class ScrapeProvider {
+    /**
+     * Create a scrape provider from a connector
+     *
+     * @param config - Provider configuration
+     * @returns Scrape provider instance
+     * @throws Error if connector not found or service type not supported
+     *
+     * @example
+     * ```typescript
+     * const scraper = ScrapeProvider.create({ connector: 'jina-main' });
+     * const result = await scraper.scrape('https://example.com');
+     * ```
+     */
+    static create(config: ScrapeProviderConfig): IScrapeProvider;
+    /**
+     * Check if a service type has a registered provider
+     */
+    static hasProvider(serviceType: string): boolean;
+    /**
+     * List all registered provider service types
+     */
+    static listProviders(): string[];
+    /**
+     * Create a scrape provider with fallback chain
+     *
+     * Returns a provider that will try each connector in order until one succeeds.
+     *
+     * @param config - Fallback configuration
+     * @returns Scrape provider with fallback support
+     *
+     * @example
+     * ```typescript
+     * const scraper = ScrapeProvider.createWithFallback({
+     *   primary: 'jina-main',
+     *   fallbacks: ['firecrawl-backup', 'scrapingbee'],
+     * });
+     * // Will try jina first, then firecrawl, then scrapingbee
+     * const result = await scraper.scrape('https://example.com');
+     * ```
+     */
+    static createWithFallback(config: ScrapeProviderFallbackConfig): IScrapeProvider;
+}
 
 /**
  * Task and Plan entities for TaskAgent
@@ -6063,7 +6475,7 @@ declare class ProviderErrorMapper {
 /**
  * Service category type
  */
-type ServiceCategory = 'communication' | 'development' | 'productivity' | 'crm' | 'payments' | 'cloud' | 'storage' | 'email' | 'monitoring' | 'other';
+type ServiceCategory = 'communication' | 'development' | 'productivity' | 'crm' | 'payments' | 'cloud' | 'storage' | 'email' | 'monitoring' | 'search' | 'scrape' | 'other';
 /**
  * Complete service definition - single source of truth
  */
@@ -7839,25 +8251,30 @@ interface WebFetchJSResult {
 declare const webFetchJS: ToolFunction<WebFetchJSArgs, WebFetchJSResult>;
 
 /**
- * Serper.dev search provider
- * Fast Google search results via API
- */
-interface SearchResult {
-    title: string;
-    url: string;
-    snippet: string;
-    position: number;
-}
-
-/**
- * Web Search Tool - Multi-provider web search
- * Supports Serper.dev (default), Brave, and Tavily
+ * Web Search Tool - Multi-provider web search with Connector support
+ * Supports Serper.dev, Brave, Tavily, and RapidAPI
+ *
+ * NEW: Uses Connector-First architecture for authentication
+ * Backward compatible with environment variable approach
  */
 
 interface WebSearchArgs {
     query: string;
     numResults?: number;
-    provider?: 'serper' | 'brave' | 'tavily';
+    /**
+     * @deprecated Use connectorName instead
+     * Provider name for backward compatibility (uses environment variables)
+     */
+    provider?: 'serper' | 'brave' | 'tavily' | 'rapidapi';
+    /**
+     * Connector name to use for search
+     * Example: 'serper-main', 'brave-backup', 'rapidapi-search'
+     */
+    connectorName?: string;
+    /** Country/region code (e.g., 'us', 'gb') */
+    country?: string;
+    /** Language code (e.g., 'en', 'fr') */
+    language?: string;
 }
 interface WebSearchResult {
     success: boolean;
@@ -8587,4 +9004,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, BaseTextProvider, type BashResult, type BuiltContext, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, type ContextBudget, type ContextBuilderConfig, ContextManager, type ContextManagerConfig, type ContextSource, ConversationHistoryManager, type ConversationHistoryManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_BUILDER_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DefaultContextBuilder, DependencyCycleError, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type IConnectorConfigStorage, type IContextBuilder, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, type MemoryEntryInput, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryPriority, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, ParallelTasksError, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type SegmentTimestamp, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleScope, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskAwareScope, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type TaskStatusForMemory, TaskTimeoutError, type ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, calculateBackoff, calculateCost, calculateEntrySize, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isSimpleScope, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, type BuiltContext, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, ConnectorTools, ConsoleMetrics, type ContextBudget, type ContextBuilderConfig, ContextManager, type ContextManagerConfig, type ContextSource, ConversationHistoryManager, type ConversationHistoryManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_BUILDER_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DefaultContextBuilder, DependencyCycleError, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, type IContextBuilder, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, type MemoryEntryInput, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryPriority, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, ParallelTasksError, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse, type SearchResult, type SegmentTimestamp, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleScope, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, TaskAgentContextProvider, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskAwareScope, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type TaskStatusForMemory, TaskTimeoutError, type ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isSimpleScope, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, toConnectorOptions, index as tools, updateTaskStatus, validatePath, writeFile };

@@ -41,10 +41,16 @@ declare function isVendor(value: string): value is Vendor;
  */
 
 /**
- * Connector authentication configuration
- * Supports OAuth 2.0, API keys, and JWT bearer tokens
+ * No authentication (for testing/mock providers)
  */
-type ConnectorAuth = OAuthConnectorAuth | APIKeyConnectorAuth | JWTConnectorAuth;
+interface NoneConnectorAuth {
+    type: 'none';
+}
+/**
+ * Connector authentication configuration
+ * Supports OAuth 2.0, API keys, JWT bearer tokens, and none (for testing)
+ */
+type ConnectorAuth = OAuthConnectorAuth | APIKeyConnectorAuth | JWTConnectorAuth | NoneConnectorAuth;
 /**
  * OAuth 2.0 authentication for connectors
  * Supports multiple OAuth flows
@@ -734,4 +740,4 @@ declare function getImageModelsWithFeature(feature: keyof IImageModelDescription
  */
 declare function calculateImageCost(modelName: string, imageCount: number, quality?: 'standard' | 'hd'): number | null;
 
-export { type AudioFormat as A, type AspectRatio$1 as B, Connector as C, type OutputFormat as D, type ISourceLinks as E, DEFAULT_CONNECTOR_TIMEOUT as F, DEFAULT_MAX_RETRIES as G, DEFAULT_RETRYABLE_STATUSES as H, type IBaseModelDescription as I, type JWTConnectorAuth as J, DEFAULT_BASE_DELAY_MS as K, DEFAULT_MAX_DELAY_MS as L, type ConnectorFetchOptions as M, type OAuthConnectorAuth as O, type QualityLevel as Q, type StoredToken as S, type VendorOptionSchema as V, Vendor as a, type IImageProvider as b, type ITokenStorage as c, type ConnectorConfig as d, type ConnectorConfigResult as e, VENDORS as f, ImageGeneration as g, type ImageGenerationCreateOptions as h, isVendor as i, type SimpleGenerateOptions as j, type ConnectorAuth as k, type APIKeyConnectorAuth as l, type IImageModelDescription as m, type ImageModelCapabilities as n, type ImageModelPricing as o, IMAGE_MODELS as p, IMAGE_MODEL_REGISTRY as q, getImageModelInfo as r, getImageModelsByVendor as s, getActiveImageModels as t, getImageModelsWithFeature as u, calculateImageCost as v, type ImageGenerateOptions as w, type ImageEditOptions as x, type ImageVariationOptions as y, type ImageResponse as z };
+export { type AudioFormat as A, type ImageResponse as B, Connector as C, type AspectRatio$1 as D, type OutputFormat as E, type ISourceLinks as F, DEFAULT_CONNECTOR_TIMEOUT as G, DEFAULT_MAX_RETRIES as H, type IBaseModelDescription as I, type JWTConnectorAuth as J, DEFAULT_RETRYABLE_STATUSES as K, DEFAULT_BASE_DELAY_MS as L, DEFAULT_MAX_DELAY_MS as M, type OAuthConnectorAuth as O, type QualityLevel as Q, type StoredToken as S, type VendorOptionSchema as V, Vendor as a, type IImageProvider as b, type ConnectorFetchOptions as c, type ITokenStorage as d, type ConnectorConfig as e, type ConnectorConfigResult as f, VENDORS as g, ImageGeneration as h, isVendor as i, type ImageGenerationCreateOptions as j, type SimpleGenerateOptions as k, type ConnectorAuth as l, type APIKeyConnectorAuth as m, type IImageModelDescription as n, type ImageModelCapabilities as o, type ImageModelPricing as p, IMAGE_MODELS as q, IMAGE_MODEL_REGISTRY as r, getImageModelInfo as s, getImageModelsByVendor as t, getActiveImageModels as u, getImageModelsWithFeature as v, calculateImageCost as w, type ImageGenerateOptions as x, type ImageEditOptions as y, type ImageVariationOptions as z };

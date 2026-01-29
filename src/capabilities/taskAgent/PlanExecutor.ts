@@ -526,6 +526,12 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
       }
     }
 
+    // Track tool calls from Agent's execution metrics (more accurate than parsing response)
+    const agentMetrics = this.agent.getMetrics();
+    if (agentMetrics) {
+      this.currentMetrics.totalToolCalls += agentMetrics.toolCallCount;
+    }
+
     // Call afterLLMCall hook
     if (this.hooks?.afterLLMCall) {
       await this.hooks.afterLLMCall(response);
@@ -738,6 +744,12 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
           this.currentMetrics.totalCost += cost;
         }
       }
+    }
+
+    // Track tool calls from validation (typically 0, but track for consistency)
+    const validationAgentMetrics = this.agent.getMetrics();
+    if (validationAgentMetrics) {
+      this.currentMetrics.totalToolCalls += validationAgentMetrics.toolCallCount;
     }
 
     // Parse validation response

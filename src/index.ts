@@ -47,6 +47,41 @@ export type {
 } from './capabilities/video/index.js';
 export { createVideoProvider } from './core/createVideoProvider.js';
 
+// Search Capabilities (NEW - Connector-based web search)
+export { SearchProvider } from './capabilities/search/index.js';
+export type {
+  ISearchProvider,
+  SearchResult,
+  SearchOptions,
+  SearchResponse,
+  SearchProviderConfig,
+} from './capabilities/search/index.js';
+export { SerperProvider, BraveProvider, TavilyProvider, RapidAPIProvider } from './capabilities/search/index.js';
+
+// Scrape Capabilities (Connector-based web scraping)
+export { ScrapeProvider, registerScrapeProvider, getRegisteredScrapeProviders } from './capabilities/scrape/index.js';
+export type {
+  IScrapeProvider,
+  ScrapeResult,
+  ScrapeOptions,
+  ScrapeResponse,
+  ScrapeFeature,
+  ScrapeProviderConfig,
+  ScrapeProviderFallbackConfig,
+} from './capabilities/scrape/index.js';
+
+// Shared Capability Utilities
+export {
+  buildQueryString,
+  toConnectorOptions,
+  buildEndpointWithQuery,
+  resolveConnector,
+  type BaseProviderConfig,
+  type BaseProviderResponse,
+  type ICapabilityProvider,
+  type ExtendedFetchOptions,
+} from './capabilities/shared/index.js';
+
 // Tool Management (Unified - handles registration, execution, and circuit breakers)
 export { ToolManager } from './core/index.js';
 export type {

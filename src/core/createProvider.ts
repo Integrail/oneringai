@@ -21,6 +21,12 @@ import { GenericOpenAIProvider } from '../infrastructure/providers/generic/Gener
  * Create a text provider from a connector
  */
 export function createProvider(connector: Connector): ITextProvider {
+  // Allow injecting a provider directly for testing
+  const injectedProvider = connector.getOptions().provider;
+  if (injectedProvider && typeof (injectedProvider as any).generate === 'function') {
+    return injectedProvider as ITextProvider;
+  }
+
   const vendor = connector.vendor;
 
   if (!vendor) {
@@ -127,6 +133,9 @@ function extractProviderConfig(connector: Connector): ProviderConfig {
 
   if (auth.type === 'api_key') {
     apiKey = auth.apiKey;
+  } else if (auth.type === 'none') {
+    // For testing/mock providers
+    apiKey = 'mock-key';
   } else if (auth.type === 'oauth') {
     // For OAuth, we'd need to get the token asynchronously
     // For now, throw an error - OAuth providers need special handling

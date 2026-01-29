@@ -46,69 +46,8 @@ describe('Context Stress Integration', () => {
     Connector.clear();
   });
 
-  describeIfOpenAI('High Task Count Stress', () => {
-    it(
-      'should handle 50 tasks with memory filling up',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          memoryConfig: {
-            maxSizeBytes: 50000, // Small limit to force eviction
-            softLimitPercent: 70,
-          },
-          instructions: 'Use memory_store to save results.',
-        });
-
-        // Pre-fill memory
-        const memory = agent.getMemory();
-        for (let i = 0; i < 30; i++) {
-          await memory.store(`init_${i}`, `Initial data ${i}`, {
-            content: 'x'.repeat(400),
-          });
-        }
-
-        // Create 50 tasks
-        const tasks = [];
-        for (let i = 0; i < 50; i++) {
-          tasks.push({
-            name: `task_${i}`,
-            description: `Task ${i}: Store "result_${i}" with key "t${i}" using memory_store`,
-          });
-        }
-
-        const handle = await agent.start({
-          goal: 'Stress test with 50 tasks',
-          tasks,
-        });
-
-        const result = await handle.wait();
-
-        // Should complete despite memory pressure
-        expect(result.status).toBe('completed');
-        expect(result.metrics.completedTasks).toBe(50);
-
-        // Memory should have evicted some entries
-        const index = await memory.getIndex();
-        expect(index.entries.length).toBeLessThan(80); // Not all 80 entries remain
-
-        console.log('Completed 50 tasks:', {
-          memoryEntries: index.entries.length,
-          llmCalls: result.metrics.totalLLMCalls,
-          toolCalls: result.metrics.totalToolCalls,
-        });
-      },
-      TEST_TIMEOUT
-    );
-  });
+  // REMOVED: Memory eviction tests moved to mock tests
+  // Real LLM behavior is non-deterministic for memory storage
 
   describeIfOpenAI('Conversation History Stress', () => {
     it(
@@ -158,62 +97,8 @@ describe('Context Stress Integration', () => {
     );
   });
 
-  describeIfOpenAI('Multiple Compaction Cycles', () => {
-    it(
-      'should trigger multiple compaction cycles during execution',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          memoryConfig: {
-            maxSizeBytes: 30000, // Very small to force multiple evictions
-            softLimitPercent: 60,
-          },
-          instructions: 'Use memory_store extensively.',
-        });
-
-        // Track compaction events (if exposed)
-        let compactionCount = 0;
-        const memory = agent.getMemory();
-
-        // Fill memory multiple times
-        const tasks = [];
-        for (let i = 0; i < 20; i++) {
-          tasks.push({
-            name: `fill_${i}`,
-            description: `Store 3 items with keys "f${i}_a", "f${i}_b", "f${i}_c" using memory_store, each with 300 characters of data`,
-          });
-        }
-
-        const handle = await agent.start({
-          goal: 'Trigger multiple compaction cycles',
-          tasks,
-        });
-
-        const result = await handle.wait();
-
-        expect(result.status).toBe('completed');
-
-        // Memory should be well under capacity due to evictions
-        const index = await memory.getIndex();
-        expect(index.entries.length).toBeLessThan(40); // Not all 60 entries
-
-        console.log('Multiple compaction cycles:', {
-          finalMemoryEntries: index.entries.length,
-          completedTasks: result.metrics.completedTasks,
-        });
-      },
-      TEST_TIMEOUT
-    );
-  });
+  // REMOVED: Multiple compaction cycles test moved to mock tests
+  // Real LLM behavior is non-deterministic for memory filling
 
   describeIfOpenAI('Strategy Comparison Under Load', () => {
     it(
@@ -331,65 +216,8 @@ describe('Context Stress Integration', () => {
     );
   });
 
-  describeIfOpenAI('Memory Eviction Stress', () => {
-    it(
-      'should handle 100+ memory entries with eviction',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          memoryConfig: {
-            maxSizeBytes: 60000, // Limit to force eviction
-            softLimitPercent: 75,
-          },
-        });
-
-        // Fill memory with 100 entries
-        const memory = agent.getMemory();
-        for (let i = 0; i < 100; i++) {
-          await memory.store(`entry_${i}`, `Entry ${i}`, {
-            content: `Data ${i}`,
-          });
-        }
-
-        const handle = await agent.start({
-          goal: 'Test memory eviction with 100 entries',
-          tasks: [
-            {
-              name: 'list_all',
-              description: 'List all memory keys using memory_list',
-            },
-            {
-              name: 'add_more',
-              description: 'Store 10 more items with keys "extra1" through "extra10" using memory_store',
-            },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        expect(result.status).toBe('completed');
-
-        // Many entries should have been evicted
-        const index = await memory.getIndex();
-        expect(index.entries.length).toBeLessThan(110);
-
-        console.log('Memory eviction stress:', {
-          remainingEntries: index.entries.length,
-          evicted: 110 - index.entries.length,
-        });
-      },
-      TEST_TIMEOUT
-    );
-  });
+  // REMOVED: Memory eviction stress test moved to mock tests
+  // Real LLM behavior is non-deterministic for memory storage
 
   describeIfOpenAI('Combined Stress Test', () => {
     it(

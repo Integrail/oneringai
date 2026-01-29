@@ -662,6 +662,255 @@ console.log(`Cost: $${cost}`);  // $1.20
 - **OpenAI**: `sora-2`, `sora-2-pro`
 - **Google**: `veo-2.0-generate-001`, `veo-3-generate-preview`, `veo-3.1-fast-generate-preview`, `veo-3.1-generate-preview`
 
+### Web Search (NEW)
+
+#### SearchProvider (`src/capabilities/search/SearchProvider.ts`)
+
+High-level web search with Connector-based authentication. Supports multiple providers: Serper, Brave, Tavily, and RapidAPI.
+
+```typescript
+import { Connector, SearchProvider, Services } from '@oneringai/agents';
+
+// Create search connectors
+Connector.create({
+  name: 'serper-main',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+Connector.create({
+  name: 'rapidapi-search',
+  serviceType: Services.RapidapiSearch,
+  auth: { type: 'api_key', apiKey: process.env.RAPIDAPI_KEY! },
+  baseURL: 'https://real-time-web-search.p.rapidapi.com',
+});
+
+// Create search provider
+const search = SearchProvider.create({ connector: 'serper-main' });
+
+// Perform search
+const results = await search.search('latest AI developments 2026', {
+  numResults: 10,
+  country: 'us',
+  language: 'en',
+});
+
+if (results.success) {
+  results.results.forEach(result => {
+    console.log(result.title);
+    console.log(result.url);
+    console.log(result.snippet);
+  });
+}
+
+// Use RapidAPI provider
+const rapidSearch = SearchProvider.create({ connector: 'rapidapi-search' });
+const rapidResults = await rapidSearch.search('quantum computing news', {
+  numResults: 5,
+});
+```
+
+#### webSearch Tool Integration
+
+The webSearch tool now supports Connector-based authentication:
+
+```typescript
+import { Agent, Connector, webSearch, Services } from '@oneringai/agents';
+
+// Setup connector
+Connector.create({
+  name: 'serper-main',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Create agent with webSearch tool
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webSearch],
+});
+
+// Agent can now search using connectors
+await agent.run('Search for the latest news on AI and summarize the top 3 results');
+```
+
+**webSearch Tool Parameters:**
+- `query` (required) - Search query string
+- `numResults` - Number of results (default: 10, max: provider-specific)
+- `connectorName` - Connector name to use (recommended)
+- `provider` - Legacy provider name ('serper', 'brave', 'tavily') for backward compatibility
+- `country` - Country/region code (e.g., 'us', 'gb')
+- `language` - Language code (e.g., 'en', 'fr')
+
+#### Search Services
+
+Four search services are available in the Services registry:
+
+```typescript
+import { Services, getServiceInfo } from '@oneringai/agents';
+
+// Service constants
+Services.Serper              // 'serper' - Google search via Serper.dev
+Services.BraveSearch         // 'brave-search' - Independent search index
+Services.Tavily              // 'tavily' - AI-optimized search
+Services.RapidapiSearch      // 'rapidapi-search' - Real-time web search
+
+// Get service info
+const info = getServiceInfo('serper');
+console.log(info.name);      // 'Serper'
+console.log(info.baseURL);   // 'https://google.serper.dev'
+console.log(info.docsURL);   // 'https://serper.dev/docs'
+```
+
+**Search Provider Features:**
+- **Serper** - Google search results, fast (1-2s), 2,500 free queries
+- **Brave Search** - Privacy-focused, independent index, no Google
+- **Tavily** - AI-optimized with summaries, tailored for LLMs
+- **RapidAPI** - Real-time web search, wide coverage, various pricing plans
+
+**Benefits:**
+- Connector-based authentication (single source of truth)
+- Enterprise resilience (retry, circuit breaker, timeout)
+- Multiple keys per vendor for redundancy
+- Unified API across all providers
+- Backward compatible with environment variable approach
+
+### Web Scraping (NEW)
+
+#### ScrapeProvider (`src/capabilities/scrape/ScrapeProvider.ts`)
+
+Enterprise web scraping with Connector-based authentication. Uses a registry pattern for extensibility and supports automatic fallback chains.
+
+```typescript
+import { Connector, ScrapeProvider, Services } from '@oneringai/agents';
+
+// Create ZenRows connector (for bot-protected sites)
+Connector.create({
+  name: 'zenrows',
+  serviceType: Services.Zenrows,
+  auth: { type: 'api_key', apiKey: process.env.ZENROWS_API_KEY! },
+  baseURL: 'https://api.zenrows.com/v1',
+});
+
+// Create scrape provider
+const scraper = ScrapeProvider.create({ connector: 'zenrows' });
+
+// Scrape a URL (defaults to JS rendering + premium proxies)
+const result = await scraper.scrape('https://example.com', {
+  includeMarkdown: true,
+  includeLinks: true,
+});
+
+if (result.success) {
+  console.log(result.result?.title);
+  console.log(result.result?.content);
+  console.log(result.result?.markdown);
+  console.log(result.finalUrl); // After redirects
+}
+```
+
+#### webScrape Tool
+
+The webScrape tool provides guaranteed URL reading with automatic fallback:
+
+```typescript
+import { Agent, webScrape } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webScrape],
+});
+
+// Agent can scrape any URL with automatic fallback
+await agent.run('Scrape https://example.com and summarize the content');
+```
+
+**webScrape Tool Strategies:**
+- `auto` (default) - Tries native → JS → API until one succeeds
+- `native` - Only native HTTP fetch (fast, free, static sites only)
+- `js` - Only JavaScript rendering (handles SPAs, needs Puppeteer)
+- `api` - Only external API provider (handles bot protection)
+- `api-first` - Tries API first, then falls back to native
+
+**webScrape Tool Parameters:**
+- `url` (required) - URL to scrape
+- `strategy` - Scraping strategy ('auto', 'native', 'js', 'api', 'api-first')
+- `connectorName` - Connector name for API provider
+- `minQualityScore` - Minimum quality score to accept (0-100, default: 50)
+- `timeout` - Timeout in milliseconds (default: 30000)
+- `includeHtml` - Include raw HTML in response
+- `includeMarkdown` - Convert to markdown (if supported)
+- `includeLinks` - Extract links from page
+- `waitForSelector` - CSS selector to wait for (JS/API only)
+
+#### ZenRows Provider
+
+ZenRows provides enterprise-grade scraping with:
+- **JavaScript rendering** - Handles SPAs and dynamic content
+- **Premium proxies** - Residential IPs for anti-bot bypass
+- **CAPTCHA solving** - Automatic CAPTCHA handling
+- **Markdown conversion** - Clean text extraction
+- **Screenshot capture** - Visual debugging
+
+```typescript
+import { ScrapeProvider, ZenRowsOptions } from '@oneringai/agents';
+
+const scraper = ScrapeProvider.create({ connector: 'zenrows' });
+
+// Full control with ZenRows-specific options
+const result = await scraper.scrape('https://protected-site.com', {
+  includeMarkdown: true,
+  includeScreenshot: true,
+  vendorOptions: {
+    jsRender: true,           // Enable JS rendering (default: true)
+    premiumProxy: true,       // Use residential IPs (default: true)
+    wait: 5000,               // Wait 5s before scraping
+    waitFor: '.content',      // Wait for CSS selector
+    device: 'mobile',         // Mobile user agent
+    proxyCountry: 'us',       // Use US proxies
+    autoparse: true,          // Auto-structure data
+  } as ZenRowsOptions,
+});
+```
+
+**ZenRows Features:**
+- `jsRender` - JavaScript rendering (5x cost)
+- `premiumProxy` - Residential IPs (10x cost)
+- `wait` / `waitFor` - Timing control
+- `autoparse` - Auto-structure data
+- `outputFormat` - 'html' or 'markdown'
+- `screenshot` - Capture screenshot
+- `device` - 'desktop' or 'mobile'
+- `proxyCountry` - Proxy location
+
+#### Scrape Services
+
+Scrape services are available in the Services registry:
+
+```typescript
+import { Services, getServiceInfo } from '@oneringai/agents';
+
+// Service constant
+Services.Zenrows             // 'zenrows' - Enterprise web scraping
+
+// Get service info
+const info = getServiceInfo('zenrows');
+console.log(info.name);      // 'ZenRows'
+console.log(info.baseURL);   // 'https://api.zenrows.com/v1'
+console.log(info.docsURL);   // 'https://docs.zenrows.com/...'
+```
+
+**Benefits:**
+- Connector-based authentication (single source of truth)
+- Registry pattern for extensibility
+- Automatic fallback chains
+- Enterprise resilience (retry, circuit breaker)
+- Unified API across all providers
+
 ## Directory Structure
 
 ```
@@ -746,6 +995,20 @@ src/
 │   │   ├── ModeManager.ts            # Mode state machine
 │   │   ├── metaTools.ts              # Meta-tools for mode transitions
 │   │   ├── types.ts                  # Type definitions
+│   │   └── index.ts                  # Exports
+│   ├── search/                       # Web search capability (Connector-based)
+│   │   ├── SearchProvider.ts         # Factory + base interface
+│   │   ├── types.ts                  # Utilities for fetch options
+│   │   ├── providers/
+│   │   │   ├── SerperProvider.ts
+│   │   │   ├── BraveProvider.ts
+│   │   │   ├── TavilyProvider.ts
+│   │   │   └── RapidAPIProvider.ts
+│   │   └── index.ts                  # Exports
+│   ├── scrape/                       # Web scraping capability (Connector-based)
+│   │   ├── ScrapeProvider.ts         # Factory + registry pattern
+│   │   ├── providers/
+│   │   │   └── ZenRowsProvider.ts    # Enterprise scraping with anti-bot
 │   │   └── index.ts                  # Exports
 │   └── video/                        # Video generation capability
 │       ├── VideoGeneration.ts        # High-level video API
@@ -2368,16 +2631,19 @@ These are handled internally and don't require manual implementation.
 30. `src/capabilities/universalAgent/` - Universal agent
 31. `src/capabilities/images/` - Image generation capability
 32. `src/capabilities/video/` - Video generation capability
+33. `src/capabilities/search/` - Web search capability (Connector-based)
+34. `src/capabilities/scrape/` - Web scraping capability (Connector-based, ZenRows)
 
 ### Tools
-33. `src/tools/connector/ConnectorTools.ts` - Connector-based tools for external APIs
-34. `src/tools/filesystem/` - File system tools (read, write, edit, glob, grep)
-35. `src/tools/shell/` - Shell execution tools (bash)
+35. `src/tools/connector/ConnectorTools.ts` - Connector-based tools for external APIs
+36. `src/tools/filesystem/` - File system tools (read, write, edit, glob, grep)
+37. `src/tools/shell/` - Shell execution tools (bash)
+38. `src/tools/web/` - Web tools (webFetch, webFetchJS, webSearch, webScrape)
 
 ### Infrastructure
-36. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
-37. `src/infrastructure/context/` - Context compactors, estimators, providers
-38. `src/infrastructure/storage/` - Session and data storage
+39. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
+40. `src/infrastructure/context/` - Context compactors, estimators, providers
+41. `src/infrastructure/storage/` - Session and data storage
 
 ---
 

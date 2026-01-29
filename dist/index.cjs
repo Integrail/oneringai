@@ -49,21 +49,31 @@ var fs10__namespace = /*#__PURE__*/_interopNamespace(fs10);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
 
 var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
   get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
 }) : x)(function(x) {
   if (typeof require !== "undefined") return require.apply(this, arguments);
   throw Error('Dynamic require of "' + x + '" is not supported');
 });
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-var ALGORITHM = "aes-256-gcm";
-var IV_LENGTH = 16;
-var SALT_LENGTH = 64;
-var TAG_LENGTH = 16;
-var KEY_LENGTH = 32;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 function encrypt(text, password) {
   const salt = crypto2__namespace.randomBytes(SALT_LENGTH);
   const key = crypto2__namespace.pbkdf2Sync(password, salt, 1e5, KEY_LENGTH, "sha512");
@@ -103,166 +113,188 @@ function getEncryptionKey() {
 function generateEncryptionKey() {
   return crypto2__namespace.randomBytes(32).toString("hex");
 }
+var ALGORITHM, IV_LENGTH, SALT_LENGTH, TAG_LENGTH, KEY_LENGTH;
+var init_encryption = __esm({
+  "src/connectors/oauth/utils/encryption.ts"() {
+    ALGORITHM = "aes-256-gcm";
+    IV_LENGTH = 16;
+    SALT_LENGTH = 64;
+    TAG_LENGTH = 16;
+    KEY_LENGTH = 32;
+  }
+});
 
 // src/connectors/oauth/infrastructure/storage/MemoryStorage.ts
-var MemoryStorage = class {
-  tokens = /* @__PURE__ */ new Map();
-  // Stores encrypted tokens
-  async storeToken(key, token) {
-    const encryptionKey = getEncryptionKey();
-    const plaintext = JSON.stringify(token);
-    const encrypted = encrypt(plaintext, encryptionKey);
-    this.tokens.set(key, encrypted);
+exports.MemoryStorage = void 0;
+var init_MemoryStorage = __esm({
+  "src/connectors/oauth/infrastructure/storage/MemoryStorage.ts"() {
+    init_encryption();
+    exports.MemoryStorage = class {
+      tokens = /* @__PURE__ */ new Map();
+      // Stores encrypted tokens
+      async storeToken(key, token) {
+        const encryptionKey = getEncryptionKey();
+        const plaintext = JSON.stringify(token);
+        const encrypted = encrypt(plaintext, encryptionKey);
+        this.tokens.set(key, encrypted);
+      }
+      async getToken(key) {
+        const encrypted = this.tokens.get(key);
+        if (!encrypted) {
+          return null;
+        }
+        try {
+          const encryptionKey = getEncryptionKey();
+          const decrypted = decrypt(encrypted, encryptionKey);
+          return JSON.parse(decrypted);
+        } catch (error) {
+          console.error("Failed to decrypt token from memory:", error);
+          this.tokens.delete(key);
+          return null;
+        }
+      }
+      async deleteToken(key) {
+        this.tokens.delete(key);
+      }
+      async hasToken(key) {
+        return this.tokens.has(key);
+      }
+      /**
+       * Clear all tokens (useful for testing)
+       */
+      clearAll() {
+        this.tokens.clear();
+      }
+      /**
+       * Get number of stored tokens
+       */
+      size() {
+        return this.tokens.size;
+      }
+    };
   }
-  async getToken(key) {
-    const encrypted = this.tokens.get(key);
-    if (!encrypted) {
-      return null;
-    }
-    try {
-      const encryptionKey = getEncryptionKey();
-      const decrypted = decrypt(encrypted, encryptionKey);
-      return JSON.parse(decrypted);
-    } catch (error) {
-      console.error("Failed to decrypt token from memory:", error);
-      this.tokens.delete(key);
-      return null;
-    }
-  }
-  async deleteToken(key) {
-    this.tokens.delete(key);
-  }
-  async hasToken(key) {
-    return this.tokens.has(key);
-  }
-  /**
-   * Clear all tokens (useful for testing)
-   */
-  clearAll() {
-    this.tokens.clear();
-  }
-  /**
-   * Get number of stored tokens
-   */
-  size() {
-    return this.tokens.size;
-  }
-};
+});
 
 // src/connectors/oauth/domain/TokenStore.ts
-var TokenStore = class {
-  storage;
-  baseStorageKey;
-  constructor(storageKey = "default", storage) {
-    this.baseStorageKey = storageKey;
-    this.storage = storage || new MemoryStorage();
-  }
-  /**
-   * Get user-scoped storage key
-   * For multi-user support, keys are scoped per user: "provider:userId"
-   * For single-user (backward compatible), userId is omitted or "default"
-   *
-   * @param userId - User identifier (optional, defaults to single-user mode)
-   * @returns Storage key scoped to user
-   */
-  getScopedKey(userId) {
-    if (!userId || userId === "default") {
-      return this.baseStorageKey;
-    }
-    return `${this.baseStorageKey}:${userId}`;
-  }
-  /**
-   * Store token (encrypted by storage layer)
-   * @param tokenResponse - Token response from OAuth provider
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async storeToken(tokenResponse, userId) {
-    if (!tokenResponse.access_token) {
-      throw new Error("OAuth response missing required access_token field");
-    }
-    if (typeof tokenResponse.access_token !== "string") {
-      throw new Error("access_token must be a string");
-    }
-    if (tokenResponse.expires_in !== void 0 && tokenResponse.expires_in < 0) {
-      throw new Error("expires_in must be positive");
-    }
-    const token = {
-      access_token: tokenResponse.access_token,
-      refresh_token: tokenResponse.refresh_token,
-      expires_in: tokenResponse.expires_in || 3600,
-      token_type: tokenResponse.token_type || "Bearer",
-      scope: tokenResponse.scope,
-      obtained_at: Date.now()
+var TokenStore;
+var init_TokenStore = __esm({
+  "src/connectors/oauth/domain/TokenStore.ts"() {
+    init_MemoryStorage();
+    TokenStore = class {
+      storage;
+      baseStorageKey;
+      constructor(storageKey = "default", storage) {
+        this.baseStorageKey = storageKey;
+        this.storage = storage || new exports.MemoryStorage();
+      }
+      /**
+       * Get user-scoped storage key
+       * For multi-user support, keys are scoped per user: "provider:userId"
+       * For single-user (backward compatible), userId is omitted or "default"
+       *
+       * @param userId - User identifier (optional, defaults to single-user mode)
+       * @returns Storage key scoped to user
+       */
+      getScopedKey(userId) {
+        if (!userId || userId === "default") {
+          return this.baseStorageKey;
+        }
+        return `${this.baseStorageKey}:${userId}`;
+      }
+      /**
+       * Store token (encrypted by storage layer)
+       * @param tokenResponse - Token response from OAuth provider
+       * @param userId - Optional user identifier for multi-user support
+       */
+      async storeToken(tokenResponse, userId) {
+        if (!tokenResponse.access_token) {
+          throw new Error("OAuth response missing required access_token field");
+        }
+        if (typeof tokenResponse.access_token !== "string") {
+          throw new Error("access_token must be a string");
+        }
+        if (tokenResponse.expires_in !== void 0 && tokenResponse.expires_in < 0) {
+          throw new Error("expires_in must be positive");
+        }
+        const token = {
+          access_token: tokenResponse.access_token,
+          refresh_token: tokenResponse.refresh_token,
+          expires_in: tokenResponse.expires_in || 3600,
+          token_type: tokenResponse.token_type || "Bearer",
+          scope: tokenResponse.scope,
+          obtained_at: Date.now()
+        };
+        const key = this.getScopedKey(userId);
+        await this.storage.storeToken(key, token);
+      }
+      /**
+       * Get access token
+       * @param userId - Optional user identifier for multi-user support
+       */
+      async getAccessToken(userId) {
+        const key = this.getScopedKey(userId);
+        const token = await this.storage.getToken(key);
+        if (!token) {
+          throw new Error(`No token stored for ${userId ? `user: ${userId}` : "default user"}`);
+        }
+        return token.access_token;
+      }
+      /**
+       * Get refresh token
+       * @param userId - Optional user identifier for multi-user support
+       */
+      async getRefreshToken(userId) {
+        const key = this.getScopedKey(userId);
+        const token = await this.storage.getToken(key);
+        if (!token?.refresh_token) {
+          throw new Error(`No refresh token available for ${userId ? `user: ${userId}` : "default user"}`);
+        }
+        return token.refresh_token;
+      }
+      /**
+       * Check if has refresh token
+       * @param userId - Optional user identifier for multi-user support
+       */
+      async hasRefreshToken(userId) {
+        const key = this.getScopedKey(userId);
+        const token = await this.storage.getToken(key);
+        return !!token?.refresh_token;
+      }
+      /**
+       * Check if token is valid (not expired)
+       *
+       * @param bufferSeconds - Refresh this many seconds before expiry (default: 300 = 5 min)
+       * @param userId - Optional user identifier for multi-user support
+       */
+      async isValid(bufferSeconds = 300, userId) {
+        const key = this.getScopedKey(userId);
+        const token = await this.storage.getToken(key);
+        if (!token) {
+          return false;
+        }
+        const expiresAt = token.obtained_at + token.expires_in * 1e3;
+        const bufferMs = bufferSeconds * 1e3;
+        return Date.now() < expiresAt - bufferMs;
+      }
+      /**
+       * Clear stored token
+       * @param userId - Optional user identifier for multi-user support
+       */
+      async clear(userId) {
+        const key = this.getScopedKey(userId);
+        await this.storage.deleteToken(key);
+      }
+      /**
+       * Get full token info
+       * @param userId - Optional user identifier for multi-user support
+       */
+      async getTokenInfo(userId) {
+        const key = this.getScopedKey(userId);
+        return this.storage.getToken(key);
+      }
     };
-    const key = this.getScopedKey(userId);
-    await this.storage.storeToken(key, token);
   }
-  /**
-   * Get access token
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async getAccessToken(userId) {
-    const key = this.getScopedKey(userId);
-    const token = await this.storage.getToken(key);
-    if (!token) {
-      throw new Error(`No token stored for ${userId ? `user: ${userId}` : "default user"}`);
-    }
-    return token.access_token;
-  }
-  /**
-   * Get refresh token
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async getRefreshToken(userId) {
-    const key = this.getScopedKey(userId);
-    const token = await this.storage.getToken(key);
-    if (!token?.refresh_token) {
-      throw new Error(`No refresh token available for ${userId ? `user: ${userId}` : "default user"}`);
-    }
-    return token.refresh_token;
-  }
-  /**
-   * Check if has refresh token
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async hasRefreshToken(userId) {
-    const key = this.getScopedKey(userId);
-    const token = await this.storage.getToken(key);
-    return !!token?.refresh_token;
-  }
-  /**
-   * Check if token is valid (not expired)
-   *
-   * @param bufferSeconds - Refresh this many seconds before expiry (default: 300 = 5 min)
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async isValid(bufferSeconds = 300, userId) {
-    const key = this.getScopedKey(userId);
-    const token = await this.storage.getToken(key);
-    if (!token) {
-      return false;
-    }
-    const expiresAt = token.obtained_at + token.expires_in * 1e3;
-    const bufferMs = bufferSeconds * 1e3;
-    return Date.now() < expiresAt - bufferMs;
-  }
-  /**
-   * Clear stored token
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async clear(userId) {
-    const key = this.getScopedKey(userId);
-    await this.storage.deleteToken(key);
-  }
-  /**
-   * Get full token info
-   * @param userId - Optional user identifier for multi-user support
-   */
-  async getTokenInfo(userId) {
-    const key = this.getScopedKey(userId);
-    return this.storage.getToken(key);
-  }
-};
+});
 function generatePKCE() {
   const codeVerifier = base64URLEncode(crypto2__namespace.randomBytes(32));
   const hash = crypto2__namespace.createHash("sha256").update(codeVerifier).digest();
@@ -278,763 +310,795 @@ function base64URLEncode(buffer) {
 function generateState() {
   return crypto2__namespace.randomBytes(16).toString("hex");
 }
+var init_pkce = __esm({
+  "src/connectors/oauth/utils/pkce.ts"() {
+  }
+});
 
 // src/connectors/oauth/flows/AuthCodePKCE.ts
-var AuthCodePKCEFlow = class {
-  constructor(config) {
-    this.config = config;
-    const storageKey = config.storageKey || `auth_code:${config.clientId}`;
-    this.tokenStore = new TokenStore(storageKey, config.storage);
-  }
-  tokenStore;
-  // Store PKCE data per user with timestamps for cleanup
-  codeVerifiers = /* @__PURE__ */ new Map();
-  states = /* @__PURE__ */ new Map();
-  // Store refresh locks per user to prevent concurrent refresh
-  refreshLocks = /* @__PURE__ */ new Map();
-  // PKCE data TTL: 15 minutes (auth flows should complete within this time)
-  PKCE_TTL = 15 * 60 * 1e3;
-  /**
-   * Generate authorization URL for user to visit
-   * Opens browser or redirects user to this URL
-   *
-   * @param userId - User identifier for multi-user support (optional)
-   */
-  async getAuthorizationUrl(userId) {
-    if (!this.config.authorizationUrl) {
-      throw new Error("authorizationUrl is required for authorization_code flow");
-    }
-    if (!this.config.redirectUri) {
-      throw new Error("redirectUri is required for authorization_code flow");
-    }
-    this.cleanupExpiredPKCE();
-    const userKey = userId || "default";
-    const { codeVerifier, codeChallenge } = generatePKCE();
-    this.codeVerifiers.set(userKey, { verifier: codeVerifier, timestamp: Date.now() });
-    const state = generateState();
-    this.states.set(userKey, { state, timestamp: Date.now() });
-    const params = new URLSearchParams({
-      response_type: "code",
-      client_id: this.config.clientId,
-      redirect_uri: this.config.redirectUri,
-      state
-    });
-    if (this.config.scope) {
-      params.append("scope", this.config.scope);
-    }
-    if (this.config.usePKCE !== false) {
-      params.append("code_challenge", codeChallenge);
-      params.append("code_challenge_method", "S256");
-    }
-    const stateWithUser = userId ? `${state}::${userId}` : state;
-    params.set("state", stateWithUser);
-    return `${this.config.authorizationUrl}?${params.toString()}`;
-  }
-  /**
-   * Exchange authorization code for access token
-   *
-   * @param code - Authorization code from callback
-   * @param state - State parameter from callback (for CSRF verification, may include userId)
-   * @param userId - User identifier (optional, can be extracted from state)
-   */
-  async exchangeCode(code, state, userId) {
-    let actualState = state;
-    let actualUserId = userId;
-    if (state.includes("::")) {
-      const parts = state.split("::");
-      actualState = parts[0];
-      actualUserId = parts[1];
-    }
-    const userKey = actualUserId || "default";
-    const stateData = this.states.get(userKey);
-    if (!stateData) {
-      throw new Error(`No PKCE state found for user ${actualUserId}. Authorization flow may have expired (15 min TTL).`);
-    }
-    const expectedState = stateData.state;
-    if (actualState !== expectedState) {
-      throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
-    }
-    if (!this.config.redirectUri) {
-      throw new Error("redirectUri is required");
-    }
-    const params = new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: this.config.redirectUri,
-      client_id: this.config.clientId
-    });
-    if (this.config.clientSecret) {
-      params.append("client_secret", this.config.clientSecret);
-    }
-    const verifierData = this.codeVerifiers.get(userKey);
-    if (this.config.usePKCE !== false && verifierData) {
-      params.append("code_verifier", verifierData.verifier);
-    }
-    const response = await fetch(this.config.tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${error}`);
-    }
-    const data = await response.json();
-    await this.tokenStore.storeToken(data, actualUserId);
-    this.codeVerifiers.delete(userKey);
-    this.states.delete(userKey);
-  }
-  /**
-   * Get valid token (auto-refreshes if needed)
-   * @param userId - User identifier for multi-user support
-   */
-  async getToken(userId) {
-    const key = userId || "default";
-    if (this.refreshLocks.has(key)) {
-      return this.refreshLocks.get(key);
-    }
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
-      return this.tokenStore.getAccessToken(userId);
-    }
-    if (await this.tokenStore.hasRefreshToken(userId)) {
-      const refreshPromise = this.refreshToken(userId);
-      this.refreshLocks.set(key, refreshPromise);
-      try {
-        return await refreshPromise;
-      } finally {
-        this.refreshLocks.delete(key);
+var AuthCodePKCEFlow;
+var init_AuthCodePKCE = __esm({
+  "src/connectors/oauth/flows/AuthCodePKCE.ts"() {
+    init_TokenStore();
+    init_pkce();
+    AuthCodePKCEFlow = class {
+      constructor(config) {
+        this.config = config;
+        const storageKey = config.storageKey || `auth_code:${config.clientId}`;
+        this.tokenStore = new TokenStore(storageKey, config.storage);
       }
-    }
-    throw new Error(`No valid token available for ${userId ? `user: ${userId}` : "default user"}. User needs to authorize (call startAuthFlow).`);
-  }
-  /**
-   * Refresh access token using refresh token
-   * @param userId - User identifier for multi-user support
-   */
-  async refreshToken(userId) {
-    const refreshToken = await this.tokenStore.getRefreshToken(userId);
-    const params = new URLSearchParams({
-      grant_type: "refresh_token",
-      refresh_token: refreshToken,
-      client_id: this.config.clientId
-    });
-    if (this.config.clientSecret) {
-      params.append("client_secret", this.config.clientSecret);
-    }
-    const response = await fetch(this.config.tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${error}`);
-    }
-    const data = await response.json();
-    await this.tokenStore.storeToken(data, userId);
-    return data.access_token;
-  }
-  /**
-   * Check if token is valid
-   * @param userId - User identifier for multi-user support
-   */
-  async isTokenValid(userId) {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId);
-  }
-  /**
-   * Revoke token (if supported by provider)
-   * @param revocationUrl - Optional revocation endpoint
-   * @param userId - User identifier for multi-user support
-   */
-  async revokeToken(revocationUrl, userId) {
-    if (!revocationUrl) {
-      await this.tokenStore.clear(userId);
-      return;
-    }
-    try {
-      const token = await this.tokenStore.getAccessToken(userId);
-      await fetch(revocationUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: new URLSearchParams({
-          token,
-          client_id: this.config.clientId
-        })
-      });
-    } finally {
-      await this.tokenStore.clear(userId);
-    }
-  }
-  /**
-   * Clean up expired PKCE data to prevent memory leaks
-   * Removes verifiers and states older than PKCE_TTL (15 minutes)
-   */
-  cleanupExpiredPKCE() {
-    const now = Date.now();
-    for (const [key, data] of this.codeVerifiers) {
-      if (now - data.timestamp > this.PKCE_TTL) {
-        this.codeVerifiers.delete(key);
-        this.states.delete(key);
-      }
-    }
-  }
-};
-
-// src/connectors/oauth/flows/ClientCredentials.ts
-var ClientCredentialsFlow = class {
-  constructor(config) {
-    this.config = config;
-    const storageKey = config.storageKey || `client_credentials:${config.clientId}`;
-    this.tokenStore = new TokenStore(storageKey, config.storage);
-  }
-  tokenStore;
-  /**
-   * Get token using client credentials
-   */
-  async getToken() {
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-      return this.tokenStore.getAccessToken();
-    }
-    return this.requestToken();
-  }
-  /**
-   * Request a new token from the authorization server
-   */
-  async requestToken() {
-    const auth = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
-      "base64"
-    );
-    const params = new URLSearchParams({
-      grant_type: "client_credentials"
-    });
-    if (this.config.scope) {
-      params.append("scope", this.config.scope);
-    }
-    const response = await fetch(this.config.tokenUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${auth}`,
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Token request failed: ${response.status} ${response.statusText} - ${error}`);
-    }
-    const data = await response.json();
-    await this.tokenStore.storeToken(data);
-    return data.access_token;
-  }
-  /**
-   * Refresh token (client credentials don't use refresh tokens)
-   * Just requests a new token
-   */
-  async refreshToken() {
-    await this.tokenStore.clear();
-    return this.requestToken();
-  }
-  /**
-   * Check if token is valid
-   */
-  async isTokenValid() {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
-  }
-};
-var JWTBearerFlow = class {
-  constructor(config) {
-    this.config = config;
-    const storageKey = config.storageKey || `jwt_bearer:${config.clientId}`;
-    this.tokenStore = new TokenStore(storageKey, config.storage);
-    if (config.privateKey) {
-      this.privateKey = config.privateKey;
-    } else if (config.privateKeyPath) {
-      try {
-        this.privateKey = fs11__namespace.readFileSync(config.privateKeyPath, "utf8");
-      } catch (error) {
-        throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
-      }
-    } else {
-      throw new Error("JWT Bearer flow requires privateKey or privateKeyPath");
-    }
-  }
-  tokenStore;
-  privateKey;
-  /**
-   * Generate signed JWT assertion
-   */
-  async generateJWT() {
-    const now = Math.floor(Date.now() / 1e3);
-    const alg = this.config.tokenSigningAlg || "RS256";
-    const key = await jose.importPKCS8(this.privateKey, alg);
-    const jwt = await new jose.SignJWT({
-      scope: this.config.scope || ""
-    }).setProtectedHeader({ alg }).setIssuer(this.config.clientId).setSubject(this.config.clientId).setAudience(this.config.audience || this.config.tokenUrl).setIssuedAt(now).setExpirationTime(now + 3600).sign(key);
-    return jwt;
-  }
-  /**
-   * Get token using JWT Bearer assertion
-   */
-  async getToken() {
-    if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
-      return this.tokenStore.getAccessToken();
-    }
-    return this.requestToken();
-  }
-  /**
-   * Request token using JWT assertion
-   */
-  async requestToken() {
-    const assertion = await this.generateJWT();
-    const params = new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion
-    });
-    const response = await fetch(this.config.tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params
-    });
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`JWT Bearer token request failed: ${response.status} ${response.statusText} - ${error}`);
-    }
-    const data = await response.json();
-    await this.tokenStore.storeToken(data);
-    return data.access_token;
-  }
-  /**
-   * Refresh token (generate new JWT and request new token)
-   */
-  async refreshToken() {
-    await this.tokenStore.clear();
-    return this.requestToken();
-  }
-  /**
-   * Check if token is valid
-   */
-  async isTokenValid() {
-    return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
-  }
-};
-
-// src/connectors/oauth/flows/StaticToken.ts
-var StaticTokenFlow = class {
-  token;
-  constructor(config) {
-    if (!config.staticToken) {
-      throw new Error("Static token flow requires staticToken in config");
-    }
-    this.token = config.staticToken;
-  }
-  /**
-   * Get token (always returns the static token)
-   */
-  async getToken() {
-    return this.token;
-  }
-  /**
-   * Refresh token (no-op for static tokens)
-   */
-  async refreshToken() {
-    return this.token;
-  }
-  /**
-   * Token is always valid for static tokens
-   */
-  async isTokenValid() {
-    return true;
-  }
-  /**
-   * Update the static token
-   */
-  updateToken(newToken) {
-    this.token = newToken;
-  }
-};
-
-// src/connectors/oauth/OAuthManager.ts
-var OAuthManager = class {
-  flow;
-  constructor(config) {
-    this.validateConfig(config);
-    switch (config.flow) {
-      case "authorization_code":
-        this.flow = new AuthCodePKCEFlow(config);
-        break;
-      case "client_credentials":
-        this.flow = new ClientCredentialsFlow(config);
-        break;
-      case "jwt_bearer":
-        this.flow = new JWTBearerFlow(config);
-        break;
-      case "static_token":
-        this.flow = new StaticTokenFlow(config);
-        break;
-      default:
-        throw new Error(`Unknown OAuth flow: ${config.flow}`);
-    }
-  }
-  /**
-   * Get valid access token
-   * Automatically refreshes if expired
-   *
-   * @param userId - User identifier for multi-user support (optional)
-   */
-  async getToken(userId) {
-    return this.flow.getToken(userId);
-  }
-  /**
-   * Force refresh the token
-   *
-   * @param userId - User identifier for multi-user support (optional)
-   */
-  async refreshToken(userId) {
-    return this.flow.refreshToken(userId);
-  }
-  /**
-   * Check if current token is valid
-   *
-   * @param userId - User identifier for multi-user support (optional)
-   */
-  async isTokenValid(userId) {
-    return this.flow.isTokenValid(userId);
-  }
-  // ==================== Authorization Code Flow Methods ====================
-  /**
-   * Start authorization flow (Authorization Code only)
-   * Returns URL for user to visit
-   *
-   * @param userId - User identifier for multi-user support (optional)
-   * @returns Authorization URL for the user to visit
-   */
-  async startAuthFlow(userId) {
-    if (!(this.flow instanceof AuthCodePKCEFlow)) {
-      throw new Error("startAuthFlow() is only available for authorization_code flow");
-    }
-    return this.flow.getAuthorizationUrl(userId);
-  }
-  /**
-   * Handle OAuth callback (Authorization Code only)
-   * Call this with the callback URL after user authorizes
-   *
-   * @param callbackUrl - Full callback URL with code and state parameters
-   * @param userId - Optional user identifier (can be extracted from state if embedded)
-   */
-  async handleCallback(callbackUrl, userId) {
-    if (!(this.flow instanceof AuthCodePKCEFlow)) {
-      throw new Error("handleCallback() is only available for authorization_code flow");
-    }
-    const url = new URL(callbackUrl);
-    const code = url.searchParams.get("code");
-    const state = url.searchParams.get("state");
-    if (!code) {
-      throw new Error("Missing authorization code in callback URL");
-    }
-    if (!state) {
-      throw new Error("Missing state parameter in callback URL");
-    }
-    await this.flow.exchangeCode(code, state, userId);
-  }
-  /**
-   * Revoke token (if supported by provider)
-   *
-   * @param revocationUrl - Optional revocation endpoint URL
-   * @param userId - User identifier for multi-user support (optional)
-   */
-  async revokeToken(revocationUrl, userId) {
-    if (this.flow instanceof AuthCodePKCEFlow) {
-      await this.flow.revokeToken(revocationUrl, userId);
-    } else {
-      throw new Error("Token revocation not implemented for this flow");
-    }
-  }
-  // ==================== Validation ====================
-  validateConfig(config) {
-    if (!config.flow) {
-      throw new Error("OAuth flow is required (authorization_code, client_credentials, jwt_bearer, or static_token)");
-    }
-    if (config.flow !== "static_token") {
-      if (!config.tokenUrl) {
-        throw new Error("tokenUrl is required");
-      }
-      if (!config.clientId) {
-        throw new Error("clientId is required");
-      }
-    }
-    switch (config.flow) {
-      case "authorization_code":
-        if (!config.authorizationUrl) {
+      tokenStore;
+      // Store PKCE data per user with timestamps for cleanup
+      codeVerifiers = /* @__PURE__ */ new Map();
+      states = /* @__PURE__ */ new Map();
+      // Store refresh locks per user to prevent concurrent refresh
+      refreshLocks = /* @__PURE__ */ new Map();
+      // PKCE data TTL: 15 minutes (auth flows should complete within this time)
+      PKCE_TTL = 15 * 60 * 1e3;
+      /**
+       * Generate authorization URL for user to visit
+       * Opens browser or redirects user to this URL
+       *
+       * @param userId - User identifier for multi-user support (optional)
+       */
+      async getAuthorizationUrl(userId) {
+        if (!this.config.authorizationUrl) {
           throw new Error("authorizationUrl is required for authorization_code flow");
         }
-        if (!config.redirectUri) {
+        if (!this.config.redirectUri) {
           throw new Error("redirectUri is required for authorization_code flow");
         }
-        break;
-      case "client_credentials":
-        if (!config.clientSecret) {
-          throw new Error("clientSecret is required for client_credentials flow");
+        this.cleanupExpiredPKCE();
+        const userKey = userId || "default";
+        const { codeVerifier, codeChallenge } = generatePKCE();
+        this.codeVerifiers.set(userKey, { verifier: codeVerifier, timestamp: Date.now() });
+        const state = generateState();
+        this.states.set(userKey, { state, timestamp: Date.now() });
+        const params = new URLSearchParams({
+          response_type: "code",
+          client_id: this.config.clientId,
+          redirect_uri: this.config.redirectUri,
+          state
+        });
+        if (this.config.scope) {
+          params.append("scope", this.config.scope);
         }
-        break;
-      case "jwt_bearer":
-        if (!config.privateKey && !config.privateKeyPath) {
-          throw new Error(
-            "privateKey or privateKeyPath is required for jwt_bearer flow"
-          );
+        if (this.config.usePKCE !== false) {
+          params.append("code_challenge", codeChallenge);
+          params.append("code_challenge_method", "S256");
         }
-        break;
-      case "static_token":
-        if (!config.staticToken) {
-          throw new Error("staticToken is required for static_token flow");
-        }
-        break;
-    }
-    if (config.storage && !process.env.OAUTH_ENCRYPTION_KEY) {
-      console.warn(
-        "WARNING: Using persistent storage without OAUTH_ENCRYPTION_KEY environment variable. Tokens will be encrypted with auto-generated key that changes on restart!"
-      );
-    }
-  }
-};
-var DEFAULT_CIRCUIT_BREAKER_CONFIG = {
-  failureThreshold: 5,
-  successThreshold: 2,
-  resetTimeoutMs: 3e4,
-  // 30 seconds
-  windowMs: 6e4,
-  // 1 minute
-  isRetryable: () => true
-  // All errors count by default
-};
-var CircuitOpenError = class extends Error {
-  constructor(breakerName, nextRetryTime, failureCount, lastError) {
-    const retryInSeconds = Math.ceil((nextRetryTime - Date.now()) / 1e3);
-    super(
-      `Circuit breaker '${breakerName}' is OPEN. Retry in ${retryInSeconds}s. (${failureCount} recent failures, last: ${lastError})`
-    );
-    this.breakerName = breakerName;
-    this.nextRetryTime = nextRetryTime;
-    this.failureCount = failureCount;
-    this.lastError = lastError;
-    this.name = "CircuitOpenError";
-  }
-};
-var CircuitBreaker = class extends eventemitter3.EventEmitter {
-  constructor(name, config = {}) {
-    super();
-    this.name = name;
-    this.config = { ...DEFAULT_CIRCUIT_BREAKER_CONFIG, ...config };
-    this.lastStateChange = Date.now();
-  }
-  state = "closed";
-  config;
-  // Failure tracking
-  failures = [];
-  lastError = "";
-  // Success tracking
-  consecutiveSuccesses = 0;
-  // Timing
-  openedAt;
-  lastStateChange;
-  // Metrics
-  totalRequests = 0;
-  successCount = 0;
-  failureCount = 0;
-  rejectedCount = 0;
-  lastFailureTime;
-  lastSuccessTime;
-  /**
-   * Execute function with circuit breaker protection
-   */
-  async execute(fn) {
-    this.totalRequests++;
-    const now = Date.now();
-    switch (this.state) {
-      case "open":
-        if (this.openedAt && now - this.openedAt >= this.config.resetTimeoutMs) {
-          this.transitionTo("half-open");
-        } else {
-          this.rejectedCount++;
-          const nextRetry = (this.openedAt || now) + this.config.resetTimeoutMs;
-          throw new CircuitOpenError(this.name, nextRetry, this.failures.length, this.lastError);
-        }
-        break;
-    }
-    try {
-      const result = await fn();
-      this.recordSuccess();
-      return result;
-    } catch (error) {
-      this.recordFailure(error);
-      throw error;
-    }
-  }
-  /**
-   * Record successful execution
-   */
-  recordSuccess() {
-    this.successCount++;
-    this.lastSuccessTime = Date.now();
-    this.consecutiveSuccesses++;
-    if (this.state === "half-open") {
-      if (this.consecutiveSuccesses >= this.config.successThreshold) {
-        this.transitionTo("closed");
+        const stateWithUser = userId ? `${state}::${userId}` : state;
+        params.set("state", stateWithUser);
+        return `${this.config.authorizationUrl}?${params.toString()}`;
       }
-    } else if (this.state === "closed") {
-      this.pruneOldFailures();
-    }
-  }
-  /**
-   * Record failed execution
-   */
-  recordFailure(error) {
-    if (this.config.isRetryable && !this.config.isRetryable(error)) {
-      return;
-    }
-    this.failureCount++;
-    this.lastFailureTime = Date.now();
-    this.lastError = error.message;
-    this.consecutiveSuccesses = 0;
-    this.failures.push({
-      timestamp: Date.now(),
-      error: error.message
-    });
-    this.pruneOldFailures();
-    if (this.state === "half-open") {
-      this.transitionTo("open");
-    } else if (this.state === "closed") {
-      if (this.failures.length >= this.config.failureThreshold) {
-        this.transitionTo("open");
+      /**
+       * Exchange authorization code for access token
+       *
+       * @param code - Authorization code from callback
+       * @param state - State parameter from callback (for CSRF verification, may include userId)
+       * @param userId - User identifier (optional, can be extracted from state)
+       */
+      async exchangeCode(code, state, userId) {
+        let actualState = state;
+        let actualUserId = userId;
+        if (state.includes("::")) {
+          const parts = state.split("::");
+          actualState = parts[0];
+          actualUserId = parts[1];
+        }
+        const userKey = actualUserId || "default";
+        const stateData = this.states.get(userKey);
+        if (!stateData) {
+          throw new Error(`No PKCE state found for user ${actualUserId}. Authorization flow may have expired (15 min TTL).`);
+        }
+        const expectedState = stateData.state;
+        if (actualState !== expectedState) {
+          throw new Error(`State mismatch for user ${actualUserId} - possible CSRF attack. Expected: ${expectedState}, Got: ${actualState}`);
+        }
+        if (!this.config.redirectUri) {
+          throw new Error("redirectUri is required");
+        }
+        const params = new URLSearchParams({
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: this.config.redirectUri,
+          client_id: this.config.clientId
+        });
+        if (this.config.clientSecret) {
+          params.append("client_secret", this.config.clientSecret);
+        }
+        const verifierData = this.codeVerifiers.get(userKey);
+        if (this.config.usePKCE !== false && verifierData) {
+          params.append("code_verifier", verifierData.verifier);
+        }
+        const response = await fetch(this.config.tokenUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: params
+        });
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${error}`);
+        }
+        const data = await response.json();
+        await this.tokenStore.storeToken(data, actualUserId);
+        this.codeVerifiers.delete(userKey);
+        this.states.delete(userKey);
       }
-    }
-  }
-  /**
-   * Transition to new state
-   */
-  transitionTo(newState) {
-    this.state = newState;
-    this.lastStateChange = Date.now();
-    switch (newState) {
-      case "open":
-        this.openedAt = Date.now();
-        this.emit("opened", {
-          name: this.name,
-          failureCount: this.failures.length,
-          lastError: this.lastError,
-          nextRetryTime: this.openedAt + this.config.resetTimeoutMs
+      /**
+       * Get valid token (auto-refreshes if needed)
+       * @param userId - User identifier for multi-user support
+       */
+      async getToken(userId) {
+        const key = userId || "default";
+        if (this.refreshLocks.has(key)) {
+          return this.refreshLocks.get(key);
+        }
+        if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId)) {
+          return this.tokenStore.getAccessToken(userId);
+        }
+        if (await this.tokenStore.hasRefreshToken(userId)) {
+          const refreshPromise = this.refreshToken(userId);
+          this.refreshLocks.set(key, refreshPromise);
+          try {
+            return await refreshPromise;
+          } finally {
+            this.refreshLocks.delete(key);
+          }
+        }
+        throw new Error(`No valid token available for ${userId ? `user: ${userId}` : "default user"}. User needs to authorize (call startAuthFlow).`);
+      }
+      /**
+       * Refresh access token using refresh token
+       * @param userId - User identifier for multi-user support
+       */
+      async refreshToken(userId) {
+        const refreshToken = await this.tokenStore.getRefreshToken(userId);
+        const params = new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: this.config.clientId
         });
-        break;
-      case "half-open":
-        this.emit("half-open", {
-          name: this.name,
-          timestamp: Date.now()
+        if (this.config.clientSecret) {
+          params.append("client_secret", this.config.clientSecret);
+        }
+        const response = await fetch(this.config.tokenUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: params
         });
-        break;
-      case "closed":
-        this.failures = [];
-        this.consecutiveSuccesses = 0;
-        this.openedAt = void 0;
-        this.emit("closed", {
-          name: this.name,
-          successCount: this.consecutiveSuccesses,
-          timestamp: Date.now()
-        });
-        break;
-    }
-  }
-  /**
-   * Remove failures outside the time window
-   */
-  pruneOldFailures() {
-    const now = Date.now();
-    const cutoff = now - this.config.windowMs;
-    this.failures = this.failures.filter((f) => f.timestamp > cutoff);
-  }
-  /**
-   * Get current state
-   */
-  getState() {
-    return this.state;
-  }
-  /**
-   * Get current metrics
-   */
-  getMetrics() {
-    this.pruneOldFailures();
-    const total = this.successCount + this.failureCount;
-    const failureRate = total > 0 ? this.failureCount / total : 0;
-    const successRate = total > 0 ? this.successCount / total : 0;
-    return {
-      name: this.name,
-      state: this.state,
-      totalRequests: this.totalRequests,
-      successCount: this.successCount,
-      failureCount: this.failureCount,
-      rejectedCount: this.rejectedCount,
-      recentFailures: this.failures.length,
-      consecutiveSuccesses: this.consecutiveSuccesses,
-      lastFailureTime: this.lastFailureTime,
-      lastSuccessTime: this.lastSuccessTime,
-      lastStateChange: this.lastStateChange,
-      nextRetryTime: this.openedAt ? this.openedAt + this.config.resetTimeoutMs : void 0,
-      failureRate,
-      successRate
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`Token refresh failed: ${response.status} ${response.statusText} - ${error}`);
+        }
+        const data = await response.json();
+        await this.tokenStore.storeToken(data, userId);
+        return data.access_token;
+      }
+      /**
+       * Check if token is valid
+       * @param userId - User identifier for multi-user support
+       */
+      async isTokenValid(userId) {
+        return this.tokenStore.isValid(this.config.refreshBeforeExpiry, userId);
+      }
+      /**
+       * Revoke token (if supported by provider)
+       * @param revocationUrl - Optional revocation endpoint
+       * @param userId - User identifier for multi-user support
+       */
+      async revokeToken(revocationUrl, userId) {
+        if (!revocationUrl) {
+          await this.tokenStore.clear(userId);
+          return;
+        }
+        try {
+          const token = await this.tokenStore.getAccessToken(userId);
+          await fetch(revocationUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded"
+            },
+            body: new URLSearchParams({
+              token,
+              client_id: this.config.clientId
+            })
+          });
+        } finally {
+          await this.tokenStore.clear(userId);
+        }
+      }
+      /**
+       * Clean up expired PKCE data to prevent memory leaks
+       * Removes verifiers and states older than PKCE_TTL (15 minutes)
+       */
+      cleanupExpiredPKCE() {
+        const now = Date.now();
+        for (const [key, data] of this.codeVerifiers) {
+          if (now - data.timestamp > this.PKCE_TTL) {
+            this.codeVerifiers.delete(key);
+            this.states.delete(key);
+          }
+        }
+      }
     };
   }
-  /**
-   * Manually reset circuit breaker (force close)
-   */
-  reset() {
-    this.transitionTo("closed");
-    this.totalRequests = 0;
-    this.successCount = 0;
-    this.failureCount = 0;
-    this.rejectedCount = 0;
-    this.lastFailureTime = void 0;
-    this.lastSuccessTime = void 0;
+});
+
+// src/connectors/oauth/flows/ClientCredentials.ts
+var ClientCredentialsFlow;
+var init_ClientCredentials = __esm({
+  "src/connectors/oauth/flows/ClientCredentials.ts"() {
+    init_TokenStore();
+    ClientCredentialsFlow = class {
+      constructor(config) {
+        this.config = config;
+        const storageKey = config.storageKey || `client_credentials:${config.clientId}`;
+        this.tokenStore = new TokenStore(storageKey, config.storage);
+      }
+      tokenStore;
+      /**
+       * Get token using client credentials
+       */
+      async getToken() {
+        if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
+          return this.tokenStore.getAccessToken();
+        }
+        return this.requestToken();
+      }
+      /**
+       * Request a new token from the authorization server
+       */
+      async requestToken() {
+        const auth = Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString(
+          "base64"
+        );
+        const params = new URLSearchParams({
+          grant_type: "client_credentials"
+        });
+        if (this.config.scope) {
+          params.append("scope", this.config.scope);
+        }
+        const response = await fetch(this.config.tokenUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${auth}`,
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: params
+        });
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`Token request failed: ${response.status} ${response.statusText} - ${error}`);
+        }
+        const data = await response.json();
+        await this.tokenStore.storeToken(data);
+        return data.access_token;
+      }
+      /**
+       * Refresh token (client credentials don't use refresh tokens)
+       * Just requests a new token
+       */
+      async refreshToken() {
+        await this.tokenStore.clear();
+        return this.requestToken();
+      }
+      /**
+       * Check if token is valid
+       */
+      async isTokenValid() {
+        return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+      }
+    };
   }
-  /**
-   * Check if circuit is allowing requests
-   */
-  isOpen() {
-    if (this.state === "open" && this.openedAt) {
-      const now = Date.now();
-      if (now - this.openedAt >= this.config.resetTimeoutMs) {
-        this.transitionTo("half-open");
+});
+var JWTBearerFlow;
+var init_JWTBearer = __esm({
+  "src/connectors/oauth/flows/JWTBearer.ts"() {
+    init_TokenStore();
+    JWTBearerFlow = class {
+      constructor(config) {
+        this.config = config;
+        const storageKey = config.storageKey || `jwt_bearer:${config.clientId}`;
+        this.tokenStore = new TokenStore(storageKey, config.storage);
+        if (config.privateKey) {
+          this.privateKey = config.privateKey;
+        } else if (config.privateKeyPath) {
+          try {
+            this.privateKey = fs11__namespace.readFileSync(config.privateKeyPath, "utf8");
+          } catch (error) {
+            throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
+          }
+        } else {
+          throw new Error("JWT Bearer flow requires privateKey or privateKeyPath");
+        }
+      }
+      tokenStore;
+      privateKey;
+      /**
+       * Generate signed JWT assertion
+       */
+      async generateJWT() {
+        const now = Math.floor(Date.now() / 1e3);
+        const alg = this.config.tokenSigningAlg || "RS256";
+        const key = await jose.importPKCS8(this.privateKey, alg);
+        const jwt = await new jose.SignJWT({
+          scope: this.config.scope || ""
+        }).setProtectedHeader({ alg }).setIssuer(this.config.clientId).setSubject(this.config.clientId).setAudience(this.config.audience || this.config.tokenUrl).setIssuedAt(now).setExpirationTime(now + 3600).sign(key);
+        return jwt;
+      }
+      /**
+       * Get token using JWT Bearer assertion
+       */
+      async getToken() {
+        if (await this.tokenStore.isValid(this.config.refreshBeforeExpiry)) {
+          return this.tokenStore.getAccessToken();
+        }
+        return this.requestToken();
+      }
+      /**
+       * Request token using JWT assertion
+       */
+      async requestToken() {
+        const assertion = await this.generateJWT();
+        const params = new URLSearchParams({
+          grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          assertion
+        });
+        const response = await fetch(this.config.tokenUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: params
+        });
+        if (!response.ok) {
+          const error = await response.text();
+          throw new Error(`JWT Bearer token request failed: ${response.status} ${response.statusText} - ${error}`);
+        }
+        const data = await response.json();
+        await this.tokenStore.storeToken(data);
+        return data.access_token;
+      }
+      /**
+       * Refresh token (generate new JWT and request new token)
+       */
+      async refreshToken() {
+        await this.tokenStore.clear();
+        return this.requestToken();
+      }
+      /**
+       * Check if token is valid
+       */
+      async isTokenValid() {
+        return this.tokenStore.isValid(this.config.refreshBeforeExpiry);
+      }
+    };
+  }
+});
+
+// src/connectors/oauth/flows/StaticToken.ts
+var StaticTokenFlow;
+var init_StaticToken = __esm({
+  "src/connectors/oauth/flows/StaticToken.ts"() {
+    StaticTokenFlow = class {
+      token;
+      constructor(config) {
+        if (!config.staticToken) {
+          throw new Error("Static token flow requires staticToken in config");
+        }
+        this.token = config.staticToken;
+      }
+      /**
+       * Get token (always returns the static token)
+       */
+      async getToken() {
+        return this.token;
+      }
+      /**
+       * Refresh token (no-op for static tokens)
+       */
+      async refreshToken() {
+        return this.token;
+      }
+      /**
+       * Token is always valid for static tokens
+       */
+      async isTokenValid() {
+        return true;
+      }
+      /**
+       * Update the static token
+       */
+      updateToken(newToken) {
+        this.token = newToken;
+      }
+    };
+  }
+});
+
+// src/connectors/oauth/OAuthManager.ts
+exports.OAuthManager = void 0;
+var init_OAuthManager = __esm({
+  "src/connectors/oauth/OAuthManager.ts"() {
+    init_AuthCodePKCE();
+    init_ClientCredentials();
+    init_JWTBearer();
+    init_StaticToken();
+    exports.OAuthManager = class {
+      flow;
+      constructor(config) {
+        this.validateConfig(config);
+        switch (config.flow) {
+          case "authorization_code":
+            this.flow = new AuthCodePKCEFlow(config);
+            break;
+          case "client_credentials":
+            this.flow = new ClientCredentialsFlow(config);
+            break;
+          case "jwt_bearer":
+            this.flow = new JWTBearerFlow(config);
+            break;
+          case "static_token":
+            this.flow = new StaticTokenFlow(config);
+            break;
+          default:
+            throw new Error(`Unknown OAuth flow: ${config.flow}`);
+        }
+      }
+      /**
+       * Get valid access token
+       * Automatically refreshes if expired
+       *
+       * @param userId - User identifier for multi-user support (optional)
+       */
+      async getToken(userId) {
+        return this.flow.getToken(userId);
+      }
+      /**
+       * Force refresh the token
+       *
+       * @param userId - User identifier for multi-user support (optional)
+       */
+      async refreshToken(userId) {
+        return this.flow.refreshToken(userId);
+      }
+      /**
+       * Check if current token is valid
+       *
+       * @param userId - User identifier for multi-user support (optional)
+       */
+      async isTokenValid(userId) {
+        return this.flow.isTokenValid(userId);
+      }
+      // ==================== Authorization Code Flow Methods ====================
+      /**
+       * Start authorization flow (Authorization Code only)
+       * Returns URL for user to visit
+       *
+       * @param userId - User identifier for multi-user support (optional)
+       * @returns Authorization URL for the user to visit
+       */
+      async startAuthFlow(userId) {
+        if (!(this.flow instanceof AuthCodePKCEFlow)) {
+          throw new Error("startAuthFlow() is only available for authorization_code flow");
+        }
+        return this.flow.getAuthorizationUrl(userId);
+      }
+      /**
+       * Handle OAuth callback (Authorization Code only)
+       * Call this with the callback URL after user authorizes
+       *
+       * @param callbackUrl - Full callback URL with code and state parameters
+       * @param userId - Optional user identifier (can be extracted from state if embedded)
+       */
+      async handleCallback(callbackUrl, userId) {
+        if (!(this.flow instanceof AuthCodePKCEFlow)) {
+          throw new Error("handleCallback() is only available for authorization_code flow");
+        }
+        const url = new URL(callbackUrl);
+        const code = url.searchParams.get("code");
+        const state = url.searchParams.get("state");
+        if (!code) {
+          throw new Error("Missing authorization code in callback URL");
+        }
+        if (!state) {
+          throw new Error("Missing state parameter in callback URL");
+        }
+        await this.flow.exchangeCode(code, state, userId);
+      }
+      /**
+       * Revoke token (if supported by provider)
+       *
+       * @param revocationUrl - Optional revocation endpoint URL
+       * @param userId - User identifier for multi-user support (optional)
+       */
+      async revokeToken(revocationUrl, userId) {
+        if (this.flow instanceof AuthCodePKCEFlow) {
+          await this.flow.revokeToken(revocationUrl, userId);
+        } else {
+          throw new Error("Token revocation not implemented for this flow");
+        }
+      }
+      // ==================== Validation ====================
+      validateConfig(config) {
+        if (!config.flow) {
+          throw new Error("OAuth flow is required (authorization_code, client_credentials, jwt_bearer, or static_token)");
+        }
+        if (config.flow !== "static_token") {
+          if (!config.tokenUrl) {
+            throw new Error("tokenUrl is required");
+          }
+          if (!config.clientId) {
+            throw new Error("clientId is required");
+          }
+        }
+        switch (config.flow) {
+          case "authorization_code":
+            if (!config.authorizationUrl) {
+              throw new Error("authorizationUrl is required for authorization_code flow");
+            }
+            if (!config.redirectUri) {
+              throw new Error("redirectUri is required for authorization_code flow");
+            }
+            break;
+          case "client_credentials":
+            if (!config.clientSecret) {
+              throw new Error("clientSecret is required for client_credentials flow");
+            }
+            break;
+          case "jwt_bearer":
+            if (!config.privateKey && !config.privateKeyPath) {
+              throw new Error(
+                "privateKey or privateKeyPath is required for jwt_bearer flow"
+              );
+            }
+            break;
+          case "static_token":
+            if (!config.staticToken) {
+              throw new Error("staticToken is required for static_token flow");
+            }
+            break;
+        }
+        if (config.storage && !process.env.OAUTH_ENCRYPTION_KEY) {
+          console.warn(
+            "WARNING: Using persistent storage without OAUTH_ENCRYPTION_KEY environment variable. Tokens will be encrypted with auto-generated key that changes on restart!"
+          );
+        }
+      }
+    };
+  }
+});
+exports.DEFAULT_CIRCUIT_BREAKER_CONFIG = void 0; exports.CircuitOpenError = void 0; exports.CircuitBreaker = void 0;
+var init_CircuitBreaker = __esm({
+  "src/infrastructure/resilience/CircuitBreaker.ts"() {
+    exports.DEFAULT_CIRCUIT_BREAKER_CONFIG = {
+      failureThreshold: 5,
+      successThreshold: 2,
+      resetTimeoutMs: 3e4,
+      // 30 seconds
+      windowMs: 6e4,
+      // 1 minute
+      isRetryable: () => true
+      // All errors count by default
+    };
+    exports.CircuitOpenError = class extends Error {
+      constructor(breakerName, nextRetryTime, failureCount, lastError) {
+        const retryInSeconds = Math.ceil((nextRetryTime - Date.now()) / 1e3);
+        super(
+          `Circuit breaker '${breakerName}' is OPEN. Retry in ${retryInSeconds}s. (${failureCount} recent failures, last: ${lastError})`
+        );
+        this.breakerName = breakerName;
+        this.nextRetryTime = nextRetryTime;
+        this.failureCount = failureCount;
+        this.lastError = lastError;
+        this.name = "CircuitOpenError";
+      }
+    };
+    exports.CircuitBreaker = class extends eventemitter3.EventEmitter {
+      constructor(name, config = {}) {
+        super();
+        this.name = name;
+        this.config = { ...exports.DEFAULT_CIRCUIT_BREAKER_CONFIG, ...config };
+        this.lastStateChange = Date.now();
+      }
+      state = "closed";
+      config;
+      // Failure tracking
+      failures = [];
+      lastError = "";
+      // Success tracking
+      consecutiveSuccesses = 0;
+      // Timing
+      openedAt;
+      lastStateChange;
+      // Metrics
+      totalRequests = 0;
+      successCount = 0;
+      failureCount = 0;
+      rejectedCount = 0;
+      lastFailureTime;
+      lastSuccessTime;
+      /**
+       * Execute function with circuit breaker protection
+       */
+      async execute(fn) {
+        this.totalRequests++;
+        const now = Date.now();
+        switch (this.state) {
+          case "open":
+            if (this.openedAt && now - this.openedAt >= this.config.resetTimeoutMs) {
+              this.transitionTo("half-open");
+            } else {
+              this.rejectedCount++;
+              const nextRetry = (this.openedAt || now) + this.config.resetTimeoutMs;
+              throw new exports.CircuitOpenError(this.name, nextRetry, this.failures.length, this.lastError);
+            }
+            break;
+        }
+        try {
+          const result = await fn();
+          this.recordSuccess();
+          return result;
+        } catch (error) {
+          this.recordFailure(error);
+          throw error;
+        }
+      }
+      /**
+       * Record successful execution
+       */
+      recordSuccess() {
+        this.successCount++;
+        this.lastSuccessTime = Date.now();
+        this.consecutiveSuccesses++;
+        if (this.state === "half-open") {
+          if (this.consecutiveSuccesses >= this.config.successThreshold) {
+            this.transitionTo("closed");
+          }
+        } else if (this.state === "closed") {
+          this.pruneOldFailures();
+        }
+      }
+      /**
+       * Record failed execution
+       */
+      recordFailure(error) {
+        if (this.config.isRetryable && !this.config.isRetryable(error)) {
+          return;
+        }
+        this.failureCount++;
+        this.lastFailureTime = Date.now();
+        this.lastError = error.message;
+        this.consecutiveSuccesses = 0;
+        this.failures.push({
+          timestamp: Date.now(),
+          error: error.message
+        });
+        this.pruneOldFailures();
+        if (this.state === "half-open") {
+          this.transitionTo("open");
+        } else if (this.state === "closed") {
+          if (this.failures.length >= this.config.failureThreshold) {
+            this.transitionTo("open");
+          }
+        }
+      }
+      /**
+       * Transition to new state
+       */
+      transitionTo(newState) {
+        this.state = newState;
+        this.lastStateChange = Date.now();
+        switch (newState) {
+          case "open":
+            this.openedAt = Date.now();
+            this.emit("opened", {
+              name: this.name,
+              failureCount: this.failures.length,
+              lastError: this.lastError,
+              nextRetryTime: this.openedAt + this.config.resetTimeoutMs
+            });
+            break;
+          case "half-open":
+            this.emit("half-open", {
+              name: this.name,
+              timestamp: Date.now()
+            });
+            break;
+          case "closed":
+            this.failures = [];
+            this.consecutiveSuccesses = 0;
+            this.openedAt = void 0;
+            this.emit("closed", {
+              name: this.name,
+              successCount: this.consecutiveSuccesses,
+              timestamp: Date.now()
+            });
+            break;
+        }
+      }
+      /**
+       * Remove failures outside the time window
+       */
+      pruneOldFailures() {
+        const now = Date.now();
+        const cutoff = now - this.config.windowMs;
+        this.failures = this.failures.filter((f) => f.timestamp > cutoff);
+      }
+      /**
+       * Get current state
+       */
+      getState() {
+        return this.state;
+      }
+      /**
+       * Get current metrics
+       */
+      getMetrics() {
+        this.pruneOldFailures();
+        const total = this.successCount + this.failureCount;
+        const failureRate = total > 0 ? this.failureCount / total : 0;
+        const successRate = total > 0 ? this.successCount / total : 0;
+        return {
+          name: this.name,
+          state: this.state,
+          totalRequests: this.totalRequests,
+          successCount: this.successCount,
+          failureCount: this.failureCount,
+          rejectedCount: this.rejectedCount,
+          recentFailures: this.failures.length,
+          consecutiveSuccesses: this.consecutiveSuccesses,
+          lastFailureTime: this.lastFailureTime,
+          lastSuccessTime: this.lastSuccessTime,
+          lastStateChange: this.lastStateChange,
+          nextRetryTime: this.openedAt ? this.openedAt + this.config.resetTimeoutMs : void 0,
+          failureRate,
+          successRate
+        };
+      }
+      /**
+       * Manually reset circuit breaker (force close)
+       */
+      reset() {
+        this.transitionTo("closed");
+        this.totalRequests = 0;
+        this.successCount = 0;
+        this.failureCount = 0;
+        this.rejectedCount = 0;
+        this.lastFailureTime = void 0;
+        this.lastSuccessTime = void 0;
+      }
+      /**
+       * Check if circuit is allowing requests
+       */
+      isOpen() {
+        if (this.state === "open" && this.openedAt) {
+          const now = Date.now();
+          if (now - this.openedAt >= this.config.resetTimeoutMs) {
+            this.transitionTo("half-open");
+            return false;
+          }
+          return true;
+        }
         return false;
       }
-      return true;
-    }
-    return false;
+      /**
+       * Get configuration
+       */
+      getConfig() {
+        return { ...this.config };
+      }
+    };
   }
-  /**
-   * Get configuration
-   */
-  getConfig() {
-    return { ...this.config };
-  }
-};
+});
 
 // src/infrastructure/resilience/BackoffStrategy.ts
-var DEFAULT_BACKOFF_CONFIG = {
-  strategy: "exponential",
-  initialDelayMs: 1e3,
-  // 1 second
-  maxDelayMs: 3e4,
-  // 30 seconds
-  multiplier: 2,
-  jitter: true,
-  jitterFactor: 0.1
-};
-function calculateBackoff(attempt, config = DEFAULT_BACKOFF_CONFIG) {
+function calculateBackoff(attempt, config = exports.DEFAULT_BACKOFF_CONFIG) {
   let delay;
   switch (config.strategy) {
     case "exponential":
@@ -1060,12 +1124,12 @@ function addJitter(delay, factor = 0.1) {
   const jitter = (Math.random() * 2 - 1) * jitterRange;
   return delay + jitter;
 }
-async function backoffWait(attempt, config = DEFAULT_BACKOFF_CONFIG) {
+async function backoffWait(attempt, config = exports.DEFAULT_BACKOFF_CONFIG) {
   const delay = calculateBackoff(attempt, config);
   await new Promise((resolve3) => setTimeout(resolve3, delay));
   return delay;
 }
-function* backoffSequence(config = DEFAULT_BACKOFF_CONFIG, maxAttempts) {
+function* backoffSequence(config = exports.DEFAULT_BACKOFF_CONFIG, maxAttempts) {
   let attempt = 1;
   while (true) {
     if (maxAttempts && attempt > maxAttempts) {
@@ -1075,7 +1139,7 @@ function* backoffSequence(config = DEFAULT_BACKOFF_CONFIG, maxAttempts) {
     attempt++;
   }
 }
-async function retryWithBackoff(fn, config = DEFAULT_BACKOFF_CONFIG, maxAttempts) {
+async function retryWithBackoff(fn, config = exports.DEFAULT_BACKOFF_CONFIG, maxAttempts) {
   let attempt = 0;
   let lastError;
   while (true) {
@@ -1094,881 +1158,935 @@ async function retryWithBackoff(fn, config = DEFAULT_BACKOFF_CONFIG, maxAttempts
     }
   }
 }
-var LOG_LEVEL_VALUES = {
-  trace: 10,
-  debug: 20,
-  info: 30,
-  warn: 40,
-  error: 50,
-  silent: 100
-};
-var FrameworkLogger = class _FrameworkLogger {
-  config;
-  context;
-  levelValue;
-  fileStream;
-  constructor(config = {}) {
-    this.config = {
-      level: config.level || process.env.LOG_LEVEL || "info",
-      pretty: config.pretty ?? (process.env.LOG_PRETTY === "true" || process.env.NODE_ENV === "development"),
-      destination: config.destination || "console",
-      context: config.context || {},
-      filePath: config.filePath || process.env.LOG_FILE
+exports.DEFAULT_BACKOFF_CONFIG = void 0;
+var init_BackoffStrategy = __esm({
+  "src/infrastructure/resilience/BackoffStrategy.ts"() {
+    exports.DEFAULT_BACKOFF_CONFIG = {
+      strategy: "exponential",
+      initialDelayMs: 1e3,
+      // 1 second
+      maxDelayMs: 3e4,
+      // 30 seconds
+      multiplier: 2,
+      jitter: true,
+      jitterFactor: 0.1
     };
-    this.context = this.config.context || {};
-    this.levelValue = LOG_LEVEL_VALUES[this.config.level || "info"];
-    if (this.config.filePath) {
-      this.initFileStream(this.config.filePath);
-    }
   }
-  /**
-   * Initialize file stream for logging
-   */
-  initFileStream(filePath) {
-    try {
-      const dir = path3__namespace.dirname(filePath);
-      if (!fs11__namespace.existsSync(dir)) {
-        fs11__namespace.mkdirSync(dir, { recursive: true });
+});
+var LOG_LEVEL_VALUES; exports.FrameworkLogger = void 0; exports.logger = void 0;
+var init_Logger = __esm({
+  "src/infrastructure/observability/Logger.ts"() {
+    LOG_LEVEL_VALUES = {
+      trace: 10,
+      debug: 20,
+      info: 30,
+      warn: 40,
+      error: 50,
+      silent: 100
+    };
+    exports.FrameworkLogger = class _FrameworkLogger {
+      config;
+      context;
+      levelValue;
+      fileStream;
+      constructor(config = {}) {
+        this.config = {
+          level: config.level || process.env.LOG_LEVEL || "info",
+          pretty: config.pretty ?? (process.env.LOG_PRETTY === "true" || process.env.NODE_ENV === "development"),
+          destination: config.destination || "console",
+          context: config.context || {},
+          filePath: config.filePath || process.env.LOG_FILE
+        };
+        this.context = this.config.context || {};
+        this.levelValue = LOG_LEVEL_VALUES[this.config.level || "info"];
+        if (this.config.filePath) {
+          this.initFileStream(this.config.filePath);
+        }
       }
-      this.fileStream = fs11__namespace.createWriteStream(filePath, {
-        flags: "a",
-        // append mode
-        encoding: "utf8"
-      });
-      this.fileStream.on("error", (err) => {
-        console.error(`[Logger] File stream error: ${err.message}`);
-        this.fileStream = void 0;
-      });
-    } catch (err) {
-      console.error(`[Logger] Failed to initialize log file: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-  /**
-   * Create child logger with additional context
-   */
-  child(context) {
-    return new _FrameworkLogger({
-      ...this.config,
-      context: { ...this.context, ...context }
+      /**
+       * Initialize file stream for logging
+       */
+      initFileStream(filePath) {
+        try {
+          const dir = path3__namespace.dirname(filePath);
+          if (!fs11__namespace.existsSync(dir)) {
+            fs11__namespace.mkdirSync(dir, { recursive: true });
+          }
+          this.fileStream = fs11__namespace.createWriteStream(filePath, {
+            flags: "a",
+            // append mode
+            encoding: "utf8"
+          });
+          this.fileStream.on("error", (err) => {
+            console.error(`[Logger] File stream error: ${err.message}`);
+            this.fileStream = void 0;
+          });
+        } catch (err) {
+          console.error(`[Logger] Failed to initialize log file: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+      /**
+       * Create child logger with additional context
+       */
+      child(context) {
+        return new _FrameworkLogger({
+          ...this.config,
+          context: { ...this.context, ...context }
+        });
+      }
+      /**
+       * Trace log
+       */
+      trace(obj, msg) {
+        this.log("trace", obj, msg);
+      }
+      /**
+       * Debug log
+       */
+      debug(obj, msg) {
+        this.log("debug", obj, msg);
+      }
+      /**
+       * Info log
+       */
+      info(obj, msg) {
+        this.log("info", obj, msg);
+      }
+      /**
+       * Warn log
+       */
+      warn(obj, msg) {
+        this.log("warn", obj, msg);
+      }
+      /**
+       * Error log
+       */
+      error(obj, msg) {
+        this.log("error", obj, msg);
+      }
+      /**
+       * Internal log method
+       */
+      log(level, obj, msg) {
+        if (LOG_LEVEL_VALUES[level] < this.levelValue) {
+          return;
+        }
+        let data;
+        let message;
+        if (typeof obj === "string") {
+          message = obj;
+          data = {};
+        } else {
+          message = msg || "";
+          data = obj;
+        }
+        const entry = {
+          level,
+          time: Date.now(),
+          ...this.context,
+          ...data,
+          msg: message
+        };
+        this.output(entry);
+      }
+      /**
+       * Output log entry
+       */
+      output(entry) {
+        if (this.config.pretty) {
+          this.prettyPrint(entry);
+        } else {
+          this.jsonPrint(entry);
+        }
+      }
+      /**
+       * Pretty print for development
+       */
+      prettyPrint(entry) {
+        const levelColors = {
+          trace: "\x1B[90m",
+          // Gray
+          debug: "\x1B[36m",
+          // Cyan
+          info: "\x1B[32m",
+          // Green
+          warn: "\x1B[33m",
+          // Yellow
+          error: "\x1B[31m",
+          // Red
+          silent: ""
+        };
+        const reset = "\x1B[0m";
+        const color = this.fileStream ? "" : levelColors[entry.level] || "";
+        const time = new Date(entry.time).toISOString().substring(11, 23);
+        const levelStr = entry.level.toUpperCase().padEnd(5);
+        const contextParts = [];
+        for (const [key, value] of Object.entries(entry)) {
+          if (key !== "level" && key !== "time" && key !== "msg") {
+            contextParts.push(`${key}=${JSON.stringify(value)}`);
+          }
+        }
+        const context = contextParts.length > 0 ? ` ${contextParts.join(" ")}` : "";
+        const output = `${color}[${time}] ${levelStr}${reset} ${entry.msg}${context}`;
+        if (this.fileStream) {
+          const cleanOutput = output.replace(/\x1b\[[0-9;]*m/g, "");
+          this.fileStream.write(cleanOutput + "\n");
+          return;
+        }
+        switch (entry.level) {
+          case "error":
+          case "warn":
+            console.error(output);
+            break;
+          default:
+            console.log(output);
+        }
+      }
+      /**
+       * JSON print for production
+       */
+      jsonPrint(entry) {
+        const json = JSON.stringify(entry);
+        if (this.fileStream) {
+          this.fileStream.write(json + "\n");
+          return;
+        }
+        switch (this.config.destination) {
+          case "stderr":
+            console.error(json);
+            break;
+          default:
+            console.log(json);
+        }
+      }
+      /**
+       * Update configuration
+       */
+      updateConfig(config) {
+        this.config = { ...this.config, ...config };
+        if (config.level) {
+          this.levelValue = LOG_LEVEL_VALUES[config.level];
+        }
+        if (config.context) {
+          this.context = { ...this.context, ...config.context };
+        }
+        if (config.filePath !== void 0) {
+          this.closeFileStream();
+          if (config.filePath) {
+            this.initFileStream(config.filePath);
+          }
+        }
+      }
+      /**
+       * Close file stream
+       */
+      closeFileStream() {
+        if (this.fileStream) {
+          this.fileStream.end();
+          this.fileStream = void 0;
+        }
+      }
+      /**
+       * Cleanup resources (call before process exit)
+       */
+      close() {
+        this.closeFileStream();
+      }
+      /**
+       * Get current log level
+       */
+      getLevel() {
+        return this.config.level || "info";
+      }
+      /**
+       * Check if level is enabled
+       */
+      isLevelEnabled(level) {
+        return LOG_LEVEL_VALUES[level] >= this.levelValue;
+      }
+    };
+    exports.logger = new exports.FrameworkLogger({
+      level: process.env.LOG_LEVEL || "info",
+      pretty: process.env.LOG_PRETTY === "true" || process.env.NODE_ENV === "development",
+      filePath: process.env.LOG_FILE
+    });
+    process.on("exit", () => {
+      exports.logger.close();
+    });
+    process.on("SIGINT", () => {
+      exports.logger.close();
+      process.exit(0);
+    });
+    process.on("SIGTERM", () => {
+      exports.logger.close();
+      process.exit(0);
     });
   }
-  /**
-   * Trace log
-   */
-  trace(obj, msg) {
-    this.log("trace", obj, msg);
-  }
-  /**
-   * Debug log
-   */
-  debug(obj, msg) {
-    this.log("debug", obj, msg);
-  }
-  /**
-   * Info log
-   */
-  info(obj, msg) {
-    this.log("info", obj, msg);
-  }
-  /**
-   * Warn log
-   */
-  warn(obj, msg) {
-    this.log("warn", obj, msg);
-  }
-  /**
-   * Error log
-   */
-  error(obj, msg) {
-    this.log("error", obj, msg);
-  }
-  /**
-   * Internal log method
-   */
-  log(level, obj, msg) {
-    if (LOG_LEVEL_VALUES[level] < this.levelValue) {
-      return;
-    }
-    let data;
-    let message;
-    if (typeof obj === "string") {
-      message = obj;
-      data = {};
-    } else {
-      message = msg || "";
-      data = obj;
-    }
-    const entry = {
-      level,
-      time: Date.now(),
-      ...this.context,
-      ...data,
-      msg: message
-    };
-    this.output(entry);
-  }
-  /**
-   * Output log entry
-   */
-  output(entry) {
-    if (this.config.pretty) {
-      this.prettyPrint(entry);
-    } else {
-      this.jsonPrint(entry);
-    }
-  }
-  /**
-   * Pretty print for development
-   */
-  prettyPrint(entry) {
-    const levelColors = {
-      trace: "\x1B[90m",
-      // Gray
-      debug: "\x1B[36m",
-      // Cyan
-      info: "\x1B[32m",
-      // Green
-      warn: "\x1B[33m",
-      // Yellow
-      error: "\x1B[31m",
-      // Red
-      silent: ""
-    };
-    const reset = "\x1B[0m";
-    const color = this.fileStream ? "" : levelColors[entry.level] || "";
-    const time = new Date(entry.time).toISOString().substring(11, 23);
-    const levelStr = entry.level.toUpperCase().padEnd(5);
-    const contextParts = [];
-    for (const [key, value] of Object.entries(entry)) {
-      if (key !== "level" && key !== "time" && key !== "msg") {
-        contextParts.push(`${key}=${JSON.stringify(value)}`);
-      }
-    }
-    const context = contextParts.length > 0 ? ` ${contextParts.join(" ")}` : "";
-    const output = `${color}[${time}] ${levelStr}${reset} ${entry.msg}${context}`;
-    if (this.fileStream) {
-      const cleanOutput = output.replace(/\x1b\[[0-9;]*m/g, "");
-      this.fileStream.write(cleanOutput + "\n");
-      return;
-    }
-    switch (entry.level) {
-      case "error":
-      case "warn":
-        console.error(output);
-        break;
-      default:
-        console.log(output);
-    }
-  }
-  /**
-   * JSON print for production
-   */
-  jsonPrint(entry) {
-    const json = JSON.stringify(entry);
-    if (this.fileStream) {
-      this.fileStream.write(json + "\n");
-      return;
-    }
-    switch (this.config.destination) {
-      case "stderr":
-        console.error(json);
-        break;
-      default:
-        console.log(json);
-    }
-  }
-  /**
-   * Update configuration
-   */
-  updateConfig(config) {
-    this.config = { ...this.config, ...config };
-    if (config.level) {
-      this.levelValue = LOG_LEVEL_VALUES[config.level];
-    }
-    if (config.context) {
-      this.context = { ...this.context, ...config.context };
-    }
-    if (config.filePath !== void 0) {
-      this.closeFileStream();
-      if (config.filePath) {
-        this.initFileStream(config.filePath);
-      }
-    }
-  }
-  /**
-   * Close file stream
-   */
-  closeFileStream() {
-    if (this.fileStream) {
-      this.fileStream.end();
-      this.fileStream = void 0;
-    }
-  }
-  /**
-   * Cleanup resources (call before process exit)
-   */
-  close() {
-    this.closeFileStream();
-  }
-  /**
-   * Get current log level
-   */
-  getLevel() {
-    return this.config.level || "info";
-  }
-  /**
-   * Check if level is enabled
-   */
-  isLevelEnabled(level) {
-    return LOG_LEVEL_VALUES[level] >= this.levelValue;
-  }
-};
-var logger = new FrameworkLogger({
-  level: process.env.LOG_LEVEL || "info",
-  pretty: process.env.LOG_PRETTY === "true" || process.env.NODE_ENV === "development",
-  filePath: process.env.LOG_FILE
-});
-process.on("exit", () => {
-  logger.close();
-});
-process.on("SIGINT", () => {
-  logger.close();
-  process.exit(0);
-});
-process.on("SIGTERM", () => {
-  logger.close();
-  process.exit(0);
 });
 
 // src/infrastructure/observability/Metrics.ts
-var NoOpMetrics = class {
-  increment() {
-  }
-  gauge() {
-  }
-  timing() {
-  }
-  histogram() {
-  }
-};
-var ConsoleMetrics = class {
-  prefix;
-  constructor(prefix = "oneringai") {
-    this.prefix = prefix;
-  }
-  increment(metric, value = 1, tags) {
-    this.log("COUNTER", metric, value, tags);
-  }
-  gauge(metric, value, tags) {
-    this.log("GAUGE", metric, value, tags);
-  }
-  timing(metric, duration, tags) {
-    this.log("TIMING", metric, `${duration}ms`, tags);
-  }
-  histogram(metric, value, tags) {
-    this.log("HISTOGRAM", metric, value, tags);
-  }
-  log(type, metric, value, tags) {
-    const fullMetric = `${this.prefix}.${metric}`;
-    const tagsStr = tags ? ` ${JSON.stringify(tags)}` : "";
-    console.log(`[METRIC:${type}] ${fullMetric}=${value}${tagsStr}`);
-  }
-};
-var InMemoryMetrics = class {
-  counters = /* @__PURE__ */ new Map();
-  gauges = /* @__PURE__ */ new Map();
-  timings = /* @__PURE__ */ new Map();
-  histograms = /* @__PURE__ */ new Map();
-  increment(metric, value = 1, tags) {
-    const key = this.makeKey(metric, tags);
-    this.counters.set(key, (this.counters.get(key) || 0) + value);
-  }
-  gauge(metric, value, tags) {
-    const key = this.makeKey(metric, tags);
-    this.gauges.set(key, value);
-  }
-  timing(metric, duration, tags) {
-    const key = this.makeKey(metric, tags);
-    const timings = this.timings.get(key) || [];
-    timings.push(duration);
-    this.timings.set(key, timings);
-  }
-  histogram(metric, value, tags) {
-    const key = this.makeKey(metric, tags);
-    const values = this.histograms.get(key) || [];
-    values.push(value);
-    this.histograms.set(key, values);
-  }
-  makeKey(metric, tags) {
-    if (!tags) return metric;
-    const tagStr = Object.entries(tags).map(([k, v]) => `${k}:${v}`).sort().join(",");
-    return `${metric}{${tagStr}}`;
-  }
-  /**
-   * Get all metrics (for testing)
-   */
-  getMetrics() {
-    return {
-      counters: new Map(this.counters),
-      gauges: new Map(this.gauges),
-      timings: new Map(this.timings),
-      histograms: new Map(this.histograms)
-    };
-  }
-  /**
-   * Clear all metrics
-   */
-  clear() {
-    this.counters.clear();
-    this.gauges.clear();
-    this.timings.clear();
-    this.histograms.clear();
-  }
-  /**
-   * Get summary statistics for timings
-   */
-  getTimingStats(metric, tags) {
-    const key = this.makeKey(metric, tags);
-    const timings = this.timings.get(key);
-    if (!timings || timings.length === 0) {
-      return null;
-    }
-    const sorted = [...timings].sort((a, b) => a - b);
-    const count = sorted.length;
-    const sum = sorted.reduce((a, b) => a + b, 0);
-    return {
-      count,
-      min: sorted[0] ?? 0,
-      max: sorted[count - 1] ?? 0,
-      mean: sum / count,
-      p50: sorted[Math.floor(count * 0.5)] ?? 0,
-      p95: sorted[Math.floor(count * 0.95)] ?? 0,
-      p99: sorted[Math.floor(count * 0.99)] ?? 0
-    };
-  }
-};
 function createMetricsCollector(type, prefix) {
   const collectorType = type || process.env.METRICS_COLLECTOR || "noop";
   switch (collectorType) {
     case "console":
-      return new ConsoleMetrics(prefix);
+      return new exports.ConsoleMetrics(prefix);
     case "inmemory":
-      return new InMemoryMetrics();
+      return new exports.InMemoryMetrics();
     default:
-      return new NoOpMetrics();
+      return new exports.NoOpMetrics();
   }
 }
-var metrics = createMetricsCollector(
-  void 0,
-  process.env.METRICS_PREFIX || "oneringai"
-);
 function setMetricsCollector(collector) {
-  Object.assign(metrics, collector);
+  Object.assign(exports.metrics, collector);
 }
+exports.NoOpMetrics = void 0; exports.ConsoleMetrics = void 0; exports.InMemoryMetrics = void 0; exports.metrics = void 0;
+var init_Metrics = __esm({
+  "src/infrastructure/observability/Metrics.ts"() {
+    exports.NoOpMetrics = class {
+      increment() {
+      }
+      gauge() {
+      }
+      timing() {
+      }
+      histogram() {
+      }
+    };
+    exports.ConsoleMetrics = class {
+      prefix;
+      constructor(prefix = "oneringai") {
+        this.prefix = prefix;
+      }
+      increment(metric, value = 1, tags) {
+        this.log("COUNTER", metric, value, tags);
+      }
+      gauge(metric, value, tags) {
+        this.log("GAUGE", metric, value, tags);
+      }
+      timing(metric, duration, tags) {
+        this.log("TIMING", metric, `${duration}ms`, tags);
+      }
+      histogram(metric, value, tags) {
+        this.log("HISTOGRAM", metric, value, tags);
+      }
+      log(type, metric, value, tags) {
+        const fullMetric = `${this.prefix}.${metric}`;
+        const tagsStr = tags ? ` ${JSON.stringify(tags)}` : "";
+        console.log(`[METRIC:${type}] ${fullMetric}=${value}${tagsStr}`);
+      }
+    };
+    exports.InMemoryMetrics = class {
+      counters = /* @__PURE__ */ new Map();
+      gauges = /* @__PURE__ */ new Map();
+      timings = /* @__PURE__ */ new Map();
+      histograms = /* @__PURE__ */ new Map();
+      increment(metric, value = 1, tags) {
+        const key = this.makeKey(metric, tags);
+        this.counters.set(key, (this.counters.get(key) || 0) + value);
+      }
+      gauge(metric, value, tags) {
+        const key = this.makeKey(metric, tags);
+        this.gauges.set(key, value);
+      }
+      timing(metric, duration, tags) {
+        const key = this.makeKey(metric, tags);
+        const timings = this.timings.get(key) || [];
+        timings.push(duration);
+        this.timings.set(key, timings);
+      }
+      histogram(metric, value, tags) {
+        const key = this.makeKey(metric, tags);
+        const values = this.histograms.get(key) || [];
+        values.push(value);
+        this.histograms.set(key, values);
+      }
+      makeKey(metric, tags) {
+        if (!tags) return metric;
+        const tagStr = Object.entries(tags).map(([k, v]) => `${k}:${v}`).sort().join(",");
+        return `${metric}{${tagStr}}`;
+      }
+      /**
+       * Get all metrics (for testing)
+       */
+      getMetrics() {
+        return {
+          counters: new Map(this.counters),
+          gauges: new Map(this.gauges),
+          timings: new Map(this.timings),
+          histograms: new Map(this.histograms)
+        };
+      }
+      /**
+       * Clear all metrics
+       */
+      clear() {
+        this.counters.clear();
+        this.gauges.clear();
+        this.timings.clear();
+        this.histograms.clear();
+      }
+      /**
+       * Get summary statistics for timings
+       */
+      getTimingStats(metric, tags) {
+        const key = this.makeKey(metric, tags);
+        const timings = this.timings.get(key);
+        if (!timings || timings.length === 0) {
+          return null;
+        }
+        const sorted = [...timings].sort((a, b) => a - b);
+        const count = sorted.length;
+        const sum = sorted.reduce((a, b) => a + b, 0);
+        return {
+          count,
+          min: sorted[0] ?? 0,
+          max: sorted[count - 1] ?? 0,
+          mean: sum / count,
+          p50: sorted[Math.floor(count * 0.5)] ?? 0,
+          p95: sorted[Math.floor(count * 0.95)] ?? 0,
+          p99: sorted[Math.floor(count * 0.99)] ?? 0
+        };
+      }
+    };
+    exports.metrics = createMetricsCollector(
+      void 0,
+      process.env.METRICS_PREFIX || "oneringai"
+    );
+  }
+});
 
 // src/core/Connector.ts
-var DEFAULT_CONNECTOR_TIMEOUT = 3e4;
-var DEFAULT_MAX_RETRIES = 3;
-var DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
-var DEFAULT_BASE_DELAY_MS = 1e3;
-var DEFAULT_MAX_DELAY_MS = 3e4;
-var Connector = class _Connector {
-  // ============ Static Registry ============
-  static registry = /* @__PURE__ */ new Map();
-  static defaultStorage = new MemoryStorage();
-  /**
-   * Create and register a new connector
-   * @param config - Must include `name` field
-   */
-  static create(config) {
-    if (!config.name || config.name.trim().length === 0) {
-      throw new Error("Connector name is required");
-    }
-    if (_Connector.registry.has(config.name)) {
-      throw new Error(`Connector '${config.name}' already exists. Use Connector.get() or choose a different name.`);
-    }
-    const connector = new _Connector(config);
-    _Connector.registry.set(config.name, connector);
-    return connector;
-  }
-  /**
-   * Get a connector by name
-   */
-  static get(name) {
-    const connector = _Connector.registry.get(name);
-    if (!connector) {
-      const available = _Connector.list().join(", ") || "none";
-      throw new Error(`Connector '${name}' not found. Available: ${available}`);
-    }
-    return connector;
-  }
-  /**
-   * Check if a connector exists
-   */
-  static has(name) {
-    return _Connector.registry.has(name);
-  }
-  /**
-   * List all registered connector names
-   */
-  static list() {
-    return Array.from(_Connector.registry.keys());
-  }
-  /**
-   * Remove a connector
-   */
-  static remove(name) {
-    const connector = _Connector.registry.get(name);
-    if (connector) {
-      connector.dispose();
-    }
-    return _Connector.registry.delete(name);
-  }
-  /**
-   * Clear all connectors (useful for testing)
-   */
-  static clear() {
-    for (const connector of _Connector.registry.values()) {
-      connector.dispose();
-    }
-    _Connector.registry.clear();
-  }
-  /**
-   * Set default token storage for OAuth connectors
-   */
-  static setDefaultStorage(storage) {
-    _Connector.defaultStorage = storage;
-  }
-  /**
-   * Get all registered connectors
-   */
-  static listAll() {
-    return Array.from(_Connector.registry.values());
-  }
-  /**
-   * Get number of registered connectors
-   */
-  static size() {
-    return _Connector.registry.size;
-  }
-  /**
-   * Get connector descriptions formatted for tool parameters
-   * Useful for generating dynamic tool descriptions
-   */
-  static getDescriptionsForTools() {
-    const connectors = _Connector.listAll();
-    if (connectors.length === 0) {
-      return "No connectors registered yet.";
-    }
-    return connectors.map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description || "No description"}`).join("\n");
-  }
-  /**
-   * Get connector info (for tools and documentation)
-   */
-  static getInfo() {
-    const info = {};
-    for (const connector of _Connector.registry.values()) {
-      info[connector.name] = {
-        displayName: connector.displayName,
-        description: connector.config.description || "",
-        baseURL: connector.baseURL
-      };
-    }
-    return info;
-  }
-  // ============ Instance ============
-  name;
-  vendor;
-  config;
-  oauthManager;
-  circuitBreaker;
-  disposed = false;
-  // Metrics
-  requestCount = 0;
-  successCount = 0;
-  failureCount = 0;
-  totalLatencyMs = 0;
-  constructor(config) {
-    this.name = config.name;
-    this.vendor = config.vendor;
-    this.config = config;
-    if (config.auth.type === "oauth") {
-      this.initOAuthManager(config.auth);
-    } else if (config.auth.type === "jwt") {
-      this.initJWTManager(config.auth);
-    }
-    this.initCircuitBreaker();
-  }
-  /**
-   * Initialize circuit breaker with config or defaults
-   */
-  initCircuitBreaker() {
-    const cbConfig = this.config.circuitBreaker;
-    const enabled = cbConfig?.enabled ?? true;
-    if (enabled) {
-      this.circuitBreaker = new CircuitBreaker(`connector:${this.name}`, {
-        failureThreshold: cbConfig?.failureThreshold ?? 5,
-        successThreshold: cbConfig?.successThreshold ?? 2,
-        resetTimeoutMs: cbConfig?.resetTimeoutMs ?? 3e4,
-        windowMs: 6e4,
-        // 1 minute window
-        isRetryable: (error) => {
-          if (error.message.includes("HTTP 4") && !error.message.includes("HTTP 429")) {
-            return false;
-          }
-          return true;
+var Connector_exports = {};
+__export(Connector_exports, {
+  Connector: () => exports.Connector,
+  DEFAULT_BASE_DELAY_MS: () => exports.DEFAULT_BASE_DELAY_MS,
+  DEFAULT_CONNECTOR_TIMEOUT: () => exports.DEFAULT_CONNECTOR_TIMEOUT,
+  DEFAULT_MAX_DELAY_MS: () => exports.DEFAULT_MAX_DELAY_MS,
+  DEFAULT_MAX_RETRIES: () => exports.DEFAULT_MAX_RETRIES,
+  DEFAULT_RETRYABLE_STATUSES: () => exports.DEFAULT_RETRYABLE_STATUSES
+});
+exports.DEFAULT_CONNECTOR_TIMEOUT = void 0; exports.DEFAULT_MAX_RETRIES = void 0; exports.DEFAULT_RETRYABLE_STATUSES = void 0; exports.DEFAULT_BASE_DELAY_MS = void 0; exports.DEFAULT_MAX_DELAY_MS = void 0; exports.Connector = void 0;
+var init_Connector = __esm({
+  "src/core/Connector.ts"() {
+    init_OAuthManager();
+    init_MemoryStorage();
+    init_CircuitBreaker();
+    init_BackoffStrategy();
+    init_Logger();
+    init_Metrics();
+    exports.DEFAULT_CONNECTOR_TIMEOUT = 3e4;
+    exports.DEFAULT_MAX_RETRIES = 3;
+    exports.DEFAULT_RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+    exports.DEFAULT_BASE_DELAY_MS = 1e3;
+    exports.DEFAULT_MAX_DELAY_MS = 3e4;
+    exports.Connector = class _Connector {
+      // ============ Static Registry ============
+      static registry = /* @__PURE__ */ new Map();
+      static defaultStorage = new exports.MemoryStorage();
+      /**
+       * Create and register a new connector
+       * @param config - Must include `name` field
+       */
+      static create(config) {
+        if (!config.name || config.name.trim().length === 0) {
+          throw new Error("Connector name is required");
         }
-      });
-      this.circuitBreaker.on("opened", ({ name, failureCount, lastError }) => {
-        logger.warn(`Circuit breaker opened for ${name}: ${failureCount} failures, last error: ${lastError}`);
-        metrics.increment("connector.circuit_breaker.opened", 1, { connector: this.name });
-      });
-      this.circuitBreaker.on("closed", ({ name }) => {
-        logger.info(`Circuit breaker closed for ${name}`);
-        metrics.increment("connector.circuit_breaker.closed", 1, { connector: this.name });
-      });
-    }
-  }
-  /**
-   * Human-readable display name
-   */
-  get displayName() {
-    return this.config.displayName || this.name;
-  }
-  /**
-   * API base URL for this connector
-   */
-  get baseURL() {
-    return this.config.baseURL || "";
-  }
-  /**
-   * Get the API key (for api_key auth type)
-   */
-  getApiKey() {
-    if (this.config.auth.type !== "api_key") {
-      throw new Error(`Connector '${this.name}' does not use API key auth. Type: ${this.config.auth.type}`);
-    }
-    return this.config.auth.apiKey;
-  }
-  /**
-   * Get the current access token (for OAuth, JWT, or API key)
-   * Handles automatic refresh if needed
-   */
-  async getToken(userId) {
-    if (this.config.auth.type === "api_key") {
-      return this.config.auth.apiKey;
-    }
-    if (!this.oauthManager) {
-      throw new Error(`OAuth manager not initialized for connector '${this.name}'`);
-    }
-    return this.oauthManager.getToken(userId);
-  }
-  /**
-   * Start OAuth authorization flow
-   * Returns the URL to redirect the user to
-   */
-  async startAuth(userId) {
-    if (!this.oauthManager) {
-      throw new Error(`Connector '${this.name}' is not an OAuth connector`);
-    }
-    return this.oauthManager.startAuthFlow(userId);
-  }
-  /**
-   * Handle OAuth callback
-   * Call this after user is redirected back from OAuth provider
-   */
-  async handleCallback(callbackUrl, userId) {
-    if (!this.oauthManager) {
-      throw new Error(`Connector '${this.name}' is not an OAuth connector`);
-    }
-    await this.oauthManager.handleCallback(callbackUrl, userId);
-  }
-  /**
-   * Check if the connector has a valid token
-   */
-  async hasValidToken(userId) {
-    try {
-      if (this.config.auth.type === "api_key") {
-        return true;
+        if (_Connector.registry.has(config.name)) {
+          throw new Error(`Connector '${config.name}' already exists. Use Connector.get() or choose a different name.`);
+        }
+        const connector = new _Connector(config);
+        _Connector.registry.set(config.name, connector);
+        return connector;
       }
-      if (this.oauthManager) {
-        const token = await this.oauthManager.getToken(userId);
-        return !!token;
+      /**
+       * Get a connector by name
+       */
+      static get(name) {
+        const connector = _Connector.registry.get(name);
+        if (!connector) {
+          const available = _Connector.list().join(", ") || "none";
+          throw new Error(`Connector '${name}' not found. Available: ${available}`);
+        }
+        return connector;
       }
-      return false;
-    } catch {
-      return false;
-    }
-  }
-  /**
-   * Get vendor-specific options from config
-   */
-  getOptions() {
-    return this.config.options ?? {};
-  }
-  /**
-   * Get the service type (explicit or undefined)
-   */
-  get serviceType() {
-    return this.config.serviceType;
-  }
-  /**
-   * Get connector metrics
-   */
-  getMetrics() {
-    return {
-      requestCount: this.requestCount,
-      successCount: this.successCount,
-      failureCount: this.failureCount,
-      avgLatencyMs: this.requestCount > 0 ? this.totalLatencyMs / this.requestCount : 0,
-      circuitBreakerState: this.circuitBreaker?.getState()
-    };
-  }
-  /**
-   * Reset circuit breaker (force close)
-   */
-  resetCircuitBreaker() {
-    this.circuitBreaker?.reset();
-  }
-  /**
-   * Make an authenticated fetch request using this connector
-   * This is the foundation for all vendor-dependent tools
-   *
-   * Features:
-   * - Timeout with AbortController
-   * - Circuit breaker protection
-   * - Retry with exponential backoff
-   * - Request/response logging
-   *
-   * @param endpoint - API endpoint (relative to baseURL) or full URL
-   * @param options - Fetch options with connector-specific settings
-   * @param userId - Optional user ID for multi-user OAuth
-   * @returns Fetch Response
-   */
-  async fetch(endpoint, options, userId) {
-    if (this.disposed) {
-      throw new Error(`Connector '${this.name}' has been disposed`);
-    }
-    const startTime = Date.now();
-    this.requestCount++;
-    const url = endpoint.startsWith("http") ? endpoint : `${this.baseURL}${endpoint}`;
-    const timeout = options?.timeout ?? this.config.timeout ?? DEFAULT_CONNECTOR_TIMEOUT;
-    if (this.config.logging?.enabled) {
-      this.logRequest(url, options);
-    }
-    const doFetch = async () => {
-      const token = await this.getToken(userId);
-      const auth = this.config.auth;
-      let headerName = "Authorization";
-      let headerValue = `Bearer ${token}`;
-      if (auth.type === "api_key") {
-        headerName = auth.headerName || "Authorization";
-        const prefix = auth.headerPrefix ?? "Bearer";
-        headerValue = prefix ? `${prefix} ${token}` : token;
+      /**
+       * Check if a connector exists
+       */
+      static has(name) {
+        return _Connector.registry.has(name);
       }
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-      try {
-        const response = await fetch(url, {
-          ...options,
-          signal: controller.signal,
-          headers: {
-            ...options?.headers,
-            [headerName]: headerValue
-          }
-        });
-        return response;
-      } finally {
-        clearTimeout(timeoutId);
+      /**
+       * List all registered connector names
+       */
+      static list() {
+        return Array.from(_Connector.registry.keys());
       }
-    };
-    const doFetchWithRetry = async () => {
-      const retryConfig = this.config.retry;
-      const maxRetries = retryConfig?.maxRetries ?? DEFAULT_MAX_RETRIES;
-      const retryableStatuses = retryConfig?.retryableStatuses ?? DEFAULT_RETRYABLE_STATUSES;
-      const baseDelayMs = retryConfig?.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
-      const maxDelayMs = retryConfig?.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;
-      const backoffConfig = {
-        strategy: "exponential",
-        initialDelayMs: baseDelayMs,
-        maxDelayMs,
-        multiplier: 2,
-        jitter: true,
-        jitterFactor: 0.1
-      };
-      let lastError;
-      let lastResponse;
-      for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
-        try {
-          const response = await doFetch();
-          if (!response.ok && retryableStatuses.includes(response.status) && attempt <= maxRetries) {
-            lastResponse = response;
-            const delay = calculateBackoff(attempt, backoffConfig);
-            if (this.config.logging?.enabled) {
-              logger.debug(`Connector ${this.name}: Retry ${attempt}/${maxRetries} after ${delay}ms (status ${response.status})`);
+      /**
+       * Remove a connector
+       */
+      static remove(name) {
+        const connector = _Connector.registry.get(name);
+        if (connector) {
+          connector.dispose();
+        }
+        return _Connector.registry.delete(name);
+      }
+      /**
+       * Clear all connectors (useful for testing)
+       */
+      static clear() {
+        for (const connector of _Connector.registry.values()) {
+          connector.dispose();
+        }
+        _Connector.registry.clear();
+      }
+      /**
+       * Set default token storage for OAuth connectors
+       */
+      static setDefaultStorage(storage) {
+        _Connector.defaultStorage = storage;
+      }
+      /**
+       * Get all registered connectors
+       */
+      static listAll() {
+        return Array.from(_Connector.registry.values());
+      }
+      /**
+       * Get number of registered connectors
+       */
+      static size() {
+        return _Connector.registry.size;
+      }
+      /**
+       * Get connector descriptions formatted for tool parameters
+       * Useful for generating dynamic tool descriptions
+       */
+      static getDescriptionsForTools() {
+        const connectors = _Connector.listAll();
+        if (connectors.length === 0) {
+          return "No connectors registered yet.";
+        }
+        return connectors.map((c) => `  - "${c.name}": ${c.displayName} - ${c.config.description || "No description"}`).join("\n");
+      }
+      /**
+       * Get connector info (for tools and documentation)
+       */
+      static getInfo() {
+        const info = {};
+        for (const connector of _Connector.registry.values()) {
+          info[connector.name] = {
+            displayName: connector.displayName,
+            description: connector.config.description || "",
+            baseURL: connector.baseURL
+          };
+        }
+        return info;
+      }
+      // ============ Instance ============
+      name;
+      vendor;
+      config;
+      oauthManager;
+      circuitBreaker;
+      disposed = false;
+      // Metrics
+      requestCount = 0;
+      successCount = 0;
+      failureCount = 0;
+      totalLatencyMs = 0;
+      constructor(config) {
+        this.name = config.name;
+        this.vendor = config.vendor;
+        this.config = config;
+        if (config.auth.type === "oauth") {
+          this.initOAuthManager(config.auth);
+        } else if (config.auth.type === "jwt") {
+          this.initJWTManager(config.auth);
+        }
+        this.initCircuitBreaker();
+      }
+      /**
+       * Initialize circuit breaker with config or defaults
+       */
+      initCircuitBreaker() {
+        const cbConfig = this.config.circuitBreaker;
+        const enabled = cbConfig?.enabled ?? true;
+        if (enabled) {
+          this.circuitBreaker = new exports.CircuitBreaker(`connector:${this.name}`, {
+            failureThreshold: cbConfig?.failureThreshold ?? 5,
+            successThreshold: cbConfig?.successThreshold ?? 2,
+            resetTimeoutMs: cbConfig?.resetTimeoutMs ?? 3e4,
+            windowMs: 6e4,
+            // 1 minute window
+            isRetryable: (error) => {
+              if (error.message.includes("HTTP 4") && !error.message.includes("HTTP 429")) {
+                return false;
+              }
+              return true;
             }
-            await this.sleep(delay);
-            continue;
+          });
+          this.circuitBreaker.on("opened", ({ name, failureCount, lastError }) => {
+            exports.logger.warn(`Circuit breaker opened for ${name}: ${failureCount} failures, last error: ${lastError}`);
+            exports.metrics.increment("connector.circuit_breaker.opened", 1, { connector: this.name });
+          });
+          this.circuitBreaker.on("closed", ({ name }) => {
+            exports.logger.info(`Circuit breaker closed for ${name}`);
+            exports.metrics.increment("connector.circuit_breaker.closed", 1, { connector: this.name });
+          });
+        }
+      }
+      /**
+       * Human-readable display name
+       */
+      get displayName() {
+        return this.config.displayName || this.name;
+      }
+      /**
+       * API base URL for this connector
+       */
+      get baseURL() {
+        return this.config.baseURL || "";
+      }
+      /**
+       * Get the API key (for api_key auth type)
+       */
+      getApiKey() {
+        if (this.config.auth.type !== "api_key") {
+          throw new Error(`Connector '${this.name}' does not use API key auth. Type: ${this.config.auth.type}`);
+        }
+        return this.config.auth.apiKey;
+      }
+      /**
+       * Get the current access token (for OAuth, JWT, or API key)
+       * Handles automatic refresh if needed
+       */
+      async getToken(userId) {
+        if (this.config.auth.type === "api_key") {
+          return this.config.auth.apiKey;
+        }
+        if (!this.oauthManager) {
+          throw new Error(`OAuth manager not initialized for connector '${this.name}'`);
+        }
+        return this.oauthManager.getToken(userId);
+      }
+      /**
+       * Start OAuth authorization flow
+       * Returns the URL to redirect the user to
+       */
+      async startAuth(userId) {
+        if (!this.oauthManager) {
+          throw new Error(`Connector '${this.name}' is not an OAuth connector`);
+        }
+        return this.oauthManager.startAuthFlow(userId);
+      }
+      /**
+       * Handle OAuth callback
+       * Call this after user is redirected back from OAuth provider
+       */
+      async handleCallback(callbackUrl, userId) {
+        if (!this.oauthManager) {
+          throw new Error(`Connector '${this.name}' is not an OAuth connector`);
+        }
+        await this.oauthManager.handleCallback(callbackUrl, userId);
+      }
+      /**
+       * Check if the connector has a valid token
+       */
+      async hasValidToken(userId) {
+        try {
+          if (this.config.auth.type === "api_key") {
+            return true;
+          }
+          if (this.oauthManager) {
+            const token = await this.oauthManager.getToken(userId);
+            return !!token;
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      }
+      /**
+       * Get vendor-specific options from config
+       */
+      getOptions() {
+        return this.config.options ?? {};
+      }
+      /**
+       * Get the service type (explicit or undefined)
+       */
+      get serviceType() {
+        return this.config.serviceType;
+      }
+      /**
+       * Get connector metrics
+       */
+      getMetrics() {
+        return {
+          requestCount: this.requestCount,
+          successCount: this.successCount,
+          failureCount: this.failureCount,
+          avgLatencyMs: this.requestCount > 0 ? this.totalLatencyMs / this.requestCount : 0,
+          circuitBreakerState: this.circuitBreaker?.getState()
+        };
+      }
+      /**
+       * Reset circuit breaker (force close)
+       */
+      resetCircuitBreaker() {
+        this.circuitBreaker?.reset();
+      }
+      /**
+       * Make an authenticated fetch request using this connector
+       * This is the foundation for all vendor-dependent tools
+       *
+       * Features:
+       * - Timeout with AbortController
+       * - Circuit breaker protection
+       * - Retry with exponential backoff
+       * - Request/response logging
+       *
+       * @param endpoint - API endpoint (relative to baseURL) or full URL
+       * @param options - Fetch options with connector-specific settings
+       * @param userId - Optional user ID for multi-user OAuth
+       * @returns Fetch Response
+       */
+      async fetch(endpoint, options, userId) {
+        if (this.disposed) {
+          throw new Error(`Connector '${this.name}' has been disposed`);
+        }
+        const startTime = Date.now();
+        this.requestCount++;
+        const url = endpoint.startsWith("http") ? endpoint : `${this.baseURL}${endpoint}`;
+        const timeout = options?.timeout ?? this.config.timeout ?? exports.DEFAULT_CONNECTOR_TIMEOUT;
+        if (this.config.logging?.enabled) {
+          this.logRequest(url, options);
+        }
+        const doFetch = async () => {
+          const token = await this.getToken(userId);
+          const auth = this.config.auth;
+          let headerName = "Authorization";
+          let headerValue = `Bearer ${token}`;
+          if (auth.type === "api_key") {
+            headerName = auth.headerName || "Authorization";
+            const prefix = auth.headerPrefix ?? "Bearer";
+            headerValue = prefix ? `${prefix} ${token}` : token;
+          }
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), timeout);
+          try {
+            const response = await fetch(url, {
+              ...options,
+              signal: controller.signal,
+              headers: {
+                ...options?.headers,
+                [headerName]: headerValue
+              }
+            });
+            return response;
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        };
+        const doFetchWithRetry = async () => {
+          const retryConfig = this.config.retry;
+          const maxRetries = retryConfig?.maxRetries ?? exports.DEFAULT_MAX_RETRIES;
+          const retryableStatuses = retryConfig?.retryableStatuses ?? exports.DEFAULT_RETRYABLE_STATUSES;
+          const baseDelayMs = retryConfig?.baseDelayMs ?? exports.DEFAULT_BASE_DELAY_MS;
+          const maxDelayMs = retryConfig?.maxDelayMs ?? exports.DEFAULT_MAX_DELAY_MS;
+          const backoffConfig = {
+            strategy: "exponential",
+            initialDelayMs: baseDelayMs,
+            maxDelayMs,
+            multiplier: 2,
+            jitter: true,
+            jitterFactor: 0.1
+          };
+          let lastError;
+          let lastResponse;
+          for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
+            try {
+              const response = await doFetch();
+              if (!response.ok && retryableStatuses.includes(response.status) && attempt <= maxRetries) {
+                lastResponse = response;
+                const delay = calculateBackoff(attempt, backoffConfig);
+                if (this.config.logging?.enabled) {
+                  exports.logger.debug(`Connector ${this.name}: Retry ${attempt}/${maxRetries} after ${delay}ms (status ${response.status})`);
+                }
+                await this.sleep(delay);
+                continue;
+              }
+              return response;
+            } catch (error) {
+              lastError = error;
+              if (lastError.name === "AbortError") {
+                throw new Error(`Request timeout after ${timeout}ms: ${url}`);
+              }
+              if (attempt <= maxRetries && !options?.skipRetry) {
+                const delay = calculateBackoff(attempt, backoffConfig);
+                if (this.config.logging?.enabled) {
+                  exports.logger.debug(`Connector ${this.name}: Retry ${attempt}/${maxRetries} after ${delay}ms (error: ${lastError.message})`);
+                }
+                await this.sleep(delay);
+                continue;
+              }
+              throw lastError;
+            }
+          }
+          if (lastResponse) {
+            return lastResponse;
+          }
+          throw lastError ?? new Error("Unknown error during fetch");
+        };
+        try {
+          let response;
+          if (this.circuitBreaker && !options?.skipCircuitBreaker) {
+            response = await this.circuitBreaker.execute(doFetchWithRetry);
+          } else {
+            response = await doFetchWithRetry();
+          }
+          const latency = Date.now() - startTime;
+          this.successCount++;
+          this.totalLatencyMs += latency;
+          exports.metrics.timing("connector.latency", latency, { connector: this.name });
+          exports.metrics.increment("connector.success", 1, { connector: this.name });
+          if (this.config.logging?.enabled) {
+            this.logResponse(url, response, latency);
           }
           return response;
         } catch (error) {
-          lastError = error;
-          if (lastError.name === "AbortError") {
-            throw new Error(`Request timeout after ${timeout}ms: ${url}`);
+          const latency = Date.now() - startTime;
+          this.failureCount++;
+          this.totalLatencyMs += latency;
+          exports.metrics.increment("connector.failure", 1, { connector: this.name, error: error.name });
+          if (this.config.logging?.enabled) {
+            exports.logger.error(
+              { connector: this.name, url, latency, error: error.message },
+              `Connector ${this.name} fetch failed: ${error.message}`
+            );
           }
-          if (attempt <= maxRetries && !options?.skipRetry) {
-            const delay = calculateBackoff(attempt, backoffConfig);
-            if (this.config.logging?.enabled) {
-              logger.debug(`Connector ${this.name}: Retry ${attempt}/${maxRetries} after ${delay}ms (error: ${lastError.message})`);
-            }
-            await this.sleep(delay);
-            continue;
-          }
-          throw lastError;
+          throw error;
         }
       }
-      if (lastResponse) {
-        return lastResponse;
+      /**
+       * Make an authenticated fetch request and parse JSON response
+       * Throws on non-OK responses
+       *
+       * @param endpoint - API endpoint (relative to baseURL) or full URL
+       * @param options - Fetch options with connector-specific settings
+       * @param userId - Optional user ID for multi-user OAuth
+       * @returns Parsed JSON response
+       */
+      async fetchJSON(endpoint, options, userId) {
+        const response = await this.fetch(endpoint, options, userId);
+        const text = await response.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${text}`);
+          }
+          throw new Error(`Invalid JSON response: ${text.slice(0, 100)}`);
+        }
+        if (!response.ok) {
+          const errorMsg = typeof data === "object" && data !== null ? JSON.stringify(data) : text;
+          throw new Error(`HTTP ${response.status}: ${errorMsg}`);
+        }
+        return data;
       }
-      throw lastError ?? new Error("Unknown error during fetch");
-    };
-    try {
-      let response;
-      if (this.circuitBreaker && !options?.skipCircuitBreaker) {
-        response = await this.circuitBreaker.execute(doFetchWithRetry);
-      } else {
-        response = await doFetchWithRetry();
+      // ============ Private Helpers ============
+      sleep(ms) {
+        return new Promise((resolve3) => setTimeout(resolve3, ms));
       }
-      const latency = Date.now() - startTime;
-      this.successCount++;
-      this.totalLatencyMs += latency;
-      metrics.timing("connector.latency", latency, { connector: this.name });
-      metrics.increment("connector.success", 1, { connector: this.name });
-      if (this.config.logging?.enabled) {
-        this.logResponse(url, response, latency);
+      logRequest(url, options) {
+        const logData = {
+          connector: this.name,
+          method: options?.method ?? "GET",
+          url
+        };
+        if (this.config.logging?.logHeaders && options?.headers) {
+          const headers = { ...options.headers };
+          if (headers["Authorization"]) {
+            headers["Authorization"] = "[REDACTED]";
+          }
+          if (headers["authorization"]) {
+            headers["authorization"] = "[REDACTED]";
+          }
+          logData.headers = headers;
+        }
+        if (this.config.logging?.logBody && options?.body) {
+          logData.body = typeof options.body === "string" ? options.body.slice(0, 1e3) : "[non-string body]";
+        }
+        exports.logger.debug(logData, `Connector ${this.name} request`);
       }
-      return response;
-    } catch (error) {
-      const latency = Date.now() - startTime;
-      this.failureCount++;
-      this.totalLatencyMs += latency;
-      metrics.increment("connector.failure", 1, { connector: this.name, error: error.name });
-      if (this.config.logging?.enabled) {
-        logger.error(
-          { connector: this.name, url, latency, error: error.message },
-          `Connector ${this.name} fetch failed: ${error.message}`
+      logResponse(url, response, latency) {
+        exports.logger.debug(
+          { connector: this.name, url, status: response.status, latency },
+          `Connector ${this.name} response`
         );
       }
-      throw error;
-    }
-  }
-  /**
-   * Make an authenticated fetch request and parse JSON response
-   * Throws on non-OK responses
-   *
-   * @param endpoint - API endpoint (relative to baseURL) or full URL
-   * @param options - Fetch options with connector-specific settings
-   * @param userId - Optional user ID for multi-user OAuth
-   * @returns Parsed JSON response
-   */
-  async fetchJSON(endpoint, options, userId) {
-    const response = await this.fetch(endpoint, options, userId);
-    const text = await response.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${text}`);
+      /**
+       * Dispose of resources
+       */
+      dispose() {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.oauthManager = void 0;
+        this.circuitBreaker = void 0;
       }
-      throw new Error(`Invalid JSON response: ${text.slice(0, 100)}`);
-    }
-    if (!response.ok) {
-      const errorMsg = typeof data === "object" && data !== null ? JSON.stringify(data) : text;
-      throw new Error(`HTTP ${response.status}: ${errorMsg}`);
-    }
-    return data;
-  }
-  // ============ Private Helpers ============
-  sleep(ms) {
-    return new Promise((resolve3) => setTimeout(resolve3, ms));
-  }
-  logRequest(url, options) {
-    const logData = {
-      connector: this.name,
-      method: options?.method ?? "GET",
-      url
+      /**
+       * Check if connector is disposed
+       */
+      isDisposed() {
+        return this.disposed;
+      }
+      // ============ Private ============
+      initOAuthManager(auth) {
+        const oauthConfig = {
+          flow: auth.flow,
+          clientId: auth.clientId,
+          clientSecret: auth.clientSecret,
+          tokenUrl: auth.tokenUrl,
+          authorizationUrl: auth.authorizationUrl,
+          redirectUri: auth.redirectUri,
+          scope: auth.scope,
+          usePKCE: auth.usePKCE,
+          privateKey: auth.privateKey,
+          privateKeyPath: auth.privateKeyPath,
+          audience: auth.audience,
+          refreshBeforeExpiry: auth.refreshBeforeExpiry,
+          storage: _Connector.defaultStorage,
+          storageKey: auth.storageKey ?? this.name
+        };
+        this.oauthManager = new exports.OAuthManager(oauthConfig);
+      }
+      initJWTManager(auth) {
+        this.oauthManager = new exports.OAuthManager({
+          flow: "jwt_bearer",
+          clientId: auth.clientId,
+          tokenUrl: auth.tokenUrl,
+          privateKey: auth.privateKey,
+          privateKeyPath: auth.privateKeyPath,
+          scope: auth.scope,
+          audience: auth.audience,
+          storage: _Connector.defaultStorage,
+          storageKey: this.name
+        });
+      }
     };
-    if (this.config.logging?.logHeaders && options?.headers) {
-      const headers = { ...options.headers };
-      if (headers["Authorization"]) {
-        headers["Authorization"] = "[REDACTED]";
-      }
-      if (headers["authorization"]) {
-        headers["authorization"] = "[REDACTED]";
-      }
-      logData.headers = headers;
-    }
-    if (this.config.logging?.logBody && options?.body) {
-      logData.body = typeof options.body === "string" ? options.body.slice(0, 1e3) : "[non-string body]";
-    }
-    logger.debug(logData, `Connector ${this.name} request`);
   }
-  logResponse(url, response, latency) {
-    logger.debug(
-      { connector: this.name, url, status: response.status, latency },
-      `Connector ${this.name} response`
-    );
-  }
-  /**
-   * Dispose of resources
-   */
-  dispose() {
-    if (this.disposed) return;
-    this.disposed = true;
-    this.oauthManager = void 0;
-    this.circuitBreaker = void 0;
-  }
-  /**
-   * Check if connector is disposed
-   */
-  isDisposed() {
-    return this.disposed;
-  }
-  // ============ Private ============
-  initOAuthManager(auth) {
-    const oauthConfig = {
-      flow: auth.flow,
-      clientId: auth.clientId,
-      clientSecret: auth.clientSecret,
-      tokenUrl: auth.tokenUrl,
-      authorizationUrl: auth.authorizationUrl,
-      redirectUri: auth.redirectUri,
-      scope: auth.scope,
-      usePKCE: auth.usePKCE,
-      privateKey: auth.privateKey,
-      privateKeyPath: auth.privateKeyPath,
-      audience: auth.audience,
-      refreshBeforeExpiry: auth.refreshBeforeExpiry,
-      storage: _Connector.defaultStorage,
-      storageKey: auth.storageKey ?? this.name
-    };
-    this.oauthManager = new OAuthManager(oauthConfig);
-  }
-  initJWTManager(auth) {
-    this.oauthManager = new OAuthManager({
-      flow: "jwt_bearer",
-      clientId: auth.clientId,
-      tokenUrl: auth.tokenUrl,
-      privateKey: auth.privateKey,
-      privateKeyPath: auth.privateKeyPath,
-      scope: auth.scope,
-      audience: auth.audience,
-      storage: _Connector.defaultStorage,
-      storageKey: this.name
-    });
-  }
-};
+});
+
+// src/core/index.ts
+init_Connector();
+
+// src/core/BaseAgent.ts
+init_Connector();
+
+// src/core/ToolManager.ts
+init_CircuitBreaker();
 
 // src/domain/errors/AIErrors.ts
 var AIError = class _AIError extends Error {
@@ -2177,6 +2295,8 @@ var ParallelTasksError = class _ParallelTasksError extends AIError {
 };
 
 // src/core/ToolManager.ts
+init_Logger();
+init_Metrics();
 var ToolManager = class extends eventemitter3.EventEmitter {
   registry = /* @__PURE__ */ new Map();
   namespaceIndex = /* @__PURE__ */ new Map();
@@ -2187,7 +2307,7 @@ var ToolManager = class extends eventemitter3.EventEmitter {
   constructor() {
     super();
     this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
-    this.toolLogger = logger.child({ component: "ToolManager" });
+    this.toolLogger = exports.logger.child({ component: "ToolManager" });
   }
   /**
    * Set tool context for execution (called by agent before runs)
@@ -2587,7 +2707,7 @@ var ToolManager = class extends eventemitter3.EventEmitter {
     const breaker = this.getOrCreateCircuitBreaker(toolName, registration);
     this.toolLogger.debug({ toolName, args }, "Tool execution started");
     const startTime = Date.now();
-    metrics.increment("tool.executed", 1, { tool: toolName });
+    exports.metrics.increment("tool.executed", 1, { tool: toolName });
     try {
       const result = await breaker.execute(async () => {
         return await registration.tool.execute(args, this._toolContext);
@@ -2595,8 +2715,8 @@ var ToolManager = class extends eventemitter3.EventEmitter {
       const duration = Date.now() - startTime;
       this.recordExecution(toolName, duration, true);
       this.toolLogger.debug({ toolName, duration }, "Tool execution completed");
-      metrics.timing("tool.duration", duration, { tool: toolName });
-      metrics.increment("tool.success", 1, { tool: toolName });
+      exports.metrics.timing("tool.duration", duration, { tool: toolName });
+      exports.metrics.increment("tool.success", 1, { tool: toolName });
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
@@ -2606,7 +2726,7 @@ var ToolManager = class extends eventemitter3.EventEmitter {
         error: error.message,
         duration
       }, "Tool execution failed");
-      metrics.increment("tool.failed", 1, {
+      exports.metrics.increment("tool.failed", 1, {
         tool: toolName,
         error: error.name
       });
@@ -2665,17 +2785,17 @@ var ToolManager = class extends eventemitter3.EventEmitter {
         windowMs: 3e5
         // 5 minutes
       };
-      breaker = new CircuitBreaker(`tool:${toolName}`, config);
+      breaker = new exports.CircuitBreaker(`tool:${toolName}`, config);
       breaker.on("opened", (data) => {
         this.toolLogger.warn(data, `Circuit breaker opened for tool: ${toolName}`);
-        metrics.increment("circuit_breaker.opened", 1, {
+        exports.metrics.increment("circuit_breaker.opened", 1, {
           breaker: data.name,
           tool: toolName
         });
       });
       breaker.on("closed", (data) => {
         this.toolLogger.info(data, `Circuit breaker closed for tool: ${toolName}`);
-        metrics.increment("circuit_breaker.closed", 1, {
+        exports.metrics.increment("circuit_breaker.closed", 1, {
           breaker: data.name,
           tool: toolName
         });
@@ -3736,6 +3856,7 @@ var ToolPermissionManager = class extends eventemitter3.EventEmitter {
 };
 
 // src/core/BaseAgent.ts
+init_Logger();
 var BaseAgent = class extends eventemitter3.EventEmitter {
   // ===== Core Properties =====
   name;
@@ -3759,7 +3880,7 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
     this.connector = this.resolveConnector(config.connector);
     this.name = config.name ?? `${this.getAgentType()}-${Date.now()}`;
     this.model = config.model;
-    this._logger = logger.child({
+    this._logger = exports.logger.child({
       component: loggerComponent,
       agentName: this.name,
       model: this.model,
@@ -3806,7 +3927,7 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
    */
   resolveConnector(ref) {
     if (typeof ref === "string") {
-      return Connector.get(ref);
+      return exports.Connector.get(ref);
     }
     return ref;
   }
@@ -4277,13 +4398,16 @@ var BaseProvider = class {
 };
 
 // src/infrastructure/providers/base/BaseTextProvider.ts
+init_CircuitBreaker();
+init_Logger();
+init_Metrics();
 var BaseTextProvider = class extends BaseProvider {
   circuitBreaker;
   logger;
   _isObservabilityInitialized = false;
   constructor(config) {
     super(config);
-    this.logger = logger.child({
+    this.logger = exports.logger.child({
       component: "Provider",
       provider: "unknown"
     });
@@ -4298,25 +4422,25 @@ var BaseTextProvider = class extends BaseProvider {
       return;
     }
     const providerName = this.name || "unknown";
-    const cbConfig = this.config.circuitBreaker || DEFAULT_CIRCUIT_BREAKER_CONFIG;
-    this.circuitBreaker = new CircuitBreaker(
+    const cbConfig = this.config.circuitBreaker || exports.DEFAULT_CIRCUIT_BREAKER_CONFIG;
+    this.circuitBreaker = new exports.CircuitBreaker(
       `provider:${providerName}`,
       cbConfig
     );
-    this.logger = logger.child({
+    this.logger = exports.logger.child({
       component: "Provider",
       provider: providerName
     });
     this.circuitBreaker.on("opened", (data) => {
       this.logger.warn(data, "Circuit breaker opened");
-      metrics.increment("circuit_breaker.opened", 1, {
+      exports.metrics.increment("circuit_breaker.opened", 1, {
         breaker: data.name,
         provider: providerName
       });
     });
     this.circuitBreaker.on("closed", (data) => {
       this.logger.info(data, "Circuit breaker closed");
-      metrics.increment("circuit_breaker.closed", 1, {
+      exports.metrics.increment("circuit_breaker.closed", 1, {
         breaker: data.name,
         provider: providerName
       });
@@ -4342,7 +4466,7 @@ var BaseTextProvider = class extends BaseProvider {
       operation: operationName,
       model
     }, "LLM call started");
-    metrics.increment("provider.llm.request", 1, {
+    exports.metrics.increment("provider.llm.request", 1, {
       provider: this.name,
       model: model || "unknown"
     });
@@ -4357,11 +4481,11 @@ var BaseTextProvider = class extends BaseProvider {
         model,
         duration
       }, "LLM call completed");
-      metrics.timing("provider.llm.latency", duration, {
+      exports.metrics.timing("provider.llm.latency", duration, {
         provider: this.name,
         model: model || "unknown"
       });
-      metrics.increment("provider.llm.response", 1, {
+      exports.metrics.increment("provider.llm.response", 1, {
         provider: this.name,
         model: model || "unknown",
         status: "success"
@@ -4375,7 +4499,7 @@ var BaseTextProvider = class extends BaseProvider {
         error: error.message,
         duration
       }, "LLM call failed");
-      metrics.increment("provider.llm.error", 1, {
+      exports.metrics.increment("provider.llm.error", 1, {
         provider: this.name,
         model: model || "unknown",
         error: error.name
@@ -7810,6 +7934,10 @@ var GenericOpenAIProvider = class extends OpenAITextProvider {
 
 // src/core/createProvider.ts
 function createProvider(connector) {
+  const injectedProvider = connector.getOptions().provider;
+  if (injectedProvider && typeof injectedProvider.generate === "function") {
+    return injectedProvider;
+  }
   const vendor = connector.vendor;
   if (!vendor) {
     throw new Error(
@@ -7892,6 +8020,8 @@ function extractProviderConfig(connector) {
   let apiKey;
   if (auth.type === "api_key") {
     apiKey = auth.apiKey;
+  } else if (auth.type === "none") {
+    apiKey = "mock-key";
   } else if (auth.type === "oauth") {
     throw new Error(
       `Connector '${connector.name}' uses OAuth. Call connector.getToken() to get the access token first.`
@@ -9770,6 +9900,7 @@ function assertNotDestroyed(obj, operation) {
 }
 
 // src/core/Agent.ts
+init_Metrics();
 var Agent = class _Agent extends BaseAgent {
   // ===== Agent-specific State =====
   provider;
@@ -9819,7 +9950,7 @@ var Agent = class _Agent extends BaseAgent {
   constructor(config) {
     super(config, "Agent");
     this._logger.debug({ config }, "Agent created");
-    metrics.increment("agent.created", 1, {
+    exports.metrics.increment("agent.created", 1, {
       model: this.model,
       connector: this.connector.name
     });
@@ -9857,7 +9988,7 @@ var Agent = class _Agent extends BaseAgent {
       inputPreview,
       toolCount: this._config.tools?.length || 0
     }, "Agent run started");
-    metrics.increment("agent.run.started", 1, {
+    exports.metrics.increment("agent.run.started", 1, {
       model: this.model,
       connector: this.connector.name
     });
@@ -9882,11 +10013,11 @@ var Agent = class _Agent extends BaseAgent {
       const response = await this.agenticLoop.execute(loopConfig);
       const duration = Date.now() - startTime;
       this._logger.info({ duration }, "Agent run completed");
-      metrics.timing("agent.run.duration", duration, {
+      exports.metrics.timing("agent.run.duration", duration, {
         model: this.model,
         connector: this.connector.name
       });
-      metrics.increment("agent.run.completed", 1, {
+      exports.metrics.increment("agent.run.completed", 1, {
         model: this.model,
         connector: this.connector.name,
         status: "success"
@@ -9898,7 +10029,7 @@ var Agent = class _Agent extends BaseAgent {
         error: error.message,
         duration
       }, "Agent run failed");
-      metrics.increment("agent.run.completed", 1, {
+      exports.metrics.increment("agent.run.completed", 1, {
         model: this.model,
         connector: this.connector.name,
         status: "error"
@@ -9917,7 +10048,7 @@ var Agent = class _Agent extends BaseAgent {
       inputPreview,
       toolCount: this._config.tools?.length || 0
     }, "Agent stream started");
-    metrics.increment("agent.stream.started", 1, {
+    exports.metrics.increment("agent.stream.started", 1, {
       model: this.model,
       connector: this.connector.name
     });
@@ -9942,11 +10073,11 @@ var Agent = class _Agent extends BaseAgent {
       yield* this.agenticLoop.executeStreaming(loopConfig);
       const duration = Date.now() - startTime;
       this._logger.info({ duration }, "Agent stream completed");
-      metrics.timing("agent.stream.duration", duration, {
+      exports.metrics.timing("agent.stream.duration", duration, {
         model: this.model,
         connector: this.connector.name
       });
-      metrics.increment("agent.stream.completed", 1, {
+      exports.metrics.increment("agent.stream.completed", 1, {
         model: this.model,
         connector: this.connector.name,
         status: "success"
@@ -9957,7 +10088,7 @@ var Agent = class _Agent extends BaseAgent {
         error: error.message,
         duration
       }, "Agent stream failed");
-      metrics.increment("agent.stream.completed", 1, {
+      exports.metrics.increment("agent.stream.completed", 1, {
         model: this.model,
         connector: this.connector.name,
         status: "error"
@@ -10113,7 +10244,7 @@ var Agent = class _Agent extends BaseAgent {
     }
     this._cleanupCallbacks = [];
     this.baseDestroy();
-    metrics.increment("agent.destroyed", 1, {
+    exports.metrics.increment("agent.destroyed", 1, {
       model: this.model,
       connector: this.connector.name
     });
@@ -10323,14 +10454,20 @@ var ROLLING_WINDOW_DEFAULTS = {
   }
 });
 
+// src/core/TextToSpeech.ts
+init_Connector();
+
 // src/infrastructure/providers/base/BaseMediaProvider.ts
+init_CircuitBreaker();
+init_Logger();
+init_Metrics();
 var BaseMediaProvider = class extends BaseProvider {
   circuitBreaker;
   logger;
   _isObservabilityInitialized = false;
   constructor(config) {
     super(config);
-    this.logger = logger.child({
+    this.logger = exports.logger.child({
       component: "MediaProvider",
       provider: "unknown"
     });
@@ -10345,25 +10482,25 @@ var BaseMediaProvider = class extends BaseProvider {
       return;
     }
     const providerName = this.name || "unknown";
-    const cbConfig = this.config.circuitBreaker || DEFAULT_CIRCUIT_BREAKER_CONFIG;
-    this.circuitBreaker = new CircuitBreaker(
+    const cbConfig = this.config.circuitBreaker || exports.DEFAULT_CIRCUIT_BREAKER_CONFIG;
+    this.circuitBreaker = new exports.CircuitBreaker(
       `media-provider:${providerName}`,
       cbConfig
     );
-    this.logger = logger.child({
+    this.logger = exports.logger.child({
       component: "MediaProvider",
       provider: providerName
     });
     this.circuitBreaker.on("opened", (data) => {
       this.logger.warn(data, "Circuit breaker opened");
-      metrics.increment("circuit_breaker.opened", 1, {
+      exports.metrics.increment("circuit_breaker.opened", 1, {
         breaker: data.name,
         provider: providerName
       });
     });
     this.circuitBreaker.on("closed", (data) => {
       this.logger.info(data, "Circuit breaker closed");
-      metrics.increment("circuit_breaker.closed", 1, {
+      exports.metrics.increment("circuit_breaker.closed", 1, {
         breaker: data.name,
         provider: providerName
       });
@@ -10389,8 +10526,8 @@ var BaseMediaProvider = class extends BaseProvider {
     try {
       const result = await this.circuitBreaker.execute(operation);
       const duration = Date.now() - startTime;
-      metrics.histogram(`${operationName}.duration`, duration, metricLabels);
-      metrics.increment(`${operationName}.success`, 1, metricLabels);
+      exports.metrics.histogram(`${operationName}.duration`, duration, metricLabels);
+      exports.metrics.increment(`${operationName}.success`, 1, metricLabels);
       this.logger.debug(
         { operation: operationName, duration, ...metadata },
         "Operation completed successfully"
@@ -10398,7 +10535,7 @@ var BaseMediaProvider = class extends BaseProvider {
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
-      metrics.increment(`${operationName}.error`, 1, {
+      exports.metrics.increment(`${operationName}.error`, 1, {
         ...metricLabels,
         error: error instanceof Error ? error.name : "unknown"
       });
@@ -11360,7 +11497,7 @@ var TextToSpeech = class _TextToSpeech {
     return new _TextToSpeech(config);
   }
   constructor(config) {
-    const connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
+    const connector = typeof config.connector === "string" ? exports.Connector.get(config.connector) : config.connector;
     this.provider = createTTSProvider(connector);
     this.config = config;
   }
@@ -11505,6 +11642,9 @@ var TextToSpeech = class _TextToSpeech {
     return defaultVoice?.id ?? caps.voices[0]?.id ?? "alloy";
   }
 };
+
+// src/core/SpeechToText.ts
+init_Connector();
 
 // src/domain/entities/STTModel.ts
 var STT_MODELS = {
@@ -11704,7 +11844,7 @@ var SpeechToText = class _SpeechToText {
     return new _SpeechToText(config);
   }
   constructor(config) {
-    const connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
+    const connector = typeof config.connector === "string" ? exports.Connector.get(config.connector) : config.connector;
     this.provider = createSTTProvider(connector);
     this.config = config;
   }
@@ -12285,6 +12425,10 @@ function extractGoogleConfig2(connector) {
     apiKey: auth.apiKey
   };
 }
+
+// src/core/ErrorHandler.ts
+init_Logger();
+init_Metrics();
 var DEFAULT_RETRYABLE_PATTERNS = [
   "ECONNRESET",
   "ECONNREFUSED",
@@ -12316,7 +12460,7 @@ var ErrorHandler = class extends eventemitter3.EventEmitter {
       baseRetryDelayMs: config.baseRetryDelayMs ?? 100,
       maxRetryDelayMs: config.maxRetryDelayMs ?? 5e3
     };
-    this.logger = logger.child({ component: "ErrorHandler" });
+    this.logger = exports.logger.child({ component: "ErrorHandler" });
   }
   /**
    * Handle an error with context.
@@ -12472,7 +12616,7 @@ var ErrorHandler = class extends eventemitter3.EventEmitter {
     };
   }
   recordMetrics(error, context, recoverable) {
-    metrics.increment("error.handled", 1, {
+    exports.metrics.increment("error.handled", 1, {
       agentType: context.agentType,
       operation: context.operation,
       errorType: error.name,
@@ -12489,6 +12633,9 @@ var ErrorHandler = class extends eventemitter3.EventEmitter {
   }
 };
 var globalErrorHandler = new ErrorHandler();
+
+// src/capabilities/images/ImageGeneration.ts
+init_Connector();
 
 // src/domain/entities/ImageModel.ts
 var IMAGE_MODELS = {
@@ -12774,7 +12921,7 @@ var ImageGeneration = class _ImageGeneration {
    * Create an ImageGeneration instance
    */
   static create(options) {
-    const connector = typeof options.connector === "string" ? Connector.get(options.connector) : options.connector;
+    const connector = typeof options.connector === "string" ? exports.Connector.get(options.connector) : options.connector;
     if (!connector) {
       throw new Error(`Connector not found: ${options.connector}`);
     }
@@ -12884,6 +13031,9 @@ var ImageGeneration = class _ImageGeneration {
     }
   }
 };
+
+// src/capabilities/video/VideoGeneration.ts
+init_Connector();
 var OpenAISoraProvider = class extends BaseMediaProvider {
   name = "openai-video";
   vendor = "openai";
@@ -13784,7 +13934,7 @@ var VideoGeneration = class _VideoGeneration {
    * Create a VideoGeneration instance
    */
   static create(options) {
-    const connector = typeof options.connector === "string" ? Connector.get(options.connector) : options.connector;
+    const connector = typeof options.connector === "string" ? exports.Connector.get(options.connector) : options.connector;
     if (!connector) {
       throw new Error(`Connector not found: ${options.connector}`);
     }
@@ -13936,6 +14086,639 @@ var VideoGeneration = class _VideoGeneration {
     }
   }
 };
+
+// src/capabilities/search/SearchProvider.ts
+init_Connector();
+
+// src/capabilities/shared/types.ts
+function buildQueryString(params) {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== void 0 && value !== null) {
+      searchParams.append(key, String(value));
+    }
+  }
+  return searchParams.toString();
+}
+function toConnectorOptions(options) {
+  const { body, queryParams, ...rest } = options;
+  const connectorOptions = {
+    ...rest
+  };
+  if (body) {
+    connectorOptions.body = JSON.stringify(body);
+    connectorOptions.headers = {
+      "Content-Type": "application/json",
+      ...rest.headers
+    };
+  }
+  return connectorOptions;
+}
+function buildEndpointWithQuery(endpoint, queryParams) {
+  if (!queryParams || Object.keys(queryParams).length === 0) {
+    return endpoint;
+  }
+  const queryString = buildQueryString(queryParams);
+  const separator = endpoint.includes("?") ? "&" : "?";
+  return `${endpoint}${separator}${queryString}`;
+}
+function resolveConnector(connectorOrName) {
+  const { Connector: ConnectorClass } = (init_Connector(), __toCommonJS(Connector_exports));
+  if (typeof connectorOrName === "string") {
+    return ConnectorClass.get(connectorOrName);
+  }
+  return connectorOrName;
+}
+
+// src/capabilities/search/providers/SerperProvider.ts
+var SerperProvider = class {
+  constructor(connector) {
+    this.connector = connector;
+  }
+  name = "serper";
+  async search(query, options = {}) {
+    const numResults = Math.min(options.numResults || 10, 100);
+    try {
+      const fetchOptions = toConnectorOptions({
+        method: "POST",
+        body: {
+          q: query,
+          num: numResults,
+          ...options.country && { gl: options.country },
+          ...options.language && { hl: options.language },
+          ...options.vendorOptions
+        }
+      });
+      const response = await this.connector.fetchJSON("/search", fetchOptions);
+      if (!response.organic || !Array.isArray(response.organic)) {
+        throw new Error("Invalid response from Serper API");
+      }
+      const results = response.organic.slice(0, numResults).map((result, index) => ({
+        title: result.title || "Untitled",
+        url: result.link || "",
+        snippet: result.snippet || "",
+        position: index + 1
+      }));
+      return {
+        success: true,
+        query,
+        provider: this.name,
+        results,
+        count: results.length
+      };
+    } catch (error) {
+      return {
+        success: false,
+        query,
+        provider: this.name,
+        results: [],
+        count: 0,
+        error: error.message || "Unknown error"
+      };
+    }
+  }
+};
+
+// src/capabilities/search/providers/BraveProvider.ts
+var BraveProvider = class {
+  constructor(connector) {
+    this.connector = connector;
+  }
+  name = "brave";
+  async search(query, options = {}) {
+    const numResults = Math.min(options.numResults || 10, 20);
+    try {
+      const queryParams = {
+        q: query,
+        count: numResults,
+        ...options.country && { country: options.country },
+        ...options.language && { search_lang: options.language },
+        ...options.vendorOptions
+      };
+      const queryString = buildQueryString(queryParams);
+      const response = await this.connector.fetchJSON(`/web/search?${queryString}`, {
+        method: "GET"
+      });
+      if (!response.web?.results || !Array.isArray(response.web.results)) {
+        throw new Error("Invalid response from Brave API");
+      }
+      const results = response.web.results.slice(0, numResults).map((result, index) => ({
+        title: result.title || "Untitled",
+        url: result.url || "",
+        snippet: result.description || "",
+        position: index + 1
+      }));
+      return {
+        success: true,
+        query,
+        provider: this.name,
+        results,
+        count: results.length
+      };
+    } catch (error) {
+      return {
+        success: false,
+        query,
+        provider: this.name,
+        results: [],
+        count: 0,
+        error: error.message || "Unknown error"
+      };
+    }
+  }
+};
+
+// src/capabilities/search/providers/TavilyProvider.ts
+var TavilyProvider = class {
+  constructor(connector) {
+    this.connector = connector;
+  }
+  name = "tavily";
+  async search(query, options = {}) {
+    const numResults = Math.min(options.numResults || 10, 20);
+    try {
+      const auth = this.connector.config.auth;
+      const apiKey = auth.type === "api_key" ? auth.apiKey : "";
+      const fetchOptions = toConnectorOptions({
+        method: "POST",
+        body: {
+          api_key: apiKey,
+          query,
+          max_results: numResults,
+          search_depth: options.vendorOptions?.search_depth || "basic",
+          include_answer: options.vendorOptions?.include_answer || false,
+          include_raw_content: options.vendorOptions?.include_raw_content || false,
+          ...options.vendorOptions
+        }
+      });
+      const response = await this.connector.fetchJSON("/search", fetchOptions);
+      if (!response.results || !Array.isArray(response.results)) {
+        throw new Error("Invalid response from Tavily API");
+      }
+      const results = response.results.slice(0, numResults).map((result, index) => ({
+        title: result.title || "Untitled",
+        url: result.url || "",
+        snippet: result.content || "",
+        position: index + 1
+      }));
+      return {
+        success: true,
+        query,
+        provider: this.name,
+        results,
+        count: results.length
+      };
+    } catch (error) {
+      return {
+        success: false,
+        query,
+        provider: this.name,
+        results: [],
+        count: 0,
+        error: error.message || "Unknown error"
+      };
+    }
+  }
+};
+
+// src/capabilities/search/providers/RapidAPIProvider.ts
+var RapidAPIProvider = class {
+  constructor(connector) {
+    this.connector = connector;
+  }
+  name = "rapidapi";
+  async search(query, options = {}) {
+    const numResults = Math.min(options.numResults || 10, 100);
+    try {
+      const queryParams = {
+        q: query,
+        num: numResults,
+        start: 0,
+        fetch_ai_overviews: false,
+        deduplicate: false,
+        return_organic_result_video_thumbnail: false,
+        nfpr: 0,
+        ...options.country && { gl: options.country },
+        ...options.language && { hl: options.language },
+        ...options.vendorOptions
+      };
+      const queryString = buildQueryString(queryParams);
+      const response = await this.connector.fetchJSON(`/search?${queryString}`, {
+        method: "GET"
+      });
+      const organicResults = response.data?.organic || response.organic || [];
+      if (!Array.isArray(organicResults)) {
+        throw new Error("Invalid response from RapidAPI Search");
+      }
+      const results = organicResults.slice(0, numResults).map((result, index) => ({
+        title: result.title || "Untitled",
+        url: result.link || result.url || "",
+        snippet: result.snippet || result.description || "",
+        position: index + 1
+      }));
+      return {
+        success: true,
+        query,
+        provider: this.name,
+        results,
+        count: results.length
+      };
+    } catch (error) {
+      return {
+        success: false,
+        query,
+        provider: this.name,
+        results: [],
+        count: 0,
+        error: error.message || "Unknown error"
+      };
+    }
+  }
+};
+
+// src/capabilities/search/SearchProvider.ts
+var SearchProvider = class {
+  /**
+   * Create a search provider from a connector
+   * @param config - Provider configuration
+   * @returns Search provider instance
+   */
+  static create(config) {
+    const connector = typeof config.connector === "string" ? exports.Connector.get(config.connector) : config.connector;
+    if (!connector) {
+      throw new Error(
+        `Connector not found: ${typeof config.connector === "string" ? config.connector : "unknown"}`
+      );
+    }
+    const serviceType = connector.serviceType;
+    switch (serviceType) {
+      case "serper":
+        return new SerperProvider(connector);
+      case "brave-search":
+        return new BraveProvider(connector);
+      case "tavily":
+        return new TavilyProvider(connector);
+      case "rapidapi-search":
+        return new RapidAPIProvider(connector);
+      default:
+        throw new Error(
+          `Unknown search service type: ${serviceType}. Supported: serper, brave-search, tavily, rapidapi-search`
+        );
+    }
+  }
+};
+
+// src/capabilities/scrape/ScrapeProvider.ts
+var providerRegistry = /* @__PURE__ */ new Map();
+function registerScrapeProvider(serviceType, providerClass) {
+  providerRegistry.set(serviceType, providerClass);
+}
+function getRegisteredScrapeProviders() {
+  return Array.from(providerRegistry.keys());
+}
+var ScrapeProvider = class _ScrapeProvider {
+  /**
+   * Create a scrape provider from a connector
+   *
+   * @param config - Provider configuration
+   * @returns Scrape provider instance
+   * @throws Error if connector not found or service type not supported
+   *
+   * @example
+   * ```typescript
+   * const scraper = ScrapeProvider.create({ connector: 'jina-main' });
+   * const result = await scraper.scrape('https://example.com');
+   * ```
+   */
+  static create(config) {
+    const connector = resolveConnector(config.connector);
+    const serviceType = connector.serviceType;
+    if (!serviceType) {
+      throw new Error(
+        `Connector '${connector.name}' has no serviceType. Set serviceType when creating the connector.`
+      );
+    }
+    const ProviderClass = providerRegistry.get(serviceType);
+    if (!ProviderClass) {
+      const registered = getRegisteredScrapeProviders();
+      throw new Error(
+        `No scrape provider registered for service type '${serviceType}'. Registered providers: ${registered.length > 0 ? registered.join(", ") : "none"}. Make sure to import the provider module.`
+      );
+    }
+    return new ProviderClass(connector);
+  }
+  /**
+   * Check if a service type has a registered provider
+   */
+  static hasProvider(serviceType) {
+    return providerRegistry.has(serviceType);
+  }
+  /**
+   * List all registered provider service types
+   */
+  static listProviders() {
+    return getRegisteredScrapeProviders();
+  }
+  /**
+   * Create a scrape provider with fallback chain
+   *
+   * Returns a provider that will try each connector in order until one succeeds.
+   *
+   * @param config - Fallback configuration
+   * @returns Scrape provider with fallback support
+   *
+   * @example
+   * ```typescript
+   * const scraper = ScrapeProvider.createWithFallback({
+   *   primary: 'jina-main',
+   *   fallbacks: ['firecrawl-backup', 'scrapingbee'],
+   * });
+   * // Will try jina first, then firecrawl, then scrapingbee
+   * const result = await scraper.scrape('https://example.com');
+   * ```
+   */
+  static createWithFallback(config) {
+    const providers = [];
+    providers.push(_ScrapeProvider.create({ connector: config.primary }));
+    if (config.fallbacks) {
+      for (const fallback of config.fallbacks) {
+        try {
+          providers.push(_ScrapeProvider.create({ connector: fallback }));
+        } catch {
+        }
+      }
+    }
+    return new FallbackScrapeProvider(providers);
+  }
+};
+var FallbackScrapeProvider = class {
+  constructor(providers) {
+    this.providers = providers;
+    if (providers.length === 0) {
+      throw new Error("At least one provider required for fallback chain");
+    }
+    this.connector = providers[0].connector;
+  }
+  name = "fallback";
+  connector;
+  async scrape(url, options) {
+    let lastError;
+    const attemptedProviders = [];
+    for (const provider of this.providers) {
+      attemptedProviders.push(provider.name);
+      try {
+        const result = await provider.scrape(url, options);
+        if (result.success) {
+          return {
+            ...result,
+            provider: `fallback(${provider.name})`
+          };
+        }
+        lastError = result.error;
+      } catch (error) {
+        lastError = error.message;
+      }
+    }
+    return {
+      success: false,
+      url,
+      provider: "fallback",
+      error: `All providers failed. Tried: ${attemptedProviders.join(" -> ")}. Last error: ${lastError}`
+    };
+  }
+  supportsFeature(feature) {
+    return this.providers.some((p) => p.supportsFeature?.(feature));
+  }
+};
+
+// src/capabilities/scrape/providers/ZenRowsProvider.ts
+var ZenRowsProvider = class {
+  constructor(connector) {
+    this.connector = connector;
+  }
+  name = "zenrows";
+  /**
+   * Scrape a URL using ZenRows API
+   *
+   * By default, enables JS rendering and premium proxies for guaranteed results.
+   */
+  async scrape(url, options = {}) {
+    const startTime = Date.now();
+    try {
+      const apiKey = this.getApiKey();
+      const zenrowsOpts = options.vendorOptions;
+      const queryParams = {
+        url,
+        apikey: apiKey,
+        // Default to JS rendering and premium proxy for guaranteed results
+        js_render: zenrowsOpts?.jsRender ?? true,
+        premium_proxy: zenrowsOpts?.premiumProxy ?? true
+      };
+      if (options.waitForSelector || zenrowsOpts?.waitFor) {
+        queryParams.wait_for = options.waitForSelector || zenrowsOpts?.waitFor || "";
+      }
+      if (zenrowsOpts?.wait) {
+        queryParams.wait = zenrowsOpts.wait;
+      }
+      if (options.includeMarkdown || zenrowsOpts?.outputFormat === "markdown") {
+        queryParams.response_type = "markdown";
+      }
+      if (options.includeScreenshot || zenrowsOpts?.screenshot) {
+        queryParams.screenshot = true;
+        if (zenrowsOpts?.screenshotFullpage) {
+          queryParams.screenshot_fullpage = true;
+        }
+      }
+      if (zenrowsOpts?.autoparse) {
+        queryParams.autoparse = true;
+      }
+      if (zenrowsOpts?.cssExtractor) {
+        queryParams.css_extractor = zenrowsOpts.cssExtractor;
+      }
+      if (zenrowsOpts?.blockResources) {
+        queryParams.block_resources = zenrowsOpts.blockResources;
+      }
+      if (zenrowsOpts?.sessionId) {
+        queryParams.session_id = zenrowsOpts.sessionId;
+      }
+      if (zenrowsOpts?.device) {
+        queryParams.device = zenrowsOpts.device;
+      }
+      if (zenrowsOpts?.originalStatus) {
+        queryParams.original_status = true;
+      }
+      if (zenrowsOpts?.proxyCountry) {
+        queryParams.proxy_country = zenrowsOpts.proxyCountry;
+      }
+      if (zenrowsOpts?.jsInstructions) {
+        queryParams.js_instructions = zenrowsOpts.jsInstructions;
+      }
+      if (options.headers && zenrowsOpts?.customHeaders !== false) {
+        queryParams.custom_headers = true;
+      }
+      const endpoint = `/?${buildQueryString(queryParams)}`;
+      const response = await this.connector.fetch(endpoint, {
+        method: "GET",
+        headers: options.headers,
+        timeout: options.timeout || 6e4
+        // ZenRows can take longer with JS rendering
+      });
+      const headers = Object.fromEntries(response.headers.entries());
+      const finalUrl = headers["zr-final-url"] || url;
+      const statusCode = parseInt(headers["zr-status"] || "200", 10);
+      if (!response.ok) {
+        const errorText = await response.text();
+        return {
+          success: false,
+          url,
+          provider: this.name,
+          error: `ZenRows API error (${response.status}): ${errorText}`,
+          statusCode: response.status,
+          durationMs: Date.now() - startTime
+        };
+      }
+      const contentType = headers["content-type"] || "";
+      const isMarkdown = queryParams.response_type === "markdown";
+      const isScreenshot = queryParams.screenshot;
+      let result;
+      if (isScreenshot && !isMarkdown) {
+        const base64 = await response.text();
+        result = {
+          title: "",
+          content: "",
+          screenshot: base64
+        };
+      } else {
+        const content = await response.text();
+        let title = "";
+        if (!isMarkdown && contentType.includes("text/html")) {
+          const titleMatch = content.match(/<title[^>]*>([^<]+)<\/title>/i);
+          title = titleMatch?.[1]?.trim() ?? "";
+        } else if (isMarkdown) {
+          const headingMatch = content.match(/^#\s+(.+)$/m);
+          title = headingMatch?.[1]?.trim() ?? "";
+        }
+        result = {
+          title,
+          content: isMarkdown ? content : this.extractText(content),
+          html: options.includeHtml && !isMarkdown ? content : void 0,
+          markdown: isMarkdown ? content : void 0
+        };
+        if (options.includeLinks && !isMarkdown) {
+          result.links = this.extractLinks(content, finalUrl);
+        }
+        if (!isMarkdown) {
+          result.metadata = this.extractMetadata(content);
+        }
+      }
+      return {
+        success: true,
+        url,
+        finalUrl,
+        provider: this.name,
+        result,
+        statusCode,
+        durationMs: Date.now() - startTime,
+        requiredJS: queryParams.js_render === true
+      };
+    } catch (error) {
+      return {
+        success: false,
+        url,
+        provider: this.name,
+        error: error.message || "Unknown error",
+        durationMs: Date.now() - startTime
+      };
+    }
+  }
+  /**
+   * Check if this provider supports a feature
+   */
+  supportsFeature(feature) {
+    const supported = [
+      "javascript",
+      "markdown",
+      "screenshot",
+      "links",
+      "metadata",
+      "proxy",
+      "stealth",
+      "dynamic"
+    ];
+    return supported.includes(feature);
+  }
+  /**
+   * Get API key from connector
+   */
+  getApiKey() {
+    return this.connector.getApiKey();
+  }
+  /**
+   * Extract text content from HTML
+   */
+  extractText(html) {
+    let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+    text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+    text = text.replace(/<[^>]+>/g, " ");
+    text = text.replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    text = text.replace(/\s+/g, " ").trim();
+    return text;
+  }
+  /**
+   * Extract links from HTML
+   */
+  extractLinks(html, baseUrl) {
+    const links = [];
+    const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>([^<]*)<\/a>/gi;
+    let match;
+    while ((match = linkRegex.exec(html)) !== null) {
+      try {
+        const href = match[1];
+        const text = match[2]?.trim() ?? "";
+        if (!href) continue;
+        const absoluteUrl = new URL(href, baseUrl).href;
+        if (!absoluteUrl.startsWith("javascript:") && !absoluteUrl.startsWith("mailto:")) {
+          links.push({ url: absoluteUrl, text: text || absoluteUrl });
+        }
+      } catch {
+      }
+    }
+    return links;
+  }
+  /**
+   * Extract metadata from HTML
+   */
+  extractMetadata(html) {
+    const metadata = {};
+    const metaRegex = /<meta[^>]+(?:name|property)=["']([^"']+)["'][^>]+content=["']([^"']+)["']/gi;
+    let match;
+    while ((match = metaRegex.exec(html)) !== null) {
+      const name = match[1]?.toLowerCase();
+      const content = match[2];
+      if (!name || !content) continue;
+      if (name === "description" || name === "og:description") {
+        metadata.description = metadata.description || content;
+      } else if (name === "author") {
+        metadata.author = content;
+      } else if (name === "og:site_name") {
+        metadata.siteName = content;
+      } else if (name === "og:image") {
+        metadata.ogImage = content;
+      } else if (name === "article:published_time") {
+        metadata.publishedDate = content;
+      }
+    }
+    const faviconMatch = html.match(/<link[^>]+rel=["'](?:shortcut )?icon["'][^>]+href=["']([^"']+)["']/i);
+    if (faviconMatch) {
+      metadata.favicon = faviconMatch[1];
+    }
+    return Object.keys(metadata).length > 0 ? metadata : void 0;
+  }
+};
+registerScrapeProvider("zenrows", ZenRowsProvider);
+
+// src/capabilities/taskAgent/TaskAgent.ts
+init_Connector();
 
 // src/domain/entities/Task.ts
 var TERMINAL_TASK_STATUSES = ["completed", "failed", "skipped", "cancelled"];
@@ -16273,6 +17056,9 @@ ${parts.join("\n\n")}`;
     return { ...this.config };
   }
 };
+
+// src/capabilities/taskAgent/ExternalDependencyHandler.ts
+init_BackoffStrategy();
 var ExternalDependencyHandler = class extends eventemitter3.EventEmitter {
   activePolls = /* @__PURE__ */ new Map();
   activeScheduled = /* @__PURE__ */ new Map();
@@ -16427,6 +17213,12 @@ var ExternalDependencyHandler = class extends eventemitter3.EventEmitter {
     this.tools = new Map(tools.map((t) => [t.definition.function.name, t]));
   }
 };
+
+// src/infrastructure/resilience/index.ts
+init_CircuitBreaker();
+init_CircuitBreaker();
+init_BackoffStrategy();
+init_BackoffStrategy();
 
 // src/infrastructure/resilience/RateLimiter.ts
 var RateLimitError = class _RateLimitError extends AIError {
@@ -17122,6 +17914,10 @@ var PlanExecutor = class extends eventemitter3.EventEmitter {
         }
       }
     }
+    const agentMetrics = this.agent.getMetrics();
+    if (agentMetrics) {
+      this.currentMetrics.totalToolCalls += agentMetrics.toolCallCount;
+    }
     if (this.hooks?.afterLLMCall) {
       await this.hooks.afterLLMCall(response);
     }
@@ -17272,6 +18068,10 @@ var PlanExecutor = class extends eventemitter3.EventEmitter {
           this.currentMetrics.totalCost += cost;
         }
       }
+    }
+    const validationAgentMetrics = this.agent.getMetrics();
+    if (validationAgentMetrics) {
+      this.currentMetrics.totalToolCalls += validationAgentMetrics.toolCallCount;
     }
     return this.parseValidationResponse(
       task,
@@ -17896,7 +18696,7 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
    * Create a new TaskAgent
    */
   static create(config) {
-    const connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
+    const connector = typeof config.connector === "string" ? exports.Connector.get(config.connector) : config.connector;
     if (!connector) {
       throw new Error(`Connector "${config.connector}" not found`);
     }
@@ -18038,8 +18838,11 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
       execute: async (args, context) => {
         const enhancedContext = {
           ...context,
+          memory: this.memory.getAccess(),
+          // Add memory access for memory tools
           contextManager: this.contextManager,
-          idempotencyCache: this.idempotencyCache
+          idempotencyCache: this.idempotencyCache,
+          agentId: this.id
         };
         if (!this.idempotencyCache) {
           return tool.execute(args, enhancedContext);
@@ -19831,6 +20634,48 @@ var SERVICE_DEFINITIONS = [
     baseURL: "https://sentry.io/api/0",
     docsURL: "https://docs.sentry.io/api/"
   },
+  // ============ Search ============
+  {
+    id: "serper",
+    name: "Serper",
+    category: "search",
+    urlPattern: /serper\.dev/i,
+    baseURL: "https://google.serper.dev",
+    docsURL: "https://serper.dev/docs"
+  },
+  {
+    id: "brave-search",
+    name: "Brave Search",
+    category: "search",
+    urlPattern: /api\.search\.brave\.com/i,
+    baseURL: "https://api.search.brave.com/res/v1",
+    docsURL: "https://brave.com/search/api/"
+  },
+  {
+    id: "tavily",
+    name: "Tavily",
+    category: "search",
+    urlPattern: /api\.tavily\.com/i,
+    baseURL: "https://api.tavily.com",
+    docsURL: "https://tavily.com/docs"
+  },
+  {
+    id: "rapidapi-search",
+    name: "RapidAPI Search",
+    category: "search",
+    urlPattern: /real-time-web-search\.p\.rapidapi\.com/i,
+    baseURL: "https://real-time-web-search.p.rapidapi.com",
+    docsURL: "https://rapidapi.com/letscrape-6bRBa3QguO5/api/real-time-web-search"
+  },
+  // ============ Scraping ============
+  {
+    id: "zenrows",
+    name: "ZenRows",
+    category: "scrape",
+    urlPattern: /api\.zenrows\.com/i,
+    baseURL: "https://api.zenrows.com/v1",
+    docsURL: "https://docs.zenrows.com/universal-scraper-api/api-reference"
+  },
   // ============ Other ============
   {
     id: "twilio",
@@ -19926,7 +20771,11 @@ function isKnownService(serviceId) {
   return SERVICE_DEFINITIONS.some((def) => def.id === serviceId);
 }
 
+// src/index.ts
+init_Connector();
+
 // src/tools/connector/ConnectorTools.ts
+init_Connector();
 var PROTECTED_HEADERS = ["authorization", "x-api-key", "api-key", "bearer"];
 function safeStringify(obj) {
   const seen = /* @__PURE__ */ new WeakSet();
@@ -20075,7 +20924,7 @@ var ConnectorTools = class {
    */
   static discoverAll(userId) {
     const result = /* @__PURE__ */ new Map();
-    for (const connector of Connector.listAll()) {
+    for (const connector of exports.Connector.listAll()) {
       const hasServiceType = !!connector.config.serviceType;
       const isExternalAPI = connector.baseURL && !connector.vendor;
       if (hasServiceType || isExternalAPI) {
@@ -20095,7 +20944,7 @@ var ConnectorTools = class {
    * @returns Connector or undefined
    */
   static findConnector(serviceType) {
-    return Connector.listAll().find((c) => this.detectService(c) === serviceType);
+    return exports.Connector.listAll().find((c) => this.detectService(c) === serviceType);
   }
   /**
    * Find all connectors for a service type
@@ -20105,7 +20954,7 @@ var ConnectorTools = class {
    * @returns Array of matching connectors
    */
   static findConnectors(serviceType) {
-    return Connector.listAll().filter((c) => this.detectService(c) === serviceType);
+    return exports.Connector.listAll().filter((c) => this.detectService(c) === serviceType);
   }
   /**
    * List services that have registered tool factories
@@ -20153,7 +21002,7 @@ var ConnectorTools = class {
   }
   // ============ Private Methods ============
   static resolveConnector(connectorOrName) {
-    return typeof connectorOrName === "string" ? Connector.get(connectorOrName) : connectorOrName;
+    return typeof connectorOrName === "string" ? exports.Connector.get(connectorOrName) : connectorOrName;
   }
   static createGenericAPITool(connector, options) {
     const toolName = options?.toolName ?? `${connector.name}_api`;
@@ -20257,6 +21106,15 @@ var ConnectorTools = class {
     };
   }
 };
+
+// src/connectors/oauth/index.ts
+init_OAuthManager();
+
+// src/connectors/index.ts
+init_MemoryStorage();
+
+// src/connectors/oauth/infrastructure/storage/FileStorage.ts
+init_encryption();
 var FileStorage = class {
   directory;
   encryptionKey;
@@ -20359,8 +21217,9 @@ var FileStorage = class {
 };
 
 // src/connectors/authenticatedFetch.ts
+init_Connector();
 async function authenticatedFetch(url, options, authProvider, userId) {
-  const connector = Connector.get(authProvider);
+  const connector = exports.Connector.get(authProvider);
   const token = await connector.getToken(userId);
   const authOptions = {
     ...options,
@@ -20372,13 +21231,14 @@ async function authenticatedFetch(url, options, authProvider, userId) {
   return fetch(url, authOptions);
 }
 function createAuthenticatedFetch(authProvider, userId) {
-  Connector.get(authProvider);
+  exports.Connector.get(authProvider);
   return async (url, options) => {
     return authenticatedFetch(url, options, authProvider, userId);
   };
 }
 
 // src/connectors/toolGenerator.ts
+init_Connector();
 function generateWebAPITool() {
   return {
     definition: {
@@ -20390,7 +21250,7 @@ function generateWebAPITool() {
 This tool automatically handles OAuth authentication for registered providers.
 
 REGISTERED PROVIDERS:
-${Connector.getDescriptionsForTools()}
+${exports.Connector.getDescriptionsForTools()}
 
 HOW TO USE:
 1. Choose the appropriate authProvider based on which API you need to access
@@ -20425,7 +21285,7 @@ Create Salesforce account:
           properties: {
             authProvider: {
               type: "string",
-              enum: Connector.list(),
+              enum: exports.Connector.list(),
               description: "Which connector to use for authentication. Choose based on the API you need to access."
             },
             url: {
@@ -20453,7 +21313,7 @@ Create Salesforce account:
     },
     execute: async (args) => {
       try {
-        const connector = Connector.get(args.authProvider);
+        const connector = exports.Connector.get(args.authProvider);
         const fullUrl = args.url.startsWith("http") ? args.url : `${connector.baseURL}${args.url}`;
         const requestOptions = {
           method: args.method || "GET",
@@ -20492,10 +21352,15 @@ Create Salesforce account:
   };
 }
 
+// src/connectors/index.ts
+init_pkce();
+init_encryption();
+
 // src/domain/interfaces/IConnectorConfigStorage.ts
 var CONNECTOR_CONFIG_VERSION = 1;
 
 // src/connectors/storage/ConnectorConfigStore.ts
+init_encryption();
 var ENCRYPTED_PREFIX = "$ENC$:";
 var ConnectorConfigStore = class {
   constructor(storage, encryptionKey) {
@@ -20875,6 +21740,10 @@ var FileConnectorStorage = class {
     await fs10__namespace.chmod(this.indexPath, 384);
   }
 };
+
+// src/infrastructure/observability/index.ts
+init_Logger();
+init_Metrics();
 
 // src/utils/messageBuilder.ts
 var MessageBuilder = class {
@@ -23403,6 +24272,9 @@ With screenshot:
   }
 };
 
+// src/tools/web/webSearch.ts
+init_Connector();
+
 // src/tools/web/searchProviders/serper.ts
 async function searchWithSerper(query, numResults, apiKey) {
   const response = await fetch("https://google.serper.dev/search", {
@@ -23495,15 +24367,51 @@ var webSearch = {
       name: "web_search",
       description: `Search the web and get relevant results with snippets.
 
-This tool searches the web using a configured search provider.
+This tool searches the web using a configured search provider via Connector.
+
+CONNECTOR SETUP (Recommended):
+Create a connector for your search provider:
+
+// Serper (Google search)
+Connector.create({
+  name: 'serper-main',
+  serviceType: 'serper',
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Brave (Independent index)
+Connector.create({
+  name: 'brave-main',
+  serviceType: 'brave-search',
+  auth: { type: 'api_key', apiKey: process.env.BRAVE_API_KEY! },
+  baseURL: 'https://api.search.brave.com/res/v1',
+});
+
+// Tavily (AI-optimized)
+Connector.create({
+  name: 'tavily-main',
+  serviceType: 'tavily',
+  auth: { type: 'api_key', apiKey: process.env.TAVILY_API_KEY! },
+  baseURL: 'https://api.tavily.com',
+});
+
+// RapidAPI (Real-time web search)
+Connector.create({
+  name: 'rapidapi-search',
+  serviceType: 'rapidapi-search',
+  auth: { type: 'api_key', apiKey: process.env.RAPIDAPI_KEY! },
+  baseURL: 'https://real-time-web-search.p.rapidapi.com',
+});
 
 SEARCH PROVIDERS:
-- serper (default): Google search results via Serper.dev API. Fast (1-2s), 2,500 free queries.
-- brave: Brave's independent search index. Privacy-focused, no Google.
+- serper: Google search results via Serper.dev. Fast (1-2s), 2,500 free queries.
+- brave-search: Brave's independent search index. Privacy-focused, no Google.
 - tavily: AI-optimized search with summaries tailored for LLMs.
+- rapidapi-search: Real-time web search via RapidAPI. Wide coverage.
 
 RETURNS:
-An array of up to 10-20 search results, each containing:
+An array of up to 10-100 search results (provider-specific), each containing:
 - title: Page title
 - url: Direct URL to the page
 - snippet: Short description/excerpt from the page
@@ -23522,23 +24430,26 @@ WORKFLOW PATTERN:
 3. Process and summarize the information
 
 EXAMPLE:
-Basic search:
+Using connector (recommended):
 {
   query: "latest AI developments 2026",
-  numResults: 5
+  connectorName: "serper-main",
+  numResults: 5,
+  country: "us",
+  language: "en"
 }
 
-With specific provider:
+Backward compatible (uses environment variables):
 {
   query: "quantum computing news",
-  numResults: 10,
-  provider: "brave"
+  provider: "brave",
+  numResults: 10
 }
 
 IMPORTANT:
-- Requires API key to be set in environment variables
-- Default provider is "serper" (requires SERPER_API_KEY)
-- Returns empty results if API key not found`,
+- Connector approach provides retry, circuit breaker, and timeout features
+- Supports multiple keys per vendor (e.g., 'serper-main', 'serper-backup')
+- Backward compatible with environment variable approach`,
       parameters: {
         type: "object",
         properties: {
@@ -23548,12 +24459,24 @@ IMPORTANT:
           },
           numResults: {
             type: "number",
-            description: "Number of results to return (default: 10, max: 20). More results = more API cost."
+            description: "Number of results to return (default: 10, max: provider-specific). More results = more API cost."
+          },
+          connectorName: {
+            type: "string",
+            description: 'Connector name to use for search (e.g., "serper-main", "brave-backup"). Recommended approach.'
           },
           provider: {
             type: "string",
-            enum: ["serper", "brave", "tavily"],
-            description: 'Which search provider to use. Default is "serper". Each provider requires its own API key.'
+            enum: ["serper", "brave", "tavily", "rapidapi"],
+            description: "DEPRECATED: Use connectorName instead. Provider for backward compatibility with environment variables."
+          },
+          country: {
+            type: "string",
+            description: 'Country/region code (e.g., "us", "gb")'
+          },
+          language: {
+            type: "string",
+            description: 'Language code (e.g., "en", "fr")'
           }
         },
         required: ["query"]
@@ -23563,53 +24486,110 @@ IMPORTANT:
     timeout: 1e4
   },
   execute: async (args) => {
-    const provider = args.provider || "serper";
-    const numResults = Math.min(args.numResults || 10, 20);
-    const apiKey = getSearchAPIKey(provider);
-    if (!apiKey) {
-      return {
-        success: false,
-        query: args.query,
-        provider,
-        results: [],
-        count: 0,
-        error: `No API key found for ${provider}. Set ${getEnvVarName(provider)} in your .env file. See .env.example for details.`
-      };
+    const numResults = args.numResults || 10;
+    if (args.connectorName) {
+      return await executeWithConnector(args, numResults);
     }
-    try {
-      let results;
-      switch (provider) {
-        case "serper":
-          results = await searchWithSerper(args.query, numResults, apiKey);
-          break;
-        case "brave":
-          results = await searchWithBrave(args.query, numResults, apiKey);
-          break;
-        case "tavily":
-          results = await searchWithTavily(args.query, numResults, apiKey);
-          break;
-        default:
-          throw new Error(`Unknown search provider: ${provider}`);
-      }
-      return {
-        success: true,
-        query: args.query,
-        provider,
-        results,
-        count: results.length
-      };
-    } catch (error) {
-      return {
-        success: false,
-        query: args.query,
-        provider,
-        results: [],
-        count: 0,
-        error: error.message
-      };
+    if (args.provider) {
+      return await executeWithProvider(args, numResults);
     }
+    const availableConnector = findAvailableSearchConnector();
+    if (availableConnector) {
+      return await executeWithConnector(
+        { ...args, connectorName: availableConnector },
+        numResults
+      );
+    }
+    return await executeWithProvider({ ...args, provider: "serper" }, numResults);
   }
 };
+async function executeWithConnector(args, numResults) {
+  try {
+    const searchProvider = SearchProvider.create({ connector: args.connectorName });
+    const response = await searchProvider.search(args.query, {
+      numResults,
+      country: args.country,
+      language: args.language
+    });
+    return {
+      success: response.success,
+      query: response.query,
+      provider: response.provider,
+      results: response.results,
+      count: response.count,
+      error: response.error
+    };
+  } catch (error) {
+    return {
+      success: false,
+      query: args.query,
+      provider: args.connectorName || "unknown",
+      results: [],
+      count: 0,
+      error: error.message || "Unknown error"
+    };
+  }
+}
+async function executeWithProvider(args, numResults) {
+  const provider = args.provider || "serper";
+  const apiKey = getSearchAPIKey(provider);
+  if (!apiKey) {
+    return {
+      success: false,
+      query: args.query,
+      provider,
+      results: [],
+      count: 0,
+      error: `No API key found for ${provider}. Set ${getEnvVarName(provider)} in your .env file, or use connectorName with a Connector. See .env.example for details.`
+    };
+  }
+  try {
+    let results;
+    switch (provider) {
+      case "serper":
+        results = await searchWithSerper(args.query, numResults, apiKey);
+        break;
+      case "brave":
+        results = await searchWithBrave(args.query, numResults, apiKey);
+        break;
+      case "tavily":
+        results = await searchWithTavily(args.query, numResults, apiKey);
+        break;
+      case "rapidapi":
+        throw new Error(
+          "RapidAPI provider requires Connector. Use connectorName with a rapidapi-search connector."
+        );
+      default:
+        throw new Error(`Unknown search provider: ${provider}`);
+    }
+    return {
+      success: true,
+      query: args.query,
+      provider,
+      results,
+      count: results.length
+    };
+  } catch (error) {
+    return {
+      success: false,
+      query: args.query,
+      provider,
+      results: [],
+      count: 0,
+      error: error.message
+    };
+  }
+}
+function findAvailableSearchConnector() {
+  const allConnectors = exports.Connector.list();
+  for (const connectorName of allConnectors) {
+    const connector = exports.Connector.get(connectorName);
+    if (connector?.serviceType && ["serper", "brave-search", "tavily", "rapidapi-search"].includes(connector.serviceType)) {
+      return connectorName;
+    }
+  }
+  return void 0;
+}
 function getSearchAPIKey(provider) {
   switch (provider) {
     case "serper":
@@ -23618,6 +24598,8 @@ function getSearchAPIKey(provider) {
       return process.env.BRAVE_API_KEY;
     case "tavily":
       return process.env.TAVILY_API_KEY;
+    case "rapidapi":
+      return process.env.RAPIDAPI_KEY;
     default:
       return void 0;
   }
@@ -23630,12 +24612,20 @@ function getEnvVarName(provider) {
       return "BRAVE_API_KEY";
     case "tavily":
       return "TAVILY_API_KEY";
+    case "rapidapi":
+      return "RAPIDAPI_KEY";
     default:
       return "UNKNOWN_API_KEY";
   }
 }
+
+// src/tools/web/webScrape.ts
+init_Connector();
+
+// src/tools/code/executeJavaScript.ts
+init_Connector();
 function generateDescription() {
-  const connectors = Connector.listAll();
+  const connectors = exports.Connector.listAll();
   const connectorList = connectors.length > 0 ? connectors.map((c) => `   \u2022 "${c.name}": ${c.displayName}
      ${c.config.description || "No description"}
      Base URL: ${c.baseURL}`).join("\n\n") : "   No connectors registered yet. Register connectors with Connector.create().";
@@ -23775,10 +24765,10 @@ async function executeInVM(code, input, timeout, logs) {
     fetch: globalThis.fetch,
     // Connector info
     connectors: {
-      list: () => Connector.list(),
+      list: () => exports.Connector.list(),
       get: (name) => {
         try {
-          const connector = Connector.get(name);
+          const connector = exports.Connector.get(name);
           return {
             displayName: connector.displayName,
             description: connector.config.description || "",
@@ -25433,34 +26423,24 @@ exports.ApproximateTokenEstimator = ApproximateTokenEstimator;
 exports.BaseMediaProvider = BaseMediaProvider;
 exports.BaseProvider = BaseProvider;
 exports.BaseTextProvider = BaseTextProvider;
+exports.BraveProvider = BraveProvider;
 exports.CONNECTOR_CONFIG_VERSION = CONNECTOR_CONFIG_VERSION;
 exports.CheckpointManager = CheckpointManager;
-exports.CircuitBreaker = CircuitBreaker;
-exports.CircuitOpenError = CircuitOpenError;
-exports.Connector = Connector;
 exports.ConnectorConfigStore = ConnectorConfigStore;
 exports.ConnectorTools = ConnectorTools;
-exports.ConsoleMetrics = ConsoleMetrics;
 exports.ContentType = ContentType;
 exports.ContextManager = ContextManager;
 exports.ConversationHistoryManager = ConversationHistoryManager;
 exports.DEFAULT_ALLOWLIST = DEFAULT_ALLOWLIST;
-exports.DEFAULT_BACKOFF_CONFIG = DEFAULT_BACKOFF_CONFIG;
-exports.DEFAULT_BASE_DELAY_MS = DEFAULT_BASE_DELAY_MS;
 exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
-exports.DEFAULT_CIRCUIT_BREAKER_CONFIG = DEFAULT_CIRCUIT_BREAKER_CONFIG;
-exports.DEFAULT_CONNECTOR_TIMEOUT = DEFAULT_CONNECTOR_TIMEOUT;
 exports.DEFAULT_CONTEXT_BUILDER_CONFIG = DEFAULT_CONTEXT_BUILDER_CONFIG;
 exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG;
 exports.DEFAULT_FILESYSTEM_CONFIG = DEFAULT_FILESYSTEM_CONFIG;
 exports.DEFAULT_HISTORY_MANAGER_CONFIG = DEFAULT_HISTORY_MANAGER_CONFIG;
 exports.DEFAULT_IDEMPOTENCY_CONFIG = DEFAULT_IDEMPOTENCY_CONFIG;
-exports.DEFAULT_MAX_DELAY_MS = DEFAULT_MAX_DELAY_MS;
-exports.DEFAULT_MAX_RETRIES = DEFAULT_MAX_RETRIES;
 exports.DEFAULT_MEMORY_CONFIG = DEFAULT_MEMORY_CONFIG;
 exports.DEFAULT_PERMISSION_CONFIG = DEFAULT_PERMISSION_CONFIG;
 exports.DEFAULT_RATE_LIMITER_CONFIG = DEFAULT_RATE_LIMITER_CONFIG;
-exports.DEFAULT_RETRYABLE_STATUSES = DEFAULT_RETRYABLE_STATUSES;
 exports.DEFAULT_SHELL_CONFIG = DEFAULT_SHELL_CONFIG;
 exports.DefaultContextBuilder = DefaultContextBuilder;
 exports.DependencyCycleError = DependencyCycleError;
@@ -25470,7 +26450,6 @@ exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileConnectorStorage = FileConnectorStorage;
 exports.FileSessionStorage = FileSessionStorage;
 exports.FileStorage = FileStorage;
-exports.FrameworkLogger = FrameworkLogger;
 exports.HookManager = HookManager;
 exports.IMAGE_MODELS = IMAGE_MODELS;
 exports.IMAGE_MODEL_REGISTRY = IMAGE_MODEL_REGISTRY;
@@ -25478,7 +26457,6 @@ exports.IdempotencyCache = IdempotencyCache;
 exports.ImageGeneration = ImageGeneration;
 exports.InMemoryAgentStateStorage = InMemoryAgentStateStorage;
 exports.InMemoryHistoryStorage = InMemoryHistoryStorage;
-exports.InMemoryMetrics = InMemoryMetrics;
 exports.InMemoryPlanStorage = InMemoryPlanStorage;
 exports.InMemorySessionStorage = InMemorySessionStorage;
 exports.InMemoryStorage = InMemoryStorage;
@@ -25491,13 +26469,10 @@ exports.META_TOOL_NAMES = META_TOOL_NAMES;
 exports.MODEL_REGISTRY = MODEL_REGISTRY;
 exports.MemoryConnectorStorage = MemoryConnectorStorage;
 exports.MemoryEvictionCompactor = MemoryEvictionCompactor;
-exports.MemoryStorage = MemoryStorage;
 exports.MessageBuilder = MessageBuilder;
 exports.MessageRole = MessageRole;
 exports.ModeManager = ModeManager;
 exports.ModelNotSupportedError = ModelNotSupportedError;
-exports.NoOpMetrics = NoOpMetrics;
-exports.OAuthManager = OAuthManager;
 exports.ParallelTasksError = ParallelTasksError;
 exports.PlanExecutor = PlanExecutor;
 exports.ProactiveCompactionStrategy = ProactiveCompactionStrategy;
@@ -25508,6 +26483,7 @@ exports.ProviderError = ProviderError;
 exports.ProviderErrorMapper = ProviderErrorMapper;
 exports.ProviderNotFoundError = ProviderNotFoundError;
 exports.ProviderRateLimitError = ProviderRateLimitError;
+exports.RapidAPIProvider = RapidAPIProvider;
 exports.RateLimitError = RateLimitError;
 exports.RollingWindowStrategy = RollingWindowStrategy;
 exports.SERVICE_DEFINITIONS = SERVICE_DEFINITIONS;
@@ -25515,6 +26491,9 @@ exports.SERVICE_INFO = SERVICE_INFO;
 exports.SERVICE_URL_PATTERNS = SERVICE_URL_PATTERNS;
 exports.STT_MODELS = STT_MODELS;
 exports.STT_MODEL_REGISTRY = STT_MODEL_REGISTRY;
+exports.ScrapeProvider = ScrapeProvider;
+exports.SearchProvider = SearchProvider;
+exports.SerperProvider = SerperProvider;
 exports.Services = Services;
 exports.SessionManager = SessionManager;
 exports.SpeechToText = SpeechToText;
@@ -25529,6 +26508,7 @@ exports.TaskAgent = TaskAgent;
 exports.TaskAgentContextProvider = TaskAgentContextProvider;
 exports.TaskTimeoutError = TaskTimeoutError;
 exports.TaskValidationError = TaskValidationError;
+exports.TavilyProvider = TavilyProvider;
 exports.TextToSpeech = TextToSpeech;
 exports.TokenBucketRateLimiter = TokenBucketRateLimiter;
 exports.ToolCallState = ToolCallState;
@@ -25552,6 +26532,8 @@ exports.authenticatedFetch = authenticatedFetch;
 exports.backoffSequence = backoffSequence;
 exports.backoffWait = backoffWait;
 exports.bash = bash;
+exports.buildEndpointWithQuery = buildEndpointWithQuery;
+exports.buildQueryString = buildQueryString;
 exports.calculateBackoff = calculateBackoff;
 exports.calculateCost = calculateCost;
 exports.calculateEntrySize = calculateEntrySize;
@@ -25610,6 +26592,7 @@ exports.getMetaTools = getMetaTools;
 exports.getModelInfo = getModelInfo;
 exports.getModelsByVendor = getModelsByVendor;
 exports.getNextExecutableTasks = getNextExecutableTasks;
+exports.getRegisteredScrapeProviders = getRegisteredScrapeProviders;
 exports.getSTTModelInfo = getSTTModelInfo;
 exports.getSTTModelsByVendor = getSTTModelsByVendor;
 exports.getSTTModelsWithFeature = getSTTModelsWithFeature;
@@ -25648,15 +26631,16 @@ exports.isToolCallStart = isToolCallStart;
 exports.isVendor = isVendor;
 exports.killBackgroundProcess = killBackgroundProcess;
 exports.listDirectory = listDirectory;
-exports.logger = logger;
-exports.metrics = metrics;
 exports.readClipboardImage = readClipboardImage;
 exports.readFile = readFile4;
+exports.registerScrapeProvider = registerScrapeProvider;
+exports.resolveConnector = resolveConnector;
 exports.resolveDependencies = resolveDependencies;
 exports.retryWithBackoff = retryWithBackoff;
 exports.scopeEquals = scopeEquals;
 exports.scopeMatches = scopeMatches;
 exports.setMetricsCollector = setMetricsCollector;
+exports.toConnectorOptions = toConnectorOptions;
 exports.tools = tools_exports;
 exports.updateTaskStatus = updateTaskStatus;
 exports.validatePath = validatePath;

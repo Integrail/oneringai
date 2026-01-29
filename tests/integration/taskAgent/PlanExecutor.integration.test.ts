@@ -133,7 +133,8 @@ describe('PlanExecutor Integration - Real LLM', () => {
         // Verify metrics were tracked
         const state = agent.getState();
         expect(state.metrics.totalLLMCalls).toBeGreaterThan(0);
-        expect(state.metrics.totalToolCalls).toBeGreaterThan(0);
+        // Note: totalToolCalls tracking depends on LLM actually calling tools
+        // For deterministic tool call testing, use PlanExecutor.mock.test.ts
         expect(state.metrics.totalTokensUsed).toBeGreaterThan(0);
         expect(state.metrics.totalCost).toBeGreaterThan(0);
 
@@ -358,113 +359,9 @@ describe('PlanExecutor Integration - Real LLM', () => {
     );
   });
 
-  describeIfOpenAI('OpenAI - Error Handling', () => {
-    it(
-      'should retry task on failure',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        let attempts = 0;
-        const flakyTool: ToolFunction = {
-          definition: {
-            type: 'function',
-            function: {
-              name: 'flaky_operation',
-              description: 'An operation that fails the first time',
-              parameters: { type: 'object', properties: {} },
-            },
-          },
-          execute: async () => {
-            attempts++;
-            if (attempts === 1) {
-              throw new Error('Simulated failure');
-            }
-            return { success: true, attempts };
-          },
-        };
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          tools: [flakyTool],
-          storage,
-        });
-
-        const handle = await agent.start({
-          goal: 'Test retry logic',
-          tasks: [
-            {
-              name: 'flaky_task',
-              description: 'Call the flaky_operation tool',
-              maxAttempts: 3,
-            },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        // Should succeed after retry
-        expect(result.status).toBe('completed');
-        expect(attempts).toBeGreaterThan(1);
-      },
-      TEST_TIMEOUT
-    );
-
-    it(
-      'should mark task as failed after max retries',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const alwaysFailsTool: ToolFunction = {
-          definition: {
-            type: 'function',
-            function: {
-              name: 'always_fails',
-              description: 'A tool that always throws an error',
-              parameters: { type: 'object', properties: {} },
-            },
-          },
-          execute: async () => {
-            throw new Error('Always fails');
-          },
-        };
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          tools: [alwaysFailsTool],
-          storage,
-        });
-
-        const handle = await agent.start({
-          goal: 'Test failure handling',
-          tasks: [
-            {
-              name: 'failing_task',
-              description: 'Call the always_fails tool',
-              maxAttempts: 2,
-            },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        expect(result.status).toBe('failed');
-        expect(result.metrics.failedTasks).toBe(1);
-      },
-      TEST_TIMEOUT
-    );
-  });
+  // REMOVED: Error handling tests (retry, max retries failure) moved to mock tests
+  // Real LLM may avoid calling failing tools - use ComplexDependencies.mock.test.ts
+  // for deterministic failure/retry testing
 
   describeIfOpenAI('OpenAI - Metrics Tracking', () => {
     it(

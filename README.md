@@ -14,6 +14,7 @@
 - 🎤 **Audio Capabilities** - Text-to-Speech (TTS) and Speech-to-Text (STT) with OpenAI and Groq
 - 🖼️ **Image Generation** - DALL-E 3, gpt-image-1, Google Imagen 4 with editing and variations
 - 🎬 **Video Generation** - NEW: OpenAI Sora 2 and Google Veo 3 for AI video creation
+- 🔍 **Web Search** - Connector-based search with Serper, Brave, Tavily, and RapidAPI providers
 - 🤖 **Universal Agent** - Unified agent combining chat, planning, and execution in one interface
 - 🎛️ **Dynamic Tool Management** - Enable/disable tools at runtime, namespaces, priority-based selection
 - 💾 **Session Persistence** - Save and resume conversations for all agent types
@@ -193,6 +194,84 @@ const veoJob = await googleVideo.generate({
   duration: 8,
 });
 ```
+
+### Web Search
+
+Connector-based web search with multiple providers:
+
+```typescript
+import { Connector, SearchProvider, Services, webSearch, Agent } from '@oneringai/agents';
+
+// Create search connector
+Connector.create({
+  name: 'serper-main',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Option 1: Use SearchProvider directly
+const search = SearchProvider.create({ connector: 'serper-main' });
+const results = await search.search('latest AI developments 2026', {
+  numResults: 10,
+  country: 'us',
+  language: 'en',
+});
+
+// Option 2: Use with Agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webSearch],
+});
+
+await agent.run('Search for quantum computing news and summarize');
+```
+
+**Supported Search Providers:**
+- **Serper** - Google search via Serper.dev (2,500 free queries)
+- **Brave** - Independent search index (privacy-focused)
+- **Tavily** - AI-optimized search with summaries
+- **RapidAPI** - Real-time web search (various pricing)
+
+### Web Scraping
+
+Enterprise web scraping with automatic fallback and bot protection bypass:
+
+```typescript
+import { Connector, ScrapeProvider, Services, webScrape, Agent } from '@oneringai/agents';
+
+// Create ZenRows connector for bot-protected sites
+Connector.create({
+  name: 'zenrows',
+  serviceType: Services.Zenrows,
+  auth: { type: 'api_key', apiKey: process.env.ZENROWS_API_KEY! },
+  baseURL: 'https://api.zenrows.com/v1',
+});
+
+// Option 1: Use ScrapeProvider directly
+const scraper = ScrapeProvider.create({ connector: 'zenrows' });
+const result = await scraper.scrape('https://protected-site.com', {
+  includeMarkdown: true,
+  vendorOptions: {
+    jsRender: true,        // JavaScript rendering
+    premiumProxy: true,    // Residential IPs
+  },
+});
+
+// Option 2: Use webScrape tool with Agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [webScrape],
+});
+
+// webScrape auto-falls back: native → JS → API
+await agent.run('Scrape https://example.com and summarize');
+```
+
+**Supported Scrape Providers:**
+- **ZenRows** - Enterprise scraping with JS rendering, residential proxies, anti-bot bypass
 
 ## Supported Providers
 

@@ -101,7 +101,7 @@ export class MockLLMProvider implements ITextProvider {
           type: 'tool_use',
           id: toolCall.id,
           name: toolCall.function.name,
-          input: tc.arguments,
+          arguments: JSON.stringify(tc.arguments), // Must be JSON string, not object
         });
       }
     }
@@ -110,8 +110,9 @@ export class MockLLMProvider implements ITextProvider {
       output: [outputItem],
       stopReason: response.stopReason || (response.toolCalls ? 'tool_use' : 'end_turn'),
       usage: {
-        inputTokens: 100,
-        outputTokens: 50,
+        input_tokens: 100,
+        output_tokens: 50,
+        total_tokens: 150,
       },
     };
   }

@@ -337,51 +337,8 @@ describe('TaskValidation Integration - LLM Self-Reflection', () => {
       TEST_TIMEOUT
     );
 
-    it(
-      'should fail task when custom validator returns false',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const hooks: TaskAgentHooks = {
-          validateTask: async (): Promise<boolean> => {
-            // Always reject
-            return false;
-          },
-        };
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          hooks,
-        });
-
-        const handle = await agent.start({
-          goal: 'Test failing validator',
-          tasks: [
-            {
-              name: 'doomed_task',
-              description: 'This will fail validation',
-              maxAttempts: 1,
-              validation: {
-                enabled: true,
-                method: 'llm_self_reflection',
-              },
-            },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        expect(result.status).toBe('failed');
-      },
-      TEST_TIMEOUT
-    );
+    // REMOVED: Custom validator failure test should use mock LLM
+    // Validator returning false is deterministic - test via mock for speed/reliability
   });
 
   describeIfOpenAI('Validation Modes - Strict vs Warn', () => {

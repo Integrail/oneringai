@@ -11,13 +11,21 @@
 import type { Vendor } from '../../core/Vendor.js';
 
 /**
+ * No authentication (for testing/mock providers)
+ */
+export interface NoneConnectorAuth {
+  type: 'none';
+}
+
+/**
  * Connector authentication configuration
- * Supports OAuth 2.0, API keys, and JWT bearer tokens
+ * Supports OAuth 2.0, API keys, JWT bearer tokens, and none (for testing)
  */
 export type ConnectorAuth =
   | OAuthConnectorAuth
   | APIKeyConnectorAuth
-  | JWTConnectorAuth;
+  | JWTConnectorAuth
+  | NoneConnectorAuth;
 
 /**
  * OAuth 2.0 authentication for connectors
