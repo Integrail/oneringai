@@ -1411,6 +1411,87 @@ interface BaseSessionConfig {
     autoSaveIntervalMs?: number;
 }
 /**
+ * Tool execution context passed to lifecycle hooks
+ */
+interface ToolExecutionHookContext {
+    /** Name of the tool being executed */
+    toolName: string;
+    /** Arguments passed to the tool */
+    args: Record<string, unknown>;
+    /** Agent ID */
+    agentId: string;
+    /** Task ID (if running in TaskAgent) */
+    taskId?: string;
+}
+/**
+ * Tool execution result passed to afterToolExecution hook
+ */
+interface ToolExecutionResult {
+    /** Name of the tool that was executed */
+    toolName: string;
+    /** Result returned by the tool */
+    result: unknown;
+    /** Execution duration in milliseconds */
+    durationMs: number;
+    /** Whether the execution was successful */
+    success: boolean;
+    /** Error if execution failed */
+    error?: Error;
+}
+/**
+ * Agent lifecycle hooks for customization.
+ * These hooks allow external code to observe and modify agent behavior
+ * at key points in the execution lifecycle.
+ */
+interface AgentLifecycleHooks {
+    /**
+     * Called before a tool is executed.
+     * Can be used for logging, validation, or rate limiting.
+     * Throw an error to prevent tool execution.
+     *
+     * @param context - Tool execution context
+     * @returns Promise that resolves when hook completes
+     */
+    beforeToolExecution?: (context: ToolExecutionHookContext) => Promise<void>;
+    /**
+     * Called after a tool execution completes (success or failure).
+     * Can be used for logging, metrics, or cleanup.
+     *
+     * @param result - Tool execution result
+     * @returns Promise that resolves when hook completes
+     */
+    afterToolExecution?: (result: ToolExecutionResult) => Promise<void>;
+    /**
+     * Called before context is prepared for LLM call.
+     * Can be used to inject additional context or modify components.
+     *
+     * @param agentId - Agent identifier
+     * @returns Promise that resolves when hook completes
+     */
+    beforeContextPrepare?: (agentId: string) => Promise<void>;
+    /**
+     * Called after context compaction occurs.
+     * Can be used for logging or monitoring context management.
+     *
+     * @param log - Compaction log messages
+     * @param tokensFreed - Number of tokens freed
+     * @returns Promise that resolves when hook completes
+     */
+    afterCompaction?: (log: string[], tokensFreed: number) => Promise<void>;
+    /**
+     * Called when agent encounters an error.
+     * Can be used for custom error handling or recovery logic.
+     *
+     * @param error - The error that occurred
+     * @param context - Additional context about where the error occurred
+     * @returns Promise that resolves when hook completes
+     */
+    onError?: (error: Error, context: {
+        phase: string;
+        agentId: string;
+    }) => Promise<void>;
+}
+/**
  * Base configuration shared by all agent types
  */
 interface BaseAgentConfig {
@@ -1428,6 +1509,8 @@ interface BaseAgentConfig {
     session?: BaseSessionConfig;
     /** Permission configuration */
     permissions?: AgentPermissionsConfig;
+    /** Lifecycle hooks for customization */
+    lifecycleHooks?: AgentLifecycleHooks;
 }
 /**
  * Base events emitted by all agent types.
@@ -1463,6 +1546,7 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
     protected _isDestroyed: boolean;
     protected _cleanupCallbacks: Array<() => void | Promise<void>>;
     protected _logger: FrameworkLogger;
+    protected _lifecycleHooks: AgentLifecycleHooks;
     constructor(config: TConfig, loggerComponent: string);
     /**
      * Get the agent type identifier for session serialization
@@ -1576,6 +1660,41 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
      * This is a helper that extracts definitions from enabled tools.
      */
     protected getEnabledToolDefinitions(): FunctionToolDefinition[];
+    /**
+     * Get the current lifecycle hooks configuration
+     */
+    get lifecycleHooks(): AgentLifecycleHooks;
+    /**
+     * Set or update lifecycle hooks at runtime
+     */
+    setLifecycleHooks(hooks: Partial<AgentLifecycleHooks>): void;
+    /**
+     * Invoke beforeToolExecution hook if defined.
+     * Call this before executing a tool.
+     *
+     * @throws Error if hook throws (prevents tool execution)
+     */
+    protected invokeBeforeToolExecution(context: ToolExecutionHookContext): Promise<void>;
+    /**
+     * Invoke afterToolExecution hook if defined.
+     * Call this after tool execution completes (success or failure).
+     */
+    protected invokeAfterToolExecution(result: ToolExecutionResult): Promise<void>;
+    /**
+     * Invoke beforeContextPrepare hook if defined.
+     * Call this before preparing context for LLM.
+     */
+    protected invokeBeforeContextPrepare(): Promise<void>;
+    /**
+     * Invoke afterCompaction hook if defined.
+     * Call this after context compaction occurs.
+     */
+    protected invokeAfterCompaction(log: string[], tokensFreed: number): Promise<void>;
+    /**
+     * Invoke onError hook if defined.
+     * Call this when the agent encounters an error.
+     */
+    protected invokeOnError(error: Error, phase: string): Promise<void>;
     get isDestroyed(): boolean;
     /**
      * Register a cleanup callback

@@ -13,6 +13,7 @@ import type {
   ContextBudget,
   ContextManagerConfig,
 } from '../types.js';
+import { ROLLING_WINDOW_DEFAULTS } from '../../constants.js';
 
 export interface RollingWindowOptions {
   /** Maximum number of messages to keep */
@@ -35,7 +36,7 @@ export class RollingWindowStrategy implements IContextStrategy {
     return components.map((component) => {
       // Apply rolling window to array components (e.g., conversation history)
       if (Array.isArray(component.content)) {
-        const maxMessages = this.options.maxMessages ?? 20;
+        const maxMessages = this.options.maxMessages ?? ROLLING_WINDOW_DEFAULTS.MAX_MESSAGES;
         if (component.content.length > maxMessages) {
           return {
             ...component,

@@ -28,8 +28,32 @@
 export { Connector } from './Connector.js';
 export { Agent } from './Agent.js';
 export type { AgentConfig, AgentSessionConfig } from './Agent.js';
+
+// Lifecycle hooks (from BaseAgent - not exported directly but types are useful)
+export type {
+  AgentLifecycleHooks,
+  ToolExecutionHookContext,
+  ToolExecutionResult,
+} from './BaseAgent.js';
 export { Vendor, VENDORS, isVendor } from './Vendor.js';
 export { createProvider, createProviderAsync } from './createProvider.js';
+
+// Centralized constants
+export {
+  TASK_DEFAULTS,
+  CONTEXT_DEFAULTS,
+  PROACTIVE_STRATEGY_DEFAULTS,
+  AGGRESSIVE_STRATEGY_DEFAULTS,
+  LAZY_STRATEGY_DEFAULTS,
+  ADAPTIVE_STRATEGY_DEFAULTS,
+  ROLLING_WINDOW_DEFAULTS,
+  MEMORY_DEFAULTS,
+  SESSION_DEFAULTS,
+  AGENT_DEFAULTS,
+  CIRCUIT_BREAKER_DEFAULTS,
+  HISTORY_DEFAULTS,
+  TOKEN_ESTIMATION,
+} from './constants.js';
 
 // Global configuration
 export { Config } from './Config.js';

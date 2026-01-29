@@ -18,6 +18,7 @@ import type {
 import { ProactiveCompactionStrategy } from './ProactiveStrategy.js';
 import { AggressiveCompactionStrategy } from './AggressiveStrategy.js';
 import { LazyCompactionStrategy } from './LazyStrategy.js';
+import { ADAPTIVE_STRATEGY_DEFAULTS } from '../../constants.js';
 
 export interface AdaptiveStrategyOptions {
   /** Number of compactions to learn from (default: 10) */
@@ -62,7 +63,7 @@ export class AdaptiveStrategy implements IContextStrategy {
 
     // Track compaction
     this.metrics.lastCompactions.push(Date.now());
-    const window = this.options.learningWindow ?? 10;
+    const window = this.options.learningWindow ?? ADAPTIVE_STRATEGY_DEFAULTS.LEARNING_WINDOW;
     if (this.metrics.lastCompactions.length > window) {
       this.metrics.lastCompactions.shift();
     }
@@ -94,14 +95,17 @@ export class AdaptiveStrategy implements IContextStrategy {
     }
 
     // Adapt based on patterns
-    const threshold = this.options.switchThreshold ?? 5;
+    const threshold = this.options.switchThreshold ?? ADAPTIVE_STRATEGY_DEFAULTS.SWITCH_THRESHOLD;
 
     if (this.metrics.compactionFrequency > threshold) {
       // Too frequent - switch to aggressive
       if (this.currentStrategy.name !== 'aggressive') {
         this.currentStrategy = new AggressiveCompactionStrategy();
       }
-    } else if (this.metrics.compactionFrequency < 0.5 && this.metrics.avgUtilization < 70) {
+    } else if (
+      this.metrics.compactionFrequency < ADAPTIVE_STRATEGY_DEFAULTS.LOW_FREQUENCY_THRESHOLD &&
+      this.metrics.avgUtilization < ADAPTIVE_STRATEGY_DEFAULTS.LOW_UTILIZATION_THRESHOLD
+    ) {
       // Rare compactions and low utilization - switch to lazy
       if (this.currentStrategy.name !== 'lazy') {
         this.currentStrategy = new LazyCompactionStrategy();

@@ -11,6 +11,7 @@
 
 import type { ContextBudget, ContextManagerConfig } from '../types.js';
 import { BaseCompactionStrategy } from './BaseCompactionStrategy.js';
+import { PROACTIVE_STRATEGY_DEFAULTS } from '../../constants.js';
 
 /**
  * Options for ProactiveCompactionStrategy
@@ -27,13 +28,13 @@ export interface ProactiveStrategyOptions {
 }
 
 /**
- * Default options for proactive strategy
+ * Default options for proactive strategy (from centralized constants)
  */
 const DEFAULT_OPTIONS: Required<ProactiveStrategyOptions> = {
-  targetUtilization: 0.65,
-  baseReductionFactor: 0.50,
-  reductionStep: 0.15,
-  maxRounds: 3,
+  targetUtilization: PROACTIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  baseReductionFactor: PROACTIVE_STRATEGY_DEFAULTS.BASE_REDUCTION_FACTOR,
+  reductionStep: PROACTIVE_STRATEGY_DEFAULTS.REDUCTION_STEP,
+  maxRounds: PROACTIVE_STRATEGY_DEFAULTS.MAX_ROUNDS,
 };
 
 export class ProactiveCompactionStrategy extends BaseCompactionStrategy {

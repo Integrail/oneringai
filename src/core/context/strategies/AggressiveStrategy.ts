@@ -11,6 +11,7 @@
 
 import type { ContextBudget, ContextManagerConfig } from '../types.js';
 import { BaseCompactionStrategy } from './BaseCompactionStrategy.js';
+import { AGGRESSIVE_STRATEGY_DEFAULTS } from '../../constants.js';
 
 /**
  * Options for AggressiveCompactionStrategy
@@ -25,12 +26,12 @@ export interface AggressiveStrategyOptions {
 }
 
 /**
- * Default options for aggressive strategy
+ * Default options for aggressive strategy (from centralized constants)
  */
 const DEFAULT_OPTIONS: Required<AggressiveStrategyOptions> = {
-  threshold: 0.60,
-  targetUtilization: 0.50,
-  reductionFactor: 0.30,
+  threshold: AGGRESSIVE_STRATEGY_DEFAULTS.THRESHOLD,
+  targetUtilization: AGGRESSIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  reductionFactor: AGGRESSIVE_STRATEGY_DEFAULTS.REDUCTION_FACTOR,
 };
 
 export class AggressiveCompactionStrategy extends BaseCompactionStrategy {

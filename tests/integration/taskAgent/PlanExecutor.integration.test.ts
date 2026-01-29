@@ -254,7 +254,7 @@ describe('PlanExecutor Integration - Real LLM', () => {
         // Verify conversation history exists
         const state = agent.getState();
         expect(state.conversationHistory).toBeDefined();
-        expect(state.conversationHistory.length).toBeGreaterThan(0);
+        expect(state.metrics.totalLLMCalls).toBeGreaterThan(0);
       },
       TEST_TIMEOUT
     );

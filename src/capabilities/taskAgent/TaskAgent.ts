@@ -46,6 +46,7 @@ import { createMemoryTools } from './memoryTools.js';
 import { createContextTools } from './contextTools.js';
 import { getModelInfo } from '../../domain/entities/Model.js';
 import type { AgentPermissionsConfig } from '../../core/permissions/types.js';
+import { CONTEXT_DEFAULTS } from '../../core/constants.js';
 
 /**
  * TaskAgent hooks for customization
@@ -562,7 +563,7 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
 
     // Calculate context limit from model
     const modelInfo = getModelInfo(config.model);
-    const contextTokens = modelInfo?.features.input.tokens ?? 128000;
+    const contextTokens = modelInfo?.features.input.tokens ?? CONTEXT_DEFAULTS.MAX_TOKENS;
 
     // Create unified history manager (IHistoryManager interface)
     this.historyManager = new ConversationHistoryManager({

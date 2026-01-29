@@ -11,6 +11,7 @@
 
 import type { ContextBudget, ContextManagerConfig } from '../types.js';
 import { BaseCompactionStrategy } from './BaseCompactionStrategy.js';
+import { LAZY_STRATEGY_DEFAULTS } from '../../constants.js';
 
 /**
  * Options for LazyCompactionStrategy
@@ -23,11 +24,11 @@ export interface LazyStrategyOptions {
 }
 
 /**
- * Default options for lazy strategy
+ * Default options for lazy strategy (from centralized constants)
  */
 const DEFAULT_OPTIONS: Required<LazyStrategyOptions> = {
-  targetUtilization: 0.85,
-  reductionFactor: 0.70,
+  targetUtilization: LAZY_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  reductionFactor: LAZY_STRATEGY_DEFAULTS.REDUCTION_FACTOR,
 };
 
 export class LazyCompactionStrategy extends BaseCompactionStrategy {

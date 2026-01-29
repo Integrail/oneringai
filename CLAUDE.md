@@ -669,9 +669,10 @@ src/
 ├── index.ts                          # Main exports
 ├── core/                             # Core architecture
 │   ├── index.ts                      # Core exports
+│   ├── constants.ts                  # Centralized configuration defaults
 │   ├── Vendor.ts                     # Vendor enum
 │   ├── Connector.ts                  # Connector registry
-│   ├── BaseAgent.ts                  # Abstract base class for all agents
+│   ├── BaseAgent.ts                  # Abstract base class for all agents (lifecycle hooks)
 │   ├── Agent.ts                      # Agent class (extends BaseAgent)
 │   ├── ToolManager.ts                # Unified tool management + execution (implements IToolExecutor)
 │   ├── SessionManager.ts             # Unified session persistence
@@ -684,7 +685,12 @@ src/
 │   ├── context/                      # Universal context management
 │   │   ├── ContextManager.ts         # Strategy-based context manager
 │   │   ├── types.ts                  # Core interfaces (IContextProvider, ITokenEstimator)
+│   │   ├── utils/                    # Context utilities (DRY extraction)
+│   │   │   ├── index.ts              # Utility exports
+│   │   │   └── ContextUtils.ts       # Shared functions (estimateComponentTokens, etc.)
 │   │   └── strategies/               # Compaction strategies
+│   │       ├── index.ts              # Strategy factory and exports
+│   │       ├── BaseCompactionStrategy.ts  # Abstract base for compaction strategies
 │   │       ├── ProactiveStrategy.ts
 │   │       ├── AggressiveStrategy.ts
 │   │       ├── LazyStrategy.ts
@@ -1616,6 +1622,122 @@ contextManager.estimateTokens(mixedContent, 'mixed'); // ~3.5 chars/token (defau
 
 **See:** `USER_GUIDE.md` for complete documentation.
 
+## Centralized Constants
+
+All default configuration values are centralized in `src/core/constants.ts`:
+
+```typescript
+import {
+  TASK_DEFAULTS,
+  CONTEXT_DEFAULTS,
+  PROACTIVE_STRATEGY_DEFAULTS,
+  AGGRESSIVE_STRATEGY_DEFAULTS,
+  LAZY_STRATEGY_DEFAULTS,
+  MEMORY_DEFAULTS,
+  SESSION_DEFAULTS,
+  AGENT_DEFAULTS,
+  CIRCUIT_BREAKER_DEFAULTS,
+} from '@oneringai/agents';
+
+// Example: Using constants
+const timeout = TASK_DEFAULTS.TIMEOUT_MS;           // 300_000 (5 min)
+const maxTokens = CONTEXT_DEFAULTS.MAX_TOKENS;      // 128_000
+const threshold = AGGRESSIVE_STRATEGY_DEFAULTS.THRESHOLD;  // 0.60
+```
+
+**Available Constant Groups:**
+
+| Group | Constants |
+|-------|-----------|
+| `TASK_DEFAULTS` | `TIMEOUT_MS`, `MAX_RETRIES`, `RETRY_DELAY_MS`, `MAX_CONSECUTIVE_ERRORS` |
+| `CONTEXT_DEFAULTS` | `MAX_TOKENS`, `RESPONSE_RESERVE`, `COMPACTION_THRESHOLD`, `HARD_LIMIT` |
+| `PROACTIVE_STRATEGY_DEFAULTS` | `TARGET_UTILIZATION`, `BASE_REDUCTION_FACTOR`, `REDUCTION_STEP`, `MAX_ROUNDS` |
+| `AGGRESSIVE_STRATEGY_DEFAULTS` | `THRESHOLD`, `TARGET_UTILIZATION`, `REDUCTION_FACTOR` |
+| `LAZY_STRATEGY_DEFAULTS` | `TARGET_UTILIZATION`, `REDUCTION_FACTOR` |
+| `ADAPTIVE_STRATEGY_DEFAULTS` | `LEARNING_WINDOW`, `SWITCH_THRESHOLD`, `LOW_UTILIZATION_THRESHOLD` |
+| `ROLLING_WINDOW_DEFAULTS` | `MAX_MESSAGES` |
+| `MEMORY_DEFAULTS` | `MAX_SIZE_BYTES`, `SOFT_LIMIT_PERCENT`, `DEFAULT_EVICTION_COUNT` |
+| `SESSION_DEFAULTS` | `AUTO_SAVE_INTERVAL_MS`, `MAX_SESSION_AGE_MS` |
+| `AGENT_DEFAULTS` | `MAX_ITERATIONS`, `DEFAULT_TEMPERATURE` |
+| `CIRCUIT_BREAKER_DEFAULTS` | `FAILURE_THRESHOLD`, `SUCCESS_THRESHOLD`, `RESET_TIMEOUT_MS`, `WINDOW_MS` |
+| `HISTORY_DEFAULTS` | `MAX_MESSAGES`, `PRESERVE_RECENT_COUNT`, `COMPACTION_STRATEGY` |
+| `TOKEN_ESTIMATION` | `CODE_CHARS_PER_TOKEN`, `PROSE_CHARS_PER_TOKEN`, `MIXED_CHARS_PER_TOKEN` |
+
+## Agent Lifecycle Hooks
+
+All agent types support lifecycle hooks for customization and monitoring:
+
+```typescript
+import { Agent } from '@oneringai/agents';
+import type { AgentLifecycleHooks } from '@oneringai/agents';
+
+const hooks: AgentLifecycleHooks = {
+  // Called before each tool execution
+  beforeToolExecution: async (context) => {
+    console.log(`Executing tool: ${context.toolName}`);
+    // Throw to prevent execution
+    if (context.toolName === 'dangerous_tool') {
+      throw new Error('Tool blocked by hook');
+    }
+  },
+
+  // Called after each tool execution (success or failure)
+  afterToolExecution: async (result) => {
+    console.log(`Tool ${result.toolName} completed in ${result.durationMs}ms`);
+    if (!result.success) {
+      console.error(`Tool failed: ${result.error?.message}`);
+    }
+  },
+
+  // Called before context is prepared for LLM
+  beforeContextPrepare: async (agentId) => {
+    console.log(`Preparing context for ${agentId}`);
+  },
+
+  // Called after context compaction
+  afterCompaction: async (log, tokensFreed) => {
+    console.log(`Freed ${tokensFreed} tokens:`, log);
+  },
+
+  // Called when agent encounters an error
+  onError: async (error, context) => {
+    console.error(`Error in ${context.phase}: ${error.message}`);
+    // Custom error handling, alerting, etc.
+  },
+};
+
+// Apply hooks at creation
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  lifecycleHooks: hooks,
+});
+
+// Or update at runtime
+agent.setLifecycleHooks({
+  beforeToolExecution: async (ctx) => {
+    // New hook logic
+  },
+});
+```
+
+**Hook Types:**
+
+| Hook | Called | Can Throw | Parameters |
+|------|--------|-----------|------------|
+| `beforeToolExecution` | Before tool runs | Yes (blocks execution) | `{ toolName, args, agentId, taskId? }` |
+| `afterToolExecution` | After tool completes | No (logged only) | `{ toolName, result, durationMs, success, error? }` |
+| `beforeContextPrepare` | Before LLM context prep | No (logged only) | `agentId` |
+| `afterCompaction` | After context compaction | No (logged only) | `log[], tokensFreed` |
+| `onError` | When error occurs | No (logged only) | `error, { phase, agentId }` |
+
+**Use Cases:**
+- **Logging/Monitoring**: Track tool executions, measure performance
+- **Rate Limiting**: Control tool call frequency via `beforeToolExecution`
+- **Security**: Block certain tools or arguments
+- **Alerting**: Notify external systems on errors
+- **Metrics**: Collect execution statistics
+
 ## Task Agents
 
 TaskAgents provide autonomous execution with:
@@ -2205,53 +2327,57 @@ These are handled internally and don't require manual implementation.
 
 ### Core Architecture
 1. `src/core/Connector.ts` - Connector registry (auth single source of truth)
-2. `src/core/BaseAgent.ts` - Abstract base class for all agents (shared functionality)
-3. `src/core/Agent.ts` - Agent class (extends BaseAgent)
-4. `src/core/ToolManager.ts` - Unified tool management + execution (implements IToolExecutor, circuit breaker)
-5. `src/core/SessionManager.ts` - Unified session persistence
-6. `src/core/Vendor.ts` - Vendor enum
+2. `src/core/constants.ts` - Centralized configuration defaults (all default values)
+3. `src/core/BaseAgent.ts` - Abstract base class for all agents (lifecycle hooks, tool methods)
+4. `src/core/Agent.ts` - Agent class (extends BaseAgent)
+5. `src/core/ToolManager.ts` - Unified tool management + execution (implements IToolExecutor, circuit breaker)
+6. `src/core/SessionManager.ts` - Unified session persistence
+7. `src/core/Vendor.ts` - Vendor enum
 
 ### Provider Factories
-7. `src/core/createProvider.ts` - Provider factory (text)
-8. `src/core/createAudioProvider.ts` - Provider factory (audio)
-9. `src/core/createImageProvider.ts` - Provider factory (image)
-10. `src/core/createVideoProvider.ts` - Provider factory (video)
+8. `src/core/createProvider.ts` - Provider factory (text)
+9. `src/core/createAudioProvider.ts` - Provider factory (audio)
+10. `src/core/createImageProvider.ts` - Provider factory (image)
+11. `src/core/createVideoProvider.ts` - Provider factory (video)
 
 ### Audio Capabilities
-11. `src/core/TextToSpeech.ts` - TTS capability class
-12. `src/core/SpeechToText.ts` - STT capability class
+12. `src/core/TextToSpeech.ts` - TTS capability class
+13. `src/core/SpeechToText.ts` - STT capability class
 
 ### Context & History Management
-13. `src/core/context/` - Universal context management (ContextManager, strategies)
-14. `src/core/history/ConversationHistoryManager.ts` - IHistoryManager implementation
+14. `src/core/context/ContextManager.ts` - Strategy-based context manager
+15. `src/core/context/utils/ContextUtils.ts` - Shared utilities (estimateComponentTokens, etc.)
+16. `src/core/context/strategies/BaseCompactionStrategy.ts` - Abstract base for all compaction strategies
+17. `src/core/context/strategies/` - Strategy implementations (Proactive, Aggressive, Lazy, etc.)
+18. `src/core/history/ConversationHistoryManager.ts` - IHistoryManager implementation
 
 ### Domain Layer
-15. `src/domain/entities/Model.ts` - LLM model registry (23+ models)
-16. `src/domain/entities/TTSModel.ts` - TTS model registry
-17. `src/domain/entities/STTModel.ts` - STT model registry
-18. `src/domain/entities/ImageModel.ts` - Image model registry
-19. `src/domain/entities/VideoModel.ts` - Video model registry (6 models)
-20. `src/domain/entities/Memory.ts` - Memory entities, scopes, priorities, utilities
-21. `src/domain/entities/Services.ts` - External service definitions (35+ services)
-22. `src/domain/interfaces/IHistoryManager.ts` - History manager interface
-23. `src/domain/interfaces/IToolExecutor.ts` - Tool executor interface
+19. `src/domain/entities/Model.ts` - LLM model registry (23+ models)
+20. `src/domain/entities/TTSModel.ts` - TTS model registry
+21. `src/domain/entities/STTModel.ts` - STT model registry
+22. `src/domain/entities/ImageModel.ts` - Image model registry
+23. `src/domain/entities/VideoModel.ts` - Video model registry (6 models)
+24. `src/domain/entities/Memory.ts` - Memory entities, scopes, priorities, utilities
+25. `src/domain/entities/Services.ts` - External service definitions (35+ services)
+26. `src/domain/interfaces/IHistoryManager.ts` - History manager interface
+27. `src/domain/interfaces/IToolExecutor.ts` - Tool executor interface
 
 ### Capabilities
-24. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
-25. `src/capabilities/taskAgent/` - Task agent (WorkingMemory, PlanExecutor)
-26. `src/capabilities/universalAgent/` - Universal agent
-27. `src/capabilities/images/` - Image generation capability
-28. `src/capabilities/video/` - Video generation capability
+28. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
+29. `src/capabilities/taskAgent/` - Task agent (WorkingMemory, PlanExecutor)
+30. `src/capabilities/universalAgent/` - Universal agent
+31. `src/capabilities/images/` - Image generation capability
+32. `src/capabilities/video/` - Video generation capability
 
 ### Tools
-29. `src/tools/connector/ConnectorTools.ts` - Connector-based tools for external APIs
-30. `src/tools/filesystem/` - File system tools (read, write, edit, glob, grep)
-31. `src/tools/shell/` - Shell execution tools (bash)
+33. `src/tools/connector/ConnectorTools.ts` - Connector-based tools for external APIs
+34. `src/tools/filesystem/` - File system tools (read, write, edit, glob, grep)
+35. `src/tools/shell/` - Shell execution tools (bash)
 
 ### Infrastructure
-32. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
-33. `src/infrastructure/context/` - Context strategies, compactors, providers
-34. `src/infrastructure/storage/` - Session and data storage
+36. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
+37. `src/infrastructure/context/` - Context compactors, estimators, providers
+38. `src/infrastructure/storage/` - Session and data storage
 
 ---
 

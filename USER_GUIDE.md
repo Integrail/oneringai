@@ -16,8 +16,16 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 5. [Agent Features](#agent-features)
 6. [Session Persistence](#session-persistence)
 7. [Universal Agent](#universal-agent)
-8. [Task Agents](#task-agents)
-9. [Context Management](#context-management)
+8. [Task Agents](#task-agents) **ENHANCED**
+   - Task Priorities
+   - Fulfillment Criteria
+   - PlanExecutor Internals
+   - Advanced Configuration
+9. [Context Management](#context-management) **ENHANCED**
+   - Strategy Deep Dive (Proactive, Aggressive, Lazy, Rolling Window, Adaptive)
+   - Custom Strategies
+   - Token Estimation
+   - Lifecycle Hooks
 10. [Tools & Function Calling](#tools--function-calling)
 11. [Dynamic Tool Management](#dynamic-tool-management)
 12. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
@@ -1174,12 +1182,40 @@ agent.toolManager.enable('risky_tool');
 
 ## Task Agents
 
-TaskAgents are **autonomous agents** that execute complex, multi-step plans with:
-- **Working Memory** - Store and retrieve data across tasks
-- **Context Management** - Automatic handling of context limits
-- **External Dependencies** - Wait for webhooks, polling, manual input
-- **State Persistence** - Resume after crashes or long waits
-- **Tool Idempotency** - Prevent duplicate side effects
+TaskAgents are **autonomous agents** that execute complex, multi-step plans with full control over execution order, priorities, and fulfillment criteria. They represent the most powerful way to build sophisticated AI workflows.
+
+### Core Capabilities
+
+- **Working Memory** - Indexed key-value store with scopes and priorities
+- **Context Management** - Automatic handling via configurable strategies
+- **Task Priorities** - Control execution order with priority levels
+- **Fulfillment Criteria** - Define exactly when a task is considered complete
+- **External Dependencies** - Wait for webhooks, polling, manual input, schedules
+- **State Persistence** - Resume after crashes, restarts, or long waits
+- **Tool Idempotency** - Prevent duplicate side effects with caching
+- **Lifecycle Hooks** - Intercept and customize execution at every stage
+- **Dynamic Plans** - Modify plans during execution with safety validation
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        TaskAgent                             │
+│  - Orchestrates plan execution                              │
+│  - Manages working memory                                   │
+│  - Handles context management                               │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+         ┌──────────────────┼──────────────────┐
+         │                  │                  │
+         ▼                  ▼                  ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│  PlanExecutor   │ │ WorkingMemory   │ │ ContextManager  │
+│  - Task queue   │ │ - Scoped store  │ │ - Token mgmt    │
+│  - Dependencies │ │ - Eviction      │ │ - Compaction    │
+│  - Priorities   │ │ - Persistence   │ │ - Strategies    │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+```
 
 ### Basic Task Agent
 
@@ -1211,7 +1247,7 @@ const handle = await agent.start({
     {
       name: 'send_notification',
       description: 'Email the user with weather info',
-      dependsOn: ['fetch_weather'], // Run after fetch_weather
+      dependsOn: ['fetch_weather'], // Run after fetch_weather completes
     },
   ],
 });
@@ -1220,6 +1256,49 @@ const handle = await agent.start({
 const result = await handle.wait();
 console.log(`Status: ${result.status}`);
 console.log(`Completed ${result.metrics.completedTasks}/${result.metrics.totalTasks} tasks`);
+```
+
+### Complete Task Configuration
+
+Every task supports a rich set of configuration options:
+
+```typescript
+interface TaskConfig {
+  // Identity
+  id?: string;               // Auto-generated if not provided
+  name: string;              // Required: human-readable name
+  description: string;       // Required: what the task should accomplish
+
+  // Execution Control
+  dependsOn?: string[];      // Task IDs/names that must complete first
+  priority?: TaskPriority;   // 'low' | 'normal' | 'high' | 'critical'
+
+  // Fulfillment
+  fulfillmentCriteria?: FulfillmentCriteria;  // When is the task "done"?
+
+  // Conditions
+  condition?: TaskCondition; // Skip task based on memory values
+
+  // Parallelism
+  execution?: {
+    parallel?: boolean;      // Can run in parallel with others
+    exclusive?: boolean;     // Must run alone (no other parallel tasks)
+  };
+
+  // External Dependencies
+  externalDependency?: ExternalDependency;  // Webhook, poll, manual, scheduled
+
+  // Retry & Timeout
+  retryConfig?: {
+    maxRetries: number;      // Max retry attempts (default: 3)
+    retryDelayMs: number;    // Delay between retries (default: 1000)
+    backoffMultiplier?: number;  // Exponential backoff (default: 2)
+  };
+  timeoutMs?: number;        // Task timeout (default: 300000 = 5 min)
+
+  // Metadata
+  metadata?: Record<string, unknown>;  // Custom data for hooks/tracking
+}
 ```
 
 ### Task Dependencies
@@ -1259,6 +1338,8 @@ await agent.start({
 
 #### Conditional Tasks
 
+Tasks can be conditionally skipped based on memory values:
+
 ```typescript
 await agent.start({
   goal: 'Process with approval',
@@ -1283,6 +1364,408 @@ await agent.start({
   ],
 });
 ```
+
+**Available Condition Operators:**
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `equals` | Exact match | `{ memoryKey: 'status', operator: 'equals', value: 'approved' }` |
+| `notEquals` | Not equal | `{ memoryKey: 'status', operator: 'notEquals', value: 'rejected' }` |
+| `greaterThan` | Greater than (numbers) | `{ memoryKey: 'amount', operator: 'greaterThan', value: 1000 }` |
+| `lessThan` | Less than (numbers) | `{ memoryKey: 'count', operator: 'lessThan', value: 5 }` |
+| `contains` | String/array contains | `{ memoryKey: 'tags', operator: 'contains', value: 'urgent' }` |
+| `exists` | Key exists in memory | `{ memoryKey: 'user.session', operator: 'exists' }` |
+| `notExists` | Key doesn't exist | `{ memoryKey: 'error', operator: 'notExists' }` |
+| `truthy` | Value is truthy | `{ memoryKey: 'isEnabled', operator: 'truthy' }` |
+| `falsy` | Value is falsy | `{ memoryKey: 'isDisabled', operator: 'falsy' }` |
+
+**Condition Actions (`onFalse`):**
+- `'skip'` - Skip the task, mark as `skipped` status
+- `'fail'` - Fail the task, may halt execution
+- `'wait'` - Wait and re-evaluate condition later
+
+---
+
+### Task Priorities
+
+Priorities control the execution order when multiple tasks are ready to run. This is crucial for optimizing workflows and ensuring critical tasks complete first.
+
+#### Priority Levels
+
+```typescript
+type TaskPriority = 'low' | 'normal' | 'high' | 'critical';
+
+// Priority values (higher = executed first)
+// critical: 4
+// high: 3
+// normal: 2 (default)
+// low: 1
+```
+
+#### Using Priorities
+
+```typescript
+await agent.start({
+  goal: 'Process customer requests',
+  tasks: [
+    // Critical: Security-related, always first
+    {
+      name: 'validate_auth',
+      description: 'Validate authentication token',
+      priority: 'critical',
+    },
+
+    // High: Customer-facing, important
+    {
+      name: 'fetch_customer',
+      description: 'Fetch customer data',
+      priority: 'high',
+      dependsOn: ['validate_auth'],
+    },
+
+    // Normal: Standard processing
+    {
+      name: 'update_analytics',
+      description: 'Update analytics dashboard',
+      priority: 'normal',  // Default
+      dependsOn: ['validate_auth'],
+    },
+
+    // Low: Can wait, background work
+    {
+      name: 'cleanup_temp',
+      description: 'Clean up temporary files',
+      priority: 'low',
+    },
+  ],
+});
+```
+
+#### Priority + Dependencies
+
+Priorities work **within** dependency constraints:
+
+```typescript
+await agent.start({
+  goal: 'Multi-stage pipeline',
+  tasks: [
+    // Stage 1: All can run, ordered by priority
+    { name: 'critical_check', priority: 'critical' },  // Runs 1st
+    { name: 'normal_fetch', priority: 'normal' },      // Runs 2nd
+    { name: 'low_log', priority: 'low' },              // Runs 3rd
+
+    // Stage 2: Only runs after Stage 1, then by priority
+    {
+      name: 'high_process',
+      priority: 'high',
+      dependsOn: ['critical_check', 'normal_fetch'],
+    },  // Runs 4th
+
+    {
+      name: 'low_archive',
+      priority: 'low',
+      dependsOn: ['critical_check'],
+    },  // Runs 5th (after critical_check, low priority)
+  ],
+});
+```
+
+#### Parallel Execution with Priorities
+
+When running parallel tasks, priority determines which tasks start first:
+
+```typescript
+await agent.start({
+  goal: 'Parallel data fetch',
+  concurrency: { maxParallelTasks: 2, strategy: 'priority' },  // Priority-based selection
+  tasks: [
+    { name: 'vip_users', priority: 'critical', execution: { parallel: true } },
+    { name: 'regular_users', priority: 'normal', execution: { parallel: true } },
+    { name: 'archived_users', priority: 'low', execution: { parallel: true } },
+  ],
+});
+
+// With maxParallelTasks: 2:
+// Round 1: vip_users (critical) + regular_users (normal)
+// Round 2: archived_users (low) after one completes
+```
+
+**Concurrency Strategies:**
+- `'priority'` - Higher priority tasks selected first
+- `'fifo'` - First-in-first-out (order defined)
+- `'lifo'` - Last-in-first-out
+
+---
+
+### Fulfillment Criteria
+
+Fulfillment criteria define exactly when a task is considered "complete". This provides fine-grained control over task success validation.
+
+#### Default Behavior
+
+By default, a task is fulfilled when:
+1. The agent produces a non-error response
+2. No exception is thrown during execution
+
+#### Custom Fulfillment Criteria
+
+```typescript
+interface FulfillmentCriteria {
+  // What to check
+  type: 'memory' | 'tool_result' | 'output_contains' | 'custom';
+
+  // Memory-based fulfillment
+  memoryKey?: string;           // Key must exist in memory
+  memoryValue?: unknown;        // Key must have this value
+  memoryOperator?: ConditionOperator;  // Comparison operator
+
+  // Tool result-based fulfillment
+  toolName?: string;            // This tool must have been called
+  toolResultContains?: string;  // Tool result must contain this
+  toolResultPath?: string;      // JSON path in result to check
+  toolResultValue?: unknown;    // Expected value at path
+
+  // Output-based fulfillment
+  outputContains?: string[];    // Agent output must contain these strings
+
+  // Custom validation function
+  customValidator?: (context: TaskExecutionContext) => boolean | Promise<boolean>;
+
+  // Retry behavior
+  retryOnUnfulfilled?: boolean;  // Retry if criteria not met (default: true)
+  maxFulfillmentRetries?: number;  // Max retries for fulfillment (default: 3)
+}
+```
+
+#### Memory-Based Fulfillment
+
+Task completes only when specific data is stored in memory:
+
+```typescript
+{
+  name: 'fetch_user',
+  description: 'Fetch user profile from API',
+  fulfillmentCriteria: {
+    type: 'memory',
+    memoryKey: 'user.profile',  // Must store data at this key
+  },
+}
+
+// More specific: value must match
+{
+  name: 'verify_email',
+  description: 'Verify user email',
+  fulfillmentCriteria: {
+    type: 'memory',
+    memoryKey: 'email.verified',
+    memoryValue: true,
+  },
+}
+
+// With operator
+{
+  name: 'collect_responses',
+  description: 'Collect at least 5 survey responses',
+  fulfillmentCriteria: {
+    type: 'memory',
+    memoryKey: 'responses.count',
+    memoryOperator: 'greaterThan',
+    memoryValue: 4,  // > 4 means >= 5
+  },
+}
+```
+
+#### Tool Result-Based Fulfillment
+
+Task completes only when a specific tool is called with expected results:
+
+```typescript
+{
+  name: 'send_email',
+  description: 'Send confirmation email to user',
+  fulfillmentCriteria: {
+    type: 'tool_result',
+    toolName: 'send_email',
+    toolResultPath: 'status',
+    toolResultValue: 'sent',
+  },
+}
+
+// Check for specific content in result
+{
+  name: 'search_database',
+  description: 'Search for matching records',
+  fulfillmentCriteria: {
+    type: 'tool_result',
+    toolName: 'db_query',
+    toolResultContains: 'found',  // Result string contains "found"
+  },
+}
+```
+
+#### Output-Based Fulfillment
+
+Task completes only when the agent's response contains specific content:
+
+```typescript
+{
+  name: 'explain_result',
+  description: 'Explain the analysis results to the user',
+  fulfillmentCriteria: {
+    type: 'output_contains',
+    outputContains: ['summary', 'recommendation'],
+    // Agent must mention both "summary" and "recommendation"
+  },
+}
+```
+
+#### Custom Fulfillment Validator
+
+For complex validation logic, use a custom function:
+
+```typescript
+{
+  name: 'complex_validation',
+  description: 'Perform complex multi-step validation',
+  fulfillmentCriteria: {
+    type: 'custom',
+    customValidator: async (context) => {
+      // Access memory
+      const data = await context.memory.get('validation.data');
+      if (!data) return false;
+
+      // Check multiple conditions
+      const hasAllFields = data.name && data.email && data.phone;
+      const isValidEmail = data.email?.includes('@');
+      const hasConsent = data.consent === true;
+
+      // Log validation result
+      if (!hasAllFields || !isValidEmail || !hasConsent) {
+        console.log('Validation failed:', { hasAllFields, isValidEmail, hasConsent });
+        return false;
+      }
+
+      // Check tool was called
+      const toolCalls = context.getToolCalls();
+      const validationToolCalled = toolCalls.some(
+        tc => tc.name === 'validate_user' && tc.result?.valid === true
+      );
+
+      return validationToolCalled;
+    },
+    retryOnUnfulfilled: true,
+    maxFulfillmentRetries: 5,
+  },
+}
+```
+
+#### Combining Fulfillment with Retry
+
+```typescript
+import { TASK_DEFAULTS } from '@oneringai/agents';
+
+{
+  name: 'reliable_api_call',
+  description: 'Call external API with reliability guarantees',
+
+  // Retry configuration
+  retryConfig: {
+    maxRetries: TASK_DEFAULTS.MAX_RETRIES,  // 3
+    retryDelayMs: TASK_DEFAULTS.RETRY_DELAY_MS,  // 1000
+    backoffMultiplier: 2,  // Exponential backoff
+  },
+
+  // Fulfillment criteria
+  fulfillmentCriteria: {
+    type: 'memory',
+    memoryKey: 'api.response',
+    memoryOperator: 'exists',
+    retryOnUnfulfilled: true,
+    maxFulfillmentRetries: 3,  // Additional retries if criteria not met
+  },
+
+  // Timeout
+  timeoutMs: 30000,  // 30 second timeout per attempt
+}
+```
+
+#### Real-World Example: E-Commerce Order
+
+```typescript
+await agent.start({
+  goal: 'Process e-commerce order #12345',
+  tasks: [
+    {
+      name: 'validate_order',
+      description: 'Validate order details and inventory',
+      priority: 'critical',
+      fulfillmentCriteria: {
+        type: 'memory',
+        memoryKey: 'order.validated',
+        memoryValue: true,
+      },
+    },
+    {
+      name: 'charge_payment',
+      description: 'Charge customer payment method',
+      priority: 'critical',
+      dependsOn: ['validate_order'],
+      fulfillmentCriteria: {
+        type: 'tool_result',
+        toolName: 'stripe_charge',
+        toolResultPath: 'status',
+        toolResultValue: 'succeeded',
+      },
+      retryConfig: { maxRetries: 3, retryDelayMs: 2000 },
+    },
+    {
+      name: 'reserve_inventory',
+      description: 'Reserve items in warehouse',
+      priority: 'high',
+      dependsOn: ['charge_payment'],
+      fulfillmentCriteria: {
+        type: 'memory',
+        memoryKey: 'inventory.reserved',
+        memoryOperator: 'truthy',
+      },
+    },
+    {
+      name: 'create_shipment',
+      description: 'Create shipping label and schedule pickup',
+      priority: 'high',
+      dependsOn: ['reserve_inventory'],
+      fulfillmentCriteria: {
+        type: 'custom',
+        customValidator: async (ctx) => {
+          const shipment = await ctx.memory.get('shipment.details');
+          return shipment?.trackingNumber && shipment?.labelUrl;
+        },
+      },
+    },
+    {
+      name: 'send_confirmation',
+      description: 'Email order confirmation to customer',
+      priority: 'normal',
+      dependsOn: ['create_shipment'],
+      fulfillmentCriteria: {
+        type: 'tool_result',
+        toolName: 'send_email',
+        toolResultPath: 'delivered',
+        toolResultValue: true,
+      },
+    },
+    {
+      name: 'update_analytics',
+      description: 'Update sales analytics',
+      priority: 'low',
+      dependsOn: ['charge_payment'],
+      // No fulfillment criteria - default behavior
+    },
+  ],
+});
+```
+
+---
 
 ### Working Memory
 
@@ -1902,11 +2385,330 @@ agent.on('agent:completed', ({ result }) => {
 });
 ```
 
+### PlanExecutor Internals
+
+Understanding how the PlanExecutor works helps you build more efficient workflows.
+
+#### Execution Loop
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                     PlanExecutor Loop                       │
+├────────────────────────────────────────────────────────────┤
+│  1. Check for ready tasks (dependencies met, not blocked)  │
+│  2. Sort by priority (critical → high → normal → low)      │
+│  3. Execute tasks (respect concurrency limits)             │
+│  4. Check fulfillment criteria                             │
+│  5. Update task status and dependencies                    │
+│  6. Handle failures (retry, skip, or fail plan)            │
+│  7. Clean up task-scoped memory entries                    │
+│  8. Repeat until all tasks complete or plan fails          │
+└────────────────────────────────────────────────────────────┘
+```
+
+#### Task State Machine
+
+```
+                    ┌──────────┐
+                    │ pending  │
+                    └────┬─────┘
+                         │
+           ┌─────────────┼─────────────┐
+           │             │             │
+           ▼             ▼             ▼
+    ┌──────────┐  ┌───────────┐  ┌──────────┐
+    │  waiting │  │in_progress│  │  skipped │
+    └────┬─────┘  └─────┬─────┘  └──────────┘
+         │              │
+         │   ┌──────────┼──────────┐
+         │   │          │          │
+         ▼   ▼          ▼          ▼
+    ┌──────────┐  ┌──────────┐  ┌──────────┐
+    │in_progress│  │completed │  │  failed  │
+    └──────────┘  └──────────┘  └──────────┘
+```
+
+#### Configuration Constants
+
+```typescript
+import {
+  TASK_DEFAULTS,
+  CONTEXT_DEFAULTS,
+  MEMORY_DEFAULTS,
+  HISTORY_DEFAULTS,
+} from '@oneringai/agents';
+
+// Task execution defaults
+console.log(TASK_DEFAULTS);
+// {
+//   TIMEOUT_MS: 300_000,      // 5 minutes per task
+//   MAX_RETRIES: 3,           // Retry failed tasks 3 times
+//   RETRY_DELAY_MS: 1_000,    // 1 second between retries
+//   MAX_CONSECUTIVE_ERRORS: 3, // Fail plan after 3 consecutive errors
+// }
+
+// Context management defaults
+console.log(CONTEXT_DEFAULTS);
+// {
+//   MAX_TOKENS: 128_000,      // Default context window
+//   RESPONSE_RESERVE: 0.15,   // Reserve 15% for response
+//   COMPACTION_THRESHOLD: 0.75, // Compact at 75%
+//   HARD_LIMIT: 0.90,         // Must compact before 90%
+// }
+
+// Memory defaults
+console.log(MEMORY_DEFAULTS);
+// {
+//   MAX_SIZE_BYTES: 1_048_576, // 1MB
+//   SOFT_LIMIT_PERCENT: 80,    // Warn at 80%
+// }
+
+// History defaults
+console.log(HISTORY_DEFAULTS);
+// {
+//   MAX_ENTRIES: 1000,        // Max conversation turns
+//   TRUNCATE_AT: 800,         // Truncate when exceeding
+// }
+```
+
+### Advanced Plan Configuration
+
+```typescript
+await agent.start({
+  // Plan identity
+  goal: 'Complete complex workflow',
+  metadata: {
+    requestId: 'req-12345',
+    userId: 'user-789',
+    environment: 'production',
+  },
+
+  // Execution control
+  concurrency: {
+    maxParallelTasks: 3,     // Run up to 3 tasks in parallel
+    strategy: 'priority',    // priority | fifo | lifo
+  },
+
+  // Error handling
+  errorHandling: {
+    maxConsecutiveErrors: 3,  // Fail plan after N consecutive errors
+    onTaskFailure: 'continue', // continue | skip_dependent | fail_plan
+    retryStrategy: 'exponential', // fixed | exponential | none
+  },
+
+  // Timeout configuration
+  timeoutConfig: {
+    planTimeoutMs: 3600000,   // 1 hour max for entire plan
+    taskTimeoutMs: 300000,    // 5 minutes per task (default)
+    idleTimeoutMs: 60000,     // Fail if idle for 1 minute
+  },
+
+  // Context management
+  contextConfig: {
+    strategy: 'adaptive',
+    maxContextTokens: 128000,
+    compactionThreshold: 0.75,
+  },
+
+  // Memory configuration
+  memoryConfig: {
+    maxSizeBytes: 2 * 1024 * 1024, // 2MB
+    softLimitPercent: 80,
+    evictionStrategy: 'lru',  // lru | size | priority
+  },
+
+  // Task definitions
+  tasks: [
+    // ... task configurations
+  ],
+});
+```
+
+### Debugging TaskAgents
+
+```typescript
+// Enable verbose logging
+const agent = TaskAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [myTool],
+  debug: {
+    logLevel: 'verbose',      // silent | error | warn | info | verbose
+    logToolCalls: true,
+    logMemoryOps: true,
+    logContextBudget: true,
+  },
+});
+
+// Get detailed execution state
+const state = agent.getState();
+console.log('Plan status:', state.plan.status);
+console.log('Current task:', state.currentTask?.name);
+console.log('Completed tasks:', state.completedTasks.map(t => t.name));
+console.log('Failed tasks:', state.failedTasks.map(t => t.name));
+console.log('Memory entries:', state.memory.length);
+console.log('Context usage:', state.contextUsage);
+
+// Inspect task execution history
+const history = agent.getExecutionHistory();
+history.forEach(entry => {
+  console.log(`[${entry.timestamp}] ${entry.taskName}: ${entry.event}`);
+  if (entry.details) console.log('  Details:', entry.details);
+});
+
+// Force compaction for testing
+await agent.forceCompaction('Testing compaction behavior');
+
+// Get memory dump
+const memoryDump = await agent.dumpMemory();
+console.log('Memory contents:', JSON.stringify(memoryDump, null, 2));
+```
+
+### Best Practices for TaskAgents
+
+#### 1. Design Tasks with Clear Boundaries
+
+```typescript
+// BAD: Vague, multi-purpose task
+{
+  name: 'process_data',
+  description: 'Process all the data and do stuff with it',
+}
+
+// GOOD: Clear, single-responsibility tasks
+{
+  name: 'fetch_user_data',
+  description: 'Fetch user profile from /api/users/:id and store in memory as user.profile',
+  fulfillmentCriteria: { type: 'memory', memoryKey: 'user.profile' },
+}
+```
+
+#### 2. Use Priorities Strategically
+
+```typescript
+// Critical: Security, validation, must-not-fail
+// High: Customer-facing, time-sensitive
+// Normal: Standard business logic
+// Low: Analytics, cleanup, nice-to-have
+
+await agent.start({
+  tasks: [
+    { name: 'validate_auth', priority: 'critical' },  // Always first
+    { name: 'charge_card', priority: 'critical' },    // Money matters
+    { name: 'send_receipt', priority: 'high' },       // Customer expects it
+    { name: 'update_inventory', priority: 'normal' }, // Important but can wait
+    { name: 'log_analytics', priority: 'low' },       // Background work
+  ],
+});
+```
+
+#### 3. Set Appropriate Timeouts
+
+```typescript
+{
+  // API call: short timeout
+  name: 'fetch_api',
+  timeoutMs: 30000,  // 30 seconds
+
+  // LLM analysis: medium timeout
+  name: 'analyze_data',
+  timeoutMs: 120000,  // 2 minutes
+
+  // External process: long timeout
+  name: 'generate_report',
+  timeoutMs: 600000,  // 10 minutes
+}
+```
+
+#### 4. Use Memory Scopes Correctly
+
+```typescript
+// Task-scoped: Temporary data for specific tasks
+await memory.set('temp.calculation', 'Intermediate result', value, {
+  scope: { type: 'task', taskIds: ['calculate', 'validate'] },
+  priority: 'normal',
+});
+
+// Plan-scoped: Shared across all tasks in this plan
+await memory.set('plan.config', 'Plan configuration', config, {
+  scope: { type: 'plan' },
+  priority: 'high',
+});
+
+// Persistent: Survives plan completion (for multi-session state)
+await memory.set('user.preferences', 'User preferences', prefs, {
+  scope: { type: 'persistent' },
+  priority: 'critical',
+  pinned: true,
+});
+```
+
+#### 5. Handle External Dependencies Gracefully
+
+```typescript
+{
+  name: 'wait_for_payment',
+  externalDependency: {
+    type: 'webhook',
+    webhookId: `payment-${orderId}`,
+    timeoutMs: 86400000,  // 24 hours
+    state: 'waiting',
+  },
+  // Define what happens on timeout
+  onTimeout: 'skip',  // or 'fail' or 'retry'
+
+  // Alternative: fallback task
+  fallbackTask: 'send_payment_reminder',
+}
+```
+
+#### 6. Monitor in Production
+
+```typescript
+// Set up comprehensive monitoring
+agent.on('task:complete', async ({ task, result, duration }) => {
+  await metrics.histogram('task.duration', duration, { task: task.name });
+  await metrics.increment('task.completed', { task: task.name });
+});
+
+agent.on('task:failed', async ({ task, error, retryCount }) => {
+  await metrics.increment('task.failed', { task: task.name });
+  if (retryCount >= 3) {
+    await alerts.error(`Task ${task.name} failed after ${retryCount} retries`);
+  }
+});
+
+agent.on('memory:evicted', async ({ keys, reason }) => {
+  await metrics.increment('memory.eviction', { count: keys.length, reason });
+});
+
+agent.on('agent:completed', async ({ result, metrics: planMetrics }) => {
+  await monitoring.record({
+    planId: result.planId,
+    status: result.status,
+    duration: planMetrics.totalDuration,
+    tasksCompleted: planMetrics.completedTasks,
+    tasksFailed: planMetrics.failedTasks,
+    tokensUsed: planMetrics.totalTokens,
+  });
+});
+```
+
 ---
 
 ## Context Management
 
-The library includes a universal context management system that works with any agent type.
+The library includes a **powerful, universal context management system** that automatically handles the complexity of managing LLM context windows across all agent types. This section covers everything from basic automatic management to advanced custom strategies.
+
+### Why Context Management Matters
+
+LLMs have fixed context windows (e.g., 128K tokens for GPT-4, 200K for Claude). As conversations grow, you must:
+- **Track usage** to avoid hitting limits
+- **Prioritize content** (instructions vs history vs memory)
+- **Compact intelligently** when approaching limits
+- **Preserve critical information** while freeing space
+
+The context management system handles all of this automatically.
 
 ### Basic Context Management
 
@@ -1923,11 +2725,37 @@ const agent = TaskAgent.create({
 });
 
 // Agent will automatically:
-// 1. Track context usage
-// 2. Compact when approaching limits
-// 3. Evict memory when needed
-// 4. Truncate tool outputs
-// 5. Summarize history
+// 1. Track context usage across all components
+// 2. Compact when approaching limits (using the chosen strategy)
+// 3. Evict low-priority memory entries when needed
+// 4. Truncate long tool outputs
+// 5. Summarize older conversation history
+// 6. Emit events for monitoring
+```
+
+### Architecture Overview
+
+The context management system consists of several layers:
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  ContextManager                      │
+│  - Orchestrates preparation and compaction          │
+│  - Manages strategy selection and switching         │
+│  - Emits events for monitoring                      │
+└─────────────────┬───────────────────────────────────┘
+                  │
+    ┌─────────────┼─────────────┐
+    │             │             │
+    ▼             ▼             ▼
+┌─────────┐ ┌──────────┐ ┌───────────────┐
+│ Strategy│ │Compactors│ │Context Provider│
+│ (when)  │ │ (how)    │ │ (what)         │
+└─────────┘ └──────────┘ └───────────────┘
+
+Strategy: Decides WHEN to compact (proactive, aggressive, lazy, etc.)
+Compactors: Decides HOW to compact (truncate, summarize, evict)
+Provider: Provides WHAT content goes into context
 ```
 
 ### Manual Context Management
@@ -1941,220 +2769,651 @@ import {
   ApproximateTokenEstimator,
   TruncateCompactor,
   MemoryEvictionCompactor,
+  SummarizeCompactor,
 } from '@oneringai/agents';
 
-// Create context provider
+// Create context provider (supplies context components)
 const provider = new TaskAgentContextProvider({
   model: 'gpt-4',
-  instructions: 'Your instructions',
+  instructions: 'Your system instructions',
   plan: yourPlan,
   memory: workingMemory,
   historyManager: historyManager,
-  currentInput: 'Current task',
+  currentInput: 'Current task description',
 });
 
-// Create estimator
+// Create token estimator
 const estimator = new ApproximateTokenEstimator();
 
-// Create compactors
+// Create compactors (applied in order during compaction)
 const compactors = [
-  new TruncateCompactor(estimator),
-  new MemoryEvictionCompactor(estimator),
+  new TruncateCompactor(estimator),        // First: truncate long outputs
+  new MemoryEvictionCompactor(estimator),  // Second: evict low-priority memory
+  new SummarizeCompactor(estimator),       // Third: summarize history
 ];
 
-// Create context manager with strategy
+// Create context manager with full configuration
 const contextManager = new ContextManager(
   provider,
   {
-    maxContextTokens: 128000,
-    compactionThreshold: 0.75,  // Compact at 75%
-    hardLimit: 0.9,             // Must compact before 90%
-    responseReserve: 0.15,      // Reserve 15% for response
-    autoCompact: true,
-    strategy: 'proactive',      // Compaction strategy
+    maxContextTokens: 128000,    // Model's context window
+    compactionThreshold: 0.75,  // Trigger compaction at 75%
+    hardLimit: 0.90,            // Must compact before 90%
+    responseReserve: 0.15,      // Reserve 15% for response tokens
+    autoCompact: true,          // Automatically compact when needed
+    strategy: 'proactive',      // Default compaction strategy
   },
   compactors,
   estimator
 );
 
-// Use before LLM call
+// Prepare context before each LLM call
 const prepared = await contextManager.prepare();
 console.log(`Context: ${prepared.budget.used}/${prepared.budget.total} tokens`);
+console.log(`Utilization: ${prepared.budget.utilizationPercent.toFixed(1)}%`);
 
-// Make LLM call
-const response = await agent.run(input);
+// Use prepared.components for LLM call
+const messages = prepared.components.map(c => c.content);
 ```
 
-### Context Strategies
+### Context Strategies Deep Dive
 
-Five built-in strategies for different use cases:
+The library provides **five built-in strategies**, each optimized for different use cases. Understanding how each works internally helps you choose the right one.
 
-#### 1. Proactive (Default)
+#### Strategy Comparison Table
 
-Balanced approach for general use:
+| Strategy | Compact Threshold | Target Utilization | Best For | Overhead |
+|----------|-------------------|-------------------|----------|----------|
+| **Proactive** | 75% | 65% | General purpose | Medium |
+| **Aggressive** | 60% | 45% | Long conversations | Higher |
+| **Lazy** | 90% | 85% | Short tasks, high-context models | Low |
+| **Rolling Window** | Never | N/A (fixed messages) | Real-time, streaming | Minimal |
+| **Adaptive** | Dynamic | Dynamic | Production, varied workloads | Medium |
+
+---
+
+#### 1. Proactive Strategy (Default)
+
+**When to use:** General-purpose agents, balanced workloads, most common scenarios.
+
+**How it works internally:**
+1. Monitors context utilization continuously
+2. Triggers compaction when utilization exceeds 75%
+3. Targets 65% utilization after compaction
+4. Uses incremental reduction (50% base + 15% per round)
+5. Maximum 3 compaction rounds per prepare cycle
 
 ```typescript
+import { PROACTIVE_STRATEGY_DEFAULTS } from '@oneringai/agents';
+
+// Default configuration values
+console.log(PROACTIVE_STRATEGY_DEFAULTS);
+// {
+//   TARGET_UTILIZATION: 0.65,
+//   BASE_REDUCTION_FACTOR: 0.50,
+//   REDUCTION_STEP: 0.15,
+//   MAX_ROUNDS: 3,
+// }
+
+// Using proactive strategy
 const contextManager = new ContextManager(provider, {
   strategy: 'proactive',
-  compactionThreshold: 0.75,  // Compact at 75%
+  compactionThreshold: 0.75,  // Compact at 75% (default)
 }, compactors, estimator);
 
-// Best for: General purpose agents
+// Proactive is predictable: you know compaction happens at 75%
+// Good balance between context preservation and headroom
 ```
 
-#### 2. Aggressive
+**Metrics tracked:**
+```typescript
+const metrics = contextManager.getStrategyMetrics();
+// {
+//   compactionCount: 5,
+//   totalTokensFreed: 45000,
+//   averageTokensFreed: 9000,
+//   lastCompactionTime: 1706540400000,
+// }
+```
 
-Early compaction for long-running agents:
+---
+
+#### 2. Aggressive Strategy
+
+**When to use:** Long-running agents, limited context models, conversations that grow rapidly.
+
+**How it works internally:**
+1. Triggers compaction earlier (60% threshold)
+2. Targets much lower utilization (45%)
+3. More aggressive reduction per round
+4. Keeps maximum headroom for new content
 
 ```typescript
+import { AGGRESSIVE_STRATEGY_DEFAULTS } from '@oneringai/agents';
+
+console.log(AGGRESSIVE_STRATEGY_DEFAULTS);
+// {
+//   TARGET_UTILIZATION: 0.45,
+//   THRESHOLD: 0.60,
+//   BASE_REDUCTION_FACTOR: 0.40,
+//   REDUCTION_STEP: 0.20,
+//   MAX_ROUNDS: 4,
+// }
+
 const contextManager = new ContextManager(provider, {
   strategy: 'aggressive',
   strategyOptions: {
-    threshold: 0.55,  // Compact at 55%
-    target: 0.45,     // Target 45% utilization
+    threshold: 0.55,  // Even earlier (optional override)
+    target: 0.40,     // Even lower target (optional override)
   },
 }, compactors, estimator);
 
-// Best for: Long conversations, limited context
+// Best for:
+// - 24/7 support bots with long conversations
+// - Research agents that accumulate lots of data
+// - Models with smaller context windows (8K-32K)
 ```
 
-#### 3. Lazy
+**Trade-offs:**
+- **Pro:** Maximum headroom, never hits limits
+- **Pro:** Predictable memory usage
+- **Con:** More frequent compaction = more LLM calls for summarization
+- **Con:** May lose more context earlier than necessary
 
-Minimal compaction, preserve context:
+---
+
+#### 3. Lazy Strategy
+
+**When to use:** Short tasks, high-context models (128K+), when context preservation is critical.
+
+**How it works internally:**
+1. Delays compaction as long as possible (90% threshold)
+2. Only compacts when absolutely necessary
+3. Targets 85% utilization (minimal reduction)
+4. Preserves maximum context for complex reasoning
 
 ```typescript
+import { LAZY_STRATEGY_DEFAULTS } from '@oneringai/agents';
+
+console.log(LAZY_STRATEGY_DEFAULTS);
+// {
+//   TARGET_UTILIZATION: 0.85,
+//   THRESHOLD: 0.90,
+//   BASE_REDUCTION_FACTOR: 0.10,
+//   REDUCTION_STEP: 0.05,
+//   MAX_ROUNDS: 2,
+// }
+
 const contextManager = new ContextManager(provider, {
   strategy: 'lazy',
 }, compactors, estimator);
 
-// Best for: High-context models, short tasks
-// Only compacts when critical (>90%)
+// Best for:
+// - Code analysis requiring full file context
+// - Complex reasoning tasks
+// - Models with 128K+ context (GPT-4 Turbo, Claude)
+// - Tasks that complete in < 20 turns
 ```
 
-#### 4. Rolling Window
+**Trade-offs:**
+- **Pro:** Maximum context preservation
+- **Pro:** Minimal compaction overhead
+- **Con:** Risk of hitting hard limit if task runs long
+- **Con:** Sudden compaction can be disruptive
 
-Fixed-size window, no compaction overhead:
+---
+
+#### 4. Rolling Window Strategy
+
+**When to use:** Real-time agents, streaming conversations, chat interfaces.
+
+**How it works internally:**
+1. **Never triggers compaction** (returns `shouldCompact: false`)
+2. Simply keeps the last N messages
+3. Old messages are dropped (not summarized)
+4. Zero compaction overhead
 
 ```typescript
+import { ROLLING_WINDOW_DEFAULTS } from '@oneringai/agents';
+
+console.log(ROLLING_WINDOW_DEFAULTS);
+// {
+//   MAX_MESSAGES: 20,
+//   MAX_TOKENS_PER_COMPONENT: 10000,
+// }
+
 const contextManager = new ContextManager(provider, {
   strategy: 'rolling-window',
   strategyOptions: {
-    maxMessages: 20,  // Keep last 20 messages only
+    maxMessages: 30,  // Keep last 30 messages
+    maxTokensPerComponent: 15000,  // Cap per component
   },
 }, compactors, estimator);
 
-// Best for: Real-time agents, streaming conversations
+// Best for:
+// - Customer service chatbots
+// - Real-time assistants
+// - When recent context matters most
+// - High-throughput scenarios
 ```
 
-#### 5. Adaptive
+**Implementation detail:**
+```typescript
+// The strategy handles windowing in prepareComponents()
+async prepareComponents(components: IContextComponent[]): Promise<IContextComponent[]> {
+  return components.map((component) => {
+    if (Array.isArray(component.content)) {
+      const maxMessages = this.options.maxMessages ?? 20;
+      if (component.content.length > maxMessages) {
+        return {
+          ...component,
+          content: component.content.slice(-maxMessages),
+          metadata: {
+            ...component.metadata,
+            windowed: true,
+            originalLength: component.content.length,
+            keptLength: maxMessages,
+          },
+        };
+      }
+    }
+    return component;
+  });
+}
+```
 
-Learns and adapts based on usage:
+**Trade-offs:**
+- **Pro:** Zero compaction overhead
+- **Pro:** Predictable memory usage
+- **Pro:** Fastest performance
+- **Con:** No long-term memory (older context lost)
+- **Con:** Not suitable for tasks requiring full history
+
+---
+
+#### 5. Adaptive Strategy
+
+**When to use:** Production systems, varied workloads, when you want automatic optimization.
+
+**How it works internally:**
+1. Monitors compaction frequency over time
+2. Automatically switches between strategies based on load:
+   - High compaction rate → switches to aggressive
+   - Low compaction rate → switches to lazy
+   - Moderate rate → stays proactive
+3. Learns optimal thresholds from usage patterns
 
 ```typescript
+import { ADAPTIVE_STRATEGY_DEFAULTS } from '@oneringai/agents';
+
+console.log(ADAPTIVE_STRATEGY_DEFAULTS);
+// {
+//   LEARNING_WINDOW: 50,        // Track last 50 compactions
+//   SWITCH_THRESHOLD: 5,        // Switch if > 5 compactions/min
+//   HYSTERESIS_FACTOR: 0.2,     // Prevent rapid switching
+//   MIN_SAMPLES: 10,            // Min samples before switching
+// }
+
 const contextManager = new ContextManager(provider, {
   strategy: 'adaptive',
   strategyOptions: {
-    learningWindow: 50,     // Learn from last 50 compactions
-    switchThreshold: 5,     // Switch if >5 compactions/min
+    learningWindow: 100,   // Learn from more history
+    switchThreshold: 3,    // Switch sooner
   },
 }, compactors, estimator);
 
-// Best for: Production systems, varied workloads
-// Automatically switches between proactive/aggressive/lazy
+// Monitor automatic switching
+contextManager.on('strategy_switched', ({ from, to, reason }) => {
+  console.log(`Adaptive: ${from} → ${to}`);
+  console.log(`Reason: ${reason}`);
+  // Example: "Adaptive: proactive → aggressive"
+  // Reason: "High compaction frequency (8/min > 5/min threshold)"
+});
+```
+
+**Adaptive decision logic:**
+```typescript
+// Simplified internal logic
+decideStrategy(metrics: AdaptiveMetrics): StrategyName {
+  const compactionsPerMinute = metrics.recentCompactions / metrics.windowMinutes;
+
+  if (compactionsPerMinute > this.switchThreshold) {
+    return 'aggressive';  // Too many compactions, be more aggressive
+  } else if (compactionsPerMinute < this.switchThreshold / 3) {
+    return 'lazy';        // Few compactions, can be lazy
+  }
+  return 'proactive';     // Moderate load, stay balanced
+}
+```
+
+**Trade-offs:**
+- **Pro:** Self-optimizing for your workload
+- **Pro:** Handles varying load patterns
+- **Con:** Takes time to learn (min samples required)
+- **Con:** More complex behavior to debug
+
+---
+
+### Creating Custom Strategies
+
+For specialized use cases, implement `IContextStrategy`:
+
+```typescript
+import {
+  IContextStrategy,
+  IContextComponent,
+  IContextCompactor,
+  ITokenEstimator,
+  ContextBudget,
+  ContextManagerConfig,
+  BaseCompactionStrategy,  // Use this for easier implementation
+} from '@oneringai/agents';
+
+// Option 1: Implement from scratch
+class TimeBasedStrategy implements IContextStrategy {
+  readonly name = 'time-based';
+
+  shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean {
+    const hour = new Date().getHours();
+    const isBusinessHours = hour >= 9 && hour <= 17;
+
+    // More aggressive during peak hours
+    const threshold = isBusinessHours ? 0.60 : 0.85;
+    return budget.utilizationPercent > threshold * 100;
+  }
+
+  async prepareComponents(components: IContextComponent[]): Promise<IContextComponent[]> {
+    return components; // No modification
+  }
+
+  async compact(
+    components: IContextComponent[],
+    budget: ContextBudget,
+    compactors: IContextCompactor[],
+    estimator: ITokenEstimator
+  ): Promise<{ components: IContextComponent[]; log: string[]; tokensFreed: number }> {
+    // Your compaction logic
+    const hour = new Date().getHours();
+    const targetUtilization = hour >= 9 && hour <= 17 ? 0.45 : 0.75;
+
+    // ... implement compaction
+    return { components, log: ['Time-based compaction'], tokensFreed: 0 };
+  }
+}
+
+// Option 2: Extend BaseCompactionStrategy (recommended)
+// This gives you the template method pattern with shared logic
+class PriorityAwareStrategy extends BaseCompactionStrategy {
+  readonly name = 'priority-aware';
+
+  shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean {
+    // Check if high-priority content is at risk
+    const highPriorityRatio = this.calculateHighPriorityRatio(budget);
+    return budget.utilizationPercent > 70 && highPriorityRatio < 0.5;
+  }
+
+  calculateTargetSize(beforeSize: number, round: number): number {
+    // Reduce by 30% each round, preserving high-priority content
+    return Math.floor(beforeSize * (0.7 - round * 0.1));
+  }
+
+  getTargetUtilization(): number {
+    return 0.55;
+  }
+
+  protected getMaxRounds(): number {
+    return 4;
+  }
+
+  private calculateHighPriorityRatio(budget: ContextBudget): number {
+    // Custom logic to assess high-priority content ratio
+    return 0.6; // Example
+  }
+}
+
+// Use your custom strategy
+const contextManager = new ContextManager(
+  provider,
+  { strategy: 'custom' }, // Will be ignored, strategy instance used
+  compactors,
+  estimator,
+  new PriorityAwareStrategy()  // Pass as 5th argument
+);
 ```
 
 ### Runtime Strategy Switching
+
+Switch strategies dynamically based on task requirements:
 
 ```typescript
 const contextManager = new ContextManager(provider, {
   strategy: 'proactive',
 }, compactors, estimator);
 
-// Start with proactive
-await contextManager.prepare();
+// Phase 1: Quick exploration (use lazy)
+contextManager.setStrategy('lazy');
+await agent.run('Explore the codebase structure');
 
-// Switch to aggressive for intensive task
+// Phase 2: Deep analysis (use proactive)
+contextManager.setStrategy('proactive');
+await agent.run('Analyze all error handling patterns');
+
+// Phase 3: Long-running task (use aggressive)
 contextManager.setStrategy('aggressive');
-await contextManager.prepare();
+await agent.run('Refactor all 50 API endpoints');
 
-// Switch to adaptive for auto-optimization
+// Phase 4: Production deployment (use adaptive)
 contextManager.setStrategy('adaptive');
-await contextManager.prepare();
-
-// Monitor strategy changes
-contextManager.on('strategy_switched', ({ from, to, reason }) => {
-  console.log(`Strategy: ${from} → ${to} (${reason})`);
-});
+// Let it self-optimize for production traffic
 ```
 
-### Monitoring Context
+### Token Estimation
+
+The `ApproximateTokenEstimator` provides content-type-aware estimation:
 
 ```typescript
-// Get current budget
+import { ApproximateTokenEstimator } from '@oneringai/agents';
+
+const estimator = new ApproximateTokenEstimator();
+
+// Basic estimation (mixed content assumed)
+const tokens1 = estimator.estimateTokens('Hello, world!');
+
+// Content-type-aware estimation for better accuracy
+const codeTokens = estimator.estimateTokens(sourceCode, 'code');    // ~3 chars/token
+const proseTokens = estimator.estimateTokens(essay, 'prose');       // ~4 chars/token
+const mixedTokens = estimator.estimateTokens(readme, 'mixed');      // ~3.5 chars/token
+
+// Estimate structured data
+const dataTokens = estimator.estimateDataTokens({ users: [...], config: {...} });
+```
+
+**Why content type matters:**
+- Code has more special characters and shorter words → fewer chars/token
+- Prose has longer words and punctuation → more chars/token
+- Accurate estimation prevents over/under-compaction
+
+### Context Budget Monitoring
+
+```typescript
+// Get current budget snapshot
 const budget = contextManager.getCurrentBudget();
 if (budget) {
-  console.log(`Used: ${budget.used}/${budget.total} tokens`);
+  console.log(`Total tokens: ${budget.total}`);
+  console.log(`Used tokens: ${budget.used}`);
+  console.log(`Available: ${budget.available}`);
   console.log(`Utilization: ${budget.utilizationPercent.toFixed(1)}%`);
-  console.log(`Status: ${budget.status}`); // 'ok', 'warning', 'critical'
+  console.log(`Status: ${budget.status}`); // 'ok' | 'warning' | 'critical'
+  console.log(`Reserved for response: ${budget.reservedForResponse}`);
 }
 
-// Listen to events
-contextManager.on('budget_warning', ({ budget }) => {
-  console.log(`⚠️ Context at ${budget.utilizationPercent}%`);
+// Comprehensive event monitoring
+contextManager.on('budget_warning', ({ budget, threshold }) => {
+  console.log(`Warning: Context at ${budget.utilizationPercent}% (threshold: ${threshold}%)`);
 });
 
 contextManager.on('budget_critical', ({ budget }) => {
-  console.error(`🚨 Context critical: ${budget.utilizationPercent}%`);
+  console.error(`CRITICAL: Context at ${budget.utilizationPercent}% - compaction required`);
 });
 
-contextManager.on('compacting', ({ reason, strategy }) => {
-  console.log(`Compacting: ${reason} (${strategy})`);
+contextManager.on('compacting', ({ reason, strategy, currentUsage }) => {
+  console.log(`Compacting: ${reason}`);
+  console.log(`Strategy: ${strategy}`);
+  console.log(`Current usage: ${currentUsage} tokens`);
 });
 
-contextManager.on('compacted', ({ log, tokensFreed }) => {
+contextManager.on('compacted', ({ log, tokensFreed, newUsage, rounds }) => {
+  console.log(`Compaction complete in ${rounds} rounds`);
   console.log(`Freed ${tokensFreed} tokens`);
-  log.forEach(entry => console.log(`  ${entry}`));
+  console.log(`New usage: ${newUsage} tokens`);
+  log.forEach(entry => console.log(`  - ${entry}`));
 });
 
-// Get strategy metrics
+// Strategy-specific metrics
 const metrics = contextManager.getStrategyMetrics();
 console.log('Strategy metrics:', metrics);
+// {
+//   compactionCount: 12,
+//   totalTokensFreed: 156000,
+//   averageTokensFreed: 13000,
+//   lastCompactionTime: 1706540400000,
+//   // Additional strategy-specific metrics...
+// }
 ```
 
-### Custom Strategies
+### Agent Lifecycle Hooks for Context
 
-Create custom compaction strategies:
+Use lifecycle hooks to integrate context management with your application:
 
 ```typescript
-import { IContextStrategy, IContextComponent, ContextBudget } from '@oneringai/agents';
+import { AgentLifecycleHooks } from '@oneringai/agents';
 
-class BusinessHoursStrategy implements IContextStrategy {
-  readonly name = 'business-hours';
+const hooks: AgentLifecycleHooks = {
+  // Called before context is prepared for LLM call
+  beforeContextPrepare: async (agentId) => {
+    console.log(`[${agentId}] Preparing context...`);
+    // Could switch strategy based on task type
+  },
 
-  shouldCompact(budget: ContextBudget): boolean {
-    const hour = new Date().getHours();
-    const isBusinessHours = hour >= 9 && hour <= 17;
+  // Called after compaction completes
+  afterCompaction: async (log, tokensFreed) => {
+    // Log to monitoring system
+    await monitoring.record({
+      event: 'context_compaction',
+      tokensFreed,
+      logEntries: log,
+    });
 
-    // More aggressive during business hours
-    return isBusinessHours
-      ? budget.utilizationPercent > 60
-      : budget.utilizationPercent > 85;
-  }
+    console.log(`Compaction freed ${tokensFreed} tokens`);
+  },
 
-  async compact(components, budget, compactors, estimator) {
-    // Your custom compaction logic
-    return { components, log: [], tokensFreed: 0 };
-  }
-}
+  // Called before each tool execution
+  beforeToolExecution: async (context) => {
+    const budget = context.contextManager?.getCurrentBudget();
+    if (budget && budget.utilizationPercent > 80) {
+      console.warn(`High context usage before tool: ${budget.utilizationPercent}%`);
+    }
+  },
 
-// Use custom strategy
-const contextManager = new ContextManager(
-  provider,
-  {},
-  compactors,
-  estimator,
-  new BusinessHoursStrategy()
-);
+  // Called after tool execution
+  afterToolExecution: async (result) => {
+    // Could trigger compaction if tool output was large
+    if (result.output && JSON.stringify(result.output).length > 10000) {
+      console.log('Large tool output detected');
+    }
+  },
+
+  // Error handling
+  onError: async (error, context) => {
+    if (context.phase === 'context_preparation') {
+      console.error('Context preparation failed:', error);
+      // Could fall back to aggressive strategy
+    }
+  },
+};
+
+// Apply hooks to agent
+agent.setLifecycleHooks(hooks);
+```
+
+### Best Practices for Context Management
+
+#### 1. Choose the Right Strategy
+
+```typescript
+// Short tasks, plenty of context → Lazy
+const shortTask = TaskAgent.create({
+  contextConfig: { strategy: 'lazy' },
+});
+
+// Long conversations → Aggressive
+const chatBot = TaskAgent.create({
+  contextConfig: { strategy: 'aggressive' },
+});
+
+// Production with varied load → Adaptive
+const productionAgent = TaskAgent.create({
+  contextConfig: { strategy: 'adaptive' },
+});
+
+// Real-time streaming → Rolling Window
+const streamingAgent = TaskAgent.create({
+  contextConfig: {
+    strategy: 'rolling-window',
+    strategyOptions: { maxMessages: 50 },
+  },
+});
+```
+
+#### 2. Monitor in Production
+
+```typescript
+// Set up comprehensive monitoring
+contextManager.on('compacted', async ({ tokensFreed, newUsage }) => {
+  await metrics.gauge('context.tokens_freed', tokensFreed);
+  await metrics.gauge('context.usage', newUsage);
+});
+
+contextManager.on('strategy_switched', async ({ from, to, reason }) => {
+  await metrics.increment('context.strategy_switch', { from, to });
+  await alerts.info(`Context strategy: ${from} → ${to} (${reason})`);
+});
+
+contextManager.on('budget_critical', async ({ budget }) => {
+  await alerts.warn(`Context critical: ${budget.utilizationPercent}%`);
+});
+```
+
+#### 3. Use Content-Type Hints
+
+```typescript
+// When storing code in memory, hint the estimator
+const codeTokens = estimator.estimateTokens(sourceCode, 'code');
+
+// Store with accurate size tracking
+await memory.set('source.code', 'Source code', sourceCode, {
+  metadata: { contentType: 'code', estimatedTokens: codeTokens },
+});
+```
+
+#### 4. Plan for Compaction
+
+```typescript
+// Structure data for efficient compaction
+// BAD: Single large object
+await memory.set('all.data', 'All data', hugeObject, { priority: 'normal' });
+
+// GOOD: Split by importance
+await memory.set('data.critical', 'Critical data', criticalPart, {
+  priority: 'critical',
+  pinned: true,
+});
+await memory.set('data.important', 'Important data', importantPart, {
+  priority: 'high',
+});
+await memory.set('data.cache', 'Cached data', cachePart, {
+  priority: 'low',  // Evicted first
+});
 ```
 
 ---

@@ -22,9 +22,10 @@ import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { CheckpointManager } from './CheckpointManager.js';
 import type { TaskAgentHooks, TaskContext, ErrorContext } from './TaskAgent.js';
 import { extractJSON, extractNumber } from '../../utils/jsonExtractor.js';
+import { TASK_DEFAULTS } from '../../core/constants.js';
 
-/** Default task timeout: 5 minutes */
-const DEFAULT_TASK_TIMEOUT_MS = 300000;
+/** Default task timeout (from centralized constants) */
+const DEFAULT_TASK_TIMEOUT_MS = TASK_DEFAULTS.TIMEOUT_MS;
 
 export interface PlanExecutorConfig {
   maxIterations: number;

@@ -3751,6 +3751,7 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
   _isDestroyed = false;
   _cleanupCallbacks = [];
   _logger;
+  _lifecycleHooks;
   // ===== Constructor =====
   constructor(config, loggerComponent) {
     super();
@@ -3766,6 +3767,7 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
     });
     this._toolManager = this.initializeToolManager(config.toolManager, config.tools);
     this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
+    this._lifecycleHooks = config.lifecycleHooks ?? {};
   }
   /**
    * Prepare session state before saving.
@@ -4030,6 +4032,102 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
    */
   getEnabledToolDefinitions() {
     return this._toolManager.getEnabled().map((t) => t.definition);
+  }
+  // ===== Lifecycle Hooks =====
+  /**
+   * Get the current lifecycle hooks configuration
+   */
+  get lifecycleHooks() {
+    return this._lifecycleHooks;
+  }
+  /**
+   * Set or update lifecycle hooks at runtime
+   */
+  setLifecycleHooks(hooks) {
+    this._lifecycleHooks = { ...this._lifecycleHooks, ...hooks };
+  }
+  /**
+   * Invoke beforeToolExecution hook if defined.
+   * Call this before executing a tool.
+   *
+   * @throws Error if hook throws (prevents tool execution)
+   */
+  async invokeBeforeToolExecution(context) {
+    if (this._lifecycleHooks.beforeToolExecution) {
+      try {
+        await this._lifecycleHooks.beforeToolExecution(context);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message, toolName: context.toolName },
+          "beforeToolExecution hook failed"
+        );
+        throw error;
+      }
+    }
+  }
+  /**
+   * Invoke afterToolExecution hook if defined.
+   * Call this after tool execution completes (success or failure).
+   */
+  async invokeAfterToolExecution(result) {
+    if (this._lifecycleHooks.afterToolExecution) {
+      try {
+        await this._lifecycleHooks.afterToolExecution(result);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message, toolName: result.toolName },
+          "afterToolExecution hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke beforeContextPrepare hook if defined.
+   * Call this before preparing context for LLM.
+   */
+  async invokeBeforeContextPrepare() {
+    if (this._lifecycleHooks.beforeContextPrepare) {
+      try {
+        await this._lifecycleHooks.beforeContextPrepare(this.name);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message },
+          "beforeContextPrepare hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke afterCompaction hook if defined.
+   * Call this after context compaction occurs.
+   */
+  async invokeAfterCompaction(log, tokensFreed) {
+    if (this._lifecycleHooks.afterCompaction) {
+      try {
+        await this._lifecycleHooks.afterCompaction(log, tokensFreed);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message, tokensFreed },
+          "afterCompaction hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke onError hook if defined.
+   * Call this when the agent encounters an error.
+   */
+  async invokeOnError(error, phase) {
+    if (this._lifecycleHooks.onError) {
+      try {
+        await this._lifecycleHooks.onError(error, { phase, agentId: this.name });
+      } catch (hookError) {
+        this._logger.error(
+          { error: hookError.message, originalError: error.message, phase },
+          "onError hook failed"
+        );
+      }
+    }
   }
   // ===== Lifecycle =====
   get isDestroyed() {
@@ -10062,6 +10160,52 @@ var Agent = class _Agent extends BaseAgent {
     }
   }
 };
+
+// src/core/constants.ts
+var TASK_DEFAULTS = {
+  /** Default timeout for task execution in milliseconds (5 minutes) */
+  TIMEOUT_MS: 3e5};
+var CONTEXT_DEFAULTS = {
+  /** Default maximum context tokens (128K) */
+  MAX_TOKENS: 128e3};
+var PROACTIVE_STRATEGY_DEFAULTS = {
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.65,
+  /** Base reduction factor for round 1 */
+  BASE_REDUCTION_FACTOR: 0.5,
+  /** Reduction step per round (more aggressive each round) */
+  REDUCTION_STEP: 0.15,
+  /** Maximum compaction rounds */
+  MAX_ROUNDS: 3
+};
+var AGGRESSIVE_STRATEGY_DEFAULTS = {
+  /** Threshold to trigger compaction */
+  THRESHOLD: 0.6,
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.5,
+  /** Reduction factor (keep 30% of original) */
+  REDUCTION_FACTOR: 0.3
+};
+var LAZY_STRATEGY_DEFAULTS = {
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.85,
+  /** Reduction factor (keep 70% of original) */
+  REDUCTION_FACTOR: 0.7
+};
+var ADAPTIVE_STRATEGY_DEFAULTS = {
+  /** Number of compactions to learn from */
+  LEARNING_WINDOW: 10,
+  /** Compactions per minute threshold to switch to aggressive */
+  SWITCH_THRESHOLD: 5,
+  /** Low utilization threshold to switch to lazy */
+  LOW_UTILIZATION_THRESHOLD: 70,
+  /** Low frequency threshold to switch to lazy */
+  LOW_FREQUENCY_THRESHOLD: 0.5
+};
+var ROLLING_WINDOW_DEFAULTS = {
+  /** Default maximum messages to keep */
+  MAX_MESSAGES: 20
+};
 (class {
   static DEFAULT_PATHS = [
     "./oneringai.config.json",
@@ -15036,10 +15180,10 @@ var BaseCompactionStrategy = class {
 
 // src/core/context/strategies/ProactiveStrategy.ts
 var DEFAULT_OPTIONS = {
-  targetUtilization: 0.65,
-  baseReductionFactor: 0.5,
-  reductionStep: 0.15,
-  maxRounds: 3
+  targetUtilization: PROACTIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  baseReductionFactor: PROACTIVE_STRATEGY_DEFAULTS.BASE_REDUCTION_FACTOR,
+  reductionStep: PROACTIVE_STRATEGY_DEFAULTS.REDUCTION_STEP,
+  maxRounds: PROACTIVE_STRATEGY_DEFAULTS.MAX_ROUNDS
 };
 var ProactiveCompactionStrategy = class extends BaseCompactionStrategy {
   name = "proactive";
@@ -15068,9 +15212,9 @@ var ProactiveCompactionStrategy = class extends BaseCompactionStrategy {
 
 // src/core/context/strategies/AggressiveStrategy.ts
 var DEFAULT_OPTIONS2 = {
-  threshold: 0.6,
-  targetUtilization: 0.5,
-  reductionFactor: 0.3
+  threshold: AGGRESSIVE_STRATEGY_DEFAULTS.THRESHOLD,
+  targetUtilization: AGGRESSIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  reductionFactor: AGGRESSIVE_STRATEGY_DEFAULTS.REDUCTION_FACTOR
 };
 var AggressiveCompactionStrategy = class extends BaseCompactionStrategy {
   name = "aggressive";
@@ -15096,8 +15240,8 @@ var AggressiveCompactionStrategy = class extends BaseCompactionStrategy {
 
 // src/core/context/strategies/LazyStrategy.ts
 var DEFAULT_OPTIONS3 = {
-  targetUtilization: 0.85,
-  reductionFactor: 0.7
+  targetUtilization: LAZY_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  reductionFactor: LAZY_STRATEGY_DEFAULTS.REDUCTION_FACTOR
 };
 var LazyCompactionStrategy = class extends BaseCompactionStrategy {
   name = "lazy";
@@ -15132,7 +15276,7 @@ var RollingWindowStrategy = class {
   async prepareComponents(components) {
     return components.map((component) => {
       if (Array.isArray(component.content)) {
-        const maxMessages = this.options.maxMessages ?? 20;
+        const maxMessages = this.options.maxMessages ?? ROLLING_WINDOW_DEFAULTS.MAX_MESSAGES;
         if (component.content.length > maxMessages) {
           return {
             ...component,
@@ -15175,7 +15319,7 @@ var AdaptiveStrategy = class {
   async compact(components, budget, compactors, estimator) {
     const result = await this.currentStrategy.compact(components, budget, compactors, estimator);
     this.metrics.lastCompactions.push(Date.now());
-    const window = this.options.learningWindow ?? 10;
+    const window = this.options.learningWindow ?? ADAPTIVE_STRATEGY_DEFAULTS.LEARNING_WINDOW;
     if (this.metrics.lastCompactions.length > window) {
       this.metrics.lastCompactions.shift();
     }
@@ -15197,12 +15341,12 @@ var AdaptiveStrategy = class {
         this.metrics.compactionFrequency = this.metrics.lastCompactions.length / timeSpan * 6e4;
       }
     }
-    const threshold = this.options.switchThreshold ?? 5;
+    const threshold = this.options.switchThreshold ?? ADAPTIVE_STRATEGY_DEFAULTS.SWITCH_THRESHOLD;
     if (this.metrics.compactionFrequency > threshold) {
       if (this.currentStrategy.name !== "aggressive") {
         this.currentStrategy = new AggressiveCompactionStrategy();
       }
-    } else if (this.metrics.compactionFrequency < 0.5 && this.metrics.avgUtilization < 70) {
+    } else if (this.metrics.compactionFrequency < ADAPTIVE_STRATEGY_DEFAULTS.LOW_FREQUENCY_THRESHOLD && this.metrics.avgUtilization < ADAPTIVE_STRATEGY_DEFAULTS.LOW_UTILIZATION_THRESHOLD) {
       if (this.currentStrategy.name !== "lazy") {
         this.currentStrategy = new LazyCompactionStrategy();
       }
@@ -16644,7 +16788,7 @@ function extractNumber(text, patterns = [
 }
 
 // src/capabilities/taskAgent/PlanExecutor.ts
-var DEFAULT_TASK_TIMEOUT_MS = 3e5;
+var DEFAULT_TASK_TIMEOUT_MS = TASK_DEFAULTS.TIMEOUT_MS;
 var PlanExecutor = class extends eventemitter3.EventEmitter {
   agent;
   memory;
@@ -17931,7 +18075,7 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
       permissions: config.permissions
     });
     const modelInfo = getModelInfo(config.model);
-    const contextTokens = modelInfo?.features.input.tokens ?? 128e3;
+    const contextTokens = modelInfo?.features.input.tokens ?? CONTEXT_DEFAULTS.MAX_TOKENS;
     this.historyManager = new ConversationHistoryManager({
       maxMessages: 50,
       maxTokens: Math.floor(contextTokens * 0.3),

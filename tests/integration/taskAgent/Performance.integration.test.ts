@@ -84,12 +84,11 @@ describe('Performance Integration', () => {
 
         // Verify token metrics exist and are reasonable
         const state = agent.getState();
-        expect(state.metrics.totalInputTokens).toBeGreaterThan(0);
-        expect(state.metrics.totalOutputTokens).toBeGreaterThan(0);
+        expect(state.metrics.totalTokensUsed).toBeGreaterThan(0);
+        expect(state.metrics.totalLLMCalls).toBeGreaterThan(0);
 
         console.log('Token usage:', {
-          inputTokens: state.metrics.totalInputTokens,
-          outputTokens: state.metrics.totalOutputTokens,
+          totalTokens: state.metrics.totalTokensUsed,
           llmCalls: state.metrics.totalLLMCalls,
         });
       },
@@ -128,7 +127,7 @@ describe('Performance Integration', () => {
         expect(result.status).toBe('completed');
 
         const state = agent.getState();
-        const totalTokens = state.metrics.totalInputTokens + state.metrics.totalOutputTokens;
+        const totalTokens = state.metrics.totalTokensUsed;
 
         // Should have accumulated significant tokens
         expect(totalTokens).toBeGreaterThan(100);
@@ -171,21 +170,18 @@ describe('Performance Integration', () => {
         expect(result.status).toBe('completed');
 
         const state = agent.getState();
-        const inputTokens = state.metrics.totalInputTokens;
-        const outputTokens = state.metrics.totalOutputTokens;
+        const totalTokens = state.metrics.totalTokensUsed;
+        const actualCost = state.metrics.totalCost;
 
-        // Calculate expected cost using MODEL_REGISTRY
-        const expectedCost = calculateCost(OPENAI_MODEL, inputTokens, outputTokens);
-
-        console.log('Cost calculation:', {
-          inputTokens,
-          outputTokens,
-          expectedCost: `$${expectedCost.toFixed(6)}`,
+        console.log('Cost tracking:', {
+          totalTokens,
+          actualCost: `$${actualCost.toFixed(6)}`,
         });
 
-        // Cost should be reasonable for mini model (very cheap)
-        expect(expectedCost).toBeLessThan(0.01); // Less than 1 cent
-        expect(expectedCost).toBeGreaterThan(0);
+        // Cost should be tracked and reasonable for mini model (very cheap)
+        expect(actualCost).toBeGreaterThan(0);
+        expect(actualCost).toBeLessThan(0.01); // Less than 1 cent
+        expect(totalTokens).toBeGreaterThan(0);
       },
       TEST_TIMEOUT
     );
@@ -220,15 +216,12 @@ describe('Performance Integration', () => {
         expect(result.status).toBe('completed');
 
         const state = agent.getState();
-        const totalCost = calculateCost(
-          OPENAI_MODEL,
-          state.metrics.totalInputTokens,
-          state.metrics.totalOutputTokens
-        );
+        const totalCost = state.metrics.totalCost;
 
         console.log('Total cost:', {
           tasks: result.metrics.completedTasks,
           cost: `$${totalCost.toFixed(6)}`,
+          tokens: state.metrics.totalTokensUsed,
         });
 
         expect(totalCost).toBeGreaterThan(0);
@@ -265,7 +258,7 @@ describe('Performance Integration', () => {
 
         const state1 = agent.getState();
         const calls1 = state1.metrics.totalLLMCalls;
-        const tokens1 = state1.metrics.totalInputTokens + state1.metrics.totalOutputTokens;
+        const tokens1 = state1.metrics.totalTokensUsed;
 
         // Second run (resume)
         await agent.updatePlan({
@@ -276,7 +269,7 @@ describe('Performance Integration', () => {
 
         const state2 = agent.getState();
         const calls2 = state2.metrics.totalLLMCalls;
-        const tokens2 = state2.metrics.totalInputTokens + state2.metrics.totalOutputTokens;
+        const tokens2 = state2.metrics.totalTokensUsed;
 
         // Metrics should have accumulated
         expect(calls2).toBeGreaterThan(calls1);
@@ -403,9 +396,7 @@ describe('Performance Integration', () => {
         expect(result.status).toBe('completed');
 
         const state = agent.getState();
-        const avgTokensPerCall =
-          (state.metrics.totalInputTokens + state.metrics.totalOutputTokens) /
-          state.metrics.totalLLMCalls;
+        const avgTokensPerCall = state.metrics.totalTokensUsed / state.metrics.totalLLMCalls;
 
         console.log('Minimal context performance:', {
           avgTokensPerCall: Math.round(avgTokensPerCall),
