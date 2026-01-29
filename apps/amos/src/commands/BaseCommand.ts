@@ -13,6 +13,19 @@ export abstract class BaseCommand implements ICommand {
   abstract readonly usage: string;
 
   /**
+   * Detailed help text for this command.
+   * Override in subclasses to provide command-specific help.
+   * If not overridden, generates a basic help from name, description, and usage.
+   */
+  get detailedHelp(): string {
+    const aliasStr = this.aliases.length > 0
+      ? `\nAliases: ${this.aliases.map(a => '/' + a).join(', ')}`
+      : '';
+
+    return `/${this.name} - ${this.description}${aliasStr}\n\nUsage: ${this.usage}`;
+  }
+
+  /**
    * Execute the command
    */
   abstract execute(context: CommandContext): Promise<CommandResult>;

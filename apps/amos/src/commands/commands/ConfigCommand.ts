@@ -11,6 +11,40 @@ export class ConfigCommand extends BaseCommand {
   readonly description = 'View or edit configuration';
   readonly usage = '/config [get <key>|set <key> <value>|reset]';
 
+  get detailedHelp(): string {
+    return `
+/config - View or Edit Configuration
+
+View and modify AMOS configuration settings.
+
+USAGE:
+  /config                  Show all configuration
+  /config get <key>        Get a specific value
+  /config set <key> <val>  Set a configuration value
+  /config reset            Reset to defaults
+
+CONFIGURABLE KEYS:
+  defaults.temperature      LLM temperature (0-2)
+  defaults.maxOutputTokens  Max response tokens
+  planning.enabled          Enable planning mode
+  planning.autoDetect       Auto-detect complex tasks
+  planning.requireApproval  Require plan approval
+  session.autoSave          Auto-save sessions
+  ui.showTokenUsage         Show token usage
+  ui.streamResponses        Enable streaming
+
+EXAMPLES:
+  /config                           View all settings
+  /config get defaults.temperature  Get temperature
+  /config set defaults.temperature 0.9
+  /config set planning.enabled true
+  /config reset                     Reset to defaults
+
+ALIASES:
+  /cfg, /settings
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { subcommand, subArgs } = this.parseSubcommand(context.args);
 

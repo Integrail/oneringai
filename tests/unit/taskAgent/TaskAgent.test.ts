@@ -656,9 +656,10 @@ describe('TaskAgent', () => {
       expect(agent.context.cache).toBeDefined();
     });
 
-    it('should provide access to history', () => {
+    it('should provide access to history via getHistory', () => {
       const agent = TaskAgent.create(config);
-      expect(agent.context.history).toBeDefined();
+      expect(agent.context.getHistory()).toBeDefined();
+      expect(Array.isArray(agent.context.getHistory())).toBe(true);
     });
 
     it('should provide access to permissions', () => {

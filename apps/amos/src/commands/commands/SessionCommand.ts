@@ -11,6 +11,33 @@ export class SessionCommand extends BaseCommand {
   readonly description = 'Manage sessions (save, load, list, delete, info, new)';
   readonly usage = '/session <save|load|list|delete|info|new> [args]';
 
+  get detailedHelp(): string {
+    return `
+/session - Manage Sessions
+
+Save and restore conversation sessions for continuity.
+
+USAGE:
+  /session             Show current session info
+  /session info        Same as above
+  /session save [name] Save current session
+  /session load <id>   Load a saved session
+  /session list        List all saved sessions
+  /session delete <id> Delete a saved session
+  /session new         Start a fresh session
+
+EXAMPLES:
+  /session               Show current session status
+  /session save mywork   Save session as "mywork"
+  /session list          List available sessions
+  /session load abc123   Load session by ID
+  /session new           Start fresh (offers to save first)
+
+ALIASES:
+  /sess, /s
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { subcommand, subArgs } = this.parseSubcommand(context.args);
 

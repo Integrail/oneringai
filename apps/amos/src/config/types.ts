@@ -136,6 +136,8 @@ export interface ICommand {
   aliases: string[];
   description: string;
   usage: string;
+  /** Detailed help text for this command */
+  detailedHelp?: string;
   execute(context: CommandContext): Promise<CommandResult>;
 }
 
@@ -158,6 +160,10 @@ export interface IAmosApp {
   // Tools
   getToolLoader(): IToolLoader;
   getActiveTools(): ToolFunction[];
+
+  // Commands
+  getRegisteredCommands(): ICommand[];
+  getCommand(name: string): ICommand | null;
 
   // Agent
   getAgent(): IAgentRunner | null;

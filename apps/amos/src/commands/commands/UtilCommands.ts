@@ -79,6 +79,26 @@ export class StatusCommand extends BaseCommand {
   readonly description = 'Show current status';
   readonly usage = '/status';
 
+  get detailedHelp(): string {
+    return `
+/status - Show Current Status
+
+Displays comprehensive status information about AMOS including:
+  - Agent status (Ready, Running, Paused, Not initialized)
+  - Active connector, vendor, and model
+  - Planning configuration
+  - Enabled tools count
+  - Session information
+  - Context metrics (history, memory, mode)
+
+USAGE:
+  /status
+
+ALIASES:
+  /st
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { app } = context;
     const config = app.getConfig();
@@ -161,6 +181,27 @@ export class HistoryCommand extends BaseCommand {
   readonly description = 'Show conversation history';
   readonly usage = '/history [count]';
 
+  get detailedHelp(): string {
+    return `
+/history - Show Conversation History
+
+Displays recent messages from the conversation with timestamps.
+Shows user, assistant, and system messages.
+
+USAGE:
+  /history          Show last 10 messages
+  /history [count]  Show last [count] messages
+
+EXAMPLES:
+  /history          Show last 10 messages
+  /history 20       Show last 20 messages
+  /history 5        Show last 5 messages
+
+ALIASES:
+  /hist
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { app, args } = context;
     const agent = app.getAgent();
@@ -199,6 +240,112 @@ export class HistoryCommand extends BaseCommand {
     }
 
     lines.push('Use /history [count] to show more or fewer messages');
+
+    return this.success(lines.join('\n'));
+  }
+}
+
+/**
+ * PlanCommand - Control planning mode settings
+ *
+ * Quick toggle for auto-planning behavior.
+ */
+export class PlanCommand extends BaseCommand {
+  readonly name = 'plan';
+  readonly aliases = ['planning'];
+  readonly description = 'Control planning mode settings';
+  readonly usage = '/plan [on|off|status]';
+
+  get detailedHelp(): string {
+    return `
+/plan - Control Planning Mode Settings
+
+Quick control over automatic planning behavior. When auto-detect is ON,
+the agent will automatically create multi-step plans for complex requests.
+When OFF, it will execute requests directly without planning.
+
+USAGE:
+  /plan           Show current planning settings
+  /plan status    Same as above
+  /plan on        Enable auto-planning detection
+  /plan off       Disable auto-planning (execute directly)
+  /plan toggle    Toggle auto-planning on/off
+
+EXAMPLES:
+  /plan off       Disable planning for simple requests
+  /plan on        Re-enable automatic planning
+  /plan           Check current settings
+
+ALIASES:
+  /planning
+`;
+  }
+
+  async execute(context: CommandContext): Promise<CommandResult> {
+    const { app, args } = context;
+    const { subcommand } = this.parseSubcommand(args);
+
+    switch (subcommand) {
+      case 'on':
+      case 'enable':
+        return this.setAutoDetect(app, true);
+
+      case 'off':
+      case 'disable':
+        return this.setAutoDetect(app, false);
+
+      case 'toggle':
+        const currentConfig = app.getConfig();
+        return this.setAutoDetect(app, !currentConfig.planning.autoDetect);
+
+      case 'status':
+      case null:
+        return this.showStatus(app);
+
+      default:
+        return this.error(`Unknown subcommand: ${subcommand}\n\nUsage: ${this.usage}`);
+    }
+  }
+
+  private async setAutoDetect(app: any, enabled: boolean): Promise<CommandResult> {
+    const config = app.getConfig();
+    config.planning.autoDetect = enabled;
+    app.updateConfig({ planning: config.planning });
+    await app.saveConfig();
+
+    // Recreate agent if it exists to pick up new settings
+    if (app.getAgent()) {
+      await app.createAgent();
+    }
+
+    const status = enabled ? 'ON' : 'OFF';
+    const description = enabled
+      ? 'Agent will automatically create plans for complex tasks.'
+      : 'Agent will execute requests directly without planning.';
+
+    return this.success(`Auto-planning: ${status}\n${description}`);
+  }
+
+  private showStatus(app: any): CommandResult {
+    const config = app.getConfig();
+    const planning = config.planning;
+
+    const autoStatus = planning.autoDetect ? 'ON' : 'OFF';
+    const enabledStatus = planning.enabled ? 'Yes' : 'No';
+    const approvalStatus = planning.requireApproval ? 'Yes' : 'No';
+
+    const lines = [
+      'Planning Settings:',
+      '',
+      `  Auto-detect: ${autoStatus}`,
+      `  Planning enabled: ${enabledStatus}`,
+      `  Require approval: ${approvalStatus}`,
+      '',
+      'Commands:',
+      '  /plan on      Enable auto-planning',
+      '  /plan off     Disable auto-planning (direct execution)',
+      '  /plan toggle  Toggle auto-planning',
+    ];
 
     return this.success(lines.join('\n'));
   }

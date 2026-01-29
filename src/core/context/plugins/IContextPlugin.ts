@@ -1,7 +1,7 @@
 /**
  * IContextPlugin - Interface for context plugins
  *
- * Plugins extend the UnifiedContextManager with custom context components.
+ * Plugins extend AgentContext with custom context components.
  * Built-in plugins: PlanPlugin, MemoryPlugin, ToolOutputPlugin
  * Users can create custom plugins for domain-specific context.
  */

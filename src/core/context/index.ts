@@ -69,23 +69,3 @@ export {
   type ToolOutputPluginConfig,
 } from './plugins/index.js';
 
-// ============================================================================
-// Internal/Deprecated
-// ============================================================================
-
-/**
- * @deprecated Use `AgentContext` from '@oneringai/agents' instead.
- * UnifiedContextManager is an older attempt at context unification.
- * It will be removed in v1.0.
- */
-export {
-  UnifiedContextManager,
-  type HistoryMessage as UnifiedHistoryMessage,
-  type HistoryConfig,
-  type UnifiedContextManagerConfig,
-  type SerializedContextState,
-  type ContextMetrics,
-  type HistoryFormatOptions,
-  type UnifiedContextManagerEvents,
-  DEFAULT_HISTORY_CONFIG,
-} from './UnifiedContextManager.js';

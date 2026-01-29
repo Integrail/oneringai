@@ -1,6 +1,6 @@
 # @oneringai/agents - Internal API Reference
 
-**Generated:** 2026-01-25
+**Generated:** 2026-01-29
 **Mode:** full
 
 This document provides a complete reference for ALL APIs in `@oneringai/agents`, including internal implementations.
@@ -9,25 +9,25 @@ This document provides a complete reference for ALL APIs in `@oneringai/agents`,
 
 ## Table of Contents
 
-- [Core](#core) (9 items)
+- [Core](#core) (21 items)
 - [Text-to-Speech (TTS)](#text-to-speech-tts-) (14 items)
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (15 items)
-- [Image Generation](#image-generation) (37 items)
+- [Image Generation](#image-generation) (38 items)
 - [Video Generation](#video-generation) (22 items)
-- [Task Agents](#task-agents) (112 items)
-- [Universal Agent](#universal-agent) (19 items)
-- [Context Management](#context-management) (24 items)
-- [Session Management](#session-management) (25 items)
-- [Tools & Function Calling](#tools-function-calling) (57 items)
-- [Streaming](#streaming) (18 items)
+- [Task Agents](#task-agents) (136 items)
+- [Universal Agent](#universal-agent) (21 items)
+- [Context Management](#context-management) (52 items)
+- [Session Management](#session-management) (31 items)
+- [Tools & Function Calling](#tools-function-calling) (90 items)
+- [Streaming](#streaming) (23 items)
 - [Model Registry](#model-registry) (9 items)
 - [OAuth & External APIs](#oauth-external-apis) (25 items)
-- [Resilience & Observability](#resilience-observability) (34 items)
-- [Errors](#errors) (13 items)
-- [Utilities](#utilities) (4 items)
-- [Interfaces](#interfaces) (14 items)
-- [Base Classes](#base-classes) (3 items)
-- [Other](#other) (133 items)
+- [Resilience & Observability](#resilience-observability) (39 items)
+- [Errors](#errors) (23 items)
+- [Utilities](#utilities) (12 items)
+- [Interfaces](#interfaces) (23 items)
+- [Base Classes](#base-classes) (7 items)
+- [Other](#other) (271 items)
 
 ## Core
 
@@ -35,9 +35,16 @@ Core classes for authentication, agents, and providers
 
 ### Agent `class`
 
-📍 [`src/core/Agent.ts:85`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:84`](src/core/Agent.ts)
 
 Agent class - represents an AI assistant with tool calling capabilities
+
+Extends BaseAgent to inherit:
+- Connector resolution
+- Tool manager initialization
+- Permission manager initialization
+- Session management
+- Lifecycle/cleanup
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -49,7 +56,7 @@ private constructor(config: AgentConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/Agent").AgentConfig`
+- `config`: `AgentConfig`
 
 </details>
 
@@ -65,38 +72,9 @@ static create(config: AgentConfig): Agent
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/Agent").AgentConfig`
+- `config`: `AgentConfig`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Agent").Agent`
-
-#### `static resume()`
-
-Resume an agent from a saved session
-
-```typescript
-static async resume(
-    sessionId: string,
-    config: Omit&lt;AgentConfig, 'session'&gt; &
-```
-
-**Parameters:**
-- `sessionId`: `string`
-- `config`: `Omit&lt;import("/Users/aantich/dev/oneringai/src/core/Agent").AgentConfig, "session"&gt; & { session: { storage: import("/Users/aantich/dev/oneringai/src/core/SessionManager").ISessionStorage; }; }`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/Agent").Agent&gt;`
-
-#### `static create()`
-
-Create a new agent
-
-```typescript
-static create(config: AgentConfig): Agent
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/Agent").AgentConfig`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Agent").Agent`
+**Returns:** `Agent`
 
 #### `static resume()`
 
@@ -110,25 +88,63 @@ static async resume(
 
 **Parameters:**
 - `sessionId`: `string`
-- `config`: `Omit&lt;import("/Users/aantich/dev/oneringai/src/core/Agent").AgentConfig, "session"&gt; & { session: { storage: import("/Users/aantich/dev/oneringai/src/core/SessionManager").ISessionStorage; }; }`
+- `config`: `Omit&lt;AgentConfig, "session"&gt; & { session: { storage: ISessionStorage; }; }`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/Agent").Agent&gt;`
+**Returns:** `Promise&lt;Agent&gt;`
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
 
-#### `loadSessionInternal()`
-
-Internal method to load session
+#### `getAgentType()`
 
 ```typescript
-private async loadSessionInternal(sessionId: string): Promise&lt;void&gt;
+protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent'
+```
+
+**Returns:** `"agent" | "task-agent" | "universal-agent"`
+
+#### `prepareSessionState()`
+
+```typescript
+protected prepareSessionState(): void
+```
+
+**Returns:** `void`
+
+#### `hasContext()`
+
+Check if context management is enabled
+
+```typescript
+hasContext(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `getContextState()`
+
+Get context state for session persistence.
+Returns null if context is not enabled.
+
+```typescript
+async getContextState(): Promise&lt;SerializedAgentContextState | null&gt;
+```
+
+**Returns:** `Promise&lt;SerializedAgentContextState | null&gt;`
+
+#### `restoreContextState()`
+
+Restore context from saved state.
+No-op if context is not enabled.
+
+```typescript
+async restoreContextState(state: SerializedAgentContextState): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `sessionId`: `string`
+- `state`: `SerializedAgentContextState`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -141,9 +157,9 @@ async run(input: string | InputItem[]): Promise&lt;AgentResponse&gt;
 ```
 
 **Parameters:**
-- `input`: `string | import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
+- `input`: `string | InputItem[]`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `stream()`
 
@@ -154,29 +170,16 @@ async *stream(input: string | InputItem[]): AsyncIterableIterator&lt;StreamEvent
 ```
 
 **Parameters:**
-- `input`: `string | import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
+- `input`: `string | InputItem[]`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
-#### `addTool()`
+#### `approveToolForSession()`
 
-Add a tool to the agent
-
-```typescript
-addTool(tool: ToolFunction): void
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-
-**Returns:** `void`
-
-#### `removeTool()`
-
-Remove a tool from the agent
+Approve a tool for the current session.
 
 ```typescript
-removeTool(toolName: string): void
+approveToolForSession(toolName: string): void
 ```
 
 **Parameters:**
@@ -184,95 +187,80 @@ removeTool(toolName: string): void
 
 **Returns:** `void`
 
-#### `listTools()`
+#### `revokeToolApproval()`
 
-List registered tools (returns enabled tool names)
+Revoke a tool's session approval.
 
 ```typescript
-listTools(): string[]
+revokeToolApproval(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `void`
+
+#### `getApprovedTools()`
+
+Get list of tools that have been approved for this session.
+
+```typescript
+getApprovedTools(): string[]
 ```
 
 **Returns:** `string[]`
 
-#### `setTools()`
+#### `toolNeedsApproval()`
 
-Replace all tools with a new array
+Check if a tool needs approval before execution.
 
 ```typescript
-setTools(tools: ToolFunction[]): void
+toolNeedsApproval(toolName: string): boolean
 ```
 
 **Parameters:**
-- `tools`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
-
-**Returns:** `void`
-
-#### `getSessionId()`
-
-Get the current session ID (if session is enabled)
-
-```typescript
-getSessionId(): string | null
-```
-
-**Returns:** `string | null`
-
-#### `hasSession()`
-
-Check if this agent has session support enabled
-
-```typescript
-hasSession(): boolean
-```
+- `toolName`: `string`
 
 **Returns:** `boolean`
 
-#### `saveSession()`
+#### `toolIsBlocked()`
 
-Save the current session to storage
-
-```typescript
-async saveSession(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `getSession()`
-
-Get the current session (for advanced use)
+Check if a tool is blocked (cannot execute at all).
 
 ```typescript
-getSession(): Session | null
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session | null`
-
-#### `updateSessionData()`
-
-Update session custom data
-
-```typescript
-updateSessionData(key: string, value: unknown): void
+toolIsBlocked(toolName: string): boolean
 ```
 
 **Parameters:**
-- `key`: `string`
-- `value`: `unknown`
+- `toolName`: `string`
+
+**Returns:** `boolean`
+
+#### `allowlistTool()`
+
+Add a tool to the allowlist (always allowed, no approval needed).
+
+```typescript
+allowlistTool(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
 
 **Returns:** `void`
 
-#### `getSessionData()`
+#### `blocklistTool()`
 
-Get session custom data
+Add a tool to the blocklist (always blocked, cannot execute).
 
 ```typescript
-getSessionData&lt;T = unknown&gt;(key: string): T | undefined
+blocklistTool(toolName: string): void
 ```
 
 **Parameters:**
-- `key`: `string`
+- `toolName`: `string`
 
-**Returns:** `T | undefined`
+**Returns:** `void`
 
 #### `setModel()`
 
@@ -346,7 +334,7 @@ cancel(reason?: string): void
 getContext(): ExecutionContext | null
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionContext | null`
+**Returns:** `ExecutionContext | null`
 
 #### `getMetrics()`
 
@@ -354,7 +342,7 @@ getContext(): ExecutionContext | null
 getMetrics()
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionMetrics | null`
+**Returns:** `ExecutionMetrics | null`
 
 #### `getSummary()`
 
@@ -370,7 +358,7 @@ getSummary()
 getAuditTrail()
 ```
 
-**Returns:** `readonly import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").AuditEntry[]`
+**Returns:** `readonly AuditEntry[]`
 
 #### `getProviderCircuitBreakerMetrics()`
 
@@ -390,7 +378,7 @@ Get circuit breaker states for all tools
 getToolCircuitBreakerStates()
 ```
 
-**Returns:** `Map&lt;string, import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitState&gt;`
+**Returns:** `Map&lt;string, CircuitState&gt;`
 
 #### `getToolCircuitBreakerMetrics()`
 
@@ -403,7 +391,7 @@ getToolCircuitBreakerMetrics(toolName: string)
 **Parameters:**
 - `toolName`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreakerMetrics | undefined`
+**Returns:** `CircuitBreakerMetrics | undefined`
 
 #### `resetToolCircuitBreaker()`
 
@@ -442,29 +430,10 @@ isCancelled(): boolean
 
 **Returns:** `boolean`
 
-#### `onCleanup()`
-
-```typescript
-onCleanup(callback: () =&gt; void): void
-```
-
-**Parameters:**
-- `callback`: `() =&gt; void`
-
-**Returns:** `void`
-
 #### `destroy()`
 
 ```typescript
 destroy(): void
-```
-
-**Returns:** `void`
-
-#### `setupEventForwarding()`
-
-```typescript
-private setupEventForwarding(): void
 ```
 
 **Returns:** `void`
@@ -476,16 +445,452 @@ private setupEventForwarding(): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `name` | `name: string` | - |
-| `connector` | `connector: import("/Users/aantich/dev/oneringai/src/core/Connector").Connector` | - |
-| `model` | `model: string` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/core/Agent").AgentConfig` | - |
-| `provider` | `provider: import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ITextProvider` | - |
-| `toolRegistry` | `toolRegistry: import("/Users/aantich/dev/oneringai/src/capabilities/agents/ToolRegistry").ToolRegistry` | - |
-| `agenticLoop` | `agenticLoop: import("/Users/aantich/dev/oneringai/src/capabilities/agents/AgenticLoop").AgenticLoop` | - |
-| `cleanupCallbacks` | `cleanupCallbacks: (() =&gt; void)[]` | - |
-| `boundListeners` | `boundListeners: Map&lt;keyof import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/EventTypes").AgenticLoopEvents, (...args: any[]) =&gt; void&gt;` | - |
-| `logger` | `logger: import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").FrameworkLogger` | - |
+| `provider` | `provider: ITextProvider` | - |
+| `agenticLoop` | `agenticLoop: AgenticLoop` | - |
+| `boundListeners` | `boundListeners: Map&lt;keyof AgenticLoopEvents, (...args: any[]) =&gt; void&gt;` | - |
+
+</details>
+
+---
+
+### AgentContext `class`
+
+📍 [`src/core/AgentContext.ts:335`](src/core/AgentContext.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+private constructor(config: AgentContextConfig =
+```
+
+**Parameters:**
+- `config`: `AgentContextConfig` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static create()`
+
+Create a new AgentContext
+
+```typescript
+static create(config: AgentContextConfig =
+```
+
+**Parameters:**
+- `config`: `AgentContextConfig` *(optional)* (default: `{}`)
+
+**Returns:** `AgentContext`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `setCurrentInput()`
+
+Set current input for this turn
+
+```typescript
+setCurrentInput(input: string): void
+```
+
+**Parameters:**
+- `input`: `string`
+
+**Returns:** `void`
+
+#### `getCurrentInput()`
+
+Get current input
+
+```typescript
+getCurrentInput(): string
+```
+
+**Returns:** `string`
+
+#### `setTaskType()`
+
+Set explicit task type (overrides auto-detection)
+
+```typescript
+setTaskType(type: TaskType): void
+```
+
+**Parameters:**
+- `type`: `TaskType`
+
+**Returns:** `void`
+
+#### `clearTaskType()`
+
+Clear explicit task type (re-enables auto-detection)
+
+```typescript
+clearTaskType(): void
+```
+
+**Returns:** `void`
+
+#### `getTaskType()`
+
+Get current task type
+Priority: explicit > auto-detected > 'general'
+
+```typescript
+getTaskType(): TaskType
+```
+
+**Returns:** `TaskType`
+
+#### `getTaskTypePrompt()`
+
+Get task-type-specific system prompt addition
+
+```typescript
+getTaskTypePrompt(): string
+```
+
+**Returns:** `string`
+
+#### `addMessage()`
+
+Add a message to history
+
+```typescript
+addMessage(
+    role: 'user' | 'assistant' | 'system' | 'tool',
+    content: string,
+    metadata?: Record&lt;string, unknown&gt;
+  ): HistoryMessage
+```
+
+**Parameters:**
+- `role`: `"user" | "assistant" | "system" | "tool"`
+- `content`: `string`
+- `metadata`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
+
+**Returns:** `HistoryMessage`
+
+#### `getHistory()`
+
+Get all history messages
+
+```typescript
+getHistory(): HistoryMessage[]
+```
+
+**Returns:** `HistoryMessage[]`
+
+#### `getRecentHistory()`
+
+Get recent N messages
+
+```typescript
+getRecentHistory(count: number): HistoryMessage[]
+```
+
+**Parameters:**
+- `count`: `number`
+
+**Returns:** `HistoryMessage[]`
+
+#### `getMessageCount()`
+
+Get message count
+
+```typescript
+getMessageCount(): number
+```
+
+**Returns:** `number`
+
+#### `clearHistory()`
+
+Clear history
+
+```typescript
+clearHistory(reason?: string): void
+```
+
+**Parameters:**
+- `reason`: `string | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `getToolCalls()`
+
+Get all tool call records
+
+```typescript
+getToolCalls(): ToolCallRecord[]
+```
+
+**Returns:** `ToolCallRecord[]`
+
+#### `executeTool()`
+
+Execute a tool with automatic caching
+
+This is the recommended way to execute tools - it integrates:
+- Permission checking
+- Result caching (if tool is cacheable)
+- History recording
+- Metrics tracking
+
+```typescript
+async executeTool(
+    toolName: string,
+    args: Record&lt;string, unknown&gt;,
+    context?: Partial&lt;ToolContext&gt;
+  ): Promise&lt;unknown&gt;
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `args`: `Record&lt;string, unknown&gt;`
+- `context`: `Partial&lt;ToolContext&gt; | undefined` *(optional)*
+
+**Returns:** `Promise&lt;unknown&gt;`
+
+#### `registerPlugin()`
+
+Register a context plugin
+
+```typescript
+registerPlugin(plugin: IContextPlugin): void
+```
+
+**Parameters:**
+- `plugin`: `IContextPlugin`
+
+**Returns:** `void`
+
+#### `unregisterPlugin()`
+
+Unregister a plugin
+
+```typescript
+unregisterPlugin(name: string): boolean
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `boolean`
+
+#### `getPlugin()`
+
+Get a plugin by name
+
+```typescript
+getPlugin&lt;T extends IContextPlugin&gt;(name: string): T | undefined
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `T | undefined`
+
+#### `listPlugins()`
+
+List all registered plugins
+
+```typescript
+listPlugins(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `prepare()`
+
+Prepare context for LLM call
+
+Assembles all components:
+- System prompt, instructions
+- Conversation history
+- Memory index
+- Plugin components
+- Current input
+
+Handles compaction automatically if budget is exceeded.
+
+```typescript
+async prepare(): Promise&lt;PreparedContext&gt;
+```
+
+**Returns:** `Promise&lt;PreparedContext&gt;`
+
+#### `getBudget()`
+
+Get current budget without full preparation
+
+```typescript
+async getBudget(): Promise&lt;ContextBudget&gt;
+```
+
+**Returns:** `Promise&lt;ContextBudget&gt;`
+
+#### `compact()`
+
+Force compaction
+
+```typescript
+async compact(): Promise&lt;PreparedContext&gt;
+```
+
+**Returns:** `Promise&lt;PreparedContext&gt;`
+
+#### `setStrategy()`
+
+Set compaction strategy
+
+```typescript
+setStrategy(strategy: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive'): void
+```
+
+**Parameters:**
+- `strategy`: `"proactive" | "aggressive" | "lazy" | "rolling-window" | "adaptive"`
+
+**Returns:** `void`
+
+#### `getMaxContextTokens()`
+
+Get max context tokens
+
+```typescript
+getMaxContextTokens(): number
+```
+
+**Returns:** `number`
+
+#### `setMaxContextTokens()`
+
+Set max context tokens
+
+```typescript
+setMaxContextTokens(tokens: number): void
+```
+
+**Parameters:**
+- `tokens`: `number`
+
+**Returns:** `void`
+
+#### `setCacheEnabled()`
+
+Enable/disable caching
+
+```typescript
+setCacheEnabled(enabled: boolean): void
+```
+
+**Parameters:**
+- `enabled`: `boolean`
+
+**Returns:** `void`
+
+#### `isCacheEnabled()`
+
+Check if caching is enabled
+
+```typescript
+isCacheEnabled(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `estimateTokens()`
+
+Estimate tokens for content
+
+```typescript
+estimateTokens(content: string, type?: TokenContentType): number
+```
+
+**Parameters:**
+- `content`: `string`
+- `type`: `TokenContentType | undefined` *(optional)*
+
+**Returns:** `number`
+
+#### `getUtilization()`
+
+Get utilization percentage
+
+```typescript
+getUtilization(): number
+```
+
+**Returns:** `number`
+
+#### `getLastBudget()`
+
+Get last calculated budget
+
+```typescript
+getLastBudget(): ContextBudget | null
+```
+
+**Returns:** `ContextBudget | null`
+
+#### `getMetrics()`
+
+Get comprehensive metrics
+
+```typescript
+async getMetrics(): Promise&lt;AgentContextMetrics&gt;
+```
+
+**Returns:** `Promise&lt;AgentContextMetrics&gt;`
+
+#### `getState()`
+
+Get state for session persistence
+
+Serializes ALL state:
+- History and tool calls
+- Tool enable/disable state
+- Memory state
+- Permission state
+- Plugin state
+
+```typescript
+async getState(): Promise&lt;SerializedAgentContextState&gt;
+```
+
+**Returns:** `Promise&lt;SerializedAgentContextState&gt;`
+
+#### `restoreState()`
+
+Restore from saved state
+
+Restores ALL state from a previous session.
+
+```typescript
+async restoreState(state: SerializedAgentContextState): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `state`: `SerializedAgentContextState`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `destroy()`
+
+Destroy the context and release resources
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
 
 </details>
 
@@ -493,7 +898,7 @@ private setupEventForwarding(): void
 
 ### Connector `class`
 
-📍 [`src/core/Connector.ts:18`](src/core/Connector.ts)
+📍 [`src/core/Connector.ts:49`](src/core/Connector.ts)
 
 Connector class - represents a single authenticated connection
 
@@ -507,7 +912,7 @@ private constructor(config: ConnectorConfig &
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig & { name: string; }`
+- `config`: `ConnectorConfig & { name: string; }`
 
 </details>
 
@@ -523,9 +928,9 @@ static create(config: ConnectorConfig &
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig & { name: string; }`
+- `config`: `ConnectorConfig & { name: string; }`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector`
+**Returns:** `Connector`
 
 #### `static get()`
 
@@ -538,7 +943,7 @@ static get(name: string): Connector
 **Parameters:**
 - `name`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector`
+**Returns:** `Connector`
 
 #### `static has()`
 
@@ -595,7 +1000,7 @@ static setDefaultStorage(storage: ITokenStorage): void
 ```
 
 **Parameters:**
-- `storage`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").ITokenStorage`
+- `storage`: `ITokenStorage`
 
 **Returns:** `void`
 
@@ -607,133 +1012,7 @@ Get all registered connectors
 static listAll(): Connector[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector[]`
-
-#### `static size()`
-
-Get number of registered connectors
-
-```typescript
-static size(): number
-```
-
-**Returns:** `number`
-
-#### `static getDescriptionsForTools()`
-
-Get connector descriptions formatted for tool parameters
-Useful for generating dynamic tool descriptions
-
-```typescript
-static getDescriptionsForTools(): string
-```
-
-**Returns:** `string`
-
-#### `static getInfo()`
-
-Get connector info (for tools and documentation)
-
-```typescript
-static getInfo(): Record&lt;string,
-```
-
-**Returns:** `Record&lt;string, { displayName: string; description: string; baseURL: string; }&gt;`
-
-#### `static create()`
-
-Create and register a new connector
-
-```typescript
-static create(config: ConnectorConfig &
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig & { name: string; }`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector`
-
-#### `static get()`
-
-Get a connector by name
-
-```typescript
-static get(name: string): Connector
-```
-
-**Parameters:**
-- `name`: `string`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector`
-
-#### `static has()`
-
-Check if a connector exists
-
-```typescript
-static has(name: string): boolean
-```
-
-**Parameters:**
-- `name`: `string`
-
-**Returns:** `boolean`
-
-#### `static list()`
-
-List all registered connector names
-
-```typescript
-static list(): string[]
-```
-
-**Returns:** `string[]`
-
-#### `static remove()`
-
-Remove a connector
-
-```typescript
-static remove(name: string): boolean
-```
-
-**Parameters:**
-- `name`: `string`
-
-**Returns:** `boolean`
-
-#### `static clear()`
-
-Clear all connectors (useful for testing)
-
-```typescript
-static clear(): void
-```
-
-**Returns:** `void`
-
-#### `static setDefaultStorage()`
-
-Set default token storage for OAuth connectors
-
-```typescript
-static setDefaultStorage(storage: ITokenStorage): void
-```
-
-**Parameters:**
-- `storage`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").ITokenStorage`
-
-**Returns:** `void`
-
-#### `static listAll()`
-
-Get all registered connectors
-
-```typescript
-static listAll(): Connector[]
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector[]`
+**Returns:** `Connector[]`
 
 #### `static size()`
 
@@ -847,6 +1126,72 @@ getOptions(): Record&lt;string, unknown&gt;
 
 **Returns:** `Record&lt;string, unknown&gt;`
 
+#### `getMetrics()`
+
+Get connector metrics
+
+```typescript
+getMetrics():
+```
+
+**Returns:** `{ requestCount: number; successCount: number; failureCount: number; avgLatencyMs: number; circuitBreakerState?: string | undefined; }`
+
+#### `resetCircuitBreaker()`
+
+Reset circuit breaker (force close)
+
+```typescript
+resetCircuitBreaker(): void
+```
+
+**Returns:** `void`
+
+#### `fetch()`
+
+Make an authenticated fetch request using this connector
+This is the foundation for all vendor-dependent tools
+
+Features:
+- Timeout with AbortController
+- Circuit breaker protection
+- Retry with exponential backoff
+- Request/response logging
+
+```typescript
+async fetch(
+    endpoint: string,
+    options?: ConnectorFetchOptions,
+    userId?: string
+  ): Promise&lt;Response&gt;
+```
+
+**Parameters:**
+- `endpoint`: `string`
+- `options`: `ConnectorFetchOptions | undefined` *(optional)*
+- `userId`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;Response&gt;`
+
+#### `fetchJSON()`
+
+Make an authenticated fetch request and parse JSON response
+Throws on non-OK responses
+
+```typescript
+async fetchJSON&lt;T = unknown&gt;(
+    endpoint: string,
+    options?: ConnectorFetchOptions,
+    userId?: string
+  ): Promise&lt;T&gt;
+```
+
+**Parameters:**
+- `endpoint`: `string`
+- `options`: `ConnectorFetchOptions | undefined` *(optional)*
+- `userId`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;T&gt;`
+
 #### `dispose()`
 
 Dispose of resources
@@ -857,27 +1202,15 @@ dispose(): void
 
 **Returns:** `void`
 
-#### `initOAuthManager()`
+#### `isDisposed()`
+
+Check if connector is disposed
 
 ```typescript
-private initOAuthManager(auth: ConnectorAuth &
+isDisposed(): boolean
 ```
 
-**Parameters:**
-- `auth`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").OAuthConnectorAuth & { type: "oauth"; }`
-
-**Returns:** `void`
-
-#### `initJWTManager()`
-
-```typescript
-private initJWTManager(auth: ConnectorAuth &
-```
-
-**Parameters:**
-- `auth`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").JWTConnectorAuth & { type: "jwt"; }`
-
-**Returns:** `void`
+**Returns:** `boolean`
 
 </details>
 
@@ -886,13 +1219,18 @@ private initJWTManager(auth: ConnectorAuth &
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `registry` | `registry: Map&lt;string, import("/Users/aantich/dev/oneringai/src/core/Connector").Connector&gt;` | - |
-| `defaultStorage` | `defaultStorage: import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").ITokenStorage` | - |
+| `registry` | `registry: Map&lt;string, Connector&gt;` | - |
+| `defaultStorage` | `defaultStorage: ITokenStorage` | - |
 | `name` | `name: string` | - |
-| `vendor?` | `vendor: import("/Users/aantich/dev/oneringai/src/core/Vendor").Vendor | undefined` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig` | - |
-| `oauthManager?` | `oauthManager: import("/Users/aantich/dev/oneringai/src/connectors/oauth/OAuthManager").OAuthManager | undefined` | - |
+| `vendor?` | `vendor: Vendor | undefined` | - |
+| `config` | `config: ConnectorConfig` | - |
+| `oauthManager?` | `oauthManager: OAuthManager | undefined` | - |
+| `circuitBreaker?` | `circuitBreaker: CircuitBreaker&lt;any&gt; | undefined` | - |
 | `disposed` | `disposed: boolean` | - |
+| `requestCount` | `requestCount: number` | - |
+| `successCount` | `successCount: number` | - |
+| `failureCount` | `failureCount: number` | - |
+| `totalLatencyMs` | `totalLatencyMs: number` | - |
 
 </details>
 
@@ -900,22 +1238,27 @@ private initJWTManager(auth: ConnectorAuth &
 
 ### AgentConfig `interface`
 
-📍 [`src/core/Agent.ts:44`](src/core/Agent.ts)
+📍 [`src/core/Agent.ts:33`](src/core/Agent.ts)
 
-Agent configuration - new simplified interface
+Agent configuration - extends BaseAgentConfig with Agent-specific options
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `connector` | `connector: string | Connector;` | - |
-| `model` | `model: string;` | - |
-| `name?` | `name?: string;` | - |
-| `instructions?` | `instructions?: string;` | - |
-| `tools?` | `tools?: ToolFunction[];` | - |
-| `temperature?` | `temperature?: number;` | - |
-| `maxIterations?` | `maxIterations?: number;` | - |
+| `instructions?` | `instructions?: string;` | System instructions for the agent |
+| `temperature?` | `temperature?: number;` | Temperature for generation |
+| `maxIterations?` | `maxIterations?: number;` | Maximum iterations for tool calling loop |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') |
+| `context?` | `context?: AgentContext | AgentContextConfig;` | Optional unified context management.
+When provided (as AgentContext instance or config), Agent will:
+- Track conversation history
+- Cache tool results (if enabled)
+- Provide unified memory access
+- Support session persistence via context
+
+Pass an AgentContext instance or AgentContextConfig to enable. |
 | `hooks?` | `hooks?: HookConfig;` | - |
 | `historyMode?` | `historyMode?: HistoryMode;` | - |
 | `limits?` | `limits?: {
@@ -929,30 +1272,225 @@ Agent configuration - new simplified interface
     toolFailureMode?: 'fail' | 'continue';
     maxConsecutiveErrors?: number;
   };` | - |
-| `session?` | `session?: AgentSessionConfig;` | Session configuration for persistence (opt-in) |
-| `toolManager?` | `toolManager?: ToolManager;` | Provide a pre-configured ToolManager (advanced) |
 
 </details>
 
 ---
 
-### AgentSessionConfig `interface`
+### AgentContextConfig `interface`
 
-📍 [`src/core/Agent.ts:30`](src/core/Agent.ts)
+📍 [`src/core/AgentContext.ts:185`](src/core/AgentContext.ts)
 
-Session configuration for Agent
+AgentContext configuration
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `storage` | `storage: ISessionStorage;` | Storage backend for sessions |
-| `id?` | `id?: string;` | Resume existing session by ID |
-| `autoSave?` | `autoSave?: boolean;` | Auto-save session after each interaction |
-| `autoSaveIntervalMs?` | `autoSaveIntervalMs?: number;` | Auto-save interval in milliseconds |
+| `model?` | `model?: string;` | Model name (used for token limits) |
+| `maxContextTokens?` | `maxContextTokens?: number;` | Max context tokens (overrides model default) |
+| `systemPrompt?` | `systemPrompt?: string;` | System prompt |
+| `instructions?` | `instructions?: string;` | Instructions |
+| `tools?` | `tools?: ToolFunction[];` | Tools to register |
+| `permissions?` | `permissions?: AgentPermissionsConfig;` | Tool permissions configuration |
+| `memory?` | `memory?: Partial&lt;WorkingMemoryConfig&gt; & {
+    /** Custom storage backend (default: InMemoryStorage) */
+    storage?: IMemoryStorage;
+  };` | Memory configuration |
+| `cache?` | `cache?: Partial&lt;IdempotencyCacheConfig&gt; & {
+    /** Enable caching (default: true) */
+    enabled?: boolean;
+  };` | Cache configuration |
+| `history?` | `history?: {
+    /** Max messages before compaction */
+    maxMessages?: number;
+    /** Messages to preserve during compaction */
+    preserveRecent?: number;
+  };` | History configuration |
+| `strategy?` | `strategy?: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive';` | Compaction strategy |
+| `responseReserve?` | `responseReserve?: number;` | Response token reserve (0.0 - 1.0) |
+| `autoCompact?` | `autoCompact?: boolean;` | Enable auto-compaction |
+| `taskType?` | `taskType?: TaskType;` | Task type for priority profiles (default: auto-detect from plan) |
+| `autoDetectTaskType?` | `autoDetectTaskType?: boolean;` | Auto-detect task type from plan (default: true) |
 
 </details>
+
+---
+
+### AgentContextEvents `interface`
+
+📍 [`src/core/AgentContext.ts:306`](src/core/AgentContext.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `'message:added'` | `'message:added': { message: HistoryMessage };` | - |
+| `'history:cleared'` | `'history:cleared': { reason?: string };` | - |
+| `'history:compacted'` | `'history:compacted': { removedCount: number };` | - |
+| `'tool:registered'` | `'tool:registered': { name: string };` | - |
+| `'tool:executed'` | `'tool:executed': { record: ToolCallRecord };` | - |
+| `'tool:cached'` | `'tool:cached': { name: string; args: Record&lt;string, unknown&gt; };` | - |
+| `'context:preparing'` | `'context:preparing': { componentCount: number };` | - |
+| `'context:prepared'` | `'context:prepared': { budget: ContextBudget; compacted: boolean };` | - |
+| `'compacted'` | `'compacted': { log: string[]; tokensFreed: number };` | - |
+| `'budget:warning'` | `'budget:warning': { budget: ContextBudget };` | - |
+| `'budget:critical'` | `'budget:critical': { budget: ContextBudget };` | - |
+| `'plugin:registered'` | `'plugin:registered': { name: string };` | - |
+| `'plugin:unregistered'` | `'plugin:unregistered': { name: string };` | - |
+
+</details>
+
+---
+
+### AgentContextMetrics `interface`
+
+📍 [`src/core/AgentContext.ts:289`](src/core/AgentContext.ts)
+
+Context metrics
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `historyMessageCount` | `historyMessageCount: number;` | - |
+| `toolCallCount` | `toolCallCount: number;` | - |
+| `cacheStats` | `cacheStats: CacheStats;` | - |
+| `memoryStats` | `memoryStats: {
+    totalEntries: number;
+    totalSizeBytes: number;
+    utilizationPercent: number;
+  };` | - |
+| `pluginCount` | `pluginCount: number;` | - |
+| `utilizationPercent` | `utilizationPercent: number;` | - |
+
+</details>
+
+---
+
+### ConnectorFetchOptions `interface`
+
+📍 [`src/core/Connector.ts:37`](src/core/Connector.ts)
+
+Fetch options with additional connector-specific settings
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `timeout?` | `timeout?: number;` | Override timeout for this request |
+| `skipRetry?` | `skipRetry?: boolean;` | Skip retry for this request |
+| `skipCircuitBreaker?` | `skipCircuitBreaker?: boolean;` | Skip circuit breaker for this request |
+
+</details>
+
+---
+
+### HistoryMessage `interface`
+
+📍 [`src/core/AgentContext.ts:160`](src/core/AgentContext.ts)
+
+History message
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `role` | `role: 'user' | 'assistant' | 'system' | 'tool';` | - |
+| `content` | `content: string;` | - |
+| `timestamp` | `timestamp: number;` | - |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
+
+</details>
+
+---
+
+### SerializedAgentContextState `interface`
+
+📍 [`src/core/AgentContext.ts:262`](src/core/AgentContext.ts)
+
+Serialized state for session persistence
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `version` | `version: number;` | - |
+| `core` | `core: {
+    systemPrompt: string;
+    instructions: string;
+    history: HistoryMessage[];
+    toolCalls: ToolCallRecord[];
+  };` | - |
+| `tools` | `tools: SerializedToolState;` | - |
+| `memoryStats?` | `memoryStats?: {
+    entryCount: number;
+    sizeBytes: number;
+  };` | - |
+| `permissions` | `permissions: SerializedApprovalState;` | - |
+| `plugins` | `plugins: Record&lt;string, unknown&gt;;` | - |
+| `config` | `config: {
+    model: string;
+    maxContextTokens: number;
+    strategy: string;
+  };` | - |
+
+</details>
+
+---
+
+### ToolCallRecord `interface`
+
+📍 [`src/core/AgentContext.ts:171`](src/core/AgentContext.ts)
+
+Tool call record (stored in history)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `name` | `name: string;` | - |
+| `args` | `args: Record&lt;string, unknown&gt;;` | - |
+| `result?` | `result?: unknown;` | - |
+| `error?` | `error?: string;` | - |
+| `durationMs?` | `durationMs?: number;` | - |
+| `cached?` | `cached?: boolean;` | - |
+| `timestamp` | `timestamp: number;` | - |
+
+</details>
+
+---
+
+### AgentSessionConfig `type`
+
+📍 [`src/core/Agent.ts:28`](src/core/Agent.ts)
+
+Session configuration for Agent (same as BaseSessionConfig)
+
+```typescript
+type AgentSessionConfig = BaseSessionConfig
+```
+
+---
+
+### TaskType `type`
+
+📍 [`src/core/AgentContext.ts:68`](src/core/AgentContext.ts)
+
+Task type determines compaction priorities and system prompt additions
+
+```typescript
+type TaskType = 'research' | 'coding' | 'analysis' | 'general'
+```
 
 ---
 
@@ -980,7 +1518,7 @@ export function createProvider(connector: Connector): ITextProvider
 
 ### createProviderAsync `function`
 
-📍 [`src/core/createProvider.ts:158`](src/core/createProvider.ts)
+📍 [`src/core/createProvider.ts:167`](src/core/createProvider.ts)
 
 Create a text provider from a Connector with async token support
 Use this for OAuth connectors
@@ -996,7 +1534,7 @@ export async function createProviderAsync(
 
 ### extractProviderConfig `function`
 
-📍 [`src/core/createProvider.ts:122`](src/core/createProvider.ts)
+📍 [`src/core/createProvider.ts:128`](src/core/createProvider.ts)
 
 Extract ProviderConfig from a Connector
 
@@ -1018,6 +1556,133 @@ export function isVendor(value: string): value is Vendor
 
 ---
 
+### DEFAULT_AGENT_CONTEXT_CONFIG `const`
+
+📍 [`src/core/AgentContext.ts:243`](src/core/AgentContext.ts)
+
+Default configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `model` | `'gpt-4'` | - |
+| `maxContextTokens` | `128000` | - |
+| `systemPrompt` | `''` | - |
+| `instructions` | `''` | - |
+| `history` | `{
+    maxMessages: 100,
+    preserveRecent: 20,
+  }` | - |
+| `strategy` | `'proactive'` | - |
+| `responseReserve` | `0.15` | - |
+| `autoCompact` | `true` | - |
+
+</details>
+
+---
+
+### PRIORITY_PROFILES `const`
+
+📍 [`src/core/AgentContext.ts:79`](src/core/AgentContext.ts)
+
+Priority profiles for different task types
+Lower number = keep longer (compact last), Higher number = compact first
+
+Research: Preserve tool outputs (search/scrape results) longest
+Coding: Preserve conversation history (context) longest
+Analysis: Balanced, preserve analysis results
+General: Default balanced approach
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `research` | `{
+    memory_index: 3,           // Keep longest (summaries!)
+    tool_outputs: 5,           // Keep long (research data!)
+    conversation_history: 10,  // Compact first (old chat less critical)
+  }` | - |
+| `coding` | `{
+    memory_index: 5,
+    conversation_history: 8,   // Keep more context
+    tool_outputs: 10,          // Compact first (output less critical once seen)
+  }` | - |
+| `analysis` | `{
+    memory_index: 4,
+    tool_outputs: 6,           // Analysis results important
+    conversation_history: 7,
+  }` | - |
+| `general` | `{
+    memory_index: 8,
+    conversation_history: 6,   // Balanced
+    tool_outputs: 10,
+  }` | - |
+
+</details>
+
+---
+
+### TASK_TYPE_PROMPTS `const`
+
+📍 [`src/core/AgentContext.ts:105`](src/core/AgentContext.ts)
+
+Task-type-specific system prompt additions
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `research` | ``## Research Protocol
+
+You are conducting research. Follow this workflow to preserve findings:
+
+### 1. SEARCH PHASE
+- Execute searches to find relevant sources
+- After EACH search, immediately store key findings in memory
+
+### 2. READ PHASE
+For each promising result:
+- Read/scrape the content
+- Extract key points (2-3 sentences per source)
+- Store IMMEDIATELY in memory - do NOT keep full articles in conversation
+
+### 3. SYNTHESIZE PHASE
+Before writing final report:
+- Use memory_list() to see all stored findings
+- Retrieve relevant findings with memory_retrieve(key)
+- Cross-reference and consolidate
+
+### 4. CONTEXT MANAGEMENT
+- Your context may be compacted automatically
+- Always store important findings in memory IMMEDIATELY
+- Stored data survives compaction; conversation history may not`` | - |
+| `coding` | ``## Coding Protocol
+
+You are implementing code changes. Guidelines:
+- Read relevant files before making changes
+- Implement incrementally
+- Store key design decisions in memory if they'll be needed later
+- Code file contents are large - summarize structure after reading`` | - |
+| `analysis` | ``## Analysis Protocol
+
+You are performing analysis. Guidelines:
+- Store intermediate results in memory
+- Summarize data immediately after loading (raw data is large)
+- Keep only essential context for current analysis step`` | - |
+| `general` | ``## Task Execution
+
+Guidelines:
+- Store important information in memory for later reference
+- Monitor your context usage with context_inspect()`` | - |
+
+</details>
+
+---
+
 ## Text-to-Speech (TTS)
 
 Convert text to spoken audio
@@ -1036,7 +1701,7 @@ constructor(config: GoogleConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").GoogleConfig`
+- `config`: `GoogleConfig`
 
 </details>
 
@@ -1052,9 +1717,9 @@ async synthesize(options: TTSOptions): Promise&lt;TTSResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").TTSOptions`
+- `options`: `TTSOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").TTSResponse&gt;`
+**Returns:** `Promise&lt;TTSResponse&gt;`
 
 #### `listVoices()`
 
@@ -1064,55 +1729,7 @@ List available voices (returns static list for Google)
 async listVoices(): Promise&lt;IVoiceInfo[]&gt;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/SharedVoices").IVoiceInfo[]&gt;`
-
-#### `extractAudioData()`
-
-Extract audio data from Gemini response
-Gemini returns raw PCM data (24kHz, 16-bit, mono), we wrap it in WAV format
-
-```typescript
-private extractAudioData(result: any): Buffer | null
-```
-
-**Parameters:**
-- `result`: `any`
-
-**Returns:** `Buffer&lt;ArrayBufferLike&gt; | null`
-
-#### `pcmToWav()`
-
-Convert raw PCM data to WAV format
-
-```typescript
-private pcmToWav(
-    pcmData: Buffer,
-    sampleRate: number = 24000,
-    channels: number = 1,
-    bitsPerSample: number = 16
-  ): Buffer
-```
-
-**Parameters:**
-- `pcmData`: `Buffer&lt;ArrayBufferLike&gt;`
-- `sampleRate`: `number` *(optional)* (default: `24000`)
-- `channels`: `number` *(optional)* (default: `1`)
-- `bitsPerSample`: `number` *(optional)* (default: `16`)
-
-**Returns:** `Buffer&lt;ArrayBufferLike&gt;`
-
-#### `handleError()`
-
-Handle Google API errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
+**Returns:** `Promise&lt;IVoiceInfo[]&gt;`
 
 </details>
 
@@ -1123,8 +1740,8 @@ private handleError(error: any): never
 |----------|------|-------------|
 | `name` | `name: string` | - |
 | `vendor` | `vendor: "google"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").GoogleGenAI` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: GoogleGenAI` | - |
 
 </details>
 
@@ -1144,7 +1761,7 @@ constructor(config: OpenAIMediaConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").OpenAIMediaConfig`
+- `config`: `OpenAIMediaConfig`
 
 </details>
 
@@ -1160,9 +1777,9 @@ async synthesize(options: TTSOptions): Promise&lt;TTSResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").TTSOptions`
+- `options`: `TTSOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").TTSResponse&gt;`
+**Returns:** `Promise&lt;TTSResponse&gt;`
 
 #### `listVoices()`
 
@@ -1172,35 +1789,7 @@ List available voices (returns static list for OpenAI)
 async listVoices(): Promise&lt;IVoiceInfo[]&gt;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/SharedVoices").IVoiceInfo[]&gt;`
-
-#### `mapFormat()`
-
-Map semantic audio format to OpenAI format
-
-```typescript
-private mapFormat(
-    format?: string
-  ): OpenAI.Audio.SpeechCreateParams['response_format']
-```
-
-**Parameters:**
-- `format`: `string | undefined` *(optional)*
-
-**Returns:** `"mp3" | "opus" | "aac" | "flac" | "wav" | "pcm" | undefined`
-
-#### `handleError()`
-
-Handle OpenAI API errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
+**Returns:** `Promise&lt;IVoiceInfo[]&gt;`
 
 </details>
 
@@ -1211,8 +1800,8 @@ private handleError(error: any): never
 |----------|------|-------------|
 | `name` | `name: string` | - |
 | `vendor` | `vendor: "openai"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/openai/client").OpenAI` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: OpenAI` | - |
 
 </details>
 
@@ -1248,7 +1837,7 @@ private constructor(config: TextToSpeechConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/TextToSpeech").TextToSpeechConfig`
+- `config`: `TextToSpeechConfig`
 
 </details>
 
@@ -1264,22 +1853,9 @@ static create(config: TextToSpeechConfig): TextToSpeech
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/TextToSpeech").TextToSpeechConfig`
+- `config`: `TextToSpeechConfig`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/TextToSpeech").TextToSpeech`
-
-#### `static create()`
-
-Create a new TextToSpeech instance
-
-```typescript
-static create(config: TextToSpeechConfig): TextToSpeech
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/TextToSpeech").TextToSpeechConfig`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/TextToSpeech").TextToSpeech`
+**Returns:** `TextToSpeech`
 
 </details>
 
@@ -1299,9 +1875,9 @@ async synthesize(
 
 **Parameters:**
 - `text`: `string`
-- `options`: `Partial&lt;Omit&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").TTSOptions, "model" | "input"&gt;&gt; | undefined` *(optional)*
+- `options`: `Partial&lt;Omit&lt;TTSOptions, "model" | "input"&gt;&gt; | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").TTSResponse&gt;`
+**Returns:** `Promise&lt;TTSResponse&gt;`
 
 #### `toFile()`
 
@@ -1318,7 +1894,7 @@ async toFile(
 **Parameters:**
 - `text`: `string`
 - `filePath`: `string`
-- `options`: `Partial&lt;Omit&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").TTSOptions, "model" | "input"&gt;&gt; | undefined` *(optional)*
+- `options`: `Partial&lt;Omit&lt;TTSOptions, "model" | "input"&gt;&gt; | undefined` *(optional)*
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -1333,7 +1909,7 @@ getModelInfo(model?: string): ITTSModelDescription
 **Parameters:**
 - `model`: `string | undefined` *(optional)*
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/TTSModel").ITTSModelDescription`
+**Returns:** `ITTSModelDescription`
 
 #### `getModelCapabilities()`
 
@@ -1346,7 +1922,7 @@ getModelCapabilities(model?: string)
 **Parameters:**
 - `model`: `string | undefined` *(optional)*
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/TTSModel").TTSModelCapabilities`
+**Returns:** `TTSModelCapabilities`
 
 #### `listVoices()`
 
@@ -1361,7 +1937,7 @@ async listVoices(model?: string): Promise&lt;IVoiceInfo[]&gt;
 **Parameters:**
 - `model`: `string | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/SharedVoices").IVoiceInfo[]&gt;`
+**Returns:** `Promise&lt;IVoiceInfo[]&gt;`
 
 #### `listAvailableModels()`
 
@@ -1371,7 +1947,7 @@ List all available models for this provider's vendor
 listAvailableModels(): ITTSModelDescription[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/TTSModel").ITTSModelDescription[]`
+**Returns:** `ITTSModelDescription[]`
 
 #### `supportsFeature()`
 
@@ -1401,7 +1977,7 @@ getSupportedFormats(model?: string): readonly AudioFormat[] | AudioFormat[]
 **Parameters:**
 - `model`: `string | undefined` *(optional)*
 
-**Returns:** `readonly import("/Users/aantich/dev/oneringai/src/domain/types/SharedTypes").AudioFormat[] | import("/Users/aantich/dev/oneringai/src/domain/types/SharedTypes").AudioFormat[]`
+**Returns:** `readonly AudioFormat[] | AudioFormat[]`
 
 #### `getSupportedLanguages()`
 
@@ -1464,7 +2040,7 @@ setFormat(format: AudioFormat): void
 ```
 
 **Parameters:**
-- `format`: `import("/Users/aantich/dev/oneringai/src/domain/types/SharedTypes").AudioFormat`
+- `format`: `AudioFormat`
 
 **Returns:** `void`
 
@@ -1481,26 +2057,6 @@ setSpeed(speed: number): void
 
 **Returns:** `void`
 
-#### `getDefaultModel()`
-
-Get default model (first active model for vendor)
-
-```typescript
-private getDefaultModel(): string
-```
-
-**Returns:** `string`
-
-#### `getDefaultVoice()`
-
-Get default voice (first or default-marked voice)
-
-```typescript
-private getDefaultVoice(): string
-```
-
-**Returns:** `string`
-
 </details>
 
 <details>
@@ -1508,8 +2064,8 @@ private getDefaultVoice(): string
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `provider` | `provider: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").ITextToSpeechProvider` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/core/TextToSpeech").TextToSpeechConfig` | - |
+| `provider` | `provider: ITextToSpeechProvider` | - |
+| `config` | `config: TextToSpeechConfig` | - |
 
 </details>
 
@@ -1889,7 +2445,7 @@ constructor(config: OpenAIMediaConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").OpenAIMediaConfig`
+- `config`: `OpenAIMediaConfig`
 
 </details>
 
@@ -1905,9 +2461,9 @@ async transcribe(options: STTOptions): Promise&lt;STTResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTOptions`
+- `options`: `STTOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTResponse&gt;`
+**Returns:** `Promise&lt;STTResponse&gt;`
 
 #### `translate()`
 
@@ -1918,62 +2474,9 @@ async translate(options: STTOptions): Promise&lt;STTResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTOptions`
+- `options`: `STTOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTResponse&gt;`
-
-#### `prepareAudioFile()`
-
-Prepare audio file for API request
-Handles both Buffer and file path inputs
-
-```typescript
-private async prepareAudioFile(audio: Buffer | string): Promise&lt;any&gt;
-```
-
-**Parameters:**
-- `audio`: `string | Buffer&lt;ArrayBufferLike&gt;`
-
-**Returns:** `Promise&lt;any&gt;`
-
-#### `mapOutputFormat()`
-
-Map semantic output format to OpenAI format
-
-```typescript
-private mapOutputFormat(format: STTOutputFormat): OpenAI.Audio.AudioResponseFormat
-```
-
-**Parameters:**
-- `format`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTOutputFormat`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/node_modules/openai/resources/audio/audio").AudioResponseFormat`
-
-#### `convertResponse()`
-
-Convert OpenAI response to our standard format
-
-```typescript
-private convertResponse(response: OpenAI.Audio.Transcription | string): STTResponse
-```
-
-**Parameters:**
-- `response`: `string | import("/Users/aantich/dev/oneringai/node_modules/openai/resources/audio/transcriptions").Transcription`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTResponse`
-
-#### `handleError()`
-
-Handle OpenAI API errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
+**Returns:** `Promise&lt;STTResponse&gt;`
 
 </details>
 
@@ -1984,8 +2487,8 @@ private handleError(error: any): never
 |----------|------|-------------|
 | `name` | `name: string` | - |
 | `vendor` | `vendor: "openai"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/openai/client").OpenAI` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: OpenAI` | - |
 
 </details>
 
@@ -2023,7 +2526,7 @@ private constructor(config: SpeechToTextConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/SpeechToText").SpeechToTextConfig`
+- `config`: `SpeechToTextConfig`
 
 </details>
 
@@ -2039,22 +2542,9 @@ static create(config: SpeechToTextConfig): SpeechToText
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/SpeechToText").SpeechToTextConfig`
+- `config`: `SpeechToTextConfig`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/SpeechToText").SpeechToText`
-
-#### `static create()`
-
-Create a new SpeechToText instance
-
-```typescript
-static create(config: SpeechToTextConfig): SpeechToText
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/SpeechToText").SpeechToTextConfig`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/SpeechToText").SpeechToText`
+**Returns:** `SpeechToText`
 
 </details>
 
@@ -2074,9 +2564,9 @@ async transcribe(
 
 **Parameters:**
 - `audio`: `string | Buffer&lt;ArrayBufferLike&gt;`
-- `options`: `Partial&lt;Omit&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTOptions, "model" | "audio"&gt;&gt; | undefined` *(optional)*
+- `options`: `Partial&lt;Omit&lt;STTOptions, "model" | "audio"&gt;&gt; | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTResponse&gt;`
+**Returns:** `Promise&lt;STTResponse&gt;`
 
 #### `transcribeFile()`
 
@@ -2091,9 +2581,9 @@ async transcribeFile(
 
 **Parameters:**
 - `filePath`: `string`
-- `options`: `Partial&lt;Omit&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTOptions, "model" | "audio"&gt;&gt; | undefined` *(optional)*
+- `options`: `Partial&lt;Omit&lt;STTOptions, "model" | "audio"&gt;&gt; | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTResponse&gt;`
+**Returns:** `Promise&lt;STTResponse&gt;`
 
 #### `transcribeWithTimestamps()`
 
@@ -2110,9 +2600,9 @@ async transcribeWithTimestamps(
 **Parameters:**
 - `audio`: `string | Buffer&lt;ArrayBufferLike&gt;`
 - `granularity`: `"word" | "segment"` *(optional)* (default: `'segment'`)
-- `options`: `Partial&lt;Omit&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTOptions, "model" | "audio" | "includeTimestamps" | "timestampGranularity"&gt;&gt; | undefined` *(optional)*
+- `options`: `Partial&lt;Omit&lt;STTOptions, "model" | "audio" | "includeTimestamps" | "timestampGranularity"&gt;&gt; | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTResponse&gt;`
+**Returns:** `Promise&lt;STTResponse&gt;`
 
 #### `translate()`
 
@@ -2128,9 +2618,9 @@ async translate(
 
 **Parameters:**
 - `audio`: `string | Buffer&lt;ArrayBufferLike&gt;`
-- `options`: `Partial&lt;Omit&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTOptions, "model" | "audio"&gt;&gt; | undefined` *(optional)*
+- `options`: `Partial&lt;Omit&lt;STTOptions, "model" | "audio"&gt;&gt; | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTResponse&gt;`
+**Returns:** `Promise&lt;STTResponse&gt;`
 
 #### `getModelInfo()`
 
@@ -2143,7 +2633,7 @@ getModelInfo(model?: string): ISTTModelDescription
 **Parameters:**
 - `model`: `string | undefined` *(optional)*
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/STTModel").ISTTModelDescription`
+**Returns:** `ISTTModelDescription`
 
 #### `getModelCapabilities()`
 
@@ -2156,7 +2646,7 @@ getModelCapabilities(model?: string)
 **Parameters:**
 - `model`: `string | undefined` *(optional)*
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/STTModel").STTModelCapabilities`
+**Returns:** `STTModelCapabilities`
 
 #### `listAvailableModels()`
 
@@ -2166,7 +2656,7 @@ List all available models for this provider's vendor
 listAvailableModels(): ISTTModelDescription[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/STTModel").ISTTModelDescription[]`
+**Returns:** `ISTTModelDescription[]`
 
 #### `supportsFeature()`
 
@@ -2315,16 +2805,6 @@ setTemperature(temperature: number): void
 
 **Returns:** `void`
 
-#### `getDefaultModel()`
-
-Get default model (first active model for vendor)
-
-```typescript
-private getDefaultModel(): string
-```
-
-**Returns:** `string`
-
 </details>
 
 <details>
@@ -2332,8 +2812,8 @@ private getDefaultModel(): string
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `provider` | `provider: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").ISpeechToTextProvider` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/core/SpeechToText").SpeechToTextConfig` | - |
+| `provider` | `provider: ISpeechToTextProvider` | - |
+| `config` | `config: SpeechToTextConfig` | - |
 
 </details>
 
@@ -2741,7 +3221,7 @@ constructor(config: GoogleConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").GoogleConfig`
+- `config`: `GoogleConfig`
 
 </details>
 
@@ -2757,9 +3237,9 @@ async generateImage(options: ImageGenerateOptions): Promise&lt;ImageResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageGenerateOptions`
+- `options`: `ImageGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `editImage()`
 
@@ -2771,9 +3251,9 @@ async editImage(options: ImageEditOptions): Promise&lt;ImageResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageEditOptions`
+- `options`: `ImageEditOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `listModels()`
 
@@ -2785,32 +3265,6 @@ async listModels(): Promise&lt;string[]&gt;
 
 **Returns:** `Promise&lt;string[]&gt;`
 
-#### `prepareReferenceImage()`
-
-Prepare a reference image for Google's editImage API
-
-```typescript
-private async prepareReferenceImage(image: Buffer | string): Promise&lt;any&gt;
-```
-
-**Parameters:**
-- `image`: `string | Buffer&lt;ArrayBufferLike&gt;`
-
-**Returns:** `Promise&lt;any&gt;`
-
-#### `handleError()`
-
-Handle Google API errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
-
 </details>
 
 <details>
@@ -2820,8 +3274,8 @@ private handleError(error: any): never
 |----------|------|-------------|
 | `name` | `name: string` | - |
 | `vendor` | `vendor: "google"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").GoogleGenAI` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: GoogleGenAI` | - |
 
 </details>
 
@@ -2843,7 +3297,7 @@ private constructor(connector: Connector)
 ```
 
 **Parameters:**
-- `connector`: `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector`
+- `connector`: `Connector`
 
 </details>
 
@@ -2859,22 +3313,9 @@ static create(options: ImageGenerationCreateOptions): ImageGeneration
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/capabilities/images/ImageGeneration").ImageGenerationCreateOptions`
+- `options`: `ImageGenerationCreateOptions`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/images/ImageGeneration").ImageGeneration`
-
-#### `static create()`
-
-Create an ImageGeneration instance
-
-```typescript
-static create(options: ImageGenerationCreateOptions): ImageGeneration
-```
-
-**Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/capabilities/images/ImageGeneration").ImageGenerationCreateOptions`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/images/ImageGeneration").ImageGeneration`
+**Returns:** `ImageGeneration`
 
 </details>
 
@@ -2890,9 +3331,9 @@ async generate(options: SimpleGenerateOptions): Promise&lt;ImageResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/capabilities/images/ImageGeneration").SimpleGenerateOptions`
+- `options`: `SimpleGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `edit()`
 
@@ -2904,9 +3345,9 @@ async edit(options: ImageEditOptions): Promise&lt;ImageResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageEditOptions`
+- `options`: `ImageEditOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `createVariation()`
 
@@ -2918,9 +3359,9 @@ async createVariation(options: ImageVariationOptions): Promise&lt;ImageResponse&
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageVariationOptions`
+- `options`: `ImageVariationOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `listModels()`
 
@@ -2943,7 +3384,7 @@ getModelInfo(modelName: string)
 **Parameters:**
 - `modelName`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/ImageModel").IImageModelDescription | undefined`
+**Returns:** `IImageModelDescription | undefined`
 
 #### `getProvider()`
 
@@ -2953,7 +3394,7 @@ Get the underlying provider
 getProvider(): IImageProvider
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").IImageProvider`
+**Returns:** `IImageProvider`
 
 #### `getConnector()`
 
@@ -2963,27 +3404,7 @@ Get the current connector
 getConnector(): Connector
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector`
-
-#### `getDefaultModel()`
-
-Get the default model for this vendor
-
-```typescript
-private getDefaultModel(): string
-```
-
-**Returns:** `string`
-
-#### `getEditModel()`
-
-Get the default edit model for this vendor
-
-```typescript
-private getEditModel(): string
-```
-
-**Returns:** `string`
+**Returns:** `Connector`
 
 </details>
 
@@ -2992,8 +3413,8 @@ private getEditModel(): string
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `provider` | `provider: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").IImageProvider` | - |
-| `connector` | `connector: import("/Users/aantich/dev/oneringai/src/core/Connector").Connector` | - |
+| `provider` | `provider: IImageProvider` | - |
+| `connector` | `connector: Connector` | - |
 | `defaultModel` | `defaultModel: string` | - |
 
 </details>
@@ -3014,7 +3435,7 @@ constructor(config: OpenAIMediaConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").OpenAIMediaConfig`
+- `config`: `OpenAIMediaConfig`
 
 </details>
 
@@ -3030,9 +3451,9 @@ async generateImage(options: ImageGenerateOptions): Promise&lt;ImageResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageGenerateOptions`
+- `options`: `ImageGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `editImage()`
 
@@ -3044,9 +3465,9 @@ async editImage(options: ImageEditOptions): Promise&lt;ImageResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageEditOptions`
+- `options`: `ImageEditOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `createVariation()`
 
@@ -3058,9 +3479,9 @@ async createVariation(options: ImageVariationOptions): Promise&lt;ImageResponse&
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageVariationOptions`
+- `options`: `ImageVariationOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `listModels()`
 
@@ -3072,32 +3493,6 @@ async listModels(): Promise&lt;string[]&gt;
 
 **Returns:** `Promise&lt;string[]&gt;`
 
-#### `prepareImageInput()`
-
-Prepare image input (Buffer or file path) for OpenAI API
-
-```typescript
-private prepareImageInput(image: Buffer | string): any
-```
-
-**Parameters:**
-- `image`: `string | Buffer&lt;ArrayBufferLike&gt;`
-
-**Returns:** `any`
-
-#### `handleError()`
-
-Handle OpenAI API errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
-
 </details>
 
 <details>
@@ -3107,8 +3502,8 @@ private handleError(error: any): never
 |----------|------|-------------|
 | `name` | `name: string` | - |
 | `vendor` | `vendor: "openai"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/openai/client").OpenAI` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: OpenAI` | - |
 
 </details>
 
@@ -3203,9 +3598,9 @@ generateImage(options: ImageGenerateOptions): Promise&lt;ImageResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageGenerateOptions`
+- `options`: `ImageGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `editImage()?`
 
@@ -3216,9 +3611,9 @@ editImage?(options: ImageEditOptions): Promise&lt;ImageResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageEditOptions`
+- `options`: `ImageEditOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `createVariation()?`
 
@@ -3229,9 +3624,9 @@ createVariation?(options: ImageVariationOptions): Promise&lt;ImageResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageVariationOptions`
+- `options`: `ImageVariationOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IImageProvider").ImageResponse&gt;`
+**Returns:** `Promise&lt;ImageResponse&gt;`
 
 #### `listModels()?`
 
@@ -3441,6 +3836,25 @@ Image model pricing
     url: string; // HTTP URL or data URI
     detail?: 'auto' | 'low' | 'high';
   };` | - |
+
+</details>
+
+---
+
+### ParsedImageData `interface`
+
+📍 [`src/infrastructure/providers/base/BaseConverter.ts:33`](src/infrastructure/providers/base/BaseConverter.ts)
+
+Image data parsed from a data URI
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `mediaType` | `mediaType: string;` | - |
+| `data` | `data: string;` | - |
+| `format` | `format: string;` | - |
 
 </details>
 
@@ -3971,7 +4385,7 @@ private constructor(connector: Connector)
 ```
 
 **Parameters:**
-- `connector`: `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector`
+- `connector`: `Connector`
 
 </details>
 
@@ -3987,22 +4401,9 @@ static create(options: VideoGenerationCreateOptions): VideoGeneration
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/capabilities/video/VideoGeneration").VideoGenerationCreateOptions`
+- `options`: `VideoGenerationCreateOptions`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/video/VideoGeneration").VideoGeneration`
-
-#### `static create()`
-
-Create a VideoGeneration instance
-
-```typescript
-static create(options: VideoGenerationCreateOptions): VideoGeneration
-```
-
-**Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/capabilities/video/VideoGeneration").VideoGenerationCreateOptions`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/video/VideoGeneration").VideoGeneration`
+**Returns:** `VideoGeneration`
 
 </details>
 
@@ -4019,9 +4420,9 @@ async generate(options: SimpleVideoGenerateOptions): Promise&lt;VideoResponse&gt
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/capabilities/video/VideoGeneration").SimpleVideoGenerateOptions`
+- `options`: `SimpleVideoGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `getStatus()`
 
@@ -4034,7 +4435,7 @@ async getStatus(jobId: string): Promise&lt;VideoResponse&gt;
 **Parameters:**
 - `jobId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `waitForCompletion()`
 
@@ -4048,7 +4449,7 @@ async waitForCompletion(jobId: string, timeoutMs: number = 600000): Promise&lt;V
 - `jobId`: `string`
 - `timeoutMs`: `number` *(optional)* (default: `600000`)
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `download()`
 
@@ -4075,10 +4476,10 @@ async generateAndWait(
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/capabilities/video/VideoGeneration").SimpleVideoGenerateOptions`
+- `options`: `SimpleVideoGenerateOptions`
 - `timeoutMs`: `number` *(optional)* (default: `600000`)
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `extend()`
 
@@ -4090,9 +4491,9 @@ async extend(options: VideoExtendOptions): Promise&lt;VideoResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoExtendOptions`
+- `options`: `VideoExtendOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `cancel()`
 
@@ -4128,7 +4529,7 @@ getModelInfo(modelName: string)
 **Parameters:**
 - `modelName`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/VideoModel").IVideoModelDescription | undefined`
+**Returns:** `IVideoModelDescription | undefined`
 
 #### `getProvider()`
 
@@ -4138,7 +4539,7 @@ Get the underlying provider
 getProvider(): IVideoProvider
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").IVideoProvider`
+**Returns:** `IVideoProvider`
 
 #### `getConnector()`
 
@@ -4148,27 +4549,7 @@ Get the current connector
 getConnector(): Connector
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/Connector").Connector`
-
-#### `getDefaultModel()`
-
-Get the default model for this vendor
-
-```typescript
-private getDefaultModel(): string
-```
-
-**Returns:** `string`
-
-#### `getExtendModel()`
-
-Get the model that supports video extension
-
-```typescript
-private getExtendModel(): string
-```
-
-**Returns:** `string`
+**Returns:** `Connector`
 
 </details>
 
@@ -4177,8 +4558,8 @@ private getExtendModel(): string
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `provider` | `provider: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").IVideoProvider` | - |
-| `connector` | `connector: import("/Users/aantich/dev/oneringai/src/core/Connector").Connector` | - |
+| `provider` | `provider: IVideoProvider` | - |
+| `connector` | `connector: Connector` | - |
 | `defaultModel` | `defaultModel: string` | - |
 
 </details>
@@ -4222,9 +4603,9 @@ generateVideo(options: VideoGenerateOptions): Promise&lt;VideoResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoGenerateOptions`
+- `options`: `VideoGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `getVideoStatus()`
 
@@ -4237,7 +4618,7 @@ getVideoStatus(jobId: string): Promise&lt;VideoResponse&gt;;
 **Parameters:**
 - `jobId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `downloadVideo()?`
 
@@ -4261,9 +4642,9 @@ extendVideo?(options: VideoExtendOptions): Promise&lt;VideoResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoExtendOptions`
+- `options`: `VideoExtendOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `listModels()?`
 
@@ -4812,8 +5193,8 @@ constructor(storage: IAgentStorage, strategy: CheckpointStrategy = DEFAULT_CHECK
 ```
 
 **Parameters:**
-- `storage`: `import("/Users/aantich/dev/oneringai/src/infrastructure/storage/InMemoryStorage").IAgentStorage`
-- `strategy`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/CheckpointManager").CheckpointStrategy` *(optional)* (default: `DEFAULT_CHECKPOINT_STRATEGY`)
+- `storage`: `IAgentStorage`
+- `strategy`: `CheckpointStrategy` *(optional)* (default: `DEFAULT_CHECKPOINT_STRATEGY`)
 
 </details>
 
@@ -4829,7 +5210,7 @@ setCurrentState(state: AgentState): void
 ```
 
 **Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
+- `state`: `AgentState`
 
 **Returns:** `void`
 
@@ -4842,7 +5223,7 @@ async onToolCall(state: AgentState): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
+- `state`: `AgentState`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -4855,7 +5236,7 @@ async onLLMCall(state: AgentState): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
+- `state`: `AgentState`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -4868,34 +5249,10 @@ async checkpoint(state: AgentState, reason: string): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
+- `state`: `AgentState`
 - `reason`: `string`
 
 **Returns:** `Promise&lt;void&gt;`
-
-#### `doCheckpoint()`
-
-Perform the actual checkpoint
-
-```typescript
-private async doCheckpoint(state: AgentState, _reason: string): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
-- `_reason`: `string`
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `checkIntervalCheckpoint()`
-
-Check if interval-based checkpoint is needed
-
-```typescript
-private checkIntervalCheckpoint(): void
-```
-
-**Returns:** `void`
 
 #### `flush()`
 
@@ -4924,204 +5281,13 @@ async cleanup(): Promise&lt;void&gt;
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `storage` | `storage: import("/Users/aantich/dev/oneringai/src/infrastructure/storage/InMemoryStorage").IAgentStorage` | - |
-| `strategy` | `strategy: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/CheckpointManager").CheckpointStrategy` | - |
+| `storage` | `storage: IAgentStorage` | - |
+| `strategy` | `strategy: CheckpointStrategy` | - |
 | `toolCallsSinceCheckpoint` | `toolCallsSinceCheckpoint: number` | - |
 | `llmCallsSinceCheckpoint` | `llmCallsSinceCheckpoint: number` | - |
 | `intervalTimer?` | `intervalTimer: NodeJS.Timeout | undefined` | - |
 | `pendingCheckpoints` | `pendingCheckpoints: Set&lt;Promise&lt;void&gt;&gt;` | - |
-| `currentState` | `currentState: import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState | null` | - |
-
-</details>
-
----
-
-### ContextManager `class`
-
-📍 [`src/capabilities/taskAgent/ContextManager.ts:136`](src/capabilities/taskAgent/ContextManager.ts)
-
-ContextManager handles context window management.
-
-Features:
-- Token estimation (approximate or tiktoken)
-- Proactive compaction before overflow
-- Configurable compaction strategies
-- Tool output truncation
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-constructor(
-    config: ContextManagerConfig = DEFAULT_CONTEXT_CONFIG,
-    strategy: CompactionStrategy = DEFAULT_COMPACTION_STRATEGY
-  )
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextManagerConfig` *(optional)* (default: `DEFAULT_CONTEXT_CONFIG`)
-- `strategy`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").CompactionStrategy` *(optional)* (default: `DEFAULT_COMPACTION_STRATEGY`)
-
-</details>
-
-<details>
-<summary><strong>Methods</strong></summary>
-
-#### `estimateTokens()`
-
-Estimate token count for text
-
-```typescript
-estimateTokens(text: string): number
-```
-
-**Parameters:**
-- `text`: `string`
-
-**Returns:** `number`
-
-#### `estimateBudget()`
-
-Estimate budget for context components
-
-```typescript
-estimateBudget(components: ContextComponents): ContextBudget
-```
-
-**Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextComponents`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextBudget`
-
-#### `prepareContext()`
-
-Prepare context, compacting if necessary
-
-```typescript
-async prepareContext(
-    components: ContextComponents,
-    memory: IMemoryManager,
-    history: IHistoryManager
-  ): Promise&lt;PreparedContext&gt;
-```
-
-**Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextComponents`
-- `memory`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").IMemoryManager`
-- `history`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").IHistoryManager`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").PreparedContext&gt;`
-
-#### `truncateToolOutputsInHistory()`
-
-Truncate tool outputs in conversation history
-
-```typescript
-private truncateToolOutputsInHistory(components: ContextComponents): ContextComponents
-```
-
-**Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextComponents`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextComponents`
-
-#### `truncateToolOutput()`
-
-Truncate tool output to fit within limit
-
-```typescript
-truncateToolOutput(output: unknown, maxTokens: number): unknown
-```
-
-**Parameters:**
-- `output`: `unknown`
-- `maxTokens`: `number`
-
-**Returns:** `unknown`
-
-#### `createOutputSummary()`
-
-Create summary of large output
-
-```typescript
-createOutputSummary(output: unknown, maxTokens: number): string
-```
-
-**Parameters:**
-- `output`: `unknown`
-- `maxTokens`: `number`
-
-**Returns:** `string`
-
-#### `shouldAutoStore()`
-
-Check if output should be auto-stored in memory
-
-```typescript
-shouldAutoStore(output: unknown, threshold: number): boolean
-```
-
-**Parameters:**
-- `output`: `unknown`
-- `threshold`: `number`
-
-**Returns:** `boolean`
-
-#### `getCurrentBudget()`
-
-Get current context budget
-
-```typescript
-getCurrentBudget(): ContextBudget | null
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextBudget | null`
-
-#### `getConfig()`
-
-Get current configuration
-
-```typescript
-getConfig(): ContextManagerConfig
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextManagerConfig`
-
-#### `getStrategy()`
-
-Get current compaction strategy
-
-```typescript
-getStrategy(): CompactionStrategy
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").CompactionStrategy`
-
-#### `updateConfig()`
-
-Update configuration
-
-```typescript
-updateConfig(updates: Partial&lt;ContextManagerConfig&gt;): void
-```
-
-**Parameters:**
-- `updates`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextManagerConfig&gt;`
-
-**Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextManagerConfig` | - |
-| `strategy` | `strategy: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").CompactionStrategy` | - |
-| `lastBudget?` | `lastBudget: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextBudget | undefined` | - |
+| `currentState` | `currentState: AgentState | null` | - |
 
 </details>
 
@@ -5129,7 +5295,7 @@ updateConfig(updates: Partial&lt;ContextManagerConfig&gt;): void
 
 ### ExternalDependencyHandler `class`
 
-📍 [`src/capabilities/taskAgent/ExternalDependencyHandler.ts:20`](src/capabilities/taskAgent/ExternalDependencyHandler.ts)
+📍 [`src/capabilities/taskAgent/ExternalDependencyHandler.ts:21`](src/capabilities/taskAgent/ExternalDependencyHandler.ts)
 
 Handles external task dependencies
 
@@ -5143,7 +5309,7 @@ constructor(tools: ToolFunction[] = [])
 ```
 
 **Parameters:**
-- `tools`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]` *(optional)* (default: `[]`)
+- `tools`: `ToolFunction&lt;any, any&gt;[]` *(optional)* (default: `[]`)
 
 </details>
 
@@ -5159,7 +5325,7 @@ async startWaiting(task: Task): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
+- `task`: `Task`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -5172,7 +5338,7 @@ stopWaiting(task: Task): void
 ```
 
 **Parameters:**
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
+- `task`: `Task`
 
 **Returns:** `void`
 
@@ -5204,32 +5370,6 @@ async completeManual(taskId: string, data: unknown): Promise&lt;void&gt;
 
 **Returns:** `Promise&lt;void&gt;`
 
-#### `startPolling()`
-
-Start polling for a task
-
-```typescript
-private startPolling(task: Task): void
-```
-
-**Parameters:**
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
-
-**Returns:** `void`
-
-#### `scheduleTask()`
-
-Schedule a task to trigger at a specific time
-
-```typescript
-private scheduleTask(task: Task): void
-```
-
-**Parameters:**
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
-
-**Returns:** `void`
-
 #### `cleanup()`
 
 Cleanup all active dependencies
@@ -5249,7 +5389,7 @@ updateTools(tools: ToolFunction[]): void
 ```
 
 **Parameters:**
-- `tools`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
+- `tools`: `ToolFunction&lt;any, any&gt;[]`
 
 **Returns:** `void`
 
@@ -5262,329 +5402,8 @@ updateTools(tools: ToolFunction[]): void
 |----------|------|-------------|
 | `activePolls` | `activePolls: Map&lt;string, NodeJS.Timeout&gt;` | - |
 | `activeScheduled` | `activeScheduled: Map&lt;string, NodeJS.Timeout&gt;` | - |
-| `tools` | `tools: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;&gt;` | - |
-
-</details>
-
----
-
-### HistoryManager `class`
-
-📍 [`src/capabilities/taskAgent/HistoryManager.ts:34`](src/capabilities/taskAgent/HistoryManager.ts)
-
-Manages conversation history with automatic compaction
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-constructor(config: HistoryManagerConfig = DEFAULT_HISTORY_CONFIG)
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/HistoryManager").HistoryManagerConfig` *(optional)* (default: `DEFAULT_HISTORY_CONFIG`)
-
-</details>
-
-<details>
-<summary><strong>Methods</strong></summary>
-
-#### `addMessage()`
-
-Add a message to history
-
-```typescript
-addMessage(role: 'user' | 'assistant' | 'system', content: string): void
-```
-
-**Parameters:**
-- `role`: `"user" | "assistant" | "system"`
-- `content`: `string`
-
-**Returns:** `void`
-
-#### `getMessages()`
-
-Get all messages (including summaries as system messages)
-
-```typescript
-getMessages(): ConversationMessage[]
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").ConversationMessage[]`
-
-#### `getRecentMessages()`
-
-Get recent messages only (no summaries)
-
-```typescript
-getRecentMessages(): ConversationMessage[]
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").ConversationMessage[]`
-
-#### `compact()`
-
-Compact history (summarize or truncate old messages)
-
-```typescript
-private compact(): void
-```
-
-**Returns:** `void`
-
-#### `summarize()`
-
-Summarize history (requires LLM - placeholder)
-
-```typescript
-async summarize(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `truncate()`
-
-Truncate messages to a limit
-
-```typescript
-async truncate(messages: ConversationMessage[], limit: number): Promise&lt;ConversationMessage[]&gt;
-```
-
-**Parameters:**
-- `messages`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").ConversationMessage[]`
-- `limit`: `number`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").ConversationMessage[]&gt;`
-
-#### `clear()`
-
-Clear all history
-
-```typescript
-clear(): void
-```
-
-**Returns:** `void`
-
-#### `getMessageCount()`
-
-Get total message count
-
-```typescript
-getMessageCount(): number
-```
-
-**Returns:** `number`
-
-#### `getState()`
-
-Get history state for persistence
-
-```typescript
-getState():
-```
-
-**Returns:** `{ messages: import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").ConversationMessage[]; summaries: { content: string; coversMessages: number; timestamp: number; }[]; }`
-
-#### `restoreState()`
-
-Restore history from state
-
-```typescript
-restoreState(state:
-```
-
-**Parameters:**
-- `state`: `{ messages: import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").ConversationMessage[]; summaries: { content: string; coversMessages: number; timestamp: number; }[]; }`
-
-**Returns:** `void`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `messages` | `messages: import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").ConversationMessage[]` | - |
-| `summaries` | `summaries: { content: string; coversMessages: number; timestamp: number; }[]` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/HistoryManager").HistoryManagerConfig` | - |
-
-</details>
-
----
-
-### IdempotencyCache `class`
-
-📍 [`src/capabilities/taskAgent/IdempotencyCache.ts:45`](src/capabilities/taskAgent/IdempotencyCache.ts)
-
-IdempotencyCache handles tool call result caching.
-
-Features:
-- Cache based on tool name + args
-- Custom key generation per tool
-- TTL-based expiration
-- Max entries eviction
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-constructor(config: IdempotencyCacheConfig = DEFAULT_IDEMPOTENCY_CONFIG)
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/IdempotencyCache").IdempotencyCacheConfig` *(optional)* (default: `DEFAULT_IDEMPOTENCY_CONFIG`)
-
-</details>
-
-<details>
-<summary><strong>Methods</strong></summary>
-
-#### `get()`
-
-Get cached result for tool call
-
-```typescript
-async get(tool: ToolFunction, args: Record&lt;string, unknown&gt;): Promise&lt;unknown&gt;
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-- `args`: `Record&lt;string, unknown&gt;`
-
-**Returns:** `Promise&lt;unknown&gt;`
-
-#### `set()`
-
-Cache result for tool call
-
-```typescript
-async set(tool: ToolFunction, args: Record&lt;string, unknown&gt;, result: unknown): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-- `args`: `Record&lt;string, unknown&gt;`
-- `result`: `unknown`
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `has()`
-
-Check if tool call is cached
-
-```typescript
-async has(tool: ToolFunction, args: Record&lt;string, unknown&gt;): Promise&lt;boolean&gt;
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-- `args`: `Record&lt;string, unknown&gt;`
-
-**Returns:** `Promise&lt;boolean&gt;`
-
-#### `invalidate()`
-
-Invalidate cached result
-
-```typescript
-async invalidate(tool: ToolFunction, args: Record&lt;string, unknown&gt;): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-- `args`: `Record&lt;string, unknown&gt;`
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `invalidateTool()`
-
-Invalidate all cached results for a tool
-
-```typescript
-async invalidateTool(tool: ToolFunction): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `pruneExpired()`
-
-Prune expired entries from cache
-
-```typescript
-pruneExpired(): number
-```
-
-**Returns:** `number`
-
-#### `clear()`
-
-Clear all cached results
-
-```typescript
-async clear(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `getStats()`
-
-Get cache statistics
-
-```typescript
-getStats(): CacheStats
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/IdempotencyCache").CacheStats`
-
-#### `generateKey()`
-
-Generate cache key for tool + args
-
-```typescript
-generateKey(tool: ToolFunction, args: Record&lt;string, unknown&gt;): string
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-- `args`: `Record&lt;string, unknown&gt;`
-
-**Returns:** `string`
-
-#### `hashObject()`
-
-Simple hash function for objects
-
-```typescript
-private hashObject(obj: unknown): string
-```
-
-**Parameters:**
-- `obj`: `unknown`
-
-**Returns:** `string`
-
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/IdempotencyCache").IdempotencyCacheConfig` | - |
-| `cache` | `cache: Map&lt;string, { value: unknown; expiresAt: number; }&gt;` | - |
-| `hits` | `hits: number` | - |
-| `misses` | `misses: number` | - |
-| `cleanupInterval?` | `cleanupInterval: NodeJS.Timeout | undefined` | - |
+| `cancelledPolls` | `cancelledPolls: Set&lt;string&gt;` | - |
+| `tools` | `tools: Map&lt;string, ToolFunction&lt;any, any&gt;&gt;` | - |
 
 </details>
 
@@ -5606,7 +5425,7 @@ async save(state: AgentState): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
+- `state`: `AgentState`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -5619,7 +5438,7 @@ async load(agentId: string): Promise&lt;AgentState | undefined&gt;
 **Parameters:**
 - `agentId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState | undefined&gt;`
+**Returns:** `Promise&lt;AgentState | undefined&gt;`
 
 #### `delete()`
 
@@ -5639,9 +5458,9 @@ async list(filter?:
 ```
 
 **Parameters:**
-- `filter`: `{ status?: import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentStatus[] | undefined; } | undefined` *(optional)*
+- `filter`: `{ status?: AgentStatus[] | undefined; } | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState[]&gt;`
+**Returns:** `Promise&lt;AgentState[]&gt;`
 
 #### `patch()`
 
@@ -5651,7 +5470,7 @@ async patch(agentId: string, updates: Partial&lt;AgentState&gt;): Promise&lt;voi
 
 **Parameters:**
 - `agentId`: `string`
-- `updates`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState&gt;`
+- `updates`: `Partial&lt;AgentState&gt;`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -5662,7 +5481,117 @@ async patch(agentId: string, updates: Partial&lt;AgentState&gt;): Promise&lt;voi
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `agents` | `agents: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState&gt;` | - |
+| `agents` | `agents: Map&lt;string, AgentState&gt;` | - |
+
+</details>
+
+---
+
+### InMemoryHistoryStorage `class`
+
+📍 [`src/infrastructure/storage/InMemoryHistoryStorage.ts:17`](src/infrastructure/storage/InMemoryHistoryStorage.ts)
+
+In-memory history storage implementation
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `addMessage()`
+
+```typescript
+async addMessage(message: HistoryMessage): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `message`: `HistoryMessage`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getMessages()`
+
+```typescript
+async getMessages(): Promise&lt;HistoryMessage[]&gt;
+```
+
+**Returns:** `Promise&lt;HistoryMessage[]&gt;`
+
+#### `getRecentMessages()`
+
+```typescript
+async getRecentMessages(count: number): Promise&lt;HistoryMessage[]&gt;
+```
+
+**Parameters:**
+- `count`: `number`
+
+**Returns:** `Promise&lt;HistoryMessage[]&gt;`
+
+#### `removeMessage()`
+
+```typescript
+async removeMessage(id: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `removeOlderThan()`
+
+```typescript
+async removeOlderThan(timestamp: number): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `timestamp`: `number`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `clear()`
+
+```typescript
+async clear(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getCount()`
+
+```typescript
+async getCount(): Promise&lt;number&gt;
+```
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getState()`
+
+```typescript
+async getState(): Promise&lt;SerializedHistoryState&gt;
+```
+
+**Returns:** `Promise&lt;SerializedHistoryState&gt;`
+
+#### `restoreState()`
+
+```typescript
+async restoreState(state: SerializedHistoryState): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `state`: `SerializedHistoryState`
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `messages` | `messages: HistoryMessage[]` | - |
+| `summaries` | `summaries: { content: string; coversCount: number; timestamp: number; }[]` | - |
 
 </details>
 
@@ -5686,7 +5615,7 @@ increment(metric: string, value: number = 1, tags?: MetricTags): void
 **Parameters:**
 - `metric`: `string`
 - `value`: `number` *(optional)* (default: `1`)
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -5699,7 +5628,7 @@ gauge(metric: string, value: number, tags?: MetricTags): void
 **Parameters:**
 - `metric`: `string`
 - `value`: `number`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -5712,7 +5641,7 @@ timing(metric: string, duration: number, tags?: MetricTags): void
 **Parameters:**
 - `metric`: `string`
 - `duration`: `number`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -5725,21 +5654,9 @@ histogram(metric: string, value: number, tags?: MetricTags): void
 **Parameters:**
 - `metric`: `string`
 - `value`: `number`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
-
-#### `makeKey()`
-
-```typescript
-private makeKey(metric: string, tags?: MetricTags): string
-```
-
-**Parameters:**
-- `metric`: `string`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
-
-**Returns:** `string`
 
 #### `getMetrics()`
 
@@ -5771,7 +5688,7 @@ getTimingStats(metric: string, tags?: MetricTags):
 
 **Parameters:**
 - `metric`: `string`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `{ count: number; min: number; max: number; mean: number; p50: number; p95: number; p99: number; } | null`
 
@@ -5807,7 +5724,7 @@ async savePlan(plan: Plan): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
+- `plan`: `Plan`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -5820,7 +5737,7 @@ async getPlan(planId: string): Promise&lt;Plan | undefined&gt;
 **Parameters:**
 - `planId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan | undefined&gt;`
+**Returns:** `Promise&lt;Plan | undefined&gt;`
 
 #### `updateTask()`
 
@@ -5830,7 +5747,7 @@ async updateTask(planId: string, task: Task): Promise&lt;void&gt;
 
 **Parameters:**
 - `planId`: `string`
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
+- `task`: `Task`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -5842,7 +5759,7 @@ async addTask(planId: string, task: Task): Promise&lt;void&gt;
 
 **Parameters:**
 - `planId`: `string`
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
+- `task`: `Task`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -5864,9 +5781,9 @@ async listPlans(filter?:
 ```
 
 **Parameters:**
-- `filter`: `{ status?: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").PlanStatus[] | undefined; } | undefined` *(optional)*
+- `filter`: `{ status?: PlanStatus[] | undefined; } | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan[]&gt;`
+**Returns:** `Promise&lt;Plan[]&gt;`
 
 #### `findByWebhookId()`
 
@@ -5877,7 +5794,7 @@ async findByWebhookId(webhookId: string): Promise&lt;
 **Parameters:**
 - `webhookId`: `string`
 
-**Returns:** `Promise&lt;{ plan: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan; task: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task; } | undefined&gt;`
+**Returns:** `Promise&lt;{ plan: Plan; task: Task; } | undefined&gt;`
 
 </details>
 
@@ -5886,7 +5803,7 @@ async findByWebhookId(webhookId: string): Promise&lt;
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `plans` | `plans: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan&gt;` | - |
+| `plans` | `plans: Map&lt;string, Plan&gt;` | - |
 
 </details>
 
@@ -5906,7 +5823,7 @@ async save(session: Session): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `session`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session`
+- `session`: `Session`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -5919,7 +5836,7 @@ async load(sessionId: string): Promise&lt;Session | null&gt;
 **Parameters:**
 - `sessionId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session | null&gt;`
+**Returns:** `Promise&lt;Session | null&gt;`
 
 #### `delete()`
 
@@ -5950,9 +5867,9 @@ async list(filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;
 ```
 
 **Parameters:**
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter | undefined` *(optional)*
+- `filter`: `SessionFilter | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary[]&gt;`
+**Returns:** `Promise&lt;SessionSummary[]&gt;`
 
 #### `search()`
 
@@ -5962,9 +5879,9 @@ async search(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]
 
 **Parameters:**
 - `query`: `string`
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter | undefined` *(optional)*
+- `filter`: `SessionFilter | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary[]&gt;`
+**Returns:** `Promise&lt;SessionSummary[]&gt;`
 
 #### `clear()`
 
@@ -5976,29 +5893,6 @@ clear(): void
 
 **Returns:** `void`
 
-#### `applyFilter()`
-
-```typescript
-private applyFilter(sessions: Session[], filter: SessionFilter): Session[]
-```
-
-**Parameters:**
-- `sessions`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session[]`
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session[]`
-
-#### `toSummary()`
-
-```typescript
-private toSummary(session: Session): SessionSummary
-```
-
-**Parameters:**
-- `session`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary`
-
 </details>
 
 <details>
@@ -6006,7 +5900,7 @@ private toSummary(session: Session): SessionSummary
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `sessions` | `sessions: Map&lt;string, import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session&gt;` | - |
+| `sessions` | `sessions: Map&lt;string, Session&gt;` | - |
 
 </details>
 
@@ -6030,7 +5924,7 @@ async get(key: string): Promise&lt;MemoryEntry | undefined&gt;
 **Parameters:**
 - `key`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryEntry | undefined&gt;`
+**Returns:** `Promise&lt;MemoryEntry | undefined&gt;`
 
 #### `set()`
 
@@ -6040,7 +5934,7 @@ async set(key: string, entry: MemoryEntry): Promise&lt;void&gt;
 
 **Parameters:**
 - `key`: `string`
-- `entry`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryEntry`
+- `entry`: `MemoryEntry`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -6072,7 +5966,7 @@ async has(key: string): Promise&lt;boolean&gt;
 async getAll(): Promise&lt;MemoryEntry[]&gt;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryEntry[]&gt;`
+**Returns:** `Promise&lt;MemoryEntry[]&gt;`
 
 #### `getByScope()`
 
@@ -6081,9 +5975,9 @@ async getByScope(scope: MemoryScope): Promise&lt;MemoryEntry[]&gt;
 ```
 
 **Parameters:**
-- `scope`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryScope`
+- `scope`: `MemoryScope`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryEntry[]&gt;`
+**Returns:** `Promise&lt;MemoryEntry[]&gt;`
 
 #### `clearScope()`
 
@@ -6092,7 +5986,7 @@ async clearScope(scope: MemoryScope): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `scope`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryScope`
+- `scope`: `MemoryScope`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -6119,7 +6013,7 @@ async getTotalSize(): Promise&lt;number&gt;
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `store` | `store: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryEntry&gt;` | - |
+| `store` | `store: Map&lt;string, MemoryEntry&gt;` | - |
 
 </details>
 
@@ -6140,7 +6034,7 @@ async save(name: string, stored: StoredConnectorConfig): Promise&lt;void&gt;
 
 **Parameters:**
 - `name`: `string`
-- `stored`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig`
+- `stored`: `StoredConnectorConfig`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -6153,7 +6047,7 @@ async get(name: string): Promise&lt;StoredConnectorConfig | null&gt;
 **Parameters:**
 - `name`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig | null&gt;`
+**Returns:** `Promise&lt;StoredConnectorConfig | null&gt;`
 
 #### `delete()`
 
@@ -6191,7 +6085,7 @@ async list(): Promise&lt;string[]&gt;
 async listAll(): Promise&lt;StoredConnectorConfig[]&gt;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig[]&gt;`
+**Returns:** `Promise&lt;StoredConnectorConfig[]&gt;`
 
 #### `clear()`
 
@@ -6220,7 +6114,7 @@ size(): number
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `configs` | `configs: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig&gt;` | - |
+| `configs` | `configs: Map&lt;string, StoredConnectorConfig&gt;` | - |
 
 </details>
 
@@ -6240,7 +6134,7 @@ constructor(private estimator: ITokenEstimator)
 ```
 
 **Parameters:**
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
+- `estimator`: `ITokenEstimator`
 
 </details>
 
@@ -6254,7 +6148,7 @@ canCompact(component: IContextComponent): boolean
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 
 **Returns:** `boolean`
 
@@ -6265,10 +6159,10 @@ async compact(component: IContextComponent, targetTokens: number): Promise&lt;IC
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 - `targetTokens`: `number`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent&gt;`
+**Returns:** `Promise&lt;IContextComponent&gt;`
 
 #### `estimateSavings()`
 
@@ -6277,7 +6171,7 @@ estimateSavings(component: IContextComponent): number
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 
 **Returns:** `number`
 
@@ -6290,6 +6184,115 @@ estimateSavings(component: IContextComponent): number
 |----------|------|-------------|
 | `name` | `name: "memory-eviction"` | - |
 | `priority` | `priority: 8` | - |
+
+</details>
+
+---
+
+### MemoryPlugin `class`
+
+📍 [`src/core/context/plugins/MemoryPlugin.ts:27`](src/core/context/plugins/MemoryPlugin.ts)
+
+Memory plugin for context management
+
+Provides the working memory index as a context component.
+When compaction is needed, it evicts least-important entries.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+Create a memory plugin
+
+```typescript
+constructor(memory: WorkingMemory, evictBatchSize: number = 3)
+```
+
+**Parameters:**
+- `memory`: `WorkingMemory`
+- `evictBatchSize`: `number` *(optional)* (default: `3`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `getMemory()`
+
+Get the underlying WorkingMemory
+
+```typescript
+getMemory(): WorkingMemory
+```
+
+**Returns:** `WorkingMemory`
+
+#### `getComponent()`
+
+Get component for context
+
+```typescript
+async getComponent(): Promise&lt;IContextComponent | null&gt;
+```
+
+**Returns:** `Promise&lt;IContextComponent | null&gt;`
+
+#### `compact()`
+
+Compact by evicting least-important entries
+
+```typescript
+override async compact(_targetTokens: number, estimator: ITokenEstimator): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `_targetTokens`: `number`
+- `estimator`: `ITokenEstimator`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `destroy()`
+
+Clean up
+
+```typescript
+override destroy(): void
+```
+
+**Returns:** `void`
+
+#### `getState()`
+
+```typescript
+override getState(): SerializedMemoryPluginState
+```
+
+**Returns:** `SerializedMemoryPluginState`
+
+#### `restoreState()`
+
+```typescript
+override restoreState(_state: unknown): void
+```
+
+**Parameters:**
+- `_state`: `unknown`
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "memory_index"` | - |
+| `priority` | `priority: 8` | - |
+| `compactable` | `compactable: true` | - |
+| `memory` | `memory: WorkingMemory` | - |
+| `evictBatchSize` | `evictBatchSize: number` | - |
 
 </details>
 
@@ -6310,7 +6313,7 @@ async storeToken(key: string, token: StoredToken): Promise&lt;void&gt;
 
 **Parameters:**
 - `key`: `string`
-- `token`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").StoredToken`
+- `token`: `StoredToken`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -6323,7 +6326,7 @@ async getToken(key: string): Promise&lt;StoredToken | null&gt;
 **Parameters:**
 - `key`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").StoredToken | null&gt;`
+**Returns:** `Promise&lt;StoredToken | null&gt;`
 
 #### `deleteToken()`
 
@@ -6380,9 +6383,59 @@ size(): number
 
 ---
 
+### ParallelTasksError `class`
+
+📍 [`src/domain/errors/AIErrors.ts:244`](src/domain/errors/AIErrors.ts)
+
+Error thrown when multiple tasks fail in parallel execution (fail-all mode)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    /** Array of task failures */
+    public readonly failures: TaskFailure[]
+  )
+```
+
+**Parameters:**
+- `failures`: `TaskFailure[]`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `getErrors()`
+
+Get all failure errors
+
+```typescript
+getErrors(): Error[]
+```
+
+**Returns:** `Error[]`
+
+#### `getFailedTaskIds()`
+
+Get failed task IDs
+
+```typescript
+getFailedTaskIds(): string[]
+```
+
+**Returns:** `string[]`
+
+</details>
+
+---
+
 ### PlanExecutor `class`
 
-📍 [`src/capabilities/taskAgent/PlanExecutor.ts:51`](src/capabilities/taskAgent/PlanExecutor.ts)
+📍 [`src/capabilities/taskAgent/PlanExecutor.ts:75`](src/capabilities/taskAgent/PlanExecutor.ts)
 
 Executes a plan using LLM and tools
 
@@ -6395,9 +6448,9 @@ Executes a plan using LLM and tools
 constructor(
     agent: Agent,
     memory: WorkingMemory,
-    contextManager: ContextManager,
+    agentContext: AgentContext,
+    planPlugin: PlanPlugin,
     idempotencyCache: IdempotencyCache,
-    historyManager: HistoryManager,
     externalHandler: ExternalDependencyHandler,
     checkpointManager: CheckpointManager,
     hooks: TaskAgentHooks | undefined,
@@ -6406,15 +6459,15 @@ constructor(
 ```
 
 **Parameters:**
-- `agent`: `import("/Users/aantich/dev/oneringai/src/core/Agent").Agent`
-- `memory`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/WorkingMemory").WorkingMemory`
-- `contextManager`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextManager`
-- `idempotencyCache`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/IdempotencyCache").IdempotencyCache`
-- `historyManager`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/HistoryManager").HistoryManager`
-- `externalHandler`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ExternalDependencyHandler").ExternalDependencyHandler`
-- `checkpointManager`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/CheckpointManager").CheckpointManager`
-- `hooks`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentHooks | undefined`
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanExecutor").PlanExecutorConfig`
+- `agent`: `Agent`
+- `memory`: `WorkingMemory`
+- `agentContext`: `AgentContext`
+- `planPlugin`: `PlanPlugin`
+- `idempotencyCache`: `IdempotencyCache`
+- `externalHandler`: `ExternalDependencyHandler`
+- `checkpointManager`: `CheckpointManager`
+- `hooks`: `TaskAgentHooks | undefined`
+- `config`: `PlanExecutorConfig`
 
 </details>
 
@@ -6430,77 +6483,10 @@ async execute(plan: Plan, state: AgentState): Promise&lt;PlanExecutionResult&gt;
 ```
 
 **Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
+- `plan`: `Plan`
+- `state`: `AgentState`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanExecutor").PlanExecutionResult&gt;`
-
-#### `executeTask()`
-
-Execute a single task
-
-```typescript
-private async executeTask(plan: Plan, task: Task): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `buildSystemPrompt()`
-
-Build system prompt for task execution
-
-```typescript
-private buildSystemPrompt(plan: Plan): string
-```
-
-**Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
-
-**Returns:** `string`
-
-#### `buildTaskPrompt()`
-
-Build prompt for a specific task
-
-```typescript
-private buildTaskPrompt(plan: Plan, task: Task): string
-```
-
-**Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
-
-**Returns:** `string`
-
-#### `isPlanComplete()`
-
-Check if plan is complete
-
-```typescript
-private isPlanComplete(plan: Plan): boolean
-```
-
-**Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
-
-**Returns:** `boolean`
-
-#### `isPlanSuspended()`
-
-Check if plan is suspended (waiting on external)
-
-```typescript
-private isPlanSuspended(plan: Plan): boolean
-```
-
-**Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
-
-**Returns:** `boolean`
+**Returns:** `Promise&lt;PlanExecutionResult&gt;`
 
 #### `cancel()`
 
@@ -6530,7 +6516,27 @@ Get idempotency cache
 getIdempotencyCache(): IdempotencyCache
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/IdempotencyCache").IdempotencyCache`
+**Returns:** `IdempotencyCache`
+
+#### `getRateLimiterMetrics()`
+
+Get rate limiter metrics (if rate limiting is enabled)
+
+```typescript
+getRateLimiterMetrics():
+```
+
+**Returns:** `{ totalRequests: number; throttledRequests: number; totalWaitMs: number; avgWaitMs: number; } | null`
+
+#### `resetRateLimiter()`
+
+Reset rate limiter state (for testing or manual control)
+
+```typescript
+resetRateLimiter(): void
+```
+
+**Returns:** `void`
 
 </details>
 
@@ -6539,18 +6545,19 @@ getIdempotencyCache(): IdempotencyCache
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `agent` | `agent: import("/Users/aantich/dev/oneringai/src/core/Agent").Agent` | - |
-| `memory` | `memory: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/WorkingMemory").WorkingMemory` | - |
-| `contextManager` | `contextManager: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextManager` | - |
-| `idempotencyCache` | `idempotencyCache: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/IdempotencyCache").IdempotencyCache` | - |
-| `historyManager` | `historyManager: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/HistoryManager").HistoryManager` | - |
-| `externalHandler` | `externalHandler: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ExternalDependencyHandler").ExternalDependencyHandler` | - |
-| `checkpointManager` | `checkpointManager: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/CheckpointManager").CheckpointManager` | - |
-| `hooks` | `hooks: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentHooks | undefined` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanExecutor").PlanExecutorConfig` | - |
+| `agent` | `agent: Agent` | - |
+| `memory` | `memory: WorkingMemory` | - |
+| `agentContext` | `agentContext: AgentContext` | - |
+| `planPlugin` | `planPlugin: PlanPlugin` | - |
+| `idempotencyCache` | `idempotencyCache: IdempotencyCache` | - |
+| `externalHandler` | `externalHandler: ExternalDependencyHandler` | - |
+| `checkpointManager` | `checkpointManager: CheckpointManager` | - |
+| `hooks` | `hooks: TaskAgentHooks | undefined` | - |
+| `config` | `config: PlanExecutorConfig` | - |
 | `abortController` | `abortController: AbortController` | - |
+| `rateLimiter?` | `rateLimiter: TokenBucketRateLimiter | undefined` | - |
 | `currentMetrics` | `currentMetrics: { totalLLMCalls: number; totalToolCalls: number; totalTokensUsed: number; totalCost: number; }` | - |
-| `currentState` | `currentState: import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState | null` | - |
+| `currentState` | `currentState: AgentState | null` | - |
 
 </details>
 
@@ -6558,7 +6565,7 @@ getIdempotencyCache(): IdempotencyCache
 
 ### PlanningAgent `class`
 
-📍 [`src/capabilities/taskAgent/PlanningAgent.ts:74`](src/capabilities/taskAgent/PlanningAgent.ts)
+📍 [`src/capabilities/taskAgent/PlanningAgent.ts:90`](src/capabilities/taskAgent/PlanningAgent.ts)
 
 PlanningAgent class
 
@@ -6568,12 +6575,11 @@ PlanningAgent class
 #### `constructor`
 
 ```typescript
-private constructor(agent: Agent, config: PlanningAgentConfig)
+private constructor(config: PlanningAgentConfig)
 ```
 
 **Parameters:**
-- `agent`: `import("/Users/aantich/dev/oneringai/src/core/Agent").Agent`
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanningAgent").PlanningAgentConfig`
+- `config`: `PlanningAgentConfig`
 
 </details>
 
@@ -6589,22 +6595,9 @@ static create(config: PlanningAgentConfig): PlanningAgent
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanningAgent").PlanningAgentConfig`
+- `config`: `PlanningAgentConfig`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanningAgent").PlanningAgent`
-
-#### `static create()`
-
-Create a new PlanningAgent
-
-```typescript
-static create(config: PlanningAgentConfig): PlanningAgent
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanningAgent").PlanningAgentConfig`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanningAgent").PlanningAgent`
+**Returns:** `PlanningAgent`
 
 </details>
 
@@ -6622,7 +6615,7 @@ async generatePlan(input:
 **Parameters:**
 - `input`: `{ goal: string; context?: string | undefined; constraints?: string[] | undefined; }`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanningAgent").GeneratedPlan&gt;`
+**Returns:** `Promise&lt;GeneratedPlan&gt;`
 
 #### `refinePlan()`
 
@@ -6633,36 +6626,10 @@ async refinePlan(plan: Plan, feedback: string): Promise&lt;GeneratedPlan&gt;
 ```
 
 **Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
+- `plan`: `Plan`
 - `feedback`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanningAgent").GeneratedPlan&gt;`
-
-#### `buildPlanningPrompt()`
-
-Build planning prompt from input
-
-```typescript
-private buildPlanningPrompt(input:
-```
-
-**Parameters:**
-- `input`: `{ goal: string; context?: string | undefined; constraints?: string[] | undefined; }`
-
-**Returns:** `string`
-
-#### `estimateComplexity()`
-
-Estimate plan complexity
-
-```typescript
-private estimateComplexity(tasks: TaskInput[]): 'low' | 'medium' | 'high'
-```
-
-**Parameters:**
-- `tasks`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").TaskInput[]`
-
-**Returns:** `"low" | "medium" | "high"`
+**Returns:** `Promise&lt;GeneratedPlan&gt;`
 
 #### `getCurrentTasks()`
 
@@ -6672,7 +6639,7 @@ Get current tasks (for tool access)
 getCurrentTasks(): TaskInput[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").TaskInput[]`
+**Returns:** `TaskInput[]`
 
 #### `addTask()`
 
@@ -6683,7 +6650,7 @@ addTask(task: TaskInput): void
 ```
 
 **Parameters:**
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").TaskInput`
+- `task`: `TaskInput`
 
 **Returns:** `void`
 
@@ -6697,7 +6664,7 @@ updateTask(name: string, updates: Partial&lt;TaskInput&gt;): void
 
 **Parameters:**
 - `name`: `string`
-- `updates`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Task").TaskInput&gt;`
+- `updates`: `Partial&lt;TaskInput&gt;`
 
 **Returns:** `void`
 
@@ -6731,10 +6698,137 @@ finalizePlanning(): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `agent` | `agent: import("/Users/aantich/dev/oneringai/src/core/Agent").Agent` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanningAgent").PlanningAgentConfig` | - |
-| `currentTasks` | `currentTasks: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").TaskInput[]` | - |
+| `agent` | `agent: Agent` | - |
+| `config` | `config: PlanningAgentConfig` | - |
+| `currentTasks` | `currentTasks: TaskInput[]` | - |
 | `planningComplete` | `planningComplete: boolean` | - |
+
+</details>
+
+---
+
+### PlanPlugin `class`
+
+📍 [`src/core/context/plugins/PlanPlugin.ts:25`](src/core/context/plugins/PlanPlugin.ts)
+
+Plan plugin for context management
+
+Provides the execution plan as a context component.
+Priority 1 (critical, never compacted).
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `setPlan()`
+
+Set the current plan
+
+```typescript
+setPlan(plan: Plan): void
+```
+
+**Parameters:**
+- `plan`: `Plan`
+
+**Returns:** `void`
+
+#### `getPlan()`
+
+Get the current plan
+
+```typescript
+getPlan(): Plan | null
+```
+
+**Returns:** `Plan | null`
+
+#### `clearPlan()`
+
+Clear the plan
+
+```typescript
+clearPlan(): void
+```
+
+**Returns:** `void`
+
+#### `updateTaskStatus()`
+
+Update a task's status within the plan
+
+```typescript
+updateTaskStatus(taskId: string, status: TaskStatus): void
+```
+
+**Parameters:**
+- `taskId`: `string`
+- `status`: `TaskStatus`
+
+**Returns:** `void`
+
+#### `getTask()`
+
+Get a task by ID or name
+
+```typescript
+getTask(taskId: string): Task | undefined
+```
+
+**Parameters:**
+- `taskId`: `string`
+
+**Returns:** `Task | undefined`
+
+#### `isComplete()`
+
+Check if all tasks are completed
+
+```typescript
+isComplete(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `getComponent()`
+
+Get component for context
+
+```typescript
+async getComponent(): Promise&lt;IContextComponent | null&gt;
+```
+
+**Returns:** `Promise&lt;IContextComponent | null&gt;`
+
+#### `getState()`
+
+```typescript
+override getState(): SerializedPlanPluginState
+```
+
+**Returns:** `SerializedPlanPluginState`
+
+#### `restoreState()`
+
+```typescript
+override restoreState(state: unknown): void
+```
+
+**Parameters:**
+- `state`: `unknown`
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "plan"` | - |
+| `priority` | `priority: 1` | - |
+| `compactable` | `compactable: false` | - |
+| `plan` | `plan: Plan | null` | - |
 
 </details>
 
@@ -6742,9 +6836,12 @@ finalizePlanning(): void
 
 ### TaskAgent `class`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:197`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:252`](src/capabilities/taskAgent/TaskAgent.ts)
 
 TaskAgent - autonomous task-based agent.
+
+Extends BaseAgent to inherit connector resolution, tool management,
+permission management, session management, and lifecycle.
 
 Features:
 - Plan-driven execution
@@ -6762,7 +6859,7 @@ Features:
 protected constructor(
     id: string,
     state: AgentState,
-    storage: IAgentStorage,
+    agentStorage: IAgentStorage,
     memory: WorkingMemory,
     config: TaskAgentConfig,
     hooks?: TaskAgentHooks
@@ -6771,11 +6868,11 @@ protected constructor(
 
 **Parameters:**
 - `id`: `string`
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
-- `storage`: `import("/Users/aantich/dev/oneringai/src/infrastructure/storage/InMemoryStorage").IAgentStorage`
-- `memory`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/WorkingMemory").WorkingMemory`
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentConfig`
-- `hooks`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentHooks | undefined` *(optional)*
+- `state`: `AgentState`
+- `agentStorage`: `IAgentStorage`
+- `memory`: `WorkingMemory`
+- `config`: `TaskAgentConfig`
+- `hooks`: `TaskAgentHooks | undefined` *(optional)*
 
 </details>
 
@@ -6791,38 +6888,9 @@ static create(config: TaskAgentConfig): TaskAgent
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentConfig`
+- `config`: `TaskAgentConfig`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgent`
-
-#### `static resume()`
-
-Resume an existing agent from storage
-
-```typescript
-static async resume(
-    agentId: string,
-    options:
-```
-
-**Parameters:**
-- `agentId`: `string`
-- `options`: `{ storage: import("/Users/aantich/dev/oneringai/src/infrastructure/storage/InMemoryStorage").IAgentStorage; tools?: import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[] | undefined; hooks?: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentHooks | undefined; }`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgent&gt;`
-
-#### `static create()`
-
-Create a new TaskAgent
-
-```typescript
-static create(config: TaskAgentConfig): TaskAgent
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentConfig`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgent`
+**Returns:** `TaskAgent`
 
 #### `static resume()`
 
@@ -6836,40 +6904,75 @@ static async resume(
 
 **Parameters:**
 - `agentId`: `string`
-- `options`: `{ storage: import("/Users/aantich/dev/oneringai/src/infrastructure/storage/InMemoryStorage").IAgentStorage; tools?: import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[] | undefined; hooks?: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentHooks | undefined; }`
+- `options`: `{ storage: IAgentStorage; tools?: ToolFunction&lt;any, any&gt;[] | undefined; hooks?: TaskAgentHooks | undefined; session?: { storage: ISessionStorage; } | undefined; }`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgent&gt;`
+**Returns:** `Promise&lt;TaskAgent&gt;`
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
 
-#### `wrapToolWithCache()`
-
-Wrap a tool with idempotency cache and enhanced context
+#### `getAgentType()`
 
 ```typescript
-private wrapToolWithCache(tool: ToolFunction): ToolFunction
+protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent'
 ```
 
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
+**Returns:** `"agent" | "task-agent" | "universal-agent"`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-
-#### `initializeComponents()`
-
-Initialize internal components
+#### `prepareSessionState()`
 
 ```typescript
-private initializeComponents(config: TaskAgentConfig): void
+protected prepareSessionState(): void
 ```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentConfig`
 
 **Returns:** `void`
+
+#### `restoreSessionState()`
+
+```typescript
+protected async restoreSessionState(session: Session): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `session`: `Session`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getSerializedPlan()`
+
+```typescript
+protected getSerializedPlan(): SerializedPlan | undefined
+```
+
+**Returns:** `SerializedPlan | undefined`
+
+#### `getSerializedMemory()`
+
+```typescript
+protected getSerializedMemory(): SerializedMemory | undefined
+```
+
+**Returns:** `SerializedMemory | undefined`
+
+#### `saveSession()`
+
+```typescript
+async saveSession(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `hasContext()`
+
+Check if context is available (components initialized)
+
+```typescript
+hasContext(): boolean
+```
+
+**Returns:** `boolean`
 
 #### `start()`
 
@@ -6880,9 +6983,9 @@ async start(planInput: PlanInput): Promise&lt;AgentHandle&gt;
 ```
 
 **Parameters:**
-- `planInput`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").PlanInput`
+- `planInput`: `PlanInput`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").AgentHandle&gt;`
+**Returns:** `Promise&lt;AgentHandle&gt;`
 
 #### `pause()`
 
@@ -6897,6 +7000,7 @@ async pause(): Promise&lt;void&gt;
 #### `resume()`
 
 Resume execution after pause
+Note: Named resumeExecution to avoid conflict with BaseAgent if any
 
 ```typescript
 async resume(): Promise&lt;void&gt;
@@ -6944,14 +7048,15 @@ async completeTaskManually(taskId: string, result: unknown): Promise&lt;void&gt;
 
 #### `updatePlan()`
 
-Update the plan
+Update the plan with validation
 
 ```typescript
-async updatePlan(updates: PlanUpdates): Promise&lt;void&gt;
+async updatePlan(updates: PlanUpdates, options?: PlanUpdateOptions): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `updates`: `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").PlanUpdates`
+- `updates`: `PlanUpdates`
+- `options`: `PlanUpdateOptions | undefined` *(optional)*
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -6963,7 +7068,7 @@ Get current agent state
 getState(): AgentState
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
+**Returns:** `AgentState`
 
 #### `getPlan()`
 
@@ -6973,7 +7078,7 @@ Get current plan
 getPlan(): Plan
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
+**Returns:** `Plan`
 
 #### `getMemory()`
 
@@ -6983,74 +7088,7 @@ Get working memory
 getMemory(): WorkingMemory
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/WorkingMemory").WorkingMemory`
-
-#### `getSessionId()`
-
-Get the current session ID (if session is enabled)
-
-```typescript
-getSessionId(): string | null
-```
-
-**Returns:** `string | null`
-
-#### `hasSession()`
-
-Check if this agent has session support enabled
-
-```typescript
-hasSession(): boolean
-```
-
-**Returns:** `boolean`
-
-#### `saveSession()`
-
-Save the current session to storage
-
-```typescript
-async saveSession(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `getSession()`
-
-Get the current session (for advanced use)
-
-```typescript
-getSession(): Session | null
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session | null`
-
-#### `updateSessionData()`
-
-Update session custom data
-
-```typescript
-updateSessionData(key: string, value: unknown): void
-```
-
-**Parameters:**
-- `key`: `string`
-- `value`: `unknown`
-
-**Returns:** `void`
-
-#### `getSessionData()`
-
-Get session custom data
-
-```typescript
-getSessionData&lt;T = unknown&gt;(key: string): T | undefined
-```
-
-**Parameters:**
-- `key`: `string`
-
-**Returns:** `T | undefined`
+**Returns:** `WorkingMemory`
 
 #### `executePlan()`
 
@@ -7060,7 +7098,7 @@ Execute the plan (internal)
 protected async executePlan(): Promise&lt;PlanResult&gt;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").PlanResult&gt;`
+**Returns:** `Promise&lt;PlanResult&gt;`
 
 #### `destroy()`
 
@@ -7080,30 +7118,27 @@ async destroy(): Promise&lt;void&gt;
 | Property | Type | Description |
 |----------|------|-------------|
 | `id` | `id: string` | - |
-| `state` | `state: import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState` | - |
-| `storage` | `storage: import("/Users/aantich/dev/oneringai/src/infrastructure/storage/InMemoryStorage").IAgentStorage` | - |
-| `memory` | `memory: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/WorkingMemory").WorkingMemory` | - |
-| `hooks?` | `hooks: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentHooks | undefined` | - |
-| `executionPromise?` | `executionPromise: Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").PlanResult&gt; | undefined` | - |
-| `agent?` | `agent: import("/Users/aantich/dev/oneringai/src/core/Agent").Agent | undefined` | - |
-| `contextManager?` | `contextManager: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ContextManager").ContextManager | undefined` | - |
-| `idempotencyCache?` | `idempotencyCache: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/IdempotencyCache").IdempotencyCache | undefined` | - |
-| `historyManager?` | `historyManager: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/HistoryManager").HistoryManager | undefined` | - |
-| `externalHandler?` | `externalHandler: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/ExternalDependencyHandler").ExternalDependencyHandler | undefined` | - |
-| `planExecutor?` | `planExecutor: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanExecutor").PlanExecutor | undefined` | - |
-| `checkpointManager?` | `checkpointManager: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/CheckpointManager").CheckpointManager | undefined` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").TaskAgentConfig` | - |
+| `state` | `state: AgentState` | - |
+| `agentStorage` | `agentStorage: IAgentStorage` | - |
+| `memory` | `memory: WorkingMemory` | - |
+| `hooks?` | `hooks: TaskAgentHooks | undefined` | - |
+| `executionPromise?` | `executionPromise: Promise&lt;PlanResult&gt; | undefined` | - |
+| `agent?` | `agent: Agent | undefined` | - |
+| `idempotencyCache?` | `idempotencyCache: IdempotencyCache | undefined` | - |
+| `externalHandler?` | `externalHandler: ExternalDependencyHandler | undefined` | - |
+| `planExecutor?` | `planExecutor: PlanExecutor | undefined` | - |
+| `checkpointManager?` | `checkpointManager: CheckpointManager | undefined` | - |
 | `eventCleanupFunctions` | `eventCleanupFunctions: (() =&gt; void)[]` | - |
 
 </details>
 
 ---
 
-### TaskAgentContextProvider `class`
+### TaskTimeoutError `class`
 
-📍 [`src/infrastructure/context/providers/TaskAgentContextProvider.ts:23`](src/infrastructure/context/providers/TaskAgentContextProvider.ts)
+📍 [`src/domain/errors/AIErrors.ts:197`](src/domain/errors/AIErrors.ts)
 
-Context provider for TaskAgent
+Error thrown when a task execution times out
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -7111,101 +7146,45 @@ Context provider for TaskAgent
 #### `constructor`
 
 ```typescript
-constructor(config: TaskAgentContextProviderConfig)
+constructor(
+    public readonly taskId: string,
+    public readonly taskName: string,
+    public readonly timeoutMs: number
+  )
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/infrastructure/context/providers/TaskAgentContextProvider").TaskAgentContextProviderConfig`
+- `taskId`: `string`
+- `taskName`: `string`
+- `timeoutMs`: `number`
 
 </details>
 
-<details>
-<summary><strong>Methods</strong></summary>
+---
 
-#### `getComponents()`
+### TaskValidationError `class`
 
-```typescript
-async getComponents(): Promise&lt;IContextComponent[]&gt;
-```
+📍 [`src/domain/errors/AIErrors.ts:216`](src/domain/errors/AIErrors.ts)
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]&gt;`
-
-#### `applyCompactedComponents()`
-
-```typescript
-async applyCompactedComponents(components: IContextComponent[]): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `getMaxContextSize()`
-
-```typescript
-getMaxContextSize(): number
-```
-
-**Returns:** `number`
-
-#### `updateConfig()`
-
-Update configuration (e.g., when task changes)
-
-```typescript
-updateConfig(updates: Partial&lt;TaskAgentContextProviderConfig&gt;): void
-```
-
-**Parameters:**
-- `updates`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/infrastructure/context/providers/TaskAgentContextProvider").TaskAgentContextProviderConfig&gt;`
-
-**Returns:** `void`
-
-#### `buildSystemPrompt()`
-
-Build system prompt for TaskAgent
-
-```typescript
-private buildSystemPrompt(): string
-```
-
-**Returns:** `string`
-
-#### `serializePlan()`
-
-Serialize plan for context
-
-```typescript
-private serializePlan(plan: Plan): string
-```
-
-**Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
-
-**Returns:** `string`
-
-#### `extractToolOutputs()`
-
-Extract tool outputs from conversation history
-
-```typescript
-private extractToolOutputs(messages: any[]): any[]
-```
-
-**Parameters:**
-- `messages`: `any[]`
-
-**Returns:** `any[]`
-
-</details>
+Error thrown when task completion validation fails
 
 <details>
-<summary><strong>Properties</strong></summary>
+<summary><strong>Constructor</strong></summary>
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/infrastructure/context/providers/TaskAgentContextProvider").TaskAgentContextProviderConfig` | - |
+#### `constructor`
+
+```typescript
+constructor(
+    public readonly taskId: string,
+    public readonly taskName: string,
+    public readonly reason: string
+  )
+```
+
+**Parameters:**
+- `taskId`: `string`
+- `taskName`: `string`
+- `reason`: `string`
 
 </details>
 
@@ -7213,14 +7192,16 @@ private extractToolOutputs(messages: any[]): any[]
 
 ### WorkingMemory `class`
 
-📍 [`src/capabilities/taskAgent/WorkingMemory.ts:31`](src/capabilities/taskAgent/WorkingMemory.ts)
+📍 [`src/capabilities/taskAgent/WorkingMemory.ts:79`](src/capabilities/taskAgent/WorkingMemory.ts)
 
 WorkingMemory manages the agent's indexed working memory.
 
 Features:
 - Store/retrieve with descriptions for index
-- Scoped memory (task vs persistent)
-- LRU eviction when approaching limits
+- Scoped memory (simple or task-aware)
+- Priority-based eviction (respects pinned, priority, then LRU)
+- Pluggable priority calculation via PriorityCalculator strategy
+- Task completion detection and stale entry notification
 - Event emission for monitoring
 
 <details>
@@ -7228,18 +7209,61 @@ Features:
 
 #### `constructor`
 
+Create a WorkingMemory instance
+
 ```typescript
-constructor(storage: IMemoryStorage, config: WorkingMemoryConfig = DEFAULT_MEMORY_CONFIG)
+constructor(
+    storage: IMemoryStorage,
+    config: WorkingMemoryConfig = DEFAULT_MEMORY_CONFIG,
+    priorityCalculator: PriorityCalculator = staticPriorityCalculator
+  )
 ```
 
 **Parameters:**
-- `storage`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IMemoryStorage").IMemoryStorage`
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").WorkingMemoryConfig` *(optional)* (default: `DEFAULT_MEMORY_CONFIG`)
+- `storage`: `IMemoryStorage`
+- `config`: `WorkingMemoryConfig` *(optional)* (default: `DEFAULT_MEMORY_CONFIG`)
+- `priorityCalculator`: `PriorityCalculator` *(optional)* (default: `staticPriorityCalculator`)
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
+
+#### `setPriorityCalculator()`
+
+Set the priority calculator (for switching strategies at runtime)
+
+```typescript
+setPriorityCalculator(calculator: PriorityCalculator): void
+```
+
+**Parameters:**
+- `calculator`: `PriorityCalculator`
+
+**Returns:** `void`
+
+#### `setPriorityContext()`
+
+Update priority context (e.g., task states for TaskAgent)
+
+```typescript
+setPriorityContext(context: PriorityContext): void
+```
+
+**Parameters:**
+- `context`: `PriorityContext`
+
+**Returns:** `void`
+
+#### `getPriorityContext()`
+
+Get the current priority context
+
+```typescript
+getPriorityContext(): PriorityContext
+```
+
+**Returns:** `PriorityContext`
 
 #### `store()`
 
@@ -7250,21 +7274,68 @@ async store(
     key: string,
     description: string,
     value: unknown,
-    scope: MemoryScope = 'task'
-  ): Promise&lt;void&gt;
+    options?:
 ```
 
 **Parameters:**
 - `key`: `string`
 - `description`: `string`
 - `value`: `unknown`
-- `scope`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryScope` *(optional)* (default: `'task'`)
+- `options`: `{ scope?: MemoryScope | undefined; priority?: MemoryPriority | undefined; pinned?: boolean | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `storeForTasks()`
+
+Store a value scoped to specific tasks
+Convenience method for task-aware memory
+
+```typescript
+async storeForTasks(
+    key: string,
+    description: string,
+    value: unknown,
+    taskIds: string[],
+    options?:
+```
+
+**Parameters:**
+- `key`: `string`
+- `description`: `string`
+- `value`: `unknown`
+- `taskIds`: `string[]`
+- `options`: `{ priority?: MemoryPriority | undefined; pinned?: boolean | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `storeForPlan()`
+
+Store a value scoped to the entire plan
+Convenience method for plan-scoped memory
+
+```typescript
+async storeForPlan(
+    key: string,
+    description: string,
+    value: unknown,
+    options?:
+```
+
+**Parameters:**
+- `key`: `string`
+- `description`: `string`
+- `value`: `unknown`
+- `options`: `{ priority?: MemoryPriority | undefined; pinned?: boolean | undefined; } | undefined` *(optional)*
 
 **Returns:** `Promise&lt;void&gt;`
 
 #### `retrieve()`
 
 Retrieve a value from working memory
+
+Note: Access stats update is not strictly atomic. Under very high concurrency,
+accessCount may be slightly inaccurate. This is acceptable for memory management
+purposes where exact counts are not critical.
 
 ```typescript
 async retrieve(key: string): Promise&lt;unknown&gt;
@@ -7316,7 +7387,8 @@ async has(key: string): Promise&lt;boolean&gt;
 
 #### `persist()`
 
-Promote a task-scoped entry to persistent
+Promote an entry to persistent scope
+Works with both simple and task-aware scopes
 
 ```typescript
 async persist(key: string): Promise&lt;void&gt;
@@ -7324,6 +7396,76 @@ async persist(key: string): Promise&lt;void&gt;
 
 **Parameters:**
 - `key`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `pin()`
+
+Pin an entry (never evicted)
+
+```typescript
+async pin(key: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `key`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `unpin()`
+
+Unpin an entry
+
+```typescript
+async unpin(key: string, newPriority: MemoryPriority = 'normal'): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `key`: `string`
+- `newPriority`: `MemoryPriority` *(optional)* (default: `'normal'`)
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `setPriority()`
+
+Set the base priority of an entry
+
+```typescript
+async setPriority(key: string, priority: MemoryPriority): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `key`: `string`
+- `priority`: `MemoryPriority`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `updateScope()`
+
+Update the scope of an entry without re-storing the value
+
+```typescript
+async updateScope(key: string, scope: MemoryScope): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `key`: `string`
+- `scope`: `MemoryScope`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `addTasksToScope()`
+
+Add task IDs to an existing task-scoped entry
+If entry is not task-scoped, converts it to task-scoped
+
+```typescript
+async addTasksToScope(key: string, taskIds: string[]): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `key`: `string`
+- `taskIds`: `string[]`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -7336,7 +7478,7 @@ async clearScope(scope: MemoryScope): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `scope`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryScope`
+- `scope`: `MemoryScope`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -7352,13 +7494,13 @@ async clear(): Promise&lt;void&gt;
 
 #### `getIndex()`
 
-Get memory index
+Get memory index with computed effective priorities
 
 ```typescript
 async getIndex(): Promise&lt;MemoryIndex&gt;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryIndex&gt;`
+**Returns:** `Promise&lt;MemoryIndex&gt;`
 
 #### `formatIndex()`
 
@@ -7370,9 +7512,28 @@ async formatIndex(): Promise&lt;string&gt;
 
 **Returns:** `Promise&lt;string&gt;`
 
+#### `evict()`
+
+Evict entries using specified strategy
+
+Eviction order:
+1. Never evict pinned entries
+2. Evict low priority first, then normal, then high (never critical)
+3. Within same priority, use strategy (LRU or largest size)
+
+```typescript
+async evict(count: number, strategy: EvictionStrategy = 'lru'): Promise&lt;string[]&gt;
+```
+
+**Parameters:**
+- `count`: `number`
+- `strategy`: `EvictionStrategy` *(optional)* (default: `'lru'`)
+
+**Returns:** `Promise&lt;string[]&gt;`
+
 #### `evictLRU()`
 
-Evict least recently used entries
+Evict entries using priority-aware LRU algorithm
 
 ```typescript
 async evictLRU(count: number): Promise&lt;string[]&gt;
@@ -7385,7 +7546,7 @@ async evictLRU(count: number): Promise&lt;string[]&gt;
 
 #### `evictBySize()`
 
-Evict largest entries first
+Evict largest entries first (priority-aware)
 
 ```typescript
 async evictBySize(count: number): Promise&lt;string[]&gt;
@@ -7396,15 +7557,197 @@ async evictBySize(count: number): Promise&lt;string[]&gt;
 
 **Returns:** `Promise&lt;string[]&gt;`
 
+#### `onTaskComplete()`
+
+Handle task completion - detect and notify about stale entries
+
+Call this when a task completes to:
+1. Update priority context with new task state
+2. Detect entries that became stale
+3. Emit event to notify LLM about stale entries
+
+```typescript
+async onTaskComplete(
+    taskId: string,
+    taskStates: Map&lt;string, TaskStatusForMemory&gt;
+  ): Promise&lt;StaleEntryInfo[]&gt;
+```
+
+**Parameters:**
+- `taskId`: `string`
+- `taskStates`: `Map&lt;string, TaskStatusForMemory&gt;`
+
+**Returns:** `Promise&lt;StaleEntryInfo[]&gt;`
+
+#### `evictCompletedTaskEntries()`
+
+Evict entries for completed tasks
+
+Removes entries that were scoped only to completed tasks.
+Use after onTaskComplete() if you want automatic cleanup.
+
+```typescript
+async evictCompletedTaskEntries(
+    taskStates: Map&lt;string, TaskStatusForMemory&gt;
+  ): Promise&lt;string[]&gt;
+```
+
+**Parameters:**
+- `taskStates`: `Map&lt;string, TaskStatusForMemory&gt;`
+
+**Returns:** `Promise&lt;string[]&gt;`
+
 #### `getAccess()`
 
 Get limited memory access for tools
+
+This provides a simplified interface for tools to interact with memory
+without exposing the full WorkingMemory API.
 
 ```typescript
 getAccess(): WorkingMemoryAccess
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IToolContext").WorkingMemoryAccess`
+**Returns:** `WorkingMemoryAccess`
+
+#### `storeRaw()`
+
+Store raw data (low priority, first to be evicted)
+
+Use this for original/unprocessed data that should be summarized.
+Raw data is automatically evicted first when memory pressure is high.
+
+```typescript
+async storeRaw(
+    key: string,
+    description: string,
+    value: unknown,
+    options?:
+```
+
+**Parameters:**
+- `key`: `string`
+- `description`: `string`
+- `value`: `unknown`
+- `options`: `{ taskIds?: string[] | undefined; scope?: MemoryScope | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `storeSummary()`
+
+Store a summary derived from raw data (normal priority)
+
+Use this for processed/summarized data that extracts key information.
+Links back to source data for cleanup tracking.
+
+```typescript
+async storeSummary(
+    key: string,
+    description: string,
+    value: unknown,
+    derivedFrom: string | string[],
+    options?:
+```
+
+**Parameters:**
+- `key`: `string`
+- `description`: `string`
+- `value`: `unknown`
+- `derivedFrom`: `string | string[]`
+- `options`: `{ taskIds?: string[] | undefined; scope?: MemoryScope | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `storeFindings()`
+
+Store final findings (high priority, kept longest)
+
+Use this for conclusions, insights, or final results that should be preserved.
+These are the last to be evicted and typically span the entire plan.
+
+```typescript
+async storeFindings(
+    key: string,
+    description: string,
+    value: unknown,
+    _derivedFrom?: string | string[],
+    options?:
+```
+
+**Parameters:**
+- `key`: `string`
+- `description`: `string`
+- `value`: `unknown`
+- `_derivedFrom`: `string | string[] | undefined` *(optional)*
+- `options`: `{ taskIds?: string[] | undefined; scope?: MemoryScope | undefined; pinned?: boolean | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `cleanupRawData()`
+
+Clean up raw data after summary/findings are created
+
+Call this after creating summaries to free up memory used by raw data.
+Only deletes entries in the 'raw' tier.
+
+```typescript
+async cleanupRawData(derivedFromKeys: string[]): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `derivedFromKeys`: `string[]`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getByTier()`
+
+Get all entries by tier
+
+```typescript
+async getByTier(tier: MemoryTier): Promise&lt;MemoryEntry[]&gt;
+```
+
+**Parameters:**
+- `tier`: `MemoryTier`
+
+**Returns:** `Promise&lt;MemoryEntry[]&gt;`
+
+#### `promote()`
+
+Promote an entry to a higher tier
+
+Changes the key prefix and updates priority.
+Use this when raw data becomes more valuable (e.g., frequently accessed).
+
+```typescript
+async promote(key: string, toTier: MemoryTier): Promise&lt;string&gt;
+```
+
+**Parameters:**
+- `key`: `string`
+- `toTier`: `MemoryTier`
+
+**Returns:** `Promise&lt;string&gt;`
+
+#### `getTierStats()`
+
+Get tier statistics
+
+```typescript
+async getTierStats(): Promise&lt;Record&lt;MemoryTier,
+```
+
+**Returns:** `Promise&lt;Record&lt;MemoryTier, { count: number; sizeBytes: number; }&gt;&gt;`
+
+#### `getStats()`
+
+Get statistics about memory usage
+
+```typescript
+async getStats(): Promise&lt;
+```
+
+**Returns:** `Promise&lt;{ totalEntries: number; totalSizeBytes: number; utilizationPercent: number; byPriority: Record&lt;MemoryPriority, number&gt;; pinnedCount: number; }&gt;`
 
 #### `getLimit()`
 
@@ -7416,6 +7759,17 @@ getLimit(): number
 
 **Returns:** `number`
 
+#### `destroy()`
+
+Destroy the WorkingMemory instance
+Removes all event listeners and clears internal state
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
+
 </details>
 
 <details>
@@ -7423,8 +7777,10 @@ getLimit(): number
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `storage` | `storage: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IMemoryStorage").IMemoryStorage` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").WorkingMemoryConfig` | - |
+| `storage` | `storage: IMemoryStorage` | - |
+| `config` | `config: WorkingMemoryConfig` | - |
+| `priorityCalculator` | `priorityCalculator: PriorityCalculator` | - |
+| `priorityContext` | `priorityContext: PriorityContext` | - |
 
 </details>
 
@@ -7432,7 +7788,7 @@ getLimit(): number
 
 ### AgentHandle `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:108`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:145`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Agent handle returned from start()
 
@@ -7447,7 +7803,7 @@ Wait for completion
 wait(): Promise&lt;PlanResult&gt;;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/TaskAgent").PlanResult&gt;`
+**Returns:** `Promise&lt;PlanResult&gt;`
 
 #### `status()`
 
@@ -7457,7 +7813,7 @@ Get current status
 status(): AgentStatus;
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentStatus`
+**Returns:** `AgentStatus`
 
 </details>
 
@@ -7468,26 +7824,6 @@ status(): AgentStatus;
 |----------|------|-------------|
 | `agentId` | `agentId: string;` | - |
 | `planId` | `planId: string;` | - |
-
-</details>
-
----
-
-### CacheStats `interface`
-
-📍 [`src/capabilities/taskAgent/IdempotencyCache.ts:21`](src/capabilities/taskAgent/IdempotencyCache.ts)
-
-Cache statistics
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `entries` | `entries: number;` | - |
-| `hits` | `hits: number;` | - |
-| `misses` | `misses: number;` | - |
-| `hitRate` | `hitRate: number;` | - |
 
 </details>
 
@@ -7512,29 +7848,9 @@ Cache statistics
 
 ---
 
-### CompactionStrategy `interface`
-
-📍 [`src/capabilities/taskAgent/ContextManager.ts:30`](src/capabilities/taskAgent/ContextManager.ts)
-
-Compaction strategy configuration
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `priority` | `priority: Array&lt;'toolOutputs' | 'history' | 'memory'&gt;;` | Priority order for compaction |
-| `historyStrategy` | `historyStrategy: 'summarize' | 'truncate' | 'sliding-window';` | Strategy for history compaction |
-| `memoryStrategy` | `memoryStrategy: 'lru' | 'largest-first' | 'oldest-first';` | Strategy for memory eviction |
-| `toolOutputMaxSize` | `toolOutputMaxSize: number;` | Max tokens for tool outputs |
-
-</details>
-
----
-
 ### ConditionMemoryAccess `interface`
 
-📍 [`src/domain/entities/Task.ts:224`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:358`](src/domain/entities/Task.ts)
 
 Memory access interface for condition evaluation
 
@@ -7556,88 +7872,19 @@ get(key: string): Promise&lt;unknown&gt;;
 
 ---
 
-### ContextBudget `interface`
+### EntryWithPriority `interface`
 
-📍 [`src/capabilities/taskAgent/ContextManager.ts:58`](src/capabilities/taskAgent/ContextManager.ts)
+📍 [`src/capabilities/taskAgent/WorkingMemory.ts:54`](src/capabilities/taskAgent/WorkingMemory.ts)
 
-Context budget breakdown
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `total` | `total: number;` | - |
-| `reserved` | `reserved: number;` | - |
-| `used` | `used: number;` | - |
-| `available` | `available: number;` | - |
-| `utilizationPercent` | `utilizationPercent: number;` | - |
-| `status` | `status: 'ok' | 'warning' | 'critical';` | - |
-| `breakdown` | `breakdown: {
-    systemPrompt: number;
-    instructions: number;
-    memoryIndex: number;
-    conversationHistory: number;
-    currentInput: number;
-  };` | - |
-
-</details>
-
----
-
-### ContextComponents `interface`
-
-📍 [`src/capabilities/taskAgent/ContextManager.ts:47`](src/capabilities/taskAgent/ContextManager.ts)
-
-Context components that make up the full context
+Entry with computed effective priority
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `systemPrompt` | `systemPrompt: string;` | - |
-| `instructions` | `instructions: string;` | - |
-| `memoryIndex` | `memoryIndex: string;` | - |
-| `conversationHistory` | `conversationHistory: Array&lt;{ role: string; content: string }&gt;;` | - |
-| `currentInput` | `currentInput: string;` | - |
-
-</details>
-
----
-
-### ContextManagerConfig `interface`
-
-📍 [`src/capabilities/taskAgent/ContextManager.ts:10`](src/capabilities/taskAgent/ContextManager.ts)
-
-Context manager configuration
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `maxContextTokens` | `maxContextTokens: number;` | Model's max context tokens |
-| `compactionThreshold` | `compactionThreshold: number;` | Trigger compaction at this % of max |
-| `hardLimit` | `hardLimit: number;` | Hard limit - must compact before LLM call |
-| `responseReserve` | `responseReserve: number;` | Reserve space for response |
-| `tokenEstimator` | `tokenEstimator: 'approximate' | 'tiktoken';` | Token estimator method |
-
-</details>
-
----
-
-### ContextManagerEvents `interface`
-
-📍 [`src/capabilities/taskAgent/ContextManager.ts:122`](src/capabilities/taskAgent/ContextManager.ts)
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `compacting` | `compacting: { reason: string };` | - |
-| `compacted` | `compacted: { log: string[] };` | - |
+| `entry` | `entry: MemoryEntry;` | - |
+| `effectivePriority` | `effectivePriority: MemoryPriority;` | - |
 
 </details>
 
@@ -7645,7 +7892,7 @@ Context manager configuration
 
 ### ErrorContext `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:84`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:121`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Error context
 
@@ -7664,7 +7911,7 @@ Error context
 
 ### ExternalDependency `interface`
 
-📍 [`src/domain/entities/Task.ts:56`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:70`](src/domain/entities/Task.ts)
 
 External dependency configuration
 
@@ -7694,7 +7941,7 @@ External dependency configuration
 
 ### ExternalDependencyEvents `interface`
 
-📍 [`src/capabilities/taskAgent/ExternalDependencyHandler.ts:9`](src/capabilities/taskAgent/ExternalDependencyHandler.ts)
+📍 [`src/capabilities/taskAgent/ExternalDependencyHandler.ts:10`](src/capabilities/taskAgent/ExternalDependencyHandler.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -7731,111 +7978,20 @@ Generated plan with metadata
 
 ---
 
-### HistoryManagerConfig `interface`
+### HierarchyMetadata `interface`
 
-📍 [`src/capabilities/taskAgent/HistoryManager.ts:7`](src/capabilities/taskAgent/HistoryManager.ts)
+📍 [`src/domain/entities/Memory.ts:159`](src/domain/entities/Memory.ts)
 
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `maxDetailedMessages` | `maxDetailedMessages: number;` | Max messages to keep in full detail |
-| `compressionStrategy` | `compressionStrategy: 'summarize' | 'truncate' | 'drop';` | Strategy for older messages |
-| `summarizeBatchSize` | `summarizeBatchSize: number;` | For summarize: how many messages per summary |
-| `maxHistoryTokens?` | `maxHistoryTokens?: number;` | Max total tokens for history (estimated) |
-| `preserveToolCalls` | `preserveToolCalls: boolean;` | Keep all tool calls/results or summarize them too |
-
-</details>
-
----
-
-### IdempotencyCacheConfig `interface`
-
-📍 [`src/capabilities/taskAgent/IdempotencyCache.ts:10`](src/capabilities/taskAgent/IdempotencyCache.ts)
-
-Cache configuration
+Hierarchy metadata for tracking data relationships
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `defaultTtlMs` | `defaultTtlMs: number;` | Default TTL for cached entries |
-| `maxEntries` | `maxEntries: number;` | Max entries before eviction |
-
-</details>
-
----
-
-### IHistoryManager `interface`
-
-📍 [`src/capabilities/taskAgent/ContextManager.ts:96`](src/capabilities/taskAgent/ContextManager.ts)
-
-History manager interface (for compaction)
-
-<details>
-<summary><strong>Methods</strong></summary>
-
-#### `summarize()`
-
-```typescript
-summarize(): Promise&lt;void&gt;;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `truncate()?`
-
-```typescript
-truncate?(messages: any[], limit: number): Promise&lt;any[]&gt;;
-```
-
-**Parameters:**
-- `messages`: `any[]`
-- `limit`: `number`
-
-**Returns:** `Promise&lt;any[]&gt;`
-
-</details>
-
----
-
-### IMemoryManager `interface`
-
-📍 [`src/capabilities/taskAgent/ContextManager.ts:87`](src/capabilities/taskAgent/ContextManager.ts)
-
-Memory manager interface (for compaction)
-
-<details>
-<summary><strong>Methods</strong></summary>
-
-#### `evictLRU()`
-
-```typescript
-evictLRU(count: number): Promise&lt;string[]&gt;;
-```
-
-**Parameters:**
-- `count`: `number`
-
-**Returns:** `Promise&lt;string[]&gt;`
-
-#### `formatIndex()?`
-
-```typescript
-formatIndex?(): Promise&lt;string&gt;;
-```
-
-**Returns:** `Promise&lt;string&gt;`
-
-#### `getIndex()?`
-
-```typescript
-getIndex?(): Promise&lt;{ entries: any[] }&gt;;
-```
-
-**Returns:** `Promise&lt;{ entries: any[]; }&gt;`
+| `tier` | `tier: MemoryTier;` | Memory tier (raw, summary, or findings) |
+| `derivedFrom?` | `derivedFrom?: string[];` | Keys this entry was derived from (e.g., findings derived from summaries) |
+| `derivedTo?` | `derivedTo?: string[];` | Keys derived from this entry (e.g., summaries derived from raw data) |
 
 </details>
 
@@ -7859,7 +8015,7 @@ get(key: string): Promise&lt;MemoryEntry | undefined&gt;;
 **Parameters:**
 - `key`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryEntry | undefined&gt;`
+**Returns:** `Promise&lt;MemoryEntry | undefined&gt;`
 
 #### `set()`
 
@@ -7871,7 +8027,7 @@ set(key: string, entry: MemoryEntry): Promise&lt;void&gt;;
 
 **Parameters:**
 - `key`: `string`
-- `entry`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryEntry`
+- `entry`: `MemoryEntry`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -7909,7 +8065,7 @@ Get all entries
 getAll(): Promise&lt;MemoryEntry[]&gt;;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryEntry[]&gt;`
+**Returns:** `Promise&lt;MemoryEntry[]&gt;`
 
 #### `getByScope()`
 
@@ -7920,9 +8076,9 @@ getByScope(scope: MemoryScope): Promise&lt;MemoryEntry[]&gt;;
 ```
 
 **Parameters:**
-- `scope`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryScope`
+- `scope`: `MemoryScope`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryEntry[]&gt;`
+**Returns:** `Promise&lt;MemoryEntry[]&gt;`
 
 #### `clearScope()`
 
@@ -7933,7 +8089,7 @@ clearScope(scope: MemoryScope): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
-- `scope`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Memory").MemoryScope`
+- `scope`: `MemoryScope`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -7977,7 +8133,7 @@ savePlan(plan: Plan): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
+- `plan`: `Plan`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -7992,7 +8148,7 @@ getPlan(planId: string): Promise&lt;Plan | undefined&gt;;
 **Parameters:**
 - `planId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan | undefined&gt;`
+**Returns:** `Promise&lt;Plan | undefined&gt;`
 
 #### `updateTask()`
 
@@ -8004,7 +8160,7 @@ updateTask(planId: string, task: Task): Promise&lt;void&gt;;
 
 **Parameters:**
 - `planId`: `string`
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
+- `task`: `Task`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -8018,7 +8174,7 @@ addTask(planId: string, task: Task): Promise&lt;void&gt;;
 
 **Parameters:**
 - `planId`: `string`
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
+- `task`: `Task`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -8044,9 +8200,9 @@ listPlans(filter?: { status?: PlanStatus[] }): Promise&lt;Plan[]&gt;;
 ```
 
 **Parameters:**
-- `filter`: `{ status?: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").PlanStatus[] | undefined; } | undefined` *(optional)*
+- `filter`: `{ status?: PlanStatus[] | undefined; } | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan[]&gt;`
+**Returns:** `Promise&lt;Plan[]&gt;`
 
 #### `findByWebhookId()`
 
@@ -8059,7 +8215,7 @@ findByWebhookId(webhookId: string): Promise&lt;{ plan: Plan; task: Task } | unde
 **Parameters:**
 - `webhookId`: `string`
 
-**Returns:** `Promise&lt;{ plan: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan; task: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task; } | undefined&gt;`
+**Returns:** `Promise&lt;{ plan: Plan; task: Task; } | undefined&gt;`
 
 </details>
 
@@ -8067,7 +8223,7 @@ findByWebhookId(webhookId: string): Promise&lt;{ plan: Plan; task: Task } | unde
 
 ### MemoryEntry `interface`
 
-📍 [`src/domain/entities/Memory.ts:15`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:380`](src/domain/entities/Memory.ts)
 
 Single memory entry stored in working memory
 
@@ -8081,6 +8237,8 @@ Single memory entry stored in working memory
 | `value` | `value: unknown;` | - |
 | `sizeBytes` | `sizeBytes: number;` | - |
 | `scope` | `scope: MemoryScope;` | - |
+| `basePriority` | `basePriority: MemoryPriority;` | - |
+| `pinned` | `pinned: boolean;` | - |
 | `createdAt` | `createdAt: number;` | - |
 | `lastAccessedAt` | `lastAccessedAt: number;` | - |
 | `accessCount` | `accessCount: number;` | - |
@@ -8091,7 +8249,7 @@ Single memory entry stored in working memory
 
 ### MemoryEntryInput `interface`
 
-📍 [`src/domain/entities/Memory.ts:68`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:437`](src/domain/entities/Memory.ts)
 
 Input for creating a memory entry
 
@@ -8103,7 +8261,9 @@ Input for creating a memory entry
 | `key` | `key: string;` | - |
 | `description` | `description: string;` | - |
 | `value` | `value: unknown;` | - |
-| `scope?` | `scope?: MemoryScope;` | - |
+| `scope?` | `scope?: MemoryScope;` | Scope - defaults to 'session' for basic agents |
+| `priority?` | `priority?: MemoryPriority;` | Base priority - may be overridden by dynamic calculation |
+| `pinned?` | `pinned?: boolean;` | If true, entry is never evicted |
 
 </details>
 
@@ -8111,7 +8271,7 @@ Input for creating a memory entry
 
 ### MemoryIndex `interface`
 
-📍 [`src/domain/entities/Memory.ts:39`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:408`](src/domain/entities/Memory.ts)
 
 Full memory index with metadata
 
@@ -8133,7 +8293,7 @@ Full memory index with metadata
 
 ### MemoryIndexEntry `interface`
 
-📍 [`src/domain/entities/Memory.ts:29`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:396`](src/domain/entities/Memory.ts)
 
 Index entry (lightweight, always in context)
 
@@ -8146,6 +8306,8 @@ Index entry (lightweight, always in context)
 | `description` | `description: string;` | - |
 | `size` | `size: string;` | - |
 | `scope` | `scope: MemoryScope;` | - |
+| `effectivePriority` | `effectivePriority: MemoryPriority;` | - |
+| `pinned` | `pinned: boolean;` | - |
 
 </details>
 
@@ -8153,7 +8315,7 @@ Index entry (lightweight, always in context)
 
 ### ModifyPlanArgs `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:236`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:243`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8171,7 +8333,7 @@ Index entry (lightweight, always in context)
 
 ### Plan `interface`
 
-📍 [`src/domain/entities/Task.ts:173`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:305`](src/domain/entities/Task.ts)
 
 Execution plan - a goal with steps to achieve it
 
@@ -8205,7 +8367,7 @@ Execution plan - a goal with steps to achieve it
 
 ### PlanChange `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:167`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:174`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8223,7 +8385,7 @@ Execution plan - a goal with steps to achieve it
 
 ### PlanConcurrency `interface`
 
-📍 [`src/domain/entities/Task.ts:165`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:289`](src/domain/entities/Task.ts)
 
 Plan concurrency settings
 
@@ -8234,6 +8396,10 @@ Plan concurrency settings
 |----------|------|-------------|
 | `maxParallelTasks` | `maxParallelTasks: number;` | - |
 | `strategy` | `strategy: 'fifo' | 'priority' | 'shortest-first';` | - |
+| `failureMode?` | `failureMode?: 'fail-fast' | 'continue' | 'fail-all';` | How to handle failures when executing tasks in parallel
+- 'fail-fast': Stop on first failure (Promise.all behavior) - DEFAULT
+- 'continue': Continue other tasks on failure, mark failed ones
+- 'fail-all': Wait for all to complete, then report all failures together |
 
 </details>
 
@@ -8241,7 +8407,7 @@ Plan concurrency settings
 
 ### PlanExecutionResult `interface`
 
-📍 [`src/capabilities/taskAgent/PlanExecutor.ts:34`](src/capabilities/taskAgent/PlanExecutor.ts)
+📍 [`src/capabilities/taskAgent/PlanExecutor.ts:58`](src/capabilities/taskAgent/PlanExecutor.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8266,7 +8432,7 @@ Plan concurrency settings
 
 ### PlanExecutorConfig `interface`
 
-📍 [`src/capabilities/taskAgent/PlanExecutor.ts:18`](src/capabilities/taskAgent/PlanExecutor.ts)
+📍 [`src/capabilities/taskAgent/PlanExecutor.ts:28`](src/capabilities/taskAgent/PlanExecutor.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8275,6 +8441,14 @@ Plan concurrency settings
 |----------|------|-------------|
 | `maxIterations` | `maxIterations: number;` | - |
 | `taskTimeout?` | `taskTimeout?: number;` | - |
+| `rateLimiter?` | `rateLimiter?: {
+    /** Max requests per minute (default: 60) */
+    maxRequestsPerMinute?: number;
+    /** What to do when rate limited: 'wait' or 'throw' (default: 'wait') */
+    onLimit?: 'wait' | 'throw';
+    /** Max wait time in ms (for 'wait' mode, default: 60000) */
+    maxWaitMs?: number;
+  };` | Rate limiting configuration for LLM calls |
 
 </details>
 
@@ -8282,7 +8456,7 @@ Plan concurrency settings
 
 ### PlanExecutorEvents `interface`
 
-📍 [`src/capabilities/taskAgent/PlanExecutor.ts:23`](src/capabilities/taskAgent/PlanExecutor.ts)
+📍 [`src/capabilities/taskAgent/PlanExecutor.ts:43`](src/capabilities/taskAgent/PlanExecutor.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8293,7 +8467,11 @@ Plan concurrency settings
 | `'task:complete'` | `'task:complete': { task: Task; result: any };` | - |
 | `'task:failed'` | `'task:failed': { task: Task; error: Error };` | - |
 | `'task:skipped'` | `'task:skipped': { task: Task; reason: string };` | - |
+| `'task:timeout'` | `'task:timeout': { task: Task; timeoutMs: number };` | - |
+| `'task:validation_failed'` | `'task:validation_failed': { task: Task; validation: TaskValidationResult };` | - |
+| `'task:validation_uncertain'` | `'task:validation_uncertain': { task: Task; validation: TaskValidationResult };` | - |
 | `'task:waiting_external'` | `'task:waiting_external': { task: Task };` | - |
+| `'memory:stale_entries'` | `'memory:stale_entries': { entries: StaleEntryInfo[]; taskId: string };` | - |
 | `'llm:call'` | `'llm:call': { iteration: number };` | - |
 | `'tool:call'` | `'tool:call': { toolName: string; args: any };` | - |
 | `'tool:result'` | `'tool:result': { toolName: string; result: any };` | - |
@@ -8304,7 +8482,7 @@ Plan concurrency settings
 
 ### PlanInput `interface`
 
-📍 [`src/domain/entities/Task.ts:212`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:344`](src/domain/entities/Task.ts)
 
 Input for creating a plan
 
@@ -8319,6 +8497,7 @@ Input for creating a plan
 | `concurrency?` | `concurrency?: PlanConcurrency;` | - |
 | `allowDynamicTasks?` | `allowDynamicTasks?: boolean;` | - |
 | `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
+| `skipCycleCheck?` | `skipCycleCheck?: boolean;` | Skip dependency cycle detection (default: false) |
 
 </details>
 
@@ -8347,7 +8526,7 @@ PlanningAgent configuration
 
 ### PlanResult `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:93`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:130`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Plan result
 
@@ -8370,11 +8549,29 @@ Plan result
 
 ---
 
+### PlanUpdateOptions `interface`
+
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:168`](src/capabilities/taskAgent/TaskAgent.ts)
+
+Options for plan update validation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `allowRemoveActiveTasks?` | `allowRemoveActiveTasks?: boolean;` | Allow removing tasks that are currently in_progress. |
+| `validateCycles?` | `validateCycles?: boolean;` | Validate that no dependency cycles exist after the update. |
+
+</details>
+
+---
+
 ### PlanUpdates `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:122`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:159`](src/capabilities/taskAgent/TaskAgent.ts)
 
-Plan update options
+Plan updates specification
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8389,21 +8586,19 @@ Plan update options
 
 ---
 
-### PreparedContext `interface`
+### PriorityContext `interface`
 
-📍 [`src/capabilities/taskAgent/ContextManager.ts:77`](src/capabilities/taskAgent/ContextManager.ts)
+📍 [`src/domain/entities/Memory.ts:207`](src/domain/entities/Memory.ts)
 
-Prepared context result
+Context passed to priority calculator - varies by agent type
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `components` | `components: ContextComponents;` | - |
-| `budget` | `budget: ContextBudget;` | - |
-| `compacted` | `compacted: boolean;` | - |
-| `compactionLog?` | `compactionLog?: string[];` | - |
+| `taskStates?` | `taskStates?: Map&lt;string, TaskStatusForMemory&gt;;` | For TaskAgent: map of taskId → current status |
+| `mode?` | `mode?: 'interactive' | 'planning' | 'executing';` | For UniversalAgent: current mode |
 
 </details>
 
@@ -8411,7 +8606,7 @@ Prepared context result
 
 ### SerializedMemory `interface`
 
-📍 [`src/core/SessionManager.ts:90`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:148`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8427,7 +8622,7 @@ Prepared context result
 
 ### SerializedMemoryEntry `interface`
 
-📍 [`src/core/SessionManager.ts:97`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:155`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8437,16 +8632,28 @@ Prepared context result
 | `key` | `key: string;` | - |
 | `description` | `description: string;` | - |
 | `value` | `value: unknown;` | - |
-| `scope` | `scope: 'task' | 'persistent';` | - |
+| `scope` | `scope: MemoryScope;` | - |
 | `sizeBytes` | `sizeBytes: number;` | - |
+| `basePriority?` | `basePriority?: MemoryPriority;` | - |
+| `pinned?` | `pinned?: boolean;` | - |
 
 </details>
 
 ---
 
+### SerializedMemoryPluginState `interface`
+
+📍 [`src/core/context/plugins/MemoryPlugin.ts:17`](src/core/context/plugins/MemoryPlugin.ts)
+
+Serialized memory plugin state
+Note: The actual memory content is stored by WorkingMemory itself,
+this plugin just holds a reference.
+
+---
+
 ### SerializedPlan `interface`
 
-📍 [`src/core/SessionManager.ts:105`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:165`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8460,9 +8667,48 @@ Prepared context result
 
 ---
 
+### SerializedPlanPluginState `interface`
+
+📍 [`src/core/context/plugins/PlanPlugin.ts:15`](src/core/context/plugins/PlanPlugin.ts)
+
+Serialized plan state for session persistence
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `plan` | `plan: Plan | null;` | - |
+
+</details>
+
+---
+
+### StaleEntryInfo `interface`
+
+📍 [`src/domain/entities/Memory.ts:328`](src/domain/entities/Memory.ts)
+
+Information about a stale entry for LLM notification
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `key` | `key: string;` | - |
+| `description` | `description: string;` | - |
+| `reason` | `reason: StaleReason;` | - |
+| `previousPriority` | `previousPriority: MemoryPriority;` | - |
+| `newPriority` | `newPriority: MemoryPriority;` | - |
+| `taskIds?` | `taskIds?: string[];` | - |
+
+</details>
+
+---
+
 ### StartPlanningArgs `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:231`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:238`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8478,7 +8724,7 @@ Prepared context result
 
 ### Task `interface`
 
-📍 [`src/domain/entities/Task.ts:104`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:220`](src/domain/entities/Task.ts)
 
 A single unit of work
 
@@ -8495,11 +8741,16 @@ A single unit of work
 | `externalDependency?` | `externalDependency?: ExternalDependency;` | External dependency (if waiting on external event) |
 | `condition?` | `condition?: TaskCondition;` | Condition for execution |
 | `execution?` | `execution?: TaskExecution;` | Execution settings |
+| `validation?` | `validation?: TaskValidation;` | Completion validation settings |
 | `expectedOutput?` | `expectedOutput?: string;` | Optional expected output description |
 | `result?` | `result?: {
     success: boolean;
     output?: unknown;
     error?: string;
+    /** Validation score (0-100) if validation was performed */
+    validationScore?: number;
+    /** Explanation of validation result */
+    validationExplanation?: string;
   };` | Result after completion |
 | `createdAt` | `createdAt: number;` | Timestamps |
 | `startedAt?` | `startedAt?: number;` | - |
@@ -8515,46 +8766,23 @@ A single unit of work
 
 ### TaskAgentConfig `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:145`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:192`](src/capabilities/taskAgent/TaskAgent.ts)
 
-TaskAgent configuration
+TaskAgent configuration - extends BaseAgentConfig
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `connector` | `connector: string | Connector;` | - |
-| `model` | `model: string;` | - |
-| `tools?` | `tools?: ToolFunction[];` | - |
-| `instructions?` | `instructions?: string;` | - |
-| `temperature?` | `temperature?: number;` | - |
-| `maxIterations?` | `maxIterations?: number;` | - |
+| `instructions?` | `instructions?: string;` | System instructions for the agent |
+| `temperature?` | `temperature?: number;` | Temperature for generation |
+| `maxIterations?` | `maxIterations?: number;` | Maximum iterations for tool calling loop |
 | `storage?` | `storage?: IAgentStorage;` | Storage for persistence (agent state, checkpoints) |
 | `memoryConfig?` | `memoryConfig?: WorkingMemoryConfig;` | Memory configuration |
 | `hooks?` | `hooks?: TaskAgentHooks;` | Hooks for customization |
-| `session?` | `session?: TaskAgentSessionConfig;` | Session configuration for persistence (opt-in) |
-| `toolManager?` | `toolManager?: ToolManager;` | Provide a pre-configured ToolManager (advanced) |
-
-</details>
-
----
-
-### TaskAgentContextProviderConfig `interface`
-
-📍 [`src/infrastructure/context/providers/TaskAgentContextProvider.ts:11`](src/infrastructure/context/providers/TaskAgentContextProvider.ts)
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `model` | `model: string;` | - |
-| `instructions?` | `instructions?: string;` | - |
-| `plan` | `plan: Plan;` | - |
-| `memory` | `memory: WorkingMemory;` | - |
-| `historyManager` | `historyManager: HistoryManager;` | - |
-| `currentInput?` | `currentInput?: string;` | - |
+| `session?` | `session?: TaskAgentSessionConfig;` | Session configuration - extends base type |
+| `permissions?` | `permissions?: AgentPermissionsConfig;` | Permission configuration for tool execution approval |
 
 </details>
 
@@ -8562,9 +8790,9 @@ TaskAgent configuration
 
 ### TaskAgentEvents `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:174`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:221`](src/capabilities/taskAgent/TaskAgent.ts)
 
-TaskAgent events
+TaskAgent events - extends BaseAgentEvents
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8574,13 +8802,17 @@ TaskAgent events
 | `'task:start'` | `'task:start': { task: Task };` | - |
 | `'task:complete'` | `'task:complete': { task: Task; result: TaskResult };` | - |
 | `'task:failed'` | `'task:failed': { task: Task; error: Error };` | - |
+| `'task:validation_failed'` | `'task:validation_failed': { task: Task; validation: TaskValidationResult };` | - |
 | `'task:waiting'` | `'task:waiting': { task: Task; dependency: any };` | - |
 | `'plan:updated'` | `'plan:updated': { plan: Plan };` | - |
 | `'agent:suspended'` | `'agent:suspended': { reason: string };` | - |
-| `'agent:resumed'` | `'agent:resumed': {};` | - |
+| `'agent:resumed'` | `'agent:resumed': Record&lt;string, never&gt;;` | - |
 | `'agent:completed'` | `'agent:completed': { result: PlanResult };` | - |
 | `'memory:stored'` | `'memory:stored': { key: string; description: string };` | - |
 | `'memory:limit_warning'` | `'memory:limit_warning': { utilization: number };` | - |
+| `'session:saved'` | `'session:saved': { sessionId: string };` | - |
+| `'session:loaded'` | `'session:loaded': { sessionId: string };` | - |
+| `destroyed` | `destroyed: void;` | - |
 
 </details>
 
@@ -8588,7 +8820,7 @@ TaskAgent events
 
 ### TaskAgentHooks `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:34`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:52`](src/capabilities/taskAgent/TaskAgent.ts)
 
 TaskAgent hooks for customization
 
@@ -8600,6 +8832,21 @@ TaskAgent hooks for customization
 | `onStart?` | `onStart?: (agent: TaskAgent, plan: Plan) =&gt; Promise&lt;void&gt;;` | Before agent starts executing |
 | `beforeTask?` | `beforeTask?: (task: Task, context: TaskContext) =&gt; Promise&lt;void | 'skip'&gt;;` | Before each task starts |
 | `afterTask?` | `afterTask?: (task: Task, result: TaskResult) =&gt; Promise&lt;void&gt;;` | After each task completes |
+| `validateTask?` | `validateTask?: (
+    task: Task,
+    result: TaskResult,
+    memory: WorkingMemory
+  ) =&gt; Promise&lt;TaskValidationResult | boolean | string&gt;;` | Validate task completion with custom logic.
+Called after task execution to verify the task achieved its goal.
+
+Return values:
+- `TaskValidationResult`: Full validation result with score and details
+- `true`: Task is complete
+- `false`: Task failed validation (will use default error message)
+- `string`: Task failed validation with custom reason
+
+If not provided, the default LLM self-reflection validation is used
+(when task.validation is configured). |
 | `beforeLLMCall?` | `beforeLLMCall?: (messages: any[], options: any) =&gt; Promise&lt;any[]&gt;;` | Before each LLM call |
 | `afterLLMCall?` | `afterLLMCall?: (response: any) =&gt; Promise&lt;void&gt;;` | After each LLM response |
 | `beforeTool?` | `beforeTool?: (tool: ToolFunction, args: unknown) =&gt; Promise&lt;unknown&gt;;` | Before each tool execution |
@@ -8613,27 +8860,15 @@ TaskAgent hooks for customization
 
 ### TaskAgentSessionConfig `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:131`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:185`](src/capabilities/taskAgent/TaskAgent.ts)
 
-Session configuration for TaskAgent
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `storage` | `storage: ISessionStorage;` | Storage backend for sessions |
-| `id?` | `id?: string;` | Resume existing session by ID |
-| `autoSave?` | `autoSave?: boolean;` | Auto-save session after each task completion |
-| `autoSaveIntervalMs?` | `autoSaveIntervalMs?: number;` | Auto-save interval in milliseconds |
-
-</details>
+Session configuration for TaskAgent - extends BaseSessionConfig
 
 ---
 
 ### TaskCondition `interface`
 
-📍 [`src/domain/entities/Task.ts:46`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:60`](src/domain/entities/Task.ts)
 
 Task condition - evaluated before execution
 
@@ -8653,7 +8888,7 @@ Task condition - evaluated before execution
 
 ### TaskContext `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:66`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:103`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Task execution context
 
@@ -8672,7 +8907,7 @@ Task execution context
 
 ### TaskExecution `interface`
 
-📍 [`src/domain/entities/Task.ts:90`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:104`](src/domain/entities/Task.ts)
 
 Task execution settings
 
@@ -8684,6 +8919,28 @@ Task execution settings
 | `parallel?` | `parallel?: boolean;` | Can run in parallel with other parallel tasks |
 | `maxConcurrency?` | `maxConcurrency?: number;` | Max concurrent if this spawns sub-work |
 | `priority?` | `priority?: number;` | Priority (higher = executed first) |
+| `raceProtection?` | `raceProtection?: boolean;` | If true (default), re-check condition immediately before LLM call
+to protect against race conditions when parallel tasks modify memory.
+Set to false to skip re-check for performance if you know condition won't change. |
+
+</details>
+
+---
+
+### TaskFailure `interface`
+
+📍 [`src/domain/errors/AIErrors.ts:235`](src/domain/errors/AIErrors.ts)
+
+Task failure info for parallel execution
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `taskId` | `taskId: string;` | - |
+| `taskName` | `taskName: string;` | - |
+| `error` | `error: Error;` | - |
 
 </details>
 
@@ -8691,7 +8948,7 @@ Task execution settings
 
 ### TaskInput `interface`
 
-📍 [`src/domain/entities/Task.ts:149`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:272`](src/domain/entities/Task.ts)
 
 Input for creating a task
 
@@ -8707,6 +8964,7 @@ Input for creating a task
 | `externalDependency?` | `externalDependency?: ExternalDependency;` | - |
 | `condition?` | `condition?: TaskCondition;` | - |
 | `execution?` | `execution?: TaskExecution;` | - |
+| `validation?` | `validation?: TaskValidation;` | - |
 | `expectedOutput?` | `expectedOutput?: string;` | - |
 | `maxAttempts?` | `maxAttempts?: number;` | - |
 | `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
@@ -8717,7 +8975,7 @@ Input for creating a task
 
 ### TaskProgress `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:75`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:82`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8736,7 +8994,7 @@ Input for creating a task
 
 ### TaskResult `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:75`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:112`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Task result
 
@@ -8748,6 +9006,100 @@ Task result
 | `success` | `success: boolean;` | - |
 | `output?` | `output?: unknown;` | - |
 | `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### TaskScopedEntryInput `interface`
+
+📍 [`src/domain/entities/Memory.ts:452`](src/domain/entities/Memory.ts)
+
+Shorthand for task-scoped entry
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `neededForTasks` | `neededForTasks: string[];` | Task IDs that need this data |
+
+</details>
+
+---
+
+### TaskValidation `interface`
+
+📍 [`src/domain/entities/Task.ts:131`](src/domain/entities/Task.ts)
+
+Task completion validation settings
+
+Used to verify that a task actually achieved its goal before marking it complete.
+Supports multiple validation approaches:
+- Programmatic checks (memory keys, hooks)
+- LLM self-reflection with completeness scoring
+- Natural language criteria evaluation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `completionCriteria?` | `completionCriteria?: string[];` | Natural language completion criteria.
+These are evaluated by LLM self-reflection to determine if the task is complete.
+Examples:
+- "The response contains at least 3 specific examples"
+- "User's email has been validated and stored in memory"
+- "All requested data fields are present in the output"
+
+This is the RECOMMENDED approach for flexible, intelligent validation. |
+| `minCompletionScore?` | `minCompletionScore?: number;` | Minimum completeness score (0-100) to consider task successful.
+LLM self-reflection returns a score; if below this threshold:
+- If requireUserApproval is set, ask user
+- Otherwise, follow the mode setting (strict = fail, warn = continue)
+Default: 80 |
+| `requireUserApproval?` | `requireUserApproval?: 'never' | 'uncertain' | 'always';` | When to require user approval:
+- 'never': Never ask user, use automated decision (default)
+- 'uncertain': Ask user when score is between minCompletionScore and minCompletionScore + 15
+- 'always': Always ask user to confirm task completion |
+| `requiredMemoryKeys?` | `requiredMemoryKeys?: string[];` | Memory keys that must exist after task completion.
+If the task should store data in memory, list the required keys here.
+This is a hard requirement checked BEFORE LLM reflection. |
+| `customValidator?` | `customValidator?: string;` | Custom validation function name (registered via validateTask hook).
+The hook will be called with this identifier to dispatch to the right validator.
+Runs AFTER LLM reflection, can override the result. |
+| `mode?` | `mode?: 'strict' | 'warn';` | Validation mode:
+- 'strict': Validation failure marks task as failed (default)
+- 'warn': Validation failure logs warning but task still completes |
+| `skipReflection?` | `skipReflection?: boolean;` | Skip LLM self-reflection validation.
+Set to true if you only want programmatic validation (memory keys, hooks).
+Default: false (reflection is enabled when completionCriteria is set) |
+
+</details>
+
+---
+
+### TaskValidationResult `interface`
+
+📍 [`src/domain/entities/Task.ts:193`](src/domain/entities/Task.ts)
+
+Result of task validation (returned by LLM reflection)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `isComplete` | `isComplete: boolean;` | Whether the task is considered complete |
+| `completionScore` | `completionScore: number;` | Completeness score from 0-100 |
+| `explanation` | `explanation: string;` | LLM's explanation of why the task is/isn't complete |
+| `criteriaResults?` | `criteriaResults?: Array&lt;{
+    criterion: string;
+    met: boolean;
+    evidence?: string;
+  }&gt;;` | Per-criterion evaluation results |
+| `requiresUserApproval` | `requiresUserApproval: boolean;` | Whether user approval is needed |
+| `approvalReason?` | `approvalReason?: string;` | Reason for requiring user approval |
 
 </details>
 
@@ -8772,11 +9124,36 @@ Task result
 
 ---
 
+### UniversalAgentPlanningConfig `interface`
+
+📍 [`src/capabilities/universalAgent/UniversalAgent.ts:61`](src/capabilities/universalAgent/UniversalAgent.ts)
+
+Planning configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `enabled?` | `enabled?: boolean;` | Whether planning is enabled (default: true) |
+| `autoDetect?` | `autoDetect?: boolean;` | Whether to auto-detect complex tasks (default: true) |
+| `model?` | `model?: string;` | Model to use for planning (defaults to agent model) |
+| `requireApproval?` | `requireApproval?: boolean;` | Whether approval is required (default: true) |
+
+</details>
+
+---
+
 ### WorkingMemoryAccess `interface`
 
-📍 [`src/domain/interfaces/IToolContext.ts:11`](src/domain/interfaces/IToolContext.ts)
+📍 [`src/domain/interfaces/IToolContext.ts:17`](src/domain/interfaces/IToolContext.ts)
 
 Limited memory access for tools
+
+This interface is designed to work with all agent types:
+- Basic agents: Use simple scopes ('session', 'persistent')
+- TaskAgent: Use task-aware scopes ({ type: 'task', taskIds: [...] })
+- UniversalAgent: Switches between simple and task-aware based on mode
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -8794,14 +9171,29 @@ get(key: string): Promise&lt;unknown&gt;;
 
 #### `set()`
 
+Store a value in memory
+
 ```typescript
-set(key: string, description: string, value: unknown): Promise&lt;void&gt;;
+set(
+    key: string,
+    description: string,
+    value: unknown,
+    options?: {
+      /** Scope determines lifecycle - defaults to 'session' */
+      scope?: MemoryScope;
+      /** Base priority for eviction ordering */
+      priority?: MemoryPriority;
+      /** If true, entry is never evicted */
+      pinned?: boolean;
+    }
+  ): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
 - `key`: `string`
 - `description`: `string`
 - `value`: `unknown`
+- `options`: `{ scope?: MemoryScope | undefined; priority?: MemoryPriority | undefined; pinned?: boolean | undefined; } | undefined` *(optional)*
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -8829,11 +9221,21 @@ has(key: string): Promise&lt;boolean&gt;;
 
 #### `list()`
 
+List all memory entries
+Returns key, description, and computed priority info
+
 ```typescript
-list(): Promise&lt;Array&lt;{ key: string; description: string }&gt;&gt;;
+list(): Promise&lt;
+    Array&lt;{
+      key: string;
+      description: string;
+      effectivePriority?: MemoryPriority;
+      pinned?: boolean;
+    }&gt;
+  &gt;;
 ```
 
-**Returns:** `Promise&lt;{ key: string; description: string; }[]&gt;`
+**Returns:** `Promise&lt;{ key: string; description: string; effectivePriority?: MemoryPriority | undefined; pinned?: boolean | undefined; }[]&gt;`
 
 </details>
 
@@ -8841,7 +9243,7 @@ list(): Promise&lt;Array&lt;{ key: string; description: string }&gt;&gt;;
 
 ### WorkingMemoryConfig `interface`
 
-📍 [`src/domain/entities/Memory.ts:51`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:420`](src/domain/entities/Memory.ts)
 
 Configuration for working memory
 
@@ -8861,17 +9263,19 @@ Configuration for working memory
 
 ### WorkingMemoryEvents `interface`
 
-📍 [`src/capabilities/taskAgent/WorkingMemory.ts:15`](src/capabilities/taskAgent/WorkingMemory.ts)
+📍 [`src/capabilities/taskAgent/WorkingMemory.ts:59`](src/capabilities/taskAgent/WorkingMemory.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `stored` | `stored: { key: string; description: string };` | - |
+| `stored` | `stored: { key: string; description: string; scope: MemoryScope };` | - |
 | `retrieved` | `retrieved: { key: string };` | - |
 | `deleted` | `deleted: { key: string };` | - |
+| `evicted` | `evicted: { keys: string[]; reason: 'lru' | 'size' | 'task_completed' };` | - |
 | `limit_warning` | `limit_warning: { utilizationPercent: number };` | - |
+| `stale_entries` | `stale_entries: { entries: StaleEntryInfo[] };` | - |
 
 </details>
 
@@ -8879,7 +9283,7 @@ Configuration for working memory
 
 ### ConditionOperator `type`
 
-📍 [`src/domain/entities/Task.ts:34`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:48`](src/domain/entities/Task.ts)
 
 Condition operators for conditional task execution
 
@@ -8895,23 +9299,69 @@ type ConditionOperator = | 'exists'
 
 ---
 
-### MemoryScope `type`
+### EvictionStrategy `type`
 
-📍 [`src/domain/entities/Memory.ts:10`](src/domain/entities/Memory.ts)
+📍 [`src/capabilities/taskAgent/WorkingMemory.ts:49`](src/capabilities/taskAgent/WorkingMemory.ts)
 
-Memory entities for TaskAgent working memory
-
-This file defines the data structures for the indexed working memory system.
+Eviction strategy type
 
 ```typescript
-type MemoryScope = 'task' | 'persistent'
+type EvictionStrategy = 'lru' | 'size'
+```
+
+---
+
+### MemoryPriority `type`
+
+📍 [`src/domain/entities/Memory.ts:110`](src/domain/entities/Memory.ts)
+
+Priority determines eviction order (lower priority evicted first)
+
+- critical: Never evicted (pinned, or actively in use)
+- high: Important data, evicted only when necessary
+- normal: Default priority
+- low: Candidate for eviction (stale data, completed task data)
+
+```typescript
+type MemoryPriority = 'critical' | 'high' | 'normal' | 'low'
+```
+
+---
+
+### MemoryScope `type`
+
+📍 [`src/domain/entities/Memory.ts:33`](src/domain/entities/Memory.ts)
+
+Union type - memory system accepts both
+
+```typescript
+type MemoryScope = SimpleScope | TaskAwareScope
+```
+
+---
+
+### MemoryTier `type`
+
+📍 [`src/domain/entities/Memory.ts:136`](src/domain/entities/Memory.ts)
+
+Memory tier for hierarchical data management
+
+The tier system provides a structured approach to managing research/analysis data:
+- raw: Original data, low priority, first to be evicted
+- summary: Processed summaries, normal priority
+- findings: Final conclusions/insights, high priority, kept longest
+
+Workflow: raw → summary → findings (data gets more refined, priority increases)
+
+```typescript
+type MemoryTier = 'raw' | 'summary' | 'findings'
 ```
 
 ---
 
 ### PlanStatus `type`
 
-📍 [`src/domain/entities/Task.ts:23`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:37`](src/domain/entities/Task.ts)
 
 Plan status
 
@@ -8926,13 +9376,76 @@ type PlanStatus = | 'pending'
 
 ---
 
+### PriorityCalculator `type`
+
+📍 [`src/domain/entities/Memory.ts:237`](src/domain/entities/Memory.ts)
+
+Priority calculator function type.
+Given an entry and optional context, returns the effective priority.
+
+```typescript
+type PriorityCalculator = (
+  entry: MemoryEntry,
+  context?: PriorityContext
+) =&gt; MemoryPriority
+```
+
+---
+
+### SimpleScope `type`
+
+📍 [`src/domain/entities/Memory.ts:20`](src/domain/entities/Memory.ts)
+
+Memory entities for WorkingMemory
+
+This module provides a GENERIC memory system that works across all agent types:
+- Basic Agent: Simple session/persistent scoping with static priority
+- TaskAgent: Task-aware scoping with dynamic priority based on task states
+- UniversalAgent: Mode-aware, switches strategy based on current mode
+
+The key abstraction is PriorityCalculator - a pluggable strategy that
+determines entry priority for eviction decisions.
+
+```typescript
+type SimpleScope = 'session' | 'persistent'
+```
+
+---
+
+### StaleReason `type`
+
+📍 [`src/domain/entities/Memory.ts:319`](src/domain/entities/Memory.ts)
+
+Reason why an entry became stale
+
+```typescript
+type StaleReason = | 'task_completed'      // All dependent tasks completed
+  | 'task_failed'         // Dependent task failed
+  | 'unused'              // Not accessed for a long time
+  | 'scope_cleared'
+```
+
+---
+
+### TaskAwareScope `type`
+
+📍 [`src/domain/entities/Memory.ts:25`](src/domain/entities/Memory.ts)
+
+Task-aware scope for TaskAgent/UniversalAgent
+
+```typescript
+type TaskAwareScope = | { type: 'task'; taskIds: string[] }   // Needed for specific task(s)
+  | { type: 'plan' }                       // Needed throughout plan execution
+  | { type: 'persistent' }
+```
+
+---
+
 ### TaskStatus `type`
 
-📍 [`src/domain/entities/Task.ts:10`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:12`](src/domain/entities/Task.ts)
 
-Task and Plan entities for TaskAgent
-
-Defines the data structures for task-based autonomous agents.
+Task status lifecycle
 
 ```typescript
 type TaskStatus = | 'pending'           // Not started
@@ -8947,11 +9460,36 @@ type TaskStatus = | 'pending'           // Not started
 
 ---
 
+### TaskStatusForMemory `type`
+
+📍 [`src/domain/entities/Memory.ts:219`](src/domain/entities/Memory.ts)
+
+Task status values for priority calculation
+
+```typescript
+type TaskStatusForMemory = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped' | 'cancelled'
+```
+
+---
+
+### addTierPrefix `function`
+
+📍 [`src/domain/entities/Memory.ts:190`](src/domain/entities/Memory.ts)
+
+Add tier prefix to key (if not already present)
+
+```typescript
+export function addTierPrefix(key: string, tier: MemoryTier): string
+```
+
+---
+
 ### calculateEntrySize `function`
 
-📍 [`src/domain/entities/Memory.ts:108`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:530`](src/domain/entities/Memory.ts)
 
 Calculate the size of a value in bytes (JSON serialization)
+Uses Buffer.byteLength for accurate UTF-8 byte count
 
 ```typescript
 export function calculateEntrySize(value: unknown): number
@@ -8961,7 +9499,7 @@ export function calculateEntrySize(value: unknown): number
 
 ### canTaskExecute `function`
 
-📍 [`src/domain/entities/Task.ts:312`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:461`](src/domain/entities/Task.ts)
 
 Check if a task can be executed (dependencies met, status is pending)
 
@@ -8973,7 +9511,7 @@ export function canTaskExecute(task: Task, allTasks: Task[]): boolean
 
 ### createCacheStatsTool `function`
 
-📍 [`src/capabilities/taskAgent/contextTools.ts:156`](src/capabilities/taskAgent/contextTools.ts)
+📍 [`src/capabilities/taskAgent/contextTools.ts:137`](src/capabilities/taskAgent/contextTools.ts)
 
 cache_stats tool - Get idempotency cache statistics
 
@@ -9021,7 +9559,7 @@ export function createContextTools(): ToolFunction[]
 
 ### createEmptyMemory `function`
 
-📍 [`src/core/SessionManager.ts:456`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:781`](src/core/SessionManager.ts)
 
 Create an empty serialized memory
 
@@ -9033,7 +9571,7 @@ export function createEmptyMemory(): SerializedMemory
 
 ### createMemoryEntry `function`
 
-📍 [`src/domain/entities/Memory.ts:120`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:548`](src/domain/entities/Memory.ts)
 
 Create a memory entry with defaults and validation
 
@@ -9048,7 +9586,7 @@ export function createMemoryEntry(
 
 ### createMemoryStatsTool `function`
 
-📍 [`src/capabilities/taskAgent/contextTools.ts:205`](src/capabilities/taskAgent/contextTools.ts)
+📍 [`src/capabilities/taskAgent/contextTools.ts:186`](src/capabilities/taskAgent/contextTools.ts)
 
 memory_stats tool - Get working memory statistics
 
@@ -9060,7 +9598,7 @@ function createMemoryStatsTool(): ToolFunction
 
 ### createMemoryTools `function`
 
-📍 [`src/capabilities/taskAgent/memoryTools.ts:99`](src/capabilities/taskAgent/memoryTools.ts)
+📍 [`src/capabilities/taskAgent/memoryTools.ts:172`](src/capabilities/taskAgent/memoryTools.ts)
 
 Create all memory tools
 
@@ -9072,7 +9610,7 @@ export function createMemoryTools(): ToolFunction[]
 
 ### createPlan `function`
 
-📍 [`src/domain/entities/Task.ts:258`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:394`](src/domain/entities/Task.ts)
 
 Create a plan with tasks
 
@@ -9082,21 +9620,9 @@ export function createPlan(input: PlanInput): Plan
 
 ---
 
-### createPlanningTools `function`
-
-📍 [`src/capabilities/taskAgent/PlanningAgent.ts:300`](src/capabilities/taskAgent/PlanningAgent.ts)
-
-Create planning tools
-
-```typescript
-function createPlanningTools(): ToolFunction[]
-```
-
----
-
 ### createTask `function`
 
-📍 [`src/domain/entities/Task.ts:233`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:367`](src/domain/entities/Task.ts)
 
 Create a task with defaults
 
@@ -9106,9 +9632,37 @@ export function createTask(input: TaskInput): Task
 
 ---
 
+### detectDependencyCycle `function`
+
+📍 [`src/domain/entities/Task.ts:668`](src/domain/entities/Task.ts)
+
+Detect dependency cycles in tasks using depth-first search
+
+```typescript
+export function detectDependencyCycle(tasks: Task[]): string[] | null
+```
+
+---
+
+### detectStaleEntries `function`
+
+📍 [`src/domain/entities/Memory.ts:340`](src/domain/entities/Memory.ts)
+
+Detect entries that became stale after task completion
+
+```typescript
+export function detectStaleEntries(
+  entries: MemoryEntry[],
+  completedTaskId: string,
+  taskStates: Map&lt;string, TaskStatusForMemory&gt;
+): StaleEntryInfo[]
+```
+
+---
+
 ### evaluateCondition `function`
 
-📍 [`src/domain/entities/Task.ts:376`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:525`](src/domain/entities/Task.ts)
 
 Evaluate a task condition against memory
 
@@ -9121,9 +9675,21 @@ export async function evaluateCondition(
 
 ---
 
+### formatEntryFlags `function`
+
+📍 [`src/domain/entities/Memory.ts:629`](src/domain/entities/Memory.ts)
+
+Format entry flags for display
+
+```typescript
+function formatEntryFlags(entry: MemoryIndexEntry): string
+```
+
+---
+
 ### formatMemoryIndex `function`
 
-📍 [`src/domain/entities/Memory.ts:172`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:646`](src/domain/entities/Memory.ts)
 
 Format memory index for context injection
 
@@ -9133,9 +9699,21 @@ export function formatMemoryIndex(index: MemoryIndex): string
 
 ---
 
+### formatScope `function`
+
+📍 [`src/domain/entities/Memory.ts:615`](src/domain/entities/Memory.ts)
+
+Format scope for display
+
+```typescript
+function formatScope(scope: MemoryScope): string
+```
+
+---
+
 ### formatSizeHuman `function`
 
-📍 [`src/domain/entities/Memory.ts:150`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:593`](src/domain/entities/Memory.ts)
 
 Format bytes to human-readable string
 
@@ -9145,9 +9723,42 @@ export function formatSizeHuman(bytes: number): string
 
 ---
 
+### forPlan `function`
+
+📍 [`src/domain/entities/Memory.ts:480`](src/domain/entities/Memory.ts)
+
+Create a plan-scoped memory entry input
+
+```typescript
+export function forPlan(
+  key: string,
+  description: string,
+  value: unknown,
+  options?:
+```
+
+---
+
+### forTasks `function`
+
+📍 [`src/domain/entities/Memory.ts:460`](src/domain/entities/Memory.ts)
+
+Create a task-scoped memory entry input
+
+```typescript
+export function forTasks(
+  key: string,
+  description: string,
+  value: unknown,
+  taskIds: string[],
+  options?:
+```
+
+---
+
 ### generateSimplePlan `function`
 
-📍 [`src/capabilities/taskAgent/PlanningAgent.ts:377`](src/capabilities/taskAgent/PlanningAgent.ts)
+📍 [`src/capabilities/taskAgent/PlanningAgent.ts:438`](src/capabilities/taskAgent/PlanningAgent.ts)
 
 Simple plan generation without tools (fallback)
 
@@ -9162,7 +9773,7 @@ export async function generateSimplePlan(
 
 ### getNextExecutableTasks `function`
 
-📍 [`src/domain/entities/Task.ts:334`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:483`](src/domain/entities/Task.ts)
 
 Get the next tasks that can be executed
 
@@ -9174,7 +9785,7 @@ export function getNextExecutableTasks(plan: Plan): Task[]
 
 ### getTaskDependencies `function`
 
-📍 [`src/domain/entities/Task.ts:473`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:622`](src/domain/entities/Task.ts)
 
 Get the dependency tasks for a task
 
@@ -9184,9 +9795,45 @@ export function getTaskDependencies(task: Task, allTasks: Task[]): Task[]
 
 ---
 
+### getTierFromKey `function`
+
+📍 [`src/domain/entities/Memory.ts:171`](src/domain/entities/Memory.ts)
+
+Check if a key has a tier prefix
+
+```typescript
+export function getTierFromKey(key: string): MemoryTier | undefined
+```
+
+---
+
+### isSimpleScope `function`
+
+📍 [`src/domain/entities/Memory.ts:45`](src/domain/entities/Memory.ts)
+
+Type guard: is this a simple scope?
+
+```typescript
+export function isSimpleScope(scope: MemoryScope): scope is SimpleScope
+```
+
+---
+
+### isTaskAwareScope `function`
+
+📍 [`src/domain/entities/Memory.ts:38`](src/domain/entities/Memory.ts)
+
+Type guard: is this a task-aware scope?
+
+```typescript
+export function isTaskAwareScope(scope: MemoryScope): scope is TaskAwareScope
+```
+
+---
+
 ### isTaskBlocked `function`
 
-📍 [`src/domain/entities/Task.ts:452`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:601`](src/domain/entities/Task.ts)
 
 Check if a task is blocked by dependencies
 
@@ -9196,9 +9843,33 @@ export function isTaskBlocked(task: Task, allTasks: Task[]): boolean
 
 ---
 
+### isTerminalMemoryStatus `function`
+
+📍 [`src/domain/entities/Memory.ts:229`](src/domain/entities/Memory.ts)
+
+Check if a task status is terminal (task will not progress further)
+
+```typescript
+export function isTerminalMemoryStatus(status: TaskStatusForMemory): boolean
+```
+
+---
+
+### isTerminalStatus `function`
+
+📍 [`src/domain/entities/Task.ts:30`](src/domain/entities/Task.ts)
+
+Check if a task status is terminal (task will not progress further)
+
+```typescript
+export function isTerminalStatus(status: TaskStatus): boolean
+```
+
+---
+
 ### resolveDependencies `function`
 
-📍 [`src/domain/entities/Task.ts:487`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:636`](src/domain/entities/Task.ts)
 
 Resolve task name dependencies to task IDs
 Modifies taskInputs in place
@@ -9209,9 +9880,47 @@ export function resolveDependencies(taskInputs: TaskInput[], tasks: Task[]): voi
 
 ---
 
+### scopeEquals `function`
+
+📍 [`src/domain/entities/Memory.ts:53`](src/domain/entities/Memory.ts)
+
+Compare two scopes for equality
+Handles both simple scopes (string comparison) and task-aware scopes (deep comparison)
+
+```typescript
+export function scopeEquals(a: MemoryScope, b: MemoryScope): boolean
+```
+
+---
+
+### scopeMatches `function`
+
+📍 [`src/domain/entities/Memory.ts:83`](src/domain/entities/Memory.ts)
+
+Check if a scope matches a filter scope
+More flexible than scopeEquals - supports partial matching for task scopes
+
+```typescript
+export function scopeMatches(entryScope: MemoryScope, filterScope: MemoryScope): boolean
+```
+
+---
+
+### stripTierPrefix `function`
+
+📍 [`src/domain/entities/Memory.ts:181`](src/domain/entities/Memory.ts)
+
+Strip tier prefix from key
+
+```typescript
+export function stripTierPrefix(key: string): string
+```
+
+---
+
 ### updateTaskStatus `function`
 
-📍 [`src/domain/entities/Task.ts:424`](src/domain/entities/Task.ts)
+📍 [`src/domain/entities/Task.ts:573`](src/domain/entities/Task.ts)
 
 Update task status and timestamps
 
@@ -9223,7 +9932,7 @@ export function updateTaskStatus(task: Task, status: TaskStatus): Task
 
 ### validateMemoryKey `function`
 
-📍 [`src/domain/entities/Memory.ts:89`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:510`](src/domain/entities/Memory.ts)
 
 Validate memory key format
 Valid: "simple", "user.profile", "order.items.123"
@@ -9254,86 +9963,9 @@ export function validateMemoryKey(key: string): void
 
 ---
 
-### DEFAULT_COMPACTION_STRATEGY `const`
-
-📍 [`src/capabilities/taskAgent/ContextManager.ts:115`](src/capabilities/taskAgent/ContextManager.ts)
-
-Default compaction strategy
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `priority` | `['toolOutputs', 'history', 'memory']` | - |
-| `historyStrategy` | `'summarize'` | - |
-| `memoryStrategy` | `'lru'` | - |
-| `toolOutputMaxSize` | `4000` | - |
-
-</details>
-
----
-
-### DEFAULT_CONTEXT_CONFIG `const`
-
-📍 [`src/capabilities/taskAgent/ContextManager.ts:104`](src/capabilities/taskAgent/ContextManager.ts)
-
-Default configuration
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `maxContextTokens` | `128000` | - |
-| `compactionThreshold` | `0.75` | - |
-| `hardLimit` | `0.9` | - |
-| `responseReserve` | `0.15` | - |
-| `tokenEstimator` | `'approximate'` | - |
-
-</details>
-
----
-
-### DEFAULT_HISTORY_CONFIG `const`
-
-📍 [`src/capabilities/taskAgent/HistoryManager.ts:24`](src/capabilities/taskAgent/HistoryManager.ts)
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `maxDetailedMessages` | `20` | - |
-| `compressionStrategy` | `'summarize'` | - |
-| `summarizeBatchSize` | `10` | - |
-| `preserveToolCalls` | `true` | - |
-
-</details>
-
----
-
-### DEFAULT_IDEMPOTENCY_CONFIG `const`
-
-📍 [`src/capabilities/taskAgent/IdempotencyCache.ts:31`](src/capabilities/taskAgent/IdempotencyCache.ts)
-
-Default configuration
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `defaultTtlMs` | `3600000` | - |
-| `maxEntries` | `1000` | - |
-
-</details>
-
----
-
 ### DEFAULT_MEMORY_CONFIG `const`
 
-📍 [`src/domain/entities/Memory.ts:78`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:499`](src/domain/entities/Memory.ts)
 
 Default configuration values
 
@@ -9350,9 +9982,61 @@ Default configuration values
 
 ---
 
+### MEMORY_PRIORITY_VALUES `const`
+
+📍 [`src/domain/entities/Memory.ts:115`](src/domain/entities/Memory.ts)
+
+Priority values for comparison (higher = more important, less likely to evict)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `critical` | `4` | - |
+| `high` | `3` | - |
+| `normal` | `2` | - |
+| `low` | `1` | - |
+
+</details>
+
+---
+
+### memoryCleanupRawDefinition `const`
+
+📍 [`src/capabilities/taskAgent/memoryTools.ts:150`](src/capabilities/taskAgent/memoryTools.ts)
+
+Tool definition for memory_cleanup_raw
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `'function'` | - |
+| `function` | `{
+    name: 'memory_cleanup_raw',
+    description: 'Clean up raw tier data after creating summaries/findings. Only deletes entries with "raw." prefix.',
+    parameters: {
+      type: 'object',
+      properties: {
+        keys: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Keys to delete (only raw tier entries will be deleted)',
+        },
+      },
+      required: ['keys'],
+    },
+  }` | - |
+
+</details>
+
+---
+
 ### memoryDeleteDefinition `const`
 
-📍 [`src/capabilities/taskAgent/memoryTools.ts:62`](src/capabilities/taskAgent/memoryTools.ts)
+📍 [`src/capabilities/taskAgent/memoryTools.ts:107`](src/capabilities/taskAgent/memoryTools.ts)
 
 Tool definition for memory_delete
 
@@ -9383,7 +10067,7 @@ Tool definition for memory_delete
 
 ### memoryListDefinition `const`
 
-📍 [`src/capabilities/taskAgent/memoryTools.ts:83`](src/capabilities/taskAgent/memoryTools.ts)
+📍 [`src/capabilities/taskAgent/memoryTools.ts:128`](src/capabilities/taskAgent/memoryTools.ts)
 
 Tool definition for memory_list
 
@@ -9398,7 +10082,13 @@ Tool definition for memory_list
     description: 'List all keys and their descriptions in working memory.',
     parameters: {
       type: 'object',
-      properties: {},
+      properties: {
+        tier: {
+          type: 'string',
+          enum: ['raw', 'summary', 'findings'],
+          description: 'Optional: Filter to only show entries from a specific tier',
+        },
+      },
       required: [],
     },
   }` | - |
@@ -9409,7 +10099,7 @@ Tool definition for memory_list
 
 ### memoryRetrieveDefinition `const`
 
-📍 [`src/capabilities/taskAgent/memoryTools.ts:40`](src/capabilities/taskAgent/memoryTools.ts)
+📍 [`src/capabilities/taskAgent/memoryTools.ts:85`](src/capabilities/taskAgent/memoryTools.ts)
 
 Tool definition for memory_retrieve
 
@@ -9428,7 +10118,7 @@ Tool definition for memory_retrieve
       properties: {
         key: {
           type: 'string',
-          description: 'The key to retrieve',
+          description: 'The key to retrieve (include tier prefix if applicable, e.g., "findings.topic")',
         },
       },
       required: ['key'],
@@ -9441,7 +10131,7 @@ Tool definition for memory_retrieve
 
 ### memoryStoreDefinition `const`
 
-📍 [`src/capabilities/taskAgent/memoryTools.ts:11`](src/capabilities/taskAgent/memoryTools.ts)
+📍 [`src/capabilities/taskAgent/memoryTools.ts:21`](src/capabilities/taskAgent/memoryTools.ts)
 
 Tool definition for memory_store
 
@@ -9453,14 +10143,20 @@ Tool definition for memory_store
 | `type` | `'function'` | - |
 | `function` | `{
     name: 'memory_store',
-    description:
-      'Store data in working memory for later use. Use this to save important information from tool outputs.',
+    description: `Store data in working memory for later use. Use this to save important information from tool outputs.
+
+TIER SYSTEM (for research/analysis tasks):
+- "raw": Low priority, evicted first. Use for unprocessed data you'll summarize later.
+- "summary": Normal priority. Use for processed summaries of raw data.
+- "findings": High priority, kept longest. Use for final conclusions and insights.
+
+The tier automatically sets priority and adds a key prefix (e.g., "findings.topic" for tier="findings").`,
     parameters: {
       type: 'object',
       properties: {
         key: {
           type: 'string',
-          description: 'Namespaced key (e.g., "user.profile", "order.items")',
+          description: 'Namespaced key (e.g., "user.profile", "search.ai_news"). If using tier, prefix is added automatically.',
         },
         description: {
           type: 'string',
@@ -9468,6 +10164,35 @@ Tool definition for memory_store
         },
         value: {
           description: 'The data to store (can be any JSON value)',
+        },
+        tier: {
+          type: 'string',
+          enum: ['raw', 'summary', 'findings'],
+          description: 'Optional: Memory tier. "raw" (low priority, evict first), "summary" (normal), "findings" (high priority, keep longest). Automatically sets key prefix and priority.',
+        },
+        derivedFrom: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional: Keys this data was derived from (for tracking data lineage, useful with tiers)',
+        },
+        neededForTasks: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional: Task IDs that need this data. Data will be auto-cleaned when all tasks complete.',
+        },
+        scope: {
+          type: 'string',
+          enum: ['session', 'plan', 'persistent'],
+          description: 'Optional: Lifecycle scope. "session" (default), "plan" (kept for entire plan), or "persistent" (never auto-cleaned)',
+        },
+        priority: {
+          type: 'string',
+          enum: ['low', 'normal', 'high', 'critical'],
+          description: 'Optional: Override eviction priority. Ignored if tier is set (tier determines priority).',
+        },
+        pinned: {
+          type: 'boolean',
+          description: 'Optional: If true, this data will never be evicted.',
         },
       },
       required: ['key', 'description', 'value'],
@@ -9586,6 +10311,44 @@ Do NOT use for:
 
 ---
 
+### TIER_KEY_PREFIXES `const`
+
+📍 [`src/domain/entities/Memory.ts:150`](src/domain/entities/Memory.ts)
+
+Key prefixes for tiered data (used by helper methods)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `raw` | `'raw.'` | - |
+| `summary` | `'summary.'` | - |
+| `findings` | `'findings.'` | - |
+
+</details>
+
+---
+
+### TIER_PRIORITIES `const`
+
+📍 [`src/domain/entities/Memory.ts:141`](src/domain/entities/Memory.ts)
+
+Default priorities for each tier
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `raw` | `'low'` | - |
+| `summary` | `'normal'` | - |
+| `findings` | `'high'` | - |
+
+</details>
+
+---
+
 ## Universal Agent
 
 Unified agent combining chat, planning, and execution
@@ -9604,7 +10367,7 @@ constructor(initialMode: AgentMode = 'interactive')
 ```
 
 **Parameters:**
-- `initialMode`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode` *(optional)* (default: `'interactive'`)
+- `initialMode`: `AgentMode` *(optional)* (default: `'interactive'`)
 
 </details>
 
@@ -9619,7 +10382,7 @@ Get current mode
 getMode(): AgentMode
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode`
+**Returns:** `AgentMode`
 
 #### `getState()`
 
@@ -9629,7 +10392,7 @@ Get full mode state
 getState(): ModeState
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").ModeState`
+**Returns:** `ModeState`
 
 #### `canTransition()`
 
@@ -9640,7 +10403,7 @@ canTransition(to: AgentMode): boolean
 ```
 
 **Parameters:**
-- `to`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode`
+- `to`: `AgentMode`
 
 **Returns:** `boolean`
 
@@ -9653,7 +10416,7 @@ transition(to: AgentMode, reason: string): boolean
 ```
 
 **Parameters:**
-- `to`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode`
+- `to`: `AgentMode`
 - `reason`: `string`
 
 **Returns:** `boolean`
@@ -9680,7 +10443,7 @@ enterExecuting(_plan: Plan, reason: string = 'plan_approved'): boolean
 ```
 
 **Parameters:**
-- `_plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
+- `_plan`: `Plan`
 - `reason`: `string` *(optional)* (default: `'plan_approved'`)
 
 **Returns:** `boolean`
@@ -9707,7 +10470,7 @@ setPendingPlan(plan: Plan): void
 ```
 
 **Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
+- `plan`: `Plan`
 
 **Returns:** `void`
 
@@ -9719,7 +10482,7 @@ Get pending plan
 getPendingPlan(): Plan | undefined
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan | undefined`
+**Returns:** `Plan | undefined`
 
 #### `approvePlan()`
 
@@ -9816,10 +10579,10 @@ recommendMode(intent: IntentAnalysis, _currentPlan?: Plan): AgentMode | null
 ```
 
 **Parameters:**
-- `intent`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis`
-- `_currentPlan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan | undefined` *(optional)*
+- `intent`: `IntentAnalysis`
+- `_currentPlan`: `Plan | undefined` *(optional)*
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode | null`
+**Returns:** `AgentMode | null`
 
 #### `getHistory()`
 
@@ -9829,7 +10592,7 @@ Get transition history
 getHistory(): Array&lt;
 ```
 
-**Returns:** `{ from: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode; to: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode; at: Date; reason: string; }[]`
+**Returns:** `{ from: AgentMode; to: AgentMode; at: Date; reason: string; }[]`
 
 #### `clearHistory()`
 
@@ -9859,7 +10622,7 @@ Serialize state for session persistence
 serialize():
 ```
 
-**Returns:** `{ mode: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode; enteredAt: string; reason: string; pendingPlan?: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan | undefined; planApproved?: boolean | undefined; currentTaskIndex?: number | undefined; }`
+**Returns:** `{ mode: AgentMode; enteredAt: string; reason: string; pendingPlan?: Plan | undefined; planApproved?: boolean | undefined; currentTaskIndex?: number | undefined; }`
 
 #### `restore()`
 
@@ -9870,7 +10633,7 @@ restore(data: ReturnType&lt;ModeManager['serialize']&gt;): void
 ```
 
 **Parameters:**
-- `data`: `{ mode: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode; enteredAt: string; reason: string; pendingPlan?: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan | undefined; planApproved?: boolean | undefined; currentTaskIndex?: number | undefined; }`
+- `data`: `{ mode: AgentMode; enteredAt: string; reason: string; pendingPlan?: Plan | undefined; planApproved?: boolean | undefined; currentTaskIndex?: number | undefined; }`
 
 **Returns:** `void`
 
@@ -9881,8 +10644,8 @@ restore(data: ReturnType&lt;ModeManager['serialize']&gt;): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `state` | `state: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").ModeState` | - |
-| `transitionHistory` | `transitionHistory: { from: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode; to: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode; at: Date; reason: string; }[]` | - |
+| `state` | `state: ModeState` | - |
+| `transitionHistory` | `transitionHistory: { from: AgentMode; to: AgentMode; at: Date; reason: string; }[]` | - |
 
 </details>
 
@@ -9890,7 +10653,7 @@ restore(data: ReturnType&lt;ModeManager['serialize']&gt;): void
 
 ### UniversalAgent `class`
 
-📍 [`src/capabilities/universalAgent/UniversalAgent.ts:56`](src/capabilities/universalAgent/UniversalAgent.ts)
+📍 [`src/capabilities/universalAgent/UniversalAgent.ts:125`](src/capabilities/universalAgent/UniversalAgent.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -9902,7 +10665,7 @@ private constructor(config: UniversalAgentConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalAgentConfig`
+- `config`: `UniversalAgentConfig`
 
 </details>
 
@@ -9918,38 +10681,9 @@ static create(config: UniversalAgentConfig): UniversalAgent
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalAgentConfig`
+- `config`: `UniversalAgentConfig`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/UniversalAgent").UniversalAgent`
-
-#### `static resume()`
-
-Resume an agent from a saved session
-
-```typescript
-static async resume(
-    sessionId: string,
-    config: Omit&lt;UniversalAgentConfig, 'session'&gt; &
-```
-
-**Parameters:**
-- `sessionId`: `string`
-- `config`: `Omit&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalAgentConfig, "session"&gt; & { session: { storage: import("/Users/aantich/dev/oneringai/src/core/SessionManager").ISessionStorage; }; }`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/UniversalAgent").UniversalAgent&gt;`
-
-#### `static create()`
-
-Create a new UniversalAgent
-
-```typescript
-static create(config: UniversalAgentConfig): UniversalAgent
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalAgentConfig`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/UniversalAgent").UniversalAgent`
+**Returns:** `UniversalAgent`
 
 #### `static resume()`
 
@@ -9963,14 +10697,57 @@ static async resume(
 
 **Parameters:**
 - `sessionId`: `string`
-- `config`: `Omit&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalAgentConfig, "session"&gt; & { session: { storage: import("/Users/aantich/dev/oneringai/src/core/SessionManager").ISessionStorage; }; }`
+- `config`: `Omit&lt;UniversalAgentConfig, "session"&gt; & { session: { storage: ISessionStorage; }; }`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/UniversalAgent").UniversalAgent&gt;`
+**Returns:** `Promise&lt;UniversalAgent&gt;`
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
+
+#### `getAgentType()`
+
+```typescript
+protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent'
+```
+
+**Returns:** `"agent" | "task-agent" | "universal-agent"`
+
+#### `prepareSessionState()`
+
+```typescript
+protected prepareSessionState(): void
+```
+
+**Returns:** `void`
+
+#### `restoreSessionState()`
+
+```typescript
+protected async restoreSessionState(session: Session): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `session`: `Session`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getSerializedPlan()`
+
+```typescript
+protected getSerializedPlan(): SerializedPlan | undefined
+```
+
+**Returns:** `SerializedPlan | undefined`
+
+#### `saveSession()`
+
+```typescript
+async saveSession(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
 
 #### `chat()`
 
@@ -9983,7 +10760,7 @@ async chat(input: string): Promise&lt;UniversalResponse&gt;
 **Parameters:**
 - `input`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
+**Returns:** `Promise&lt;UniversalResponse&gt;`
 
 #### `stream()`
 
@@ -9996,375 +10773,7 @@ async *stream(input: string): AsyncIterableIterator&lt;UniversalEvent&gt;
 **Parameters:**
 - `input`: `string`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalEvent&gt;`
-
-#### `handleInteractive()`
-
-```typescript
-private async handleInteractive(input: string, intent: IntentAnalysis): Promise&lt;UniversalResponse&gt;
-```
-
-**Parameters:**
-- `input`: `string`
-- `intent`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
-
-#### `handlePlanning()`
-
-```typescript
-private async handlePlanning(input: string, intent: IntentAnalysis): Promise&lt;UniversalResponse&gt;
-```
-
-**Parameters:**
-- `input`: `string`
-- `intent`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
-
-#### `handleExecuting()`
-
-```typescript
-private async handleExecuting(input: string, intent: IntentAnalysis): Promise&lt;UniversalResponse&gt;
-```
-
-**Parameters:**
-- `input`: `string`
-- `intent`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
-
-#### `streamInteractive()`
-
-```typescript
-private async *streamInteractive(input: string, intent: IntentAnalysis): AsyncIterableIterator&lt;UniversalEvent&gt;
-```
-
-**Parameters:**
-- `input`: `string`
-- `intent`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalEvent&gt;`
-
-#### `streamPlanning()`
-
-```typescript
-private async *streamPlanning(input: string, intent: IntentAnalysis): AsyncIterableIterator&lt;UniversalEvent&gt;
-```
-
-**Parameters:**
-- `input`: `string`
-- `intent`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalEvent&gt;`
-
-#### `streamExecuting()`
-
-```typescript
-private async *streamExecuting(intent: IntentAnalysis): AsyncIterableIterator&lt;UniversalEvent&gt;
-```
-
-**Parameters:**
-- `intent`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalEvent&gt;`
-
-#### `streamExecution()`
-
-```typescript
-private async *streamExecution(): AsyncIterableIterator&lt;UniversalEvent&gt;
-```
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalEvent&gt;`
-
-#### `createPlan()`
-
-```typescript
-private async createPlan(goal: string, _reasoning?: string): Promise&lt;UniversalResponse&gt;
-```
-
-**Parameters:**
-- `goal`: `string`
-- `_reasoning`: `string | undefined` *(optional)*
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
-
-#### `createPlanInternal()`
-
-```typescript
-private async createPlanInternal(goal: string): Promise&lt;Plan&gt;
-```
-
-**Parameters:**
-- `goal`: `string`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan&gt;`
-
-#### `approvePlan()`
-
-```typescript
-private async approvePlan(_feedback?: string): Promise&lt;UniversalResponse&gt;
-```
-
-**Parameters:**
-- `_feedback`: `string | undefined` *(optional)*
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
-
-#### `handlePlanRejection()`
-
-```typescript
-private async handlePlanRejection(_input: string, intent: IntentAnalysis): Promise&lt;UniversalResponse&gt;
-```
-
-**Parameters:**
-- `_input`: `string`
-- `intent`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
-
-#### `refinePlan()`
-
-```typescript
-private async refinePlan(feedback: string): Promise&lt;UniversalResponse&gt;
-```
-
-**Parameters:**
-- `feedback`: `string`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
-
-#### `modifyPlan()`
-
-```typescript
-private async modifyPlan(modification: IntentAnalysis['modification']): Promise&lt;UniversalResponse&gt;
-```
-
-**Parameters:**
-- `modification`: `{ action: "add_task" | "remove_task" | "skip_task" | "reorder" | "update_task"; taskName?: string | undefined; details?: string | undefined; } | undefined`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
-
-#### `continueExecution()`
-
-```typescript
-private async continueExecution(): Promise&lt;UniversalResponse&gt;
-```
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse&gt;`
-
-#### `reportProgress()`
-
-```typescript
-private reportProgress(): UniversalResponse
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse`
-
-#### `analyzeIntent()`
-
-```typescript
-private async analyzeIntent(input: string): Promise&lt;IntentAnalysis&gt;
-```
-
-**Parameters:**
-- `input`: `string`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis&gt;`
-
-#### `isApproval()`
-
-```typescript
-private isApproval(input: string): boolean
-```
-
-**Parameters:**
-- `input`: `string`
-
-**Returns:** `boolean`
-
-#### `isRejection()`
-
-```typescript
-private isRejection(input: string): boolean
-```
-
-**Parameters:**
-- `input`: `string`
-
-**Returns:** `boolean`
-
-#### `isStatusQuery()`
-
-```typescript
-private isStatusQuery(input: string): boolean
-```
-
-**Parameters:**
-- `input`: `string`
-
-**Returns:** `boolean`
-
-#### `isInterrupt()`
-
-```typescript
-private isInterrupt(input: string): boolean
-```
-
-**Parameters:**
-- `input`: `string`
-
-**Returns:** `boolean`
-
-#### `isPlanModification()`
-
-```typescript
-private isPlanModification(input: string): boolean
-```
-
-**Parameters:**
-- `input`: `string`
-
-**Returns:** `boolean`
-
-#### `parsePlanModification()`
-
-```typescript
-private parsePlanModification(input: string): IntentAnalysis['modification']
-```
-
-**Parameters:**
-- `input`: `string`
-
-**Returns:** `{ action: "add_task" | "remove_task" | "skip_task" | "reorder" | "update_task"; taskName?: string | undefined; details?: string | undefined; } | undefined`
-
-#### `estimateComplexity()`
-
-```typescript
-private estimateComplexity(input: string): 'low' | 'medium' | 'high'
-```
-
-**Parameters:**
-- `input`: `string`
-
-**Returns:** `"low" | "medium" | "high"`
-
-#### `estimateSteps()`
-
-```typescript
-private estimateSteps(input: string): number
-```
-
-**Parameters:**
-- `input`: `string`
-
-**Returns:** `number`
-
-#### `shouldSwitchToPlanning()`
-
-```typescript
-private shouldSwitchToPlanning(intent: IntentAnalysis): boolean
-```
-
-**Parameters:**
-- `intent`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").IntentAnalysis`
-
-**Returns:** `boolean`
-
-#### `buildInstructions()`
-
-```typescript
-private buildInstructions(userInstructions?: string): string
-```
-
-**Parameters:**
-- `userInstructions`: `string | undefined` *(optional)*
-
-**Returns:** `string`
-
-#### `buildTaskPrompt()`
-
-```typescript
-private buildTaskPrompt(task: Task): string
-```
-
-**Parameters:**
-- `task`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Task`
-
-**Returns:** `string`
-
-#### `formatPlanSummary()`
-
-```typescript
-private formatPlanSummary(plan: Plan): string
-```
-
-**Parameters:**
-- `plan`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan`
-
-**Returns:** `string`
-
-#### `formatProgress()`
-
-```typescript
-private formatProgress(progress: TaskProgress): string
-```
-
-**Parameters:**
-- `progress`: `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").TaskProgress`
-
-**Returns:** `string`
-
-#### `getTaskProgress()`
-
-```typescript
-private getTaskProgress(): TaskProgress
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").TaskProgress`
-
-#### `getSessionId()`
-
-```typescript
-getSessionId(): string | null
-```
-
-**Returns:** `string | null`
-
-#### `hasSession()`
-
-```typescript
-hasSession(): boolean
-```
-
-**Returns:** `boolean`
-
-#### `saveSession()`
-
-```typescript
-async saveSession(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `loadSession()`
-
-```typescript
-private async loadSession(sessionId: string): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `sessionId`: `string`
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `getSession()`
-
-```typescript
-getSession(): Session | null
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session | null`
+**Returns:** `AsyncIterableIterator&lt;UniversalEvent&gt;`
 
 #### `getMode()`
 
@@ -10372,7 +10781,7 @@ getSession(): Session | null
 getMode(): AgentMode
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").AgentMode`
+**Returns:** `AgentMode`
 
 #### `getPlan()`
 
@@ -10380,7 +10789,7 @@ getMode(): AgentMode
 getPlan(): Plan | null
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan | null`
+**Returns:** `Plan | null`
 
 #### `getProgress()`
 
@@ -10388,7 +10797,17 @@ getPlan(): Plan | null
 getProgress(): TaskProgress | null
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").TaskProgress | null`
+**Returns:** `TaskProgress | null`
+
+#### `hasContext()`
+
+Check if context is available (always true for UniversalAgent)
+
+```typescript
+hasContext(): boolean
+```
+
+**Returns:** `boolean`
 
 #### `setAutoApproval()`
 
@@ -10452,17 +10871,6 @@ isPaused(): boolean
 
 **Returns:** `boolean`
 
-#### `onCleanup()`
-
-```typescript
-onCleanup(callback: () =&gt; void): void
-```
-
-**Parameters:**
-- `callback`: `() =&gt; void`
-
-**Returns:** `void`
-
 #### `destroy()`
 
 ```typescript
@@ -10478,17 +10886,12 @@ destroy(): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `name` | `name: string` | - |
-| `connector` | `connector: import("/Users/aantich/dev/oneringai/src/core/Connector").Connector` | - |
-| `model` | `model: string` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalAgentConfig` | - |
-| `agent` | `agent: import("/Users/aantich/dev/oneringai/src/core/Agent").Agent` | - |
-| `modeManager` | `modeManager: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/ModeManager").ModeManager` | - |
-| `planningAgent?` | `planningAgent: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/PlanningAgent").PlanningAgent | undefined` | - |
-| `workingMemory` | `workingMemory: import("/Users/aantich/dev/oneringai/src/capabilities/taskAgent/WorkingMemory").WorkingMemory` | - |
-| `currentPlan` | `currentPlan: import("/Users/aantich/dev/oneringai/src/domain/entities/Task").Plan | null` | - |
-| `executionHistory` | `executionHistory: { input: string; response: import("/Users/aantich/dev/oneringai/src/capabilities/universalAgent/types").UniversalResponse; timestamp: Date; }[]` | - |
-| `isDestroyed` | `isDestroyed: boolean` | - |
+| `agent` | `agent: Agent` | - |
+| `executionAgent?` | `executionAgent: Agent | undefined` | - |
+| `modeManager` | `modeManager: ModeManager` | - |
+| `planningAgent?` | `planningAgent: PlanningAgent | undefined` | - |
+| `currentPlan` | `currentPlan: Plan | null` | - |
+| `executionHistory` | `executionHistory: { input: string; response: UniversalResponse; timestamp: Date; }[]` | - |
 
 </details>
 
@@ -10496,7 +10899,7 @@ destroy(): void
 
 ### ExecutionResult `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:174`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:181`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10516,7 +10919,7 @@ destroy(): void
 
 ### IntentAnalysis `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:187`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:194`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10557,7 +10960,7 @@ destroy(): void
 
 ### ModeState `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:212`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:219`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10579,13 +10982,13 @@ destroy(): void
 
 ### ReportProgressArgs `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:243`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:250`](src/capabilities/universalAgent/types.ts)
 
 ---
 
 ### RequestApprovalArgs `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:247`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:254`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10600,7 +11003,7 @@ destroy(): void
 
 ### ToolCallResult `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:116`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:123`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10637,6 +11040,32 @@ destroy(): void
 | `session?` | `session?: UniversalAgentSessionConfig;` | - |
 | `memoryConfig?` | `memoryConfig?: WorkingMemoryConfig;` | - |
 | `toolManager?` | `toolManager?: ToolManager;` | - |
+| `permissions?` | `permissions?: import('../../core/permissions/types.js').AgentPermissionsConfig;` | Permission configuration for tool execution approval. |
+| `context?` | `context?: Partial&lt;import('../../core/AgentContext.js').AgentContextConfig&gt;;` | AgentContext configuration (optional overrides) |
+
+</details>
+
+---
+
+### UniversalAgentConfig `interface`
+
+📍 [`src/capabilities/universalAgent/UniversalAgent.ts:75`](src/capabilities/universalAgent/UniversalAgent.ts)
+
+UniversalAgent configuration - extends BaseAgentConfig
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `instructions?` | `instructions?: string;` | System instructions for the agent |
+| `temperature?` | `temperature?: number;` | Temperature for generation |
+| `maxIterations?` | `maxIterations?: number;` | Maximum iterations for tool calling loop |
+| `planning?` | `planning?: UniversalAgentPlanningConfig;` | Planning configuration |
+| `memoryConfig?` | `memoryConfig?: WorkingMemoryConfig;` | Memory configuration |
+| `session?` | `session?: UniversalAgentSessionConfig;` | Session configuration - extends base type |
+| `permissions?` | `permissions?: AgentPermissionsConfig;` | Permission configuration for tool execution approval |
+| `context?` | `context?: Partial&lt;AgentContextConfig&gt;;` | AgentContext configuration (optional) |
 
 </details>
 
@@ -10644,7 +11073,7 @@ destroy(): void
 
 ### UniversalAgentEvents `interface`
 
-📍 [`src/capabilities/universalAgent/UniversalAgent.ts:40`](src/capabilities/universalAgent/UniversalAgent.ts)
+📍 [`src/capabilities/universalAgent/UniversalAgent.ts:105`](src/capabilities/universalAgent/UniversalAgent.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10660,6 +11089,9 @@ destroy(): void
 | `'task:failed'` | `'task:failed': { task: Task; error: string };` | - |
 | `'execution:completed'` | `'execution:completed': { result: ExecutionResult };` | - |
 | `'error'` | `'error': { error: Error; recoverable: boolean };` | - |
+| `'session:saved'` | `'session:saved': { sessionId: string };` | - |
+| `'session:loaded'` | `'session:loaded': { sessionId: string };` | - |
+| `destroyed` | `destroyed: void;` | - |
 
 </details>
 
@@ -10683,9 +11115,17 @@ destroy(): void
 
 ---
 
+### UniversalAgentSessionConfig `interface`
+
+📍 [`src/capabilities/universalAgent/UniversalAgent.ts:54`](src/capabilities/universalAgent/UniversalAgent.ts)
+
+Session configuration for UniversalAgent - extends BaseSessionConfig
+
+---
+
 ### UniversalResponse `interface`
 
-📍 [`src/capabilities/universalAgent/types.ts:83`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:90`](src/capabilities/universalAgent/types.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -10722,7 +11162,7 @@ type AgentMode = 'interactive' | 'planning' | 'executing'
 
 ### UniversalEvent `type`
 
-📍 [`src/capabilities/universalAgent/types.ts:128`](src/capabilities/universalAgent/types.ts)
+📍 [`src/capabilities/universalAgent/types.ts:135`](src/capabilities/universalAgent/types.ts)
 
 ```typescript
 type UniversalEvent = | { type: 'text:delta'; delta: string }
@@ -10864,7 +11304,7 @@ Manage context windows and compaction strategies
 
 ### AdaptiveStrategy `class`
 
-📍 [`src/core/context/strategies/AdaptiveStrategy.ts:29`](src/core/context/strategies/AdaptiveStrategy.ts)
+📍 [`src/core/context/strategies/AdaptiveStrategy.ts:30`](src/core/context/strategies/AdaptiveStrategy.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -10876,7 +11316,7 @@ constructor(private options: AdaptiveStrategyOptions =
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/core/context/strategies/AdaptiveStrategy").AdaptiveStrategyOptions` *(optional)* (default: `{}`)
+- `options`: `AdaptiveStrategyOptions` *(optional)* (default: `{}`)
 
 </details>
 
@@ -10890,8 +11330,8 @@ shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean
 ```
 
 **Parameters:**
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig`
+- `budget`: `ContextBudget`
+- `config`: `ContextManagerConfig`
 
 **Returns:** `boolean`
 
@@ -10907,31 +11347,12 @@ async compact(
 ```
 
 **Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `compactors`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextCompactor[]`
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
+- `components`: `IContextComponent[]`
+- `budget`: `ContextBudget`
+- `compactors`: `IContextCompactor[]`
+- `estimator`: `ITokenEstimator`
 
-**Returns:** `Promise&lt;{ components: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]; log: string[]; tokensFreed: number; }&gt;`
-
-#### `updateMetrics()`
-
-```typescript
-private updateMetrics(budget: ContextBudget): void
-```
-
-**Parameters:**
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-
-**Returns:** `void`
-
-#### `maybeAdapt()`
-
-```typescript
-private maybeAdapt(): void
-```
-
-**Returns:** `void`
+**Returns:** `Promise&lt;{ components: IContextComponent[]; log: string[]; tokensFreed: number; }&gt;`
 
 #### `getMetrics()`
 
@@ -10949,7 +11370,7 @@ getMetrics()
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "adaptive"` | - |
-| `currentStrategy` | `currentStrategy: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextStrategy` | - |
+| `currentStrategy` | `currentStrategy: IContextStrategy` | - |
 | `metrics` | `metrics: { avgUtilization: number; compactionFrequency: number; lastCompactions: number[]; }` | - |
 
 </details>
@@ -10958,7 +11379,7 @@ getMetrics()
 
 ### AggressiveCompactionStrategy `class`
 
-📍 [`src/core/context/strategies/AggressiveStrategy.ts:26`](src/core/context/strategies/AggressiveStrategy.ts)
+📍 [`src/core/context/strategies/AggressiveStrategy.ts:37`](src/core/context/strategies/AggressiveStrategy.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -10966,11 +11387,11 @@ getMetrics()
 #### `constructor`
 
 ```typescript
-constructor(private options: AggressiveStrategyOptions =
+constructor(options: AggressiveStrategyOptions =
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/core/context/strategies/AggressiveStrategy").AggressiveStrategyOptions` *(optional)* (default: `{}`)
+- `options`: `AggressiveStrategyOptions` *(optional)* (default: `{}`)
 
 </details>
 
@@ -10984,41 +11405,38 @@ shouldCompact(budget: ContextBudget, _config: ContextManagerConfig): boolean
 ```
 
 **Parameters:**
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `_config`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig`
+- `budget`: `ContextBudget`
+- `_config`: `ContextManagerConfig`
 
 **Returns:** `boolean`
 
-#### `compact()`
+#### `calculateTargetSize()`
 
 ```typescript
-async compact(
-    components: IContextComponent[],
-    budget: ContextBudget,
-    compactors: IContextCompactor[],
-    estimator: ITokenEstimator
-  ): Promise&lt;
+calculateTargetSize(beforeSize: number, _round: number): number
 ```
 
 **Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `compactors`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextCompactor[]`
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
-
-**Returns:** `Promise&lt;{ components: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]; log: string[]; tokensFreed: number; }&gt;`
-
-#### `estimateComponent()`
-
-```typescript
-private estimateComponent(component: IContextComponent, estimator: ITokenEstimator): number
-```
-
-**Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
+- `beforeSize`: `number`
+- `_round`: `number`
 
 **Returns:** `number`
+
+#### `getTargetUtilization()`
+
+```typescript
+getTargetUtilization(): number
+```
+
+**Returns:** `number`
+
+#### `getLogPrefix()`
+
+```typescript
+protected getLogPrefix(): string
+```
+
+**Returns:** `string`
 
 </details>
 
@@ -11028,6 +11446,7 @@ private estimateComponent(component: IContextComponent, estimator: ITokenEstimat
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "aggressive"` | - |
+| `options` | `options: Required&lt;AggressiveStrategyOptions&gt;` | - |
 
 </details>
 
@@ -11035,36 +11454,36 @@ private estimateComponent(component: IContextComponent, estimator: ITokenEstimat
 
 ### ApproximateTokenEstimator `class`
 
-📍 [`src/infrastructure/context/estimators/ApproximateEstimator.ts:10`](src/infrastructure/context/estimators/ApproximateEstimator.ts)
+📍 [`src/infrastructure/context/estimators/ApproximateEstimator.ts:14`](src/infrastructure/context/estimators/ApproximateEstimator.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
 
 #### `estimateTokens()`
 
-Estimate tokens for text using 4 chars per token heuristic
+Estimate tokens for text with content-type awareness
 
 ```typescript
-estimateTokens(text: string, _model?: string): number
+estimateTokens(text: string, contentType: TokenContentType = 'mixed'): number
 ```
 
 **Parameters:**
 - `text`: `string`
-- `_model`: `string | undefined` *(optional)*
+- `contentType`: `TokenContentType` *(optional)* (default: `'mixed'`)
 
 **Returns:** `number`
 
 #### `estimateDataTokens()`
 
-Estimate tokens for structured data
+Estimate tokens for structured data (always uses 'mixed' estimation)
 
 ```typescript
-estimateDataTokens(data: unknown, _model?: string): number
+estimateDataTokens(data: unknown, contentType: TokenContentType = 'mixed'): number
 ```
 
 **Parameters:**
 - `data`: `unknown`
-- `_model`: `string | undefined` *(optional)*
+- `contentType`: `TokenContentType` *(optional)* (default: `'mixed'`)
 
 **Returns:** `number`
 
@@ -11072,9 +11491,235 @@ estimateDataTokens(data: unknown, _model?: string): number
 
 ---
 
+### BaseCompactionStrategy `class`
+
+📍 [`src/core/context/strategies/BaseCompactionStrategy.ts:37`](src/core/context/strategies/BaseCompactionStrategy.ts)
+
+Abstract base class for compaction strategies.
+
+Uses template method pattern - subclasses implement abstract methods
+while base class provides the common compaction loop.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `shouldCompact()`
+
+Determine if compaction should be triggered.
+Each strategy has different thresholds.
+
+```typescript
+abstract shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean;
+```
+
+**Parameters:**
+- `budget`: `ContextBudget`
+- `config`: `ContextManagerConfig`
+
+**Returns:** `boolean`
+
+#### `calculateTargetSize()`
+
+Calculate target size for a component during compaction.
+
+```typescript
+abstract calculateTargetSize(beforeSize: number, round: number): number;
+```
+
+**Parameters:**
+- `beforeSize`: `number`
+- `round`: `number`
+
+**Returns:** `number`
+
+#### `getTargetUtilization()`
+
+Get the target utilization ratio after compaction (0-1).
+Used to calculate how many tokens need to be freed.
+
+```typescript
+abstract getTargetUtilization(): number;
+```
+
+**Returns:** `number`
+
+#### `getMaxRounds()`
+
+Get the maximum number of compaction rounds.
+Override in subclasses for multi-round strategies.
+
+```typescript
+protected getMaxRounds(): number
+```
+
+**Returns:** `number`
+
+#### `getLogPrefix()`
+
+Get the log prefix for compaction messages.
+Override to customize logging.
+
+```typescript
+protected getLogPrefix(): string
+```
+
+**Returns:** `string`
+
+#### `compact()`
+
+Compact components to fit within budget.
+Uses the shared compaction loop with strategy-specific target calculation.
+
+```typescript
+async compact(
+    components: IContextComponent[],
+    budget: ContextBudget,
+    compactors: IContextCompactor[],
+    estimator: ITokenEstimator
+  ): Promise&lt;CompactionResult&gt;
+```
+
+**Parameters:**
+- `components`: `IContextComponent[]`
+- `budget`: `ContextBudget`
+- `compactors`: `IContextCompactor[]`
+- `estimator`: `ITokenEstimator`
+
+**Returns:** `Promise&lt;CompactionResult&gt;`
+
+#### `updateMetrics()`
+
+Update internal metrics after compaction
+
+```typescript
+protected updateMetrics(tokensFreed: number): void
+```
+
+**Parameters:**
+- `tokensFreed`: `number`
+
+**Returns:** `void`
+
+#### `getMetrics()`
+
+Get strategy metrics
+
+```typescript
+getMetrics(): BaseStrategyMetrics
+```
+
+**Returns:** `BaseStrategyMetrics`
+
+#### `resetMetrics()`
+
+Reset metrics (useful for testing)
+
+```typescript
+resetMetrics(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string` | - |
+| `metrics` | `metrics: BaseStrategyMetrics` | - |
+
+</details>
+
+---
+
+### BaseContextPlugin `class`
+
+📍 [`src/core/context/plugins/IContextPlugin.ts:93`](src/core/context/plugins/IContextPlugin.ts)
+
+Base class for context plugins with common functionality
+Plugins can extend this or implement IContextPlugin directly
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `getComponent()`
+
+```typescript
+abstract getComponent(): Promise&lt;IContextComponent | null&gt;;
+```
+
+**Returns:** `Promise&lt;IContextComponent | null&gt;`
+
+#### `compact()`
+
+```typescript
+async compact(_targetTokens: number, _estimator: ITokenEstimator): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `_targetTokens`: `number`
+- `_estimator`: `ITokenEstimator`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `onPrepared()`
+
+```typescript
+async onPrepared(_budget: ContextBudget): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `_budget`: `ContextBudget`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `destroy()`
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
+
+#### `getState()`
+
+```typescript
+getState(): unknown
+```
+
+**Returns:** `unknown`
+
+#### `restoreState()`
+
+```typescript
+restoreState(_state: unknown): void
+```
+
+**Parameters:**
+- `_state`: `unknown`
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string` | - |
+| `priority` | `priority: number` | - |
+| `compactable` | `compactable: boolean` | - |
+
+</details>
+
+---
+
 ### ContextManager `class`
 
-📍 [`src/core/context/ContextManager.ts:36`](src/core/context/ContextManager.ts)
+📍 [`src/core/context/ContextManager.ts:38`](src/core/context/ContextManager.ts)
 
 Universal Context Manager
 
@@ -11093,16 +11738,44 @@ constructor(
 ```
 
 **Parameters:**
-- `provider`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextProvider`
-- `config`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig&gt;` *(optional)* (default: `{}`)
-- `compactors`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextCompactor[]` *(optional)* (default: `[]`)
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator | undefined` *(optional)*
-- `strategy`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextStrategy | undefined` *(optional)*
+- `provider`: `IContextProvider`
+- `config`: `Partial&lt;ContextManagerConfig&gt;` *(optional)* (default: `{}`)
+- `compactors`: `IContextCompactor[]` *(optional)* (default: `[]`)
+- `estimator`: `ITokenEstimator | undefined` *(optional)*
+- `strategy`: `IContextStrategy | undefined` *(optional)*
+- `hooks`: `ContextManagerHooks | undefined` *(optional)*
+- `agentId`: `string | undefined` *(optional)*
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
+
+#### `setHooks()`
+
+Set hooks at runtime
+
+```typescript
+setHooks(hooks: ContextManagerHooks): void
+```
+
+**Parameters:**
+- `hooks`: `ContextManagerHooks`
+
+**Returns:** `void`
+
+#### `setAgentId()`
+
+Set agent ID at runtime
+
+```typescript
+setAgentId(agentId: string): void
+```
+
+**Parameters:**
+- `agentId`: `string`
+
+**Returns:** `void`
 
 #### `prepare()`
 
@@ -11113,50 +11786,7 @@ Returns prepared components, automatically compacting if needed
 async prepare(): Promise&lt;PreparedContext&gt;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").PreparedContext&gt;`
-
-#### `compactWithStrategy()`
-
-Compact using the current strategy
-
-```typescript
-private async compactWithStrategy(
-    components: IContextComponent[],
-    budget: ContextBudget
-  ): Promise&lt;PreparedContext&gt;
-```
-
-**Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").PreparedContext&gt;`
-
-#### `calculateBudget()`
-
-Calculate budget for components
-
-```typescript
-private calculateBudget(components: IContextComponent[]): ContextBudget
-```
-
-**Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-
-#### `estimateComponent()`
-
-Estimate tokens for a component
-
-```typescript
-private estimateComponent(component: IContextComponent): number
-```
-
-**Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
-
-**Returns:** `number`
+**Returns:** `Promise&lt;PreparedContext&gt;`
 
 #### `setStrategy()`
 
@@ -11169,7 +11799,7 @@ setStrategy(
 ```
 
 **Parameters:**
-- `strategy`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextStrategy | "proactive" | "aggressive" | "lazy" | "rolling-window" | "adaptive"`
+- `strategy`: `"proactive" | "aggressive" | "lazy" | "rolling-window" | "adaptive" | IContextStrategy`
 
 **Returns:** `void`
 
@@ -11181,7 +11811,7 @@ Get current strategy
 getStrategy(): IContextStrategy
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextStrategy`
+**Returns:** `IContextStrategy`
 
 #### `getStrategyMetrics()`
 
@@ -11201,7 +11831,7 @@ Get current budget
 getCurrentBudget(): ContextBudget | null
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget | null`
+**Returns:** `ContextBudget | null`
 
 #### `getConfig()`
 
@@ -11211,7 +11841,7 @@ Get configuration
 getConfig(): ContextManagerConfig
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig`
+**Returns:** `ContextManagerConfig`
 
 #### `updateConfig()`
 
@@ -11222,7 +11852,7 @@ updateConfig(updates: Partial&lt;ContextManagerConfig&gt;): void
 ```
 
 **Parameters:**
-- `updates`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig&gt;`
+- `updates`: `Partial&lt;ContextManagerConfig&gt;`
 
 **Returns:** `void`
 
@@ -11235,7 +11865,7 @@ addCompactor(compactor: IContextCompactor): void
 ```
 
 **Parameters:**
-- `compactor`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextCompactor`
+- `compactor`: `IContextCompactor`
 
 **Returns:** `void`
 
@@ -11247,33 +11877,7 @@ Get all compactors
 getCompactors(): IContextCompactor[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextCompactor[]`
-
-#### `createEstimator()`
-
-Create estimator from name
-
-```typescript
-private createEstimator(_name: string): ITokenEstimator
-```
-
-**Parameters:**
-- `_name`: `string`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
-
-#### `createStrategy()`
-
-Create strategy from name or config
-
-```typescript
-private createStrategy(strategy: string | IContextStrategy): IContextStrategy
-```
-
-**Parameters:**
-- `strategy`: `string | import("/Users/aantich/dev/oneringai/src/core/context/types").IContextStrategy`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextStrategy`
+**Returns:** `IContextCompactor[]`
 
 </details>
 
@@ -11282,12 +11886,14 @@ private createStrategy(strategy: string | IContextStrategy): IContextStrategy
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig` | - |
-| `provider` | `provider: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextProvider` | - |
-| `estimator` | `estimator: import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator` | - |
-| `compactors` | `compactors: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextCompactor[]` | - |
-| `strategy` | `strategy: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextStrategy` | - |
-| `lastBudget?` | `lastBudget: import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget | undefined` | - |
+| `config` | `config: ContextManagerConfig` | - |
+| `provider` | `provider: IContextProvider` | - |
+| `estimator` | `estimator: ITokenEstimator` | - |
+| `compactors` | `compactors: IContextCompactor[]` | - |
+| `strategy` | `strategy: IContextStrategy` | - |
+| `lastBudget?` | `lastBudget: ContextBudget | undefined` | - |
+| `hooks` | `hooks: ContextManagerHooks` | - |
+| `agentId?` | `agentId: string | undefined` | - |
 
 </details>
 
@@ -11295,7 +11901,21 @@ private createStrategy(strategy: string | IContextStrategy): IContextStrategy
 
 ### LazyCompactionStrategy `class`
 
-📍 [`src/core/context/strategies/LazyStrategy.ts:19`](src/core/context/strategies/LazyStrategy.ts)
+📍 [`src/core/context/strategies/LazyStrategy.ts:34`](src/core/context/strategies/LazyStrategy.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options: LazyStrategyOptions =
+```
+
+**Parameters:**
+- `options`: `LazyStrategyOptions` *(optional)* (default: `{}`)
+
+</details>
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -11307,41 +11927,38 @@ shouldCompact(budget: ContextBudget, _config: ContextManagerConfig): boolean
 ```
 
 **Parameters:**
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `_config`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig`
+- `budget`: `ContextBudget`
+- `_config`: `ContextManagerConfig`
 
 **Returns:** `boolean`
 
-#### `compact()`
+#### `calculateTargetSize()`
 
 ```typescript
-async compact(
-    components: IContextComponent[],
-    budget: ContextBudget,
-    compactors: IContextCompactor[],
-    estimator: ITokenEstimator
-  ): Promise&lt;
+calculateTargetSize(beforeSize: number, _round: number): number
 ```
 
 **Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `compactors`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextCompactor[]`
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
-
-**Returns:** `Promise&lt;{ components: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]; log: string[]; tokensFreed: number; }&gt;`
-
-#### `estimateComponent()`
-
-```typescript
-private estimateComponent(component: IContextComponent, estimator: ITokenEstimator): number
-```
-
-**Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
+- `beforeSize`: `number`
+- `_round`: `number`
 
 **Returns:** `number`
+
+#### `getTargetUtilization()`
+
+```typescript
+getTargetUtilization(): number
+```
+
+**Returns:** `number`
+
+#### `getLogPrefix()`
+
+```typescript
+protected getLogPrefix(): string
+```
+
+**Returns:** `string`
 
 </details>
 
@@ -11351,6 +11968,7 @@ private estimateComponent(component: IContextComponent, estimator: ITokenEstimat
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "lazy"` | - |
+| `options` | `options: Required&lt;LazyStrategyOptions&gt;` | - |
 
 </details>
 
@@ -11358,7 +11976,21 @@ private estimateComponent(component: IContextComponent, estimator: ITokenEstimat
 
 ### ProactiveCompactionStrategy `class`
 
-📍 [`src/core/context/strategies/ProactiveStrategy.ts:18`](src/core/context/strategies/ProactiveStrategy.ts)
+📍 [`src/core/context/strategies/ProactiveStrategy.ts:40`](src/core/context/strategies/ProactiveStrategy.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(options: ProactiveStrategyOptions =
+```
+
+**Parameters:**
+- `options`: `ProactiveStrategyOptions` *(optional)* (default: `{}`)
+
+</details>
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -11370,49 +12002,46 @@ shouldCompact(budget: ContextBudget, _config: ContextManagerConfig): boolean
 ```
 
 **Parameters:**
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `_config`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig`
+- `budget`: `ContextBudget`
+- `_config`: `ContextManagerConfig`
 
 **Returns:** `boolean`
 
-#### `compact()`
+#### `calculateTargetSize()`
 
 ```typescript
-async compact(
-    components: IContextComponent[],
-    budget: ContextBudget,
-    compactors: IContextCompactor[],
-    estimator: ITokenEstimator
-  ): Promise&lt;
+calculateTargetSize(beforeSize: number, round: number): number
 ```
 
 **Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `compactors`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextCompactor[]`
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
-
-**Returns:** `Promise&lt;{ components: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]; log: string[]; tokensFreed: number; }&gt;`
-
-#### `estimateComponent()`
-
-```typescript
-private estimateComponent(component: IContextComponent, estimator: ITokenEstimator): number
-```
-
-**Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
+- `beforeSize`: `number`
+- `round`: `number`
 
 **Returns:** `number`
 
-#### `getMetrics()`
+#### `getTargetUtilization()`
 
 ```typescript
-getMetrics()
+getTargetUtilization(): number
 ```
 
-**Returns:** `{ compactionCount: number; totalTokensFreed: number; avgTokensFreedPerCompaction: number; }`
+**Returns:** `number`
+
+#### `getMaxRounds()`
+
+```typescript
+protected getMaxRounds(): number
+```
+
+**Returns:** `number`
+
+#### `getLogPrefix()`
+
+```typescript
+protected getLogPrefix(): string
+```
+
+**Returns:** `string`
 
 </details>
 
@@ -11422,7 +12051,7 @@ getMetrics()
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "proactive"` | - |
-| `metrics` | `metrics: { compactionCount: number; totalTokensFreed: number; avgTokensFreedPerCompaction: number; }` | - |
+| `options` | `options: Required&lt;ProactiveStrategyOptions&gt;` | - |
 
 </details>
 
@@ -11430,7 +12059,7 @@ getMetrics()
 
 ### RollingWindowStrategy `class`
 
-📍 [`src/core/context/strategies/RollingWindowStrategy.ts:24`](src/core/context/strategies/RollingWindowStrategy.ts)
+📍 [`src/core/context/strategies/RollingWindowStrategy.ts:25`](src/core/context/strategies/RollingWindowStrategy.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -11442,7 +12071,7 @@ constructor(private options: RollingWindowOptions =
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/core/context/strategies/RollingWindowStrategy").RollingWindowOptions` *(optional)* (default: `{}`)
+- `options`: `RollingWindowOptions` *(optional)* (default: `{}`)
 
 </details>
 
@@ -11456,8 +12085,8 @@ shouldCompact(_budget: ContextBudget, _config: ContextManagerConfig): boolean
 ```
 
 **Parameters:**
-- `_budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `_config`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig`
+- `_budget`: `ContextBudget`
+- `_config`: `ContextManagerConfig`
 
 **Returns:** `boolean`
 
@@ -11468,9 +12097,9 @@ async prepareComponents(components: IContextComponent[]): Promise&lt;IContextCom
 ```
 
 **Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
+- `components`: `IContextComponent[]`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]&gt;`
+**Returns:** `Promise&lt;IContextComponent[]&gt;`
 
 #### `compact()`
 
@@ -11478,7 +12107,7 @@ async prepareComponents(components: IContextComponent[]): Promise&lt;IContextCom
 async compact(): Promise&lt;
 ```
 
-**Returns:** `Promise&lt;{ components: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]; log: string[]; tokensFreed: number; }&gt;`
+**Returns:** `Promise&lt;{ components: IContextComponent[]; log: string[]; tokensFreed: number; }&gt;`
 
 </details>
 
@@ -11495,7 +12124,12 @@ async compact(): Promise&lt;
 
 ### SummarizeCompactor `class`
 
-📍 [`src/infrastructure/context/compactors/SummarizeCompactor.ts:10`](src/infrastructure/context/compactors/SummarizeCompactor.ts)
+📍 [`src/infrastructure/context/compactors/SummarizeCompactor.ts:108`](src/infrastructure/context/compactors/SummarizeCompactor.ts)
+
+SummarizeCompactor - LLM-based context compaction
+
+Uses AI to intelligently summarize content, preserving semantic meaning
+while significantly reducing token count.
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -11503,11 +12137,12 @@ async compact(): Promise&lt;
 #### `constructor`
 
 ```typescript
-constructor(private estimator: ITokenEstimator)
+constructor(estimator: ITokenEstimator, config: SummarizeCompactorConfig)
 ```
 
 **Parameters:**
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
+- `estimator`: `ITokenEstimator`
+- `config`: `SummarizeCompactorConfig`
 
 </details>
 
@@ -11516,35 +12151,44 @@ constructor(private estimator: ITokenEstimator)
 
 #### `canCompact()`
 
+Check if this compactor can handle the component
+
 ```typescript
 canCompact(component: IContextComponent): boolean
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 
 **Returns:** `boolean`
 
 #### `compact()`
 
+Compact the component by summarizing its content
+
 ```typescript
-async compact(component: IContextComponent, _targetTokens: number): Promise&lt;IContextComponent&gt;
+async compact(
+    component: IContextComponent,
+    targetTokens: number
+  ): Promise&lt;IContextComponent&gt;
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
-- `_targetTokens`: `number`
+- `component`: `IContextComponent`
+- `targetTokens`: `number`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent&gt;`
+**Returns:** `Promise&lt;IContextComponent&gt;`
 
 #### `estimateSavings()`
+
+Estimate how many tokens could be saved by summarization
 
 ```typescript
 estimateSavings(component: IContextComponent): number
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 
 **Returns:** `number`
 
@@ -11557,6 +12201,128 @@ estimateSavings(component: IContextComponent): number
 |----------|------|-------------|
 | `name` | `name: "summarize"` | - |
 | `priority` | `priority: 5` | - |
+| `config` | `config: Required&lt;SummarizeCompactorConfig&gt;` | - |
+| `estimator` | `estimator: ITokenEstimator` | - |
+
+</details>
+
+---
+
+### ToolOutputPlugin `class`
+
+📍 [`src/core/context/plugins/ToolOutputPlugin.ts:56`](src/core/context/plugins/ToolOutputPlugin.ts)
+
+Tool output plugin for context management
+
+Provides recent tool outputs as a context component.
+Highest compaction priority - first to be reduced when space is needed.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: ToolOutputPluginConfig =
+```
+
+**Parameters:**
+- `config`: `ToolOutputPluginConfig` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `addOutput()`
+
+Add a tool output
+
+```typescript
+addOutput(toolName: string, result: unknown): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `result`: `unknown`
+
+**Returns:** `void`
+
+#### `getOutputs()`
+
+Get recent outputs
+
+```typescript
+getOutputs(): ToolOutput[]
+```
+
+**Returns:** `ToolOutput[]`
+
+#### `clear()`
+
+Clear all outputs
+
+```typescript
+clear(): void
+```
+
+**Returns:** `void`
+
+#### `getComponent()`
+
+Get component for context
+
+```typescript
+async getComponent(): Promise&lt;IContextComponent | null&gt;
+```
+
+**Returns:** `Promise&lt;IContextComponent | null&gt;`
+
+#### `compact()`
+
+Compact by removing oldest outputs and truncating large ones
+
+```typescript
+override async compact(_targetTokens: number, estimator: ITokenEstimator): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `_targetTokens`: `number`
+- `estimator`: `ITokenEstimator`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getState()`
+
+```typescript
+override getState(): SerializedToolOutputState
+```
+
+**Returns:** `SerializedToolOutputState`
+
+#### `restoreState()`
+
+```typescript
+override restoreState(state: unknown): void
+```
+
+**Parameters:**
+- `state`: `unknown`
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "tool_outputs"` | - |
+| `priority` | `priority: 10` | - |
+| `compactable` | `compactable: true` | - |
+| `outputs` | `outputs: ToolOutput[]` | - |
+| `config` | `config: Required&lt;ToolOutputPluginConfig&gt;` | - |
 
 </details>
 
@@ -11576,7 +12342,7 @@ constructor(private estimator: ITokenEstimator)
 ```
 
 **Parameters:**
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
+- `estimator`: `ITokenEstimator`
 
 </details>
 
@@ -11590,7 +12356,7 @@ canCompact(component: IContextComponent): boolean
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 
 **Returns:** `boolean`
 
@@ -11601,10 +12367,10 @@ async compact(component: IContextComponent, targetTokens: number): Promise&lt;IC
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 - `targetTokens`: `number`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent&gt;`
+**Returns:** `Promise&lt;IContextComponent&gt;`
 
 #### `estimateSavings()`
 
@@ -11613,33 +12379,9 @@ estimateSavings(component: IContextComponent): number
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 
 **Returns:** `number`
-
-#### `truncateString()`
-
-```typescript
-private truncateString(component: IContextComponent, targetTokens: number): IContextComponent
-```
-
-**Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
-- `targetTokens`: `number`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
-
-#### `truncateArray()`
-
-```typescript
-private truncateArray(component: IContextComponent, targetTokens: number): IContextComponent
-```
-
-**Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
-- `targetTokens`: `number`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
 
 </details>
 
@@ -11657,7 +12399,7 @@ private truncateArray(component: IContextComponent, targetTokens: number): ICont
 
 ### AdaptiveStrategyOptions `interface`
 
-📍 [`src/core/context/strategies/AdaptiveStrategy.ts:22`](src/core/context/strategies/AdaptiveStrategy.ts)
+📍 [`src/core/context/strategies/AdaptiveStrategy.ts:23`](src/core/context/strategies/AdaptiveStrategy.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -11675,13 +12417,103 @@ private truncateArray(component: IContextComponent, targetTokens: number): ICont
 
 📍 [`src/core/context/strategies/AggressiveStrategy.ts:19`](src/core/context/strategies/AggressiveStrategy.ts)
 
+Options for AggressiveCompactionStrategy
+
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
 | `threshold?` | `threshold?: number;` | Threshold to trigger compaction (default: 0.60) |
-| `target?` | `target?: number;` | Target utilization after compaction (default: 0.50) |
+| `targetUtilization?` | `targetUtilization?: number;` | Target utilization after compaction (default: 0.50) |
+| `reductionFactor?` | `reductionFactor?: number;` | Reduction factor - target this fraction of original size (default: 0.30) |
+
+</details>
+
+---
+
+### BaseStrategyMetrics `interface`
+
+📍 [`src/core/context/strategies/BaseCompactionStrategy.ts:25`](src/core/context/strategies/BaseCompactionStrategy.ts)
+
+Base metrics tracked by all strategies.
+Includes index signature to satisfy IContextStrategy.getMetrics() return type.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `compactionCount` | `compactionCount: number;` | - |
+| `totalTokensFreed` | `totalTokensFreed: number;` | - |
+| `avgTokensFreedPerCompaction` | `avgTokensFreedPerCompaction: number;` | - |
+
+</details>
+
+---
+
+### CompactionHookContext `interface`
+
+📍 [`src/core/context/types.ts:162`](src/core/context/types.ts)
+
+Hook context for beforeCompaction callback
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agentId?` | `agentId?: string;` | Agent identifier (if available) |
+| `currentBudget` | `currentBudget: ContextBudget;` | Current context budget info |
+| `strategy` | `strategy: string;` | Compaction strategy being used |
+| `components` | `components: ReadonlyArray&lt;{
+    name: string;
+    priority: number;
+    compactable: boolean;
+  }&gt;;` | Current context components (read-only summaries) |
+| `estimatedTokensToFree` | `estimatedTokensToFree: number;` | Estimated tokens to be freed |
+
+</details>
+
+---
+
+### CompactionLoopOptions `interface`
+
+📍 [`src/core/context/utils/ContextUtils.ts:88`](src/core/context/utils/ContextUtils.ts)
+
+Options for the core compaction loop
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `components` | `components: IContextComponent[];` | Components to compact |
+| `tokensToFree` | `tokensToFree: number;` | Target number of tokens to free |
+| `compactors` | `compactors: import('../types.js').IContextCompactor[];` | Available compactors |
+| `estimator` | `estimator: ITokenEstimator;` | Token estimator |
+| `calculateTargetSize` | `calculateTargetSize: (beforeSize: number, round: number) =&gt; number;` | Calculate target size for a component given its current size and round number |
+| `maxRounds?` | `maxRounds?: number;` | Maximum rounds of compaction (default: 1) |
+| `logPrefix?` | `logPrefix?: string;` | Log prefix for messages (e.g., 'Proactive', 'Aggressive') |
+
+</details>
+
+---
+
+### CompactionResult `interface`
+
+📍 [`src/core/context/utils/ContextUtils.ts:76`](src/core/context/utils/ContextUtils.ts)
+
+Result of a compaction operation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `components` | `components: IContextComponent[];` | Updated components after compaction |
+| `log` | `log: string[];` | Log of compaction actions taken |
+| `tokensFreed` | `tokensFreed: number;` | Total tokens freed |
 
 </details>
 
@@ -11736,7 +12568,7 @@ Context manager configuration
 
 ### ContextManagerEvents `interface`
 
-📍 [`src/core/context/ContextManager.ts:22`](src/core/context/ContextManager.ts)
+📍 [`src/core/context/ContextManager.ts:24`](src/core/context/ContextManager.ts)
 
 Context manager events
 
@@ -11755,9 +12587,28 @@ Context manager events
 
 ---
 
+### ContextManagerHooks `interface`
+
+📍 [`src/core/context/types.ts:182`](src/core/context/types.ts)
+
+Hooks for context management events
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `beforeCompaction?` | `beforeCompaction?: (context: CompactionHookContext) =&gt; Promise&lt;void&gt;;` | Called before compaction occurs.
+Use this to save important data before it gets compacted.
+This is the last chance to preserve critical information. |
+
+</details>
+
+---
+
 ### IContextCompactor `interface`
 
-📍 [`src/core/context/types.ts:150`](src/core/context/types.ts)
+📍 [`src/core/context/types.ts:194`](src/core/context/types.ts)
 
 Abstract interface for compaction strategies
 
@@ -11773,7 +12624,7 @@ canCompact(component: IContextComponent): boolean;
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 
 **Returns:** `boolean`
 
@@ -11786,10 +12637,10 @@ compact(component: IContextComponent, targetTokens: number): Promise&lt;IContext
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 - `targetTokens`: `number`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent&gt;`
+**Returns:** `Promise&lt;IContextComponent&gt;`
 
 #### `estimateSavings()`
 
@@ -11800,7 +12651,7 @@ estimateSavings(component: IContextComponent): number;
 ```
 
 **Parameters:**
-- `component`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent`
+- `component`: `IContextComponent`
 
 **Returns:** `number`
 
@@ -11839,6 +12690,118 @@ Core types for context management system
 
 ---
 
+### IContextPlugin `interface`
+
+📍 [`src/core/context/plugins/IContextPlugin.ts:20`](src/core/context/plugins/IContextPlugin.ts)
+
+Context plugin interface
+
+Plugins add custom components to the context (e.g., Plan, Memory, Tool Outputs).
+Each plugin is responsible for:
+- Providing its context component
+- Handling compaction when space is needed
+- Serializing/restoring state for sessions
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `getComponent()`
+
+Get this plugin's context component
+Return null if plugin has no content for this turn
+
+```typescript
+getComponent(): Promise&lt;IContextComponent | null&gt;;
+```
+
+**Returns:** `Promise&lt;IContextComponent | null&gt;`
+
+#### `compact()?`
+
+Called when this plugin's content needs compaction
+Plugin is responsible for reducing its size to fit within budget
+
+```typescript
+compact?(targetTokens: number, estimator: ITokenEstimator): Promise&lt;number&gt;;
+```
+
+**Parameters:**
+- `targetTokens`: `number`
+- `estimator`: `ITokenEstimator`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `onPrepared()?`
+
+Called after context is prepared (opportunity for cleanup/logging)
+Can be used to track context usage metrics
+
+```typescript
+onPrepared?(budget: ContextBudget): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `budget`: `ContextBudget`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `destroy()?`
+
+Called when the context manager is being destroyed/cleaned up
+Use for releasing resources
+
+```typescript
+destroy?(): void;
+```
+
+**Returns:** `void`
+
+#### `getState()?`
+
+Get state for session serialization
+Return undefined if plugin has no state to persist
+
+```typescript
+getState?(): unknown;
+```
+
+**Returns:** `unknown`
+
+#### `restoreState()?`
+
+Restore from serialized state
+Called when resuming a session
+
+```typescript
+restoreState?(state: unknown): void;
+```
+
+**Parameters:**
+- `state`: `unknown`
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `readonly name: string;` | Unique name for this plugin (used as component name)
+Should be lowercase with underscores (e.g., 'plan', 'memory_index', 'tool_outputs') |
+| `priority` | `readonly priority: number;` | Compaction priority (higher number = compact first)
+- 0: Never compact (system_prompt, instructions, current_input)
+- 1-3: Critical (plan, core instructions)
+- 4-7: Important (conversation history)
+- 8-10: Expendable (memory index, tool outputs) |
+| `compactable` | `readonly compactable: boolean;` | Whether this plugin's content can be compacted
+If false, the component will never be reduced |
+
+</details>
+
+---
+
 ### IContextProvider `interface`
 
 📍 [`src/core/context/types.ts:115`](src/core/context/types.ts)
@@ -11857,7 +12820,7 @@ Get current context components
 getComponents(): Promise&lt;IContextComponent[]&gt;;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]&gt;`
+**Returns:** `Promise&lt;IContextComponent[]&gt;`
 
 #### `applyCompactedComponents()`
 
@@ -11868,7 +12831,7 @@ applyCompactedComponents(components: IContextComponent[]): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
+- `components`: `IContextComponent[]`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -11888,7 +12851,7 @@ getMaxContextSize(): number;
 
 ### IContextStrategy `interface`
 
-📍 [`src/core/context/types.ts:176`](src/core/context/types.ts)
+📍 [`src/core/context/types.ts:220`](src/core/context/types.ts)
 
 Context management strategy - defines the overall approach to managing context
 
@@ -11904,8 +12867,8 @@ shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean;
 ```
 
 **Parameters:**
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextManagerConfig`
+- `budget`: `ContextBudget`
+- `config`: `ContextManagerConfig`
 
 **Returns:** `boolean`
 
@@ -11927,12 +12890,12 @@ compact(
 ```
 
 **Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
-- `compactors`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextCompactor[]`
-- `estimator`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ITokenEstimator`
+- `components`: `IContextComponent[]`
+- `budget`: `ContextBudget`
+- `compactors`: `IContextCompactor[]`
+- `estimator`: `ITokenEstimator`
 
-**Returns:** `Promise&lt;{ components: import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]; log: string[]; tokensFreed: number; }&gt;`
+**Returns:** `Promise&lt;{ components: IContextComponent[]; log: string[]; tokensFreed: number; }&gt;`
 
 #### `prepareComponents()?`
 
@@ -11944,9 +12907,9 @@ prepareComponents?(components: IContextComponent[]): Promise&lt;IContextComponen
 ```
 
 **Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
+- `components`: `IContextComponent[]`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]&gt;`
+**Returns:** `Promise&lt;IContextComponent[]&gt;`
 
 #### `postProcess()?`
 
@@ -11961,10 +12924,10 @@ postProcess?(
 ```
 
 **Parameters:**
-- `components`: `import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]`
-- `budget`: `import("/Users/aantich/dev/oneringai/src/core/context/types").ContextBudget`
+- `components`: `IContextComponent[]`
+- `budget`: `ContextBudget`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/context/types").IContextComponent[]&gt;`
+**Returns:** `Promise&lt;IContextComponent[]&gt;`
 
 #### `getMetrics()?`
 
@@ -11991,7 +12954,7 @@ getMetrics?(): Record&lt;string, unknown&gt;;
 
 ### ITokenEstimator `interface`
 
-📍 [`src/core/context/types.ts:135`](src/core/context/types.ts)
+📍 [`src/core/context/types.ts:141`](src/core/context/types.ts)
 
 Abstract interface for token estimation
 
@@ -12003,12 +12966,12 @@ Abstract interface for token estimation
 Estimate token count for text
 
 ```typescript
-estimateTokens(text: string, model?: string): number;
+estimateTokens(text: string, contentType?: TokenContentType): number;
 ```
 
 **Parameters:**
 - `text`: `string`
-- `model`: `string | undefined` *(optional)*
+- `contentType`: `TokenContentType | undefined` *(optional)*
 
 **Returns:** `number`
 
@@ -12017,14 +12980,32 @@ estimateTokens(text: string, model?: string): number;
 Estimate tokens for structured data
 
 ```typescript
-estimateDataTokens(data: unknown, model?: string): number;
+estimateDataTokens(data: unknown, contentType?: TokenContentType): number;
 ```
 
 **Parameters:**
 - `data`: `unknown`
-- `model`: `string | undefined` *(optional)*
+- `contentType`: `TokenContentType | undefined` *(optional)*
 
 **Returns:** `number`
+
+</details>
+
+---
+
+### LazyStrategyOptions `interface`
+
+📍 [`src/core/context/strategies/LazyStrategy.ts:19`](src/core/context/strategies/LazyStrategy.ts)
+
+Options for LazyCompactionStrategy
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `targetUtilization?` | `targetUtilization?: number;` | Target utilization after compaction (default: 0.85) |
+| `reductionFactor?` | `reductionFactor?: number;` | Reduction factor - target this fraction of original size (default: 0.70) |
 
 </details>
 
@@ -12050,9 +13031,29 @@ Context preparation result
 
 ---
 
+### ProactiveStrategyOptions `interface`
+
+📍 [`src/core/context/strategies/ProactiveStrategy.ts:19`](src/core/context/strategies/ProactiveStrategy.ts)
+
+Options for ProactiveCompactionStrategy
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `targetUtilization?` | `targetUtilization?: number;` | Target utilization after compaction (default: 0.65) |
+| `baseReductionFactor?` | `baseReductionFactor?: number;` | Base reduction factor for round 1 (default: 0.50) |
+| `reductionStep?` | `reductionStep?: number;` | Reduction step per round (default: 0.15) |
+| `maxRounds?` | `maxRounds?: number;` | Maximum compaction rounds (default: 3) |
+
+</details>
+
+---
+
 ### RollingWindowOptions `interface`
 
-📍 [`src/core/context/strategies/RollingWindowStrategy.ts:17`](src/core/context/strategies/RollingWindowStrategy.ts)
+📍 [`src/core/context/strategies/RollingWindowStrategy.ts:18`](src/core/context/strategies/RollingWindowStrategy.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -12063,6 +13064,145 @@ Context preparation result
 | `maxTokensPerComponent?` | `maxTokensPerComponent?: number;` | Maximum tokens per component |
 
 </details>
+
+---
+
+### SerializedToolOutputState `interface`
+
+📍 [`src/core/context/plugins/ToolOutputPlugin.ts:28`](src/core/context/plugins/ToolOutputPlugin.ts)
+
+Serialized tool output state
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `outputs` | `outputs: ToolOutput[];` | - |
+
+</details>
+
+---
+
+### SummarizeCompactorConfig `interface`
+
+📍 [`src/infrastructure/context/compactors/SummarizeCompactor.ts:22`](src/infrastructure/context/compactors/SummarizeCompactor.ts)
+
+Configuration for the SummarizeCompactor
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `textProvider` | `textProvider: ITextProvider;` | Text provider for LLM-based summarization |
+| `model?` | `model?: string;` | Model to use for summarization (optional - uses provider default) |
+| `maxSummaryTokens?` | `maxSummaryTokens?: number;` | Maximum tokens for the summary (default: 500) |
+| `preserveStructure?` | `preserveStructure?: boolean;` | Preserve markdown structure like headings and lists (default: true) |
+| `fallbackToTruncate?` | `fallbackToTruncate?: boolean;` | Fall back to truncation if LLM summarization fails (default: true) |
+| `temperature?` | `temperature?: number;` | Temperature for summarization (default: 0.3 for deterministic output) |
+
+</details>
+
+---
+
+### ToolOutput `interface`
+
+📍 [`src/core/context/plugins/ToolOutputPlugin.ts:14`](src/core/context/plugins/ToolOutputPlugin.ts)
+
+A single tool output entry
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tool` | `tool: string;` | Tool name |
+| `output` | `output: unknown;` | Tool result (may be truncated) |
+| `timestamp` | `timestamp: number;` | When the tool was called |
+| `truncated?` | `truncated?: boolean;` | Whether output was truncated |
+
+</details>
+
+---
+
+### ToolOutputPluginConfig `interface`
+
+📍 [`src/core/context/plugins/ToolOutputPlugin.ts:35`](src/core/context/plugins/ToolOutputPlugin.ts)
+
+Tool output plugin configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxOutputs?` | `maxOutputs?: number;` | Maximum outputs to keep (default: 10) |
+| `maxTokensPerOutput?` | `maxTokensPerOutput?: number;` | Maximum tokens per individual output (default: 1000) |
+| `includeTimestamps?` | `includeTimestamps?: boolean;` | Whether to include timestamps in context (default: false) |
+
+</details>
+
+---
+
+### StrategyOptions `type`
+
+📍 [`src/core/context/strategies/index.ts:15`](src/core/context/strategies/index.ts)
+
+Union type of all strategy options
+
+```typescript
+type StrategyOptions = | ProactiveStrategyOptions
+  | AggressiveStrategyOptions
+  | LazyStrategyOptions
+  | RollingWindowOptions
+  | AdaptiveStrategyOptions
+```
+
+---
+
+### SummarizeContentType `type`
+
+📍 [`src/infrastructure/context/compactors/SummarizeCompactor.ts:45`](src/infrastructure/context/compactors/SummarizeCompactor.ts)
+
+Content type hint for selecting appropriate summarization prompt
+
+```typescript
+type SummarizeContentType = | 'conversation'
+  | 'tool_output'
+  | 'search_results'
+  | 'scrape_results'
+  | 'generic'
+```
+
+---
+
+### TokenContentType `type`
+
+📍 [`src/core/context/types.ts:136`](src/core/context/types.ts)
+
+Content type for more accurate token estimation
+Named differently from TokenContentType in Content.ts to avoid conflicts
+
+```typescript
+type TokenContentType = 'code' | 'prose' | 'mixed'
+```
+
+---
+
+### calculateUtilizationRatio `function`
+
+📍 [`src/core/context/utils/ContextUtils.ts:65`](src/core/context/utils/ContextUtils.ts)
+
+Calculate utilization ratio for a budget.
+
+```typescript
+export function calculateUtilizationRatio(
+  used: number,
+  reserved: number,
+  total: number
+): number
+```
 
 ---
 
@@ -12080,15 +13220,94 @@ export function createEstimator(name: string): ITokenEstimator
 
 ### createStrategy `function`
 
-📍 [`src/core/context/strategies/index.ts:15`](src/core/context/strategies/index.ts)
+📍 [`src/core/context/strategies/index.ts:29`](src/core/context/strategies/index.ts)
 
-Strategy factory
+Strategy factory - creates a strategy by name with options
 
 ```typescript
 export function createStrategy(
   name: string,
   options: Record&lt;string, unknown&gt; =
 ```
+
+---
+
+### estimateComponentTokens `function`
+
+📍 [`src/core/context/utils/ContextUtils.ts:17`](src/core/context/utils/ContextUtils.ts)
+
+Estimate tokens for a context component.
+Handles both string content and structured data.
+
+```typescript
+export function estimateComponentTokens(
+  component: IContextComponent,
+  estimator: ITokenEstimator
+): number
+```
+
+---
+
+### executeCompactionLoop `function`
+
+📍 [`src/core/context/utils/ContextUtils.ts:112`](src/core/context/utils/ContextUtils.ts)
+
+Execute the core compaction loop.
+This is the shared logic used by all compaction strategies.
+
+```typescript
+export async function executeCompactionLoop(
+  options: CompactionLoopOptions
+): Promise&lt;CompactionResult&gt;
+```
+
+---
+
+### findCompactorForComponent `function`
+
+📍 [`src/core/context/utils/ContextUtils.ts:50`](src/core/context/utils/ContextUtils.ts)
+
+Find a compactor that can handle the given component.
+
+```typescript
+export function findCompactorForComponent(
+  component: IContextComponent,
+  compactors: import('../types.js').IContextCompactor[]
+): import('../types.js').IContextCompactor | undefined
+```
+
+---
+
+### sortCompactableByPriority `function`
+
+📍 [`src/core/context/utils/ContextUtils.ts:35`](src/core/context/utils/ContextUtils.ts)
+
+Sort components by priority for compaction.
+Higher priority components are compacted first.
+Only returns compactable components.
+
+```typescript
+export function sortCompactableByPriority(
+  components: IContextComponent[]
+): IContextComponent[]
+```
+
+---
+
+### DEFAULT_CONFIG `const`
+
+📍 [`src/core/context/plugins/ToolOutputPlugin.ts:44`](src/core/context/plugins/ToolOutputPlugin.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxOutputs` | `10` | - |
+| `maxTokensPerOutput` | `1000` | - |
+| `includeTimestamps` | `false` | - |
+
+</details>
 
 ---
 
@@ -12111,6 +13330,119 @@ Default configuration
 | `autoCompact` | `true` | - |
 | `strategy` | `'proactive'` | - |
 | `strategyOptions` | `{}` | - |
+
+</details>
+
+---
+
+### DEFAULT_OPTIONS `const`
+
+📍 [`src/core/context/strategies/AggressiveStrategy.ts:31`](src/core/context/strategies/AggressiveStrategy.ts)
+
+Default options for aggressive strategy (from centralized constants)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `threshold` | `AGGRESSIVE_STRATEGY_DEFAULTS.THRESHOLD` | - |
+| `targetUtilization` | `AGGRESSIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION` | - |
+| `reductionFactor` | `AGGRESSIVE_STRATEGY_DEFAULTS.REDUCTION_FACTOR` | - |
+
+</details>
+
+---
+
+### DEFAULT_OPTIONS `const`
+
+📍 [`src/core/context/strategies/LazyStrategy.ts:29`](src/core/context/strategies/LazyStrategy.ts)
+
+Default options for lazy strategy (from centralized constants)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `targetUtilization` | `LAZY_STRATEGY_DEFAULTS.TARGET_UTILIZATION` | - |
+| `reductionFactor` | `LAZY_STRATEGY_DEFAULTS.REDUCTION_FACTOR` | - |
+
+</details>
+
+---
+
+### DEFAULT_OPTIONS `const`
+
+📍 [`src/core/context/strategies/ProactiveStrategy.ts:33`](src/core/context/strategies/ProactiveStrategy.ts)
+
+Default options for proactive strategy (from centralized constants)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `targetUtilization` | `PROACTIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION` | - |
+| `baseReductionFactor` | `PROACTIVE_STRATEGY_DEFAULTS.BASE_REDUCTION_FACTOR` | - |
+| `reductionStep` | `PROACTIVE_STRATEGY_DEFAULTS.REDUCTION_STEP` | - |
+| `maxRounds` | `PROACTIVE_STRATEGY_DEFAULTS.MAX_ROUNDS` | - |
+
+</details>
+
+---
+
+### SUMMARIZATION_PROMPTS `const`
+
+📍 [`src/infrastructure/context/compactors/SummarizeCompactor.ts:55`](src/infrastructure/context/compactors/SummarizeCompactor.ts)
+
+Summarization prompts for different content types
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `conversation` | ``Summarize this conversation history, preserving:
+- Key decisions made by the user or assistant
+- Important facts and data discovered
+- User preferences expressed
+- Unresolved questions or pending items
+- Any errors or issues encountered
+
+Focus on information that would be needed to continue the conversation coherently.
+Be concise but preserve critical context.`` | - |
+| `tool_output` | ``Summarize these tool outputs, preserving:
+- Key results and findings from each tool call
+- Important data values (numbers, dates, names, IDs)
+- Error messages or warnings
+- Status information
+- Dependencies or relationships between results
+
+Prioritize factual data over explanatory text.`` | - |
+| `search_results` | ``Summarize these search results, preserving:
+- Key findings relevant to the task
+- Source URLs and their main points (keep URLs intact)
+- Factual data (numbers, dates, names, statistics)
+- Contradictions or disagreements between sources
+- Credibility indicators (official sources, recent dates)
+
+Format as a bulleted list organized by topic or source.`` | - |
+| `scrape_results` | ``Summarize this scraped web content, preserving:
+- Main topic and key points
+- Factual data (numbers, dates, names, prices, specifications)
+- Important quotes or statements
+- Source attribution (keep the URL)
+- Any structured data (tables, lists)
+
+Discard navigation elements, ads, and boilerplate text.`` | - |
+| `generic` | ``Summarize this content, preserving:
+- Main points and key information
+- Important data and facts
+- Relationships and dependencies
+- Actionable items
+
+Be concise while retaining critical information.`` | - |
 
 </details>
 
@@ -12148,7 +13480,7 @@ constructor(
 ```
 
 **Parameters:**
-- `storage`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").IConnectorConfigStorage`
+- `storage`: `IConnectorConfigStorage`
 - `encryptionKey`: `string`
 
 </details>
@@ -12166,7 +13498,7 @@ async save(name: string, config: ConnectorConfig): Promise&lt;void&gt;
 
 **Parameters:**
 - `name`: `string`
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig`
+- `config`: `ConnectorConfig`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -12181,7 +13513,7 @@ async get(name: string): Promise&lt;ConnectorConfig | null&gt;
 **Parameters:**
 - `name`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig | null&gt;`
+**Returns:** `Promise&lt;ConnectorConfig | null&gt;`
 
 #### `delete()`
 
@@ -12227,7 +13559,7 @@ Get all connector configurations (secrets are decrypted automatically)
 async listAll(): Promise&lt;ConnectorConfig[]&gt;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig[]&gt;`
+**Returns:** `Promise&lt;ConnectorConfig[]&gt;`
 
 #### `getMetadata()`
 
@@ -12243,98 +13575,6 @@ async getMetadata(
 - `name`: `string`
 
 **Returns:** `Promise&lt;{ createdAt: number; updatedAt: number; version: number; } | null&gt;`
-
-#### `encryptSecrets()`
-
-Encrypt sensitive fields in a ConnectorConfig
-Fields encrypted: apiKey, clientSecret, privateKey
-
-```typescript
-private encryptSecrets(config: ConnectorConfig): ConnectorConfig
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig`
-
-#### `decryptSecrets()`
-
-Decrypt sensitive fields in a ConnectorConfig
-
-```typescript
-private decryptSecrets(config: ConnectorConfig): ConnectorConfig
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfig`
-
-#### `encryptAuthSecrets()`
-
-Encrypt secrets in ConnectorAuth based on auth type
-
-```typescript
-private encryptAuthSecrets(auth: ConnectorAuth): ConnectorAuth
-```
-
-**Parameters:**
-- `auth`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorAuth`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorAuth`
-
-#### `decryptAuthSecrets()`
-
-Decrypt secrets in ConnectorAuth based on auth type
-
-```typescript
-private decryptAuthSecrets(auth: ConnectorAuth): ConnectorAuth
-```
-
-**Parameters:**
-- `auth`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorAuth`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorAuth`
-
-#### `encryptValue()`
-
-Encrypt a single value if not already encrypted
-
-```typescript
-private encryptValue(value: string): string
-```
-
-**Parameters:**
-- `value`: `string`
-
-**Returns:** `string`
-
-#### `decryptValue()`
-
-Decrypt a single value if encrypted
-
-```typescript
-private decryptValue(value: string): string
-```
-
-**Parameters:**
-- `value`: `string`
-
-**Returns:** `string`
-
-#### `isEncrypted()`
-
-Check if a value is encrypted (has the $ENC$: prefix)
-
-```typescript
-private isEncrypted(value: string): boolean
-```
-
-**Parameters:**
-- `value`: `string`
-
-**Returns:** `boolean`
 
 </details>
 
@@ -12354,7 +13594,7 @@ constructor(config: FileConnectorStorageConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/connectors/storage/FileConnectorStorage").FileConnectorStorageConfig`
+- `config`: `FileConnectorStorageConfig`
 
 </details>
 
@@ -12369,7 +13609,7 @@ async save(name: string, stored: StoredConnectorConfig): Promise&lt;void&gt;
 
 **Parameters:**
 - `name`: `string`
-- `stored`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig`
+- `stored`: `StoredConnectorConfig`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -12382,7 +13622,7 @@ async get(name: string): Promise&lt;StoredConnectorConfig | null&gt;
 **Parameters:**
 - `name`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig | null&gt;`
+**Returns:** `Promise&lt;StoredConnectorConfig | null&gt;`
 
 #### `delete()`
 
@@ -12420,7 +13660,7 @@ async list(): Promise&lt;string[]&gt;
 async listAll(): Promise&lt;StoredConnectorConfig[]&gt;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig[]&gt;`
+**Returns:** `Promise&lt;StoredConnectorConfig[]&gt;`
 
 #### `clear()`
 
@@ -12429,69 +13669,6 @@ Clear all stored configs (useful for testing)
 ```typescript
 async clear(): Promise&lt;void&gt;
 ```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `getFilePath()`
-
-Get file path for a connector (hashed for security)
-
-```typescript
-private getFilePath(name: string): string
-```
-
-**Parameters:**
-- `name`: `string`
-
-**Returns:** `string`
-
-#### `hashName()`
-
-Hash connector name to prevent enumeration
-
-```typescript
-private hashName(name: string): string
-```
-
-**Parameters:**
-- `name`: `string`
-
-**Returns:** `string`
-
-#### `ensureDirectory()`
-
-Ensure storage directory exists with proper permissions
-
-```typescript
-private async ensureDirectory(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `loadIndex()`
-
-Load the index file
-
-```typescript
-private async loadIndex(): Promise&lt;IndexFile&gt;
-```
-
-**Returns:** `Promise&lt;IndexFile&gt;`
-
-#### `updateIndex()`
-
-Update the index file
-
-```typescript
-private async updateIndex(
-    name: string,
-    action: 'add' | 'remove'
-  ): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `name`: `string`
-- `action`: `"add" | "remove"`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -12524,7 +13701,7 @@ constructor(config: FileSessionStorageConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/infrastructure/storage/FileSessionStorage").FileSessionStorageConfig`
+- `config`: `FileSessionStorageConfig`
 
 </details>
 
@@ -12538,7 +13715,7 @@ async save(session: Session): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `session`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session`
+- `session`: `Session`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -12551,7 +13728,7 @@ async load(sessionId: string): Promise&lt;Session | null&gt;
 **Parameters:**
 - `sessionId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session | null&gt;`
+**Returns:** `Promise&lt;Session | null&gt;`
 
 #### `delete()`
 
@@ -12582,9 +13759,9 @@ async list(filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;
 ```
 
 **Parameters:**
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter | undefined` *(optional)*
+- `filter`: `SessionFilter | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary[]&gt;`
+**Returns:** `Promise&lt;SessionSummary[]&gt;`
 
 #### `search()`
 
@@ -12594,9 +13771,9 @@ async search(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]
 
 **Parameters:**
 - `query`: `string`
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter | undefined` *(optional)*
+- `filter`: `SessionFilter | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary[]&gt;`
+**Returns:** `Promise&lt;SessionSummary[]&gt;`
 
 #### `rebuildIndex()`
 
@@ -12618,100 +13795,6 @@ getDirectory(): string
 ```
 
 **Returns:** `string`
-
-#### `getFilePath()`
-
-```typescript
-private getFilePath(sessionId: string): string
-```
-
-**Parameters:**
-- `sessionId`: `string`
-
-**Returns:** `string`
-
-#### `ensureDirectory()`
-
-```typescript
-private async ensureDirectory(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `loadIndex()`
-
-```typescript
-private async loadIndex(): Promise&lt;SessionIndex&gt;
-```
-
-**Returns:** `Promise&lt;SessionIndex&gt;`
-
-#### `saveIndex()`
-
-```typescript
-private async saveIndex(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `updateIndex()`
-
-```typescript
-private async updateIndex(session: Session): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `session`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session`
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `removeFromIndex()`
-
-```typescript
-private async removeFromIndex(sessionId: string): Promise&lt;void&gt;
-```
-
-**Parameters:**
-- `sessionId`: `string`
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `sessionToIndexEntry()`
-
-```typescript
-private sessionToIndexEntry(session: Session): SessionIndexEntry
-```
-
-**Parameters:**
-- `session`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session`
-
-**Returns:** `SessionIndexEntry`
-
-#### `indexEntryToSummary()`
-
-```typescript
-private indexEntryToSummary(entry: SessionIndexEntry): SessionSummary
-```
-
-**Parameters:**
-- `entry`: `SessionIndexEntry`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary`
-
-#### `applyFilter()`
-
-```typescript
-private applyFilter(
-    entries: SessionIndexEntry[],
-    filter: SessionFilter
-  ): SessionIndexEntry[]
-```
-
-**Parameters:**
-- `entries`: `SessionIndexEntry[]`
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter`
-
-**Returns:** `SessionIndexEntry[]`
 
 </details>
 
@@ -12744,33 +13827,12 @@ constructor(config: FileStorageConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/infrastructure/storage/FileStorage").FileStorageConfig`
+- `config`: `FileStorageConfig`
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
-
-#### `ensureDirectory()`
-
-```typescript
-private async ensureDirectory(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
-#### `getFilePath()`
-
-Get file path for a token key (hashed for security)
-
-```typescript
-private getFilePath(key: string): string
-```
-
-**Parameters:**
-- `key`: `string`
-
-**Returns:** `string`
 
 #### `storeToken()`
 
@@ -12780,7 +13842,7 @@ async storeToken(key: string, token: StoredToken): Promise&lt;void&gt;
 
 **Parameters:**
 - `key`: `string`
-- `token`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").StoredToken`
+- `token`: `StoredToken`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -12793,7 +13855,7 @@ async getToken(key: string): Promise&lt;StoredToken | null&gt;
 **Parameters:**
 - `key`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").StoredToken | null&gt;`
+**Returns:** `Promise&lt;StoredToken | null&gt;`
 
 #### `deleteToken()`
 
@@ -12853,7 +13915,7 @@ async clearAll(): Promise&lt;void&gt;
 
 ### SessionManager `class`
 
-📍 [`src/core/SessionManager.ts:193`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:455`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -12865,7 +13927,7 @@ constructor(config: SessionManagerConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionManagerConfig`
+- `config`: `SessionManagerConfig`
 
 </details>
 
@@ -12882,9 +13944,9 @@ create(agentType: string, metadata?: SessionMetadata): Session
 
 **Parameters:**
 - `agentType`: `string`
-- `metadata`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionMetadata | undefined` *(optional)*
+- `metadata`: `SessionMetadata | undefined` *(optional)*
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session`
+**Returns:** `Session`
 
 #### `save()`
 
@@ -12895,7 +13957,7 @@ async save(session: Session): Promise&lt;void&gt;
 ```
 
 **Parameters:**
-- `session`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session`
+- `session`: `Session`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -12910,7 +13972,7 @@ async load(sessionId: string): Promise&lt;Session | null&gt;
 **Parameters:**
 - `sessionId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session | null&gt;`
+**Returns:** `Promise&lt;Session | null&gt;`
 
 #### `delete()`
 
@@ -12947,9 +14009,9 @@ async list(filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;
 ```
 
 **Parameters:**
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter | undefined` *(optional)*
+- `filter`: `SessionFilter | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary[]&gt;`
+**Returns:** `Promise&lt;SessionSummary[]&gt;`
 
 #### `search()`
 
@@ -12961,9 +14023,9 @@ async search(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]
 
 **Parameters:**
 - `query`: `string`
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter | undefined` *(optional)*
+- `filter`: `SessionFilter | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary[]&gt;`
+**Returns:** `Promise&lt;SessionSummary[]&gt;`
 
 #### `fork()`
 
@@ -12975,9 +14037,9 @@ async fork(sessionId: string, newMetadata?: Partial&lt;SessionMetadata&gt;): Pro
 
 **Parameters:**
 - `sessionId`: `string`
-- `newMetadata`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionMetadata&gt; | undefined` *(optional)*
+- `newMetadata`: `Partial&lt;SessionMetadata&gt; | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session&gt;`
+**Returns:** `Promise&lt;Session&gt;`
 
 #### `updateMetadata()`
 
@@ -12992,7 +14054,7 @@ async updateMetadata(
 
 **Parameters:**
 - `sessionId`: `string`
-- `metadata`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionMetadata&gt;`
+- `metadata`: `Partial&lt;SessionMetadata&gt;`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -13009,9 +14071,9 @@ enableAutoSave(
 ```
 
 **Parameters:**
-- `session`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session`
+- `session`: `Session`
 - `intervalMs`: `number`
-- `onSave`: `((session: import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session) =&gt; void) | undefined` *(optional)*
+- `onSave`: `((session: Session) =&gt; void) | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -13038,16 +14100,6 @@ stopAllAutoSave(): void
 
 **Returns:** `void`
 
-#### `generateId()`
-
-Generate a unique session ID
-
-```typescript
-private generateId(): string
-```
-
-**Returns:** `string`
-
 #### `destroy()`
 
 Cleanup resources
@@ -13065,9 +14117,59 @@ destroy(): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `storage` | `storage: import("/Users/aantich/dev/oneringai/src/core/SessionManager").ISessionStorage` | - |
-| `defaultMetadata` | `defaultMetadata: Partial&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionMetadata&gt;` | - |
+| `storage` | `storage: ISessionStorage` | - |
+| `defaultMetadata` | `defaultMetadata: Partial&lt;SessionMetadata&gt;` | - |
 | `autoSaveTimers` | `autoSaveTimers: Map&lt;string, NodeJS.Timeout&gt;` | - |
+| `validateOnLoad` | `validateOnLoad: boolean` | - |
+| `autoMigrate` | `autoMigrate: boolean` | - |
+| `savesInFlight` | `savesInFlight: Set&lt;string&gt;` | - |
+| `pendingSaves` | `pendingSaves: Set&lt;string&gt;` | - |
+
+</details>
+
+---
+
+### SessionValidationError `class`
+
+📍 [`src/core/SessionManager.ts:62`](src/core/SessionManager.ts)
+
+Error thrown when session validation fails
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    public readonly sessionId: string,
+    public readonly errors: string[]
+  )
+```
+
+**Parameters:**
+- `sessionId`: `string`
+- `errors`: `string[]`
+
+</details>
+
+---
+
+### BaseSessionConfig `interface`
+
+📍 [`src/core/BaseAgent.ts:38`](src/core/BaseAgent.ts)
+
+Base session configuration (shared by all agent types)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `storage` | `storage: ISessionStorage;` | Storage backend for sessions |
+| `id?` | `id?: string;` | Resume existing session by ID |
+| `autoSave?` | `autoSave?: boolean;` | Auto-save session after each interaction |
+| `autoSaveIntervalMs?` | `autoSaveIntervalMs?: number;` | Auto-save interval in milliseconds |
 
 </details>
 
@@ -13157,7 +14259,7 @@ Unified agent storage interface
 
 ### ISessionStorage `interface`
 
-📍 [`src/core/SessionManager.ts:144`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:204`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -13171,7 +14273,7 @@ save(session: Session): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
-- `session`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session`
+- `session`: `Session`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -13186,7 +14288,7 @@ load(sessionId: string): Promise&lt;Session | null&gt;;
 **Parameters:**
 - `sessionId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").Session | null&gt;`
+**Returns:** `Promise&lt;Session | null&gt;`
 
 #### `delete()`
 
@@ -13223,9 +14325,9 @@ list(filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 ```
 
 **Parameters:**
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter | undefined` *(optional)*
+- `filter`: `SessionFilter | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary[]&gt;`
+**Returns:** `Promise&lt;SessionSummary[]&gt;`
 
 #### `search()?`
 
@@ -13237,9 +14339,9 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 **Parameters:**
 - `query`: `string`
-- `filter`: `import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionFilter | undefined` *(optional)*
+- `filter`: `SessionFilter | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/core/SessionManager").SessionSummary[]&gt;`
+**Returns:** `Promise&lt;SessionSummary[]&gt;`
 
 </details>
 
@@ -13247,7 +14349,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SerializedHistory `interface`
 
-📍 [`src/core/SessionManager.ts:76`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:134`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13263,7 +14365,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SerializedHistoryEntry `interface`
 
-📍 [`src/core/SessionManager.ts:83`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:141`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13281,7 +14383,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### Session `interface`
 
-📍 [`src/core/SessionManager.ts:20`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:76`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13298,6 +14400,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 | `plan?` | `plan?: SerializedPlan;` | Current plan (TaskAgent, UniversalAgent) |
 | `mode?` | `mode?: string;` | Current mode (UniversalAgent) |
 | `metrics?` | `metrics?: SessionMetrics;` | Execution metrics |
+| `approvalState?` | `approvalState?: SerializedApprovalState;` | Tool permission approval state (all agent types) |
 | `custom` | `custom: Record&lt;string, unknown&gt;;` | Agent-specific custom data |
 | `metadata` | `metadata: SessionMetadata;` | - |
 
@@ -13307,7 +14410,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionFilter `interface`
 
-📍 [`src/core/SessionManager.ts:112`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:172`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13371,7 +14474,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionManagerConfig `interface`
 
-📍 [`src/core/SessionManager.ts:187`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:249`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13380,6 +14483,8 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 |----------|------|-------------|
 | `storage` | `storage: ISessionStorage;` | - |
 | `defaultMetadata?` | `defaultMetadata?: Partial&lt;SessionMetadata&gt;;` | Default metadata for new sessions |
+| `validateOnLoad?` | `validateOnLoad?: boolean;` | Validate sessions on load (default: true) |
+| `autoMigrate?` | `autoMigrate?: boolean;` | Auto-migrate sessions with fixable issues (default: true) |
 
 </details>
 
@@ -13387,7 +14492,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionMetadata `interface`
 
-📍 [`src/core/SessionManager.ts:58`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:116`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13404,7 +14509,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionMetrics `interface`
 
-📍 [`src/core/SessionManager.ts:69`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:127`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13420,9 +14525,27 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ---
 
+### SessionMigration `interface`
+
+📍 [`src/core/SessionManager.ts:48`](src/core/SessionManager.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `field` | `field: string;` | Field to migrate |
+| `type` | `type: 'add_default' | 'upgrade_version' | 'fix_type';` | Type of migration |
+| `description` | `description: string;` | Description of the migration |
+| `apply` | `apply: (session: Partial&lt;Session&gt;) =&gt; void;` | Function to apply the migration |
+
+</details>
+
+---
+
 ### SessionSummary `interface`
 
-📍 [`src/core/SessionManager.ts:131`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:191`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -13440,9 +14563,28 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ---
 
+### SessionValidationResult `interface`
+
+📍 [`src/core/SessionManager.ts:35`](src/core/SessionManager.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `valid` | `valid: boolean;` | Whether the session is valid |
+| `errors` | `errors: string[];` | Validation errors (critical issues) |
+| `warnings` | `warnings: string[];` | Validation warnings (non-critical issues) |
+| `canMigrate` | `canMigrate: boolean;` | Whether the session can be migrated to fix issues |
+| `migrations` | `migrations: SessionMigration[];` | Suggested migrations |
+
+</details>
+
+---
+
 ### SessionManagerEvent `type`
 
-📍 [`src/core/SessionManager.ts:180`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:240`](src/core/SessionManager.ts)
 
 ```typescript
 type SessionManagerEvent = | 'session:created'
@@ -13450,13 +14592,15 @@ type SessionManagerEvent = | 'session:created'
   | 'session:loaded'
   | 'session:deleted'
   | 'session:error'
+  | 'session:warning'
+  | 'session:migrated'
 ```
 
 ---
 
 ### addHistoryEntry `function`
 
-📍 [`src/core/SessionManager.ts:463`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:788`](src/core/SessionManager.ts)
 
 Add an entry to serialized history
 
@@ -13485,7 +14629,7 @@ export function createAgentStorage(options:
 
 ### createEmptyHistory `function`
 
-📍 [`src/core/SessionManager.ts:449`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:774`](src/core/SessionManager.ts)
 
 Create an empty serialized history
 
@@ -13495,9 +14639,249 @@ export function createEmptyHistory(): SerializedHistory
 
 ---
 
+### migrateSession `function`
+
+📍 [`src/core/SessionManager.ts:445`](src/core/SessionManager.ts)
+
+Apply migrations to a session
+
+```typescript
+export function migrateSession(
+  session: Partial&lt;Session&gt;,
+  migrations: SessionMigration[]
+): Session
+```
+
+---
+
+### validateSession `function`
+
+📍 [`src/core/SessionManager.ts:266`](src/core/SessionManager.ts)
+
+Validate a session object and return validation results
+
+```typescript
+export function validateSession(session: unknown): SessionValidationResult
+```
+
+---
+
 ## Tools & Function Calling
 
 Define and execute tools for agents
+
+### ConnectorTools `class`
+
+📍 [`src/tools/connector/ConnectorTools.ts:110`](src/tools/connector/ConnectorTools.ts)
+
+ConnectorTools - Main API for vendor-dependent tools
+
+Usage:
+```typescript
+// Get all tools for a connector
+const tools = ConnectorTools.for('slack');
+
+// Get just the generic API tool
+const apiTool = ConnectorTools.genericAPI('github');
+
+// Discover all available connector tools
+const allTools = ConnectorTools.discoverAll();
+```
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static clearCache()`
+
+Clear all caches (useful for testing or when connectors change)
+
+```typescript
+static clearCache(): void
+```
+
+**Returns:** `void`
+
+#### `static invalidateCache()`
+
+Invalidate cache for a specific connector
+
+```typescript
+static invalidateCache(connectorName: string): void
+```
+
+**Parameters:**
+- `connectorName`: `string`
+
+**Returns:** `void`
+
+#### `static registerService()`
+
+Register a tool factory for a service type
+
+```typescript
+static registerService(serviceType: string, factory: ServiceToolFactory): void
+```
+
+**Parameters:**
+- `serviceType`: `string`
+- `factory`: `ServiceToolFactory`
+
+**Returns:** `void`
+
+#### `static unregisterService()`
+
+Unregister a service tool factory
+
+```typescript
+static unregisterService(serviceType: string): boolean
+```
+
+**Parameters:**
+- `serviceType`: `string`
+
+**Returns:** `boolean`
+
+#### `static for()`
+
+Get ALL tools for a connector (generic API + service-specific)
+This is the main entry point
+
+```typescript
+static for(connectorOrName: Connector | string, userId?: string): ToolFunction[]
+```
+
+**Parameters:**
+- `connectorOrName`: `string | Connector`
+- `userId`: `string | undefined` *(optional)*
+
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
+
+#### `static genericAPI()`
+
+Get just the generic API tool for a connector
+
+```typescript
+static genericAPI(
+    connectorOrName: Connector | string,
+    options?: GenericAPIToolOptions
+  ): ToolFunction&lt;GenericAPICallArgs, GenericAPICallResult&gt;
+```
+
+**Parameters:**
+- `connectorOrName`: `string | Connector`
+- `options`: `GenericAPIToolOptions | undefined` *(optional)*
+
+**Returns:** `ToolFunction&lt;GenericAPICallArgs, GenericAPICallResult&gt;`
+
+#### `static serviceTools()`
+
+Get only service-specific tools (no generic API tool)
+
+```typescript
+static serviceTools(connectorOrName: Connector | string, userId?: string): ToolFunction[]
+```
+
+**Parameters:**
+- `connectorOrName`: `string | Connector`
+- `userId`: `string | undefined` *(optional)*
+
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
+
+#### `static discoverAll()`
+
+Discover tools for ALL registered connectors with external services
+Skips AI provider connectors (those with vendor but no serviceType)
+
+```typescript
+static discoverAll(userId?: string): Map&lt;string, ToolFunction[]&gt;
+```
+
+**Parameters:**
+- `userId`: `string | undefined` *(optional)*
+
+**Returns:** `Map&lt;string, ToolFunction&lt;any, any&gt;[]&gt;`
+
+#### `static findConnector()`
+
+Find a connector by service type
+Returns the first connector matching the service type
+
+```typescript
+static findConnector(serviceType: string): Connector | undefined
+```
+
+**Parameters:**
+- `serviceType`: `string`
+
+**Returns:** `Connector | undefined`
+
+#### `static findConnectors()`
+
+Find all connectors for a service type
+Useful when you have multiple connectors for the same service
+
+```typescript
+static findConnectors(serviceType: string): Connector[]
+```
+
+**Parameters:**
+- `serviceType`: `string`
+
+**Returns:** `Connector[]`
+
+#### `static listSupportedServices()`
+
+List services that have registered tool factories
+
+```typescript
+static listSupportedServices(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `static hasServiceTools()`
+
+Check if a service has dedicated tool factory
+
+```typescript
+static hasServiceTools(serviceType: string): boolean
+```
+
+**Parameters:**
+- `serviceType`: `string`
+
+**Returns:** `boolean`
+
+#### `static detectService()`
+
+Detect the service type for a connector
+Uses explicit serviceType if set, otherwise infers from baseURL
+Results are cached for performance
+
+```typescript
+static detectService(connector: Connector): string | undefined
+```
+
+**Parameters:**
+- `connector`: `Connector`
+
+**Returns:** `string | undefined`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `factories` | `factories: Map&lt;string, ServiceToolFactory&gt;` | Registry of service-specific tool factories |
+| `serviceTypeCache` | `serviceTypeCache: Map&lt;string, string | undefined&gt;` | Cache for detected service types (connector name -> service type) |
+| `toolCache` | `toolCache: Map&lt;string, ToolFunction&lt;any, any&gt;[]&gt;` | Cache for generated tools (cacheKey -> tools) |
+| `MAX_CACHE_SIZE` | `MAX_CACHE_SIZE: 100` | Maximum cache size to prevent memory issues |
+
+</details>
+
+---
 
 ### InvalidToolArgumentsError `class`
 
@@ -13520,6 +14904,36 @@ constructor(
 - `toolName`: `string`
 - `rawArguments`: `string`
 - `parseError`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### MCPToolError `class`
+
+📍 [`src/domain/errors/MCPError.ts:62`](src/domain/errors/MCPError.ts)
+
+Tool execution errors (tool not found, tool execution failed)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    message: string,
+    public readonly toolName: string,
+    serverName?: string,
+    cause?: Error
+  )
+```
+
+**Parameters:**
+- `message`: `string`
+- `toolName`: `string`
+- `serverName`: `string | undefined` *(optional)*
+- `cause`: `Error | undefined` *(optional)*
 
 </details>
 
@@ -13553,7 +14967,7 @@ constructor(
 
 ### ToolManager `class`
 
-📍 [`src/core/ToolManager.ts:100`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:120`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -13569,6 +14983,29 @@ constructor()
 <details>
 <summary><strong>Methods</strong></summary>
 
+#### `setToolContext()`
+
+Set tool context for execution (called by agent before runs)
+
+```typescript
+setToolContext(context: ToolContext | undefined): void
+```
+
+**Parameters:**
+- `context`: `ToolContext | undefined`
+
+**Returns:** `void`
+
+#### `getToolContext()`
+
+Get current tool context
+
+```typescript
+getToolContext(): ToolContext | undefined
+```
+
+**Returns:** `ToolContext | undefined`
+
 #### `register()`
 
 Register a tool with optional configuration
@@ -13578,8 +15015,8 @@ register(tool: ToolFunction, options: ToolOptions =
 ```
 
 **Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-- `options`: `import("/Users/aantich/dev/oneringai/src/core/ToolManager").ToolOptions` *(optional)* (default: `{}`)
+- `tool`: `ToolFunction&lt;any, any&gt;`
+- `options`: `ToolOptions` *(optional)* (default: `{}`)
 
 **Returns:** `void`
 
@@ -13592,8 +15029,8 @@ registerMany(tools: ToolFunction[], options: Omit&lt;ToolOptions, 'conditions'&g
 ```
 
 **Parameters:**
-- `tools`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
-- `options`: `Omit&lt;import("/Users/aantich/dev/oneringai/src/core/ToolManager").ToolOptions, "conditions"&gt;` *(optional)* (default: `{}`)
+- `tools`: `ToolFunction&lt;any, any&gt;[]`
+- `options`: `Omit&lt;ToolOptions, "conditions"&gt;` *(optional)* (default: `{}`)
 
 **Returns:** `void`
 
@@ -13746,8 +15183,8 @@ createNamespace(namespace: string, tools: ToolFunction[], options: Omit&lt;ToolO
 
 **Parameters:**
 - `namespace`: `string`
-- `tools`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
-- `options`: `Omit&lt;import("/Users/aantich/dev/oneringai/src/core/ToolManager").ToolOptions, "namespace"&gt;` *(optional)* (default: `{}`)
+- `tools`: `ToolFunction&lt;any, any&gt;[]`
+- `options`: `Omit&lt;ToolOptions, "namespace"&gt;` *(optional)* (default: `{}`)
 
 **Returns:** `void`
 
@@ -13778,6 +15215,33 @@ getPriority(name: string): number | undefined
 
 **Returns:** `number | undefined`
 
+#### `getPermission()`
+
+Get permission config for a tool
+
+```typescript
+getPermission(name: string): ToolPermissionConfig | undefined
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `ToolPermissionConfig | undefined`
+
+#### `setPermission()`
+
+Set permission config for a tool
+
+```typescript
+setPermission(name: string, permission: ToolPermissionConfig): boolean
+```
+
+**Parameters:**
+- `name`: `string`
+- `permission`: `ToolPermissionConfig`
+
+**Returns:** `boolean`
+
 #### `get()`
 
 Get a tool by name
@@ -13789,7 +15253,7 @@ get(name: string): ToolFunction | undefined
 **Parameters:**
 - `name`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt; | undefined`
+**Returns:** `ToolFunction&lt;any, any&gt; | undefined`
 
 #### `has()`
 
@@ -13812,7 +15276,7 @@ Get all enabled tools (sorted by priority)
 getEnabled(): ToolFunction[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
 
 #### `getAll()`
 
@@ -13822,7 +15286,7 @@ Get all tools (enabled and disabled)
 getAll(): ToolFunction[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
 
 #### `getByNamespace()`
 
@@ -13835,7 +15299,7 @@ getByNamespace(namespace: string): ToolFunction[]
 **Parameters:**
 - `namespace`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
 
 #### `getRegistration()`
 
@@ -13848,7 +15312,7 @@ getRegistration(name: string): ToolRegistration | undefined
 **Parameters:**
 - `name`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/ToolManager").ToolRegistration | undefined`
+**Returns:** `ToolRegistration | undefined`
 
 #### `list()`
 
@@ -13879,9 +15343,9 @@ selectForContext(context: ToolSelectionContext): ToolFunction[]
 ```
 
 **Parameters:**
-- `context`: `import("/Users/aantich/dev/oneringai/src/core/ToolManager").ToolSelectionContext`
+- `context`: `ToolSelectionContext`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
 
 #### `selectByCapability()`
 
@@ -13894,7 +15358,7 @@ selectByCapability(description: string): ToolFunction[]
 **Parameters:**
 - `description`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
 
 #### `selectWithinBudget()`
 
@@ -13907,7 +15371,7 @@ selectWithinBudget(budget: number): ToolFunction[]
 **Parameters:**
 - `budget`: `number`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
+**Returns:** `ToolFunction&lt;any, any&gt;[]`
 
 #### `recordExecution()`
 
@@ -13936,7 +15400,134 @@ Get comprehensive statistics
 getStats(): ToolManagerStats
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/ToolManager").ToolManagerStats`
+**Returns:** `ToolManagerStats`
+
+#### `execute()`
+
+Execute a tool function with circuit breaker protection
+Implements IToolExecutor interface
+
+```typescript
+async execute(toolName: string, args: any): Promise&lt;any&gt;
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `args`: `any`
+
+**Returns:** `Promise&lt;any&gt;`
+
+#### `hasToolFunction()`
+
+Check if tool is available (IToolExecutor interface)
+
+```typescript
+hasToolFunction(toolName: string): boolean
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `boolean`
+
+#### `getToolDefinition()`
+
+Get tool definition (IToolExecutor interface)
+
+```typescript
+getToolDefinition(toolName: string): Tool | undefined
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `Tool | undefined`
+
+#### `registerTool()`
+
+Register a tool (IToolExecutor interface - delegates to register())
+
+```typescript
+registerTool(tool: ToolFunction): void
+```
+
+**Parameters:**
+- `tool`: `ToolFunction&lt;any, any&gt;`
+
+**Returns:** `void`
+
+#### `unregisterTool()`
+
+Unregister a tool (IToolExecutor interface - delegates to unregister())
+
+```typescript
+unregisterTool(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `void`
+
+#### `listTools()`
+
+List all registered tool names (IToolExecutor interface - delegates to list())
+
+```typescript
+listTools(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `getCircuitBreakerStates()`
+
+Get circuit breaker states for all tools
+
+```typescript
+getCircuitBreakerStates(): Map&lt;string, CircuitState&gt;
+```
+
+**Returns:** `Map&lt;string, CircuitState&gt;`
+
+#### `getToolCircuitBreakerMetrics()`
+
+Get circuit breaker metrics for a specific tool
+
+```typescript
+getToolCircuitBreakerMetrics(toolName: string)
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `CircuitBreakerMetrics | undefined`
+
+#### `resetToolCircuitBreaker()`
+
+Manually reset a tool's circuit breaker
+
+```typescript
+resetToolCircuitBreaker(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `void`
+
+#### `setCircuitBreakerConfig()`
+
+Configure circuit breaker for a tool
+
+```typescript
+setCircuitBreakerConfig(toolName: string, config: CircuitBreakerConfig): boolean
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `config`: `CircuitBreakerConfig`
+
+**Returns:** `boolean`
 
 #### `getState()`
 
@@ -13946,11 +15537,11 @@ Get serializable state (for session persistence)
 getState(): SerializedToolState
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/ToolManager").SerializedToolState`
+**Returns:** `SerializedToolState`
 
 #### `loadState()`
 
-Load state (restores enabled/disabled, namespaces, priorities)
+Load state (restores enabled/disabled, namespaces, priorities, permissions)
 Note: Tools must be re-registered separately (they contain functions)
 
 ```typescript
@@ -13958,88 +15549,9 @@ loadState(state: SerializedToolState): void
 ```
 
 **Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/core/ToolManager").SerializedToolState`
+- `state`: `SerializedToolState`
 
 **Returns:** `void`
-
-#### `getToolName()`
-
-```typescript
-private getToolName(tool: ToolFunction): string
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-
-**Returns:** `string`
-
-#### `getSortedByPriority()`
-
-```typescript
-private getSortedByPriority(): ToolRegistration[]
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/core/ToolManager").ToolRegistration[]`
-
-#### `addToNamespace()`
-
-```typescript
-private addToNamespace(toolName: string, namespace: string): void
-```
-
-**Parameters:**
-- `toolName`: `string`
-- `namespace`: `string`
-
-**Returns:** `void`
-
-#### `removeFromNamespace()`
-
-```typescript
-private removeFromNamespace(toolName: string, namespace: string): void
-```
-
-**Parameters:**
-- `toolName`: `string`
-- `namespace`: `string`
-
-**Returns:** `void`
-
-#### `moveToNamespace()`
-
-```typescript
-private moveToNamespace(toolName: string, oldNamespace: string, newNamespace: string): void
-```
-
-**Parameters:**
-- `toolName`: `string`
-- `oldNamespace`: `string`
-- `newNamespace`: `string`
-
-**Returns:** `void`
-
-#### `filterByTokenBudget()`
-
-```typescript
-private filterByTokenBudget(tools: ToolFunction[], budget: number): ToolFunction[]
-```
-
-**Parameters:**
-- `tools`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
-- `budget`: `number`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;[]`
-
-#### `estimateToolTokens()`
-
-```typescript
-private estimateToolTokens(tool: ToolFunction): number
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-
-**Returns:** `number`
 
 </details>
 
@@ -14048,8 +15560,10 @@ private estimateToolTokens(tool: ToolFunction): number
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `registry` | `registry: Map&lt;string, import("/Users/aantich/dev/oneringai/src/core/ToolManager").ToolRegistration&gt;` | - |
+| `registry` | `registry: Map&lt;string, ToolRegistration&gt;` | - |
 | `namespaceIndex` | `namespaceIndex: Map&lt;string, Set&lt;string&gt;&gt;` | - |
+| `circuitBreakers` | `circuitBreakers: Map&lt;string, CircuitBreaker&lt;any&gt;&gt;` | - |
+| `toolLogger` | `toolLogger: FrameworkLogger` | - |
 
 </details>
 
@@ -14075,9 +15589,9 @@ constructor(toolName: string)
 
 ---
 
-### ToolRegistry `class`
+### ToolPermissionManager `class`
 
-📍 [`src/capabilities/agents/ToolRegistry.ts:12`](src/capabilities/agents/ToolRegistry.ts)
+📍 [`src/core/permissions/ToolPermissionManager.ts:56`](src/core/permissions/ToolPermissionManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -14085,74 +15599,50 @@ constructor(toolName: string)
 #### `constructor`
 
 ```typescript
-constructor()
+constructor(config?: AgentPermissionsConfig)
 ```
+
+**Parameters:**
+- `config`: `AgentPermissionsConfig | undefined` *(optional)*
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
 
-#### `registerTool()`
+#### `checkPermission()`
 
-Register a new tool
-
-```typescript
-registerTool(tool: ToolFunction): void
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-
-**Returns:** `void`
-
-#### `unregisterTool()`
-
-Unregister a tool
+Check if a tool needs approval before execution
 
 ```typescript
-unregisterTool(toolName: string): void
+checkPermission(toolName: string, _args?: Record&lt;string, unknown&gt;): PermissionCheckResult
 ```
 
 **Parameters:**
 - `toolName`: `string`
+- `_args`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
 
-**Returns:** `void`
+**Returns:** `PermissionCheckResult`
 
-#### `getCircuitBreaker()`
+#### `needsApproval()`
 
-Get or create circuit breaker for a tool
+Check if a tool call needs approval (uses ToolCall object)
 
 ```typescript
-private getCircuitBreaker(toolName: string, tool: ToolFunction): CircuitBreaker
+needsApproval(toolCall: ToolCall): boolean
 ```
 
 **Parameters:**
-- `toolName`: `string`
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
+- `toolCall`: `ToolCall`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreaker&lt;any&gt;`
+**Returns:** `boolean`
 
-#### `execute()`
+#### `isBlocked()`
 
-Execute a tool function
-
-```typescript
-async execute(toolName: string, args: any): Promise&lt;any&gt;
-```
-
-**Parameters:**
-- `toolName`: `string`
-- `args`: `any`
-
-**Returns:** `Promise&lt;any&gt;`
-
-#### `hasToolFunction()`
-
-Check if tool is available
+Check if a tool is blocked
 
 ```typescript
-hasToolFunction(toolName: string): boolean
+isBlocked(toolName: string): boolean
 ```
 
 **Parameters:**
@@ -14160,72 +15650,345 @@ hasToolFunction(toolName: string): boolean
 
 **Returns:** `boolean`
 
-#### `getToolDefinition()`
+#### `isApproved()`
 
-Get tool definition
+Check if a tool is approved (either allowlisted or session-approved)
 
 ```typescript
-getToolDefinition(toolName: string): Tool | undefined
+isApproved(toolName: string): boolean
 ```
 
 **Parameters:**
 - `toolName`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").Tool | undefined`
+**Returns:** `boolean`
 
-#### `listTools()`
+#### `approve()`
 
-List all registered tools
+Approve a tool (record approval)
 
 ```typescript
-listTools(): string[]
+approve(toolName: string, decision?: Partial&lt;ApprovalDecision&gt;): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `decision`: `Partial&lt;ApprovalDecision&gt; | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `approveForSession()`
+
+Approve a tool for the entire session
+
+```typescript
+approveForSession(toolName: string, approvedBy?: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `approvedBy`: `string | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `revoke()`
+
+Revoke a tool's approval
+
+```typescript
+revoke(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `void`
+
+#### `deny()`
+
+Deny a tool execution (for audit trail)
+
+```typescript
+deny(toolName: string, reason: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `reason`: `string`
+
+**Returns:** `void`
+
+#### `isApprovedForSession()`
+
+Check if a tool has been approved for the current session
+
+```typescript
+isApprovedForSession(toolName: string): boolean
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `boolean`
+
+#### `allowlistAdd()`
+
+Add a tool to the allowlist (always allowed)
+
+```typescript
+allowlistAdd(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `void`
+
+#### `allowlistRemove()`
+
+Remove a tool from the allowlist
+
+```typescript
+allowlistRemove(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `void`
+
+#### `isAllowlisted()`
+
+Check if a tool is in the allowlist
+
+```typescript
+isAllowlisted(toolName: string): boolean
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `boolean`
+
+#### `getAllowlist()`
+
+Get all allowlisted tools
+
+```typescript
+getAllowlist(): string[]
 ```
 
 **Returns:** `string[]`
 
-#### `clear()`
+#### `blocklistAdd()`
 
-Clear all registered tools
+Add a tool to the blocklist (always blocked)
 
 ```typescript
-clear(): void
+blocklistAdd(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `void`
+
+#### `blocklistRemove()`
+
+Remove a tool from the blocklist
+
+```typescript
+blocklistRemove(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `void`
+
+#### `isBlocklisted()`
+
+Check if a tool is in the blocklist
+
+```typescript
+isBlocklisted(toolName: string): boolean
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `boolean`
+
+#### `getBlocklist()`
+
+Get all blocklisted tools
+
+```typescript
+getBlocklist(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `setToolConfig()`
+
+Set permission config for a specific tool
+
+```typescript
+setToolConfig(toolName: string, config: ToolPermissionConfig): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `config`: `ToolPermissionConfig`
+
+**Returns:** `void`
+
+#### `getToolConfig()`
+
+Get permission config for a specific tool
+
+```typescript
+getToolConfig(toolName: string): ToolPermissionConfig | undefined
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `ToolPermissionConfig | undefined`
+
+#### `getEffectiveConfig()`
+
+Get effective config (tool-specific or defaults)
+
+```typescript
+getEffectiveConfig(toolName: string): ToolPermissionConfig
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `ToolPermissionConfig`
+
+#### `requestApproval()`
+
+Request approval for a tool call
+
+If an onApprovalRequired callback is set, it will be called.
+Otherwise, this auto-approves for backward compatibility.
+
+NOTE: If you want to require explicit approval, you MUST either:
+1. Set onApprovalRequired callback in AgentPermissionsConfig
+2. Register an 'approve:tool' hook in the AgenticLoop
+3. Add tools to the blocklist if they should never run
+
+This auto-approval behavior preserves backward compatibility with
+existing code that doesn't use the permission system.
+
+```typescript
+async requestApproval(context: PermissionCheckContext): Promise&lt;ApprovalDecision&gt;
+```
+
+**Parameters:**
+- `context`: `PermissionCheckContext`
+
+**Returns:** `Promise&lt;ApprovalDecision&gt;`
+
+#### `getApprovedTools()`
+
+Get all tools that have session approvals
+
+```typescript
+getApprovedTools(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `getApprovalEntry()`
+
+Get the approval entry for a tool
+
+```typescript
+getApprovalEntry(toolName: string): ApprovalCacheEntry | undefined
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `ApprovalCacheEntry | undefined`
+
+#### `clearSession()`
+
+Clear all session approvals
+
+```typescript
+clearSession(): void
 ```
 
 **Returns:** `void`
 
-#### `getCircuitBreakerStates()`
+#### `getState()`
 
-Get circuit breaker states for all tools
+Serialize approval state for persistence
 
 ```typescript
-getCircuitBreakerStates(): Map&lt;string, CircuitState&gt;
+getState(): SerializedApprovalState
 ```
 
-**Returns:** `Map&lt;string, import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitState&gt;`
+**Returns:** `SerializedApprovalState`
 
-#### `getToolCircuitBreakerMetrics()`
+#### `loadState()`
 
-Get circuit breaker metrics for a specific tool
-
-```typescript
-getToolCircuitBreakerMetrics(toolName: string)
-```
-
-**Parameters:**
-- `toolName`: `string`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreakerMetrics | undefined`
-
-#### `resetToolCircuitBreaker()`
-
-Manually reset a tool's circuit breaker
+Load approval state from persistence
 
 ```typescript
-resetToolCircuitBreaker(toolName: string): void
+loadState(state: SerializedApprovalState): void
 ```
 
 **Parameters:**
-- `toolName`: `string`
+- `state`: `SerializedApprovalState`
+
+**Returns:** `void`
+
+#### `getDefaults()`
+
+Get defaults
+
+```typescript
+getDefaults():
+```
+
+**Returns:** `{ scope: PermissionScope; riskLevel: RiskLevel; }`
+
+#### `setDefaults()`
+
+Set defaults
+
+```typescript
+setDefaults(defaults:
+```
+
+**Parameters:**
+- `defaults`: `{ scope?: PermissionScope | undefined; riskLevel?: RiskLevel | undefined; }`
+
+**Returns:** `void`
+
+#### `getStats()`
+
+Get summary statistics
+
+```typescript
+getStats():
+```
+
+**Returns:** `{ approvedCount: number; allowlistedCount: number; blocklistedCount: number; configuredCount: number; }`
+
+#### `reset()`
+
+Reset to initial state
+
+```typescript
+reset(): void
+```
 
 **Returns:** `void`
 
@@ -14236,9 +15999,13 @@ resetToolCircuitBreaker(toolName: string): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `tools` | `tools: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;&gt;` | - |
-| `circuitBreakers` | `circuitBreakers: Map&lt;string, import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreaker&lt;any&gt;&gt;` | - |
-| `logger` | `logger: import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").FrameworkLogger` | - |
+| `approvalCache` | `approvalCache: Map&lt;string, ApprovalCacheEntry&gt;` | - |
+| `allowlist` | `allowlist: Set&lt;string&gt;` | - |
+| `blocklist` | `blocklist: Set&lt;string&gt;` | - |
+| `toolConfigs` | `toolConfigs: Map&lt;string, ToolPermissionConfig&gt;` | - |
+| `defaultScope` | `defaultScope: PermissionScope` | - |
+| `defaultRiskLevel` | `defaultRiskLevel: RiskLevel` | - |
+| `onApprovalRequired?` | `onApprovalRequired: ((context: PermissionCheckContext) =&gt; Promise&lt;ApprovalDecision&gt;) | undefined` | - |
 
 </details>
 
@@ -14342,6 +16109,38 @@ constructor(
 
 ---
 
+### FilesystemToolConfig `interface`
+
+📍 [`src/tools/filesystem/types.ts:13`](src/tools/filesystem/types.ts)
+
+Configuration for filesystem tools
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `workingDirectory?` | `workingDirectory?: string;` | Base working directory for all operations.
+All paths will be resolved relative to this directory.
+Defaults to process.cwd() |
+| `allowedDirectories?` | `allowedDirectories?: string[];` | Allowed directories for file operations.
+If specified, operations outside these directories will be blocked.
+Paths can be absolute or relative to workingDirectory. |
+| `blockedDirectories?` | `blockedDirectories?: string[];` | Blocked directories (e.g., node_modules, .git).
+Operations in these directories will be blocked. |
+| `maxFileSize?` | `maxFileSize?: number;` | Maximum file size to read (in bytes).
+Default: 10MB |
+| `maxResults?` | `maxResults?: number;` | Maximum number of results for glob/grep operations.
+Default: 1000 |
+| `followSymlinks?` | `followSymlinks?: boolean;` | Whether to follow symlinks.
+Default: false |
+| `excludeExtensions?` | `excludeExtensions?: string[];` | File extensions to exclude from search.
+Default: common binary extensions |
+
+</details>
+
+---
+
 ### FunctionToolDefinition `interface`
 
 📍 [`src/domain/entities/Tool.ts:12`](src/domain/entities/Tool.ts)
@@ -14360,6 +16159,67 @@ constructor(
   };` | - |
 | `blocking?` | `blocking?: boolean;` | - |
 | `timeout?` | `timeout?: number;` | - |
+
+</details>
+
+---
+
+### GenericAPICallArgs `interface`
+
+📍 [`src/tools/connector/ConnectorTools.ts:77`](src/tools/connector/ConnectorTools.ts)
+
+Arguments for the generic API call tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `method` | `method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';` | - |
+| `endpoint` | `endpoint: string;` | - |
+| `body?` | `body?: Record&lt;string, unknown&gt;;` | - |
+| `queryParams?` | `queryParams?: Record&lt;string, string | number | boolean&gt;;` | - |
+| `headers?` | `headers?: Record&lt;string, string&gt;;` | - |
+
+</details>
+
+---
+
+### GenericAPICallResult `interface`
+
+📍 [`src/tools/connector/ConnectorTools.ts:88`](src/tools/connector/ConnectorTools.ts)
+
+Result from the generic API call tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `status?` | `status?: number;` | - |
+| `data?` | `data?: unknown;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### GenericAPIToolOptions `interface`
+
+📍 [`src/tools/connector/ConnectorTools.ts:63`](src/tools/connector/ConnectorTools.ts)
+
+Options for generating the generic API tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `toolName?` | `toolName?: string;` | Override the tool name (default: `${connectorName}_api`) |
+| `description?` | `description?: string;` | Override the description |
+| `userId?` | `userId?: string;` | User ID for multi-user OAuth |
+| `permission?` | `permission?: ToolPermissionConfig;` | Permission config for the tool |
 
 </details>
 
@@ -14410,7 +16270,7 @@ getToolDefinition(toolName: string): Tool | undefined;
 **Parameters:**
 - `toolName`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").Tool | undefined`
+**Returns:** `Tool | undefined`
 
 #### `registerTool()`
 
@@ -14421,7 +16281,7 @@ registerTool(tool: ToolFunction): void;
 ```
 
 **Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
+- `tool`: `ToolFunction&lt;any, any&gt;`
 
 **Returns:** `void`
 
@@ -14471,6 +16331,80 @@ Tool entities with blocking/non-blocking execution support
 
 ---
 
+### MCPTool `interface`
+
+📍 [`src/domain/entities/MCPTypes.ts:11`](src/domain/entities/MCPTypes.ts)
+
+MCP Domain Types
+
+Core types for MCP tools, resources, and prompts.
+These are simplified wrappers around the SDK types.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Tool name |
+| `description?` | `description?: string;` | Tool description |
+| `inputSchema` | `inputSchema: {
+    type: 'object';
+    properties?: Record&lt;string, unknown&gt;;
+    required?: string[];
+    [key: string]: unknown;
+  };` | JSON Schema for tool input |
+
+</details>
+
+---
+
+### MCPToolResult `interface`
+
+📍 [`src/domain/entities/MCPTypes.ts:28`](src/domain/entities/MCPTypes.ts)
+
+MCP Tool call result
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `content` | `content: Array&lt;{
+    type: 'text' | 'image' | 'resource';
+    text?: string;
+    data?: string;
+    mimeType?: string;
+    uri?: string;
+  }&gt;;` | Result content |
+| `isError?` | `isError?: boolean;` | Whether the tool call resulted in an error |
+
+</details>
+
+---
+
+### PermissionManagerEvents `interface`
+
+📍 [`src/core/permissions/ToolPermissionManager.ts:40`](src/core/permissions/ToolPermissionManager.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `'tool:approved'` | `'tool:approved': { toolName: string; scope: PermissionScope; approvedBy?: string };` | - |
+| `'tool:denied'` | `'tool:denied': { toolName: string; reason: string };` | - |
+| `'tool:blocked'` | `'tool:blocked': { toolName: string; reason: string };` | - |
+| `'tool:revoked'` | `'tool:revoked': { toolName: string };` | - |
+| `'allowlist:added'` | `'allowlist:added': { toolName: string };` | - |
+| `'allowlist:removed'` | `'allowlist:removed': { toolName: string };` | - |
+| `'blocklist:added'` | `'blocklist:added': { toolName: string };` | - |
+| `'blocklist:removed'` | `'blocklist:removed': { toolName: string };` | - |
+| `'session:cleared'` | `'session:cleared': {};` | - |
+
+</details>
+
+---
+
 ### ProviderToolFormat `interface`
 
 📍 [`src/infrastructure/providers/shared/ToolConversionUtils.ts:14`](src/infrastructure/providers/shared/ToolConversionUtils.ts)
@@ -14492,7 +16426,7 @@ Standardized tool format before provider-specific transformation
 
 ### SerializedToolState `interface`
 
-📍 [`src/core/ToolManager.ts:81`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:99`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14502,6 +16436,42 @@ Standardized tool format before provider-specific transformation
 | `enabled` | `enabled: Record&lt;string, boolean&gt;;` | - |
 | `namespaces` | `namespaces: Record&lt;string, string&gt;;` | - |
 | `priorities` | `priorities: Record&lt;string, number&gt;;` | - |
+| `permissions?` | `permissions?: Record&lt;string, ToolPermissionConfig&gt;;` | Permission configs by tool name |
+
+</details>
+
+---
+
+### ShellToolConfig `interface`
+
+📍 [`src/tools/shell/types.ts:10`](src/tools/shell/types.ts)
+
+Shell Tools - Shared Types
+
+Common types and configuration for shell command execution.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `workingDirectory?` | `workingDirectory?: string;` | Working directory for command execution.
+Defaults to process.cwd() |
+| `defaultTimeout?` | `defaultTimeout?: number;` | Default timeout for commands in milliseconds.
+Default: 120000 (2 minutes) |
+| `maxTimeout?` | `maxTimeout?: number;` | Maximum timeout allowed in milliseconds.
+Default: 600000 (10 minutes) |
+| `shell?` | `shell?: string;` | Shell to use for command execution.
+Default: '/bin/bash' on Unix, 'cmd.exe' on Windows |
+| `env?` | `env?: Record&lt;string, string&gt;;` | Environment variables to add to command execution. |
+| `blockedCommands?` | `blockedCommands?: string[];` | Commands that are blocked from execution.
+Default: dangerous commands like rm -rf / |
+| `blockedPatterns?` | `blockedPatterns?: RegExp[];` | Patterns that if matched will block the command.
+Default: patterns that could cause data loss |
+| `maxOutputSize?` | `maxOutputSize?: number;` | Maximum output size in characters before truncation.
+Default: 100000 (100KB) |
+| `allowBackground?` | `allowBackground?: boolean;` | Whether to allow running commands in background.
+Default: true |
 
 </details>
 
@@ -14595,6 +16565,25 @@ Buffer for accumulating tool call arguments
 
 ---
 
+### ToolCallBuffer `interface`
+
+📍 [`src/infrastructure/providers/base/BaseStreamConverter.ts:18`](src/infrastructure/providers/base/BaseStreamConverter.ts)
+
+Buffer for accumulating tool call arguments during streaming
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `name` | `name: string;` | - |
+| `args` | `args: string;` | - |
+
+</details>
+
+---
+
 ### ToolCallStartEvent `interface`
 
 📍 [`src/domain/entities/StreamEvent.ts:75`](src/domain/entities/StreamEvent.ts)
@@ -14636,7 +16625,7 @@ Tool call detected and starting
 
 ### ToolCondition `interface`
 
-📍 [`src/core/ToolManager.ts:32`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:46`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14672,7 +16661,7 @@ Tool context - passed to tools during execution (optional, for TaskAgent)
 
 ### ToolContext `interface`
 
-📍 [`src/domain/interfaces/IToolContext.ts:22`](src/domain/interfaces/IToolContext.ts)
+📍 [`src/domain/interfaces/IToolContext.ts:62`](src/domain/interfaces/IToolContext.ts)
 
 Context passed to tool execute function
 
@@ -14771,6 +16760,47 @@ Tool execution complete
 
 ---
 
+### ToolExecutionHookContext `interface`
+
+📍 [`src/core/BaseAgent.ts:52`](src/core/BaseAgent.ts)
+
+Tool execution context passed to lifecycle hooks
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `toolName` | `toolName: string;` | Name of the tool being executed |
+| `args` | `args: Record&lt;string, unknown&gt;;` | Arguments passed to the tool |
+| `agentId` | `agentId: string;` | Agent ID |
+| `taskId?` | `taskId?: string;` | Task ID (if running in TaskAgent) |
+
+</details>
+
+---
+
+### ToolExecutionResult `interface`
+
+📍 [`src/core/BaseAgent.ts:66`](src/core/BaseAgent.ts)
+
+Tool execution result passed to afterToolExecution hook
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `toolName` | `toolName: string;` | Name of the tool that was executed |
+| `result` | `result: unknown;` | Result returned by the tool |
+| `durationMs` | `durationMs: number;` | Execution duration in milliseconds |
+| `success` | `success: boolean;` | Whether the execution was successful |
+| `error?` | `error?: Error;` | Error if execution failed |
+
+</details>
+
+---
+
 ### ToolExecutionStartEvent `interface`
 
 📍 [`src/domain/entities/StreamEvent.ts:108`](src/domain/entities/StreamEvent.ts)
@@ -14793,7 +16823,7 @@ Tool execution starting
 
 ### ToolFunction `interface`
 
-📍 [`src/domain/entities/Tool.ts:101`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:154`](src/domain/entities/Tool.ts)
 
 User-provided tool function
 
@@ -14806,6 +16836,9 @@ User-provided tool function
 | `execute` | `execute: (args: TArgs, context?: ToolContext) =&gt; Promise&lt;TResult&gt;;` | - |
 | `idempotency?` | `idempotency?: ToolIdempotency;` | - |
 | `output?` | `output?: ToolOutputHints;` | - |
+| `permission?` | `permission?: ToolPermissionConfig;` | Permission settings for this tool. If not set, defaults are used. |
+| `describeCall?` | `describeCall?: (args: TArgs) =&gt; string;` | Returns a human-readable description of a tool call.
+Used for logging, UI display, and debugging. |
 
 </details>
 
@@ -14822,7 +16855,10 @@ Idempotency configuration for tool caching
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `safe` | `safe: boolean;` | - |
+| `safe?` | `safe?: boolean;` | - |
+| `cacheable?` | `cacheable?: boolean;` | If true, tool results can be cached based on arguments.
+Use this for tools that return deterministic results for the same inputs.
+Takes precedence over the deprecated 'safe' field. |
 | `keyFn?` | `keyFn?: (args: Record&lt;string, unknown&gt;) =&gt; string;` | - |
 | `ttlMs?` | `ttlMs?: number;` | - |
 
@@ -14832,7 +16868,7 @@ Idempotency configuration for tool caching
 
 ### ToolManagerStats `interface`
 
-📍 [`src/core/ToolManager.ts:71`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:89`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14853,7 +16889,7 @@ Idempotency configuration for tool caching
 
 ### ToolMetadata `interface`
 
-📍 [`src/core/ToolManager.ts:61`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:79`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14892,7 +16928,7 @@ Idempotency configuration for tool caching
 
 ### ToolOptions `interface`
 
-📍 [`src/core/ToolManager.ts:21`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:33`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14903,6 +16939,7 @@ Idempotency configuration for tool caching
 | `namespace?` | `namespace?: string;` | Namespace for grouping related tools. Default: 'default' |
 | `priority?` | `priority?: number;` | Priority for selection ordering. Higher = preferred. Default: 0 |
 | `conditions?` | `conditions?: ToolCondition[];` | Conditions for auto-enable/disable |
+| `permission?` | `permission?: ToolPermissionConfig;` | Permission configuration override. If not set, uses tool's config or defaults. |
 
 </details>
 
@@ -14926,9 +16963,63 @@ Output handling hints for context management
 
 ---
 
+### ToolPermissionConfig `interface`
+
+📍 [`src/core/permissions/types.ts:45`](src/core/permissions/types.ts)
+
+Permission configuration for a tool
+
+Can be set on the tool definition or overridden at registration time.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `scope?` | `scope?: PermissionScope;` | When approval is required. |
+| `riskLevel?` | `riskLevel?: RiskLevel;` | Risk classification for the tool. |
+| `approvalMessage?` | `approvalMessage?: string;` | Custom message shown in approval UI.
+Should explain what the tool does and any potential risks. |
+| `sensitiveArgs?` | `sensitiveArgs?: string[];` | Argument names that should be highlighted in approval UI.
+E.g., ['path', 'url'] for file/network operations. |
+| `sessionTTLMs?` | `sessionTTLMs?: number;` | Optional expiration time for session approvals (milliseconds).
+If set, session approvals expire after this duration. |
+
+</details>
+
+---
+
+### ToolPermissionConfig `interface`
+
+📍 [`src/domain/entities/Tool.ts:118`](src/domain/entities/Tool.ts)
+
+Permission configuration for a tool
+
+Controls when approval is required for tool execution.
+Used by the ToolPermissionManager.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `scope?` | `scope?: 'once' | 'session' | 'always' | 'never';` | When approval is required.
+- 'once' - Require approval for each call
+- 'session' - Approve once per session
+- 'always' - Auto-approve (no prompts)
+- 'never' - Always blocked |
+| `riskLevel?` | `riskLevel?: 'low' | 'medium' | 'high' | 'critical';` | Risk level classification. |
+| `approvalMessage?` | `approvalMessage?: string;` | Custom message shown in approval UI. |
+| `sensitiveArgs?` | `sensitiveArgs?: string[];` | Argument names that should be highlighted as sensitive. |
+| `sessionTTLMs?` | `sessionTTLMs?: number;` | TTL for session approvals (milliseconds). |
+
+</details>
+
+---
+
 ### ToolRegistration `interface`
 
-📍 [`src/core/ToolManager.ts:52`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:66`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14941,6 +17032,26 @@ Output handling hints for context management
 | `priority` | `priority: number;` | - |
 | `conditions` | `conditions: ToolCondition[];` | - |
 | `metadata` | `metadata: ToolMetadata;` | - |
+| `permission?` | `permission?: ToolPermissionConfig;` | Effective permission config (merged from tool.permission and options.permission) |
+| `circuitBreakerConfig?` | `circuitBreakerConfig?: Partial&lt;CircuitBreakerConfig&gt;;` | Circuit breaker configuration for this tool (uses shared CircuitBreakerConfig from resilience) |
+
+</details>
+
+---
+
+### ToolRegistrationOptions `interface`
+
+📍 [`src/core/BaseAgent.ts:28`](src/core/BaseAgent.ts)
+
+Options for tool registration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `namespace?` | `namespace?: string;` | Namespace for the tool (e.g., 'user', '_meta', 'mcp:fs') |
+| `enabled?` | `enabled?: boolean;` | Whether the tool is enabled by default |
 
 </details>
 
@@ -15002,7 +17113,7 @@ Output handling hints for context management
 
 ### ToolSelectionContext `interface`
 
-📍 [`src/core/ToolManager.ts:37`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:51`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -15094,6 +17205,31 @@ Output handling hints for context management
 
 ---
 
+### DefaultAllowlistedTool `type`
+
+📍 [`src/core/permissions/types.ts:343`](src/core/permissions/types.ts)
+
+Type for default allowlisted tools
+
+```typescript
+type DefaultAllowlistedTool = (typeof DEFAULT_ALLOWLIST)[number]
+```
+
+---
+
+### ServiceToolFactory `type`
+
+📍 [`src/tools/connector/ConnectorTools.ts:58`](src/tools/connector/ConnectorTools.ts)
+
+Factory function type for creating service-specific tools
+Takes a Connector and returns an array of tools that use it
+
+```typescript
+type ServiceToolFactory = (connector: Connector, userId?: string) =&gt; ToolFunction[]
+```
+
+---
+
 ### Tool `type`
 
 📍 [`src/domain/entities/Tool.ts:29`](src/domain/entities/Tool.ts)
@@ -15106,7 +17242,7 @@ type Tool = FunctionToolDefinition | BuiltInTool
 
 ### ToolManagerEvent `type`
 
-📍 [`src/core/ToolManager.ts:87`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:107`](src/core/ToolManager.ts)
 
 ```typescript
 type ToolManagerEvent = | 'tool:registered'
@@ -15135,6 +17271,30 @@ export function convertToolsToStandardFormat(
 
 ---
 
+### createBashTool `function`
+
+📍 [`src/tools/shell/bash.ts:51`](src/tools/shell/bash.ts)
+
+Create a Bash tool with the given configuration
+
+```typescript
+export function createBashTool(config: ShellToolConfig =
+```
+
+---
+
+### createEditFileTool `function`
+
+📍 [`src/tools/filesystem/editFile.ts:42`](src/tools/filesystem/editFile.ts)
+
+Create an Edit File tool with the given configuration
+
+```typescript
+export function createEditFileTool(config: FilesystemToolConfig =
+```
+
+---
+
 ### createExecuteJavaScriptTool `function`
 
 📍 [`src/tools/code/executeJavaScript.ts:107`](src/tools/code/executeJavaScript.ts)
@@ -15144,6 +17304,141 @@ Use this factory when you need the tool to reflect currently registered connecto
 
 ```typescript
 export function createExecuteJavaScriptTool(): ToolFunction&lt;ExecuteJSArgs, ExecuteJSResult&gt;
+```
+
+---
+
+### createGlobTool `function`
+
+📍 [`src/tools/filesystem/glob.ts:123`](src/tools/filesystem/glob.ts)
+
+Create a Glob tool with the given configuration
+
+```typescript
+export function createGlobTool(config: FilesystemToolConfig =
+```
+
+---
+
+### createGrepTool `function`
+
+📍 [`src/tools/filesystem/grep.ts:191`](src/tools/filesystem/grep.ts)
+
+Create a Grep tool with the given configuration
+
+```typescript
+export function createGrepTool(config: FilesystemToolConfig =
+```
+
+---
+
+### createListDirectoryTool `function`
+
+📍 [`src/tools/filesystem/listDirectory.ts:137`](src/tools/filesystem/listDirectory.ts)
+
+Create a List Directory tool with the given configuration
+
+```typescript
+export function createListDirectoryTool(config: FilesystemToolConfig =
+```
+
+---
+
+### createMCPToolAdapter `function`
+
+📍 [`src/infrastructure/mcp/adapters/MCPToolAdapter.ts:15`](src/infrastructure/mcp/adapters/MCPToolAdapter.ts)
+
+Convert an MCP tool to a ToolFunction
+
+```typescript
+export function createMCPToolAdapter(
+  tool: MCPTool,
+  client: IMCPClient,
+  namespace: string
+): ToolFunction
+```
+
+---
+
+### createMCPToolAdapters `function`
+
+📍 [`src/infrastructure/mcp/adapters/MCPToolAdapter.ts:92`](src/infrastructure/mcp/adapters/MCPToolAdapter.ts)
+
+Convert all tools from an MCP client to ToolFunctions
+
+```typescript
+export function createMCPToolAdapters(
+  tools: MCPTool[],
+  client: IMCPClient,
+  namespace: string
+): ToolFunction[]
+```
+
+---
+
+### createReadFileTool `function`
+
+📍 [`src/tools/filesystem/readFile.ts:40`](src/tools/filesystem/readFile.ts)
+
+Create a Read File tool with the given configuration
+
+```typescript
+export function createReadFileTool(config: FilesystemToolConfig =
+```
+
+---
+
+### createToolUseContent `function`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:140`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Create a tool_use content item
+
+```typescript
+export function createToolUseContent(
+  id: string,
+  name: string,
+  args: string | Record&lt;string, unknown&gt;
+): Content
+```
+
+---
+
+### createWriteFileTool `function`
+
+📍 [`src/tools/filesystem/writeFile.ts:38`](src/tools/filesystem/writeFile.ts)
+
+Create a Write File tool with the given configuration
+
+```typescript
+export function createWriteFileTool(config: FilesystemToolConfig =
+```
+
+---
+
+### defaultDescribeCall `function`
+
+📍 [`src/domain/entities/Tool.ts:204`](src/domain/entities/Tool.ts)
+
+Default implementation for describeCall.
+Shows the first meaningful argument value.
+
+```typescript
+export function defaultDescribeCall(
+  args: Record&lt;string, unknown&gt;,
+  maxLength = 60
+): string
+```
+
+**Example:**
+
+```typescript
+defaultDescribeCall({ file_path: '/path/to/file.ts' })
+// Returns: '/path/to/file.ts'
+```
+```typescript
+defaultDescribeCall({ query: 'search term', limit: 10 })
+// Returns: 'search term'
 ```
 
 ---
@@ -15163,6 +17458,30 @@ export function extractFunctionTools(
 
 ---
 
+### filterProtectedHeaders `function`
+
+📍 [`src/tools/connector/ConnectorTools.ts:42`](src/tools/connector/ConnectorTools.ts)
+
+Filter out protected headers from user-provided headers
+
+```typescript
+function filterProtectedHeaders(headers?: Record&lt;string, string&gt;): Record&lt;string, string&gt;
+```
+
+---
+
+### generateToolCallId `function`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:214`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Generate a tool call ID with optional provider prefix
+
+```typescript
+export function generateToolCallId(provider?: string): string
+```
+
+---
+
 ### generateWebAPITool `function`
 
 📍 [`src/connectors/toolGenerator.ts:33`](src/connectors/toolGenerator.ts)
@@ -15174,6 +17493,22 @@ The tool description is dynamically generated based on registered providers.
 
 ```typescript
 export function generateWebAPITool(): ToolFunction&lt;APIRequestArgs, APIRequestResult&gt;
+```
+
+---
+
+### getToolCallDescription `function`
+
+📍 [`src/domain/entities/Tool.ts:256`](src/domain/entities/Tool.ts)
+
+Get a human-readable description of a tool call.
+Uses the tool's describeCall method if available, otherwise falls back to default.
+
+```typescript
+export function getToolCallDescription&lt;TArgs&gt;(
+  tool: ToolFunction&lt;TArgs&gt;,
+  args: TArgs
+): string
 ```
 
 ---
@@ -15208,6 +17543,18 @@ export function isToolCallArgumentsDone(
 
 ```typescript
 export function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent
+```
+
+---
+
+### safeStringify `function`
+
+📍 [`src/tools/connector/ConnectorTools.ts:26`](src/tools/connector/ConnectorTools.ts)
+
+Safely stringify an object, handling circular references
+
+```typescript
+function safeStringify(obj: unknown): string
 ```
 
 ---
@@ -15254,122 +17601,96 @@ Real-time streaming of agent responses
 
 ### AnthropicStreamConverter `class`
 
-📍 [`src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts:11`](src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts)
+📍 [`src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts:27`](src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts)
 
 Converts Anthropic streaming events to our unified StreamEvent format
 
 <details>
 <summary><strong>Methods</strong></summary>
 
-#### `convertStream()`
-
-Convert Anthropic stream to our StreamEvent format
-
-```typescript
-async *convertStream(
-    anthropicStream: AsyncIterable&lt;Anthropic.MessageStreamEvent&gt;,
-    model: string
-  ): AsyncIterableIterator&lt;StreamEvent&gt;
-```
-
-**Parameters:**
-- `anthropicStream`: `AsyncIterable&lt;import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").RawMessageStreamEvent&gt;`
-- `model`: `string`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
 #### `convertEvent()`
 
-Convert single Anthropic event to our event(s)
+Convert a single Anthropic event to our StreamEvent(s)
 
 ```typescript
-private convertEvent(event: Anthropic.MessageStreamEvent): StreamEvent[]
+protected convertEvent(event: Anthropic.MessageStreamEvent): StreamEvent[]
 ```
 
 **Parameters:**
-- `event`: `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").RawMessageStreamEvent`
+- `event`: `RawMessageStreamEvent`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]`
-
-#### `handleMessageStart()`
-
-Handle message_start event
-
-```typescript
-private handleMessageStart(event: Anthropic.MessageStartEvent): StreamEvent[]
-```
-
-**Parameters:**
-- `event`: `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").RawMessageStartEvent`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]`
-
-#### `handleContentBlockStart()`
-
-Handle content_block_start event
-
-```typescript
-private handleContentBlockStart(event: Anthropic.ContentBlockStartEvent): StreamEvent[]
-```
-
-**Parameters:**
-- `event`: `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").RawContentBlockStartEvent`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]`
-
-#### `handleContentBlockDelta()`
-
-Handle content_block_delta event
-
-```typescript
-private handleContentBlockDelta(event: Anthropic.ContentBlockDeltaEvent): StreamEvent[]
-```
-
-**Parameters:**
-- `event`: `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").RawContentBlockDeltaEvent`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]`
-
-#### `handleContentBlockStop()`
-
-Handle content_block_stop event
-
-```typescript
-private handleContentBlockStop(event: Anthropic.ContentBlockStopEvent): StreamEvent[]
-```
-
-**Parameters:**
-- `event`: `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").RawContentBlockStopEvent`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]`
-
-#### `handleMessageDelta()`
-
-Handle message_delta event (usage info, stop_reason)
-
-```typescript
-private handleMessageDelta(event: Anthropic.MessageDeltaEvent): StreamEvent[]
-```
-
-**Parameters:**
-- `event`: `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").RawMessageDeltaEvent`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]`
-
-#### `handleMessageStop()`
-
-Handle message_stop event (final event)
-
-```typescript
-private handleMessageStop(): StreamEvent[]
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]`
+**Returns:** `StreamEvent[]`
 
 #### `clear()`
 
 Clear all internal state
-Should be called after each stream completes to prevent memory leaks
+
+```typescript
+override clear(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `providerName` | `providerName: "anthropic"` | - |
+| `contentBlockIndex` | `contentBlockIndex: Map&lt;number, ContentBlockInfo&gt;` | Map of content block index to block info |
+
+</details>
+
+---
+
+### BaseStreamConverter `class`
+
+📍 [`src/infrastructure/providers/base/BaseStreamConverter.ts:39`](src/infrastructure/providers/base/BaseStreamConverter.ts)
+
+Abstract base class for streaming event converters.
+
+Manages common state and provides helper methods for emitting events.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `convertEvent()`
+
+Convert a single provider event to our StreamEvent(s)
+May return empty array if event should be ignored
+
+```typescript
+protected abstract convertEvent(event: TEvent): StreamEvent[];
+```
+
+**Parameters:**
+- `event`: `TEvent`
+
+**Returns:** `StreamEvent[]`
+
+#### `convertStream()`
+
+Convert provider stream to our StreamEvent format
+
+```typescript
+async *convertStream(
+    stream: AsyncIterable&lt;TEvent&gt;,
+    model?: string
+  ): AsyncIterableIterator&lt;StreamEvent&gt;
+```
+
+**Parameters:**
+- `stream`: `AsyncIterable&lt;TEvent&gt;`
+- `model`: `string | undefined` *(optional)*
+
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
+
+#### `clear()`
+
+Clear all internal state
+Should be called after stream is fully processed
 
 ```typescript
 clear(): void
@@ -15388,6 +17709,156 @@ reset(): void
 
 **Returns:** `void`
 
+#### `generateResponseId()`
+
+Generate a response ID with provider prefix
+
+```typescript
+protected generateResponseId(): string
+```
+
+**Returns:** `string`
+
+#### `nextSequence()`
+
+Get next sequence number (auto-increments)
+
+```typescript
+protected nextSequence(): number
+```
+
+**Returns:** `number`
+
+#### `emitResponseCreated()`
+
+Create RESPONSE_CREATED event
+
+```typescript
+protected emitResponseCreated(responseId?: string): StreamEvent
+```
+
+**Parameters:**
+- `responseId`: `string | undefined` *(optional)*
+
+**Returns:** `StreamEvent`
+
+#### `emitTextDelta()`
+
+Create OUTPUT_TEXT_DELTA event
+
+```typescript
+protected emitTextDelta(
+    delta: string,
+    options?:
+```
+
+**Parameters:**
+- `delta`: `string`
+- `options`: `{ itemId?: string | undefined; outputIndex?: number | undefined; contentIndex?: number | undefined; } | undefined` *(optional)*
+
+**Returns:** `StreamEvent`
+
+#### `emitToolCallStart()`
+
+Create TOOL_CALL_START event
+
+```typescript
+protected emitToolCallStart(toolCallId: string, toolName: string, itemId?: string): StreamEvent
+```
+
+**Parameters:**
+- `toolCallId`: `string`
+- `toolName`: `string`
+- `itemId`: `string | undefined` *(optional)*
+
+**Returns:** `StreamEvent`
+
+#### `emitToolCallArgsDelta()`
+
+Create TOOL_CALL_ARGUMENTS_DELTA event and accumulate args
+
+```typescript
+protected emitToolCallArgsDelta(
+    toolCallId: string,
+    delta: string,
+    toolName?: string
+  ): StreamEvent
+```
+
+**Parameters:**
+- `toolCallId`: `string`
+- `delta`: `string`
+- `toolName`: `string | undefined` *(optional)*
+
+**Returns:** `StreamEvent`
+
+#### `emitToolCallArgsDone()`
+
+Create TOOL_CALL_ARGUMENTS_DONE event with accumulated args
+
+```typescript
+protected emitToolCallArgsDone(toolCallId: string, toolName?: string): StreamEvent
+```
+
+**Parameters:**
+- `toolCallId`: `string`
+- `toolName`: `string | undefined` *(optional)*
+
+**Returns:** `StreamEvent`
+
+#### `emitResponseComplete()`
+
+Create RESPONSE_COMPLETE event
+
+```typescript
+protected emitResponseComplete(status: 'completed' | 'failed' | 'incomplete' = 'completed'): StreamEvent
+```
+
+**Parameters:**
+- `status`: `"completed" | "failed" | "incomplete"` *(optional)* (default: `'completed'`)
+
+**Returns:** `StreamEvent`
+
+#### `updateUsage()`
+
+Update usage statistics
+
+```typescript
+protected updateUsage(inputTokens?: number, outputTokens?: number): void
+```
+
+**Parameters:**
+- `inputTokens`: `number | undefined` *(optional)*
+- `outputTokens`: `number | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `getAccumulatedArgs()`
+
+Get accumulated arguments for a tool call
+
+```typescript
+protected getAccumulatedArgs(toolCallId: string): string
+```
+
+**Parameters:**
+- `toolCallId`: `string`
+
+**Returns:** `string`
+
+#### `hasToolCallBuffer()`
+
+Check if we have buffered data for a tool call
+
+```typescript
+protected hasToolCallBuffer(toolCallId: string): boolean
+```
+
+**Parameters:**
+- `toolCallId`: `string`
+
+**Returns:** `boolean`
+
 </details>
 
 <details>
@@ -15395,11 +17866,12 @@ reset(): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `responseId` | `responseId: string` | - |
-| `model` | `model: string` | - |
-| `sequenceNumber` | `sequenceNumber: number` | - |
-| `contentBlockIndex` | `contentBlockIndex: Map&lt;number, { type: string; id?: string | undefined; name?: string | undefined; accumulatedArgs?: string | undefined; }&gt;` | - |
-| `usage` | `usage: { input_tokens: number; output_tokens: number; }` | - |
+| `responseId` | `responseId: string` | Current response ID |
+| `model` | `model: string` | Model name |
+| `sequenceNumber` | `sequenceNumber: number` | Event sequence number for ordering |
+| `usage` | `usage: StreamUsage` | Usage statistics |
+| `toolCallBuffers` | `toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;` | Buffers for accumulating tool call arguments |
+| `providerName` | `providerName: string` | Get the provider name (used for ID generation) |
 
 </details>
 
@@ -15426,46 +17898,10 @@ async *convertStream(
 ```
 
 **Parameters:**
-- `googleStream`: `AsyncIterable&lt;import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").GenerateContentResponse&gt;`
+- `googleStream`: `AsyncIterable&lt;GenerateContentResponse&gt;`
 - `model`: `string`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-#### `extractUsage()`
-
-Extract usage from Google chunk
-
-```typescript
-private extractUsage(chunk: GenerateContentResponse):
-```
-
-**Parameters:**
-- `chunk`: `import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").GenerateContentResponse`
-
-**Returns:** `{ input_tokens: number; output_tokens: number; total_tokens: number; } | null`
-
-#### `convertChunk()`
-
-Convert single Google chunk to our event(s)
-
-```typescript
-private convertChunk(chunk: GenerateContentResponse): StreamEvent[]
-```
-
-**Parameters:**
-- `chunk`: `import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").GenerateContentResponse`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]`
-
-#### `generateResponseId()`
-
-Generate unique response ID using cryptographically secure UUID
-
-```typescript
-private generateResponseId(): string
-```
-
-**Returns:** `string`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `clear()`
 
@@ -15506,6 +17942,32 @@ reset(): void
 
 ---
 
+### OpenAIResponsesStreamConverter `class`
+
+📍 [`src/infrastructure/providers/openai/OpenAIResponsesStreamConverter.ts:20`](src/infrastructure/providers/openai/OpenAIResponsesStreamConverter.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `convertStream()`
+
+Convert Responses API stream to our StreamEvent format
+
+```typescript
+async *convertStream(
+    stream: AsyncIterable&lt;ResponseStreamEvent&gt;
+  ): AsyncIterableIterator&lt;StreamEvent&gt;
+```
+
+**Parameters:**
+- `stream`: `AsyncIterable&lt;ResponseStreamEvent&gt;`
+
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
+
+</details>
+
+---
+
 ### StreamHelpers `class`
 
 📍 [`src/capabilities/agents/StreamHelpers.ts:18`](src/capabilities/agents/StreamHelpers.ts)
@@ -15527,9 +17989,9 @@ static async collectResponse(
 ```
 
 **Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `static textOnly()`
 
@@ -15543,7 +18005,7 @@ static async *textOnly(
 ```
 
 **Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 **Returns:** `AsyncIterableIterator&lt;string&gt;`
 
@@ -15559,8 +18021,8 @@ static async *filterByType&lt;T extends StreamEvent&gt;(
 ```
 
 **Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-- `eventType`: `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEventType`
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
+- `eventType`: `StreamEventType`
 
 **Returns:** `AsyncIterableIterator&lt;T&gt;`
 
@@ -15575,7 +18037,7 @@ static async accumulateText(
 ```
 
 **Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 **Returns:** `Promise&lt;string&gt;`
 
@@ -15591,10 +18053,10 @@ static async *bufferEvents(
 ```
 
 **Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
 - `batchSize`: `number`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent[]&gt;`
 
 #### `static tap()`
 
@@ -15609,183 +18071,10 @@ static async *tap(
 ```
 
 **Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-- `callback`: `(event: import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent) =&gt; void | Promise&lt;void&gt;`
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
+- `callback`: `(event: StreamEvent) =&gt; void | Promise&lt;void&gt;`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-#### `static take()`
-
-Take first N events from stream
-
-```typescript
-static async *take(
-    stream: AsyncIterableIterator&lt;StreamEvent&gt;,
-    count: number
-  ): AsyncIterableIterator&lt;StreamEvent&gt;
-```
-
-**Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-- `count`: `number`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-#### `static skip()`
-
-Skip first N events from stream
-
-```typescript
-static async *skip(
-    stream: AsyncIterableIterator&lt;StreamEvent&gt;,
-    count: number
-  ): AsyncIterableIterator&lt;StreamEvent&gt;
-```
-
-**Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-- `count`: `number`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-#### `static updateStateFromEvent()`
-
-Update StreamState from event
-
-```typescript
-private static updateStateFromEvent(state: StreamState, event: StreamEvent): void
-```
-
-**Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamState").StreamState`
-- `event`: `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent`
-
-**Returns:** `void`
-
-#### `static reconstructLLMResponse()`
-
-Reconstruct LLMResponse from StreamState
-
-```typescript
-private static reconstructLLMResponse(state: StreamState): LLMResponse
-```
-
-**Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamState").StreamState`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse`
-
-#### `static extractOutputText()`
-
-Extract text from output items
-
-```typescript
-private static extractOutputText(output: OutputItem[]): string
-```
-
-**Parameters:**
-- `output`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").OutputItem[]`
-
-**Returns:** `string`
-
-#### `static collectResponse()`
-
-Collect complete response from stream
-Accumulates all events and reconstructs final LLMResponse
-
-```typescript
-static async collectResponse(
-    stream: AsyncIterableIterator&lt;StreamEvent&gt;
-  ): Promise&lt;LLMResponse&gt;
-```
-
-**Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
-
-#### `static textOnly()`
-
-Get only text deltas from stream (for simple text streaming)
-Filters out all other event types
-
-```typescript
-static async *textOnly(
-    stream: AsyncIterableIterator&lt;StreamEvent&gt;
-  ): AsyncIterableIterator&lt;string&gt;
-```
-
-**Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-**Returns:** `AsyncIterableIterator&lt;string&gt;`
-
-#### `static filterByType()`
-
-Filter stream events by type
-
-```typescript
-static async *filterByType&lt;T extends StreamEvent&gt;(
-    stream: AsyncIterableIterator&lt;StreamEvent&gt;,
-    eventType: StreamEventType
-  ): AsyncIterableIterator&lt;T&gt;
-```
-
-**Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-- `eventType`: `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEventType`
-
-**Returns:** `AsyncIterableIterator&lt;T&gt;`
-
-#### `static accumulateText()`
-
-Accumulate text from stream into a single string
-
-```typescript
-static async accumulateText(
-    stream: AsyncIterableIterator&lt;StreamEvent&gt;
-  ): Promise&lt;string&gt;
-```
-
-**Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-**Returns:** `Promise&lt;string&gt;`
-
-#### `static bufferEvents()`
-
-Buffer stream events into batches
-
-```typescript
-static async *bufferEvents(
-    stream: AsyncIterableIterator&lt;StreamEvent&gt;,
-    batchSize: number
-  ): AsyncIterableIterator&lt;StreamEvent[]&gt;
-```
-
-**Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-- `batchSize`: `number`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent[]&gt;`
-
-#### `static tap()`
-
-Tap into stream without consuming it
-Useful for logging or side effects
-
-```typescript
-static async *tap(
-    stream: AsyncIterableIterator&lt;StreamEvent&gt;,
-    callback: (event: StreamEvent) =&gt; void | Promise&lt;void&gt;
-  ): AsyncIterableIterator&lt;StreamEvent&gt;
-```
-
-**Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-- `callback`: `(event: import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent) =&gt; void | Promise&lt;void&gt;`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `static take()`
 
@@ -15799,10 +18088,10 @@ static async *take(
 ```
 
 **Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
 - `count`: `number`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `static skip()`
 
@@ -15816,50 +18105,10 @@ static async *skip(
 ```
 
 **Parameters:**
-- `stream`: `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+- `stream`: `AsyncIterableIterator&lt;StreamEvent&gt;`
 - `count`: `number`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-#### `static updateStateFromEvent()`
-
-Update StreamState from event
-
-```typescript
-private static updateStateFromEvent(state: StreamState, event: StreamEvent): void
-```
-
-**Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamState").StreamState`
-- `event`: `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent`
-
-**Returns:** `void`
-
-#### `static reconstructLLMResponse()`
-
-Reconstruct LLMResponse from StreamState
-
-```typescript
-private static reconstructLLMResponse(state: StreamState): LLMResponse
-```
-
-**Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamState").StreamState`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse`
-
-#### `static extractOutputText()`
-
-Extract text from output items
-
-```typescript
-private static extractOutputText(output: OutputItem[]): string
-```
-
-**Parameters:**
-- `output`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").OutputItem[]`
-
-**Returns:** `string`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 </details>
 
@@ -16016,7 +18265,7 @@ addCompletedToolCall(toolCall: ToolCall): void
 ```
 
 **Parameters:**
-- `toolCall`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolCall`
+- `toolCall`: `ToolCall`
 
 **Returns:** `void`
 
@@ -16028,7 +18277,7 @@ Get all completed tool calls
 getCompletedToolCalls(): ToolCall[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolCall[]`
+**Returns:** `ToolCall[]`
 
 #### `setToolResult()`
 
@@ -16066,7 +18315,7 @@ updateUsage(usage: Partial&lt;TokenUsage&gt;): void
 ```
 
 **Parameters:**
-- `usage`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").TokenUsage&gt;`
+- `usage`: `Partial&lt;TokenUsage&gt;`
 
 **Returns:** `void`
 
@@ -16079,7 +18328,7 @@ accumulateUsage(usage: Partial&lt;TokenUsage&gt;): void
 ```
 
 **Parameters:**
-- `usage`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").TokenUsage&gt;`
+- `usage`: `Partial&lt;TokenUsage&gt;`
 
 **Returns:** `void`
 
@@ -16124,7 +18373,7 @@ Get summary statistics
 getStatistics()
 ```
 
-**Returns:** `{ responseId: string; model: string; status: "completed" | "failed" | "incomplete" | "in_progress"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; }`
+**Returns:** `{ responseId: string; model: string; status: "completed" | "failed" | "in_progress" | "incomplete"; iterations: number; totalChunks: number; totalTextDeltas: number; totalToolCalls: number; textItemsCount: number; toolCallBuffersCount: number; completedToolCallsCount: number; durationMs: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; }`
 
 #### `hasText()`
 
@@ -16164,7 +18413,7 @@ Create a snapshot for checkpointing (error recovery)
 createSnapshot()
 ```
 
-**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/entities/StreamState").ToolCallBuffer&gt;; completedToolCalls: import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; status: "completed" | "failed" | "incomplete" | "in_progress"; startTime: Date; endTime: Date | undefined; }`
+**Returns:** `{ responseId: string; model: string; createdAt: number; textBuffers: Map&lt;string, string[]&gt;; toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;; completedToolCalls: ToolCall[]; toolResults: Map&lt;string, any&gt;; currentIteration: number; usage: { input_tokens: number; output_tokens: number; total_tokens: number; output_tokens_details?: { reasoning_tokens: number; } | undefined; }; status: "completed" | "failed" | "in_progress" | "incomplete"; startTime: Date; endTime: Date | undefined; }`
 
 </details>
 
@@ -16177,12 +18426,12 @@ createSnapshot()
 | `model` | `model: string` | - |
 | `createdAt` | `createdAt: number` | - |
 | `textBuffers` | `textBuffers: Map&lt;string, string[]&gt;` | - |
-| `toolCallBuffers` | `toolCallBuffers: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/entities/StreamState").ToolCallBuffer&gt;` | - |
-| `completedToolCalls` | `completedToolCalls: import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolCall[]` | - |
+| `toolCallBuffers` | `toolCallBuffers: Map&lt;string, ToolCallBuffer&gt;` | - |
+| `completedToolCalls` | `completedToolCalls: ToolCall[]` | - |
 | `toolResults` | `toolResults: Map&lt;string, any&gt;` | - |
 | `currentIteration` | `currentIteration: number` | - |
-| `usage` | `usage: import("/Users/aantich/dev/oneringai/src/domain/entities/Response").TokenUsage` | - |
-| `status` | `status: "completed" | "failed" | "incomplete" | "in_progress"` | - |
+| `usage` | `usage: TokenUsage` | - |
+| `status` | `status: "completed" | "failed" | "in_progress" | "incomplete"` | - |
 | `startTime` | `startTime: Date` | - |
 | `endTime?` | `endTime: Date | undefined` | - |
 | `totalChunks` | `totalChunks: number` | - |
@@ -16206,6 +18455,25 @@ Base interface for all stream events
 |----------|------|-------------|
 | `type` | `type: StreamEventType;` | - |
 | `response_id` | `response_id: string;` | - |
+
+</details>
+
+---
+
+### ContentBlockInfo `interface`
+
+📍 [`src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts:18`](src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts)
+
+Block info tracked during streaming
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: string;` | - |
+| `id?` | `id?: string;` | - |
+| `name?` | `name?: string;` | - |
 
 </details>
 
@@ -16353,6 +18621,24 @@ Response in progress
 
 ---
 
+### StreamUsage `interface`
+
+📍 [`src/infrastructure/providers/base/BaseStreamConverter.ts:27`](src/infrastructure/providers/base/BaseStreamConverter.ts)
+
+Usage statistics tracked during streaming
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `inputTokens` | `inputTokens: number;` | - |
+| `outputTokens` | `outputTokens: number;` | - |
+
+</details>
+
+---
+
 ### StreamEventType `enum`
 
 📍 [`src/domain/entities/StreamEvent.ts:11`](src/domain/entities/StreamEvent.ts)
@@ -16378,6 +18664,16 @@ Stream event type enum
 | `ERROR` | `response.error` | - |
 
 </details>
+
+---
+
+### ResponseStreamEvent `type`
+
+📍 [`src/infrastructure/providers/openai/OpenAIResponsesStreamConverter.ts:18`](src/infrastructure/providers/openai/OpenAIResponsesStreamConverter.ts)
+
+```typescript
+type ResponseStreamEvent = ResponsesAPI.ResponseStreamEvent
+```
 
 ---
 
@@ -16560,6 +18856,18 @@ Complete description of an LLM model including capabilities, pricing, and featur
     /** Supports prompt caching */
     promptCaching?: boolean;
 
+    /** Parameter support - indicates which sampling parameters are supported */
+    parameters?: {
+      /** Supports temperature parameter */
+      temperature?: boolean;
+      /** Supports top_p parameter */
+      topP?: boolean;
+      /** Supports frequency_penalty parameter */
+      frequencyPenalty?: boolean;
+      /** Supports presence_penalty parameter */
+      presencePenalty?: boolean;
+    };
+
     /** Input specifications */
     input: {
       /** Maximum input context window (in tokens) */
@@ -16609,7 +18917,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ### ModelCapabilities `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:28`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:30`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16630,7 +18938,7 @@ Complete description of an LLM model including capabilities, pricing, and featur
 
 ### calculateCost `function`
 
-📍 [`src/domain/entities/Model.ts:1010`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:1190`](src/domain/entities/Model.ts)
 
 Calculate the cost for a given model and token usage
 
@@ -16646,7 +18954,7 @@ export function calculateCost(
 
 ### getActiveModels `function`
 
-📍 [`src/domain/entities/Model.ts:998`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:1178`](src/domain/entities/Model.ts)
 
 Get all currently active models
 
@@ -16658,7 +18966,7 @@ export function getActiveModels(): ILLMDescription[]
 
 ### getModelInfo `function`
 
-📍 [`src/domain/entities/Model.ts:981`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:1161`](src/domain/entities/Model.ts)
 
 Get model information by name
 
@@ -16670,7 +18978,7 @@ export function getModelInfo(modelName: string): ILLMDescription | undefined
 
 ### getModelsByVendor `function`
 
-📍 [`src/domain/entities/Model.ts:990`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:1170`](src/domain/entities/Model.ts)
 
 Get all models for a specific vendor
 
@@ -16682,56 +18990,22 @@ export function getModelsByVendor(vendor: VendorType): ILLMDescription[]
 
 ### MODEL_REGISTRY `const`
 
-📍 [`src/domain/entities/Model.ts:150`](src/domain/entities/Model.ts)
+📍 [`src/domain/entities/Model.ts:176`](src/domain/entities/Model.ts)
 
 Complete model registry with all model metadata
-Updated: January 2026
+Updated: January 2026 - Verified from official vendor documentation
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `'gpt-5.2-instant'` | `{
-    name: 'gpt-5.2-instant',
+| `'gpt-5.2'` | `{
+    name: 'gpt-5.2',
     provider: Vendor.OpenAI,
-    description: 'Fast variant of GPT-5.2 with minimal reasoning step',
+    description: 'Flagship model for coding and agentic tasks. Reasoning.effort: none, low, medium, high, xhigh',
     isActive: true,
-    releaseDate: '2025-12-11',
-    knowledgeCutoff: '2025-08-31',
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 400000,
-        text: true,
-        image: true,
-        cpm: 1.75,
-        cpmCached: 0.025, // 90% discount
-      },
-      output: {
-        tokens: 128000,
-        text: true,
-        cpm: 14,
-      },
-    },
-  }` | - |
-| `'gpt-5.2-thinking'` | `{
-    name: 'gpt-5.2-thinking',
-    provider: Vendor.OpenAI,
-    description: 'GPT-5.2 with extended reasoning capabilities and xhigh reasoning effort',
-    isActive: true,
-    releaseDate: '2025-12-11',
+    releaseDate: '2025-12-01',
     knowledgeCutoff: '2025-08-31',
     features: {
       reasoning: true,
@@ -16746,12 +19020,17 @@ Updated: January 2026
       video: false,
       batchAPI: true,
       promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
       input: {
         tokens: 400000,
         text: true,
         image: true,
         cpm: 1.75,
-        cpmCached: 0.025,
       },
       output: {
         tokens: 128000,
@@ -16763,9 +19042,9 @@ Updated: January 2026
 | `'gpt-5.2-pro'` | `{
     name: 'gpt-5.2-pro',
     provider: Vendor.OpenAI,
-    description: 'Flagship GPT-5.2 model with advanced reasoning and highest quality',
+    description: 'GPT-5.2 pro produces smarter and more precise responses. Reasoning.effort: medium, high, xhigh',
     isActive: true,
-    releaseDate: '2025-12-11',
+    releaseDate: '2025-12-01',
     knowledgeCutoff: '2025-08-31',
     features: {
       reasoning: true,
@@ -16780,12 +19059,17 @@ Updated: January 2026
       video: false,
       batchAPI: true,
       promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
       input: {
         tokens: 400000,
         text: true,
         image: true,
         cpm: 21,
-        cpmCached: 0.025,
       },
       output: {
         tokens: 128000,
@@ -16794,13 +19078,13 @@ Updated: January 2026
       },
     },
   }` | - |
-| `'gpt-5.2-codex'` | `{
-    name: 'gpt-5.2-codex',
+| `'gpt-5'` | `{
+    name: 'gpt-5',
     provider: Vendor.OpenAI,
-    description: 'Most advanced agentic coding model for complex software engineering',
+    description: 'Previous intelligent reasoning model for coding and agentic tasks. Reasoning.effort: minimal, low, medium, high',
     isActive: true,
-    releaseDate: '2026-01-14',
-    knowledgeCutoff: '2025-08-31',
+    releaseDate: '2025-08-01',
+    knowledgeCutoff: '2024-09-30',
     features: {
       reasoning: true,
       streaming: true,
@@ -16814,83 +19098,20 @@ Updated: January 2026
       video: false,
       batchAPI: true,
       promptCaching: true,
-      input: {
-        tokens: 400000,
-        text: true,
-        image: true,
-        cpm: 1.75,
-        cpmCached: 0.025,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
       },
-      output: {
-        tokens: 128000,
-        text: true,
-        cpm: 14,
-      },
-    },
-  }` | - |
-| `'gpt-5.1'` | `{
-    name: 'gpt-5.1',
-    provider: Vendor.OpenAI,
-    description: 'Balanced GPT-5.1 model with expanded context window',
-    isActive: true,
-    releaseDate: '2025-11-13',
-    knowledgeCutoff: '2025-08-31',
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 272000,
-        text: true,
-        image: true,
-        cpm: 1.25,
-        cpmCached: 0.025,
-      },
-      output: {
-        tokens: 128000,
-        text: true,
-        cpm: 10,
-      },
-    },
-  }` | - |
-| `'gpt-5'` | `{
-    name: 'gpt-5',
-    provider: Vendor.OpenAI,
-    description: 'Standard GPT-5 model with large context window',
-    isActive: true,
-    releaseDate: '2025-08-07',
-    knowledgeCutoff: '2025-08-31',
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      batchAPI: true,
-      promptCaching: true,
       input: {
         tokens: 400000,
         text: true,
         image: true,
         cpm: 1.25,
-        cpmCached: 0.025,
       },
       output: {
-        tokens: 16384,
+        tokens: 128000,
         text: true,
         cpm: 10,
       },
@@ -16899,12 +19120,12 @@ Updated: January 2026
 | `'gpt-5-mini'` | `{
     name: 'gpt-5-mini',
     provider: Vendor.OpenAI,
-    description: 'Fast, cost-efficient version of GPT-5',
+    description: 'Faster, cost-efficient version of GPT-5 for well-defined tasks and precise prompts',
     isActive: true,
-    releaseDate: '2025-08-07',
-    knowledgeCutoff: '2025-08-31',
+    releaseDate: '2025-08-01',
+    knowledgeCutoff: '2024-05-31',
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
@@ -16916,15 +19137,20 @@ Updated: January 2026
       video: false,
       batchAPI: true,
       promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
       input: {
-        tokens: 200000,
+        tokens: 400000,
         text: true,
         image: true,
         cpm: 0.25,
-        cpmCached: 0.025,
       },
       output: {
-        tokens: 16384,
+        tokens: 128000,
         text: true,
         cpm: 2,
       },
@@ -16933,31 +19159,37 @@ Updated: January 2026
 | `'gpt-5-nano'` | `{
     name: 'gpt-5-nano',
     provider: Vendor.OpenAI,
-    description: 'Fastest, most cost-effective version of GPT-5',
+    description: 'Fastest, most cost-efficient GPT-5. Great for summarization and classification tasks',
     isActive: true,
-    releaseDate: '2025-08-07',
-    knowledgeCutoff: '2025-08-31',
+    releaseDate: '2025-08-01',
+    knowledgeCutoff: '2024-05-31',
     features: {
-      reasoning: false,
+      reasoning: true,
       streaming: true,
       structuredOutput: true,
       functionCalling: true,
       fineTuning: false,
       predictedOutputs: false,
       realtime: false,
-      vision: false,
+      vision: true,
       audio: false,
       video: false,
       batchAPI: true,
       promptCaching: true,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
       input: {
-        tokens: 128000,
+        tokens: 400000,
         text: true,
+        image: true,
         cpm: 0.05,
-        cpmCached: 0.025,
       },
       output: {
-        tokens: 4096,
+        tokens: 128000,
         text: true,
         cpm: 0.4,
       },
@@ -16966,9 +19198,9 @@ Updated: January 2026
 | `'gpt-4.1'` | `{
     name: 'gpt-4.1',
     provider: Vendor.OpenAI,
-    description: 'GPT-4.1 specialized for coding with large context window',
+    description: 'GPT-4.1 specialized for coding with 1M token context window',
     isActive: true,
-    releaseDate: '2025-06-01',
+    releaseDate: '2025-04-14',
     knowledgeCutoff: '2025-04-01',
     features: {
       reasoning: false,
@@ -16987,22 +19219,21 @@ Updated: January 2026
         tokens: 1000000,
         text: true,
         image: true,
-        cpm: 0.5,
-        cpmCached: 0.025,
+        cpm: 2,
       },
       output: {
         tokens: 32768,
         text: true,
-        cpm: 2,
+        cpm: 8,
       },
     },
   }` | - |
 | `'gpt-4.1-mini'` | `{
     name: 'gpt-4.1-mini',
     provider: Vendor.OpenAI,
-    description: 'Efficient GPT-4.1 model with excellent instruction following',
+    description: 'Efficient GPT-4.1 model, beats GPT-4o in many benchmarks at 83% lower cost',
     isActive: true,
-    releaseDate: '2025-06-01',
+    releaseDate: '2025-04-14',
     knowledgeCutoff: '2025-04-01',
     features: {
       reasoning: false,
@@ -17022,7 +19253,6 @@ Updated: January 2026
         text: true,
         image: true,
         cpm: 0.4,
-        cpmCached: 0.025,
       },
       output: {
         tokens: 16384,
@@ -17031,45 +19261,194 @@ Updated: January 2026
       },
     },
   }` | - |
+| `'gpt-4.1-nano'` | `{
+    name: 'gpt-4.1-nano',
+    provider: Vendor.OpenAI,
+    description: 'Fastest and cheapest model with 1M context. 80.1% MMLU, ideal for classification/autocompletion',
+    isActive: true,
+    releaseDate: '2025-04-14',
+    knowledgeCutoff: '2025-04-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 1000000,
+        text: true,
+        image: true,
+        cpm: 0.1,
+      },
+      output: {
+        tokens: 16384,
+        text: true,
+        cpm: 0.4,
+      },
+    },
+  }` | - |
+| `'gpt-4o'` | `{
+    name: 'gpt-4o',
+    provider: Vendor.OpenAI,
+    description: 'Versatile omni model with audio support. Legacy but still available',
+    isActive: true,
+    releaseDate: '2024-05-13',
+    knowledgeCutoff: '2024-04-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: true,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128000,
+        text: true,
+        image: true,
+        audio: true,
+        cpm: 2.5,
+      },
+      output: {
+        tokens: 16384,
+        text: true,
+        audio: true,
+        cpm: 10,
+      },
+    },
+  }` | - |
+| `'gpt-4o-mini'` | `{
+    name: 'gpt-4o-mini',
+    provider: Vendor.OpenAI,
+    description: 'Fast, affordable omni model with audio support',
+    isActive: true,
+    releaseDate: '2024-07-18',
+    knowledgeCutoff: '2024-04-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: true,
+      predictedOutputs: false,
+      realtime: true,
+      vision: true,
+      audio: true,
+      video: false,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 128000,
+        text: true,
+        image: true,
+        audio: true,
+        cpm: 0.15,
+      },
+      output: {
+        tokens: 16384,
+        text: true,
+        audio: true,
+        cpm: 0.6,
+      },
+    },
+  }` | - |
 | `'o3-mini'` | `{
     name: 'o3-mini',
     provider: Vendor.OpenAI,
     description: 'Fast reasoning model tailored for coding, math, and science',
     isActive: true,
-    releaseDate: '2025-01-01',
-    knowledgeCutoff: '2023-10-01',
+    releaseDate: '2025-01-31',
+    knowledgeCutoff: '2024-10-01',
     features: {
       reasoning: true,
       streaming: true,
-      structuredOutput: false,
-      functionCalling: false,
+      structuredOutput: true,
+      functionCalling: true,
       fineTuning: false,
       predictedOutputs: false,
       realtime: false,
-      vision: false,
+      vision: true,
       audio: false,
       video: false,
       batchAPI: true,
       promptCaching: false,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
       input: {
         tokens: 200000,
         text: true,
-        cpm: 0.4,
+        image: true,
+        cpm: 1.1,
       },
       output: {
         tokens: 100000,
         text: true,
-        cpm: 1.6,
+        cpm: 4.4,
+      },
+    },
+  }` | - |
+| `'o1'` | `{
+    name: 'o1',
+    provider: Vendor.OpenAI,
+    description: 'Advanced reasoning model for complex problems',
+    isActive: true,
+    releaseDate: '2024-12-17',
+    knowledgeCutoff: '2024-10-01',
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: true,
+      promptCaching: false,
+      parameters: {
+        temperature: false,
+        topP: false,
+        frequencyPenalty: false,
+        presencePenalty: false,
+      },
+      input: {
+        tokens: 200000,
+        text: true,
+        image: true,
+        cpm: 15,
+      },
+      output: {
+        tokens: 100000,
+        text: true,
+        cpm: 60,
       },
     },
   }` | - |
 | `'claude-opus-4-5-20251101'` | `{
     name: 'claude-opus-4-5-20251101',
     provider: Vendor.Anthropic,
-    description: 'Flagship Claude model with extended thinking and 80.9% SWE-bench score',
+    description: 'Premium model combining maximum intelligence with practical performance',
     isActive: true,
-    releaseDate: '2025-11-24',
-    knowledgeCutoff: '2025-03-01',
+    releaseDate: '2025-11-01',
+    knowledgeCutoff: '2025-05-01',
     features: {
       reasoning: false,
       streaming: true,
@@ -17089,7 +19468,7 @@ Updated: January 2026
         text: true,
         image: true,
         cpm: 5,
-        cpmCached: 0.5, // 10x reduction for cache read
+        cpmCached: 0.5,
       },
       output: {
         tokens: 64000,
@@ -17101,10 +19480,10 @@ Updated: January 2026
 | `'claude-sonnet-4-5-20250929'` | `{
     name: 'claude-sonnet-4-5-20250929',
     provider: Vendor.Anthropic,
-    description: 'Balanced Claude model with computer use and extended thinking',
+    description: 'Smart model for complex agents and coding. Best balance of intelligence, speed, cost',
     isActive: true,
     releaseDate: '2025-09-29',
-    knowledgeCutoff: '2025-03-01',
+    knowledgeCutoff: '2025-01-01',
     features: {
       reasoning: false,
       streaming: true,
@@ -17136,10 +19515,10 @@ Updated: January 2026
 | `'claude-haiku-4-5-20251001'` | `{
     name: 'claude-haiku-4-5-20251001',
     provider: Vendor.Anthropic,
-    description: 'Fastest Claude model with extended thinking and lowest latency',
+    description: 'Fastest model with near-frontier intelligence. Matches Sonnet 4 on coding',
     isActive: true,
     releaseDate: '2025-10-01',
-    knowledgeCutoff: '2025-03-01',
+    knowledgeCutoff: '2025-02-01',
     features: {
       reasoning: false,
       streaming: true,
@@ -17171,10 +19550,115 @@ Updated: January 2026
 | `'claude-opus-4-1-20250805'` | `{
     name: 'claude-opus-4-1-20250805',
     provider: Vendor.Anthropic,
-    description: 'Legacy Claude Opus 4.1 (67% more expensive than 4.5)',
+    description: 'Legacy Opus 4.1 focused on agentic tasks, real-world coding, and reasoning',
     isActive: true,
     releaseDate: '2025-08-05',
-    knowledgeCutoff: '2025-03-01',
+    knowledgeCutoff: '2025-01-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 200000,
+        text: true,
+        image: true,
+        cpm: 15,
+        cpmCached: 1.5,
+      },
+      output: {
+        tokens: 32000,
+        text: true,
+        cpm: 75,
+      },
+    },
+  }` | - |
+| `'claude-sonnet-4-20250514'` | `{
+    name: 'claude-sonnet-4-20250514',
+    provider: Vendor.Anthropic,
+    description: 'Legacy Sonnet 4. Default for most users, supports 1M context beta',
+    isActive: true,
+    releaseDate: '2025-05-14',
+    knowledgeCutoff: '2025-01-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 200000, // 1M with beta header
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3,
+      },
+      output: {
+        tokens: 64000,
+        text: true,
+        cpm: 15,
+      },
+    },
+  }` | - |
+| `'claude-3-7-sonnet-20250219'` | `{
+    name: 'claude-3-7-sonnet-20250219',
+    provider: Vendor.Anthropic,
+    description: 'Claude 3.7 Sonnet with extended thinking, supports 128K output beta',
+    isActive: true,
+    releaseDate: '2025-02-19',
+    knowledgeCutoff: '2024-10-01',
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      extendedThinking: true,
+      batchAPI: true,
+      promptCaching: true,
+      input: {
+        tokens: 200000,
+        text: true,
+        image: true,
+        cpm: 3,
+        cpmCached: 0.3,
+      },
+      output: {
+        tokens: 64000, // 128K with beta header
+        text: true,
+        cpm: 15,
+      },
+    },
+  }` | - |
+| `'claude-3-haiku-20240307'` | `{
+    name: 'claude-3-haiku-20240307',
+    provider: Vendor.Anthropic,
+    description: 'Fast legacy model. Recommend migrating to Haiku 4.5',
+    isActive: true,
+    releaseDate: '2024-03-07',
+    knowledgeCutoff: '2023-08-01',
     features: {
       reasoning: false,
       streaming: true,
@@ -17193,48 +19677,13 @@ Updated: January 2026
         tokens: 200000,
         text: true,
         image: true,
-        cpm: 15,
-        cpmCached: 1.5,
+        cpm: 0.25,
+        cpmCached: 0.03,
       },
       output: {
-        tokens: 64000,
+        tokens: 4096,
         text: true,
-        cpm: 75,
-      },
-    },
-  }` | - |
-| `'claude-sonnet-4-20250514'` | `{
-    name: 'claude-sonnet-4-20250514',
-    provider: Vendor.Anthropic,
-    description: 'Legacy Claude Sonnet 4 with optional 1M token context',
-    isActive: true,
-    releaseDate: '2025-05-14',
-    knowledgeCutoff: '2025-03-01',
-    features: {
-      reasoning: false,
-      streaming: true,
-      structuredOutput: true,
-      functionCalling: true,
-      fineTuning: false,
-      predictedOutputs: false,
-      realtime: false,
-      vision: true,
-      audio: false,
-      video: false,
-      extendedThinking: false,
-      batchAPI: true,
-      promptCaching: true,
-      input: {
-        tokens: 1000000, // Up to 1M with premium pricing beyond 200K
-        text: true,
-        image: true,
-        cpm: 3,
-        cpmCached: 0.3,
-      },
-      output: {
-        tokens: 64000,
-        text: true,
-        cpm: 15,
+        cpm: 1.25,
       },
     },
   }` | - |
@@ -17264,19 +19713,19 @@ Updated: January 2026
         image: true,
         audio: true,
         video: true,
-        cpm: 0.5,
+        cpm: 0.15,
       },
       output: {
-        tokens: 64000,
+        tokens: 65536,
         text: true,
-        cpm: 3,
+        cpm: 0.6,
       },
     },
   }` | - |
-| `'gemini-3-pro'` | `{
-    name: 'gemini-3-pro',
+| `'gemini-3-pro-preview'` | `{
+    name: 'gemini-3-pro-preview',
     provider: Vendor.Google,
-    description: 'Most advanced reasoning Gemini model with 1M token context',
+    description: 'Most advanced reasoning Gemini model for complex tasks',
     isActive: true,
     releaseDate: '2025-11-18',
     knowledgeCutoff: '2025-08-01',
@@ -17299,19 +19748,19 @@ Updated: January 2026
         image: true,
         audio: true,
         video: true,
-        cpm: 2, // $2 up to 200K, $4 beyond
+        cpm: 1.25,
       },
       output: {
-        tokens: 64000,
+        tokens: 65536,
         text: true,
-        cpm: 12, // $12 up to 200K, $18 beyond
+        cpm: 10,
       },
     },
   }` | - |
-| `'gemini-3-pro-image'` | `{
-    name: 'gemini-3-pro-image',
+| `'gemini-3-pro-image-preview'` | `{
+    name: 'gemini-3-pro-image-preview',
     provider: Vendor.Google,
-    description: 'Highest quality image generation model (Nano Banana Pro)',
+    description: 'Highest quality image generation model',
     isActive: true,
     releaseDate: '2025-11-18',
     knowledgeCutoff: '2025-08-01',
@@ -17332,20 +19781,20 @@ Updated: January 2026
         tokens: 1000000,
         text: true,
         image: true,
-        cpm: 2,
+        cpm: 1.25,
       },
       output: {
-        tokens: 64000,
+        tokens: 65536,
         text: true,
         image: true,
-        cpm: 120, // For image output
+        cpm: 10,
       },
     },
   }` | - |
 | `'gemini-2.5-pro'` | `{
     name: 'gemini-2.5-pro',
     provider: Vendor.Google,
-    description: 'Balanced multimodal model built for agents',
+    description: 'Advanced multimodal model built for deep reasoning and agents',
     isActive: true,
     releaseDate: '2025-03-01',
     knowledgeCutoff: '2025-01-01',
@@ -17371,7 +19820,7 @@ Updated: January 2026
         cpm: 1.25,
       },
       output: {
-        tokens: 64000,
+        tokens: 65536,
         text: true,
         cpm: 10,
       },
@@ -17380,7 +19829,7 @@ Updated: January 2026
 | `'gemini-2.5-flash'` | `{
     name: 'gemini-2.5-flash',
     provider: Vendor.Google,
-    description: 'Cost-effective model with upgraded reasoning',
+    description: 'Fast, cost-effective model with excellent reasoning',
     isActive: true,
     releaseDate: '2025-06-17',
     knowledgeCutoff: '2025-01-01',
@@ -17403,19 +19852,19 @@ Updated: January 2026
         image: true,
         audio: true,
         video: true,
-        cpm: 0.1,
+        cpm: 0.15,
       },
       output: {
-        tokens: 64000,
+        tokens: 65536,
         text: true,
-        cpm: 0.4,
+        cpm: 0.6,
       },
     },
   }` | - |
 | `'gemini-2.5-flash-lite'` | `{
     name: 'gemini-2.5-flash-lite',
     provider: Vendor.Google,
-    description: 'Lowest latency Gemini model with 1M context',
+    description: 'Lowest latency for high-volume tasks, summarization, classification',
     isActive: true,
     releaseDate: '2025-06-17',
     knowledgeCutoff: '2025-01-01',
@@ -17438,21 +19887,21 @@ Updated: January 2026
         image: true,
         audio: true,
         video: true,
-        cpm: 0.1,
+        cpm: 0.075,
       },
       output: {
-        tokens: 64000,
+        tokens: 65536,
         text: true,
-        cpm: 0.4,
+        cpm: 0.3,
       },
     },
   }` | - |
 | `'gemini-2.5-flash-image'` | `{
     name: 'gemini-2.5-flash-image',
     provider: Vendor.Google,
-    description: 'State-of-the-art image generation and editing (1290 tokens per image)',
+    description: 'Image generation and editing model',
     isActive: true,
-    releaseDate: '2026-01-01',
+    releaseDate: '2025-09-01',
     knowledgeCutoff: '2025-01-01',
     features: {
       reasoning: true,
@@ -17471,13 +19920,13 @@ Updated: January 2026
         tokens: 1000000,
         text: true,
         image: true,
-        cpm: 0.1,
+        cpm: 0.15,
       },
       output: {
-        tokens: 64000,
+        tokens: 65536,
         text: true,
         image: true,
-        cpm: 30, // For image output
+        cpm: 0.6,
       },
     },
   }` | - |
@@ -17504,7 +19953,7 @@ constructor(private config: OAuthConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/types").OAuthConfig`
+- `config`: `OAuthConfig`
 
 </details>
 
@@ -17593,17 +20042,6 @@ async revokeToken(revocationUrl?: string, userId?: string): Promise&lt;void&gt;
 
 **Returns:** `Promise&lt;void&gt;`
 
-#### `cleanupExpiredPKCE()`
-
-Clean up expired PKCE data to prevent memory leaks
-Removes verifiers and states older than PKCE_TTL (15 minutes)
-
-```typescript
-private cleanupExpiredPKCE(): void
-```
-
-**Returns:** `void`
-
 </details>
 
 <details>
@@ -17611,7 +20049,7 @@ private cleanupExpiredPKCE(): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `tokenStore` | `tokenStore: import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/TokenStore").TokenStore` | - |
+| `tokenStore` | `tokenStore: TokenStore` | - |
 | `codeVerifiers` | `codeVerifiers: Map&lt;string, { verifier: string; timestamp: number; }&gt;` | - |
 | `states` | `states: Map&lt;string, { state: string; timestamp: number; }&gt;` | - |
 | `refreshLocks` | `refreshLocks: Map&lt;string, Promise&lt;string&gt;&gt;` | - |
@@ -17635,7 +20073,7 @@ constructor(private config: OAuthConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/types").OAuthConfig`
+- `config`: `OAuthConfig`
 
 </details>
 
@@ -17648,16 +20086,6 @@ Get token using client credentials
 
 ```typescript
 async getToken(): Promise&lt;string&gt;
-```
-
-**Returns:** `Promise&lt;string&gt;`
-
-#### `requestToken()`
-
-Request a new token from the authorization server
-
-```typescript
-private async requestToken(): Promise&lt;string&gt;
 ```
 
 **Returns:** `Promise&lt;string&gt;`
@@ -17690,7 +20118,7 @@ async isTokenValid(): Promise&lt;boolean&gt;
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `tokenStore` | `tokenStore: import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/TokenStore").TokenStore` | - |
+| `tokenStore` | `tokenStore: TokenStore` | - |
 
 </details>
 
@@ -17710,22 +20138,12 @@ constructor(private config: OAuthConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/types").OAuthConfig`
+- `config`: `OAuthConfig`
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
-
-#### `generateJWT()`
-
-Generate signed JWT assertion
-
-```typescript
-private async generateJWT(): Promise&lt;string&gt;
-```
-
-**Returns:** `Promise&lt;string&gt;`
 
 #### `getToken()`
 
@@ -17733,16 +20151,6 @@ Get token using JWT Bearer assertion
 
 ```typescript
 async getToken(): Promise&lt;string&gt;
-```
-
-**Returns:** `Promise&lt;string&gt;`
-
-#### `requestToken()`
-
-Request token using JWT assertion
-
-```typescript
-private async requestToken(): Promise&lt;string&gt;
 ```
 
 **Returns:** `Promise&lt;string&gt;`
@@ -17774,7 +20182,7 @@ async isTokenValid(): Promise&lt;boolean&gt;
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `tokenStore` | `tokenStore: import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/TokenStore").TokenStore` | - |
+| `tokenStore` | `tokenStore: TokenStore` | - |
 | `privateKey` | `privateKey: string` | - |
 
 </details>
@@ -17795,7 +20203,7 @@ constructor(config: OAuthConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/types").OAuthConfig`
+- `config`: `OAuthConfig`
 
 </details>
 
@@ -17885,17 +20293,6 @@ async revokeToken(revocationUrl?: string, userId?: string): Promise&lt;void&gt;
 
 **Returns:** `Promise&lt;void&gt;`
 
-#### `validateConfig()`
-
-```typescript
-private validateConfig(config: OAuthConfig): void
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/types").OAuthConfig`
-
-**Returns:** `void`
-
 </details>
 
 <details>
@@ -17903,7 +20300,7 @@ private validateConfig(config: OAuthConfig): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `flow` | `flow: import("/Users/aantich/dev/oneringai/src/connectors/oauth/flows/AuthCodePKCE").AuthCodePKCEFlow | import("/Users/aantich/dev/oneringai/src/connectors/oauth/flows/ClientCredentials").ClientCredentialsFlow | import("/Users/aantich/dev/oneringai/src/connectors/oauth/flows/JWTBearer").JWTBearerFlow | import("/Users/aantich/dev/oneringai/src/connectors/oauth/flows/StaticToken").StaticTokenFlow` | - |
+| `flow` | `flow: AuthCodePKCEFlow | ClientCredentialsFlow | JWTBearerFlow | StaticTokenFlow` | - |
 
 </details>
 
@@ -17923,7 +20320,7 @@ constructor(config: OAuthConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/types").OAuthConfig`
+- `config`: `OAuthConfig`
 
 </details>
 
@@ -18001,27 +20398,12 @@ constructor(storageKey: string = 'default', storage?: ITokenStorage)
 
 **Parameters:**
 - `storageKey`: `string` *(optional)* (default: `'default'`)
-- `storage`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").ITokenStorage | undefined` *(optional)*
+- `storage`: `ITokenStorage | undefined` *(optional)*
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
-
-#### `getScopedKey()`
-
-Get user-scoped storage key
-For multi-user support, keys are scoped per user: "provider:userId"
-For single-user (backward compatible), userId is omitted or "default"
-
-```typescript
-private getScopedKey(userId?: string): string
-```
-
-**Parameters:**
-- `userId`: `string | undefined` *(optional)*
-
-**Returns:** `string`
 
 #### `storeToken()`
 
@@ -18114,7 +20496,7 @@ async getTokenInfo(userId?: string): Promise&lt;StoredToken | null&gt;
 **Parameters:**
 - `userId`: `string | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").StoredToken | null&gt;`
+**Returns:** `Promise&lt;StoredToken | null&gt;`
 
 </details>
 
@@ -18123,7 +20505,7 @@ async getTokenInfo(userId?: string): Promise&lt;StoredToken | null&gt;
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `storage` | `storage: import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").ITokenStorage` | - |
+| `storage` | `storage: ITokenStorage` | - |
 | `baseStorageKey` | `baseStorageKey: string` | - |
 
 </details>
@@ -18188,7 +20570,7 @@ storeToken(key: string, token: StoredToken): Promise&lt;void&gt;;
 
 **Parameters:**
 - `key`: `string`
-- `token`: `import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").StoredToken`
+- `token`: `StoredToken`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -18203,7 +20585,7 @@ getToken(key: string): Promise&lt;StoredToken | null&gt;;
 **Parameters:**
 - `key`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/connectors/oauth/domain/ITokenStorage").StoredToken | null&gt;`
+**Returns:** `Promise&lt;StoredToken | null&gt;`
 
 #### `deleteToken()`
 
@@ -18268,7 +20650,7 @@ hasToken(key: string): Promise&lt;boolean&gt;;
 
 ### OAuthConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:26`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:34`](src/domain/entities/Connector.ts)
 
 OAuth 2.0 authentication for connectors
 Supports multiple OAuth flows
@@ -18594,7 +20976,7 @@ constructor(
 
 **Parameters:**
 - `name`: `string`
-- `config`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreakerConfig&gt;` *(optional)* (default: `{}`)
+- `config`: `Partial&lt;CircuitBreakerConfig&gt;` *(optional)* (default: `{}`)
 
 </details>
 
@@ -18614,52 +20996,6 @@ async execute(fn: () =&gt; Promise&lt;T&gt;): Promise&lt;T&gt;
 
 **Returns:** `Promise&lt;T&gt;`
 
-#### `recordSuccess()`
-
-Record successful execution
-
-```typescript
-private recordSuccess(): void
-```
-
-**Returns:** `void`
-
-#### `recordFailure()`
-
-Record failed execution
-
-```typescript
-private recordFailure(error: Error): void
-```
-
-**Parameters:**
-- `error`: `Error`
-
-**Returns:** `void`
-
-#### `transitionTo()`
-
-Transition to new state
-
-```typescript
-private transitionTo(newState: CircuitState): void
-```
-
-**Parameters:**
-- `newState`: `import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitState`
-
-**Returns:** `void`
-
-#### `pruneOldFailures()`
-
-Remove failures outside the time window
-
-```typescript
-private pruneOldFailures(): void
-```
-
-**Returns:** `void`
-
 #### `getState()`
 
 Get current state
@@ -18668,7 +21004,7 @@ Get current state
 getState(): CircuitState
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitState`
+**Returns:** `CircuitState`
 
 #### `getMetrics()`
 
@@ -18678,7 +21014,7 @@ Get current metrics
 getMetrics(): CircuitBreakerMetrics
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreakerMetrics`
+**Returns:** `CircuitBreakerMetrics`
 
 #### `reset()`
 
@@ -18708,7 +21044,7 @@ Get configuration
 getConfig(): CircuitBreakerConfig
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreakerConfig`
+**Returns:** `CircuitBreakerConfig`
 
 </details>
 
@@ -18717,8 +21053,8 @@ getConfig(): CircuitBreakerConfig
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `state` | `state: import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitState` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreakerConfig` | - |
+| `state` | `state: CircuitState` | - |
+| `config` | `config: CircuitBreakerConfig` | - |
 | `failures` | `failures: FailureRecord[]` | - |
 | `lastError` | `lastError: string` | - |
 | `consecutiveSuccesses` | `consecutiveSuccesses: number` | - |
@@ -18797,7 +21133,7 @@ increment(metric: string, value: number = 1, tags?: MetricTags): void
 **Parameters:**
 - `metric`: `string`
 - `value`: `number` *(optional)* (default: `1`)
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -18810,7 +21146,7 @@ gauge(metric: string, value: number, tags?: MetricTags): void
 **Parameters:**
 - `metric`: `string`
 - `value`: `number`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -18823,7 +21159,7 @@ timing(metric: string, duration: number, tags?: MetricTags): void
 **Parameters:**
 - `metric`: `string`
 - `duration`: `number`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -18836,21 +21172,7 @@ histogram(metric: string, value: number, tags?: MetricTags): void
 **Parameters:**
 - `metric`: `string`
 - `value`: `number`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
-
-**Returns:** `void`
-
-#### `log()`
-
-```typescript
-private log(type: string, metric: string, value: any, tags?: MetricTags): void
-```
-
-**Parameters:**
-- `type`: `string`
-- `metric`: `string`
-- `value`: `any`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -18883,25 +21205,12 @@ constructor(config: LoggerConfig =
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").LoggerConfig` *(optional)* (default: `{}`)
+- `config`: `LoggerConfig` *(optional)* (default: `{}`)
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
-
-#### `initFileStream()`
-
-Initialize file stream for logging
-
-```typescript
-private initFileStream(filePath: string): void
-```
-
-**Parameters:**
-- `filePath`: `string`
-
-**Returns:** `void`
 
 #### `child()`
 
@@ -18914,7 +21223,7 @@ child(context: Record&lt;string, any&gt;): FrameworkLogger
 **Parameters:**
 - `context`: `Record&lt;string, any&gt;`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").FrameworkLogger`
+**Returns:** `FrameworkLogger`
 
 #### `trace()`
 
@@ -18986,60 +21295,6 @@ error(obj: Record&lt;string, any&gt; | string, msg?: string): void
 
 **Returns:** `void`
 
-#### `log()`
-
-Internal log method
-
-```typescript
-private log(level: LogLevel, obj: Record&lt;string, any&gt; | string, msg?: string): void
-```
-
-**Parameters:**
-- `level`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").LogLevel`
-- `obj`: `string | Record&lt;string, any&gt;`
-- `msg`: `string | undefined` *(optional)*
-
-**Returns:** `void`
-
-#### `output()`
-
-Output log entry
-
-```typescript
-private output(entry: LogEntry): void
-```
-
-**Parameters:**
-- `entry`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").LogEntry`
-
-**Returns:** `void`
-
-#### `prettyPrint()`
-
-Pretty print for development
-
-```typescript
-private prettyPrint(entry: LogEntry): void
-```
-
-**Parameters:**
-- `entry`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").LogEntry`
-
-**Returns:** `void`
-
-#### `jsonPrint()`
-
-JSON print for production
-
-```typescript
-private jsonPrint(entry: LogEntry): void
-```
-
-**Parameters:**
-- `entry`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").LogEntry`
-
-**Returns:** `void`
-
 #### `updateConfig()`
 
 Update configuration
@@ -19049,17 +21304,7 @@ updateConfig(config: Partial&lt;LoggerConfig&gt;): void
 ```
 
 **Parameters:**
-- `config`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").LoggerConfig&gt;`
-
-**Returns:** `void`
-
-#### `closeFileStream()`
-
-Close file stream
-
-```typescript
-private closeFileStream(): void
-```
+- `config`: `Partial&lt;LoggerConfig&gt;`
 
 **Returns:** `void`
 
@@ -19081,7 +21326,7 @@ Get current log level
 getLevel(): LogLevel
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").LogLevel`
+**Returns:** `LogLevel`
 
 #### `isLevelEnabled()`
 
@@ -19092,7 +21337,7 @@ isLevelEnabled(level: LogLevel): boolean
 ```
 
 **Parameters:**
-- `level`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").LogLevel`
+- `level`: `LogLevel`
 
 **Returns:** `boolean`
 
@@ -19103,10 +21348,10 @@ isLevelEnabled(level: LogLevel): boolean
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").LoggerConfig` | - |
+| `config` | `config: LoggerConfig` | - |
 | `context` | `context: Record&lt;string, any&gt;` | - |
 | `levelValue` | `levelValue: number` | - |
-| `fileStream?` | `fileStream: import("fs").WriteStream | undefined` | - |
+| `fileStream?` | `fileStream: WriteStream | undefined` | - |
 
 </details>
 
@@ -19152,6 +21397,157 @@ histogram(): void
 ```
 
 **Returns:** `void`
+
+</details>
+
+---
+
+### RateLimitError `class`
+
+📍 [`src/infrastructure/resilience/RateLimiter.ts:13`](src/infrastructure/resilience/RateLimiter.ts)
+
+Error thrown when rate limit is exceeded and onLimit is 'throw'
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    public readonly retryAfterMs: number,
+    message?: string
+  )
+```
+
+**Parameters:**
+- `retryAfterMs`: `number`
+- `message`: `string | undefined` *(optional)*
+
+</details>
+
+---
+
+### TokenBucketRateLimiter `class`
+
+📍 [`src/infrastructure/resilience/RateLimiter.ts:71`](src/infrastructure/resilience/RateLimiter.ts)
+
+Token bucket rate limiter implementation
+
+Uses a sliding window approach where tokens are refilled completely
+when the time window expires.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: Partial&lt;RateLimiterConfig&gt; =
+```
+
+**Parameters:**
+- `config`: `Partial&lt;RateLimiterConfig&gt;` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `acquire()`
+
+Acquire a token (request permission to make an LLM call)
+
+```typescript
+async acquire(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `tryAcquire()`
+
+Try to acquire without waiting
+
+```typescript
+tryAcquire(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `getAvailableTokens()`
+
+Get current available tokens
+
+```typescript
+getAvailableTokens(): number
+```
+
+**Returns:** `number`
+
+#### `getWaitTime()`
+
+Get time until next token is available
+
+```typescript
+getWaitTime(): number
+```
+
+**Returns:** `number`
+
+#### `getMetrics()`
+
+Get rate limiter metrics
+
+```typescript
+getMetrics(): RateLimiterMetrics
+```
+
+**Returns:** `RateLimiterMetrics`
+
+#### `reset()`
+
+Reset the rate limiter state
+
+```typescript
+reset(): void
+```
+
+**Returns:** `void`
+
+#### `resetMetrics()`
+
+Reset metrics
+
+```typescript
+resetMetrics(): void
+```
+
+**Returns:** `void`
+
+#### `getConfig()`
+
+Get the current configuration
+
+```typescript
+getConfig(): Required&lt;RateLimiterConfig&gt;
+```
+
+**Returns:** `Required&lt;RateLimiterConfig&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tokens` | `tokens: number` | - |
+| `lastRefill` | `lastRefill: number` | - |
+| `config` | `config: Required&lt;RateLimiterConfig&gt;` | - |
+| `waitQueue` | `waitQueue: { resolve: () =&gt; void; reject: (e: Error) =&gt; void; timeout?: NodeJS.Timeout | undefined; }[]` | - |
+| `totalRequests` | `totalRequests: number` | - |
+| `throttledRequests` | `throttledRequests: number` | - |
+| `totalWaitMs` | `totalWaitMs: number` | - |
 
 </details>
 
@@ -19490,7 +21886,7 @@ increment(metric: string, value?: number, tags?: MetricTags): void;
 **Parameters:**
 - `metric`: `string`
 - `value`: `number | undefined` *(optional)*
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -19505,7 +21901,7 @@ gauge(metric: string, value: number, tags?: MetricTags): void;
 **Parameters:**
 - `metric`: `string`
 - `value`: `number`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -19520,7 +21916,7 @@ timing(metric: string, duration: number, tags?: MetricTags): void;
 **Parameters:**
 - `metric`: `string`
 - `duration`: `number`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
 
@@ -19535,9 +21931,49 @@ histogram(metric: string, value: number, tags?: MetricTags): void;
 **Parameters:**
 - `metric`: `string`
 - `value`: `number`
-- `tags`: `import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Metrics").MetricTags | undefined` *(optional)*
+- `tags`: `MetricTags | undefined` *(optional)*
 
 **Returns:** `void`
+
+</details>
+
+---
+
+### RateLimiterConfig `interface`
+
+📍 [`src/infrastructure/resilience/RateLimiter.ts:27`](src/infrastructure/resilience/RateLimiter.ts)
+
+Configuration for the rate limiter
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxRequests` | `maxRequests: number;` | Max requests allowed in window |
+| `windowMs?` | `windowMs?: number;` | Time window in ms (default: 60000 = 1 minute) |
+| `onLimit` | `onLimit: 'wait' | 'throw';` | What to do when rate limited |
+| `maxWaitMs?` | `maxWaitMs?: number;` | Max wait time in ms (for 'wait' mode, default: 60000) |
+
+</details>
+
+---
+
+### RateLimiterMetrics `interface`
+
+📍 [`src/infrastructure/resilience/RateLimiter.ts:54`](src/infrastructure/resilience/RateLimiter.ts)
+
+Rate limiter metrics
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `totalRequests` | `totalRequests: number;` | Total requests made |
+| `throttledRequests` | `throttledRequests: number;` | Total requests throttled |
+| `totalWaitMs` | `totalWaitMs: number;` | Total wait time in ms |
+| `avgWaitMs` | `avgWaitMs: number;` | Average wait time in ms |
 
 </details>
 
@@ -19739,6 +22175,26 @@ Default configuration
 
 ---
 
+### DEFAULT_RATE_LIMITER_CONFIG `const`
+
+📍 [`src/infrastructure/resilience/RateLimiter.ts:44`](src/infrastructure/resilience/RateLimiter.ts)
+
+Default rate limiter configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxRequests` | `60` | - |
+| `windowMs` | `60000` | - |
+| `onLimit` | `'wait'` | - |
+| `maxWaitMs` | `60000` | - |
+
+</details>
+
+---
+
 ### LOG_LEVEL_VALUES `const`
 
 📍 [`src/infrastructure/observability/Logger.ts:24`](src/infrastructure/observability/Logger.ts)
@@ -19795,6 +22251,211 @@ constructor(
 
 ---
 
+### DependencyCycleError `class`
+
+📍 [`src/domain/errors/AIErrors.ts:177`](src/domain/errors/AIErrors.ts)
+
+Error thrown when a dependency cycle is detected in a plan
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    /** Task IDs forming the cycle (e.g., ['A', 'B', 'C', 'A']) */
+    public readonly cycle: string[],
+    /** Plan ID where the cycle was detected */
+    public readonly planId?: string
+  )
+```
+
+**Parameters:**
+- `cycle`: `string[]`
+- `planId`: `string | undefined` *(optional)*
+
+</details>
+
+---
+
+### ErrorHandler `class`
+
+📍 [`src/core/ErrorHandler.ts:122`](src/core/ErrorHandler.ts)
+
+Centralized error handling for all agent types.
+
+Features:
+- Consistent error logging with context
+- Automatic retry with exponential backoff
+- Error classification (recoverable vs fatal)
+- Metrics collection
+- Event emission for monitoring
+
+**Example:**
+
+```typescript
+const errorHandler = new ErrorHandler({
+  maxRetries: 3,
+  logErrors: true,
+});
+
+// Handle an error
+errorHandler.handle(error, {
+  agentType: 'agent',
+  operation: 'run',
+});
+
+// Execute with retry
+const result = await errorHandler.executeWithRetry(
+  () => riskyOperation(),
+  { agentType: 'agent', operation: 'riskyOperation' }
+);
+```
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: ErrorHandlerConfig =
+```
+
+**Parameters:**
+- `config`: `ErrorHandlerConfig` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `handle()`
+
+Handle an error with context.
+Logs the error, emits events, and records metrics.
+
+```typescript
+handle(error: Error, context: ErrorContext): void
+```
+
+**Parameters:**
+- `error`: `Error`
+- `context`: `ErrorContext`
+
+**Returns:** `void`
+
+#### `executeWithRetry()`
+
+Execute a function with automatic retry on retryable errors.
+
+```typescript
+async executeWithRetry&lt;T&gt;(
+    fn: () =&gt; Promise&lt;T&gt;,
+    context: ErrorContext
+  ): Promise&lt;T&gt;
+```
+
+**Parameters:**
+- `fn`: `() =&gt; Promise&lt;T&gt;`
+- `context`: `ErrorContext`
+
+**Returns:** `Promise&lt;T&gt;`
+
+#### `wrap()`
+
+Wrap a function with error handling (no retry).
+Useful for wrapping methods that already have their own retry logic.
+
+```typescript
+wrap&lt;TArgs extends unknown[], TResult&gt;(
+    fn: (...args: TArgs) =&gt; Promise&lt;TResult&gt;,
+    contextFactory: (...args: TArgs) =&gt; ErrorContext
+  ): (...args: TArgs) =&gt; Promise&lt;TResult&gt;
+```
+
+**Parameters:**
+- `fn`: `(...args: TArgs) =&gt; Promise&lt;TResult&gt;`
+- `contextFactory`: `(...args: TArgs) =&gt; ErrorContext`
+
+**Returns:** `(...args: TArgs) =&gt; Promise&lt;TResult&gt;`
+
+#### `isRecoverable()`
+
+Check if an error is recoverable (can be retried or handled gracefully).
+
+```typescript
+isRecoverable(error: Error): boolean
+```
+
+**Parameters:**
+- `error`: `Error`
+
+**Returns:** `boolean`
+
+#### `isRetryable()`
+
+Check if an error should be retried.
+
+```typescript
+isRetryable(error: Error): boolean
+```
+
+**Parameters:**
+- `error`: `Error`
+
+**Returns:** `boolean`
+
+#### `addRetryablePattern()`
+
+Add a retryable pattern.
+
+```typescript
+addRetryablePattern(pattern: string): void
+```
+
+**Parameters:**
+- `pattern`: `string`
+
+**Returns:** `void`
+
+#### `removeRetryablePattern()`
+
+Remove a retryable pattern.
+
+```typescript
+removeRetryablePattern(pattern: string): void
+```
+
+**Parameters:**
+- `pattern`: `string`
+
+**Returns:** `void`
+
+#### `getConfig()`
+
+Get current configuration (read-only).
+
+```typescript
+getConfig(): Readonly&lt;Required&lt;ErrorHandlerConfig&gt;&gt;
+```
+
+**Returns:** `Readonly&lt;Required&lt;ErrorHandlerConfig&gt;&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `config` | `config: Required&lt;ErrorHandlerConfig&gt;` | - |
+| `logger` | `logger: FrameworkLogger` | - |
+
+</details>
+
+---
+
 ### InvalidConfigError `class`
 
 📍 [`src/domain/errors/AIErrors.ts:129`](src/domain/errors/AIErrors.ts)
@@ -19810,6 +22471,144 @@ constructor(message: string)
 
 **Parameters:**
 - `message`: `string`
+
+</details>
+
+---
+
+### MCPConnectionError `class`
+
+📍 [`src/domain/errors/MCPError.ts:27`](src/domain/errors/MCPError.ts)
+
+Connection-related errors (failed to connect, disconnected unexpectedly)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(message: string, serverName?: string, cause?: Error)
+```
+
+**Parameters:**
+- `message`: `string`
+- `serverName`: `string | undefined` *(optional)*
+- `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### MCPError `class`
+
+📍 [`src/domain/errors/MCPError.ts:10`](src/domain/errors/MCPError.ts)
+
+MCP Error Classes
+
+Error hierarchy for MCP-related failures.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    message: string,
+    public readonly serverName?: string,
+    public readonly cause?: Error
+  )
+```
+
+**Parameters:**
+- `message`: `string`
+- `serverName`: `string | undefined` *(optional)*
+- `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### MCPProtocolError `class`
+
+📍 [`src/domain/errors/MCPError.ts:52`](src/domain/errors/MCPError.ts)
+
+Protocol-level errors (invalid message, unsupported capability)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(message: string, serverName?: string, cause?: Error)
+```
+
+**Parameters:**
+- `message`: `string`
+- `serverName`: `string | undefined` *(optional)*
+- `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### MCPResourceError `class`
+
+📍 [`src/domain/errors/MCPError.ts:77`](src/domain/errors/MCPError.ts)
+
+Resource-related errors (resource not found, subscription failed)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    message: string,
+    public readonly resourceUri: string,
+    serverName?: string,
+    cause?: Error
+  )
+```
+
+**Parameters:**
+- `message`: `string`
+- `resourceUri`: `string`
+- `serverName`: `string | undefined` *(optional)*
+- `cause`: `Error | undefined` *(optional)*
+
+</details>
+
+---
+
+### MCPTimeoutError `class`
+
+📍 [`src/domain/errors/MCPError.ts:37`](src/domain/errors/MCPError.ts)
+
+Timeout errors (request timeout, connection timeout)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(
+    message: string,
+    public readonly timeoutMs: number,
+    serverName?: string,
+    cause?: Error
+  )
+```
+
+**Parameters:**
+- `message`: `string`
+- `timeoutMs`: `number`
+- `serverName`: `string | undefined` *(optional)*
+- `cause`: `Error | undefined` *(optional)*
 
 </details>
 
@@ -19909,49 +22708,9 @@ static mapError(error: any, context: ProviderErrorContext): AIError
 
 **Parameters:**
 - `error`: `any`
-- `context`: `import("/Users/aantich/dev/oneringai/src/infrastructure/providers/base/ProviderErrorMapper").ProviderErrorContext`
+- `context`: `ProviderErrorContext`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/errors/AIErrors").AIError`
-
-#### `static extractRetryAfter()`
-
-Extract retry-after value from error headers or body
-
-```typescript
-private static extractRetryAfter(error: any): number | undefined
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `number | undefined`
-
-#### `static mapError()`
-
-Map any provider error to our standard error types
-
-```typescript
-static mapError(error: any, context: ProviderErrorContext): AIError
-```
-
-**Parameters:**
-- `error`: `any`
-- `context`: `import("/Users/aantich/dev/oneringai/src/infrastructure/providers/base/ProviderErrorMapper").ProviderErrorContext`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/errors/AIErrors").AIError`
-
-#### `static extractRetryAfter()`
-
-Extract retry-after value from error headers or body
-
-```typescript
-private static extractRetryAfter(error: any): number | undefined
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `number | undefined`
+**Returns:** `AIError`
 
 </details>
 
@@ -19996,6 +22755,69 @@ constructor(
 **Parameters:**
 - `providerName`: `string`
 - `retryAfter`: `number | undefined` *(optional)*
+
+</details>
+
+---
+
+### ErrorContext `interface`
+
+📍 [`src/core/ErrorHandler.ts:15`](src/core/ErrorHandler.ts)
+
+Context information for error handling
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agentType` | `agentType: 'agent' | 'task-agent' | 'universal-agent';` | Type of agent |
+| `agentId?` | `agentId?: string;` | Optional agent identifier |
+| `operation` | `operation: string;` | Operation that failed |
+| `input?` | `input?: unknown;` | Input that caused the error (optional, for debugging) |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | Additional metadata |
+
+</details>
+
+---
+
+### ErrorHandlerConfig `interface`
+
+📍 [`src/core/ErrorHandler.ts:35`](src/core/ErrorHandler.ts)
+
+Configuration for ErrorHandler
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `logErrors?` | `logErrors?: boolean;` | Log errors to console/logger. Default: true |
+| `includeStackTrace?` | `includeStackTrace?: boolean;` | Include stack traces in logs. Default: true in development, false in production |
+| `transformError?` | `transformError?: (error: Error, context: ErrorContext) =&gt; Error;` | Custom error transformer |
+| `retryablePatterns?` | `retryablePatterns?: string[];` | Error codes/messages that should be retried |
+| `maxRetries?` | `maxRetries?: number;` | Maximum retry attempts. Default: 3 |
+| `baseRetryDelayMs?` | `baseRetryDelayMs?: number;` | Base delay for exponential backoff in ms. Default: 100 |
+| `maxRetryDelayMs?` | `maxRetryDelayMs?: number;` | Maximum retry delay in ms. Default: 5000 |
+
+</details>
+
+---
+
+### ErrorHandlerEvents `interface`
+
+📍 [`src/core/ErrorHandler.ts:61`](src/core/ErrorHandler.ts)
+
+Events emitted by ErrorHandler
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `error` | `error: { error: Error; context: ErrorContext; recoverable: boolean };` | Emitted when an error is handled |
+| `'error:retrying'` | `'error:retrying': { error: Error; context: ErrorContext; attempt: number; delayMs: number };` | Emitted when retrying after an error |
+| `'error:fatal'` | `'error:fatal': { error: Error; context: ErrorContext };` | Emitted when an error is fatal (no recovery possible) |
 
 </details>
 
@@ -20154,7 +22976,7 @@ Build and return the messages array
 build(): InputItem[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
+**Returns:** `InputItem[]`
 
 #### `clear()`
 
@@ -20183,7 +23005,31 @@ count(): number
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `messages` | `messages: import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]` | - |
+| `messages` | `messages: InputItem[]` | - |
+
+</details>
+
+---
+
+### JSONExtractionResult `interface`
+
+📍 [`src/utils/jsonExtractor.ts:11`](src/utils/jsonExtractor.ts)
+
+JSON Extractor Utilities
+
+Extracts JSON from LLM responses that may contain markdown formatting,
+code blocks, or other text mixed with JSON data.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | Whether extraction was successful |
+| `data?` | `data?: T;` | Extracted and parsed data (if successful) |
+| `rawJson?` | `rawJson?: string;` | Raw JSON string that was parsed (if found) |
+| `error?` | `error?: string;` | Error message (if failed) |
+| `method?` | `method?: 'code_block' | 'inline' | 'raw';` | How the JSON was found |
 
 </details>
 
@@ -20214,6 +23060,129 @@ export function createTextMessage(text: string, role: MessageRole = MessageRole.
 
 ---
 
+### extractFromCodeBlock `function`
+
+📍 [`src/utils/jsonExtractor.ts:91`](src/utils/jsonExtractor.ts)
+
+Extract JSON from markdown code blocks
+
+```typescript
+function extractFromCodeBlock&lt;T&gt;(text: string): JSONExtractionResult&lt;T&gt;
+```
+
+---
+
+### extractInlineJSON `function`
+
+📍 [`src/utils/jsonExtractor.ts:121`](src/utils/jsonExtractor.ts)
+
+Extract inline JSON object or array from text
+
+```typescript
+function extractInlineJSON&lt;T&gt;(text: string): JSONExtractionResult&lt;T&gt;
+```
+
+---
+
+### extractJSON `function`
+
+📍 [`src/utils/jsonExtractor.ts:49`](src/utils/jsonExtractor.ts)
+
+Extract JSON from a string that may contain markdown code blocks or other formatting.
+
+Tries multiple extraction strategies in order:
+1. JSON inside markdown code blocks (```json ... ``` or ``` ... ```)
+2. First complete JSON object/array found in text
+3. Raw string as JSON
+
+```typescript
+export function extractJSON&lt;T = unknown&gt;(text: string): JSONExtractionResult&lt;T&gt;
+```
+
+**Example:**
+
+```typescript
+const response = `Here's the result:
+\`\`\`json
+{"score": 85, "valid": true}
+\`\`\`
+That's the answer.`;
+
+const result = extractJSON<{score: number, valid: boolean}>(response);
+if (result.success) {
+  console.log(result.data.score); // 85
+}
+```
+
+---
+
+### extractJSONField `function`
+
+📍 [`src/utils/jsonExtractor.ts:258`](src/utils/jsonExtractor.ts)
+
+Safely extract a specific field from JSON embedded in text
+
+```typescript
+export function extractJSONField&lt;T&gt;(
+  text: string,
+  field: string,
+  defaultValue: T
+): T
+```
+
+**Example:**
+
+```typescript
+const score = extractJSONField<number>(llmResponse, 'completionScore', 50);
+```
+
+---
+
+### extractNumber `function`
+
+📍 [`src/utils/jsonExtractor.ts:283`](src/utils/jsonExtractor.ts)
+
+Extract a number from text, trying JSON first, then regex patterns
+
+```typescript
+export function extractNumber(
+  text: string,
+  patterns: RegExp[] = [
+    /(\d
+```
+
+**Example:**
+
+```typescript
+const score = extractNumber(llmResponse, [/(\d{1,3})%?\s*complete/i], 50);
+```
+
+---
+
+### findJSONArray `function`
+
+📍 [`src/utils/jsonExtractor.ts:204`](src/utils/jsonExtractor.ts)
+
+Find the first complete JSON array in text by matching brackets
+
+```typescript
+function findJSONArray(text: string): string | null
+```
+
+---
+
+### findJSONObject `function`
+
+📍 [`src/utils/jsonExtractor.ts:160`](src/utils/jsonExtractor.ts)
+
+Find the first complete JSON object in text by matching braces
+
+```typescript
+function findJSONObject(text: string): string | null
+```
+
+---
+
 ### formatBytes `function`
 
 📍 [`src/utils/imageUtils.ts:177`](src/utils/imageUtils.ts)
@@ -20229,6 +23198,48 @@ function formatBytes(bytes: number): string
 ## Interfaces
 
 TypeScript interfaces for extensibility
+
+### HistoryManagerEvents `interface`
+
+📍 [`src/domain/interfaces/IHistoryManager.ts:24`](src/domain/interfaces/IHistoryManager.ts)
+
+Events emitted by IHistoryManager implementations
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `'message:added'` | `'message:added': { message: HistoryMessage };` | - |
+| `'message:removed'` | `'message:removed': { messageId: string };` | - |
+| `'history:cleared'` | `'history:cleared': { reason?: string };` | - |
+| `'history:compacted'` | `'history:compacted': { removedCount: number; strategy: string };` | - |
+| `'history:restored'` | `'history:restored': { messageCount: number };` | - |
+
+</details>
+
+---
+
+### HistoryMessage `interface`
+
+📍 [`src/domain/interfaces/IHistoryManager.ts:13`](src/domain/interfaces/IHistoryManager.ts)
+
+A single message in conversation history
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `role` | `role: 'user' | 'assistant' | 'system';` | - |
+| `content` | `content: string;` | - |
+| `timestamp` | `timestamp: number;` | - |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
+
+</details>
+
+---
 
 ### IAgentStateStorage `interface`
 
@@ -20246,7 +23257,7 @@ save(state: AgentState): Promise&lt;void&gt;;
 ```
 
 **Parameters:**
-- `state`: `import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState`
+- `state`: `AgentState`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -20261,7 +23272,7 @@ load(agentId: string): Promise&lt;AgentState | undefined&gt;;
 **Parameters:**
 - `agentId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState | undefined&gt;`
+**Returns:** `Promise&lt;AgentState | undefined&gt;`
 
 #### `delete()`
 
@@ -20285,9 +23296,9 @@ list(filter?: { status?: AgentStatus[] }): Promise&lt;AgentState[]&gt;;
 ```
 
 **Parameters:**
-- `filter`: `{ status?: import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentStatus[] | undefined; } | undefined` *(optional)*
+- `filter`: `{ status?: AgentStatus[] | undefined; } | undefined` *(optional)*
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState[]&gt;`
+**Returns:** `Promise&lt;AgentState[]&gt;`
 
 #### `patch()`
 
@@ -20299,7 +23310,7 @@ patch(agentId: string, updates: Partial&lt;AgentState&gt;): Promise&lt;void&gt;;
 
 **Parameters:**
 - `agentId`: `string`
-- `updates`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/AgentState").AgentState&gt;`
+- `updates`: `Partial&lt;AgentState&gt;`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -20363,7 +23374,7 @@ save(name: string, stored: StoredConnectorConfig): Promise&lt;void&gt;;
 
 **Parameters:**
 - `name`: `string`
-- `stored`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig`
+- `stored`: `StoredConnectorConfig`
 
 **Returns:** `Promise&lt;void&gt;`
 
@@ -20378,7 +23389,7 @@ get(name: string): Promise&lt;StoredConnectorConfig | null&gt;;
 **Parameters:**
 - `name`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig | null&gt;`
+**Returns:** `Promise&lt;StoredConnectorConfig | null&gt;`
 
 #### `delete()`
 
@@ -20424,7 +23435,7 @@ Get all stored connector configurations
 listAll(): Promise&lt;StoredConnectorConfig[]&gt;;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IConnectorConfigStorage").StoredConnectorConfig[]&gt;`
+**Returns:** `Promise&lt;StoredConnectorConfig[]&gt;`
 
 </details>
 
@@ -20470,6 +23481,504 @@ destroy(): void;
 |----------|------|-------------|
 | `isDestroyed` | `readonly isDestroyed: boolean;` | Returns true if destroy() has been called.
 Methods should check this before performing operations. |
+
+</details>
+
+---
+
+### IHistoryManager `interface`
+
+📍 [`src/domain/interfaces/IHistoryManager.ts:114`](src/domain/interfaces/IHistoryManager.ts)
+
+Interface for history manager
+Manages conversation history with compaction and persistence support
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `addMessage()`
+
+Add a message to history
+
+```typescript
+addMessage(role: 'user' | 'assistant' | 'system', content: string, metadata?: Record&lt;string, unknown&gt;): Promise&lt;HistoryMessage&gt;;
+```
+
+**Parameters:**
+- `role`: `"user" | "assistant" | "system"`
+- `content`: `string`
+- `metadata`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
+
+**Returns:** `Promise&lt;HistoryMessage&gt;`
+
+#### `getMessages()`
+
+Get all messages (may include summaries as system messages)
+
+```typescript
+getMessages(): Promise&lt;HistoryMessage[]&gt;;
+```
+
+**Returns:** `Promise&lt;HistoryMessage[]&gt;`
+
+#### `getRecentMessages()`
+
+Get recent messages only
+
+```typescript
+getRecentMessages(count?: number): Promise&lt;HistoryMessage[]&gt;;
+```
+
+**Parameters:**
+- `count`: `number | undefined` *(optional)*
+
+**Returns:** `Promise&lt;HistoryMessage[]&gt;`
+
+#### `formatForContext()`
+
+Get formatted history for LLM context
+
+```typescript
+formatForContext(options?: { maxTokens?: number; includeMetadata?: boolean }): Promise&lt;string&gt;;
+```
+
+**Parameters:**
+- `options`: `{ maxTokens?: number | undefined; includeMetadata?: boolean | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;string&gt;`
+
+#### `compact()`
+
+Compact history (apply compaction strategy)
+
+```typescript
+compact(): Promise&lt;void&gt;;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `clear()`
+
+Clear all history
+
+```typescript
+clear(): Promise&lt;void&gt;;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getMessageCount()`
+
+Get message count
+
+```typescript
+getMessageCount(): Promise&lt;number&gt;;
+```
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getState()`
+
+Get state for session persistence
+
+```typescript
+getState(): Promise&lt;SerializedHistoryState&gt;;
+```
+
+**Returns:** `Promise&lt;SerializedHistoryState&gt;`
+
+#### `restoreState()`
+
+Restore from saved state
+
+```typescript
+restoreState(state: SerializedHistoryState): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `state`: `SerializedHistoryState`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getConfig()`
+
+Get current configuration
+
+```typescript
+getConfig(): IHistoryManagerConfig;
+```
+
+**Returns:** `IHistoryManagerConfig`
+
+</details>
+
+---
+
+### IHistoryManagerConfig `interface`
+
+📍 [`src/domain/interfaces/IHistoryManager.ts:35`](src/domain/interfaces/IHistoryManager.ts)
+
+Configuration for history management
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxMessages?` | `maxMessages?: number;` | Maximum messages to keep (for sliding window) |
+| `maxTokens?` | `maxTokens?: number;` | Maximum tokens to keep (estimated) |
+| `compactionStrategy?` | `compactionStrategy?: 'truncate' | 'summarize' | 'sliding-window';` | Compaction strategy when limits are reached |
+| `preserveRecentCount?` | `preserveRecentCount?: number;` | Number of recent messages to always preserve |
+
+</details>
+
+---
+
+### IHistoryStorage `interface`
+
+📍 [`src/domain/interfaces/IHistoryManager.ts:63`](src/domain/interfaces/IHistoryManager.ts)
+
+Interface for history storage backends
+Implement this to use custom storage (Redis, PostgreSQL, file, etc.)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `addMessage()`
+
+Store a message
+
+```typescript
+addMessage(message: HistoryMessage): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `message`: `HistoryMessage`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getMessages()`
+
+Get all messages
+
+```typescript
+getMessages(): Promise&lt;HistoryMessage[]&gt;;
+```
+
+**Returns:** `Promise&lt;HistoryMessage[]&gt;`
+
+#### `getRecentMessages()`
+
+Get recent N messages
+
+```typescript
+getRecentMessages(count: number): Promise&lt;HistoryMessage[]&gt;;
+```
+
+**Parameters:**
+- `count`: `number`
+
+**Returns:** `Promise&lt;HistoryMessage[]&gt;`
+
+#### `removeMessage()`
+
+Remove a message by ID
+
+```typescript
+removeMessage(id: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `id`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `removeOlderThan()`
+
+Remove messages older than timestamp
+
+```typescript
+removeOlderThan(timestamp: number): Promise&lt;number&gt;;
+```
+
+**Parameters:**
+- `timestamp`: `number`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `clear()`
+
+Clear all messages
+
+```typescript
+clear(): Promise&lt;void&gt;;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getCount()`
+
+Get message count
+
+```typescript
+getCount(): Promise&lt;number&gt;;
+```
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getState()`
+
+Get serialized state for session persistence
+
+```typescript
+getState(): Promise&lt;SerializedHistoryState&gt;;
+```
+
+**Returns:** `Promise&lt;SerializedHistoryState&gt;`
+
+#### `restoreState()`
+
+Restore from serialized state
+
+```typescript
+restoreState(state: SerializedHistoryState): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `state`: `SerializedHistoryState`
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+---
+
+### IMCPClient `interface`
+
+📍 [`src/domain/interfaces/IMCPClient.ts:34`](src/domain/interfaces/IMCPClient.ts)
+
+MCP Client interface
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `connect()`
+
+Connect to the MCP server
+
+```typescript
+connect(): Promise&lt;void&gt;;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `disconnect()`
+
+Disconnect from the MCP server
+
+```typescript
+disconnect(): Promise&lt;void&gt;;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `reconnect()`
+
+Reconnect to the MCP server
+
+```typescript
+reconnect(): Promise&lt;void&gt;;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `isConnected()`
+
+Check if connected
+
+```typescript
+isConnected(): boolean;
+```
+
+**Returns:** `boolean`
+
+#### `ping()`
+
+Ping the server to check health
+
+```typescript
+ping(): Promise&lt;boolean&gt;;
+```
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `listTools()`
+
+List available tools from the server
+
+```typescript
+listTools(): Promise&lt;MCPTool[]&gt;;
+```
+
+**Returns:** `Promise&lt;MCPTool[]&gt;`
+
+#### `callTool()`
+
+Call a tool on the server
+
+```typescript
+callTool(name: string, args: Record&lt;string, unknown&gt;): Promise&lt;MCPToolResult&gt;;
+```
+
+**Parameters:**
+- `name`: `string`
+- `args`: `Record&lt;string, unknown&gt;`
+
+**Returns:** `Promise&lt;MCPToolResult&gt;`
+
+#### `registerTools()`
+
+Register all tools with a ToolManager
+
+```typescript
+registerTools(toolManager: ToolManager): void;
+```
+
+**Parameters:**
+- `toolManager`: `ToolManager`
+
+**Returns:** `void`
+
+#### `unregisterTools()`
+
+Unregister all tools from a ToolManager
+
+```typescript
+unregisterTools(toolManager: ToolManager): void;
+```
+
+**Parameters:**
+- `toolManager`: `ToolManager`
+
+**Returns:** `void`
+
+#### `listResources()`
+
+List available resources from the server
+
+```typescript
+listResources(): Promise&lt;MCPResource[]&gt;;
+```
+
+**Returns:** `Promise&lt;MCPResource[]&gt;`
+
+#### `readResource()`
+
+Read a resource from the server
+
+```typescript
+readResource(uri: string): Promise&lt;MCPResourceContent&gt;;
+```
+
+**Parameters:**
+- `uri`: `string`
+
+**Returns:** `Promise&lt;MCPResourceContent&gt;`
+
+#### `subscribeResource()`
+
+Subscribe to resource updates
+
+```typescript
+subscribeResource(uri: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `uri`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `unsubscribeResource()`
+
+Unsubscribe from resource updates
+
+```typescript
+unsubscribeResource(uri: string): Promise&lt;void&gt;;
+```
+
+**Parameters:**
+- `uri`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `listPrompts()`
+
+List available prompts from the server
+
+```typescript
+listPrompts(): Promise&lt;MCPPrompt[]&gt;;
+```
+
+**Returns:** `Promise&lt;MCPPrompt[]&gt;`
+
+#### `getPrompt()`
+
+Get a prompt from the server
+
+```typescript
+getPrompt(name: string, args?: Record&lt;string, unknown&gt;): Promise&lt;MCPPromptResult&gt;;
+```
+
+**Parameters:**
+- `name`: `string`
+- `args`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
+
+**Returns:** `Promise&lt;MCPPromptResult&gt;`
+
+#### `getState()`
+
+Get current state for serialization
+
+```typescript
+getState(): MCPClientState;
+```
+
+**Returns:** `MCPClientState`
+
+#### `loadState()`
+
+Load state from serialization
+
+```typescript
+loadState(state: MCPClientState): void;
+```
+
+**Parameters:**
+- `state`: `MCPClientState`
+
+**Returns:** `void`
+
+#### `destroy()`
+
+Destroy the client and clean up resources
+
+```typescript
+destroy(): void;
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `readonly name: string;` | Server name |
+| `state` | `readonly state: MCPClientConnectionState;` | Current connection state |
+| `capabilities?` | `readonly capabilities?: MCPServerCapabilities;` | Server capabilities (available after connection) |
+| `tools` | `readonly tools: MCPTool[];` | Currently available tools |
 
 </details>
 
@@ -20525,9 +24034,9 @@ transcribe(options: STTOptions): Promise&lt;STTResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTOptions`
+- `options`: `STTOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTResponse&gt;`
+**Returns:** `Promise&lt;STTResponse&gt;`
 
 #### `translate()?`
 
@@ -20538,9 +24047,9 @@ translate?(options: STTOptions): Promise&lt;STTResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTOptions`
+- `options`: `STTOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").STTResponse&gt;`
+**Returns:** `Promise&lt;STTResponse&gt;`
 
 </details>
 
@@ -20548,7 +24057,7 @@ translate?(options: STTOptions): Promise&lt;STTResponse&gt;;
 
 ### ITextProvider `interface`
 
-📍 [`src/domain/interfaces/ITextProvider.ts:38`](src/domain/interfaces/ITextProvider.ts)
+📍 [`src/domain/interfaces/ITextProvider.ts:40`](src/domain/interfaces/ITextProvider.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -20562,9 +24071,9 @@ generate(options: TextGenerateOptions): Promise&lt;LLMResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `streamGenerate()`
 
@@ -20576,9 +24085,9 @@ streamGenerate(options: TextGenerateOptions): AsyncIterableIterator&lt;StreamEve
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `getModelCapabilities()`
 
@@ -20591,7 +24100,7 @@ getModelCapabilities(model: string): ModelCapabilities;
 **Parameters:**
 - `model`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ModelCapabilities`
+**Returns:** `ModelCapabilities`
 
 #### `listModels()?`
 
@@ -20625,9 +24134,9 @@ synthesize(options: TTSOptions): Promise&lt;TTSResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").TTSOptions`
+- `options`: `TTSOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IAudioProvider").TTSResponse&gt;`
+**Returns:** `Promise&lt;TTSResponse&gt;`
 
 #### `listVoices()?`
 
@@ -20637,7 +24146,7 @@ List available voices (optional - some providers return static list)
 listVoices?(): Promise&lt;IVoiceInfo[]&gt;;
 ```
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/SharedVoices").IVoiceInfo[]&gt;`
+**Returns:** `Promise&lt;IVoiceInfo[]&gt;`
 
 </details>
 
@@ -20680,6 +24189,26 @@ Segment-level timestamp
 | `start` | `start: number;` | - |
 | `end` | `end: number;` | - |
 | `tokens?` | `tokens?: number[];` | - |
+
+</details>
+
+---
+
+### SerializedHistoryState `interface`
+
+📍 [`src/domain/interfaces/IHistoryManager.ts:52`](src/domain/interfaces/IHistoryManager.ts)
+
+Serialized history state for persistence
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `version` | `version: number;` | - |
+| `messages` | `messages: HistoryMessage[];` | - |
+| `summaries?` | `summaries?: Array&lt;{ content: string; coversCount: number; timestamp: number }&gt;;` | - |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | - |
 
 </details>
 
@@ -20728,6 +24257,7 @@ Wrapper for stored connector configuration with metadata
 | `parallel_tool_calls?` | `parallel_tool_calls?: boolean;` | - |
 | `previous_response_id?` | `previous_response_id?: string;` | - |
 | `metadata?` | `metadata?: Record&lt;string, string&gt;;` | - |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) |
 
 </details>
 
@@ -20752,6 +24282,22 @@ Word-level timestamp
 
 ---
 
+### MCPClientConnectionState `type`
+
+📍 [`src/domain/interfaces/IMCPClient.ts:24`](src/domain/interfaces/IMCPClient.ts)
+
+MCP Client connection states
+
+```typescript
+type MCPClientConnectionState = | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'failed'
+```
+
+---
+
 ### assertNotDestroyed `function`
 
 📍 [`src/domain/interfaces/IDisposable.ts:50`](src/domain/interfaces/IDisposable.ts)
@@ -20764,9 +24310,295 @@ export function assertNotDestroyed(obj: IDisposable | IAsyncDisposable, operatio
 
 ---
 
+### DEFAULT_HISTORY_MANAGER_CONFIG `const`
+
+📍 [`src/domain/interfaces/IHistoryManager.ts:169`](src/domain/interfaces/IHistoryManager.ts)
+
+Default configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxMessages` | `50` | - |
+| `maxTokens` | `32000` | - |
+| `compactionStrategy` | `'sliding-window'` | - |
+| `preserveRecentCount` | `10` | - |
+
+</details>
+
+---
+
 ## Base Classes
 
 Base classes for custom provider implementations
+
+### BaseConverter `class`
+
+📍 [`src/infrastructure/providers/base/BaseConverter.ts:62`](src/infrastructure/providers/base/BaseConverter.ts)
+
+Abstract base converter for all LLM providers.
+
+Subclasses implement provider-specific conversion logic while inheriting
+common patterns for input normalization, tool conversion, and response building.
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `convertRequest()`
+
+Convert our TextGenerateOptions to provider-specific request format
+
+```typescript
+abstract convertRequest(options: TextGenerateOptions): TRequest | Promise&lt;TRequest&gt;;
+```
+
+**Parameters:**
+- `options`: `TextGenerateOptions`
+
+**Returns:** `TRequest | Promise&lt;TRequest&gt;`
+
+#### `convertResponse()`
+
+Convert provider response to our LLMResponse format
+
+```typescript
+abstract convertResponse(response: TResponse): LLMResponse;
+```
+
+**Parameters:**
+- `response`: `TResponse`
+
+**Returns:** `LLMResponse`
+
+#### `transformTool()`
+
+Transform a standardized tool to provider-specific format
+
+```typescript
+protected abstract transformTool(tool: ProviderToolFormat): unknown;
+```
+
+**Parameters:**
+- `tool`: `ProviderToolFormat`
+
+**Returns:** `unknown`
+
+#### `convertProviderContent()`
+
+Convert provider-specific content blocks to our Content[]
+
+```typescript
+protected abstract convertProviderContent(blocks: unknown[]): Content[];
+```
+
+**Parameters:**
+- `blocks`: `unknown[]`
+
+**Returns:** `Content[]`
+
+#### `mapProviderStatus()`
+
+Map provider status to our ResponseStatus
+
+```typescript
+protected abstract mapProviderStatus(status: unknown): ResponseStatus;
+```
+
+**Parameters:**
+- `status`: `unknown`
+
+**Returns:** `ResponseStatus`
+
+#### `normalizeInput()`
+
+Convert InputItem array to provider messages
+
+```typescript
+protected normalizeInput(input: string | InputItem[]): InputItem[]
+```
+
+**Parameters:**
+- `input`: `string | InputItem[]`
+
+**Returns:** `InputItem[]`
+
+#### `mapRole()`
+
+Map our role to provider-specific role
+Override in subclass if provider uses different role names
+
+```typescript
+protected mapRole(role: MessageRole): string
+```
+
+**Parameters:**
+- `role`: `MessageRole`
+
+**Returns:** `string`
+
+#### `convertTools()`
+
+Convert our Tool[] to provider-specific tool format
+
+```typescript
+protected convertTools(tools?: Tool[]): unknown[] | undefined
+```
+
+**Parameters:**
+- `tools`: `Tool[] | undefined` *(optional)*
+
+**Returns:** `unknown[] | undefined`
+
+#### `parseToolArguments()`
+
+Parse tool arguments from JSON string
+Throws InvalidToolArgumentsError on parse failure
+
+```typescript
+protected parseToolArguments(name: string, argsString: string): unknown
+```
+
+**Parameters:**
+- `name`: `string`
+- `argsString`: `string`
+
+**Returns:** `unknown`
+
+#### `parseDataUri()`
+
+Parse a data URI into components
+
+```typescript
+protected parseDataUri(url: string): ParsedImageData | null
+```
+
+**Parameters:**
+- `url`: `string`
+
+**Returns:** `ParsedImageData | null`
+
+#### `isDataUri()`
+
+Check if URL is a data URI
+
+```typescript
+protected isDataUri(url: string): boolean
+```
+
+**Parameters:**
+- `url`: `string`
+
+**Returns:** `boolean`
+
+#### `buildResponse()`
+
+Build standardized LLMResponse using shared utility
+
+```typescript
+protected buildResponse(options:
+```
+
+**Parameters:**
+- `options`: `{ rawId?: string | undefined; model: string; status: ResponseStatus; content: Content[]; usage: UsageStats; messageId?: string | undefined; }`
+
+**Returns:** `LLMResponse`
+
+#### `createText()`
+
+Create a text content block
+
+```typescript
+protected createText(text: string): Content
+```
+
+**Parameters:**
+- `text`: `string`
+
+**Returns:** `Content`
+
+#### `createToolUse()`
+
+Create a tool_use content block
+
+```typescript
+protected createToolUse(id: string, name: string, args: string | Record&lt;string, unknown&gt;): Content
+```
+
+**Parameters:**
+- `id`: `string`
+- `name`: `string`
+- `args`: `string | Record&lt;string, unknown&gt;`
+
+**Returns:** `Content`
+
+#### `extractText()`
+
+Extract text from Content array
+
+```typescript
+protected extractText(content: Content[]): string
+```
+
+**Parameters:**
+- `content`: `Content[]`
+
+**Returns:** `string`
+
+#### `handleCommonContent()`
+
+Handle content conversion for common content types
+Can be used as a starting point in subclass convertContent methods
+
+```typescript
+protected handleCommonContent(
+    content: Content,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _handlers:
+```
+
+**Parameters:**
+- `content`: `Content`
+- `_handlers`: `{ onText?: ((text: string) =&gt; void) | undefined; onImage?: ((url: string, parsed: ParsedImageData | null) =&gt; void) | undefined; onToolUse?: ((id: string, name: string, args: unknown) =&gt; void) | undefined; onToolResult?: ((toolUseId: string, result: unknown, isError: boolean, errorMessage?: string | undefined) =&gt; void) | undefined; }`
+
+**Returns:** `boolean`
+
+#### `clear()`
+
+Clean up any internal state/caches
+Should be called after each request/response cycle to prevent memory leaks
+
+Default implementation does nothing - override if subclass maintains state
+
+```typescript
+clear(): void
+```
+
+**Returns:** `void`
+
+#### `reset()`
+
+Alias for clear() - reset converter state
+
+```typescript
+reset(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `providerName` | `providerName: string` | Get the provider name (used for error messages and IDs) |
+
+</details>
+
+---
 
 ### BaseMediaProvider `class`
 
@@ -20791,17 +24623,6 @@ constructor(config: any)
 
 <details>
 <summary><strong>Methods</strong></summary>
-
-#### `ensureObservabilityInitialized()`
-
-Auto-initialize observability on first use (lazy initialization)
-This is called automatically by executeWithCircuitBreaker()
-
-```typescript
-private ensureObservabilityInitialized(): void
-```
-
-**Returns:** `void`
 
 #### `executeWithCircuitBreaker()`
 
@@ -20859,8 +24680,8 @@ protected logOperationComplete(operation: string, context: Record&lt;string, unk
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `circuitBreaker?` | `circuitBreaker: import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreaker&lt;any&gt; | undefined` | - |
-| `logger` | `logger: import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").FrameworkLogger` | - |
+| `circuitBreaker?` | `circuitBreaker: CircuitBreaker&lt;any&gt; | undefined` | - |
+| `logger` | `logger: FrameworkLogger` | - |
 
 </details>
 
@@ -20880,7 +24701,7 @@ constructor(protected config: ProviderConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").ProviderConfig`
+- `config`: `ProviderConfig`
 
 </details>
 
@@ -20980,7 +24801,7 @@ protected getMaxRetries(): number
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: string` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
 
 </details>
 
@@ -21007,17 +24828,6 @@ constructor(config: any)
 <details>
 <summary><strong>Methods</strong></summary>
 
-#### `ensureObservabilityInitialized()`
-
-Auto-initialize observability on first use (lazy initialization)
-This is called automatically by executeWithCircuitBreaker()
-
-```typescript
-private ensureObservabilityInitialized(): void
-```
-
-**Returns:** `void`
-
 #### `initializeObservability()`
 
 DEPRECATED: No longer needed, kept for backward compatibility
@@ -21039,9 +24849,9 @@ abstract generate(options: TextGenerateOptions): Promise&lt;LLMResponse&gt;;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `streamGenerate()`
 
@@ -21050,9 +24860,9 @@ abstract streamGenerate(options: TextGenerateOptions): AsyncIterableIterator&lt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `getModelCapabilities()`
 
@@ -21063,7 +24873,7 @@ abstract getModelCapabilities(model: string): ModelCapabilities;
 **Parameters:**
 - `model`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ModelCapabilities`
+**Returns:** `ModelCapabilities`
 
 #### `executeWithCircuitBreaker()`
 
@@ -21090,7 +24900,7 @@ Get circuit breaker metrics
 getCircuitBreakerMetrics()
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreakerMetrics | null`
+**Returns:** `CircuitBreakerMetrics | null`
 
 #### `normalizeInputToString()`
 
@@ -21105,236 +24915,10 @@ protected normalizeInputToString(input: string | any[]): string
 
 **Returns:** `string`
 
-</details>
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `circuitBreaker?` | `circuitBreaker: import("/Users/aantich/dev/oneringai/src/infrastructure/resilience/CircuitBreaker").CircuitBreaker&lt;any&gt; | undefined` | - |
-| `logger` | `logger: import("/Users/aantich/dev/oneringai/src/infrastructure/observability/Logger").FrameworkLogger` | - |
-
-</details>
-
----
-
-## Other
-
-### Agent `class`
-
-📍 [`src/capabilities/agents/Agent.ts:46`](src/capabilities/agents/Agent.ts)
-
-<details>
-<summary><strong>Constructor</strong></summary>
-
-#### `constructor`
-
-```typescript
-constructor(
-    private config: AgentConfig,
-    textProvider: ITextProvider,
-    private toolRegistry: ToolRegistry
-  )
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/Agent").AgentConfig`
-- `textProvider`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ITextProvider`
-- `toolRegistry`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/ToolRegistry").ToolRegistry`
-
-</details>
-
-<details>
-<summary><strong>Methods</strong></summary>
-
-#### `run()`
-
-Run the agent with input
-
-```typescript
-async run(input: string | InputItem[]): Promise&lt;AgentResponse&gt;
-```
-
-**Parameters:**
-- `input`: `string | import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
-
-#### `stream()`
-
-Stream response from the agent with real-time events
-Returns an async iterator of streaming events
-Supports full agentic loop with tool calling
-
-```typescript
-async *stream(input: string | InputItem[]): AsyncIterableIterator&lt;StreamEvent&gt;
-```
-
-**Parameters:**
-- `input`: `string | import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-#### `addTool()`
-
-Add a tool to the agent
-
-```typescript
-addTool(tool: ToolFunction): void
-```
-
-**Parameters:**
-- `tool`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolFunction&lt;any, any&gt;`
-
-**Returns:** `void`
-
-#### `removeTool()`
-
-Remove a tool from the agent
-
-```typescript
-removeTool(toolName: string): void
-```
-
-**Parameters:**
-- `toolName`: `string`
-
-**Returns:** `void`
-
-#### `listTools()`
-
-List registered tools
-
-```typescript
-listTools(): string[]
-```
-
-**Returns:** `string[]`
-
-#### `pause()`
-
-Pause execution
-
-```typescript
-pause(reason?: string): void
-```
-
-**Parameters:**
-- `reason`: `string | undefined` *(optional)*
-
-**Returns:** `void`
-
-#### `resume()`
-
-Resume execution
-
-```typescript
-resume(): void
-```
-
-**Returns:** `void`
-
-#### `cancel()`
-
-Cancel execution
-
-```typescript
-cancel(reason?: string): void
-```
-
-**Parameters:**
-- `reason`: `string | undefined` *(optional)*
-
-**Returns:** `void`
-
-#### `getContext()`
-
-Get current execution context
-
-```typescript
-getContext(): ExecutionContext | null
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionContext | null`
-
-#### `getMetrics()`
-
-Get execution metrics
-
-```typescript
-getMetrics()
-```
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionMetrics | null`
-
-#### `getSummary()`
-
-Get execution summary
-
-```typescript
-getSummary()
-```
-
-**Returns:** `{ executionId: string; startTime: Date; currentIteration: number; paused: boolean; cancelled: boolean; metrics: { totalDuration: number; llmDuration: number; toolDuration: number; hookDuration: number; iterationCount: number; toolCallCount: number; toolSuccessCount: number; toolFailureCount: number; toolTimeoutCount: number; inputTokens: number; outputTokens: number; totalTokens: number; errors: { type: string; message: string; timestamp: Date; }[]; }; totalDuration: number; } | null`
-
-#### `getAuditTrail()`
-
-Get audit trail
-
-```typescript
-getAuditTrail()
-```
-
-**Returns:** `readonly import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").AuditEntry[]`
-
-#### `isRunning()`
-
-Check if currently running
-
-```typescript
-isRunning(): boolean
-```
-
-**Returns:** `boolean`
-
-#### `isPaused()`
-
-Check if paused
-
-```typescript
-isPaused(): boolean
-```
-
-**Returns:** `boolean`
-
-#### `isCancelled()`
-
-Check if cancelled
-
-```typescript
-isCancelled(): boolean
-```
-
-**Returns:** `boolean`
-
-#### `onCleanup()`
-
-Register cleanup callback
-
-```typescript
-onCleanup(callback: () =&gt; void): void
-```
-
-**Parameters:**
-- `callback`: `() =&gt; void`
-
-**Returns:** `void`
-
 #### `destroy()`
 
-Destroy agent and cleanup resources
-Safe to call multiple times (idempotent)
+Clean up provider resources (circuit breaker listeners, etc.)
+Should be called when the provider is no longer needed.
 
 ```typescript
 destroy(): void
@@ -21349,17 +24933,50 @@ destroy(): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `agenticLoop` | `agenticLoop: import("/Users/aantich/dev/oneringai/src/capabilities/agents/AgenticLoop").AgenticLoop` | - |
-| `cleanupCallbacks` | `cleanupCallbacks: (() =&gt; void)[]` | - |
-| `boundListeners` | `boundListeners: Map&lt;keyof import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/EventTypes").AgenticLoopEvents, (...args: any[]) =&gt; void&gt;` | - |
+| `circuitBreaker?` | `circuitBreaker: CircuitBreaker&lt;any&gt; | undefined` | - |
+| `logger` | `logger: FrameworkLogger` | - |
 
 </details>
 
 ---
 
+### ProviderRequest `interface`
+
+📍 [`src/infrastructure/providers/base/BaseConverter.ts:45`](src/infrastructure/providers/base/BaseConverter.ts)
+
+Provider-specific request format (abstract, defined by subclass)
+Using Record<string, unknown> would be too restrictive -
+providers have their own typed request formats
+
+---
+
+### ProviderResponse `interface`
+
+📍 [`src/infrastructure/providers/base/BaseConverter.ts:51`](src/infrastructure/providers/base/BaseConverter.ts)
+
+Provider-specific response format (abstract, defined by subclass)
+
+---
+
+### hasAsyncConvert `function`
+
+📍 [`src/infrastructure/providers/base/BaseConverter.ts:318`](src/infrastructure/providers/base/BaseConverter.ts)
+
+Type guard for checking if converter has async request conversion
+
+```typescript
+export function hasAsyncConvert(
+  _converter: BaseConverter
+): _converter is BaseConverter &
+```
+
+---
+
+## Other
+
 ### AgenticLoop `class`
 
-📍 [`src/capabilities/agents/AgenticLoop.ts:59`](src/capabilities/agents/AgenticLoop.ts)
+📍 [`src/capabilities/agents/AgenticLoop.ts:80`](src/capabilities/agents/AgenticLoop.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -21375,9 +24992,9 @@ constructor(
 ```
 
 **Parameters:**
-- `provider`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ITextProvider`
-- `toolExecutor`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IToolExecutor").IToolExecutor`
-- `hookConfig`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").HookConfig | undefined` *(optional)*
+- `provider`: `ITextProvider`
+- `toolExecutor`: `IToolExecutor`
+- `hookConfig`: `HookConfig | undefined` *(optional)*
 - `errorHandling`: `{ maxConsecutiveErrors?: number | undefined; } | undefined` *(optional)*
 
 </details>
@@ -21394,9 +25011,9 @@ async execute(config: AgenticLoopConfig): Promise&lt;AgentResponse&gt;
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/AgenticLoop").AgenticLoopConfig`
+- `config`: `AgenticLoopConfig`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `executeStreaming()`
 
@@ -21407,208 +25024,9 @@ async *executeStreaming(config: AgenticLoopConfig): AsyncIterableIterator&lt;Str
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/AgenticLoop").AgenticLoopConfig`
+- `config`: `AgenticLoopConfig`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-#### `streamGenerateWithHooks()`
-
-Stream LLM response with hooks
-
-```typescript
-private async *streamGenerateWithHooks(
-    config: AgenticLoopConfig,
-    input: string | InputItem[],
-    iteration: number,
-    executionId: string,
-    streamState: StreamState,
-    toolCallsMap: Map&lt;string,
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/AgenticLoop").AgenticLoopConfig`
-- `input`: `string | import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-- `iteration`: `number`
-- `executionId`: `string`
-- `streamState`: `import("/Users/aantich/dev/oneringai/src/domain/entities/StreamState").StreamState`
-- `toolCallsMap`: `Map&lt;string, { name: string; args: string; }&gt;`
-
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
-
-#### `executeToolWithHooks()`
-
-Execute single tool with hooks
-
-```typescript
-private async executeToolWithHooks(
-    toolCall: ToolCall,
-    iteration: number,
-    executionId: string,
-    config: AgenticLoopConfig
-  ): Promise&lt;ToolResult&gt;
-```
-
-**Parameters:**
-- `toolCall`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolCall`
-- `iteration`: `number`
-- `executionId`: `string`
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/AgenticLoop").AgenticLoopConfig`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolResult&gt;`
-
-#### `generateWithHooks()`
-
-Generate LLM response with hooks
-
-```typescript
-private async generateWithHooks(
-    config: AgenticLoopConfig,
-    input: string | InputItem[],
-    iteration: number,
-    executionId: string
-  ): Promise&lt;AgentResponse&gt;
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/AgenticLoop").AgenticLoopConfig`
-- `input`: `string | import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-- `iteration`: `number`
-- `executionId`: `string`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
-
-#### `executeToolsWithHooks()`
-
-Execute tools with hooks
-
-```typescript
-private async executeToolsWithHooks(
-    toolCalls: ToolCall[],
-    iteration: number,
-    executionId: string,
-    config: AgenticLoopConfig
-  ): Promise&lt;ToolResult[]&gt;
-```
-
-**Parameters:**
-- `toolCalls`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolCall[]`
-- `iteration`: `number`
-- `executionId`: `string`
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/AgenticLoop").AgenticLoopConfig`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolResult[]&gt;`
-
-#### `extractToolCalls()`
-
-Extract tool calls from response output
-
-```typescript
-private extractToolCalls(output: OutputItem[], toolDefinitions: Tool[]): ToolCall[]
-```
-
-**Parameters:**
-- `output`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").OutputItem[]`
-- `toolDefinitions`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").Tool[]`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolCall[]`
-
-#### `executeWithTimeout()`
-
-Execute function with timeout
-
-```typescript
-private async executeWithTimeout&lt;T&gt;(fn: () =&gt; Promise&lt;T&gt;, timeoutMs: number): Promise&lt;T&gt;
-```
-
-**Parameters:**
-- `fn`: `() =&gt; Promise&lt;T&gt;`
-- `timeoutMs`: `number`
-
-**Returns:** `Promise&lt;T&gt;`
-
-#### `buildNewMessages()`
-
-Build new messages from tool results (assistant response + tool results)
-
-```typescript
-private buildNewMessages(
-    previousOutput: OutputItem[],
-    toolResults: ToolResult[]
-  ): InputItem[]
-```
-
-**Parameters:**
-- `previousOutput`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").OutputItem[]`
-- `toolResults`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolResult[]`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-
-#### `appendToContext()`
-
-Append new messages to current context, preserving history
-Unified logic for both execute() and executeStreaming()
-
-```typescript
-private appendToContext(
-    currentInput: string | InputItem[],
-    newMessages: InputItem[]
-  ): InputItem[]
-```
-
-**Parameters:**
-- `currentInput`: `string | import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-- `newMessages`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-
-#### `applySlidingWindow()`
-
-Apply sliding window to prevent unbounded input growth
-Preserves system/developer message at the start if present
-IMPORTANT: Ensures tool_use and tool_result pairs are never broken
-
-```typescript
-private applySlidingWindow(
-    input: InputItem[],
-    maxMessages: number = 50
-  ): InputItem[]
-```
-
-**Parameters:**
-- `input`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-- `maxMessages`: `number` *(optional)* (default: `50`)
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-
-#### `findSafeToolBoundary()`
-
-Find a safe index to cut the message array without breaking tool call/result pairs
-A safe boundary is one where all tool_use IDs have matching tool_result IDs
-
-```typescript
-private findSafeToolBoundary(input: InputItem[], targetIndex: number): number
-```
-
-**Parameters:**
-- `input`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-- `targetIndex`: `number`
-
-**Returns:** `number`
-
-#### `isToolBoundarySafe()`
-
-Check if cutting at this index would leave tool calls/results balanced
-Returns true if all tool_use IDs in the slice have matching tool_result IDs
-
-```typescript
-private isToolBoundarySafe(input: InputItem[], startIndex: number): boolean
-```
-
-**Parameters:**
-- `input`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-- `startIndex`: `number`
-
-**Returns:** `boolean`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `pause()`
 
@@ -21646,16 +25064,6 @@ cancel(reason?: string): void
 
 **Returns:** `void`
 
-#### `checkPause()`
-
-Check if paused and wait
-
-```typescript
-private async checkPause(): Promise&lt;void&gt;
-```
-
-**Returns:** `Promise&lt;void&gt;`
-
 #### `getContext()`
 
 Get current execution context
@@ -21664,7 +25072,7 @@ Get current execution context
 getContext(): ExecutionContext | null
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionContext | null`
+**Returns:** `ExecutionContext | null`
 
 #### `isRunning()`
 
@@ -21703,8 +25111,8 @@ isCancelled(): boolean
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `hookManager` | `hookManager: import("/Users/aantich/dev/oneringai/src/capabilities/agents/HookManager").HookManager` | - |
-| `context` | `context: import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionContext | null` | - |
+| `hookManager` | `hookManager: HookManager` | - |
+| `context` | `context: ExecutionContext | null` | - |
 | `paused` | `paused: boolean` | - |
 | `pausePromise` | `pausePromise: Promise&lt;void&gt; | null` | - |
 | `resumeCallback` | `resumeCallback: (() =&gt; void) | null` | - |
@@ -21717,118 +25125,84 @@ isCancelled(): boolean
 
 ### AnthropicConverter `class`
 
-📍 [`src/infrastructure/providers/anthropic/AnthropicConverter.ts:14`](src/infrastructure/providers/anthropic/AnthropicConverter.ts)
+📍 [`src/infrastructure/providers/anthropic/AnthropicConverter.ts:21`](src/infrastructure/providers/anthropic/AnthropicConverter.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
 
 #### `convertRequest()`
 
-Convert our format → Anthropic Messages API format
+Convert our format -> Anthropic Messages API format
 
 ```typescript
 convertRequest(options: TextGenerateOptions): Anthropic.MessageCreateParams
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").MessageCreateParams`
-
-#### `convertMessages()`
-
-Convert our InputItem[] → Anthropic messages
-
-```typescript
-private convertMessages(input: string | InputItem[]): Anthropic.MessageParam[]
-```
-
-**Parameters:**
-- `input`: `string | import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").MessageParam[]`
-
-#### `convertContent()`
-
-Convert our Content[] → Anthropic content blocks
-
-```typescript
-private convertContent(content: Content[]): Anthropic.MessageParam['content']
-```
-
-**Parameters:**
-- `content`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Content").Content[]`
-
-**Returns:** `string | (import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").TextBlockParam | import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").ImageBlockParam | import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").ToolUseBlockParam | import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").ToolResultBlockParam)[]`
-
-#### `convertTools()`
-
-Convert our Tool[] → Anthropic tools
-
-```typescript
-private convertTools(tools?: Tool[]): Anthropic.Tool[] | undefined
-```
-
-**Parameters:**
-- `tools`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").Tool[] | undefined` *(optional)*
-
-**Returns:** `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").Tool[] | undefined`
+**Returns:** `MessageCreateParams`
 
 #### `convertResponse()`
 
-Convert Anthropic response → our LLMResponse format
+Convert Anthropic response -> our LLMResponse format
 
 ```typescript
 convertResponse(response: Anthropic.Message): LLMResponse
 ```
 
 **Parameters:**
-- `response`: `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").Message`
+- `response`: `Message`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse`
+**Returns:** `LLMResponse`
 
-#### `convertAnthropicContent()`
+#### `transformTool()`
 
-Convert Anthropic content blocks → our Content[]
+Transform standardized tool to Anthropic format
 
 ```typescript
-private convertAnthropicContent(
-    blocks: Array&lt;Anthropic.ContentBlock&gt;
-  ): Content[]
+protected transformTool(tool: ProviderToolFormat): Anthropic.Tool
 ```
 
 **Parameters:**
-- `blocks`: `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").ContentBlock[]`
+- `tool`: `ProviderToolFormat`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Content").Content[]`
+**Returns:** `Tool`
 
-#### `extractOutputText()`
+#### `convertProviderContent()`
 
-Extract output text from Anthropic content blocks
+Convert Anthropic content blocks to our Content[]
 
 ```typescript
-private extractOutputText(blocks: Array&lt;Anthropic.ContentBlock&gt;): string
+protected convertProviderContent(blocks: unknown[]): Content[]
 ```
 
 **Parameters:**
-- `blocks`: `import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/resources/messages").ContentBlock[]`
+- `blocks`: `unknown[]`
 
-**Returns:** `string`
+**Returns:** `Content[]`
 
-#### `mapStopReason()`
+#### `mapProviderStatus()`
 
-Map Anthropic stop_reason → our status
+Map Anthropic stop_reason to ResponseStatus
 
 ```typescript
-private mapStopReason(
-    stopReason: string | null
-  ): 'completed' | 'incomplete' | 'failed'
+protected mapProviderStatus(status: unknown): ResponseStatus
 ```
 
 **Parameters:**
-- `stopReason`: `string | null`
+- `status`: `unknown`
 
-**Returns:** `"completed" | "failed" | "incomplete"`
+**Returns:** `ResponseStatus`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `providerName` | `providerName: "anthropic"` | - |
 
 </details>
 
@@ -21848,7 +25222,7 @@ constructor(config: AnthropicConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").AnthropicConfig`
+- `config`: `AnthropicConfig`
 
 </details>
 
@@ -21864,9 +25238,9 @@ async generate(options: TextGenerateOptions): Promise&lt;LLMResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `streamGenerate()`
 
@@ -21877,9 +25251,9 @@ async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator&lt;St
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `getModelCapabilities()`
 
@@ -21892,20 +25266,7 @@ getModelCapabilities(model: string): ModelCapabilities
 **Parameters:**
 - `model`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ModelCapabilities`
-
-#### `handleError()`
-
-Handle Anthropic-specific errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
+**Returns:** `ModelCapabilities`
 
 </details>
 
@@ -21915,10 +25276,844 @@ private handleError(error: any): never
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "anthropic"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/@anthropic-ai/sdk/index").Anthropic` | - |
-| `converter` | `converter: import("/Users/aantich/dev/oneringai/src/infrastructure/providers/anthropic/AnthropicConverter").AnthropicConverter` | - |
-| `streamConverter` | `streamConverter: import("/Users/aantich/dev/oneringai/src/infrastructure/providers/anthropic/AnthropicStreamConverter").AnthropicStreamConverter` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: Anthropic` | - |
+| `converter` | `converter: AnthropicConverter` | - |
+| `streamConverter` | `streamConverter: AnthropicStreamConverter` | - |
+
+</details>
+
+---
+
+### BaseAgent `class`
+
+📍 [`src/core/BaseAgent.ts:218`](src/core/BaseAgent.ts)
+
+Abstract base class for all agent types.
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: TConfig, loggerComponent: string)
+```
+
+**Parameters:**
+- `config`: `TConfig`
+- `loggerComponent`: `string`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `getAgentType()`
+
+Get the agent type identifier for session serialization
+
+```typescript
+protected abstract getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
+```
+
+**Returns:** `"agent" | "task-agent" | "universal-agent"`
+
+#### `prepareSessionState()`
+
+Prepare session state before saving.
+Subclasses override to add their specific state (plan, memory, etc.)
+
+Default implementation does nothing - override in subclasses.
+
+```typescript
+protected prepareSessionState(): void
+```
+
+**Returns:** `void`
+
+#### `restoreSessionState()`
+
+Restore session state after loading.
+Subclasses override to restore their specific state (plan, memory, etc.)
+Called after tool state and approval state are restored.
+
+Default implementation does nothing - override in subclasses.
+
+```typescript
+protected async restoreSessionState(_session: Session): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `_session`: `Session`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getSerializedPlan()`
+
+Get plan state for session serialization.
+Subclasses with plans override this.
+
+```typescript
+protected getSerializedPlan(): SerializedPlan | undefined
+```
+
+**Returns:** `SerializedPlan | undefined`
+
+#### `getSerializedMemory()`
+
+Get memory state for session serialization.
+Subclasses with working memory override this.
+
+```typescript
+protected getSerializedMemory(): SerializedMemory | undefined
+```
+
+**Returns:** `SerializedMemory | undefined`
+
+#### `resolveConnector()`
+
+Resolve connector from string name or instance
+
+```typescript
+protected resolveConnector(ref: string | Connector): Connector
+```
+
+**Parameters:**
+- `ref`: `string | Connector`
+
+**Returns:** `Connector`
+
+#### `initializeToolManager()`
+
+Initialize tool manager with provided tools
+
+```typescript
+protected initializeToolManager(
+    existingManager?: ToolManager,
+    tools?: ToolFunction[],
+    options?: ToolRegistrationOptions
+  ): ToolManager
+```
+
+**Parameters:**
+- `existingManager`: `ToolManager | undefined` *(optional)*
+- `tools`: `ToolFunction&lt;any, any&gt;[] | undefined` *(optional)*
+- `options`: `ToolRegistrationOptions | undefined` *(optional)*
+
+**Returns:** `ToolManager`
+
+#### `registerTools()`
+
+Register multiple tools with the tool manager
+Utility method to avoid code duplication across agent types
+
+```typescript
+protected registerTools(
+    manager: ToolManager,
+    tools: ToolFunction[],
+    options?: ToolRegistrationOptions
+  ): void
+```
+
+**Parameters:**
+- `manager`: `ToolManager`
+- `tools`: `ToolFunction&lt;any, any&gt;[]`
+- `options`: `ToolRegistrationOptions | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `initializePermissionManager()`
+
+Initialize permission manager
+
+```typescript
+protected initializePermissionManager(
+    config?: AgentPermissionsConfig,
+    tools?: ToolFunction[]
+  ): ToolPermissionManager
+```
+
+**Parameters:**
+- `config`: `AgentPermissionsConfig | undefined` *(optional)*
+- `tools`: `ToolFunction&lt;any, any&gt;[] | undefined` *(optional)*
+
+**Returns:** `ToolPermissionManager`
+
+#### `initializeSession()`
+
+Initialize session management (call from subclass constructor after other setup)
+
+```typescript
+protected initializeSession(sessionConfig?: BaseSessionConfig): void
+```
+
+**Parameters:**
+- `sessionConfig`: `BaseSessionConfig | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `ensureSessionLoaded()`
+
+Ensure any pending session load is complete
+
+```typescript
+protected async ensureSessionLoaded(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `loadSessionInternal()`
+
+Internal method to load session
+
+```typescript
+protected async loadSessionInternal(sessionId: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `sessionId`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getSessionId()`
+
+Get the current session ID (if session is enabled)
+
+```typescript
+getSessionId(): string | null
+```
+
+**Returns:** `string | null`
+
+#### `hasSession()`
+
+Check if this agent has session support enabled
+
+```typescript
+hasSession(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `getSession()`
+
+Get the current session (for advanced use)
+
+```typescript
+getSession(): Session | null
+```
+
+**Returns:** `Session | null`
+
+#### `saveSession()`
+
+Save the current session to storage
+
+```typescript
+async saveSession(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `updateSessionData()`
+
+Update session custom data
+
+```typescript
+updateSessionData(key: string, value: unknown): void
+```
+
+**Parameters:**
+- `key`: `string`
+- `value`: `unknown`
+
+**Returns:** `void`
+
+#### `getSessionData()`
+
+Get session custom data
+
+```typescript
+getSessionData&lt;T = unknown&gt;(key: string): T | undefined
+```
+
+**Parameters:**
+- `key`: `string`
+
+**Returns:** `T | undefined`
+
+#### `addTool()`
+
+Add a tool to the agent
+
+```typescript
+addTool(tool: ToolFunction): void
+```
+
+**Parameters:**
+- `tool`: `ToolFunction&lt;any, any&gt;`
+
+**Returns:** `void`
+
+#### `removeTool()`
+
+Remove a tool from the agent
+
+```typescript
+removeTool(toolName: string): void
+```
+
+**Parameters:**
+- `toolName`: `string`
+
+**Returns:** `void`
+
+#### `listTools()`
+
+List registered tools (returns enabled tool names)
+
+```typescript
+listTools(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `setTools()`
+
+Replace all tools with a new array
+
+```typescript
+setTools(tools: ToolFunction[]): void
+```
+
+**Parameters:**
+- `tools`: `ToolFunction&lt;any, any&gt;[]`
+
+**Returns:** `void`
+
+#### `getEnabledToolDefinitions()`
+
+Get enabled tool definitions (for passing to LLM).
+This is a helper that extracts definitions from enabled tools.
+
+```typescript
+protected getEnabledToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[]
+```
+
+**Returns:** `FunctionToolDefinition[]`
+
+#### `setLifecycleHooks()`
+
+Set or update lifecycle hooks at runtime
+
+```typescript
+setLifecycleHooks(hooks: Partial&lt;AgentLifecycleHooks&gt;): void
+```
+
+**Parameters:**
+- `hooks`: `Partial&lt;AgentLifecycleHooks&gt;`
+
+**Returns:** `void`
+
+#### `invokeBeforeToolExecution()`
+
+Invoke beforeToolExecution hook if defined.
+Call this before executing a tool.
+
+```typescript
+protected async invokeBeforeToolExecution(context: ToolExecutionHookContext): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `context`: `ToolExecutionHookContext`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `invokeAfterToolExecution()`
+
+Invoke afterToolExecution hook if defined.
+Call this after tool execution completes (success or failure).
+
+```typescript
+protected async invokeAfterToolExecution(result: ToolExecutionResult): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `result`: `ToolExecutionResult`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `invokeBeforeContextPrepare()`
+
+Invoke beforeContextPrepare hook if defined.
+Call this before preparing context for LLM.
+
+```typescript
+protected async invokeBeforeContextPrepare(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `invokeBeforeCompaction()`
+
+Invoke beforeCompaction hook if defined.
+Call this before context compaction occurs.
+Gives the agent a chance to save important data to memory.
+
+```typescript
+protected async invokeBeforeCompaction(context: BeforeCompactionContext): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `context`: `BeforeCompactionContext`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `invokeAfterCompaction()`
+
+Invoke afterCompaction hook if defined.
+Call this after context compaction occurs.
+
+```typescript
+protected async invokeAfterCompaction(log: string[], tokensFreed: number): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `log`: `string[]`
+- `tokensFreed`: `number`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `invokeOnError()`
+
+Invoke onError hook if defined.
+Call this when the agent encounters an error.
+
+```typescript
+protected async invokeOnError(error: Error, phase: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `error`: `Error`
+- `phase`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `onCleanup()`
+
+Register a cleanup callback
+
+```typescript
+onCleanup(callback: () =&gt; void | Promise&lt;void&gt;): void
+```
+
+**Parameters:**
+- `callback`: `() =&gt; void | Promise&lt;void&gt;`
+
+**Returns:** `void`
+
+#### `baseDestroy()`
+
+Base cleanup for session and listeners.
+Subclasses should call super.baseDestroy() in their destroy() method.
+
+```typescript
+protected baseDestroy(): void
+```
+
+**Returns:** `void`
+
+#### `runCleanupCallbacks()`
+
+Run cleanup callbacks
+
+```typescript
+protected async runCleanupCallbacks(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string` | - |
+| `connector` | `connector: Connector` | - |
+| `model` | `model: string` | - |
+
+</details>
+
+---
+
+### BraveProvider `class`
+
+📍 [`src/capabilities/search/providers/BraveProvider.ts:15`](src/capabilities/search/providers/BraveProvider.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(readonly connector: Connector)
+```
+
+**Parameters:**
+- `connector`: `Connector`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `search()`
+
+```typescript
+async search(query: string, options: SearchOptions =
+```
+
+**Parameters:**
+- `query`: `string`
+- `options`: `SearchOptions` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;SearchResponse&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "brave"` | - |
+
+</details>
+
+---
+
+### Config `class`
+
+📍 [`src/core/Config.ts:13`](src/core/Config.ts)
+
+Global configuration singleton
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static load()`
+
+Load configuration from file
+If no path provided, searches default locations
+
+```typescript
+static async load(path?: string): Promise&lt;OneRingAIConfig&gt;
+```
+
+**Parameters:**
+- `path`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;OneRingAIConfig&gt;`
+
+#### `static loadSync()`
+
+Load configuration synchronously
+
+```typescript
+static loadSync(path?: string): OneRingAIConfig
+```
+
+**Parameters:**
+- `path`: `string | undefined` *(optional)*
+
+**Returns:** `OneRingAIConfig`
+
+#### `static get()`
+
+Get the current configuration
+Returns null if not loaded
+
+```typescript
+static get(): OneRingAIConfig | null
+```
+
+**Returns:** `OneRingAIConfig | null`
+
+#### `static getSection()`
+
+Get a specific section of the configuration
+
+```typescript
+static getSection&lt;K extends keyof OneRingAIConfig&gt;(section: K): OneRingAIConfig[K] | undefined
+```
+
+**Parameters:**
+- `section`: `K`
+
+**Returns:** `OneRingAIConfig[K] | undefined`
+
+#### `static isLoaded()`
+
+Check if configuration is loaded
+
+```typescript
+static isLoaded(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `static reload()`
+
+Reload configuration from file
+
+```typescript
+static async reload(path?: string): Promise&lt;OneRingAIConfig&gt;
+```
+
+**Parameters:**
+- `path`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;OneRingAIConfig&gt;`
+
+#### `static set()`
+
+Set configuration programmatically
+Useful for testing or runtime configuration
+
+```typescript
+static set(config: OneRingAIConfig): void
+```
+
+**Parameters:**
+- `config`: `OneRingAIConfig`
+
+**Returns:** `void`
+
+#### `static clear()`
+
+Clear configuration (for testing)
+
+```typescript
+static clear(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `instance` | `instance: OneRingAIConfig | null` | - |
+| `loaded` | `loaded: boolean` | - |
+
+</details>
+
+---
+
+### ConfigLoader `class`
+
+📍 [`src/infrastructure/config/ConfigLoader.ts:15`](src/infrastructure/config/ConfigLoader.ts)
+
+Configuration loader class
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static load()`
+
+Load configuration from file
+
+```typescript
+static async load(path?: string): Promise&lt;OneRingAIConfig&gt;
+```
+
+**Parameters:**
+- `path`: `string | undefined` *(optional)*
+
+**Returns:** `Promise&lt;OneRingAIConfig&gt;`
+
+#### `static loadSync()`
+
+Load configuration synchronously
+
+```typescript
+static loadSync(path?: string): OneRingAIConfig
+```
+
+**Parameters:**
+- `path`: `string | undefined` *(optional)*
+
+**Returns:** `OneRingAIConfig`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `DEFAULT_PATHS` | `DEFAULT_PATHS: string[]` | - |
+
+</details>
+
+---
+
+### ConversationHistoryManager `class`
+
+📍 [`src/core/history/ConversationHistoryManager.ts:35`](src/core/history/ConversationHistoryManager.ts)
+
+Default conversation history manager implementation
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: ConversationHistoryManagerConfig =
+```
+
+**Parameters:**
+- `config`: `ConversationHistoryManagerConfig` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `addMessage()`
+
+Add a message to history
+
+```typescript
+async addMessage(
+    role: 'user' | 'assistant' | 'system',
+    content: string,
+    metadata?: Record&lt;string, unknown&gt;
+  ): Promise&lt;HistoryMessage&gt;
+```
+
+**Parameters:**
+- `role`: `"user" | "assistant" | "system"`
+- `content`: `string`
+- `metadata`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
+
+**Returns:** `Promise&lt;HistoryMessage&gt;`
+
+#### `getMessages()`
+
+Get all messages
+
+```typescript
+async getMessages(): Promise&lt;HistoryMessage[]&gt;
+```
+
+**Returns:** `Promise&lt;HistoryMessage[]&gt;`
+
+#### `getRecentMessages()`
+
+Get recent messages
+
+```typescript
+async getRecentMessages(count?: number): Promise&lt;HistoryMessage[]&gt;
+```
+
+**Parameters:**
+- `count`: `number | undefined` *(optional)*
+
+**Returns:** `Promise&lt;HistoryMessage[]&gt;`
+
+#### `formatForContext()`
+
+Format history for LLM context
+
+```typescript
+async formatForContext(options?:
+```
+
+**Parameters:**
+- `options`: `{ maxTokens?: number | undefined; includeMetadata?: boolean | undefined; } | undefined` *(optional)*
+
+**Returns:** `Promise&lt;string&gt;`
+
+#### `compact()`
+
+Compact history based on strategy
+
+```typescript
+async compact(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `clear()`
+
+Clear all history
+
+```typescript
+async clear(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getMessageCount()`
+
+Get message count
+
+```typescript
+async getMessageCount(): Promise&lt;number&gt;
+```
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getState()`
+
+Get state for persistence
+
+```typescript
+async getState(): Promise&lt;SerializedHistoryState&gt;
+```
+
+**Returns:** `Promise&lt;SerializedHistoryState&gt;`
+
+#### `restoreState()`
+
+Restore from saved state
+
+```typescript
+async restoreState(state: SerializedHistoryState): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `state`: `SerializedHistoryState`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getConfig()`
+
+Get configuration
+
+```typescript
+getConfig(): IHistoryManagerConfig
+```
+
+**Returns:** `IHistoryManagerConfig`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `storage` | `storage: IHistoryStorage` | - |
+| `config` | `config: Required&lt;IHistoryManagerConfig&gt;` | - |
 
 </details>
 
@@ -21926,7 +26121,7 @@ private handleError(error: any): never
 
 ### ExecutionContext `class`
 
-📍 [`src/capabilities/agents/ExecutionContext.ts:74`](src/capabilities/agents/ExecutionContext.ts)
+📍 [`src/capabilities/agents/ExecutionContext.ts:76`](src/capabilities/agents/ExecutionContext.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -21941,7 +26136,7 @@ constructor(
 
 **Parameters:**
 - `executionId`: `string`
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionContextConfig` *(optional)* (default: `{}`)
+- `config`: `ExecutionContextConfig` *(optional)* (default: `{}`)
 
 </details>
 
@@ -21957,7 +26152,7 @@ addIteration(record: IterationRecord): void
 ```
 
 **Parameters:**
-- `record`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").IterationRecord`
+- `record`: `IterationRecord`
 
 **Returns:** `void`
 
@@ -21969,7 +26164,7 @@ Get iteration history
 getHistory(): IterationRecord[] | IterationSummary[]
 ```
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").IterationRecord[] | import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").IterationSummary[]`
+**Returns:** `IterationRecord[] | IterationSummary[]`
 
 #### `audit()`
 
@@ -21980,7 +26175,7 @@ audit(type: AuditEntry['type'], details: any, hookName?: string, toolName?: stri
 ```
 
 **Parameters:**
-- `type`: `"hook_executed" | "tool_modified" | "tool_skipped" | "execution_paused" | "execution_resumed" | "tool_approved" | "tool_rejected"`
+- `type`: `"hook_executed" | "tool_modified" | "tool_skipped" | "execution_paused" | "execution_resumed" | "tool_approved" | "tool_rejected" | "tool_blocked" | "tool_permission_approved"`
 - `details`: `any`
 - `hookName`: `string | undefined` *(optional)*
 - `toolName`: `string | undefined` *(optional)*
@@ -21995,7 +26190,7 @@ Get audit trail
 getAuditTrail(): readonly AuditEntry[]
 ```
 
-**Returns:** `readonly import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").AuditEntry[]`
+**Returns:** `readonly AuditEntry[]`
 
 #### `updateMetrics()`
 
@@ -22006,7 +26201,7 @@ updateMetrics(update: Partial&lt;ExecutionMetrics&gt;): void
 ```
 
 **Parameters:**
-- `update`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionMetrics&gt;`
+- `update`: `Partial&lt;ExecutionMetrics&gt;`
 
 **Returns:** `void`
 
@@ -22019,7 +26214,7 @@ addToolCall(toolCall: ToolCall): void
 ```
 
 **Parameters:**
-- `toolCall`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolCall`
+- `toolCall`: `ToolCall`
 
 **Returns:** `void`
 
@@ -22032,7 +26227,7 @@ addToolResult(result: ToolResult): void
 ```
 
 **Parameters:**
-- `result`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolResult`
+- `result`: `ToolResult`
 
 **Returns:** `void`
 
@@ -22048,16 +26243,6 @@ checkLimits(limits?:
 - `limits`: `{ maxExecutionTime?: number | undefined; maxToolCalls?: number | undefined; maxContextSize?: number | undefined; } | undefined` *(optional)*
 
 **Returns:** `void`
-
-#### `estimateSize()`
-
-Estimate memory usage (rough approximation)
-
-```typescript
-private estimateSize(): number
-```
-
-**Returns:** `number`
 
 #### `cleanup()`
 
@@ -22090,18 +26275,78 @@ getSummary()
 | `executionId` | `executionId: string` | - |
 | `startTime` | `startTime: Date` | - |
 | `iteration` | `iteration: number` | - |
-| `toolCalls` | `toolCalls: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolCall&gt;` | - |
-| `toolResults` | `toolResults: Map&lt;string, import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").ToolResult&gt;` | - |
+| `toolCalls` | `toolCalls: Map&lt;string, ToolCall&gt;` | - |
+| `toolResults` | `toolResults: Map&lt;string, ToolResult&gt;` | - |
 | `paused` | `paused: boolean` | - |
 | `pauseReason?` | `pauseReason: string | undefined` | - |
 | `cancelled` | `cancelled: boolean` | - |
 | `cancelReason?` | `cancelReason: string | undefined` | - |
 | `metadata` | `metadata: Map&lt;string, any&gt;` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionContextConfig` | - |
-| `iterations` | `iterations: import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").IterationRecord[]` | - |
-| `iterationSummaries` | `iterationSummaries: import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").IterationSummary[]` | - |
-| `metrics` | `metrics: import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").ExecutionMetrics` | - |
-| `auditTrail` | `auditTrail: import("/Users/aantich/dev/oneringai/src/capabilities/agents/ExecutionContext").AuditEntry[]` | - |
+| `config` | `config: ExecutionContextConfig` | - |
+| `iterations` | `iterations: IterationRecord[]` | - |
+| `iterationSummaries` | `iterationSummaries: IterationSummary[]` | - |
+| `metrics` | `metrics: ExecutionMetrics` | - |
+| `auditTrail` | `auditTrail: AuditEntry[]` | - |
+
+</details>
+
+---
+
+### FallbackScrapeProvider `class`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:302`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Internal provider that implements fallback chain
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(private providers: IScrapeProvider[])
+```
+
+**Parameters:**
+- `providers`: `IScrapeProvider[]`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `scrape()`
+
+```typescript
+async scrape(url: string, options?: ScrapeOptions): Promise&lt;ScrapeResponse&gt;
+```
+
+**Parameters:**
+- `url`: `string`
+- `options`: `ScrapeOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;ScrapeResponse&gt;`
+
+#### `supportsFeature()`
+
+```typescript
+supportsFeature(feature: ScrapeFeature): boolean
+```
+
+**Parameters:**
+- `feature`: `ScrapeFeature`
+
+**Returns:** `boolean`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "fallback"` | - |
+| `connector` | `connector: Connector` | - |
 
 </details>
 
@@ -22126,8 +26371,8 @@ constructor(
 
 **Parameters:**
 - `name`: `string`
-- `config`: `import("/Users/aantich/dev/oneringai/src/infrastructure/providers/generic/GenericOpenAIProvider").GenericOpenAIConfig`
-- `capabilities`: `Partial&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities&gt; | undefined` *(optional)*
+- `config`: `GenericOpenAIConfig`
+- `capabilities`: `Partial&lt;ProviderCapabilities&gt; | undefined` *(optional)*
 
 </details>
 
@@ -22146,7 +26391,7 @@ getModelCapabilities(model: string): ModelCapabilities
 **Parameters:**
 - `model`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ModelCapabilities`
+**Returns:** `ModelCapabilities`
 
 </details>
 
@@ -22156,7 +26401,7 @@ getModelCapabilities(model: string): ModelCapabilities
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: string` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
 
 </details>
 
@@ -22164,7 +26409,7 @@ getModelCapabilities(model: string): ModelCapabilities
 
 ### GoogleConverter `class`
 
-📍 [`src/infrastructure/providers/google/GoogleConverter.ts:22`](src/infrastructure/providers/google/GoogleConverter.ts)
+📍 [`src/infrastructure/providers/google/GoogleConverter.ts:28`](src/infrastructure/providers/google/GoogleConverter.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -22178,61 +26423,9 @@ async convertRequest(options: TextGenerateOptions): Promise&lt;any&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
 **Returns:** `Promise&lt;any&gt;`
-
-#### `convertMessages()`
-
-Convert our InputItem[] → Google contents
-
-```typescript
-private async convertMessages(input: string | InputItem[]): Promise&lt;GeminiContent[]&gt;
-```
-
-**Parameters:**
-- `input`: `string | import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").Content[]&gt;`
-
-#### `convertContentToParts()`
-
-Convert our Content[] → Google parts
-
-```typescript
-private async convertContentToParts(content: Content[]): Promise&lt;Part[]&gt;
-```
-
-**Parameters:**
-- `content`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Content").Content[]`
-
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").Part[]&gt;`
-
-#### `convertTools()`
-
-Convert our Tool[] → Google function declarations
-
-```typescript
-private convertTools(tools?: Tool[]): FunctionDeclaration[] | undefined
-```
-
-**Parameters:**
-- `tools`: `import("/Users/aantich/dev/oneringai/src/domain/entities/Tool").Tool[] | undefined` *(optional)*
-
-**Returns:** `import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").FunctionDeclaration[] | undefined`
-
-#### `convertParametersSchema()`
-
-Convert JSON Schema parameters to Google's format
-
-```typescript
-private convertParametersSchema(schema: any): any
-```
-
-**Parameters:**
-- `schema`: `any`
-
-**Returns:** `any`
 
 #### `convertResponse()`
 
@@ -22245,59 +26438,7 @@ convertResponse(response: any): LLMResponse
 **Parameters:**
 - `response`: `any`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse`
-
-#### `convertGeminiPartsToContent()`
-
-Convert Google parts → our Content[]
-
-```typescript
-private convertGeminiPartsToContent(parts: Part[]): Content[]
-```
-
-**Parameters:**
-- `parts`: `import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").Part[]`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Content").Content[]`
-
-#### `extractOutputText()`
-
-Extract output text from Google parts
-
-```typescript
-private extractOutputText(parts: Part[]): string
-```
-
-**Parameters:**
-- `parts`: `import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").Part[]`
-
-**Returns:** `string`
-
-#### `mapFinishReason()`
-
-Map Google finish reason → our status
-
-```typescript
-private mapFinishReason(finishReason: string | undefined): 'completed' | 'incomplete' | 'failed'
-```
-
-**Parameters:**
-- `finishReason`: `string | undefined`
-
-**Returns:** `"completed" | "failed" | "incomplete"`
-
-#### `extractToolName()`
-
-Extract tool name from tool_use_id using tracked mapping
-
-```typescript
-private extractToolName(toolUseId: string): string
-```
-
-**Parameters:**
-- `toolUseId`: `string`
-
-**Returns:** `string`
+**Returns:** `LLMResponse`
 
 #### `clearMappings()`
 
@@ -22349,7 +26490,7 @@ constructor(config: GoogleConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").GoogleConfig`
+- `config`: `GoogleConfig`
 
 </details>
 
@@ -22365,9 +26506,9 @@ async generate(options: TextGenerateOptions): Promise&lt;LLMResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `streamGenerate()`
 
@@ -22378,9 +26519,9 @@ async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator&lt;St
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `getModelCapabilities()`
 
@@ -22393,20 +26534,7 @@ getModelCapabilities(model: string): ModelCapabilities
 **Parameters:**
 - `model`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ModelCapabilities`
-
-#### `handleError()`
-
-Handle Google-specific errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
+**Returns:** `ModelCapabilities`
 
 </details>
 
@@ -22416,10 +26544,10 @@ private handleError(error: any): never
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "google"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").GoogleGenAI` | - |
-| `converter` | `converter: import("/Users/aantich/dev/oneringai/src/infrastructure/providers/google/GoogleConverter").GoogleConverter` | - |
-| `streamConverter` | `streamConverter: import("/Users/aantich/dev/oneringai/src/infrastructure/providers/google/GoogleStreamConverter").GoogleStreamConverter` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: GoogleGenAI` | - |
+| `converter` | `converter: GoogleConverter` | - |
+| `streamConverter` | `streamConverter: GoogleStreamConverter` | - |
 
 </details>
 
@@ -22439,7 +26567,7 @@ constructor(config: GoogleMediaConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").GoogleMediaConfig`
+- `config`: `GoogleMediaConfig`
 
 </details>
 
@@ -22455,9 +26583,9 @@ async generateVideo(options: VideoGenerateOptions): Promise&lt;VideoResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoGenerateOptions`
+- `options`: `VideoGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `getVideoStatus()`
 
@@ -22470,7 +26598,7 @@ async getVideoStatus(jobId: string): Promise&lt;VideoResponse&gt;
 **Parameters:**
 - `jobId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `downloadVideo()`
 
@@ -22494,9 +26622,9 @@ async extendVideo(options: VideoExtendOptions): Promise&lt;VideoResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoExtendOptions`
+- `options`: `VideoExtendOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `listModels()`
 
@@ -22520,73 +26648,7 @@ async waitForCompletion(jobId: string, timeoutMs: number = 600000): Promise&lt;V
 - `jobId`: `string`
 - `timeoutMs`: `number` *(optional)* (default: `600000`)
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
-
-#### `extractJobId()`
-
-Extract job ID from operation
-
-```typescript
-private extractJobId(operation: any): string
-```
-
-**Parameters:**
-- `operation`: `any`
-
-**Returns:** `string`
-
-#### `prepareImageInput()`
-
-Prepare image input for API
-
-```typescript
-private async prepareImageInput(image: Buffer | string): Promise&lt;any&gt;
-```
-
-**Parameters:**
-- `image`: `string | Buffer&lt;ArrayBufferLike&gt;`
-
-**Returns:** `Promise&lt;any&gt;`
-
-#### `mapResponse()`
-
-Map operation to VideoResponse
-
-```typescript
-private mapResponse(jobId: string, operation: any): VideoResponse
-```
-
-**Parameters:**
-- `jobId`: `string`
-- `operation`: `any`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse`
-
-#### `mapStatus()`
-
-Map operation status to our status type
-
-```typescript
-private mapStatus(operation: any): VideoStatus
-```
-
-**Parameters:**
-- `operation`: `any`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoStatus`
-
-#### `handleError()`
-
-Handle Google API errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 </details>
 
@@ -22597,8 +26659,8 @@ private handleError(error: any): never
 |----------|------|-------------|
 | `name` | `name: string` | - |
 | `vendor` | `vendor: "google"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").GoogleGenAI` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: GoogleGenAI` | - |
 | `pendingOperations` | `pendingOperations: Map&lt;string, any&gt;` | - |
 
 </details>
@@ -22620,27 +26682,14 @@ constructor(
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").HookConfig` *(optional)* (default: `{}`)
-- `emitter`: `import("/Users/aantich/dev/oneringai/node_modules/eventemitter3/index").EventEmitter&lt;string | symbol, any&gt;`
+- `config`: `HookConfig` *(optional)* (default: `{}`)
+- `emitter`: `EventEmitter&lt;string | symbol, any&gt;`
 - `errorHandling`: `{ maxConsecutiveErrors?: number | undefined; } | undefined` *(optional)*
 
 </details>
 
 <details>
 <summary><strong>Methods</strong></summary>
-
-#### `registerFromConfig()`
-
-Register hooks from configuration
-
-```typescript
-private registerFromConfig(config: HookConfig): void
-```
-
-**Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").HookConfig`
-
-**Returns:** `void`
 
 #### `register()`
 
@@ -22652,7 +26701,7 @@ register(name: HookName, hook: Hook&lt;any, any&gt;): void
 
 **Parameters:**
 - `name`: `"before:execution" | "after:execution" | "before:llm" | "after:llm" | "before:tool" | "after:tool" | "approve:tool" | "pause:check"`
-- `hook`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").Hook&lt;any, any&gt;`
+- `hook`: `Hook&lt;any, any&gt;`
 
 **Returns:** `void`
 
@@ -22670,81 +26719,10 @@ async executeHooks&lt;K extends HookName&gt;(
 
 **Parameters:**
 - `name`: `K`
-- `context`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").HookSignatures[K]["context"]`
-- `defaultResult`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").HookSignatures[K]["result"]`
+- `context`: `HookSignatures[K]["context"]`
+- `defaultResult`: `HookSignatures[K]["result"]`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").HookSignatures[K]["result"]&gt;`
-
-#### `executeHooksSequential()`
-
-Execute hooks sequentially
-
-```typescript
-private async executeHooksSequential&lt;T&gt;(
-    hooks: Hook&lt;any, any&gt;[],
-    context: any,
-    defaultResult: T
-  ): Promise&lt;T&gt;
-```
-
-**Parameters:**
-- `hooks`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").Hook&lt;any, any&gt;[]`
-- `context`: `any`
-- `defaultResult`: `T`
-
-**Returns:** `Promise&lt;T&gt;`
-
-#### `executeHooksParallel()`
-
-Execute hooks in parallel
-
-```typescript
-private async executeHooksParallel&lt;T&gt;(
-    hooks: Hook&lt;any, any&gt;[],
-    context: any,
-    defaultResult: T
-  ): Promise&lt;T&gt;
-```
-
-**Parameters:**
-- `hooks`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").Hook&lt;any, any&gt;[]`
-- `context`: `any`
-- `defaultResult`: `T`
-
-**Returns:** `Promise&lt;T&gt;`
-
-#### `getHookKey()`
-
-Generate unique key for a hook
-
-```typescript
-private getHookKey(hook: Hook&lt;any, any&gt;, index: number): string
-```
-
-**Parameters:**
-- `hook`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").Hook&lt;any, any&gt;`
-- `index`: `number`
-
-**Returns:** `string`
-
-#### `executeHookSafely()`
-
-Execute single hook with error isolation and timeout (with per-hook error tracking)
-
-```typescript
-private async executeHookSafely&lt;T&gt;(
-    hook: Hook&lt;any, any&gt;,
-    context: any,
-    hookKey?: string
-  ): Promise&lt;T | null&gt;
-```
-
-**Parameters:**
-- `hook`: `import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").Hook&lt;any, any&gt;`
-- `context`: `any`
-- `hookKey`: `string | undefined` *(optional)*
-
-**Returns:** `Promise&lt;T | null&gt;`
+**Returns:** `Promise&lt;HookSignatures[K]["result"]&gt;`
 
 #### `hasHooks()`
 
@@ -22812,13 +26790,634 @@ getDisabledHooks(): string[]
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `hooks` | `hooks: Map&lt;"before:execution" | "after:execution" | "before:llm" | "after:llm" | "before:tool" | "after:tool" | "approve:tool" | "pause:check", import("/Users/aantich/dev/oneringai/src/capabilities/agents/types/HookTypes").Hook&lt;any, any&gt;[]&gt;` | - |
+| `hooks` | `hooks: Map&lt;"before:execution" | "after:execution" | "before:llm" | "after:llm" | "before:tool" | "after:tool" | "approve:tool" | "pause:check", Hook&lt;any, any&gt;[]&gt;` | - |
 | `timeout` | `timeout: number` | - |
 | `parallel` | `parallel: boolean` | - |
 | `hookErrorCounts` | `hookErrorCounts: Map&lt;string, number&gt;` | - |
 | `disabledHooks` | `disabledHooks: Set&lt;string&gt;` | - |
 | `maxConsecutiveErrors` | `maxConsecutiveErrors: number` | - |
-| `emitter` | `emitter: import("/Users/aantich/dev/oneringai/node_modules/eventemitter3/index").EventEmitter&lt;string | symbol, any&gt;` | - |
+| `emitter` | `emitter: EventEmitter&lt;string | symbol, any&gt;` | - |
+
+</details>
+
+---
+
+### IdempotencyCache `class`
+
+📍 [`src/core/IdempotencyCache.ts:54`](src/core/IdempotencyCache.ts)
+
+IdempotencyCache handles tool call result caching.
+
+Features:
+- Cache based on tool name + args
+- Custom key generation per tool
+- TTL-based expiration
+- Max entries eviction
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: IdempotencyCacheConfig = DEFAULT_IDEMPOTENCY_CONFIG)
+```
+
+**Parameters:**
+- `config`: `IdempotencyCacheConfig` *(optional)* (default: `DEFAULT_IDEMPOTENCY_CONFIG`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `get()`
+
+Get cached result for tool call
+
+```typescript
+async get(tool: ToolFunction, args: Record&lt;string, unknown&gt;): Promise&lt;unknown&gt;
+```
+
+**Parameters:**
+- `tool`: `ToolFunction&lt;any, any&gt;`
+- `args`: `Record&lt;string, unknown&gt;`
+
+**Returns:** `Promise&lt;unknown&gt;`
+
+#### `set()`
+
+Cache result for tool call
+
+```typescript
+async set(tool: ToolFunction, args: Record&lt;string, unknown&gt;, result: unknown): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `tool`: `ToolFunction&lt;any, any&gt;`
+- `args`: `Record&lt;string, unknown&gt;`
+- `result`: `unknown`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `has()`
+
+Check if tool call is cached
+
+```typescript
+async has(tool: ToolFunction, args: Record&lt;string, unknown&gt;): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `tool`: `ToolFunction&lt;any, any&gt;`
+- `args`: `Record&lt;string, unknown&gt;`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `invalidate()`
+
+Invalidate cached result
+
+```typescript
+async invalidate(tool: ToolFunction, args: Record&lt;string, unknown&gt;): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `tool`: `ToolFunction&lt;any, any&gt;`
+- `args`: `Record&lt;string, unknown&gt;`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `invalidateTool()`
+
+Invalidate all cached results for a tool
+
+```typescript
+async invalidateTool(tool: ToolFunction): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `tool`: `ToolFunction&lt;any, any&gt;`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `pruneExpired()`
+
+Prune expired entries from cache
+
+```typescript
+pruneExpired(): number
+```
+
+**Returns:** `number`
+
+#### `clear()`
+
+Clear all cached results
+
+```typescript
+async clear(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getStats()`
+
+Get cache statistics
+
+```typescript
+getStats(): CacheStats
+```
+
+**Returns:** `CacheStats`
+
+#### `generateKey()`
+
+Generate cache key for tool + args
+
+```typescript
+generateKey(tool: ToolFunction, args: Record&lt;string, unknown&gt;): string
+```
+
+**Parameters:**
+- `tool`: `ToolFunction&lt;any, any&gt;`
+- `args`: `Record&lt;string, unknown&gt;`
+
+**Returns:** `string`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `config` | `config: IdempotencyCacheConfig` | - |
+| `cache` | `cache: Map&lt;string, { value: unknown; expiresAt: number; }&gt;` | - |
+| `hits` | `hits: number` | - |
+| `misses` | `misses: number` | - |
+| `cleanupInterval?` | `cleanupInterval: NodeJS.Timeout | undefined` | - |
+
+</details>
+
+---
+
+### MCPClient `class`
+
+📍 [`src/core/mcp/MCPClient.ts:50`](src/core/mcp/MCPClient.ts)
+
+MCP Client class
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: MCPServerConfig, defaults?: MCPConfiguration['defaults'])
+```
+
+**Parameters:**
+- `config`: `MCPServerConfig`
+- `defaults`: `{ autoConnect?: boolean | undefined; autoReconnect?: boolean | undefined; reconnectIntervalMs?: number | undefined; maxReconnectAttempts?: number | undefined; requestTimeoutMs?: number | undefined; healthCheckIntervalMs?: number | undefined; } | undefined` *(optional)*
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `connect()`
+
+```typescript
+async connect(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `disconnect()`
+
+```typescript
+async disconnect(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `reconnect()`
+
+```typescript
+async reconnect(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `isConnected()`
+
+```typescript
+isConnected(): boolean
+```
+
+**Returns:** `boolean`
+
+#### `ping()`
+
+```typescript
+async ping(): Promise&lt;boolean&gt;
+```
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `listTools()`
+
+```typescript
+async listTools(): Promise&lt;MCPTool[]&gt;
+```
+
+**Returns:** `Promise&lt;MCPTool[]&gt;`
+
+#### `callTool()`
+
+```typescript
+async callTool(name: string, args: Record&lt;string, unknown&gt;): Promise&lt;MCPToolResult&gt;
+```
+
+**Parameters:**
+- `name`: `string`
+- `args`: `Record&lt;string, unknown&gt;`
+
+**Returns:** `Promise&lt;MCPToolResult&gt;`
+
+#### `registerTools()`
+
+```typescript
+registerTools(toolManager: ToolManager): void
+```
+
+**Parameters:**
+- `toolManager`: `ToolManager`
+
+**Returns:** `void`
+
+#### `unregisterTools()`
+
+```typescript
+unregisterTools(toolManager: ToolManager): void
+```
+
+**Parameters:**
+- `toolManager`: `ToolManager`
+
+**Returns:** `void`
+
+#### `listResources()`
+
+```typescript
+async listResources(): Promise&lt;MCPResource[]&gt;
+```
+
+**Returns:** `Promise&lt;MCPResource[]&gt;`
+
+#### `readResource()`
+
+```typescript
+async readResource(uri: string): Promise&lt;MCPResourceContent&gt;
+```
+
+**Parameters:**
+- `uri`: `string`
+
+**Returns:** `Promise&lt;MCPResourceContent&gt;`
+
+#### `subscribeResource()`
+
+```typescript
+async subscribeResource(uri: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `uri`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `unsubscribeResource()`
+
+```typescript
+async unsubscribeResource(uri: string): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `uri`: `string`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `listPrompts()`
+
+```typescript
+async listPrompts(): Promise&lt;MCPPrompt[]&gt;
+```
+
+**Returns:** `Promise&lt;MCPPrompt[]&gt;`
+
+#### `getPrompt()`
+
+```typescript
+async getPrompt(name: string, args?: Record&lt;string, unknown&gt;): Promise&lt;MCPPromptResult&gt;
+```
+
+**Parameters:**
+- `name`: `string`
+- `args`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
+
+**Returns:** `Promise&lt;MCPPromptResult&gt;`
+
+#### `getState()`
+
+```typescript
+getState(): MCPClientState
+```
+
+**Returns:** `MCPClientState`
+
+#### `loadState()`
+
+```typescript
+loadState(state: MCPClientState): void
+```
+
+**Parameters:**
+- `state`: `MCPClientState`
+
+**Returns:** `void`
+
+#### `destroy()`
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string` | - |
+| `config` | `config: Required&lt;Omit&lt;MCPServerConfig, "permissions" | "displayName" | "description" | "toolNamespace"&gt;&gt; & { displayName?: string | undefined; description?: string | undefined; permissions?: { defaultScope?: "session" | "once" | "always" | "never" | undefined; defaultRiskLevel?: "critical" | "high" | "low" | "medium" | undefined; } | undefined; toolNamespace: string; }` | - |
+| `client` | `client: Client&lt;{ method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; "io.modelcontextprotocol/related-task"?: { taskId: string; } | undefined; } | undefined; } | undefined; }, { method: string; params?: { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; "io.modelcontextprotocol/related-task"?: { taskId: string; } | undefined; } | undefined; } | undefined; }, { [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; "io.modelcontextprotocol/related-task"?: { taskId: string; } | undefined; } | undefined; }&gt; | null` | - |
+| `transport` | `transport: Transport | null` | - |
+| `reconnectAttempts` | `reconnectAttempts: number` | - |
+| `reconnectTimer?` | `reconnectTimer: NodeJS.Timeout | undefined` | - |
+| `healthCheckTimer?` | `healthCheckTimer: NodeJS.Timeout | undefined` | - |
+| `subscribedResources` | `subscribedResources: Set&lt;string&gt;` | - |
+| `registeredToolNames` | `registeredToolNames: Set&lt;string&gt;` | - |
+
+</details>
+
+---
+
+### MCPRegistry `class`
+
+📍 [`src/core/mcp/MCPRegistry.ts:18`](src/core/mcp/MCPRegistry.ts)
+
+MCP Registry - static registry for MCP clients
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static create()`
+
+Create and register an MCP client
+
+```typescript
+static create(config: MCPServerConfig, defaults?: MCPConfiguration['defaults']): IMCPClient
+```
+
+**Parameters:**
+- `config`: `MCPServerConfig`
+- `defaults`: `{ autoConnect?: boolean | undefined; autoReconnect?: boolean | undefined; reconnectIntervalMs?: number | undefined; maxReconnectAttempts?: number | undefined; requestTimeoutMs?: number | undefined; healthCheckIntervalMs?: number | undefined; } | undefined` *(optional)*
+
+**Returns:** `IMCPClient`
+
+#### `static get()`
+
+Get a registered MCP client
+
+```typescript
+static get(name: string): IMCPClient
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `IMCPClient`
+
+#### `static has()`
+
+Check if an MCP client is registered
+
+```typescript
+static has(name: string): boolean
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `boolean`
+
+#### `static list()`
+
+List all registered MCP client names
+
+```typescript
+static list(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `static getInfo()`
+
+Get info about a registered MCP client
+
+```typescript
+static getInfo(name: string):
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `{ name: string; state: string; connected: boolean; toolCount: number; }`
+
+#### `static getAllInfo()`
+
+Get info about all registered MCP clients
+
+```typescript
+static getAllInfo(): Array&lt;
+```
+
+**Returns:** `{ name: string; state: string; connected: boolean; toolCount: number; }[]`
+
+#### `static createFromConfig()`
+
+Create multiple clients from MCP configuration
+
+```typescript
+static createFromConfig(config: MCPConfiguration): IMCPClient[]
+```
+
+**Parameters:**
+- `config`: `MCPConfiguration`
+
+**Returns:** `IMCPClient[]`
+
+#### `static loadFromConfigFile()`
+
+Load MCP configuration from file and create clients
+
+```typescript
+static async loadFromConfigFile(path: string): Promise&lt;IMCPClient[]&gt;
+```
+
+**Parameters:**
+- `path`: `string`
+
+**Returns:** `Promise&lt;IMCPClient[]&gt;`
+
+#### `static connectAll()`
+
+Connect all servers with autoConnect enabled
+
+```typescript
+static async connectAll(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `static disconnectAll()`
+
+Disconnect all servers
+
+```typescript
+static async disconnectAll(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `static destroyAll()`
+
+Destroy all clients and clear registry
+
+```typescript
+static destroyAll(): void
+```
+
+**Returns:** `void`
+
+#### `static clear()`
+
+Clear the registry (for testing)
+
+```typescript
+static clear(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `clients` | `clients: Map&lt;string, IMCPClient&gt;` | - |
+
+</details>
+
+---
+
+### OpenAIResponsesConverter `class`
+
+📍 [`src/infrastructure/providers/openai/OpenAIResponsesConverter.ts:23`](src/infrastructure/providers/openai/OpenAIResponsesConverter.ts)
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `convertInput()`
+
+Convert our input format to Responses API format
+
+```typescript
+convertInput(
+    input: string | InputItem[],
+    instructions?: string
+  ):
+```
+
+**Parameters:**
+- `input`: `string | InputItem[]`
+- `instructions`: `string | undefined` *(optional)*
+
+**Returns:** `{ input: string | ResponseInputItem[]; instructions?: string | undefined; }`
+
+#### `convertResponse()`
+
+Convert Responses API response to our LLMResponse format
+
+```typescript
+convertResponse(response: ResponsesAPIResponse): LLMResponse
+```
+
+**Parameters:**
+- `response`: `Response`
+
+**Returns:** `LLMResponse`
+
+#### `convertTools()`
+
+Convert our tool definitions to Responses API format
+
+Key difference: Responses API uses internally-tagged format
+(no nested `function` object) and strict mode requires proper schemas
+
+```typescript
+convertTools(tools: Tool[]): ResponsesAPI.Tool[]
+```
+
+**Parameters:**
+- `tools`: `Tool[]`
+
+**Returns:** `Tool[]`
+
+#### `convertToolChoice()`
+
+Convert tool_choice option to Responses API format
+
+```typescript
+convertToolChoice(
+    toolChoice?: 'auto' | 'required' |
+```
+
+**Parameters:**
+- `toolChoice`: `"auto" | "required" | { type: "function"; function: { name: string; }; } | undefined` *(optional)*
+
+**Returns:** `ToolChoiceOptions | ToolChoiceAllowed | ToolChoiceTypes | ToolChoiceFunction | ToolChoiceMcp | ToolChoiceCustom | ToolChoiceApplyPatch | ToolChoiceShell | undefined`
+
+#### `convertResponseFormat()`
+
+Convert response_format option to Responses API format (modalities)
+
+```typescript
+convertResponseFormat(
+    responseFormat?:
+```
+
+**Parameters:**
+- `responseFormat`: `{ type: "text" | "json_object" | "json_schema"; json_schema?: any; } | undefined` *(optional)*
+
+**Returns:** `ResponseTextConfig | undefined`
 
 </details>
 
@@ -22838,7 +27437,7 @@ constructor(config: OpenAIMediaConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").OpenAIMediaConfig`
+- `config`: `OpenAIMediaConfig`
 
 </details>
 
@@ -22854,9 +27453,9 @@ async generateVideo(options: VideoGenerateOptions): Promise&lt;VideoResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoGenerateOptions`
+- `options`: `VideoGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `getVideoStatus()`
 
@@ -22869,7 +27468,7 @@ async getVideoStatus(jobId: string): Promise&lt;VideoResponse&gt;
 **Parameters:**
 - `jobId`: `string`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `downloadVideo()`
 
@@ -22894,9 +27493,9 @@ async extendVideo(options: VideoExtendOptions): Promise&lt;VideoResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoExtendOptions`
+- `options`: `VideoExtendOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse&gt;`
+**Returns:** `Promise&lt;VideoResponse&gt;`
 
 #### `listModels()`
 
@@ -22921,110 +27520,6 @@ async cancelJob(jobId: string): Promise&lt;boolean&gt;
 
 **Returns:** `Promise&lt;boolean&gt;`
 
-#### `mapResponse()`
-
-Map OpenAI SDK Video response to our VideoResponse format
-
-```typescript
-private mapResponse(response: OpenAI.Videos.Video): VideoResponse
-```
-
-**Parameters:**
-- `response`: `import("/Users/aantich/dev/oneringai/node_modules/openai/resources/videos").Video`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/IVideoProvider").VideoResponse`
-
-#### `mapStatus()`
-
-Map OpenAI status to our status type
-
-```typescript
-private mapStatus(status: string): 'pending' | 'processing' | 'completed' | 'failed'
-```
-
-**Parameters:**
-- `status`: `string`
-
-**Returns:** `"completed" | "failed" | "pending" | "processing"`
-
-#### `durationToSeconds()`
-
-Convert duration number to SDK's seconds string format
-
-```typescript
-private durationToSeconds(duration: number): '4' | '8' | '12'
-```
-
-**Parameters:**
-- `duration`: `number`
-
-**Returns:** `"4" | "8" | "12"`
-
-#### `secondsStringToNumber()`
-
-Convert seconds string back to number
-
-```typescript
-private secondsStringToNumber(seconds: string): number
-```
-
-**Parameters:**
-- `seconds`: `string`
-
-**Returns:** `number`
-
-#### `resolutionToSize()`
-
-Map resolution string to SDK's size format
-
-```typescript
-private resolutionToSize(resolution: string): '720x1280' | '1280x720' | '1024x1792' | '1792x1024'
-```
-
-**Parameters:**
-- `resolution`: `string`
-
-**Returns:** `"720x1280" | "1280x720" | "1024x1792" | "1792x1024"`
-
-#### `aspectRatioToSize()`
-
-Map aspect ratio to SDK's size format
-
-```typescript
-private aspectRatioToSize(aspectRatio: string): '720x1280' | '1280x720' | '1024x1792' | '1792x1024'
-```
-
-**Parameters:**
-- `aspectRatio`: `string`
-
-**Returns:** `"720x1280" | "1280x720" | "1024x1792" | "1792x1024"`
-
-#### `prepareImageInput()`
-
-Prepare image input for API (input_reference)
-
-```typescript
-private async prepareImageInput(image: Buffer | string): Promise&lt;any&gt;
-```
-
-**Parameters:**
-- `image`: `string | Buffer&lt;ArrayBufferLike&gt;`
-
-**Returns:** `Promise&lt;any&gt;`
-
-#### `handleError()`
-
-Handle OpenAI API errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
-
 </details>
 
 <details>
@@ -23034,8 +27529,8 @@ private handleError(error: any): never
 |----------|------|-------------|
 | `name` | `name: string` | - |
 | `vendor` | `vendor: "openai"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/openai/client").OpenAI` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: OpenAI` | - |
 
 </details>
 
@@ -23043,7 +27538,7 @@ private handleError(error: any): never
 
 ### OpenAITextProvider `class`
 
-📍 [`src/infrastructure/providers/openai/OpenAITextProvider.ts:19`](src/infrastructure/providers/openai/OpenAITextProvider.ts)
+📍 [`src/infrastructure/providers/openai/OpenAITextProvider.ts:22`](src/infrastructure/providers/openai/OpenAITextProvider.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -23055,7 +27550,7 @@ constructor(config: OpenAIConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").OpenAIConfig`
+- `config`: `OpenAIConfig`
 
 </details>
 
@@ -23071,22 +27566,22 @@ async generate(options: TextGenerateOptions): Promise&lt;LLMResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `streamGenerate()`
 
-Stream response using OpenAI Streaming API
+Stream response using OpenAI Responses API
 
 ```typescript
 async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator&lt;StreamEvent&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `getModelCapabilities()`
 
@@ -23099,47 +27594,7 @@ getModelCapabilities(model: string): ModelCapabilities
 **Parameters:**
 - `model`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ModelCapabilities`
-
-#### `convertInput()`
-
-Convert our input format to OpenAI messages format
-
-```typescript
-private convertInput(input: string | any[], instructions?: string): any[]
-```
-
-**Parameters:**
-- `input`: `string | any[]`
-- `instructions`: `string | undefined` *(optional)*
-
-**Returns:** `any[]`
-
-#### `convertResponse()`
-
-Convert OpenAI response to our LLMResponse format
-
-```typescript
-private convertResponse(response: OpenAI.Chat.Completions.ChatCompletion): LLMResponse
-```
-
-**Parameters:**
-- `response`: `import("/Users/aantich/dev/oneringai/node_modules/openai/resources/chat/completions/completions").ChatCompletion`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse`
-
-#### `handleError()`
-
-Handle OpenAI-specific errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
+**Returns:** `ModelCapabilities`
 
 </details>
 
@@ -23149,8 +27604,10 @@ private handleError(error: any): never
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: string` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/openai/client").OpenAI` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: OpenAI` | - |
+| `converter` | `converter: OpenAIResponsesConverter` | - |
+| `streamConverter` | `streamConverter: OpenAIResponsesStreamConverter` | - |
 
 </details>
 
@@ -23193,7 +27650,7 @@ async run(initialInput?: string): Promise&lt;string | ConnectorConfigResult&gt;
 **Parameters:**
 - `initialInput`: `string | undefined` *(optional)*
 
-**Returns:** `Promise&lt;string | import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfigResult&gt;`
+**Returns:** `Promise&lt;string | ConnectorConfigResult&gt;`
 
 #### `continue()`
 
@@ -23206,40 +27663,7 @@ async continue(userMessage: string): Promise&lt;string | ConnectorConfigResult&g
 **Parameters:**
 - `userMessage`: `string`
 
-**Returns:** `Promise&lt;string | import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfigResult&gt;`
-
-#### `getSystemInstructions()`
-
-Get system instructions for the agent
-
-```typescript
-private getSystemInstructions(): string
-```
-
-**Returns:** `string`
-
-#### `extractConfig()`
-
-Extract configuration from AI response
-
-```typescript
-private extractConfig(responseText: string): ConnectorConfigResult
-```
-
-**Parameters:**
-- `responseText`: `string`
-
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/entities/Connector").ConnectorConfigResult`
-
-#### `getDefaultModel()`
-
-Get default model
-
-```typescript
-private getDefaultModel(): string
-```
-
-**Returns:** `string`
+**Returns:** `Promise&lt;string | ConnectorConfigResult&gt;`
 
 #### `reset()`
 
@@ -23258,9 +27682,240 @@ reset(): void
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `agent` | `agent: import("/Users/aantich/dev/oneringai/src/core/Agent").Agent | null` | - |
-| `conversationHistory` | `conversationHistory: import("/Users/aantich/dev/oneringai/src/domain/entities/Message").InputItem[]` | - |
+| `agent` | `agent: Agent | null` | - |
+| `conversationHistory` | `conversationHistory: InputItem[]` | - |
 | `connectorName` | `connectorName: string` | - |
+
+</details>
+
+---
+
+### RapidAPIProvider `class`
+
+📍 [`src/capabilities/search/providers/RapidAPIProvider.ts:15`](src/capabilities/search/providers/RapidAPIProvider.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(readonly connector: Connector)
+```
+
+**Parameters:**
+- `connector`: `Connector`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `search()`
+
+```typescript
+async search(query: string, options: SearchOptions =
+```
+
+**Parameters:**
+- `query`: `string`
+- `options`: `SearchOptions` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;SearchResponse&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "rapidapi"` | - |
+
+</details>
+
+---
+
+### ScrapeProvider `class`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:205`](src/capabilities/scrape/ScrapeProvider.ts)
+
+ScrapeProvider factory
+
+Creates the appropriate provider based on Connector's serviceType.
+Use createWithFallback() for automatic fallback on failure.
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static create()`
+
+Create a scrape provider from a connector
+
+```typescript
+static create(config: ScrapeProviderConfig): IScrapeProvider
+```
+
+**Parameters:**
+- `config`: `ScrapeProviderConfig`
+
+**Returns:** `IScrapeProvider`
+
+#### `static hasProvider()`
+
+Check if a service type has a registered provider
+
+```typescript
+static hasProvider(serviceType: string): boolean
+```
+
+**Parameters:**
+- `serviceType`: `string`
+
+**Returns:** `boolean`
+
+#### `static listProviders()`
+
+List all registered provider service types
+
+```typescript
+static listProviders(): string[]
+```
+
+**Returns:** `string[]`
+
+#### `static createWithFallback()`
+
+Create a scrape provider with fallback chain
+
+Returns a provider that will try each connector in order until one succeeds.
+
+```typescript
+static createWithFallback(config: ScrapeProviderFallbackConfig): IScrapeProvider
+```
+
+**Parameters:**
+- `config`: `ScrapeProviderFallbackConfig`
+
+**Returns:** `IScrapeProvider`
+
+</details>
+
+---
+
+### SearchProvider `class`
+
+📍 [`src/capabilities/search/SearchProvider.ts:91`](src/capabilities/search/SearchProvider.ts)
+
+SearchProvider factory
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static create()`
+
+Create a search provider from a connector
+
+```typescript
+static create(config: SearchProviderConfig): ISearchProvider
+```
+
+**Parameters:**
+- `config`: `SearchProviderConfig`
+
+**Returns:** `ISearchProvider`
+
+</details>
+
+---
+
+### SerperProvider `class`
+
+📍 [`src/capabilities/search/providers/SerperProvider.ts:15`](src/capabilities/search/providers/SerperProvider.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(readonly connector: Connector)
+```
+
+**Parameters:**
+- `connector`: `Connector`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `search()`
+
+```typescript
+async search(query: string, options: SearchOptions =
+```
+
+**Parameters:**
+- `query`: `string`
+- `options`: `SearchOptions` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;SearchResponse&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "serper"` | - |
+
+</details>
+
+---
+
+### TavilyProvider `class`
+
+📍 [`src/capabilities/search/providers/TavilyProvider.ts:15`](src/capabilities/search/providers/TavilyProvider.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(readonly connector: Connector)
+```
+
+**Parameters:**
+- `connector`: `Connector`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `search()`
+
+```typescript
+async search(query: string, options: SearchOptions =
+```
+
+**Parameters:**
+- `query`: `string`
+- `options`: `SearchOptions` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;SearchResponse&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "tavily"` | - |
 
 </details>
 
@@ -23280,7 +27935,7 @@ constructor(config: VertexAIConfig)
 ```
 
 **Parameters:**
-- `config`: `import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").VertexAIConfig`
+- `config`: `VertexAIConfig`
 
 </details>
 
@@ -23296,9 +27951,9 @@ async generate(options: TextGenerateOptions): Promise&lt;LLMResponse&gt;
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `Promise&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/Response").LLMResponse&gt;`
+**Returns:** `Promise&lt;LLMResponse&gt;`
 
 #### `streamGenerate()`
 
@@ -23309,9 +27964,9 @@ async *streamGenerate(options: TextGenerateOptions): AsyncIterableIterator&lt;St
 ```
 
 **Parameters:**
-- `options`: `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").TextGenerateOptions`
+- `options`: `TextGenerateOptions`
 
-**Returns:** `AsyncIterableIterator&lt;import("/Users/aantich/dev/oneringai/src/domain/entities/StreamEvent").StreamEvent&gt;`
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `getModelCapabilities()`
 
@@ -23324,20 +27979,7 @@ getModelCapabilities(model: string): ModelCapabilities
 **Parameters:**
 - `model`: `string`
 
-**Returns:** `import("/Users/aantich/dev/oneringai/src/domain/interfaces/ITextProvider").ModelCapabilities`
-
-#### `handleError()`
-
-Handle Vertex AI-specific errors
-
-```typescript
-private handleError(error: any): never
-```
-
-**Parameters:**
-- `error`: `any`
-
-**Returns:** `never`
+**Returns:** `ModelCapabilities`
 
 </details>
 
@@ -23347,10 +27989,73 @@ private handleError(error: any): never
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "vertex-ai"` | - |
-| `capabilities` | `capabilities: import("/Users/aantich/dev/oneringai/src/domain/interfaces/IProvider").ProviderCapabilities` | - |
-| `client` | `client: import("/Users/aantich/dev/oneringai/node_modules/@google/genai/dist/genai").GoogleGenAI` | - |
-| `converter` | `converter: import("/Users/aantich/dev/oneringai/src/infrastructure/providers/google/GoogleConverter").GoogleConverter` | - |
-| `config` | `config: import("/Users/aantich/dev/oneringai/src/domain/types/ProviderConfig").VertexAIConfig` | - |
+| `capabilities` | `capabilities: ProviderCapabilities` | - |
+| `client` | `client: GoogleGenAI` | - |
+| `converter` | `converter: GoogleConverter` | - |
+| `config` | `config: VertexAIConfig` | - |
+
+</details>
+
+---
+
+### ZenRowsProvider `class`
+
+📍 [`src/capabilities/scrape/providers/ZenRowsProvider.ts:74`](src/capabilities/scrape/providers/ZenRowsProvider.ts)
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(readonly connector: Connector)
+```
+
+**Parameters:**
+- `connector`: `Connector`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `scrape()`
+
+Scrape a URL using ZenRows API
+
+By default, enables JS rendering and premium proxies for guaranteed results.
+
+```typescript
+async scrape(url: string, options: ScrapeOptions =
+```
+
+**Parameters:**
+- `url`: `string`
+- `options`: `ScrapeOptions` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;ScrapeResponse&gt;`
+
+#### `supportsFeature()`
+
+Check if this provider supports a feature
+
+```typescript
+supportsFeature(feature: ScrapeFeature): boolean
+```
+
+**Parameters:**
+- `feature`: `ScrapeFeature`
+
+**Returns:** `boolean`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "zenrows"` | - |
 
 </details>
 
@@ -23397,40 +28102,6 @@ private handleError(error: any): never
 
 ### AgentConfig `interface`
 
-📍 [`src/capabilities/agents/Agent.ts:21`](src/capabilities/agents/Agent.ts)
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `provider` | `provider: string;` | - |
-| `model` | `model: string;` | - |
-| `instructions?` | `instructions?: string;` | - |
-| `tools?` | `tools?: ToolFunction[];` | - |
-| `temperature?` | `temperature?: number;` | - |
-| `maxIterations?` | `maxIterations?: number;` | - |
-| `hooks?` | `hooks?: HookConfig;` | - |
-| `historyMode?` | `historyMode?: HistoryMode;` | - |
-| `limits?` | `limits?: {
-    maxExecutionTime?: number;
-    maxToolCalls?: number;
-    maxContextSize?: number;
-    /** Maximum number of input messages to keep (prevents unbounded context growth) */
-    maxInputMessages?: number;
-  };` | - |
-| `errorHandling?` | `errorHandling?: {
-    hookFailureMode?: 'fail' | 'warn' | 'ignore';
-    toolFailureMode?: 'fail' | 'continue';
-    maxConsecutiveErrors?: number;
-  };` | - |
-
-</details>
-
----
-
-### AgentConfig `interface`
-
 📍 [`src/domain/entities/AgentState.ts:23`](src/domain/entities/AgentState.ts)
 
 Agent configuration (needed for resume)
@@ -23452,7 +28123,7 @@ Agent configuration (needed for resume)
 
 ### AgenticLoopConfig `interface`
 
-📍 [`src/capabilities/agents/AgenticLoop.ts:22`](src/capabilities/agents/AgenticLoop.ts)
+📍 [`src/capabilities/agents/AgenticLoop.ts:24`](src/capabilities/agents/AgenticLoop.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -23465,6 +28136,7 @@ Agent configuration (needed for resume)
 | `tools` | `tools: Tool[];` | - |
 | `temperature?` | `temperature?: number;` | - |
 | `maxIterations` | `maxIterations: number;` | - |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options (e.g., Google's thinkingLevel) |
 | `hooks?` | `hooks?: HookConfig;` | - |
 | `historyMode?` | `historyMode?: HistoryMode;` | - |
 | `limits?` | `limits?: {
@@ -23486,6 +28158,10 @@ Agent configuration (needed for resume)
     maxConsecutiveErrors?: number;
   };` | - |
 | `toolTimeout?` | `toolTimeout?: number;` | Tool execution timeout in milliseconds |
+| `permissionManager?` | `permissionManager?: ToolPermissionManager;` | Permission manager for tool approval/blocking.
+If provided, permission checks run BEFORE approve:tool hooks. |
+| `agentType?` | `agentType?: 'agent' | 'task-agent' | 'universal-agent';` | Agent type for permission context (used by TaskAgent/UniversalAgent). |
+| `taskName?` | `taskName?: string;` | Current task name (used for TaskAgent/UniversalAgent context). |
 
 </details>
 
@@ -23522,6 +28198,75 @@ Map of all event names to their payload types
 | `'circuit:opened'` | `'circuit:opened': CircuitOpenedEvent;` | - |
 | `'circuit:half-open'` | `'circuit:half-open': CircuitHalfOpenEvent;` | - |
 | `'circuit:closed'` | `'circuit:closed': CircuitClosedEvent;` | - |
+
+</details>
+
+---
+
+### AgentLifecycleHooks `interface`
+
+📍 [`src/core/BaseAgent.ts:110`](src/core/BaseAgent.ts)
+
+Agent lifecycle hooks for customization.
+These hooks allow external code to observe and modify agent behavior
+at key points in the execution lifecycle.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `beforeToolExecution?` | `beforeToolExecution?: (context: ToolExecutionHookContext) =&gt; Promise&lt;void&gt;;` | Called before a tool is executed.
+Can be used for logging, validation, or rate limiting.
+Throw an error to prevent tool execution. |
+| `afterToolExecution?` | `afterToolExecution?: (result: ToolExecutionResult) =&gt; Promise&lt;void&gt;;` | Called after a tool execution completes (success or failure).
+Can be used for logging, metrics, or cleanup. |
+| `beforeContextPrepare?` | `beforeContextPrepare?: (agentId: string) =&gt; Promise&lt;void&gt;;` | Called before context is prepared for LLM call.
+Can be used to inject additional context or modify components. |
+| `beforeCompaction?` | `beforeCompaction?: (context: BeforeCompactionContext) =&gt; Promise&lt;void&gt;;` | Called before context compaction occurs.
+Use this hook to save important data to working memory before it's compacted.
+This is your last chance to preserve critical information from tool outputs
+or conversation history that would otherwise be lost. |
+| `afterCompaction?` | `afterCompaction?: (log: string[], tokensFreed: number) =&gt; Promise&lt;void&gt;;` | Called after context compaction occurs.
+Can be used for logging or monitoring context management. |
+| `onError?` | `onError?: (error: Error, context: { phase: string; agentId: string }) =&gt; Promise&lt;void&gt;;` | Called when agent encounters an error.
+Can be used for custom error handling or recovery logic. |
+
+</details>
+
+---
+
+### AgentPermissionsConfig `interface`
+
+📍 [`src/core/permissions/types.ts:219`](src/core/permissions/types.ts)
+
+Permission configuration for any agent type.
+
+Used in:
+- Agent.create({ permissions: {...} })
+- TaskAgent.create({ permissions: {...} })
+- UniversalAgent.create({ permissions: {...} })
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `defaultScope?` | `defaultScope?: PermissionScope;` | Default permission scope for tools without explicit config. |
+| `defaultRiskLevel?` | `defaultRiskLevel?: RiskLevel;` | Default risk level for tools without explicit config. |
+| `allowlist?` | `allowlist?: string[];` | Tools that are always allowed (never prompt).
+Array of tool names. |
+| `blocklist?` | `blocklist?: string[];` | Tools that are always blocked (cannot execute).
+Array of tool names. |
+| `tools?` | `tools?: Record&lt;string, ToolPermissionConfig&gt;;` | Per-tool permission overrides.
+Keys are tool names, values are permission configs. |
+| `onApprovalRequired?` | `onApprovalRequired?: (context: PermissionCheckContext) =&gt; Promise&lt;ApprovalDecision&gt;;` | Callback invoked when a tool needs approval.
+Return an ApprovalDecision to approve/deny.
+
+If not provided, the existing `approve:tool` hook system is used.
+This callback runs BEFORE hooks, providing a first-pass check. |
+| `inheritFromSession?` | `inheritFromSession?: boolean;` | Whether to inherit permission state from parent session.
+Only applies when resuming from a session. |
 
 </details>
 
@@ -23590,7 +28335,7 @@ Provider configuration types
 
 ### APIKeyConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:57`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:65`](src/domain/entities/Connector.ts)
 
 Static API key authentication
 For services like OpenAI, Anthropic, many SaaS APIs
@@ -23604,6 +28349,49 @@ For services like OpenAI, Anthropic, many SaaS APIs
 | `apiKey` | `apiKey: string;` | - |
 | `headerName?` | `headerName?: string;` | - |
 | `headerPrefix?` | `headerPrefix?: string;` | - |
+
+</details>
+
+---
+
+### ApprovalCacheEntry `interface`
+
+📍 [`src/core/permissions/types.ts:114`](src/core/permissions/types.ts)
+
+Entry in the approval cache representing an approved tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `toolName` | `toolName: string;` | Name of the approved tool |
+| `scope` | `scope: PermissionScope;` | The scope that was approved |
+| `approvedAt` | `approvedAt: Date;` | When the approval was granted |
+| `approvedBy?` | `approvedBy?: string;` | Optional identifier of who approved (for audit) |
+| `expiresAt?` | `expiresAt?: Date;` | When this approval expires (for session/TTL approvals) |
+| `argsHash?` | `argsHash?: string;` | Arguments hash if approval was for specific arguments |
+
+</details>
+
+---
+
+### ApprovalDecision `interface`
+
+📍 [`src/core/permissions/types.ts:190`](src/core/permissions/types.ts)
+
+Result from approval UI/hook
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `approved` | `approved: boolean;` | Whether the tool was approved |
+| `scope?` | `scope?: PermissionScope;` | Scope of the approval (may differ from requested) |
+| `reason?` | `reason?: string;` | Reason for denial (if not approved) |
+| `approvedBy?` | `approvedBy?: string;` | Optional identifier of who approved |
+| `remember?` | `remember?: boolean;` | Whether to remember this decision for future calls |
 
 </details>
 
@@ -23643,10 +28431,56 @@ For services like OpenAI, Anthropic, many SaaS APIs
     | 'execution_paused'
     | 'execution_resumed'
     | 'tool_approved'
-    | 'tool_rejected';` | - |
+    | 'tool_rejected'
+    | 'tool_blocked'
+    | 'tool_permission_approved';` | - |
 | `hookName?` | `hookName?: string;` | - |
 | `toolName?` | `toolName?: string;` | - |
 | `details` | `details: any;` | - |
+
+</details>
+
+---
+
+### BaseAgentConfig `interface`
+
+📍 [`src/core/BaseAgent.ts:174`](src/core/BaseAgent.ts)
+
+Base configuration shared by all agent types
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: string | Connector;` | Connector name or instance |
+| `model` | `model: string;` | Model identifier |
+| `name?` | `name?: string;` | Agent name (optional, auto-generated if not provided) |
+| `tools?` | `tools?: ToolFunction[];` | Tools available to the agent |
+| `toolManager?` | `toolManager?: ToolManager;` | Provide a pre-configured ToolManager (advanced) |
+| `session?` | `session?: BaseSessionConfig;` | Session configuration |
+| `permissions?` | `permissions?: AgentPermissionsConfig;` | Permission configuration |
+| `lifecycleHooks?` | `lifecycleHooks?: AgentLifecycleHooks;` | Lifecycle hooks for customization |
+
+</details>
+
+---
+
+### BaseAgentEvents `interface`
+
+📍 [`src/core/BaseAgent.ts:204`](src/core/BaseAgent.ts)
+
+Base events emitted by all agent types.
+Agent subclasses typically extend their own event interfaces.
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `'session:saved'` | `'session:saved': { sessionId: string };` | - |
+| `'session:loaded'` | `'session:loaded': { sessionId: string };` | - |
+| `destroyed` | `destroyed: void;` | - |
 
 </details>
 
@@ -23669,6 +28503,23 @@ For services like OpenAI, Anthropic, many SaaS APIs
 
 ### BaseProviderConfig `interface`
 
+📍 [`src/capabilities/shared/types.ts:16`](src/capabilities/shared/types.ts)
+
+Base configuration for all capability providers
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: string | Connector;` | Connector name or instance |
+
+</details>
+
+---
+
+### BaseProviderConfig `interface`
+
 📍 [`src/domain/types/ProviderConfig.ts:13`](src/domain/types/ProviderConfig.ts)
 
 <details>
@@ -23681,6 +28532,101 @@ For services like OpenAI, Anthropic, many SaaS APIs
 | `organization?` | `organization?: string;` | - |
 | `timeout?` | `timeout?: number;` | - |
 | `maxRetries?` | `maxRetries?: number;` | - |
+
+</details>
+
+---
+
+### BaseProviderResponse `interface`
+
+📍 [`src/capabilities/shared/types.ts:24`](src/capabilities/shared/types.ts)
+
+Base response for all capability providers
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | Whether the operation succeeded |
+| `provider` | `provider: string;` | Provider name |
+| `error?` | `error?: string;` | Error message if failed |
+
+</details>
+
+---
+
+### BashArgs `interface`
+
+📍 [`src/tools/shell/bash.ts:27`](src/tools/shell/bash.ts)
+
+Arguments for the bash tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `command` | `command: string;` | The command to execute |
+| `timeout?` | `timeout?: number;` | Optional timeout in milliseconds (up to 600000ms / 10 minutes) |
+| `description?` | `description?: string;` | Description of what this command does (for clarity) |
+| `run_in_background?` | `run_in_background?: boolean;` | Run the command in the background |
+
+</details>
+
+---
+
+### BashResult `interface`
+
+📍 [`src/tools/shell/types.ts:96`](src/tools/shell/types.ts)
+
+Result of a bash command execution
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `stdout?` | `stdout?: string;` | - |
+| `stderr?` | `stderr?: string;` | - |
+| `exitCode?` | `exitCode?: number;` | - |
+| `signal?` | `signal?: string;` | - |
+| `duration?` | `duration?: number;` | - |
+| `truncated?` | `truncated?: boolean;` | - |
+| `error?` | `error?: string;` | - |
+| `backgroundId?` | `backgroundId?: string;` | - |
+
+</details>
+
+---
+
+### BeforeCompactionContext `interface`
+
+📍 [`src/core/BaseAgent.ts:82`](src/core/BaseAgent.ts)
+
+Context passed to beforeCompaction hook
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `agentId` | `agentId: string;` | Agent identifier |
+| `currentBudget` | `currentBudget: {
+    total: number;
+    used: number;
+    available: number;
+    utilizationPercent: number;
+    status: 'ok' | 'warning' | 'critical';
+  };` | Current context budget info |
+| `strategy` | `strategy: string;` | Compaction strategy being used |
+| `components` | `components: ReadonlyArray&lt;{
+    name: string;
+    priority: number;
+    compactable: boolean;
+  }&gt;;` | Current context components (read-only) |
+| `estimatedTokensToFree` | `estimatedTokensToFree: number;` | Estimated tokens to be freed |
 
 </details>
 
@@ -23722,6 +28668,26 @@ For services like OpenAI, Anthropic, many SaaS APIs
 
 ---
 
+### CacheStats `interface`
+
+📍 [`src/core/IdempotencyCache.ts:30`](src/core/IdempotencyCache.ts)
+
+Cache statistics
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `entries` | `entries: number;` | - |
+| `hits` | `hits: number;` | - |
+| `misses` | `misses: number;` | - |
+| `hitRate` | `hitRate: number;` | - |
+
+</details>
+
+---
+
 ### CompactionItem `interface`
 
 📍 [`src/domain/entities/Message.ts:20`](src/domain/entities/Message.ts)
@@ -23741,7 +28707,7 @@ For services like OpenAI, Anthropic, many SaaS APIs
 
 ### ConnectorConfig `interface`
 
-📍 [`src/domain/entities/Connector.ts:84`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:92`](src/domain/entities/Connector.ts)
 
 Complete connector configuration
 Used for BOTH AI providers AND external APIs
@@ -23753,6 +28719,7 @@ Used for BOTH AI providers AND external APIs
 |----------|------|-------------|
 | `name?` | `name?: string;` | - |
 | `vendor?` | `vendor?: Vendor;` | - |
+| `serviceType?` | `serviceType?: string;` | - |
 | `auth` | `auth: ConnectorAuth;` | - |
 | `displayName?` | `displayName?: string;` | - |
 | `description?` | `description?: string;` | - |
@@ -23766,8 +28733,6 @@ Used for BOTH AI providers AND external APIs
 | `documentation?` | `documentation?: string;` | - |
 | `tags?` | `tags?: string[];` | - |
 | `options?` | `options?: {
-    timeout?: number;
-    maxRetries?: number;
     organization?: string; // OpenAI
     project?: string; // OpenAI
     anthropicVersion?: string;
@@ -23775,6 +28740,35 @@ Used for BOTH AI providers AND external APIs
     projectId?: string; // Google Vertex
     [key: string]: unknown;
   };` | - |
+| `timeout?` | `timeout?: number;` | Request timeout in milliseconds |
+| `retry?` | `retry?: {
+    /** Maximum number of retry attempts @default 3 */
+    maxRetries?: number;
+    /** HTTP status codes that trigger retry @default [429, 500, 502, 503, 504] */
+    retryableStatuses?: number[];
+    /** Base delay in ms for exponential backoff @default 1000 */
+    baseDelayMs?: number;
+    /** Maximum delay in ms @default 30000 */
+    maxDelayMs?: number;
+  };` | Retry configuration for transient failures |
+| `circuitBreaker?` | `circuitBreaker?: {
+    /** Enable circuit breaker @default true */
+    enabled?: boolean;
+    /** Number of failures before opening circuit @default 5 */
+    failureThreshold?: number;
+    /** Number of successes to close circuit @default 2 */
+    successThreshold?: number;
+    /** Time in ms before attempting to close circuit @default 30000 */
+    resetTimeoutMs?: number;
+  };` | Circuit breaker configuration for failing services |
+| `logging?` | `logging?: {
+    /** Enable request/response logging @default false */
+    enabled?: boolean;
+    /** Log request/response bodies (security risk) @default false */
+    logBody?: boolean;
+    /** Log request/response headers (security risk) @default false */
+    logHeaders?: boolean;
+  };` | Logging configuration for requests/responses |
 
 </details>
 
@@ -23782,7 +28776,7 @@ Used for BOTH AI providers AND external APIs
 
 ### ConnectorConfigResult `interface`
 
-📍 [`src/domain/entities/Connector.ts:130`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:189`](src/domain/entities/Connector.ts)
 
 Result from ProviderConfigAgent
 Includes setup instructions and environment variables
@@ -23802,6 +28796,23 @@ Includes setup instructions and environment variables
 
 ---
 
+### ConversationHistoryManagerConfig `interface`
+
+📍 [`src/core/history/ConversationHistoryManager.ts:27`](src/core/history/ConversationHistoryManager.ts)
+
+Configuration for ConversationHistoryManager
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `storage?` | `storage?: IHistoryStorage;` | Storage backend (defaults to in-memory) |
+
+</details>
+
+---
+
 ### ConversationMessage `interface`
 
 📍 [`src/domain/entities/AgentState.ts:34`](src/domain/entities/AgentState.ts)
@@ -23816,6 +28827,68 @@ Conversation message in history
 | `role` | `role: 'user' | 'assistant' | 'system';` | - |
 | `content` | `content: string;` | - |
 | `timestamp` | `timestamp: number;` | - |
+
+</details>
+
+---
+
+### DirectoryEntry `interface`
+
+📍 [`src/tools/filesystem/listDirectory.ts:41`](src/tools/filesystem/listDirectory.ts)
+
+A single directory entry
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | - |
+| `path` | `path: string;` | - |
+| `type` | `type: 'file' | 'directory';` | - |
+| `size?` | `size?: number;` | - |
+| `modified?` | `modified?: string;` | - |
+
+</details>
+
+---
+
+### EditFileArgs `interface`
+
+📍 [`src/tools/filesystem/editFile.ts:28`](src/tools/filesystem/editFile.ts)
+
+Arguments for the edit file tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `file_path` | `file_path: string;` | Absolute path to the file to edit |
+| `old_string` | `old_string: string;` | The exact text to find and replace |
+| `new_string` | `new_string: string;` | The text to replace it with (must be different from old_string) |
+| `replace_all?` | `replace_all?: boolean;` | Replace all occurrences (default: false, which requires old_string to be unique) |
+
+</details>
+
+---
+
+### EditFileResult `interface`
+
+📍 [`src/tools/filesystem/types.ts:107`](src/tools/filesystem/types.ts)
+
+Result of a file edit operation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `path?` | `path?: string;` | - |
+| `replacements?` | `replacements?: number;` | - |
+| `error?` | `error?: string;` | - |
+| `diff?` | `diff?: string;` | - |
 
 </details>
 
@@ -23959,6 +29032,25 @@ Conversation message in history
 
 ---
 
+### ExtendedFetchOptions `interface`
+
+📍 [`src/capabilities/shared/types.ts:49`](src/capabilities/shared/types.ts)
+
+Extended fetch options with JSON body and query params support
+Usable by any capability that makes HTTP requests via Connector
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `body?` | `body?: Record&lt;string, any&gt;;` | JSON body (will be stringified automatically) |
+| `queryParams?` | `queryParams?: Record&lt;string, string | number | boolean&gt;;` | Query parameters (will be appended to URL automatically) |
+
+</details>
+
+---
+
 ### GenericOpenAIConfig `interface`
 
 📍 [`src/domain/types/ProviderConfig.ts:78`](src/domain/types/ProviderConfig.ts)
@@ -23990,6 +29082,45 @@ Conversation message in history
 | `timeout?` | `timeout?: number;` | - |
 | `maxRetries?` | `maxRetries?: number;` | - |
 | `defaultModel?` | `defaultModel?: string;` | - |
+
+</details>
+
+---
+
+### GlobArgs `interface`
+
+📍 [`src/tools/filesystem/glob.ts:29`](src/tools/filesystem/glob.ts)
+
+Arguments for the glob tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `pattern` | `pattern: string;` | The glob pattern to match files against (e.g., "**\/*.ts", "src/**\/*.tsx") |
+| `path?` | `path?: string;` | The directory to search in. Defaults to current working directory. |
+
+</details>
+
+---
+
+### GlobResult `interface`
+
+📍 [`src/tools/filesystem/types.ts:118`](src/tools/filesystem/types.ts)
+
+Result of a glob operation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `files?` | `files?: string[];` | - |
+| `count?` | `count?: number;` | - |
+| `truncated?` | `truncated?: boolean;` | - |
+| `error?` | `error?: string;` | - |
 
 </details>
 
@@ -24046,6 +29177,78 @@ Google Veo-specific options
 | `lastFrame?` | `lastFrame?: Buffer | string;` | Last frame image for interpolation |
 | `personGeneration?` | `personGeneration?: 'dont_allow' | 'allow_adult' | 'allow_all';` | Person generation mode |
 | `safetyFilterLevel?` | `safetyFilterLevel?: 'block_low_and_above' | 'block_medium_and_above' | 'block_only_high';` | Safety filter level |
+
+</details>
+
+---
+
+### GrepArgs `interface`
+
+📍 [`src/tools/filesystem/grep.ts:32`](src/tools/filesystem/grep.ts)
+
+Arguments for the grep tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `pattern` | `pattern: string;` | The regex pattern to search for in file contents |
+| `path?` | `path?: string;` | File or directory to search in. Defaults to current working directory. |
+| `glob?` | `glob?: string;` | Glob pattern to filter files (e.g., "*.ts", "*.{ts,tsx}") |
+| `type?` | `type?: string;` | File type to search (e.g., "ts", "js", "py"). More efficient than glob for standard types. |
+| `output_mode?` | `output_mode?: 'content' | 'files_with_matches' | 'count';` | Output mode: "content" shows lines, "files_with_matches" shows only file paths, "count" shows match counts |
+| `case_insensitive?` | `case_insensitive?: boolean;` | Case insensitive search |
+| `context_before?` | `context_before?: number;` | Number of context lines before match |
+| `context_after?` | `context_after?: number;` | Number of context lines after match |
+| `limit?` | `limit?: number;` | Limit output to first N results |
+
+</details>
+
+---
+
+### GrepMatch `interface`
+
+📍 [`src/tools/filesystem/types.ts:129`](src/tools/filesystem/types.ts)
+
+A single grep match
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `file` | `file: string;` | - |
+| `line` | `line: number;` | - |
+| `column?` | `column?: number;` | - |
+| `content` | `content: string;` | - |
+| `context?` | `context?: {
+    before: string[];
+    after: string[];
+  };` | - |
+
+</details>
+
+---
+
+### GrepResult `interface`
+
+📍 [`src/tools/filesystem/types.ts:143`](src/tools/filesystem/types.ts)
+
+Result of a grep operation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `matches?` | `matches?: GrepMatch[];` | - |
+| `filesSearched?` | `filesSearched?: number;` | - |
+| `filesMatched?` | `filesMatched?: number;` | - |
+| `totalMatches?` | `totalMatches?: number;` | - |
+| `truncated?` | `truncated?: boolean;` | - |
+| `error?` | `error?: string;` | - |
 
 </details>
 
@@ -24129,6 +29332,73 @@ Map of hook names to their context and result types
 
 ---
 
+### HTTPTransportConfig `interface`
+
+📍 [`src/domain/entities/MCPConfig.ts:29`](src/domain/entities/MCPConfig.ts)
+
+HTTP/HTTPS transport configuration (StreamableHTTP)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `url` | `url: string;` | HTTP(S) endpoint URL |
+| `token?` | `token?: string;` | Authentication token (supports ${ENV_VAR} interpolation) |
+| `headers?` | `headers?: Record&lt;string, string&gt;;` | Additional HTTP headers |
+| `timeoutMs?` | `timeoutMs?: number;` | Request timeout in milliseconds |
+| `sessionId?` | `sessionId?: string;` | Session ID for reconnection |
+| `reconnection?` | `reconnection?: {
+    /** Max reconnection delay in ms (default: 30000) */
+    maxReconnectionDelay?: number;
+    /** Initial reconnection delay in ms (default: 1000) */
+    initialReconnectionDelay?: number;
+    /** Reconnection delay growth factor (default: 1.5) */
+    reconnectionDelayGrowFactor?: number;
+    /** Max retry attempts (default: 2) */
+    maxRetries?: number;
+  };` | Reconnection options |
+
+</details>
+
+---
+
+### ICapabilityProvider `interface`
+
+📍 [`src/capabilities/shared/types.ts:36`](src/capabilities/shared/types.ts)
+
+Base interface for all capability providers
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `readonly name: string;` | Provider name |
+| `connector` | `readonly connector: Connector;` | Connector used for authentication |
+
+</details>
+
+---
+
+### IdempotencyCacheConfig `interface`
+
+📍 [`src/core/IdempotencyCache.ts:19`](src/core/IdempotencyCache.ts)
+
+Cache configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `defaultTtlMs` | `defaultTtlMs: number;` | Default TTL for cached entries |
+| `maxEntries` | `maxEntries: number;` | Max entries before eviction |
+
+</details>
+
+---
+
 ### InputFileContent `interface`
 
 📍 [`src/domain/entities/Content.ts:31`](src/domain/entities/Content.ts)
@@ -24156,6 +29426,94 @@ Map of hook names to their context and result types
 |----------|------|-------------|
 | `type` | `type: ContentType.INPUT_TEXT;` | - |
 | `text` | `text: string;` | - |
+
+</details>
+
+---
+
+### IScrapeProvider `interface`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:105`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Base ScrapeProvider interface
+All scraping providers must implement this interface
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `scrape()`
+
+Scrape a URL and extract content
+
+```typescript
+scrape(url: string, options?: ScrapeOptions): Promise&lt;ScrapeResponse&gt;;
+```
+
+**Parameters:**
+- `url`: `string`
+- `options`: `ScrapeOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;ScrapeResponse&gt;`
+
+#### `supportsFeature()?`
+
+Check if this provider supports a specific feature
+
+```typescript
+supportsFeature?(feature: ScrapeFeature): boolean;
+```
+
+**Parameters:**
+- `feature`: `ScrapeFeature`
+
+**Returns:** `boolean`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `readonly name: string;` | Provider name (e.g., 'jina', 'firecrawl', 'scrapingbee') |
+| `connector` | `readonly connector: Connector;` | Connector used for authentication |
+
+</details>
+
+---
+
+### ISearchProvider `interface`
+
+📍 [`src/capabilities/search/SearchProvider.ts:65`](src/capabilities/search/SearchProvider.ts)
+
+Base SearchProvider interface
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `search()`
+
+Search the web
+
+```typescript
+search(query: string, options?: SearchOptions): Promise&lt;SearchResponse&gt;;
+```
+
+**Parameters:**
+- `query`: `string`
+- `options`: `SearchOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;SearchResponse&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `readonly name: string;` | Provider name |
+| `connector` | `readonly connector: Connector;` | Connector used for authentication |
 
 </details>
 
@@ -24323,7 +29681,7 @@ Eliminates duplication across TTS model registries
 
 ### JWTConnectorAuth `interface`
 
-📍 [`src/domain/entities/Connector.ts:68`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:76`](src/domain/entities/Connector.ts)
 
 JWT Bearer token authentication
 For service accounts (Google, Salesforce)
@@ -24342,6 +29700,47 @@ For service accounts (Google, Salesforce)
 | `issuer?` | `issuer?: string;` | - |
 | `subject?` | `subject?: string;` | - |
 | `audience?` | `audience?: string;` | - |
+
+</details>
+
+---
+
+### ListDirectoryArgs `interface`
+
+📍 [`src/tools/filesystem/listDirectory.ts:27`](src/tools/filesystem/listDirectory.ts)
+
+Arguments for the list directory tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `path` | `path: string;` | Path to the directory to list |
+| `recursive?` | `recursive?: boolean;` | Whether to list recursively |
+| `filter?` | `filter?: 'files' | 'directories';` | Filter: "files" for files only, "directories" for directories only |
+| `max_depth?` | `max_depth?: number;` | Maximum depth for recursive listing (default: 3) |
+
+</details>
+
+---
+
+### ListDirectoryResult `interface`
+
+📍 [`src/tools/filesystem/listDirectory.ts:52`](src/tools/filesystem/listDirectory.ts)
+
+Result of a list directory operation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `entries?` | `entries?: DirectoryEntry[];` | - |
+| `count?` | `count?: number;` | - |
+| `truncated?` | `truncated?: boolean;` | - |
+| `error?` | `error?: string;` | - |
 
 </details>
 
@@ -24428,6 +29827,208 @@ For service accounts (Google, Salesforce)
 
 ---
 
+### MCPClientState `interface`
+
+📍 [`src/domain/entities/MCPTypes.ts:126`](src/domain/entities/MCPTypes.ts)
+
+MCP Client state (for serialization)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Server name |
+| `state` | `state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';` | Connection state |
+| `capabilities?` | `capabilities?: MCPServerCapabilities;` | Server capabilities |
+| `subscribedResources` | `subscribedResources: string[];` | Subscribed resource URIs |
+| `lastConnectedAt?` | `lastConnectedAt?: number;` | Last connected timestamp |
+| `connectionAttempts` | `connectionAttempts: number;` | Connection attempt count |
+
+</details>
+
+---
+
+### MCPConfiguration `interface`
+
+📍 [`src/domain/entities/MCPConfig.ts:98`](src/domain/entities/MCPConfig.ts)
+
+MCP global configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `servers` | `servers: MCPServerConfig[];` | List of MCP servers |
+| `defaults?` | `defaults?: {
+    /** Default auto-connect (default: false) */
+    autoConnect?: boolean;
+    /** Default auto-reconnect (default: true) */
+    autoReconnect?: boolean;
+    /** Default reconnect interval in milliseconds (default: 5000) */
+    reconnectIntervalMs?: number;
+    /** Default maximum reconnect attempts (default: 10) */
+    maxReconnectAttempts?: number;
+    /** Default request timeout in milliseconds (default: 30000) */
+    requestTimeoutMs?: number;
+    /** Default health check interval in milliseconds (default: 60000) */
+    healthCheckIntervalMs?: number;
+  };` | Default settings for all servers |
+
+</details>
+
+---
+
+### MCPPrompt `interface`
+
+📍 [`src/domain/entities/MCPTypes.ts:72`](src/domain/entities/MCPTypes.ts)
+
+MCP Prompt definition
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Prompt name |
+| `description?` | `description?: string;` | Prompt description |
+| `arguments?` | `arguments?: Array&lt;{
+    name: string;
+    description?: string;
+    required?: boolean;
+  }&gt;;` | Prompt arguments schema |
+
+</details>
+
+---
+
+### MCPPromptResult `interface`
+
+📍 [`src/domain/entities/MCPTypes.ts:88`](src/domain/entities/MCPTypes.ts)
+
+MCP Prompt result
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `description?` | `description?: string;` | Prompt description |
+| `messages` | `messages: Array&lt;{
+    role: 'user' | 'assistant';
+    content: {
+      type: 'text' | 'image' | 'resource';
+      text?: string;
+      data?: string;
+      mimeType?: string;
+      uri?: string;
+    };
+  }&gt;;` | Prompt messages |
+
+</details>
+
+---
+
+### MCPResource `interface`
+
+📍 [`src/domain/entities/MCPTypes.ts:44`](src/domain/entities/MCPTypes.ts)
+
+MCP Resource definition
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `uri` | `uri: string;` | Resource URI |
+| `name` | `name: string;` | Resource name |
+| `description?` | `description?: string;` | Resource description |
+| `mimeType?` | `mimeType?: string;` | MIME type |
+
+</details>
+
+---
+
+### MCPResourceContent `interface`
+
+📍 [`src/domain/entities/MCPTypes.ts:58`](src/domain/entities/MCPTypes.ts)
+
+MCP Resource content
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `uri` | `uri: string;` | Resource URI |
+| `mimeType?` | `mimeType?: string;` | MIME type |
+| `text?` | `text?: string;` | Text content |
+| `blob?` | `blob?: string;` | Binary content (base64) |
+
+</details>
+
+---
+
+### MCPServerCapabilities `interface`
+
+📍 [`src/domain/entities/MCPTypes.ts:107`](src/domain/entities/MCPTypes.ts)
+
+MCP Server capabilities
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `tools?` | `tools?: Record&lt;string, unknown&gt;;` | Tools capability |
+| `resources?` | `resources?: {
+    subscribe?: boolean;
+    listChanged?: boolean;
+  };` | Resources capability |
+| `prompts?` | `prompts?: {
+    listChanged?: boolean;
+  };` | Prompts capability |
+| `logging?` | `logging?: Record&lt;string, unknown&gt;;` | Logging capability |
+
+</details>
+
+---
+
+### MCPServerConfig `interface`
+
+📍 [`src/domain/entities/MCPConfig.ts:61`](src/domain/entities/MCPConfig.ts)
+
+MCP server configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Unique identifier for the server |
+| `displayName?` | `displayName?: string;` | Human-readable display name |
+| `description?` | `description?: string;` | Server description |
+| `transport` | `transport: MCPTransportType;` | Transport type |
+| `transportConfig` | `transportConfig: TransportConfig;` | Transport-specific configuration |
+| `autoConnect?` | `autoConnect?: boolean;` | Auto-connect on startup (default: false) |
+| `autoReconnect?` | `autoReconnect?: boolean;` | Auto-reconnect on failure (default: true) |
+| `reconnectIntervalMs?` | `reconnectIntervalMs?: number;` | Reconnect interval in milliseconds (default: 5000) |
+| `maxReconnectAttempts?` | `maxReconnectAttempts?: number;` | Maximum reconnect attempts (default: 10) |
+| `requestTimeoutMs?` | `requestTimeoutMs?: number;` | Request timeout in milliseconds (default: 30000) |
+| `healthCheckIntervalMs?` | `healthCheckIntervalMs?: number;` | Health check interval in milliseconds (default: 60000) |
+| `toolNamespace?` | `toolNamespace?: string;` | Tool namespace prefix (default: 'mcp:{name}') |
+| `permissions?` | `permissions?: {
+    /** Default permission scope */
+    defaultScope?: 'once' | 'session' | 'always' | 'never';
+    /** Default risk level */
+    defaultRiskLevel?: 'low' | 'medium' | 'high' | 'critical';
+  };` | Permission configuration for tools from this server |
+
+</details>
+
+---
+
 ### Message `interface`
 
 📍 [`src/domain/entities/Message.ts:13`](src/domain/entities/Message.ts)
@@ -24441,6 +30042,66 @@ For service accounts (Google, Salesforce)
 | `id?` | `id?: string;` | - |
 | `role` | `role: MessageRole;` | - |
 | `content` | `content: Content[];` | - |
+
+</details>
+
+---
+
+### NoneConnectorAuth `interface`
+
+📍 [`src/domain/entities/Connector.ts:16`](src/domain/entities/Connector.ts)
+
+No authentication (for testing/mock providers)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `type: 'none';` | - |
+
+</details>
+
+---
+
+### OneRingAIConfig `interface`
+
+📍 [`src/domain/entities/MCPConfig.ts:121`](src/domain/entities/MCPConfig.ts)
+
+Global library configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `version?` | `version?: string;` | Configuration schema version |
+| `mcp?` | `mcp?: MCPConfiguration;` | MCP configuration |
+| `tools?` | `tools?: {
+    /** Permission defaults for all tools */
+    permissions?: {
+      defaultScope?: 'once' | 'session' | 'always' | 'never';
+      defaultRiskLevel?: 'low' | 'medium' | 'high' | 'critical';
+    };
+  };` | Tools configuration |
+| `session?` | `session?: {
+    /** Storage type ('memory' or 'file') */
+    storage?: 'memory' | 'file';
+    /** Storage-specific options */
+    storageOptions?: Record&lt;string, unknown&gt;;
+    /** Auto-save enabled (default: false) */
+    autoSave?: boolean;
+    /** Auto-save interval in milliseconds (default: 30000) */
+    autoSaveIntervalMs?: number;
+  };` | Session configuration |
+| `context?` | `context?: {
+    /** Maximum context tokens (default: 128000) */
+    maxContextTokens?: number;
+    /** Context strategy ('proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive') */
+    strategy?: string;
+    /** Strategy-specific options */
+    strategyOptions?: Record&lt;string, unknown&gt;;
+  };` | Context management configuration |
 
 </details>
 
@@ -24535,6 +30196,50 @@ Supports both legacy apiKey and new auth structure
 
 ---
 
+### PermissionCheckContext `interface`
+
+📍 [`src/core/permissions/types.ts:84`](src/core/permissions/types.ts)
+
+Context passed to approval callbacks/hooks
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `toolCall` | `toolCall: ToolCall;` | The tool call being checked |
+| `parsedArgs` | `parsedArgs: Record&lt;string, unknown&gt;;` | Parsed arguments (for display/inspection) |
+| `config` | `config: ToolPermissionConfig;` | The tool's permission config |
+| `executionId` | `executionId: string;` | Current execution context ID |
+| `iteration` | `iteration: number;` | Current iteration (if in agentic loop) |
+| `agentType` | `agentType: 'agent' | 'task-agent' | 'universal-agent';` | Agent type (for context-specific handling) |
+| `taskName?` | `taskName?: string;` | Optional task name (for TaskAgent/UniversalAgent) |
+
+</details>
+
+---
+
+### PermissionCheckResult `interface`
+
+📍 [`src/core/permissions/types.ts:170`](src/core/permissions/types.ts)
+
+Result of checking if a tool needs approval
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `allowed` | `allowed: boolean;` | Whether the tool can execute without prompting |
+| `needsApproval` | `needsApproval: boolean;` | Whether approval is needed (user should be prompted) |
+| `blocked` | `blocked: boolean;` | Whether the tool is blocked (cannot execute at all) |
+| `reason` | `reason: string;` | Reason for the decision |
+| `config?` | `config?: ToolPermissionConfig;` | The tool's permission config (for UI display) |
+
+</details>
+
+---
+
 ### ProvidersConfig `interface`
 
 📍 [`src/domain/types/ProviderConfig.ts:94`](src/domain/types/ProviderConfig.ts)
@@ -24576,6 +30281,49 @@ Supports both legacy apiKey and new auth structure
 
 ---
 
+### ReadFileArgs `interface`
+
+📍 [`src/tools/filesystem/readFile.ts:28`](src/tools/filesystem/readFile.ts)
+
+Arguments for the read file tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `file_path` | `file_path: string;` | Absolute path to the file to read |
+| `offset?` | `offset?: number;` | Line number to start reading from (1-indexed). Only provide if the file is too large. |
+| `limit?` | `limit?: number;` | Number of lines to read. Only provide if the file is too large. |
+
+</details>
+
+---
+
+### ReadFileResult `interface`
+
+📍 [`src/tools/filesystem/types.ts:82`](src/tools/filesystem/types.ts)
+
+Result of a file read operation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `content?` | `content?: string;` | - |
+| `lines?` | `lines?: number;` | - |
+| `truncated?` | `truncated?: boolean;` | - |
+| `encoding?` | `encoding?: string;` | - |
+| `size?` | `size?: number;` | - |
+| `error?` | `error?: string;` | - |
+| `path?` | `path?: string;` | - |
+
+</details>
+
+---
+
 ### ReasoningItem `interface`
 
 📍 [`src/domain/entities/Message.ts:26`](src/domain/entities/Message.ts)
@@ -24612,6 +30360,225 @@ Supports both legacy apiKey and new auth structure
 
 ---
 
+### ResponseBuilderOptions `interface`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:31`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Options for building an LLMResponse
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `provider` | `provider: string;` | Provider name for ID prefix (e.g., 'anthropic', 'google') |
+| `rawId?` | `rawId?: string;` | Raw response ID from the provider (optional) |
+| `model` | `model: string;` | Model name/version |
+| `status` | `status: ResponseStatus;` | Response status |
+| `content` | `content: Content[];` | Content array for the assistant message |
+| `usage` | `usage: UsageStats;` | Usage statistics |
+| `messageId?` | `messageId?: string;` | Optional message ID (separate from response ID) |
+| `createdAt?` | `createdAt?: number;` | Timestamp (defaults to now) |
+
+</details>
+
+---
+
+### ScrapeOptions `interface`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:58`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Scrape options
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `timeout?` | `timeout?: number;` | Timeout in milliseconds (default: 30000) |
+| `waitForJS?` | `waitForJS?: boolean;` | Whether to wait for JavaScript to render (if supported) |
+| `waitForSelector?` | `waitForSelector?: string;` | CSS selector to wait for before scraping |
+| `includeHtml?` | `includeHtml?: boolean;` | Whether to include raw HTML in response |
+| `includeMarkdown?` | `includeMarkdown?: boolean;` | Whether to convert to markdown (if supported) |
+| `includeLinks?` | `includeLinks?: boolean;` | Whether to extract links |
+| `includeScreenshot?` | `includeScreenshot?: boolean;` | Whether to take a screenshot (if supported) |
+| `headers?` | `headers?: Record&lt;string, string&gt;;` | Custom headers to send |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options |
+
+</details>
+
+---
+
+### ScrapeProviderConfig `interface`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:180`](src/capabilities/scrape/ScrapeProvider.ts)
+
+ScrapeProvider factory configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: string | Connector;` | Connector name or instance |
+
+</details>
+
+---
+
+### ScrapeProviderFallbackConfig `interface`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:188`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Fallback chain configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `primary` | `primary: string | Connector;` | Primary connector to try first |
+| `fallbacks?` | `fallbacks?: Array&lt;string | Connector&gt;;` | Fallback connectors to try in order |
+| `tryNativeFirst?` | `tryNativeFirst?: boolean;` | Whether to try native fetch before API providers |
+
+</details>
+
+---
+
+### ScrapeResponse `interface`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:82`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Scrape response
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `url` | `url: string;` | The URL that was scraped |
+| `finalUrl?` | `finalUrl?: string;` | Final URL after redirects |
+| `result?` | `result?: ScrapeResult;` | Scraped content |
+| `statusCode?` | `statusCode?: number;` | HTTP status code |
+| `durationMs?` | `durationMs?: number;` | Time taken in milliseconds |
+| `requiredJS?` | `requiredJS?: boolean;` | Whether the content required JavaScript rendering |
+| `suggestedFallback?` | `suggestedFallback?: string;` | Suggested fallback if this provider failed |
+
+</details>
+
+---
+
+### ScrapeResult `interface`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:30`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Scraped content result
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `title` | `title: string;` | Page title |
+| `content` | `content: string;` | Extracted text content (cleaned) |
+| `html?` | `html?: string;` | Raw HTML (if available) |
+| `markdown?` | `markdown?: string;` | Markdown version (if provider supports it) |
+| `metadata?` | `metadata?: {
+    description?: string;
+    author?: string;
+    publishedDate?: string;
+    siteName?: string;
+    favicon?: string;
+    ogImage?: string;
+    [key: string]: any;
+  };` | Metadata extracted from the page |
+| `screenshot?` | `screenshot?: string;` | Screenshot as base64 (if requested and supported) |
+| `links?` | `links?: Array&lt;{ url: string; text: string }&gt;;` | Links found on the page |
+
+</details>
+
+---
+
+### SearchOptions `interface`
+
+📍 [`src/capabilities/search/SearchProvider.ts:31`](src/capabilities/search/SearchProvider.ts)
+
+Search options
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `numResults?` | `numResults?: number;` | Number of results to return (default: 10, max provider-specific) |
+| `language?` | `language?: string;` | Language code (e.g., 'en', 'fr') |
+| `country?` | `country?: string;` | Country/region code (e.g., 'us', 'gb') |
+| `timeRange?` | `timeRange?: string;` | Time range filter (e.g., 'day', 'week', 'month', 'year') |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options |
+
+</details>
+
+---
+
+### SearchProviderConfig `interface`
+
+📍 [`src/capabilities/search/SearchProvider.ts:83`](src/capabilities/search/SearchProvider.ts)
+
+SearchProvider factory configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connector` | `connector: string | Connector;` | Connector name or instance |
+
+</details>
+
+---
+
+### SearchResponse `interface`
+
+📍 [`src/capabilities/search/SearchProvider.ts:47`](src/capabilities/search/SearchProvider.ts)
+
+Search response
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | Whether the search succeeded |
+| `query` | `query: string;` | Search query |
+| `provider` | `provider: string;` | Provider name |
+| `results` | `results: SearchResult[];` | Search results |
+| `count` | `count: number;` | Number of results |
+| `error?` | `error?: string;` | Error message if failed |
+
+</details>
+
+---
+
+### SearchResult `interface`
+
+📍 [`src/capabilities/search/SearchProvider.ts:17`](src/capabilities/search/SearchProvider.ts)
+
+Search result interface
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `title` | `title: string;` | Page title |
+| `url` | `url: string;` | Direct URL to the page |
+| `snippet` | `snippet: string;` | Short description/excerpt |
+| `position` | `position: number;` | Search ranking position |
+
+</details>
+
+---
+
 ### SearchResult `interface`
 
 📍 [`src/tools/web/searchProviders/serper.ts:6`](src/tools/web/searchProviders/serper.ts)
@@ -24628,6 +30595,113 @@ Fast Google search results via API
 | `url` | `url: string;` | - |
 | `snippet` | `snippet: string;` | - |
 | `position` | `position: number;` | - |
+
+</details>
+
+---
+
+### SerializedApprovalEntry `interface`
+
+📍 [`src/core/permissions/types.ts:154`](src/core/permissions/types.ts)
+
+Serialized version of ApprovalCacheEntry (with ISO date strings)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `toolName` | `toolName: string;` | - |
+| `scope` | `scope: PermissionScope;` | - |
+| `approvedAt` | `approvedAt: string;` | - |
+| `approvedBy?` | `approvedBy?: string;` | - |
+| `expiresAt?` | `expiresAt?: string;` | - |
+| `argsHash?` | `argsHash?: string;` | - |
+
+</details>
+
+---
+
+### SerializedApprovalState `interface`
+
+📍 [`src/core/permissions/types.ts:137`](src/core/permissions/types.ts)
+
+Serialized approval state for session persistence
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `version` | `version: number;` | Version for future migrations |
+| `approvals` | `approvals: Record&lt;string, SerializedApprovalEntry&gt;;` | Map of tool name to approval entry |
+| `blocklist` | `blocklist: string[];` | Tools that are always blocked (persisted blocklist) |
+| `allowlist` | `allowlist: string[];` | Tools that are always allowed (persisted allowlist) |
+
+</details>
+
+---
+
+### ServiceDefinition `interface`
+
+📍 [`src/domain/entities/Services.ts:28`](src/domain/entities/Services.ts)
+
+Complete service definition - single source of truth
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | Unique identifier (e.g., 'slack', 'github') |
+| `name` | `name: string;` | Human-readable name (e.g., 'Slack', 'GitHub') |
+| `category` | `category: ServiceCategory;` | Service category |
+| `urlPattern` | `urlPattern: RegExp;` | URL pattern for auto-detection from baseURL |
+| `baseURL` | `baseURL: string;` | Default base URL for API calls |
+| `docsURL?` | `docsURL?: string;` | Documentation URL |
+| `commonScopes?` | `commonScopes?: string[];` | Common OAuth scopes |
+
+</details>
+
+---
+
+### ServiceInfo `interface`
+
+📍 [`src/domain/entities/Services.ts:476`](src/domain/entities/Services.ts)
+
+Service info lookup (derived from SERVICE_DEFINITIONS)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | - |
+| `name` | `name: string;` | - |
+| `category` | `category: ServiceCategory;` | - |
+| `baseURL` | `baseURL: string;` | - |
+| `docsURL?` | `docsURL?: string;` | - |
+| `commonScopes?` | `commonScopes?: string[];` | - |
+
+</details>
+
+---
+
+### StdioTransportConfig `interface`
+
+📍 [`src/domain/entities/MCPConfig.ts:15`](src/domain/entities/MCPConfig.ts)
+
+Stdio transport configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `command` | `command: string;` | Command to execute (e.g., 'npx', 'node') |
+| `args?` | `args?: string[];` | Command arguments |
+| `env?` | `env?: Record&lt;string, string&gt;;` | Environment variables |
+| `cwd?` | `cwd?: string;` | Working directory for the process |
 
 </details>
 
@@ -24665,6 +30739,25 @@ Token usage statistics
 | `output_tokens_details?` | `output_tokens_details?: {
     reasoning_tokens: number;
   };` | - |
+
+</details>
+
+---
+
+### UsageStats `interface`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:22`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Usage statistics for a response
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `inputTokens` | `inputTokens: number;` | - |
+| `outputTokens` | `outputTokens: number;` | - |
+| `totalTokens?` | `totalTokens?: number;` | - |
 
 </details>
 
@@ -24794,9 +30887,71 @@ Used to describe vendor-specific options that fall outside semantic options
 
 ---
 
+### WebScrapeArgs `interface`
+
+📍 [`src/tools/web/webScrape.ts:31`](src/tools/web/webScrape.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `url` | `url: string;` | URL to scrape |
+| `strategy?` | `strategy?: 'auto' | 'native' | 'js' | 'api' | 'api-first';` | Scraping strategy:
+- 'auto': Try native -> JS -> API (default)
+- 'native': Only use native fetch
+- 'js': Only use JS rendering
+- 'api': Only use external API provider
+- 'api-first': Try API first, then native |
+| `connectorName?` | `connectorName?: string;` | Connector name for external API provider
+Required if strategy is 'api' or 'api-first'
+Optional for 'auto' (will be used as final fallback) |
+| `minQualityScore?` | `minQualityScore?: number;` | Minimum quality score to accept from native fetch (0-100)
+If native fetch returns lower score, will try next method
+Default: 50 |
+| `timeout?` | `timeout?: number;` | Timeout in milliseconds (default: 30000) |
+| `includeHtml?` | `includeHtml?: boolean;` | Whether to include raw HTML in response |
+| `includeMarkdown?` | `includeMarkdown?: boolean;` | Whether to convert to markdown (if supported by provider) |
+| `includeLinks?` | `includeLinks?: boolean;` | Whether to extract links |
+| `waitForSelector?` | `waitForSelector?: string;` | CSS selector to wait for (JS/API only) |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options for API provider |
+
+</details>
+
+---
+
+### WebScrapeResult `interface`
+
+📍 [`src/tools/web/webScrape.ts:78`](src/tools/web/webScrape.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | Whether scraping succeeded |
+| `url` | `url: string;` | URL that was scraped |
+| `finalUrl?` | `finalUrl?: string;` | Final URL after redirects |
+| `method` | `method: string;` | Method used: 'native', 'js', or provider name |
+| `title` | `title: string;` | Page title |
+| `content` | `content: string;` | Extracted text content |
+| `html?` | `html?: string;` | Raw HTML (if requested) |
+| `markdown?` | `markdown?: string;` | Markdown version (if requested and supported) |
+| `metadata?` | `metadata?: ScrapeResult['metadata'];` | Extracted metadata |
+| `links?` | `links?: ScrapeResult['links'];` | Extracted links (if requested) |
+| `qualityScore?` | `qualityScore?: number;` | Quality score (0-100) for native/js methods |
+| `durationMs` | `durationMs: number;` | Time taken in milliseconds |
+| `attemptedMethods` | `attemptedMethods: string[];` | Methods attempted before success |
+| `error?` | `error?: string;` | Error message if failed |
+| `suggestion?` | `suggestion?: string;` | Suggestion for improvement |
+
+</details>
+
+---
+
 ### WebSearchArgs `interface`
 
-📍 [`src/tools/web/webSearch.ts:11`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:19`](src/tools/web/webSearch.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -24805,7 +30960,11 @@ Used to describe vendor-specific options that fall outside semantic options
 |----------|------|-------------|
 | `query` | `query: string;` | - |
 | `numResults?` | `numResults?: number;` | - |
-| `provider?` | `provider?: 'serper' | 'brave' | 'tavily';` | - |
+| `provider?` | `provider?: 'serper' | 'brave' | 'tavily' | 'rapidapi';` | - |
+| `connectorName?` | `connectorName?: string;` | Connector name to use for search
+Example: 'serper-main', 'brave-backup', 'rapidapi-search' |
+| `country?` | `country?: string;` | Country/region code (e.g., 'us', 'gb') |
+| `language?` | `language?: string;` | Language code (e.g., 'en', 'fr') |
 
 </details>
 
@@ -24813,7 +30972,7 @@ Used to describe vendor-specific options that fall outside semantic options
 
 ### WebSearchResult `interface`
 
-📍 [`src/tools/web/webSearch.ts:17`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:38`](src/tools/web/webSearch.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -24826,6 +30985,97 @@ Used to describe vendor-specific options that fall outside semantic options
 | `results` | `results: SearchResult[];` | - |
 | `count` | `count: number;` | - |
 | `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### WriteFileArgs `interface`
+
+📍 [`src/tools/filesystem/writeFile.ts:28`](src/tools/filesystem/writeFile.ts)
+
+Arguments for the write file tool
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `file_path` | `file_path: string;` | Absolute path to the file to write |
+| `content` | `content: string;` | Content to write to the file |
+
+</details>
+
+---
+
+### WriteFileResult `interface`
+
+📍 [`src/tools/filesystem/types.ts:96`](src/tools/filesystem/types.ts)
+
+Result of a file write operation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | - |
+| `path?` | `path?: string;` | - |
+| `bytesWritten?` | `bytesWritten?: number;` | - |
+| `created?` | `created?: boolean;` | - |
+| `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### ZenRowsHeaders `interface`
+
+📍 [`src/capabilities/scrape/providers/ZenRowsProvider.ts:67`](src/capabilities/scrape/providers/ZenRowsProvider.ts)
+
+ZenRows API response headers
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `'zr-final-url'?` | `'zr-final-url'?: string;` | - |
+| `'zr-status'?` | `'zr-status'?: string;` | - |
+| `'zr-cost'?` | `'zr-cost'?: string;` | - |
+| `'content-type'?` | `'content-type'?: string;` | - |
+
+</details>
+
+---
+
+### ZenRowsOptions `interface`
+
+📍 [`src/capabilities/scrape/providers/ZenRowsProvider.ts:29`](src/capabilities/scrape/providers/ZenRowsProvider.ts)
+
+ZenRows-specific options
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `jsRender?` | `jsRender?: boolean;` | Enable JavaScript rendering (5x cost) |
+| `premiumProxy?` | `premiumProxy?: boolean;` | Use premium proxies / residential IPs (10x cost) |
+| `wait?` | `wait?: number;` | Wait time in ms before returning content (max 30000) |
+| `waitFor?` | `waitFor?: string;` | CSS selector to wait for before returning |
+| `autoparse?` | `autoparse?: boolean;` | Enable auto-parsing of structured data |
+| `cssExtractor?` | `cssExtractor?: string;` | CSS selectors to extract (JSON output) |
+| `outputFormat?` | `outputFormat?: 'html' | 'markdown';` | Output format: 'html' or 'markdown' |
+| `screenshot?` | `screenshot?: boolean;` | Take a screenshot (returns base64) |
+| `screenshotFullpage?` | `screenshotFullpage?: boolean;` | Screenshot full page (vs viewport only) |
+| `blockResources?` | `blockResources?: string;` | Block specific resources: 'image', 'media', 'font', 'stylesheet' |
+| `customHeaders?` | `customHeaders?: boolean;` | Custom headers as JSON string |
+| `sessionId?` | `sessionId?: number;` | Session ID for sticky sessions |
+| `device?` | `device?: 'desktop' | 'mobile';` | Device type: 'desktop' or 'mobile' |
+| `originalStatus?` | `originalStatus?: boolean;` | Original status code passthrough |
+| `proxyCountry?` | `proxyCountry?: string;` | Proxy country (e.g., 'us', 'gb') |
+| `jsInstructions?` | `jsInstructions?: string;` | JavaScript instructions to execute |
 
 </details>
 
@@ -24933,15 +31183,16 @@ type AudioFormat = 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm' | 'ogg'
 
 ### ConnectorAuth `type`
 
-📍 [`src/domain/entities/Connector.ts:17`](src/domain/entities/Connector.ts)
+📍 [`src/domain/entities/Connector.ts:24`](src/domain/entities/Connector.ts)
 
 Connector authentication configuration
-Supports OAuth 2.0, API keys, and JWT bearer tokens
+Supports OAuth 2.0, API keys, JWT bearer tokens, and none (for testing)
 
 ```typescript
 type ConnectorAuth = | OAuthConnectorAuth
   | APIKeyConnectorAuth
   | JWTConnectorAuth
+  | NoneConnectorAuth
 ```
 
 ---
@@ -25017,6 +31268,20 @@ type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent'
 
 ---
 
+### MCPTransportType `type`
+
+📍 [`src/domain/entities/MCPConfig.ts:10`](src/domain/entities/MCPConfig.ts)
+
+MCP Configuration Types
+
+Defines configuration structures for MCP servers and global library configuration.
+
+```typescript
+type MCPTransportType = 'stdio' | 'http' | 'https'
+```
+
+---
+
 ### ModifyingHook `type`
 
 📍 [`src/capabilities/agents/types/HookTypes.ts:22`](src/capabilities/agents/types/HookTypes.ts)
@@ -25051,6 +31316,43 @@ type OutputItem = Message | CompactionItem | ReasoningItem
 
 ---
 
+### PermissionManagerEvent `type`
+
+📍 [`src/core/permissions/types.ts:274`](src/core/permissions/types.ts)
+
+Events emitted by ToolPermissionManager
+
+```typescript
+type PermissionManagerEvent = | 'tool:approved'
+  | 'tool:denied'
+  | 'tool:blocked'
+  | 'tool:revoked'
+  | 'allowlist:added'
+  | 'allowlist:removed'
+  | 'blocklist:added'
+  | 'blocklist:removed'
+  | 'session:cleared'
+```
+
+---
+
+### PermissionScope `type`
+
+📍 [`src/core/permissions/types.ts:26`](src/core/permissions/types.ts)
+
+Permission scope defines when approval is required for a tool
+
+- `once` - Require approval for each tool call (most restrictive)
+- `session` - Approve once, valid for entire session
+- `always` - Auto-approve (allowlisted, no prompts)
+- `never` - Always blocked (blocklisted, tool cannot execute)
+
+```typescript
+type PermissionScope = 'once' | 'session' | 'always' | 'never'
+```
+
+---
+
 ### ProviderConfig `type`
 
 📍 [`src/domain/types/ProviderConfig.ts:83`](src/domain/types/ProviderConfig.ts)
@@ -25069,6 +31371,18 @@ type ProviderConfig = | OpenAIConfig
 
 ---
 
+### ProviderConstructor `type`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:146`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Provider constructor type
+
+```typescript
+type ProviderConstructor = new (connector: Connector) =&gt; IScrapeProvider
+```
+
+---
+
 ### QualityLevel `type`
 
 📍 [`src/domain/types/SharedTypes.ts:21`](src/domain/types/SharedTypes.ts)
@@ -25078,6 +31392,179 @@ Providers map these to vendor-specific quality settings
 
 ```typescript
 type QualityLevel = 'draft' | 'standard' | 'high' | 'ultra'
+```
+
+---
+
+### ResponsesAPIInputItem `type`
+
+📍 [`src/infrastructure/providers/openai/OpenAIResponsesConverter.ts:20`](src/infrastructure/providers/openai/OpenAIResponsesConverter.ts)
+
+```typescript
+type ResponsesAPIInputItem = ResponsesAPI.ResponseInputItem
+```
+
+---
+
+### ResponsesAPIResponse `type`
+
+📍 [`src/infrastructure/providers/openai/OpenAIResponsesConverter.ts:21`](src/infrastructure/providers/openai/OpenAIResponsesConverter.ts)
+
+```typescript
+type ResponsesAPIResponse = ResponsesAPI.Response
+```
+
+---
+
+### ResponseStatus `type`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:17`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Response status type (matches LLMResponse.status)
+
+```typescript
+type ResponseStatus = 'completed' | 'failed' | 'in_progress' | 'cancelled' | 'queued' | 'incomplete'
+```
+
+---
+
+### RiskLevel `type`
+
+📍 [`src/core/permissions/types.ts:34`](src/core/permissions/types.ts)
+
+Risk level classification for tools
+
+Used to help users understand the potential impact of approving a tool.
+Can be used by UI to show different approval dialogs.
+
+```typescript
+type RiskLevel = 'low' | 'medium' | 'high' | 'critical'
+```
+
+---
+
+### ScrapeFeature `type`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:130`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Features that scrape providers may support
+
+```typescript
+type ScrapeFeature = | 'javascript'      // Can render JavaScript
+  | 'markdown'        // Can convert to markdown
+  | 'screenshot'      // Can take screenshots
+  | 'links'           // Can extract links
+  | 'metadata'        // Can extract metadata
+  | 'proxy'           // Uses proxy rotation
+  | 'stealth'         // Has anti-bot detection bypass
+  | 'pdf'             // Can scrape PDFs
+  | 'dynamic'
+```
+
+---
+
+### ServiceCategory `type`
+
+📍 [`src/domain/entities/Services.ts:11`](src/domain/entities/Services.ts)
+
+Services - Single source of truth for external service definitions
+
+All service metadata is defined in one place (SERVICE_DEFINITIONS).
+Other exports are derived from this to maintain DRY principles.
+
+```typescript
+type ServiceCategory = | 'communication'
+  | 'development'
+  | 'productivity'
+  | 'crm'
+  | 'payments'
+  | 'cloud'
+  | 'storage'
+  | 'email'
+  | 'monitoring'
+  | 'search'
+  | 'scrape'
+  | 'other'
+```
+
+---
+
+### ServiceType `type`
+
+📍 [`src/domain/entities/Services.ts:447`](src/domain/entities/Services.ts)
+
+Service type - union of all service IDs
+
+```typescript
+type ServiceType = (typeof SERVICE_DEFINITIONS)[number]['id']
+```
+
+---
+
+### TransportConfig `type`
+
+📍 [`src/domain/entities/MCPConfig.ts:56`](src/domain/entities/MCPConfig.ts)
+
+Transport configuration union type
+
+```typescript
+type TransportConfig = StdioTransportConfig | HTTPTransportConfig
+```
+
+---
+
+### applyServerDefaults `function`
+
+📍 [`src/domain/entities/MCPConfig.ts:159`](src/domain/entities/MCPConfig.ts)
+
+Apply defaults to server config
+
+```typescript
+export function applyServerDefaults(
+  config: MCPServerConfig,
+  defaults?: MCPConfiguration['defaults']
+): Required&lt;Omit&lt;MCPServerConfig, 'displayName' | 'description' | 'permissions' | 'toolNamespace'&gt;&gt; &
+```
+
+---
+
+### buildEndpointWithQuery `function`
+
+📍 [`src/capabilities/shared/types.ts:106`](src/capabilities/shared/types.ts)
+
+Build endpoint URL with query parameters
+
+```typescript
+export function buildEndpointWithQuery(
+  endpoint: string,
+  queryParams?: Record&lt;string, string | number | boolean&gt;
+): string
+```
+
+---
+
+### buildLLMResponse `function`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:58`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Build a standardized LLMResponse object
+
+All providers should use this to ensure consistent response format.
+
+```typescript
+export function buildLLMResponse(options: ResponseBuilderOptions): LLMResponse
+```
+
+---
+
+### buildQueryString `function`
+
+📍 [`src/capabilities/shared/types.ts:63`](src/capabilities/shared/types.ts)
+
+Build query string from params
+
+```typescript
+export function buildQueryString(params: Record&lt;string, string | number | boolean&gt;): string
 ```
 
 ---
@@ -25141,6 +31628,18 @@ export const getActiveImageModels = helpers.getActive;
 
 ---
 
+### createTextContent `function`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:124`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Create a text content item
+
+```typescript
+export function createTextContent(text: string): Content
+```
+
+---
+
 ### deleteAtPath `function`
 
 📍 [`src/tools/json/pathUtils.ts:115`](src/tools/json/pathUtils.ts)
@@ -25169,6 +31668,18 @@ export function detectContentQuality(
 
 ---
 
+### detectServiceFromURL `function`
+
+📍 [`src/domain/entities/Services.ts:525`](src/domain/entities/Services.ts)
+
+Detect service type from a URL
+
+```typescript
+export function detectServiceFromURL(url: string): string | undefined
+```
+
+---
+
 ### executeInVM `function`
 
 📍 [`src/tools/code/executeJavaScript.ts:177`](src/tools/code/executeJavaScript.ts)
@@ -25182,6 +31693,48 @@ async function executeInVM(
   timeout: number,
   logs: string[]
 ): Promise&lt;any&gt;
+```
+
+---
+
+### executeWithConnector `function`
+
+📍 [`src/tools/web/webSearch.ts:207`](src/tools/web/webSearch.ts)
+
+Execute search using Connector (new approach)
+
+```typescript
+async function executeWithConnector(
+  args: WebSearchArgs,
+  numResults: number
+): Promise&lt;WebSearchResult&gt;
+```
+
+---
+
+### executeWithProvider `function`
+
+📍 [`src/tools/web/webSearch.ts:243`](src/tools/web/webSearch.ts)
+
+Execute search using provider + environment variables (backward compatibility)
+
+```typescript
+async function executeWithProvider(
+  args: WebSearchArgs,
+  numResults: number
+): Promise&lt;WebSearchResult&gt;
+```
+
+---
+
+### expandTilde `function`
+
+📍 [`src/tools/filesystem/types.ts:230`](src/tools/filesystem/types.ts)
+
+Expand tilde (~) to the user's home directory
+
+```typescript
+export function expandTilde(inputPath: string): string
 ```
 
 ---
@@ -25222,6 +31775,91 @@ function extractOpenAIConfig(connector: Connector): OpenAIMediaConfig
 
 ---
 
+### extractTextFromContent `function`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:109`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Extract text content from a Content array
+
+```typescript
+export function extractTextFromContent(content: Content[]): string
+```
+
+---
+
+### findAvailableScrapeConnector `function`
+
+📍 [`src/tools/web/webScrape.ts:507`](src/tools/web/webScrape.ts)
+
+Find an available scrape connector
+
+```typescript
+function findAvailableScrapeConnector(): string | undefined
+```
+
+---
+
+### findAvailableSearchConnector `function`
+
+📍 [`src/tools/web/webSearch.ts:310`](src/tools/web/webSearch.ts)
+
+Find any available search connector
+
+```typescript
+function findAvailableSearchConnector(): string | undefined
+```
+
+---
+
+### findFiles `function`
+
+📍 [`src/tools/filesystem/glob.ts:67`](src/tools/filesystem/glob.ts)
+
+Recursively find files matching a pattern
+
+```typescript
+async function findFiles(
+  dir: string,
+  pattern: string,
+  baseDir: string,
+  config: Required&lt;FilesystemToolConfig&gt;,
+  results:
+```
+
+---
+
+### findFilesToSearch `function`
+
+📍 [`src/tools/filesystem/grep.ts:84`](src/tools/filesystem/grep.ts)
+
+Recursively find files to search
+
+```typescript
+async function findFilesToSearch(
+  dir: string,
+  baseDir: string,
+  config: Required&lt;FilesystemToolConfig&gt;,
+  globPattern?: string,
+  fileType?: string,
+  files: string[] = [],
+  depth: number = 0
+): Promise&lt;string[]&gt;
+```
+
+---
+
+### generateBackgroundId `function`
+
+📍 [`src/tools/shell/bash.ts:44`](src/tools/shell/bash.ts)
+
+Generate a unique ID for background processes
+
+```typescript
+function generateBackgroundId(): string
+```
+
+---
+
 ### generateDescription `function`
 
 📍 [`src/tools/code/executeJavaScript.ts:29`](src/tools/code/executeJavaScript.ts)
@@ -25230,6 +31868,42 @@ Generate the tool description with current connectors
 
 ```typescript
 function generateDescription(): string
+```
+
+---
+
+### generateDiffPreview `function`
+
+📍 [`src/tools/filesystem/editFile.ts:223`](src/tools/filesystem/editFile.ts)
+
+Generate a simple diff preview
+
+```typescript
+function generateDiffPreview(oldStr: string, newStr: string): string
+```
+
+---
+
+### getAllServiceIds `function`
+
+📍 [`src/domain/entities/Services.ts:561`](src/domain/entities/Services.ts)
+
+Get all service IDs
+
+```typescript
+export function getAllServiceIds(): string[]
+```
+
+---
+
+### getBackgroundOutput `function`
+
+📍 [`src/tools/shell/bash.ts:285`](src/tools/shell/bash.ts)
+
+Get output from a background process
+
+```typescript
+export function getBackgroundOutput(bgId: string):
 ```
 
 ---
@@ -25246,11 +31920,23 @@ async function getBrowser(): Promise&lt;any&gt;
 
 ---
 
+### getCompiledPatterns `function`
+
+📍 [`src/domain/entities/Services.ts:510`](src/domain/entities/Services.ts)
+
+Get compiled patterns (lazy initialization)
+
+```typescript
+function getCompiledPatterns(): Array&lt;
+```
+
+---
+
 ### getEnvVarName `function`
 
-📍 [`src/tools/web/webSearch.ts:181`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:348`](src/tools/web/webSearch.ts)
 
-Get environment variable name for provider
+Get environment variable name for provider (backward compatibility)
 
 ```typescript
 function getEnvVarName(provider: string): string
@@ -25258,14 +31944,62 @@ function getEnvVarName(provider: string): string
 
 ---
 
+### getRegisteredScrapeProviders `function`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:171`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Get registered service types
+
+```typescript
+export function getRegisteredScrapeProviders(): string[]
+```
+
+---
+
 ### getSearchAPIKey `function`
 
-📍 [`src/tools/web/webSearch.ts:165`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:330`](src/tools/web/webSearch.ts)
 
-Get search API key from environment
+Get search API key from environment (backward compatibility)
 
 ```typescript
 function getSearchAPIKey(provider: string): string | undefined
+```
+
+---
+
+### getServiceDefinition `function`
+
+📍 [`src/domain/entities/Services.ts:547`](src/domain/entities/Services.ts)
+
+Get service definition by service type
+
+```typescript
+export function getServiceDefinition(serviceType: string): ServiceDefinition | undefined
+```
+
+---
+
+### getServiceInfo `function`
+
+📍 [`src/domain/entities/Services.ts:540`](src/domain/entities/Services.ts)
+
+Get service info by service type
+
+```typescript
+export function getServiceInfo(serviceType: string): ServiceInfo | undefined
+```
+
+---
+
+### getServicesByCategory `function`
+
+📍 [`src/domain/entities/Services.ts:554`](src/domain/entities/Services.ts)
+
+Get all services in a category
+
+```typescript
+export function getServicesByCategory(category: ServiceCategory): ServiceDefinition[]
 ```
 
 ---
@@ -25284,6 +32018,92 @@ export function getValueAtPath(obj: any, path: string): any
 
 ---
 
+### hasAvailableScrapeConnector `function`
+
+📍 [`src/tools/web/webScrape.ts:500`](src/tools/web/webScrape.ts)
+
+Check if any scrape connector is available
+
+```typescript
+function hasAvailableScrapeConnector(): boolean
+```
+
+---
+
+### isBlockedCommand `function`
+
+📍 [`src/tools/shell/types.ts:111`](src/tools/shell/types.ts)
+
+Check if a command should be blocked
+
+```typescript
+export function isBlockedCommand(
+  command: string,
+  config: ShellToolConfig =
+```
+
+---
+
+### isExcludedExtension `function`
+
+📍 [`src/tools/filesystem/types.ts:242`](src/tools/filesystem/types.ts)
+
+Check if a file extension should be excluded
+
+```typescript
+export function isExcludedExtension(
+  filePath: string,
+  excludeExtensions: string[] = DEFAULT_FILESYSTEM_CONFIG.excludeExtensions
+): boolean
+```
+
+---
+
+### isKnownService `function`
+
+📍 [`src/domain/entities/Services.ts:568`](src/domain/entities/Services.ts)
+
+Check if a service ID is known
+
+```typescript
+export function isKnownService(serviceId: string): boolean
+```
+
+---
+
+### killBackgroundProcess `function`
+
+📍 [`src/tools/shell/bash.ts:301`](src/tools/shell/bash.ts)
+
+Kill a background process
+
+```typescript
+export function killBackgroundProcess(bgId: string): boolean
+```
+
+---
+
+### listDir `function`
+
+📍 [`src/tools/filesystem/listDirectory.ts:63`](src/tools/filesystem/listDirectory.ts)
+
+Recursively list directory contents
+
+```typescript
+async function listDir(
+  dir: string,
+  baseDir: string,
+  config: Required&lt;FilesystemToolConfig&gt;,
+  recursive: boolean,
+  filter?: 'files' | 'directories',
+  maxDepth: number = 3,
+  currentDepth: number = 0,
+  entries: DirectoryEntry[] = []
+): Promise&lt;DirectoryEntry[]&gt;
+```
+
+---
+
 ### loadPuppeteer `function`
 
 📍 [`src/tools/web/webFetchJS.ts:35`](src/tools/web/webFetchJS.ts)
@@ -25292,6 +32112,54 @@ Load Puppeteer dynamically (only when needed)
 
 ```typescript
 async function loadPuppeteer(): Promise&lt;any&gt;
+```
+
+---
+
+### mapAnthropicStatus `function`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:177`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Map Anthropic stop_reason to ResponseStatus
+
+```typescript
+export function mapAnthropicStatus(stopReason: string | null): ResponseStatus
+```
+
+---
+
+### mapGoogleStatus `function`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:193`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Map Google finish_reason to ResponseStatus
+
+```typescript
+export function mapGoogleStatus(finishReason?: string): ResponseStatus
+```
+
+---
+
+### mapOpenAIStatus `function`
+
+📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:160`](src/infrastructure/providers/shared/ResponseBuilder.ts)
+
+Mapping functions for provider-specific status to our ResponseStatus
+
+```typescript
+export function mapOpenAIStatus(status?: string): ResponseStatus
+```
+
+---
+
+### matchGlobPattern `function`
+
+📍 [`src/tools/filesystem/glob.ts:39`](src/tools/filesystem/glob.ts)
+
+Simple glob pattern matcher
+
+```typescript
+function matchGlobPattern(pattern: string, filePath: string): boolean
 ```
 
 ---
@@ -25316,6 +32184,52 @@ Check if path exists in object
 
 ```typescript
 export function pathExists(obj: any, path: string): boolean
+```
+
+---
+
+### registerScrapeProvider `function`
+
+📍 [`src/capabilities/scrape/ScrapeProvider.ts:161`](src/capabilities/scrape/ScrapeProvider.ts)
+
+Register a scrape provider for a service type
+Called by provider implementations to register themselves
+
+```typescript
+export function registerScrapeProvider(
+  serviceType: string,
+  providerClass: ProviderConstructor
+): void
+```
+
+---
+
+### resolveConnector `function`
+
+📍 [`src/capabilities/shared/types.ts:128`](src/capabilities/shared/types.ts)
+
+Resolve connector from config (name or instance)
+Shared logic for all provider factories
+
+```typescript
+export function resolveConnector(connectorOrName: string | Connector): Connector
+```
+
+---
+
+### searchFile `function`
+
+📍 [`src/tools/filesystem/grep.ts:147`](src/tools/filesystem/grep.ts)
+
+Search a single file for matches
+
+```typescript
+async function searchFile(
+  filePath: string,
+  regex: RegExp,
+  contextBefore: number,
+  contextAfter: number
+): Promise&lt;GrepMatch[]&gt;
 ```
 
 ---
@@ -25376,6 +32290,61 @@ export function setValueAtPath(obj: any, path: string, value: any): boolean
 
 ---
 
+### toConnectorOptions `function`
+
+📍 [`src/capabilities/shared/types.ts:80`](src/capabilities/shared/types.ts)
+
+Convert ExtendedFetchOptions to standard ConnectorFetchOptions
+Handles body stringification and query param building
+
+```typescript
+export function toConnectorOptions(options: ExtendedFetchOptions): ConnectorFetchOptions
+```
+
+---
+
+### tryAPI `function`
+
+📍 [`src/tools/web/webScrape.ts:426`](src/tools/web/webScrape.ts)
+
+```typescript
+async function tryAPI(
+  args: WebScrapeArgs,
+  startTime: number,
+  attemptedMethods: string[]
+): Promise&lt;WebScrapeResult&gt;
+```
+
+---
+
+### tryJS `function`
+
+📍 [`src/tools/web/webScrape.ts:381`](src/tools/web/webScrape.ts)
+
+```typescript
+async function tryJS(
+  args: WebScrapeArgs,
+  startTime: number,
+  attemptedMethods: string[]
+): Promise&lt;WebScrapeResult&gt;
+```
+
+---
+
+### tryNative `function`
+
+📍 [`src/tools/web/webScrape.ts:338`](src/tools/web/webScrape.ts)
+
+```typescript
+async function tryNative(
+  args: WebScrapeArgs,
+  startTime: number,
+  attemptedMethods: string[]
+): Promise&lt;WebScrapeResult&gt;
+```
+
+---
+
 ### updateAgentStatus `function`
 
 📍 [`src/domain/entities/AgentState.ts:107`](src/domain/entities/AgentState.ts)
@@ -25390,6 +32359,20 @@ export function updateAgentStatus(state: AgentState, status: AgentStatus): Agent
 
 ### validatePath `function`
 
+📍 [`src/tools/filesystem/types.ts:156`](src/tools/filesystem/types.ts)
+
+Validate and resolve a path within allowed boundaries
+
+```typescript
+export function validatePath(
+  inputPath: string,
+  config: FilesystemToolConfig =
+```
+
+---
+
+### validatePath `function`
+
 📍 [`src/tools/json/pathUtils.ts:177`](src/tools/json/pathUtils.ts)
 
 Validate path format
@@ -25397,6 +32380,148 @@ Validate path format
 ```typescript
 export function validatePath(path: string): boolean
 ```
+
+---
+
+### DEFAULT_FILESYSTEM_CONFIG `const`
+
+📍 [`src/tools/filesystem/types.ts:62`](src/tools/filesystem/types.ts)
+
+Default configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `workingDirectory` | `process.cwd()` | - |
+| `allowedDirectories` | `[]` | - |
+| `blockedDirectories` | `['node_modules', '.git', '.svn', '.hg', '__pycache__', '.cache']` | - |
+| `maxFileSize` | `10 * 1024 * 1024` | - |
+| `maxResults` | `1000` | - |
+| `followSymlinks` | `false` | - |
+| `excludeExtensions` | `[
+    '.exe', '.dll', '.so', '.dylib', '.bin', '.obj', '.o', '.a',
+    '.zip', '.tar', '.gz', '.bz2', '.7z', '.rar',
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg', '.webp',
+    '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    '.woff', '.woff2', '.ttf', '.eot', '.otf',
+  ]` | - |
+
+</details>
+
+---
+
+### DEFAULT_IDEMPOTENCY_CONFIG `const`
+
+📍 [`src/core/IdempotencyCache.ts:40`](src/core/IdempotencyCache.ts)
+
+Default configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `defaultTtlMs` | `3600000` | - |
+| `maxEntries` | `1000` | - |
+
+</details>
+
+---
+
+### DEFAULT_PERMISSION_CONFIG `const`
+
+📍 [`src/core/permissions/types.ts:297`](src/core/permissions/types.ts)
+
+Default permission config applied when no config is specified
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `scope` | `'once'` | - |
+| `riskLevel` | `'low'` | - |
+
+</details>
+
+---
+
+### DEFAULT_SHELL_CONFIG `const`
+
+📍 [`src/tools/shell/types.ts:68`](src/tools/shell/types.ts)
+
+Default configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `workingDirectory` | `process.cwd()` | - |
+| `defaultTimeout` | `120000` | - |
+| `maxTimeout` | `600000` | - |
+| `shell` | `process.platform === 'win32' ? 'cmd.exe' : '/bin/bash'` | - |
+| `env` | `{}` | - |
+| `blockedCommands` | `[
+    'rm -rf /',
+    'rm -rf /*',
+    'rm -rf ~',
+    'rm -rf ~/*',
+    'mkfs',
+    'dd if=/dev/zero',
+    ':(){:|:&};:', // Fork bomb
+  ]` | - |
+| `blockedPatterns` | `[
+    /rm\s+(-rf?|--recursive)\s+\/(?!\S)/i, // rm -rf / variations
+    /&gt;\s*\/dev\/sd[a-z]/i, // Writing to disk devices
+    /mkfs/i,
+    /dd\s+.*of=\/dev\//i, // dd to devices
+  ]` | - |
+| `maxOutputSize` | `100000` | - |
+| `allowBackground` | `true` | - |
+
+</details>
+
+---
+
+### FILE_TYPE_MAP `const`
+
+📍 [`src/tools/filesystem/grep.ts:56`](src/tools/filesystem/grep.ts)
+
+Map of common file types to extensions
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `ts` | `['.ts', '.tsx']` | - |
+| `js` | `['.js', '.jsx', '.mjs', '.cjs']` | - |
+| `py` | `['.py', '.pyi']` | - |
+| `java` | `['.java']` | - |
+| `go` | `['.go']` | - |
+| `rust` | `['.rs']` | - |
+| `c` | `['.c', '.h']` | - |
+| `cpp` | `['.cpp', '.hpp', '.cc', '.hh', '.cxx', '.hxx']` | - |
+| `cs` | `['.cs']` | - |
+| `rb` | `['.rb']` | - |
+| `php` | `['.php']` | - |
+| `swift` | `['.swift']` | - |
+| `kotlin` | `['.kt', '.kts']` | - |
+| `scala` | `['.scala']` | - |
+| `html` | `['.html', '.htm']` | - |
+| `css` | `['.css', '.scss', '.sass', '.less']` | - |
+| `json` | `['.json']` | - |
+| `yaml` | `['.yaml', '.yml']` | - |
+| `xml` | `['.xml']` | - |
+| `md` | `['.md', '.markdown']` | - |
+| `sql` | `['.sql']` | - |
+| `sh` | `['.sh', '.bash', '.zsh']` | - |
+
+</details>
 
 ---
 
@@ -26088,9 +33213,241 @@ With screenshot:
 
 ---
 
+### webScrape `const`
+
+📍 [`src/tools/web/webScrape.ts:113`](src/tools/web/webScrape.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `definition` | `{
+    type: 'function',
+    function: {
+      name: 'web_scrape',
+      description: `Scrape any URL with automatic fallback - guaranteed to work on most sites.
+
+This tool combines multiple scraping methods to ensure content extraction:
+
+SCRAPING STRATEGIES:
+- auto (default): Tries native -&gt; JS -&gt; API until one succeeds
+- native: Only native HTTP fetch (fast, free, static sites only)
+- js: Only JavaScript rendering (handles SPAs, needs Puppeteer)
+- api: Only external API provider (handles bot protection)
+- api-first: Tries API first, then falls back to native
+
+FALLBACK CHAIN (auto strategy):
+1. Native fetch - Fast (~1s), free, works for blogs/docs/articles
+2. JS rendering - Slower (~5s), handles React/Vue/Angular
+3. External API - Handles bot protection, CAPTCHAs, rate limits
+
+EXTERNAL API PROVIDERS:
+Configure a connector with a scraping service:
+- Jina AI Reader (free tier available)
+- Firecrawl (advanced features)
+- ScrapingBee (proxy rotation)
+- etc.
+
+WHEN TO USE EACH STRATEGY:
+- 'auto': Most cases - let the tool figure it out
+- 'native': When you know the site is static
+- 'js': When you know it's a React/Vue/Angular app
+- 'api': When site has bot protection or rate limits
+- 'api-first': When you want best quality regardless of cost
+
+RETURNS:
+{
+  success: boolean,
+  url: string,
+  finalUrl: string,        // After redirects
+  method: string,          // 'native', 'js', or provider name
+  title: string,
+  content: string,         // Clean text
+  html: string,            // If requested
+  markdown: string,        // If requested and supported
+  metadata: {...},         // Title, description, author, etc.
+  links: [{url, text}],    // If requested
+  qualityScore: number,    // 0-100
+  durationMs: number,
+  attemptedMethods: [],    // Methods tried
+  error: string,           // If failed
+  suggestion: string       // How to fix
+}
+
+EXAMPLES:
+Basic (auto strategy):
+{ "url": "https://example.com/article" }
+
+With API fallback:
+{
+  "url": "https://protected-site.com",
+  "connectorName": "jina-reader",
+  "strategy": "auto"
+}
+
+Force API provider:
+{
+  "url": "https://hard-to-scrape.com",
+  "connectorName": "firecrawl-main",
+  "strategy": "api",
+  "includeMarkdown": true
+}
+
+High quality threshold:
+{
+  "url": "https://example.com",
+  "minQualityScore": 80,
+  "strategy": "auto"
+}`,
+
+      parameters: {
+        type: 'object',
+        properties: {
+          url: {
+            type: 'string',
+            description: 'URL to scrape. Must start with http:// or https://',
+          },
+          strategy: {
+            type: 'string',
+            enum: ['auto', 'native', 'js', 'api', 'api-first'],
+            description: 'Scraping strategy. Default: "auto"',
+          },
+          connectorName: {
+            type: 'string',
+            description: 'Connector name for external API provider (e.g., "jina-reader", "firecrawl-main")',
+          },
+          minQualityScore: {
+            type: 'number',
+            description: 'Minimum quality score (0-100) to accept from native methods. Default: 50',
+          },
+          timeout: {
+            type: 'number',
+            description: 'Timeout in milliseconds. Default: 30000',
+          },
+          includeHtml: {
+            type: 'boolean',
+            description: 'Include raw HTML in response. Default: false',
+          },
+          includeMarkdown: {
+            type: 'boolean',
+            description: 'Include markdown conversion (if supported). Default: false',
+          },
+          includeLinks: {
+            type: 'boolean',
+            description: 'Extract and include links. Default: false',
+          },
+          waitForSelector: {
+            type: 'string',
+            description: 'CSS selector to wait for (JS/API strategies only)',
+          },
+          vendorOptions: {
+            type: 'object',
+            description: 'Vendor-specific options for API provider',
+          },
+        },
+        required: ['url'],
+      },
+    },
+    blocking: true,
+    timeout: 60000, // Allow time for all fallbacks
+  }` | - |
+| `execute` | `async (args: WebScrapeArgs): Promise&lt;WebScrapeResult&gt; =&gt; {
+    const startTime = Date.now();
+    const strategy = args.strategy || 'auto';
+    const minQuality = args.minQualityScore ?? 50;
+    const attemptedMethods: string[] = [];
+
+    // Validate URL
+    try {
+      new URL(args.url);
+    } catch {
+      return {
+        success: false,
+        url: args.url,
+        method: 'none',
+        title: '',
+        content: '',
+        durationMs: Date.now() - startTime,
+        attemptedMethods: [],
+        error: 'Invalid URL format',
+      };
+    }
+
+    // Strategy execution
+    switch (strategy) {
+      case 'native':
+        return await tryNative(args, startTime, attemptedMethods);
+
+      case 'js':
+        return await tryJS(args, startTime, attemptedMethods);
+
+      case 'api':
+        return await tryAPI(args, startTime, attemptedMethods);
+
+      case 'api-first':
+        // Try API first, then native
+        if (args.connectorName) {
+          const apiResult = await tryAPI(args, startTime, attemptedMethods);
+          if (apiResult.success) return apiResult;
+        }
+        const nativeResult = await tryNative(args, startTime, attemptedMethods);
+        if (nativeResult.success) return nativeResult;
+        return await tryJS(args, startTime, attemptedMethods);
+
+      case 'auto':
+      default:
+        // Try native -&gt; JS -&gt; API
+        const native = await tryNative(args, startTime, attemptedMethods);
+        if (native.success && (native.qualityScore ?? 0) &gt;= minQuality) {
+          return native;
+        }
+
+        const js = await tryJS(args, startTime, attemptedMethods);
+        if (js.success && (js.qualityScore ?? 0) &gt;= minQuality) {
+          return js;
+        }
+
+        // Try API if configured
+        if (args.connectorName || hasAvailableScrapeConnector()) {
+          const api = await tryAPI(args, startTime, attemptedMethods);
+          if (api.success) return api;
+        }
+
+        // Return best result we got
+        if (js.success) return js;
+        if (native.success) return native;
+
+        return {
+          success: false,
+          url: args.url,
+          method: 'none',
+          title: '',
+          content: '',
+          durationMs: Date.now() - startTime,
+          attemptedMethods,
+          error: 'All scraping methods failed',
+          suggestion: args.connectorName
+            ? 'Check connector configuration and API key'
+            : 'Configure an external scraping API connector for better results',
+        };
+    }
+  }` | - |
+| `describeCall` | `(args: WebScrapeArgs) =&gt; {
+    const strategy = args.strategy || 'auto';
+    if (args.connectorName) {
+      return `${args.url} (${strategy}, ${args.connectorName})`;
+    }
+    return `${args.url} (${strategy})`;
+  }` | - |
+
+</details>
+
+---
+
 ### webSearch `const`
 
-📍 [`src/tools/web/webSearch.ts:26`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:47`](src/tools/web/webSearch.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -26103,15 +33460,51 @@ With screenshot:
       name: 'web_search',
       description: `Search the web and get relevant results with snippets.
 
-This tool searches the web using a configured search provider.
+This tool searches the web using a configured search provider via Connector.
+
+CONNECTOR SETUP (Recommended):
+Create a connector for your search provider:
+
+// Serper (Google search)
+Connector.create({
+  name: 'serper-main',
+  serviceType: 'serper',
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Brave (Independent index)
+Connector.create({
+  name: 'brave-main',
+  serviceType: 'brave-search',
+  auth: { type: 'api_key', apiKey: process.env.BRAVE_API_KEY! },
+  baseURL: 'https://api.search.brave.com/res/v1',
+});
+
+// Tavily (AI-optimized)
+Connector.create({
+  name: 'tavily-main',
+  serviceType: 'tavily',
+  auth: { type: 'api_key', apiKey: process.env.TAVILY_API_KEY! },
+  baseURL: 'https://api.tavily.com',
+});
+
+// RapidAPI (Real-time web search)
+Connector.create({
+  name: 'rapidapi-search',
+  serviceType: 'rapidapi-search',
+  auth: { type: 'api_key', apiKey: process.env.RAPIDAPI_KEY! },
+  baseURL: 'https://real-time-web-search.p.rapidapi.com',
+});
 
 SEARCH PROVIDERS:
-- serper (default): Google search results via Serper.dev API. Fast (1-2s), 2,500 free queries.
-- brave: Brave's independent search index. Privacy-focused, no Google.
+- serper: Google search results via Serper.dev. Fast (1-2s), 2,500 free queries.
+- brave-search: Brave's independent search index. Privacy-focused, no Google.
 - tavily: AI-optimized search with summaries tailored for LLMs.
+- rapidapi-search: Real-time web search via RapidAPI. Wide coverage.
 
 RETURNS:
-An array of up to 10-20 search results, each containing:
+An array of up to 10-100 search results (provider-specific), each containing:
 - title: Page title
 - url: Direct URL to the page
 - snippet: Short description/excerpt from the page
@@ -26130,23 +33523,26 @@ WORKFLOW PATTERN:
 3. Process and summarize the information
 
 EXAMPLE:
-Basic search:
+Using connector (recommended):
 {
   query: "latest AI developments 2026",
-  numResults: 5
+  connectorName: "serper-main",
+  numResults: 5,
+  country: "us",
+  language: "en"
 }
 
-With specific provider:
+Backward compatible (uses environment variables):
 {
   query: "quantum computing news",
-  numResults: 10,
-  provider: "brave"
+  provider: "brave",
+  numResults: 10
 }
 
 IMPORTANT:
-- Requires API key to be set in environment variables
-- Default provider is "serper" (requires SERPER_API_KEY)
-- Returns empty results if API key not found`,
+- Connector approach provides retry, circuit breaker, and timeout features
+- Supports multiple keys per vendor (e.g., 'serper-main', 'serper-backup')
+- Backward compatible with environment variable approach`,
 
       parameters: {
         type: 'object',
@@ -26158,13 +33554,26 @@ IMPORTANT:
           numResults: {
             type: 'number',
             description:
-              'Number of results to return (default: 10, max: 20). More results = more API cost.',
+              'Number of results to return (default: 10, max: provider-specific). More results = more API cost.',
+          },
+          connectorName: {
+            type: 'string',
+            description:
+              'Connector name to use for search (e.g., "serper-main", "brave-backup"). Recommended approach.',
           },
           provider: {
             type: 'string',
-            enum: ['serper', 'brave', 'tavily'],
+            enum: ['serper', 'brave', 'tavily', 'rapidapi'],
             description:
-              'Which search provider to use. Default is "serper". Each provider requires its own API key.',
+              'DEPRECATED: Use connectorName instead. Provider for backward compatibility with environment variables.',
+          },
+          country: {
+            type: 'string',
+            description: 'Country/region code (e.g., "us", "gb")',
+          },
+          language: {
+            type: 'string',
+            description: 'Language code (e.g., "en", "fr")',
           },
         },
         required: ['query'],
@@ -26174,60 +33583,29 @@ IMPORTANT:
     timeout: 10000,
   }` | - |
 | `execute` | `async (args: WebSearchArgs): Promise&lt;WebSearchResult&gt; =&gt; {
-    const provider = args.provider || 'serper';
-    const numResults = Math.min(args.numResults || 10, 20);
+    const numResults = args.numResults || 10;
 
-    // Get API key from environment
-    const apiKey = getSearchAPIKey(provider);
-
-    if (!apiKey) {
-      return {
-        success: false,
-        query: args.query,
-        provider,
-        results: [],
-        count: 0,
-        error: `No API key found for ${provider}. Set ${getEnvVarName(provider)} in your .env file. See .env.example for details.`,
-      };
+    // NEW: Connector-based approach (preferred)
+    if (args.connectorName) {
+      return await executeWithConnector(args, numResults);
     }
 
-    try {
-      let results: SearchResult[];
-
-      switch (provider) {
-        case 'serper':
-          results = await searchWithSerper(args.query, numResults, apiKey);
-          break;
-
-        case 'brave':
-          results = await searchWithBrave(args.query, numResults, apiKey);
-          break;
-
-        case 'tavily':
-          results = await searchWithTavily(args.query, numResults, apiKey);
-          break;
-
-        default:
-          throw new Error(`Unknown search provider: ${provider}`);
-      }
-
-      return {
-        success: true,
-        query: args.query,
-        provider,
-        results,
-        count: results.length,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        query: args.query,
-        provider,
-        results: [],
-        count: 0,
-        error: (error as Error).message,
-      };
+    // OLD: Backward compatibility with environment variables
+    if (args.provider) {
+      return await executeWithProvider(args, numResults);
     }
+
+    // Auto-detect: Try to find any search connector
+    const availableConnector = findAvailableSearchConnector();
+    if (availableConnector) {
+      return await executeWithConnector(
+        { ...args, connectorName: availableConnector },
+        numResults
+      );
+    }
+
+    // Fallback to environment variable approach
+    return await executeWithProvider({ ...args, provider: 'serper' }, numResults);
   }` | - |
 
 </details>

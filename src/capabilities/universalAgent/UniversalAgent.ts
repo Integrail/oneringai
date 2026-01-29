@@ -21,19 +21,16 @@ import { Agent } from '../../core/Agent.js';
 import { Session, ISessionStorage, SerializedPlan } from '../../core/SessionManager.js';
 import { Plan, Task, createPlan, createTask, TaskInput } from '../../domain/entities/Task.js';
 import { StreamEventType } from '../../domain/entities/StreamEvent.js';
-import { WorkingMemory } from '../taskAgent/WorkingMemory.js';
-import { DEFAULT_MEMORY_CONFIG, WorkingMemoryConfig } from '../../domain/entities/Memory.js';
+import type { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
 import { InMemoryStorage } from '../../infrastructure/storage/InMemoryStorage.js';
 import { PlanningAgent } from '../taskAgent/PlanningAgent.js';
 import { ModeManager } from './ModeManager.js';
 import { getMetaTools, isMetaTool, META_TOOL_NAMES } from './metaTools.js';
-import { ConversationHistoryManager } from '../../core/history/ConversationHistoryManager.js';
-import type { IHistoryManager, SerializedHistoryState } from '../../domain/interfaces/IHistoryManager.js';
-import type { IContextBuilder, ContextSource } from '../../domain/interfaces/IContextBuilder.js';
-import { DefaultContextBuilder } from '../../core/context/DefaultContextBuilder.js';
+import { AgentContext } from '../../core/AgentContext.js';
+import type { AgentContextConfig } from '../../core/AgentContext.js';
+import { PlanPlugin } from '../../core/context/plugins/PlanPlugin.js';
+import { MemoryPlugin } from '../../core/context/plugins/MemoryPlugin.js';
 import type { AgentPermissionsConfig } from '../../core/permissions/types.js';
-import type { ToolPermissionManager } from '../../core/permissions/ToolPermissionManager.js';
-import type { ToolManager } from '../../core/ToolManager.js';
 import type {
   UniversalResponse,
   UniversalEvent,
@@ -44,37 +41,8 @@ import type {
   ExecutionResult,
 } from './types.js';
 
-// ============================================================================
-// Unified Context Access Interface
-// ============================================================================
-
-/**
- * UniversalAgentContextAccess provides AgentContext-compatible access
- * to UniversalAgent's internal managers for unified API access.
- */
-export interface UniversalAgentContextAccess {
-  /** Working memory */
-  readonly memory: WorkingMemory;
-  /** History manager */
-  readonly history: IHistoryManager;
-  /** Context builder */
-  readonly contextBuilder: IContextBuilder;
-  /** Permission manager (from BaseAgent) */
-  readonly permissions: ToolPermissionManager;
-  /** Tool manager (from BaseAgent) */
-  readonly tools: ToolManager;
-
-  /** Add a message to history (fire and forget) */
-  addMessage(role: 'user' | 'assistant' | 'system', content: string): void;
-
-  /** Get context metrics */
-  getMetrics(): Promise<{
-    historyMessageCount: number;
-    memoryStats: { totalEntries: number; totalSizeBytes: number };
-    mode: AgentMode;
-    hasPlan: boolean;
-  }>;
-}
+// NOTE: UniversalAgent now exposes AgentContext directly via the `context` getter.
+// No separate interface needed - AgentContext is the unified API.
 
 // ============================================================================
 // Configuration
@@ -126,11 +94,8 @@ export interface UniversalAgentConfig extends BaseAgentConfig {
   /** Permission configuration for tool execution approval */
   permissions?: AgentPermissionsConfig;
 
-  /** Custom history manager (optional) */
-  historyManager?: IHistoryManager;
-
-  /** Custom context builder (optional) */
-  contextBuilder?: IContextBuilder;
+  /** AgentContext configuration (optional) */
+  context?: Partial<AgentContextConfig>;
 }
 
 // ============================================================================
@@ -163,11 +128,11 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
   private executionAgent?: Agent;           // Execution agent (without meta-tools) - created on demand
   private modeManager: ModeManager;
   private planningAgent?: PlanningAgent;
-  private workingMemory: WorkingMemory;
 
-  // Pluggable history and context management
-  private historyManager: IHistoryManager;
-  private contextBuilder: IContextBuilder;
+  // Unified context management (replaces historyManager, workingMemory, contextBuilder)
+  private _agentContext: AgentContext;
+  private _planPlugin: PlanPlugin;
+  private _memoryPlugin: MemoryPlugin;
 
   // Execution state
   private currentPlan: Plan | null = null;
@@ -253,18 +218,27 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     // Create execution agent (without meta-tools) for task execution
     this.executionAgent = this.createExecutionAgent();
 
-    // Initialize working memory with in-memory storage
-    const memoryStorage = new InMemoryStorage();
-    this.workingMemory = new WorkingMemory(memoryStorage, config.memoryConfig ?? DEFAULT_MEMORY_CONFIG);
+    // Initialize unified AgentContext (replaces historyManager, workingMemory, contextBuilder)
+    this._agentContext = AgentContext.create({
+      model: config.model,
+      systemPrompt: this.buildInstructions(config.instructions),
+      tools: this._toolManager.getEnabled(),
+      permissions: config.permissions,
+      memory: config.memoryConfig ? {
+        ...config.memoryConfig,
+        storage: new InMemoryStorage(),
+      } : {
+        storage: new InMemoryStorage(),
+      },
+      strategy: 'proactive',
+      autoDetectTaskType: true,  // Auto-detect from plan
+    });
 
-    // Initialize history manager (pluggable - users can provide their own)
-    this.historyManager = config.historyManager ?? new ConversationHistoryManager();
-
-    // Initialize context builder (pluggable - users can provide their own)
-    this.contextBuilder = config.contextBuilder ?? new DefaultContextBuilder();
-
-    // Register default context sources
-    this.registerDefaultContextSources();
+    // Register PlanPlugin and MemoryPlugin
+    this._planPlugin = new PlanPlugin();
+    this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
+    this._agentContext.registerPlugin(this._planPlugin);
+    this._agentContext.registerPlugin(this._memoryPlugin);
 
     // Initialize session (from BaseAgent)
     this.initializeSession(config.session);
@@ -296,6 +270,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     // Restore plan
     if (session.plan?.data) {
       this.currentPlan = session.plan.data as Plan;
+      this._planPlugin.setPlan(this.currentPlan);
     }
 
     // Restore execution history
@@ -303,9 +278,9 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       this.executionHistory = session.custom['executionHistory'] as typeof this.executionHistory;
     }
 
-    // Restore conversation history (using pluggable IHistoryManager)
-    if (session.custom['historyState']) {
-      await this.historyManager.restoreState(session.custom['historyState'] as SerializedHistoryState);
+    // Restore AgentContext state (includes history)
+    if (session.custom['agentContextState']) {
+      await this._agentContext.restoreState(session.custom['agentContextState'] as any);
     }
 
     this._logger.debug({ sessionId: session.id }, 'UniversalAgent session state restored');
@@ -321,7 +296,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     };
   }
 
-  // Override saveSession to handle async history serialization
+  // Override saveSession to handle async AgentContext serialization
   async saveSession(): Promise<void> {
     // Ensure any pending session load is complete
     await this.ensureSessionLoaded();
@@ -342,8 +317,8 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       this._session.plan = plan;
     }
 
-    // Store history state (async)
-    this._session.custom['historyState'] = await this.historyManager.getState();
+    // Store AgentContext state (includes history, memory, etc.)
+    this._session.custom['agentContextState'] = await this._agentContext.getState();
 
     // Let prepareSessionState add mode state and execution history
     this.prepareSessionState();
@@ -534,7 +509,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
 
     // Handle feedback - note it and continue
     if (intent.type === 'feedback') {
-      await this.workingMemory.store(
+      await this._agentContext.memory.store(
         `user_feedback_${Date.now()}`,
         'User feedback during execution',
         input,
@@ -751,9 +726,15 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       skippedTasks: tasks.filter(t => t.status === 'skipped').length,
     };
 
-    // Add execution summary to conversation history
-    const summary = `Execution completed: ${completedTasks}/${tasks.length} tasks successful${failedTasks > 0 ? `, ${failedTasks} failed` : ''}.`;
-    await this.addToConversationHistory('assistant', summary);
+    // Generate final response by gathering task results
+    const finalResponse = this.generateExecutionSummary(tasks);
+
+    // Yield text events so the user sees the final response
+    yield { type: 'text:delta', delta: '\n' + finalResponse };
+    yield { type: 'text:done', text: finalResponse };
+
+    // Add final response to conversation history
+    await this.addToConversationHistory('assistant', finalResponse);
 
     yield { type: 'execution:done', result };
 
@@ -762,6 +743,35 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     yield { type: 'mode:changed', from: 'executing', to: 'interactive', reason: 'execution_completed' };
 
     this.emit('execution:completed', { result });
+  }
+
+  /**
+   * Generate a user-facing summary from task execution results.
+   * Returns the output of the last successful task, or a status summary if all failed.
+   */
+  private generateExecutionSummary(tasks: Task[]): string {
+    // Find the last completed task with output (typically the final synthesis/summary task)
+    const completedTasks = tasks.filter(t => t.status === 'completed' && t.result?.output);
+
+    if (completedTasks.length > 0) {
+      // Return the last task's output - this is typically the final answer/summary
+      const lastTask = completedTasks[completedTasks.length - 1];
+      if (lastTask && lastTask.result?.output) {
+        // Convert output to string (it's typed as unknown)
+        const output = lastTask.result.output;
+        return typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+      }
+    }
+
+    // If no completed tasks with output, check for failed tasks
+    const failedTasks = tasks.filter(t => t.status === 'failed');
+    if (failedTasks.length > 0) {
+      const errors = failedTasks.map(t => `- ${t.name}: ${t.result?.error || 'Unknown error'}`).join('\n');
+      return `Plan execution encountered errors:\n${errors}`;
+    }
+
+    // Fallback
+    return 'Plan execution completed but no output was generated.';
   }
 
   // ============================================================================
@@ -1109,17 +1119,83 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     return { action: 'update_task', details: input };
   }
 
-  private estimateComplexity(input: string): 'low' | 'medium' | 'high' {
-    const words = input.split(/\s+/).length;
-    const hasMultipleActions = /and|then|after|before|also|additionally/.test(input.toLowerCase());
-    const hasComplexKeywords = /build|create|implement|design|develop|setup|configure|migrate|refactor/.test(input.toLowerCase());
+  /**
+   * Check if the input is a simple single-tool request that shouldn't trigger planning.
+   * These are common patterns like web searches, lookups, etc.
+   */
+  private isSingleToolRequest(input: string): boolean {
+    const lowerInput = input.toLowerCase();
 
-    if (words > 50 || (hasMultipleActions && hasComplexKeywords)) {
+    // Patterns that indicate a simple tool call (not a multi-step task)
+    const singleToolPatterns = [
+      // Web search patterns
+      /^(search|google|look\s*up|find)\s+(the\s+)?(web|internet|online)?\s*(for|about)?\s+/i,
+      /^(search|find|look\s*up)\s+/i,
+      /^what\s+(is|are|was|were)\s+/i,
+      /^who\s+(is|are|was|were)\s+/i,
+      /^where\s+(is|are|was|were)\s+/i,
+      /^when\s+(did|was|were|is)\s+/i,
+      /^how\s+(do|does|did|to|much|many)\s+/i,
+      // Web fetch patterns
+      /^(fetch|get|read|open|visit|go\s+to)\s+(the\s+)?(url|page|website|site|link)/i,
+      /^(fetch|get|scrape)\s+https?:\/\//i,
+      // Simple calculations/lookups
+      /^(calculate|compute|what\s+is)\s+\d/i,
+      /^(tell\s+me|show\s+me|give\s+me)\s+(about|the)/i,
+      // Summary requests (still single action)
+      /^(summarize|summary\s+of)\s+/i,
+    ];
+
+    // Check if it matches any single-tool pattern
+    if (singleToolPatterns.some(p => p.test(lowerInput))) {
+      return true;
+    }
+
+    // Also check: if "and" is followed by result-presentation words, it's still single-action
+    // e.g., "search for X and show me results" = single action (search + display)
+    // vs "search for X and then email the results" = multi-action
+    const presentationSuffixes = /\s+and\s+(show|display|give|tell|present|list|summarize|provide)\s+(me\s+)?(the\s+)?(results?|summary|findings?|answer|info|information)/i;
+    if (presentationSuffixes.test(lowerInput)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private estimateComplexity(input: string): 'low' | 'medium' | 'high' {
+    // First check: is this a simple single-tool request?
+    if (this.isSingleToolRequest(input)) {
+      return 'low';
+    }
+
+    const words = input.split(/\s+/).length;
+    const lowerInput = input.toLowerCase();
+
+    // Check for multiple DISTINCT action verbs (not just the word "and")
+    const actionVerbs = ['search', 'find', 'create', 'build', 'write', 'send', 'email',
+                         'delete', 'update', 'fetch', 'scrape', 'download', 'upload',
+                         'install', 'deploy', 'configure', 'setup', 'migrate', 'refactor',
+                         'analyze', 'compare', 'merge', 'split', 'convert', 'transform'];
+    const foundVerbs = actionVerbs.filter(v => new RegExp(`\\b${v}\\b`, 'i').test(lowerInput));
+    const hasMultipleDistinctActions = foundVerbs.length >= 2;
+
+    // Complex keywords that suggest planning is needed
+    const hasComplexKeywords = /\b(build|create|implement|design|develop|setup|configure|migrate|refactor|deploy|integrate)\b/i.test(lowerInput);
+
+    // Sequential action keywords (stronger signal than just "and")
+    const hasSequentialKeywords = /\b(then|after\s+that|next|finally|first\s+.+\s+then|step\s+\d)\b/i.test(lowerInput);
+
+    // High complexity: long input with complex keywords, or multiple distinct actions with sequences
+    if (words > 50 || (hasMultipleDistinctActions && hasSequentialKeywords)) {
       return 'high';
     }
-    if (words > 20 || hasMultipleActions || hasComplexKeywords) {
+
+    // Medium complexity: multiple distinct actions, or complex keywords with some length
+    if (hasMultipleDistinctActions || (hasComplexKeywords && words > 15)) {
       return 'medium';
     }
+
+    // Default to low
     return 'low';
   }
 
@@ -1175,81 +1251,42 @@ ${this._config.instructions ?? ''}`;
   }
 
   // ============================================================================
-  // Conversation History & Context (Pluggable via IHistoryManager & IContextBuilder)
+  // Conversation History & Context (via AgentContext)
   // ============================================================================
 
   /**
-   * Register default context sources with the context builder
-   */
-  private registerDefaultContextSources(): void {
-    // Conversation history source
-    const historySource: ContextSource = {
-      name: 'conversation_history',
-      priority: 80, // High priority
-      required: false,
-      getContent: async () => this.historyManager.formatForContext(),
-      estimateTokens: async () => {
-        const content = await this.historyManager.formatForContext();
-        return Math.ceil(content.length / 4);
-      },
-    };
-
-    // Plan context source
-    const planSource: ContextSource = {
-      name: 'plan_context',
-      priority: 90, // Higher priority than history
-      required: false,
-      getContent: async () => this.buildPlanContextString(),
-      estimateTokens: async () => {
-        const content = this.buildPlanContextString();
-        return Math.ceil(content.length / 4);
-      },
-    };
-
-    this.contextBuilder.registerSource(historySource);
-    this.contextBuilder.registerSource(planSource);
-  }
-
-  /**
-   * Add a message to conversation history (using pluggable IHistoryManager)
+   * Add a message to conversation history (via AgentContext)
    */
   private async addToConversationHistory(role: 'user' | 'assistant', content: string): Promise<void> {
-    await this.historyManager.addMessage(role, content);
+    this._agentContext.addMessage(role, content);
   }
 
   /**
-   * Build context about the current plan and execution state
-   */
-  private buildPlanContextString(): string {
-    if (!this.currentPlan) {
-      return '';
-    }
-
-    let context = '## Current Plan Context\n\n';
-    context += `**Goal**: ${this.currentPlan.goal}\n\n`;
-    context += `**Tasks**:\n`;
-
-    for (const task of this.currentPlan.tasks) {
-      const status = task.status === 'completed' ? '✓' : task.status === 'failed' ? '✗' : '○';
-      context += `- ${status} ${task.name}: ${task.description}`;
-      if (task.result?.output) {
-        const output = typeof task.result.output === 'string'
-          ? task.result.output.substring(0, 200)
-          : JSON.stringify(task.result.output).substring(0, 200);
-        context += ` (Result: ${output}...)`;
-      }
-      context += '\n';
-    }
-
-    return context + '\n';
-  }
-
-  /**
-   * Build full context for the agent (using pluggable IContextBuilder)
+   * Build full context for the agent (via AgentContext.prepare())
+   * Returns formatted context string ready for LLM
    */
   private async buildFullContext(currentInput: string): Promise<string> {
-    const built = await this.contextBuilder.build(currentInput);
-    return built.content;
+    // Update plan in plugin before preparing context
+    if (this.currentPlan) {
+      this._planPlugin.setPlan(this.currentPlan);
+    }
+
+    // Set current input and prepare context
+    this._agentContext.setCurrentInput(currentInput);
+    const prepared = await this._agentContext.prepare();
+
+    // Format components into context string
+    const parts: string[] = [];
+    for (const component of prepared.components) {
+      if (component.content) {
+        const content = typeof component.content === 'string'
+          ? component.content
+          : JSON.stringify(component.content, null, 2);
+        parts.push(content);
+      }
+    }
+
+    return parts.join('\n\n');
   }
 
   // ============================================================================
@@ -1408,54 +1445,26 @@ Always be helpful, clear, and ask for clarification when needed.`;
   // ============================================================================
 
   /**
-   * Get unified context access interface.
+   * Get unified AgentContext.
    *
-   * Provides AgentContext-compatible access to UniversalAgent's internal managers,
-   * allowing users to interact with the same unified API across all agent types.
+   * Returns the AgentContext instance directly, providing the same API
+   * across all agent types (Agent, TaskAgent, UniversalAgent).
    *
    * @example
    * ```typescript
    * const agent = UniversalAgent.create({ ... });
    *
-   * // Access context features (same API as AgentContext)
+   * // Access context features
    * agent.context.addMessage('user', 'Hello');
    * const metrics = await agent.context.getMetrics();
    *
    * // Direct access to managers
    * await agent.context.memory.store('key', 'desc', value);
+   * const budget = await agent.context.getBudget();
    * ```
    */
-  get context(): UniversalAgentContextAccess {
-    const self = this;
-    return {
-      get memory() { return self.workingMemory; },
-      get history() { return self.historyManager; },
-      get contextBuilder() { return self.contextBuilder; },
-      get permissions() { return self._permissionManager; },
-      get tools() { return self._toolManager; },
-
-      addMessage(role: 'user' | 'assistant' | 'system', content: string): void {
-        // Fire and forget - don't await since interface is sync
-        self.historyManager.addMessage(role, content).catch(err => {
-          console.warn('Failed to add message to history:', err);
-        });
-      },
-
-      async getMetrics() {
-        const memoryStats = await self.workingMemory.getStats();
-        const messages = await self.historyManager.getMessages();
-
-        return {
-          historyMessageCount: messages.length,
-          memoryStats: {
-            totalEntries: memoryStats.totalEntries,
-            totalSizeBytes: memoryStats.totalSizeBytes,
-          },
-          mode: self.modeManager.getMode(),
-          hasPlan: self.currentPlan !== null,
-        };
-      },
-    };
+  get context(): AgentContext {
+    return this._agentContext;
   }
 
   /**
@@ -1542,10 +1551,8 @@ Always be helpful, clear, and ask for clarification when needed.`;
     }
     this.modeManager.removeAllListeners();
 
-    // Clear conversation history (using pluggable IHistoryManager)
-    this.historyManager.clear().catch(() => {
-      // Ignore cleanup errors
-    });
+    // Cleanup AgentContext (handles history, memory, cache, plugins)
+    this._agentContext.destroy();
 
     // Call base destroy (handles session, tool manager, permission manager cleanup)
     this.baseDestroy();

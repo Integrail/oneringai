@@ -48,6 +48,26 @@ export class ContextCommand extends BaseCommand {
   readonly description = 'Show context inspection details';
   readonly usage = '/context [budget|breakdown|cache|memory|history]';
 
+  get detailedHelp(): string {
+    return `
+/context - Context Inspection
+
+USAGE:
+  /context              Show context overview (utilization bar)
+  /context budget       Detailed token budget
+  /context breakdown    Per-component token breakdown
+  /context cache        Cache statistics
+  /context memory       Memory entries
+  /context history [n]  Show conversation history
+
+EXAMPLES:
+  /context
+  /context budget
+  /context breakdown
+  /context history 20
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { app, args } = context;
     const agent = app.getAgent();

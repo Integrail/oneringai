@@ -1,5 +1,5 @@
 /**
- * Context plugins for UnifiedContextManager
+ * Context plugins for AgentContext
  *
  * Built-in plugins:
  * - PlanPlugin: Provides execution plan (TaskAgent, UniversalAgent)

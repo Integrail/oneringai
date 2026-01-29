@@ -6,13 +6,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PlanExecutor, PlanExecutorConfig } from '../../../src/capabilities/taskAgent/PlanExecutor.js';
 import { Agent } from '../../../src/core/Agent.js';
 import { WorkingMemory } from '../../../src/capabilities/taskAgent/WorkingMemory.js';
-import { ContextManager } from '../../../src/core/context/ContextManager.js';
+import { AgentContext } from '../../../src/core/AgentContext.js';
+import { PlanPlugin } from '../../../src/core/context/plugins/PlanPlugin.js';
 import { IdempotencyCache } from '../../../src/capabilities/taskAgent/IdempotencyCache.js';
 import { ExternalDependencyHandler } from '../../../src/capabilities/taskAgent/ExternalDependencyHandler.js';
 import { CheckpointManager } from '../../../src/capabilities/taskAgent/CheckpointManager.js';
 import type { TaskAgentHooks, TaskContext, ErrorContext } from '../../../src/capabilities/taskAgent/TaskAgent.js';
-import type { IHistoryManager } from '../../../src/domain/interfaces/IHistoryManager.js';
-import type { TaskAgentContextProvider } from '../../../src/infrastructure/context/providers/TaskAgentContextProvider.js';
 import type { Plan, Task, TaskStatus } from '../../../src/domain/entities/Task.js';
 import { InMemoryStorage } from '../../../src/infrastructure/storage/InMemoryStorage.js';
 
@@ -31,31 +30,23 @@ const createMockMemory = () => ({
   onTaskComplete: vi.fn().mockResolvedValue([]),
 });
 
-const createMockContextManager = () => ({
-  prepare: vi.fn().mockResolvedValue({ budget: { used: 1000, total: 10000 } }),
+const createMockAgentContext = () => ({
+  prepare: vi.fn().mockResolvedValue({ budget: { used: 1000, total: 10000 }, components: [], compacted: false }),
+  addMessage: vi.fn(),
+  setCurrentInput: vi.fn(),
+  getHistory: vi.fn().mockReturnValue([]),
+  destroy: vi.fn(),
 });
 
-const createMockContextProvider = () => ({
-  updateConfig: vi.fn(),
+const createMockPlanPlugin = () => ({
+  setPlan: vi.fn(),
+  getPlan: vi.fn(),
 });
 
 const createMockIdempotencyCache = () => ({
   get: vi.fn(),
   set: vi.fn(),
   has: vi.fn().mockReturnValue(false),
-});
-
-const createMockHistoryManager = (): IHistoryManager => ({
-  addMessage: vi.fn().mockResolvedValue(undefined),
-  getHistory: vi.fn().mockReturnValue([]),
-  getRecentHistory: vi.fn().mockReturnValue([]),
-  clear: vi.fn(),
-  getState: vi.fn().mockReturnValue({ messages: [] }),
-  loadState: vi.fn(),
-  getMessageCount: vi.fn().mockReturnValue(0),
-  getToolCalls: vi.fn().mockReturnValue([]),
-  setMaxMessages: vi.fn(),
-  destroy: vi.fn(),
 });
 
 const createMockExternalHandler = () => ({
@@ -95,10 +86,9 @@ describe('PlanExecutor', () => {
   let executor: PlanExecutor;
   let mockAgent: ReturnType<typeof createMockAgent>;
   let mockMemory: ReturnType<typeof createMockMemory>;
-  let mockContextManager: ReturnType<typeof createMockContextManager>;
-  let mockContextProvider: ReturnType<typeof createMockContextProvider>;
+  let mockAgentContext: ReturnType<typeof createMockAgentContext>;
+  let mockPlanPlugin: ReturnType<typeof createMockPlanPlugin>;
   let mockIdempotencyCache: ReturnType<typeof createMockIdempotencyCache>;
-  let mockHistoryManager: IHistoryManager;
   let mockExternalHandler: ReturnType<typeof createMockExternalHandler>;
   let mockCheckpointManager: ReturnType<typeof createMockCheckpointManager>;
   let config: PlanExecutorConfig;
@@ -106,10 +96,9 @@ describe('PlanExecutor', () => {
   beforeEach(() => {
     mockAgent = createMockAgent();
     mockMemory = createMockMemory();
-    mockContextManager = createMockContextManager();
-    mockContextProvider = createMockContextProvider();
+    mockAgentContext = createMockAgentContext();
+    mockPlanPlugin = createMockPlanPlugin();
     mockIdempotencyCache = createMockIdempotencyCache();
-    mockHistoryManager = createMockHistoryManager();
     mockExternalHandler = createMockExternalHandler();
     mockCheckpointManager = createMockCheckpointManager();
     config = { maxIterations: 10 };
@@ -117,10 +106,9 @@ describe('PlanExecutor', () => {
     executor = new PlanExecutor(
       mockAgent as any,
       mockMemory as any,
-      mockContextManager as any,
-      mockContextProvider as any,
+      mockAgentContext as any,
+      mockPlanPlugin as any,
       mockIdempotencyCache as any,
-      mockHistoryManager,
       mockExternalHandler as any,
       mockCheckpointManager as any,
       undefined,
@@ -147,10 +135,9 @@ describe('PlanExecutor', () => {
       const executorWithRateLimiter = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         undefined,
@@ -243,10 +230,9 @@ describe('PlanExecutor', () => {
       const executorWithLowIterations = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         undefined,
@@ -414,10 +400,9 @@ describe('PlanExecutor', () => {
       const executorWithTimeout = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         undefined,
@@ -447,10 +432,9 @@ describe('PlanExecutor', () => {
       const executorWithHooks = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         hooks,
@@ -474,10 +458,9 @@ describe('PlanExecutor', () => {
       const executorWithHooks = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         hooks,
@@ -505,10 +488,9 @@ describe('PlanExecutor', () => {
       const executorWithHooks = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         hooks,
@@ -541,10 +523,9 @@ describe('PlanExecutor', () => {
       const executorWithHooks = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         hooks,
@@ -567,10 +548,9 @@ describe('PlanExecutor', () => {
       const executorWithHooks = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         hooks,
@@ -593,10 +573,9 @@ describe('PlanExecutor', () => {
       const executorWithHooks = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         hooks,
@@ -667,10 +646,9 @@ describe('PlanExecutor', () => {
       const executorWithHooks = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         hooks,
@@ -696,10 +674,9 @@ describe('PlanExecutor', () => {
       const executorWithHooks = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         hooks,
@@ -724,10 +701,9 @@ describe('PlanExecutor', () => {
       const executorWithHooks = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         hooks,
@@ -871,10 +847,9 @@ describe('PlanExecutor', () => {
       const executorWithRateLimiter = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         undefined,
@@ -898,10 +873,9 @@ describe('PlanExecutor', () => {
       const executorWithRateLimiter = new PlanExecutor(
         mockAgent as any,
         mockMemory as any,
-        mockContextManager as any,
-        mockContextProvider as any,
+        mockAgentContext as any,
+        mockPlanPlugin as any,
         mockIdempotencyCache as any,
-        mockHistoryManager,
         mockExternalHandler as any,
         mockCheckpointManager as any,
         undefined,
@@ -1006,7 +980,7 @@ describe('PlanExecutor', () => {
 
       await executor.execute(plan, state);
 
-      expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
+      expect(mockAgentContext.addMessage).toHaveBeenCalledWith(
         'user',
         expect.any(String)
       );
@@ -1019,7 +993,7 @@ describe('PlanExecutor', () => {
 
       await executor.execute(plan, state);
 
-      expect(mockHistoryManager.addMessage).toHaveBeenCalledWith(
+      expect(mockAgentContext.addMessage).toHaveBeenCalledWith(
         'assistant',
         'Task completed successfully'
       );
@@ -1027,33 +1001,29 @@ describe('PlanExecutor', () => {
   });
 
   // ============================================================================
-  // Context Provider Integration Tests
+  // AgentContext Integration Tests
   // ============================================================================
 
-  describe('context provider integration', () => {
-    it('should update context provider with current input', async () => {
+  describe('agent context integration', () => {
+    it('should update plan and current input', async () => {
       const task = createTask();
       const plan = createPlan([task]);
       const state = { id: 'state-1' } as any;
 
       await executor.execute(plan, state);
 
-      expect(mockContextProvider.updateConfig).toHaveBeenCalledWith(
-        expect.objectContaining({
-          currentInput: expect.any(String),
-          plan: plan,
-        })
-      );
+      expect(mockPlanPlugin.setPlan).toHaveBeenCalledWith(plan);
+      expect(mockAgentContext.setCurrentInput).toHaveBeenCalledWith(expect.any(String));
     });
 
-    it('should call context manager prepare', async () => {
+    it('should call agent context prepare', async () => {
       const task = createTask();
       const plan = createPlan([task]);
       const state = { id: 'state-1' } as any;
 
       await executor.execute(plan, state);
 
-      expect(mockContextManager.prepare).toHaveBeenCalled();
+      expect(mockAgentContext.prepare).toHaveBeenCalled();
     });
   });
 });

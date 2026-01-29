@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import type { ToolFunction, ApprovalDecision } from '@oneringai/agents';
 import { defaultDescribeCall } from '@oneringai/agents';
 import { ConfigManager } from './config/ConfigManager.js';
-import type { AmosConfig, IAmosApp, IConnectorManager, IToolLoader, IAgentRunner, IPromptManager, ToolApprovalContext } from './config/types.js';
+import type { AmosConfig, IAmosApp, IConnectorManager, IToolLoader, IAgentRunner, IPromptManager, ICommand, ToolApprovalContext } from './config/types.js';
 import { ConnectorManager } from './connectors/ConnectorManager.js';
 import { ToolLoader } from './tools/ToolLoader.js';
 import { PromptManager } from './prompts/PromptManager.js';
@@ -30,6 +30,7 @@ import {
   ExitCommand,
   StatusCommand,
   HistoryCommand,
+  PlanCommand,
 } from './commands/index.js';
 import { ExternalToolManager } from './tools/ExternalToolManager.js';
 
@@ -77,20 +78,7 @@ export class AmosApp implements IAmosApp {
     this.promptManager = new PromptManager(config);
     await this.promptManager.initialize();
 
-    // Initialize tool loader (pass config for developer tools settings)
-    this.toolLoader.setConfig(config);
-
-    // Set up external tool manager
-    const externalToolManager = new ExternalToolManager(
-      config.externalTools,
-      this.connectorManager
-    );
-    this.toolLoader.setExternalToolManager(externalToolManager);
-
-    await this.toolLoader.initialize();
-    this.toolLoader.applyConfig(config.tools.enabledTools, config.tools.disabledTools);
-
-    // Register active connector if configured
+    // Register active connector if configured (must be done before tool loading)
     if (config.activeConnector) {
       try {
         this.connectorManager.registerConnector(config.activeConnector);
@@ -99,6 +87,30 @@ export class AmosApp implements IAmosApp {
         this.configManager.update({ activeConnector: null });
       }
     }
+
+    // Register external tool connectors BEFORE tool loading
+    // These connectors are required for web_search and web_scrape tools to work
+    console.log('[AmosApp.initialize] Registering external tool connectors...');
+    await this.registerExternalToolConnectors(config);
+
+    // Initialize tool loader (pass config for developer tools settings)
+    console.log('[AmosApp.initialize] Setting config on ToolLoader...');
+    console.log('[AmosApp.initialize] externalTools config:', JSON.stringify(config.externalTools, null, 2));
+    this.toolLoader.setConfig(config);
+
+    // Set up external tool manager
+    console.log('[AmosApp.initialize] Creating ExternalToolManager...');
+    const externalToolManager = new ExternalToolManager(
+      config.externalTools,
+      this.connectorManager
+    );
+    this.toolLoader.setExternalToolManager(externalToolManager);
+    console.log('[AmosApp.initialize] ExternalToolManager set on ToolLoader');
+
+    console.log('[AmosApp.initialize] Initializing ToolLoader...');
+    await this.toolLoader.initialize();
+    console.log('[AmosApp.initialize] ToolLoader initialized');
+    this.toolLoader.applyConfig(config.tools.enabledTools, config.tools.disabledTools);
 
     // Create agent if we have an active connector
     if (config.activeConnector) {
@@ -267,6 +279,10 @@ export class AmosApp implements IAmosApp {
               break;
 
             case 'done':
+              // If execution completed but no output was shown, display a notice
+              if (!hasOutput) {
+                this.terminal.printDim('\n[Execution completed]');
+              }
               if (config.ui.showTokenUsage && event.usage) {
                 this.terminal.printDim(
                   `\n[Tokens: ${event.usage.inputTokens} in / ${event.usage.outputTokens} out]`
@@ -398,6 +414,7 @@ export class AmosApp implements IAmosApp {
       new ConfigCommand(),
       new ContextCommand(),
       new ExternalCommand(),
+      new PlanCommand(),
       new ClearCommand(),
       new ExitCommand(),
       new StatusCommand(),
@@ -423,6 +440,53 @@ export class AmosApp implements IAmosApp {
 
     // Close terminal
     this.terminal.close();
+  }
+
+  /**
+   * Register external tool connectors (search, scrape) on startup
+   * These connectors are required for web_search and web_scrape tools to work
+   */
+  private async registerExternalToolConnectors(config: AmosConfig): Promise<void> {
+    const externalTools = config.externalTools;
+    if (!externalTools.enabled) return;
+
+    // Register search connector if configured
+    if (externalTools.search?.enabled && externalTools.search.connectorName) {
+      const connectorName = externalTools.search.connectorName;
+      try {
+        if (!this.connectorManager.isRegistered(connectorName)) {
+          this.connectorManager.registerConnector(connectorName);
+        }
+      } catch (error) {
+        // Connector might not exist anymore - disable the search tool
+        console.error(`Failed to register search connector '${connectorName}':`, error);
+        this.configManager.update({
+          externalTools: {
+            ...externalTools,
+            search: { ...externalTools.search, enabled: false },
+          },
+        });
+      }
+    }
+
+    // Register scrape connector if configured
+    if (externalTools.scrape?.enabled && externalTools.scrape.connectorName) {
+      const connectorName = externalTools.scrape.connectorName;
+      try {
+        if (!this.connectorManager.isRegistered(connectorName)) {
+          this.connectorManager.registerConnector(connectorName);
+        }
+      } catch (error) {
+        // Connector might not exist anymore - disable the scrape tool
+        console.error(`Failed to register scrape connector '${connectorName}':`, error);
+        this.configManager.update({
+          externalTools: {
+            ...externalTools,
+            scrape: { ...externalTools.scrape, enabled: false },
+          },
+        });
+      }
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -455,6 +519,14 @@ export class AmosApp implements IAmosApp {
 
   getActiveTools(): ToolFunction[] {
     return this.toolLoader.getEnabledTools();
+  }
+
+  getRegisteredCommands(): ICommand[] {
+    return this.commandProcessor.getAllCommands();
+  }
+
+  getCommand(name: string): ICommand | null {
+    return this.commandProcessor.getCommand(name);
   }
 
   getAgent(): IAgentRunner | null {

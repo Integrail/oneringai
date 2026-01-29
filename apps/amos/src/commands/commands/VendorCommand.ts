@@ -12,6 +12,33 @@ export class VendorCommand extends BaseCommand {
   readonly description = 'Switch vendor or list available vendors';
   readonly usage = '/vendor [name|list|info]';
 
+  get detailedHelp(): string {
+    return `
+/vendor - Switch Vendor or List Available Vendors
+
+View available AI vendors or switch to a different vendor.
+Requires a configured connector for the target vendor.
+
+USAGE:
+  /vendor             List all available vendors
+  /vendor list        Same as above
+  /vendor info        Show detailed info about current vendor
+  /vendor <name>      Switch to specified vendor
+
+SUPPORTED VENDORS:
+  openai, anthropic, google, google-vertex, groq,
+  together, grok, deepseek, mistral, perplexity, ollama
+
+EXAMPLES:
+  /vendor                 List vendors with connector status
+  /vendor anthropic       Switch to Anthropic
+  /vendor info            Show current vendor details
+
+ALIASES:
+  /v
+`;
+  }
+
   // Static vendor display names
   private vendorNames: Record<string, string> = {
     [Vendor.OpenAI]: 'OpenAI',

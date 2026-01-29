@@ -1030,9 +1030,7 @@ src/
 │   │   │   ├── GoogleImagenProvider.ts # Image generation
 │   │   │   └── GoogleVeoProvider.ts  # Video generation
 │   │   └── generic/                  # OpenAI-compatible
-│   ├── context/                      # NEW: Context infrastructure
-│   │   ├── providers/                # Context providers
-│   │   │   └── TaskAgentContextProvider.ts
+│   ├── context/                      # Context infrastructure
 │   │   ├── compactors/               # Compaction implementations
 │   │   │   ├── TruncateCompactor.ts
 │   │   │   ├── SummarizeCompactor.ts
@@ -1917,74 +1915,113 @@ const metrics = await ctx?.getMetrics();
 
 ### Context Access in TaskAgent and UniversalAgent
 
-TaskAgent and UniversalAgent provide unified context access:
+TaskAgent and UniversalAgent use AgentContext directly, providing unified context access:
 
 ```typescript
-// TaskAgent
+// TaskAgent - uses AgentContext with PlanPlugin and MemoryPlugin
 const taskAgent = TaskAgent.create({ connector: 'openai', model: 'gpt-4' });
-taskAgent.context.memory.set('key', 'desc', value);
-taskAgent.context.addMessage('user', 'Hello');
-const budget = await taskAgent.context.getBudget();
 
-// UniversalAgent
+// Access AgentContext directly
+taskAgent.context.addMessage('user', 'Hello');
+const history = taskAgent.context.getHistory();
+const prepared = await taskAgent.context.prepare();
+const metrics = await taskAgent.context.getMetrics();
+
+// Access WorkingMemory (managed separately in TaskAgent)
+taskAgent.memory.set('key', 'desc', value);
+
+// UniversalAgent - also uses AgentContext with plugins
 const uniAgent = UniversalAgent.create({ connector: 'openai', model: 'gpt-4' });
 uniAgent.context.addMessage('system', 'New instructions');
-const metrics = await uniAgent.context.getMetrics();
+const uniMetrics = await uniAgent.context.getMetrics();
 ```
 
-**TaskAgentContextAccess Interface:**
+**AgentContext API (used by all agent types):**
 ```typescript
-interface TaskAgentContextAccess {
-  readonly memory: WorkingMemory;
-  readonly cache: IdempotencyCache;
-  readonly history: IHistoryManager;
-  readonly contextManager: ContextManager;
-  readonly permissions: ToolPermissionManager;
-  readonly tools: ToolManager;
-  addMessage(role: 'user' | 'assistant' | 'system', content: string): void;
-  getBudget(): Promise<ContextBudget>;
-  getMetrics(): Promise<{ historyMessageCount, memoryStats, cacheStats }>;
-}
+// AgentContext provides unified access to:
+ctx.addMessage(role, content);           // Add to history
+ctx.getHistory();                        // Get conversation history
+ctx.prepare();                           // Prepare context for LLM call
+ctx.getMetrics();                        // Get usage metrics
+ctx.executeTool(name, args);             // Execute tool with caching
+ctx.registerPlugin(plugin);              // Register context plugin
+
+// Access composed managers:
+ctx.tools;                               // ToolManager
+ctx.memory;                              // WorkingMemory (if configured)
+ctx.cache;                               // IdempotencyCache
+ctx.permissions;                         // ToolPermissionManager
 ```
 
 ### ContextManager - Strategy-based Context Preparation (Advanced)
 
-For custom agents or advanced use cases, use ContextManager directly:
+For custom agents or advanced use cases, use ContextManager with plugins:
 
 ```typescript
 import {
   ContextManager,
-  TaskAgentContextProvider,
+  PlanPlugin,
+  MemoryPlugin,
   ApproximateTokenEstimator,
   TruncateCompactor,
+  SummarizeCompactor,
+  MemoryEvictionCompactor,
 } from '@oneringai/agents';
 
-// Create context provider (agent-specific)
-const provider = new TaskAgentContextProvider({
+// Create plugins for custom context components
+const planPlugin = new PlanPlugin();
+const memoryPlugin = new MemoryPlugin(workingMemory);
+
+// Create AgentContext with plugins
+const ctx = AgentContext.create({
   model: 'gpt-4',
-  plan: plan,
-  memory: workingMemory,
-  historyManager: historyManager,
-  currentInput: 'Task prompt',
+  systemPrompt: 'Your instructions',
+  maxContextTokens: 128000,
+  strategy: 'adaptive',  // or 'proactive', 'aggressive', 'lazy', 'rolling-window'
+  history: { maxMessages: 50, preserveRecent: 10 },
 });
 
-// Create context manager with strategy
-const contextManager = new ContextManager(
-  provider,
-  {
-    maxContextTokens: 128000,
-    strategy: 'adaptive',  // or 'proactive', 'aggressive', 'lazy', 'rolling-window'
-    strategyOptions: { learningWindow: 50 },
-  },
-  [new TruncateCompactor(new ApproximateTokenEstimator())],
-  new ApproximateTokenEstimator()
-);
+// Register plugins
+ctx.registerPlugin(planPlugin);
+ctx.registerPlugin(memoryPlugin);
 
 // Use before LLM calls
-const prepared = await contextManager.prepare();
+const prepared = await ctx.prepare();
+console.log(`Budget: ${prepared.budget.used}/${prepared.budget.total} tokens`);
 
-// Switch strategy at runtime
-contextManager.setStrategy('aggressive');
+// Add messages
+ctx.addMessage('user', 'Hello');
+
+// Update plan via plugin
+planPlugin.setPlan(myPlan);
+
+// Set pre-compaction hooks
+ctx.setHooks({
+  beforeCompaction: async (compactionCtx) => {
+    console.log(`Freeing ${compactionCtx.estimatedTokensToFree} tokens`);
+  },
+});
+```
+
+**Available Compactors:**
+- `SummarizeCompactor` - LLM-based summarization (priority: 5, runs first)
+- `TruncateCompactor` - Simple truncation (priority: 10)
+- `MemoryEvictionCompactor` - Evicts low-priority memory (priority: 8)
+
+```typescript
+import { SummarizeCompactor, TruncateCompactor, MemoryEvictionCompactor } from '@oneringai/agents';
+
+// SummarizeCompactor uses LLM to preserve key information
+const summarizer = new SummarizeCompactor(estimator, {
+  textProvider: myTextProvider,   // Required: LLM for summarization
+  model: 'gpt-4o-mini',           // Optional: model to use
+  maxSummaryTokens: 500,          // Optional: max summary size
+  fallbackToTruncate: true,       // Optional: fallback on failure
+});
+
+// Components with strategy: 'summarize' use SummarizeCompactor
+// Components with strategy: 'truncate' use TruncateCompactor
+// Components with strategy: 'evict' use MemoryEvictionCompactor
 ```
 
 **Available Strategies:**
@@ -2097,6 +2134,19 @@ const hooks: AgentLifecycleHooks = {
     console.log(`Preparing context for ${agentId}`);
   },
 
+  // Called before context compaction (NEW)
+  beforeCompaction: async (context) => {
+    console.log(`Compaction starting for ${context.agentId}`);
+    console.log(`Need to free: ${context.estimatedTokensToFree} tokens`);
+    console.log(`Strategy: ${context.strategy}`);
+    // Save important data before compaction
+    for (const component of context.components) {
+      if (component.name === 'tool_outputs') {
+        await saveKeyFindings(component.content);
+      }
+    }
+  },
+
   // Called after context compaction
   afterCompaction: async (log, tokensFreed) => {
     console.log(`Freed ${tokensFreed} tokens:`, log);
@@ -2131,6 +2181,7 @@ agent.setLifecycleHooks({
 | `beforeToolExecution` | Before tool runs | Yes (blocks execution) | `{ toolName, args, agentId, taskId? }` |
 | `afterToolExecution` | After tool completes | No (logged only) | `{ toolName, result, durationMs, success, error? }` |
 | `beforeContextPrepare` | Before LLM context prep | No (logged only) | `agentId` |
+| `beforeCompaction` | Before context compaction | No (logged only) | `{ agentId, currentBudget, strategy, components, estimatedTokensToFree }` |
 | `afterCompaction` | After context compaction | No (logged only) | `log[], tokensFreed` |
 | `onError` | When error occurs | No (logged only) | `error, { phase, agentId }` |
 
@@ -2344,6 +2395,124 @@ executor.on('memory:stale_entries', ({ entries, taskId }) => {
   console.log(`${entries.length} entries became stale after task ${taskId}`);
 });
 ```
+
+### Hierarchical Memory (Research Pattern)
+
+For research tasks, use the **raw → summary → findings** pattern:
+
+```typescript
+import { WorkingMemory, MemoryTier, TIER_PRIORITIES, getTierFromKey } from '@oneringai/agents';
+
+// Store raw data (low priority - evicted first)
+await memory.storeRaw('search.results', 'Raw search results', rawData);
+// Key: raw.search.results, Priority: low
+
+// Store summary (normal priority)
+await memory.storeSummary(
+  'search.summary',
+  'Key points from search',
+  summaryData,
+  'raw.search.results'  // Derived from
+);
+// Key: summary.search.summary, Priority: normal
+
+// Store findings (high priority - kept longest)
+await memory.storeFindings(
+  'report.conclusions',
+  'Final conclusions',
+  findings,
+  ['summary.search.summary'],
+  { pinned: true }  // Optional: never evict
+);
+// Key: findings.report.conclusions, Priority: high
+```
+
+**Tier Utilities:**
+```typescript
+import { getTierFromKey, addTierPrefix, stripTierPrefix, TIER_PRIORITIES } from '@oneringai/agents';
+
+getTierFromKey('raw.data');           // 'raw'
+getTierFromKey('findings.report');    // 'findings'
+getTierFromKey('user.profile');       // 'none' (no tier)
+
+addTierPrefix('data', 'raw');         // 'raw.data'
+stripTierPrefix('raw.data');          // 'data'
+
+TIER_PRIORITIES.raw;                  // 'low'
+TIER_PRIORITIES.summary;              // 'normal'
+TIER_PRIORITIES.findings;             // 'high'
+```
+
+**Cleanup and Queries:**
+```typescript
+// Clean up raw data after summary is created
+await memory.cleanupRawData('summary.search.summary');
+
+// Get entries by tier
+const rawEntries = await memory.getByTier('raw');
+const findings = await memory.getByTier('findings');
+
+// Get tier statistics
+const stats = await memory.getTierStats();
+// { raw: { count, totalSize }, summary: {...}, findings: {...}, none: {...} }
+
+// Promote entry to higher tier
+await memory.promote('raw.important', 'findings');
+```
+
+### Task Types and Priority Profiles
+
+Task types optimize context management for specific workloads:
+
+```typescript
+import { TaskAgent, getTaskType, PRIORITY_PROFILES } from '@oneringai/agents';
+
+// Auto-detect task type from plan
+const taskType = getTaskType({
+  goal: 'Research AI frameworks and compare features',
+  tasks: [{ name: 'search', description: 'Search for frameworks' }],
+});
+// Returns: 'research'
+
+// Explicit task type
+const agent = TaskAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  taskType: 'research',  // 'research' | 'coding' | 'analysis' | 'general'
+});
+```
+
+**Priority Profiles (lower number = kept longer):**
+```typescript
+PRIORITY_PROFILES.research = {
+  conversation_history: 10,  // Compact first
+  tool_outputs: 5,           // Preserve (contains research data)
+  memory_index: 3,           // Keep longest
+};
+
+PRIORITY_PROFILES.coding = {
+  conversation_history: 8,
+  tool_outputs: 10,          // Compact first (verbose)
+  memory_index: 5,
+};
+
+PRIORITY_PROFILES.analysis = {
+  conversation_history: 7,
+  tool_outputs: 8,
+  memory_index: 5,
+};
+
+PRIORITY_PROFILES.general = {
+  conversation_history: 6,
+  tool_outputs: 10,
+  memory_index: 8,
+};
+```
+
+**Detection Keywords:**
+- `research`: "research", "search", "find information", "investigate"
+- `coding`: "implement", "code", "program", "develop", "build", "fix bug"
+- `analysis`: "analyze", "examine", "evaluate", "assess", "compare"
 
 ## Tool Management
 

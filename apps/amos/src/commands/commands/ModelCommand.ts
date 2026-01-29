@@ -12,6 +12,30 @@ export class ModelCommand extends BaseCommand {
   readonly description = 'Switch model or list available models';
   readonly usage = '/model [name|list|info]';
 
+  get detailedHelp(): string {
+    return `
+/model - Switch Model or List Available Models
+
+View available models for the current vendor or switch to a different model.
+Model changes require agent recreation.
+
+USAGE:
+  /model              List models for current vendor
+  /model list         Same as above
+  /model info         Show detailed info about current model
+  /model <name>       Switch to specified model
+
+EXAMPLES:
+  /model                    List available models
+  /model gpt-4o             Switch to GPT-4o
+  /model claude-opus-4-5    Switch to Claude Opus 4.5
+  /model info               Show current model details
+
+ALIASES:
+  /m
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { args, app } = context;
     const config = app.getConfig();

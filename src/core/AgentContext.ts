@@ -56,6 +56,99 @@ import { createStrategy as createStrategyFactory } from './context/strategies/in
 import { estimateComponentTokens } from './context/utils/ContextUtils.js';
 import type { IContextPlugin } from './context/plugins/IContextPlugin.js';
 import { getModelInfo } from '../domain/entities/Model.js';
+import { PlanPlugin } from './context/plugins/PlanPlugin.js';
+
+// ============================================================================
+// Task Types & Priority Profiles
+// ============================================================================
+
+/**
+ * Task type determines compaction priorities and system prompt additions
+ */
+export type TaskType = 'research' | 'coding' | 'analysis' | 'general';
+
+/**
+ * Priority profiles for different task types
+ * Lower number = keep longer (compact last), Higher number = compact first
+ *
+ * Research: Preserve tool outputs (search/scrape results) longest
+ * Coding: Preserve conversation history (context) longest
+ * Analysis: Balanced, preserve analysis results
+ * General: Default balanced approach
+ */
+export const PRIORITY_PROFILES: Record<TaskType, Record<string, number>> = {
+  research: {
+    memory_index: 3,           // Keep longest (summaries!)
+    tool_outputs: 5,           // Keep long (research data!)
+    conversation_history: 10,  // Compact first (old chat less critical)
+  },
+  coding: {
+    memory_index: 5,
+    conversation_history: 8,   // Keep more context
+    tool_outputs: 10,          // Compact first (output less critical once seen)
+  },
+  analysis: {
+    memory_index: 4,
+    tool_outputs: 6,           // Analysis results important
+    conversation_history: 7,
+  },
+  general: {
+    memory_index: 8,
+    conversation_history: 6,   // Balanced
+    tool_outputs: 10,
+  },
+};
+
+/**
+ * Task-type-specific system prompt additions
+ */
+export const TASK_TYPE_PROMPTS: Record<TaskType, string> = {
+  research: `## Research Protocol
+
+You are conducting research. Follow this workflow to preserve findings:
+
+### 1. SEARCH PHASE
+- Execute searches to find relevant sources
+- After EACH search, immediately store key findings in memory
+
+### 2. READ PHASE
+For each promising result:
+- Read/scrape the content
+- Extract key points (2-3 sentences per source)
+- Store IMMEDIATELY in memory - do NOT keep full articles in conversation
+
+### 3. SYNTHESIZE PHASE
+Before writing final report:
+- Use memory_list() to see all stored findings
+- Retrieve relevant findings with memory_retrieve(key)
+- Cross-reference and consolidate
+
+### 4. CONTEXT MANAGEMENT
+- Your context may be compacted automatically
+- Always store important findings in memory IMMEDIATELY
+- Stored data survives compaction; conversation history may not`,
+
+  coding: `## Coding Protocol
+
+You are implementing code changes. Guidelines:
+- Read relevant files before making changes
+- Implement incrementally
+- Store key design decisions in memory if they'll be needed later
+- Code file contents are large - summarize structure after reading`,
+
+  analysis: `## Analysis Protocol
+
+You are performing analysis. Guidelines:
+- Store intermediate results in memory
+- Summarize data immediately after loading (raw data is large)
+- Keep only essential context for current analysis step`,
+
+  general: `## Task Execution
+
+Guidelines:
+- Store important information in memory for later reference
+- Monitor your context usage with context_inspect()`,
+};
 
 // ============================================================================
 // Types
@@ -136,12 +229,18 @@ export interface AgentContextConfig {
 
   /** Enable auto-compaction */
   autoCompact?: boolean;
+
+  /** Task type for priority profiles (default: auto-detect from plan) */
+  taskType?: TaskType;
+
+  /** Auto-detect task type from plan (default: true) */
+  autoDetectTaskType?: boolean;
 }
 
 /**
  * Default configuration
  */
-const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache'>> & {
+const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType'>> & {
   history: Required<NonNullable<AgentContextConfig['history']>>;
 } = {
   model: 'gpt-4',
@@ -262,6 +361,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private _totalTokensFreed = 0;
   private _lastBudget: ContextBudget | null = null;
 
+  // ===== Task Type =====
+  private _explicitTaskType?: TaskType;
+  private _autoDetectedTaskType?: TaskType;
+  private _autoDetectTaskType: boolean = true;
+
   // ============================================================================
   // Constructor & Factory
   // ============================================================================
@@ -316,6 +420,10 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       ...config.cache,
     };
     this._cache = new IdempotencyCache(cacheConfig);
+
+    // Task type configuration
+    this._explicitTaskType = config.taskType;
+    this._autoDetectTaskType = config.autoDetectTaskType !== false;
   }
 
   /**
@@ -379,6 +487,77 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   /** Get current input */
   getCurrentInput(): string {
     return this._currentInput;
+  }
+
+  // ============================================================================
+  // Task Type Management
+  // ============================================================================
+
+  /**
+   * Set explicit task type (overrides auto-detection)
+   */
+  setTaskType(type: TaskType): void {
+    this._explicitTaskType = type;
+  }
+
+  /**
+   * Clear explicit task type (re-enables auto-detection)
+   */
+  clearTaskType(): void {
+    this._explicitTaskType = undefined;
+    this._autoDetectedTaskType = undefined;
+  }
+
+  /**
+   * Get current task type
+   * Priority: explicit > auto-detected > 'general'
+   */
+  getTaskType(): TaskType {
+    if (this._explicitTaskType) {
+      return this._explicitTaskType;
+    }
+    if (this._autoDetectTaskType) {
+      this._autoDetectedTaskType = this.detectTaskTypeFromPlan();
+      return this._autoDetectedTaskType ?? 'general';
+    }
+    return 'general';
+  }
+
+  /**
+   * Get task-type-specific system prompt addition
+   */
+  getTaskTypePrompt(): string {
+    return TASK_TYPE_PROMPTS[this.getTaskType()];
+  }
+
+  /**
+   * Auto-detect task type from plan (if PlanPlugin is registered)
+   * Uses keyword matching - NO LLM calls
+   */
+  private detectTaskTypeFromPlan(): TaskType | undefined {
+    const planPlugin = this.getPlugin<PlanPlugin>('plan');
+    const plan = planPlugin?.getPlan();
+    if (!plan) return undefined;
+
+    // Combine goal + task descriptions
+    const text = `${plan.goal} ${plan.tasks.map(t => `${t.name} ${t.description}`).join(' ')}`.toLowerCase();
+
+    // Research keywords
+    if (/\b(research|search|find|investigate|discover|explore|gather|look\s*up|scrape|web\s*search|crawl|collect\s*data|survey|study)\b/.test(text)) {
+      return 'research';
+    }
+
+    // Coding keywords
+    if (/\b(code|implement|develop|program|function|class|refactor|debug|fix\s*bug|write\s*code|api|endpoint|module|component|typescript|javascript|python)\b/.test(text)) {
+      return 'coding';
+    }
+
+    // Analysis keywords
+    if (/\b(analyze|analysis|calculate|compute|evaluate|assess|compare|statistics|metrics|measure|data|report|chart|graph)\b/.test(text)) {
+      return 'analysis';
+    }
+
+    return 'general';
   }
 
   // ============================================================================
@@ -838,15 +1017,23 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
   /**
    * Build all context components
+   * Uses task-type-aware priority profiles for compaction ordering
    */
   private async buildComponents(): Promise<IContextComponent[]> {
     const components: IContextComponent[] = [];
 
-    // System prompt (never compact)
-    if (this._systemPrompt) {
+    // Get task type and priority profile
+    const taskType = this.getTaskType();
+    const priorityProfile = PRIORITY_PROFILES[taskType];
+
+    // System prompt + task type prompt (never compact)
+    const fullSystemPrompt = this._systemPrompt
+      ? `${this._systemPrompt}\n\n${this.getTaskTypePrompt()}`
+      : this.getTaskTypePrompt();
+    if (fullSystemPrompt) {
       components.push({
         name: 'system_prompt',
-        content: this._systemPrompt,
+        content: fullSystemPrompt,
         priority: 0,
         compactable: false,
       });
@@ -862,20 +1049,21 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       });
     }
 
-    // Conversation history (compactable)
+    // Conversation history (compactable, priority from profile)
     if (this._history.length > 0) {
       components.push({
         name: 'conversation_history',
         content: this.formatHistoryForContext(),
-        priority: 6, // Medium priority
+        priority: priorityProfile.conversation_history ?? 6,
         compactable: true,
         metadata: {
           messageCount: this._history.length,
+          strategy: taskType === 'research' ? 'summarize' : 'truncate',
         },
       });
     }
 
-    // Memory index (compactable)
+    // Memory index (compactable, priority from profile)
     const memoryIndex = await this._memory.formatIndex();
     // Check if memory is truly empty (formatMemoryIndex returns "Memory is empty." when no entries)
     const isEmpty = !memoryIndex || memoryIndex.trim().length === 0 || memoryIndex.includes('Memory is empty.');
@@ -883,16 +1071,24 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       components.push({
         name: 'memory_index',
         content: memoryIndex,
-        priority: 8, // Higher = compact first
+        priority: priorityProfile.memory_index ?? 8,
         compactable: true,
+        metadata: {
+          strategy: 'evict',
+        },
       });
     }
 
-    // Plugin components
+    // Plugin components with priority override
     for (const plugin of this._plugins.values()) {
       try {
         const component = await plugin.getComponent();
         if (component) {
+          // Apply task-type priority override if defined in profile
+          const overridePriority = priorityProfile[component.name];
+          if (overridePriority !== undefined) {
+            component.priority = overridePriority;
+          }
           components.push(component);
         }
       } catch (error) {

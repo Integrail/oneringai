@@ -14,6 +14,34 @@ export class ConnectorCommand extends BaseCommand {
   readonly description = 'Manage connectors (add, edit, delete, list, generate)';
   readonly usage = '/connector <list|add|edit|delete|generate|use|info> [args]';
 
+  get detailedHelp(): string {
+    return `
+/connector - Manage API Connectors
+
+Connectors store authentication credentials for AI vendors.
+Multiple connectors per vendor are supported (e.g., openai-main, openai-backup).
+
+USAGE:
+  /connector              List all connectors
+  /connector list         Same as above
+  /connector add          Interactive connector creation
+  /connector edit <name>  Edit an existing connector
+  /connector delete <name> Delete a connector
+  /connector generate     AI-assisted connector generation
+  /connector use <name>   Switch to a connector
+  /connector info [name]  Show connector details
+
+EXAMPLES:
+  /connector add              Add a new connector interactively
+  /connector use openai-main  Switch to openai-main connector
+  /connector info             Show current connector details
+  /connector delete old-key   Delete the old-key connector
+
+ALIASES:
+  /conn, /c
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { subcommand, subArgs } = this.parseSubcommand(context.args);
 

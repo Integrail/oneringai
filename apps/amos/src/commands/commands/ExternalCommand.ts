@@ -31,6 +31,32 @@ export class ExternalCommand extends BaseCommand {
   readonly description = 'Manage external tools (search, scrape, fetch)';
   readonly usage = '/external [list|setup|enable|disable|providers]';
 
+  get detailedHelp(): string {
+    return `
+/external - Manage External Tools
+
+External tools are web tools that require API connectors:
+  - web_search: Search the web (Serper, Brave, Tavily, RapidAPI)
+  - web_scrape: Scrape web pages (ZenRows)
+  - web_fetch: Simple HTTP fetch (free, no connector needed)
+
+USAGE:
+  /external              Show status of all external tools
+  /external list         Same as above
+  /external setup        Interactive setup wizard
+  /external setup <type> Setup specific type (search/scrape)
+  /external enable <tool>  Enable a tool (fetch/search/scrape)
+  /external disable <tool> Disable a tool
+  /external providers    List available providers and their APIs
+
+EXAMPLES:
+  /external setup search      Setup web search with Serper
+  /external enable fetch      Enable web_fetch tool
+  /external disable scrape    Disable web_scrape tool
+  /external providers         Show all available providers
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { args } = context;
     const { subcommand, subArgs } = this.parseSubcommand(args);
@@ -261,9 +287,28 @@ export class ExternalCommand extends BaseCommand {
     app.updateConfig({ externalTools });
     await app.saveConfig();
 
-    // Reload tools to pick up the new configuration
+    // Get fresh config after update
+    const updatedConfig = app.getConfig();
+
+    // Update ToolLoader's config and ExternalToolManager's config BEFORE reloading
+    // This ensures the new connector settings are used when tools are recreated
     const toolLoader = app.getToolLoader();
+    toolLoader.setConfig(updatedConfig);
+
+    // Also update the ExternalToolManager directly
+    const externalToolManager = toolLoader.getExternalToolManager();
+    if (externalToolManager) {
+      externalToolManager.updateConfig(updatedConfig.externalTools);
+    }
+
+    // Now reload tools with the updated config
     await toolLoader.reloadTools();
+
+    // Recreate agent to pick up the new tools
+    // Agent stores tools at creation time, so tool changes require recreation
+    if (app.getAgent()?.isReady()) {
+      await app.createAgent();
+    }
 
     return this.success(
       `${type} tool configured with connector '${connectorName}'.\n` +
@@ -320,9 +365,20 @@ export class ExternalCommand extends BaseCommand {
     app.updateConfig({ externalTools });
     await app.saveConfig();
 
-    // Reload tools
+    // Update configs and reload tools
+    const updatedConfig = app.getConfig();
     const toolLoader = app.getToolLoader();
+    toolLoader.setConfig(updatedConfig);
+    const externalToolManager = toolLoader.getExternalToolManager();
+    if (externalToolManager) {
+      externalToolManager.updateConfig(updatedConfig.externalTools);
+    }
     await toolLoader.reloadTools();
+
+    // Recreate agent to pick up the new tools
+    if (app.getAgent()?.isReady()) {
+      await app.createAgent();
+    }
 
     return this.success(`Tool '${toolName}' enabled.`);
   }
@@ -368,9 +424,20 @@ export class ExternalCommand extends BaseCommand {
     app.updateConfig({ externalTools });
     await app.saveConfig();
 
-    // Reload tools
+    // Update configs and reload tools
+    const updatedConfig = app.getConfig();
     const toolLoader = app.getToolLoader();
+    toolLoader.setConfig(updatedConfig);
+    const externalToolManager = toolLoader.getExternalToolManager();
+    if (externalToolManager) {
+      externalToolManager.updateConfig(updatedConfig.externalTools);
+    }
     await toolLoader.reloadTools();
+
+    // Recreate agent to pick up the new tools
+    if (app.getAgent()?.isReady()) {
+      await app.createAgent();
+    }
 
     return this.success(`Tool '${toolName}' disabled.`);
   }

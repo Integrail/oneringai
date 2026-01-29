@@ -165,7 +165,6 @@ export type {
   TaskAgentConfig,
   TaskAgentSessionConfig,
   TaskAgentHooks,
-  TaskAgentContextAccess,
   AgentHandle,
   PlanResult,
   PlanUpdates,
@@ -212,23 +211,12 @@ export {
 
 // Context Infrastructure
 export {
-  TaskAgentContextProvider,
   TruncateCompactor,
   SummarizeCompactor,
   MemoryEvictionCompactor,
   ApproximateTokenEstimator,
   createEstimator,
 } from './infrastructure/context/index.js';
-
-// Context Builder
-export { DefaultContextBuilder } from './core/context/DefaultContextBuilder.js';
-export type {
-  IContextBuilder,
-  ContextSource,
-  BuiltContext,
-  ContextBuilderConfig,
-} from './domain/interfaces/IContextBuilder.js';
-export { DEFAULT_CONTEXT_BUILDER_CONFIG } from './domain/interfaces/IContextBuilder.js';
 
 // ============ Conversation History Management ============
 export { ConversationHistoryManager } from './core/history/index.js';
@@ -727,7 +715,6 @@ export type {
   UniversalAgentConfig,
   UniversalAgentSessionConfig,
   UniversalAgentPlanningConfig,
-  UniversalAgentContextAccess,
   UniversalResponse,
   UniversalEvent,
   AgentMode,

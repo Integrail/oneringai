@@ -22,6 +22,37 @@ export class PromptCommand extends BaseCommand {
   readonly description = 'Manage system prompt templates';
   readonly usage = '/prompt <list|show|use|clear|create|edit|delete|current|reload> [args]';
 
+  get detailedHelp(): string {
+    return `
+/prompt - Manage System Prompt Templates
+
+System prompts define the agent's personality and capabilities.
+Prompts are stored as markdown files in data/prompts/.
+
+USAGE:
+  /prompt              List all available prompts
+  /prompt list         Same as above
+  /prompt show <name>  Display a prompt's content
+  /prompt use <name>   Set active prompt (recreates agent)
+  /prompt current      Show the currently active prompt
+  /prompt clear        Clear active prompt (use defaults)
+  /prompt create <name> Create a new prompt interactively
+  /prompt edit <name>  Edit an existing prompt
+  /prompt delete <name> Delete a prompt
+  /prompt reload       Reload prompts from disk
+
+EXAMPLES:
+  /prompt list               Show available prompts
+  /prompt use coding-agent   Use the coding agent prompt
+  /prompt show research      View the research prompt
+  /prompt create my-prompt   Create a custom prompt
+  /prompt clear              Reset to default instructions
+
+ALIASES:
+  /p, /prompts
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { app, args } = context;
     const { subcommand, subArgs } = this.parseSubcommand(args);

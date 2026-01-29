@@ -11,6 +11,41 @@ export class ToolCommand extends BaseCommand {
   readonly description = 'Manage tools and permissions';
   readonly usage = '/tool <list|enable|disable|info|reload|approve|revoke|allowlist|blocklist|permissions> [name]';
 
+  get detailedHelp(): string {
+    return `
+/tool - Manage Tools and Permissions
+
+Control which tools are available to the agent and manage permissions.
+
+USAGE:
+  /tool                    List all tools with status
+  /tool list               Same as above
+  /tool enable <name>      Enable a tool
+  /tool disable <name>     Disable a tool
+  /tool info <name>        Show tool details and parameters
+  /tool reload             Reload all tools from disk
+
+PERMISSION COMMANDS:
+  /tool approve <name>     Approve tool for this session
+  /tool revoke <name>      Revoke tool approval
+  /tool allowlist [add|remove|list|clear] [name]
+                           Manage always-allowed tools
+  /tool blocklist [add|remove|list|clear] [name]
+                           Manage always-blocked tools
+  /tool permissions [name] Show permission settings
+
+EXAMPLES:
+  /tool list               Show all tools
+  /tool enable bash        Enable shell commands
+  /tool info read_file     Show read_file tool details
+  /tool allowlist add bash Always allow bash
+  /tool blocklist rm -rf   Block dangerous commands
+
+ALIASES:
+  /t, /tools
+`;
+  }
+
   async execute(context: CommandContext): Promise<CommandResult> {
     const { subcommand, subArgs } = this.parseSubcommand(context.args);
 

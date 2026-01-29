@@ -415,10 +415,12 @@ await agent.start({
 
 **Features:**
 - 📝 **Working Memory** - Store and retrieve data with priority-based eviction, task-aware scoping, and pinning
-- 🧠 **Context Management** - Automatic handling of context limits
+- 🏗️ **Hierarchical Memory** - Raw → Summary → Findings pattern for research tasks
+- 🧠 **Context Management** - Automatic handling of context limits with LLM summarization
 - ⏸️ **State Persistence** - Resume after crashes or long waits
 - 🔗 **External Dependencies** - Wait for webhooks, polling, manual input
 - 🔄 **Tool Idempotency** - Prevent duplicate side effects
+- 🔬 **Task Types** - Optimized prompts and priorities for research, coding, and analysis
 
 ### 5. Context Management
 
@@ -466,6 +468,16 @@ const metrics = await agent.context?.getMetrics();
 - **lazy** - Minimal compaction at 90%, for short tasks
 - **rolling-window** - Fixed message window, zero overhead
 - **adaptive** - Self-optimizing based on usage patterns
+
+**Three compactors** for content reduction:
+- **TruncateCompactor** - Simple truncation for tool outputs
+- **SummarizeCompactor** - LLM-based intelligent summarization (preserves key facts)
+- **MemoryEvictionCompactor** - Priority-based memory eviction
+
+**Task type detection** automatically optimizes context for:
+- **research** - Preserves tool outputs, summarizes conversation early
+- **coding** - Preserves code context, truncates verbose outputs
+- **analysis** - Balanced data and reasoning preservation
 
 ### 6. Audio Capabilities (NEW)
 

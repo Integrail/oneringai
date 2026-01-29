@@ -690,7 +690,8 @@ describe('AgentContext', () => {
 
       const sysPrompt = prepared.components.find(c => c.name === 'system_prompt');
       expect(sysPrompt).toBeDefined();
-      expect(sysPrompt?.content).toBe('System prompt');
+      // System prompt now includes task type prompt (auto-detected or default)
+      expect(sysPrompt?.content).toContain('System prompt');
       expect(sysPrompt?.compactable).toBe(false);
     });
 
@@ -1159,7 +1160,10 @@ describe('AgentContext', () => {
       const prepared = await ctx.prepare();
 
       const sysPrompt = prepared.components.find(c => c.name === 'system_prompt');
-      expect(sysPrompt).toBeUndefined();
+      // Even with empty system prompt, task type prompt is still added
+      expect(sysPrompt).toBeDefined();
+      // System prompt contains task execution guidelines
+      expect(sysPrompt?.content).toContain('Task Execution');
     });
 
     it('should handle empty instructions', async () => {

@@ -19,7 +19,7 @@
 
 ### Context Tests
 ✅ ContextCompactors - Truncate, Summarize, MemoryEviction compactors
-✅ TaskAgentContextProvider - Component assembly
+✅ AgentContext - Unified context management with plugins
 ✅ Core ContextManager - Budget, strategies, events
 ✅ Strategies - Proactive, Aggressive, Lazy, Rolling Window, Adaptive
 
@@ -129,7 +129,7 @@
 4. ✅ Priority-based compaction (plan untouched, memory evicted first)
 5. ✅ Strategy switching mid-execution (proactive → aggressive)
 6. ✅ Budget warnings and critical events
-7. ✅ Context components correctly assembled by TaskAgentContextProvider
+7. ✅ Context components correctly assembled by AgentContext with plugins
 8. ✅ Tool outputs component management
 
 **Requirements**:
@@ -283,6 +283,7 @@ class RealisticLLMMock {
 
 - **TaskAgent**: `src/capabilities/taskAgent/TaskAgent.ts`
 - **PlanExecutor**: `src/capabilities/taskAgent/PlanExecutor.ts`
+- **AgentContext**: `src/core/AgentContext.ts`
 - **ContextManager**: `src/core/context/ContextManager.ts`
-- **TaskAgentContextProvider**: `src/infrastructure/context/providers/TaskAgentContextProvider.ts`
+- **Plugins**: `src/core/context/plugins/` (PlanPlugin, MemoryPlugin, ToolOutputPlugin)
 - **Task Validation**: `src/domain/entities/Task.ts` (lines 142-216)

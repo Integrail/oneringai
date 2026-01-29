@@ -1,8 +1,7 @@
 /**
  * PlanExecutor - executes plans with LLM integration
  *
- * Uses the unified ContextManager with TaskAgentContextProvider
- * and IHistoryManager interface for history management.
+ * Uses unified AgentContext for context management.
  */
 
 import { EventEmitter } from 'eventemitter3';
@@ -14,10 +13,9 @@ import { calculateCost } from '../../domain/entities/Model.js';
 import { TaskTimeoutError, TaskValidationError, ParallelTasksError, TaskFailure } from '../../domain/errors/AIErrors.js';
 import { TokenBucketRateLimiter } from '../../infrastructure/resilience/index.js';
 import { WorkingMemory } from './WorkingMemory.js';
-import { ContextManager } from '../../core/context/ContextManager.js';
-import type { TaskAgentContextProvider } from '../../infrastructure/context/providers/TaskAgentContextProvider.js';
+import { AgentContext } from '../../core/AgentContext.js';
+import { PlanPlugin } from '../../core/context/plugins/PlanPlugin.js';
 import { IdempotencyCache } from './IdempotencyCache.js';
-import type { IHistoryManager } from '../../domain/interfaces/IHistoryManager.js';
 import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { CheckpointManager } from './CheckpointManager.js';
 import type { TaskAgentHooks, TaskContext, ErrorContext } from './TaskAgent.js';
@@ -77,10 +75,9 @@ export interface PlanExecutionResult {
 export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
   private agent: Agent;
   private memory: WorkingMemory;
-  private contextManager: ContextManager;
-  private contextProvider: TaskAgentContextProvider;
+  private agentContext: AgentContext;
+  private planPlugin: PlanPlugin;
   private idempotencyCache: IdempotencyCache;
-  private historyManager: IHistoryManager;
   private externalHandler: ExternalDependencyHandler;
   private checkpointManager: CheckpointManager;
   private hooks: TaskAgentHooks | undefined;
@@ -102,10 +99,9 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
   constructor(
     agent: Agent,
     memory: WorkingMemory,
-    contextManager: ContextManager,
-    contextProvider: TaskAgentContextProvider,
+    agentContext: AgentContext,
+    planPlugin: PlanPlugin,
     idempotencyCache: IdempotencyCache,
-    historyManager: IHistoryManager,
     externalHandler: ExternalDependencyHandler,
     checkpointManager: CheckpointManager,
     hooks: TaskAgentHooks | undefined,
@@ -114,10 +110,9 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     super();
     this.agent = agent;
     this.memory = memory;
-    this.contextManager = contextManager;
-    this.contextProvider = contextProvider;
+    this.agentContext = agentContext;
+    this.planPlugin = planPlugin;
     this.idempotencyCache = idempotencyCache;
-    this.historyManager = historyManager;
     this.externalHandler = externalHandler;
     this.checkpointManager = checkpointManager;
     this.hooks = hooks;
@@ -468,17 +463,15 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     // Build task prompt
     const taskPrompt = this.buildTaskPrompt(plan, task);
 
-    // Update context provider with current input and plan state
-    this.contextProvider.updateConfig({
-      currentInput: taskPrompt,
-      plan: plan,
-    });
+    // Update context with current input and plan state
+    this.planPlugin.setPlan(plan);
+    this.agentContext.setCurrentInput(taskPrompt);
 
-    // Prepare context using unified ContextManager (handles compaction automatically)
-    await this.contextManager.prepare();
+    // Prepare context using unified AgentContext (handles compaction automatically)
+    await this.agentContext.prepare();
 
-    // Add task prompt to history (async)
-    await this.historyManager.addMessage('user', taskPrompt);
+    // Add task prompt to history
+    this.agentContext.addMessage('user', taskPrompt);
 
     this.emit('llm:call', { iteration: task.attempts });
 
@@ -542,8 +535,8 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
       await this.checkpointManager.onLLMCall(this.currentState);
     }
 
-    // Add response to history (async)
-    await this.historyManager.addMessage('assistant', response.output_text || '');
+    // Add response to history
+    this.agentContext.addMessage('assistant', response.output_text || '');
 
     // Validate task completion (unless validation is disabled or not configured)
     const validationResult = await this.validateTaskCompletion(task, response.output_text || '');

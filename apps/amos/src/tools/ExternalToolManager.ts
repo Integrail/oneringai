@@ -292,16 +292,29 @@ export class ExternalToolManager {
    * Create a configured version of the web_search tool
    */
   createSearchTool(baseTool: ToolFunction): ToolFunction | null {
-    if (!this.config.enabled) return null;
-    if (!this.config.search?.enabled) return null;
-    if (!this.config.search.connectorName) return null;
+    console.log('[ExternalToolManager.createSearchTool] config:', JSON.stringify(this.config, null, 2));
+
+    if (!this.config.enabled) {
+      console.log('[ExternalToolManager.createSearchTool] FAILED: config.enabled is false');
+      return null;
+    }
+    if (!this.config.search?.enabled) {
+      console.log('[ExternalToolManager.createSearchTool] FAILED: search not enabled, search config:', this.config.search);
+      return null;
+    }
+    if (!this.config.search.connectorName) {
+      console.log('[ExternalToolManager.createSearchTool] FAILED: no connectorName');
+      return null;
+    }
 
     const connectorName = this.config.search.connectorName;
+    console.log(`[ExternalToolManager.createSearchTool] SUCCESS: wrapping with connector '${connectorName}'`);
 
     // Wrap the tool to inject the connector name
     return {
       ...baseTool,
       execute: async (args: any) => {
+        console.log(`[ExternalToolManager.web_search.execute] INJECTING connectorName '${connectorName}' into args`);
         return baseTool.execute({
           ...args,
           connectorName: args.connectorName || connectorName,

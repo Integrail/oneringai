@@ -318,7 +318,12 @@ export class ToolLoader implements IToolLoader {
    */
   private loadExternalTools(tools: ToolFunction[]): void {
     const externalConfig = this.config?.externalTools;
-    if (!externalConfig?.enabled) return;
+    console.log('[ToolLoader.loadExternalTools] config:', JSON.stringify(externalConfig, null, 2));
+
+    if (!externalConfig?.enabled) {
+      console.log('[ToolLoader.loadExternalTools] external tools disabled');
+      return;
+    }
 
     // web_fetch - Always available (no connector needed)
     if (externalConfig.webFetchEnabled) {
@@ -326,19 +331,26 @@ export class ToolLoader implements IToolLoader {
     }
 
     // web_search - Requires connector
+    console.log('[ToolLoader.loadExternalTools] externalToolManager exists:', !!this.externalToolManager);
+
     if (this.externalToolManager) {
+      console.log('[ToolLoader.loadExternalTools] calling createSearchTool...');
       const searchTool = this.externalToolManager.createSearchTool(webSearch);
+      console.log('[ToolLoader.loadExternalTools] createSearchTool returned:', searchTool ? 'wrapped tool' : 'null');
       if (searchTool) {
         tools.push(searchTool);
+        console.log('[ToolLoader.loadExternalTools] added WRAPPED web_search tool');
       } else if (externalConfig.search === null) {
         // Add unconfigured tool so user can see it exists
         // but mark it as disabled
         tools.push(webSearch);
+        console.log('[ToolLoader.loadExternalTools] added ORIGINAL web_search (disabled)');
         // Don't enable it - will be filtered out
       }
     } else if (externalConfig.search?.enabled && externalConfig.search?.connectorName) {
       // Direct config without manager (fallback)
       const connectorName = externalConfig.search.connectorName;
+      console.log('[ToolLoader.loadExternalTools] using FALLBACK wrapping with connector:', connectorName);
       tools.push({
         ...webSearch,
         execute: async (args: any) => {
@@ -348,6 +360,8 @@ export class ToolLoader implements IToolLoader {
           });
         },
       });
+    } else {
+      console.log('[ToolLoader.loadExternalTools] NO web_search tool added');
     }
 
     // Note: webScrape would be added here similarly when available

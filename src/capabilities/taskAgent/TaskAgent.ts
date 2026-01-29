@@ -8,8 +8,8 @@
  * - Session management
  * - Lifecycle/cleanup
  *
- * Uses unified ContextManager with TaskAgentContextProvider
- * and IHistoryManager interface for clean architecture.
+ * Uses AgentContext with PlanPlugin and MemoryPlugin for unified
+ * context management across all agent types.
  */
 
 import { BaseAgent, BaseAgentConfig, BaseSessionConfig } from '../../core/BaseAgent.js';
@@ -29,16 +29,11 @@ import type { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
 import { DEFAULT_MEMORY_CONFIG } from '../../domain/entities/Memory.js';
 import { IAgentStorage, createAgentStorage } from '../../infrastructure/storage/InMemoryStorage.js';
 import { WorkingMemory } from './WorkingMemory.js';
-// Unified ContextManager from core
-import { ContextManager } from '../../core/context/ContextManager.js';
-import { TaskAgentContextProvider } from '../../infrastructure/context/providers/TaskAgentContextProvider.js';
-import { TruncateCompactor } from '../../infrastructure/context/compactors/TruncateCompactor.js';
-import { MemoryEvictionCompactor } from '../../infrastructure/context/compactors/MemoryEvictionCompactor.js';
-import { ApproximateTokenEstimator } from '../../infrastructure/context/estimators/ApproximateEstimator.js';
+// Unified AgentContext
+import { AgentContext } from '../../core/AgentContext.js';
+import { PlanPlugin } from '../../core/context/plugins/PlanPlugin.js';
+import { MemoryPlugin } from '../../core/context/plugins/MemoryPlugin.js';
 import { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
-// Unified IHistoryManager
-import type { IHistoryManager } from '../../domain/interfaces/IHistoryManager.js';
-import { ConversationHistoryManager } from '../../core/history/ConversationHistoryManager.js';
 import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { PlanExecutor } from './PlanExecutor.js';
 import { CheckpointManager, DEFAULT_CHECKPOINT_STRATEGY } from './CheckpointManager.js';
@@ -48,44 +43,8 @@ import { getModelInfo } from '../../domain/entities/Model.js';
 import type { AgentPermissionsConfig } from '../../core/permissions/types.js';
 import { CONTEXT_DEFAULTS } from '../../core/constants.js';
 
-// ============================================================================
-// Unified Context Access Interface
-// ============================================================================
-
-/**
- * TaskAgentContextAccess provides AgentContext-compatible access
- * to TaskAgent's internal managers for unified API access.
- *
- * This allows users to interact with TaskAgent using the same
- * patterns as AgentContext without breaking TaskAgent's internal architecture.
- */
-export interface TaskAgentContextAccess {
-  /** Working memory */
-  readonly memory: WorkingMemory;
-  /** Tool result cache */
-  readonly cache: IdempotencyCache;
-  /** History manager */
-  readonly history: IHistoryManager;
-  /** Context manager for LLM context preparation */
-  readonly contextManager: ContextManager;
-  /** Permission manager (from BaseAgent) */
-  readonly permissions: import('../../core/permissions/ToolPermissionManager.js').ToolPermissionManager;
-  /** Tool manager (from BaseAgent) */
-  readonly tools: import('../../core/ToolManager.js').ToolManager;
-
-  /** Add a message to history (fire and forget) */
-  addMessage(role: 'user' | 'assistant' | 'system', content: string): void;
-
-  /** Get current context budget */
-  getBudget(): Promise<import('../../core/context/types.js').ContextBudget>;
-
-  /** Get context metrics */
-  getMetrics(): Promise<{
-    historyMessageCount: number;
-    memoryStats: { totalEntries: number; totalSizeBytes: number };
-    cacheStats: import('../../core/IdempotencyCache.js').CacheStats;
-  }>;
-}
+// NOTE: TaskAgent now exposes AgentContext directly via the `context` getter.
+// TaskAgentContextAccess interface is deprecated - use AgentContext API instead.
 
 /**
  * TaskAgent hooks for customization
@@ -300,10 +259,10 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
 
   // Internal components
   protected agent?: Agent;
-  protected contextManager?: ContextManager;
-  protected contextProvider?: TaskAgentContextProvider;
+  protected _agentContext?: AgentContext;
+  protected _planPlugin?: PlanPlugin;
+  protected _memoryPlugin?: MemoryPlugin;
   protected idempotencyCache?: IdempotencyCache;
-  protected historyManager?: IHistoryManager;
   protected externalHandler?: ExternalDependencyHandler;
   protected planExecutor?: PlanExecutor;
   protected checkpointManager?: CheckpointManager;
@@ -546,7 +505,7 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
         const enhancedContext = {
           ...context,
           memory: this.memory.getAccess(),    // Add memory access for memory tools
-          contextManager: this.contextManager,
+          agentContext: this._agentContext,
           idempotencyCache: this.idempotencyCache,
           agentId: this.id,
         };
@@ -606,41 +565,31 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     const modelInfo = getModelInfo(config.model);
     const contextTokens = modelInfo?.features.input.tokens ?? CONTEXT_DEFAULTS.MAX_TOKENS;
 
-    // Create unified history manager (IHistoryManager interface)
-    this.historyManager = new ConversationHistoryManager({
-      maxMessages: 50,
-      maxTokens: Math.floor(contextTokens * 0.3), // Reserve 30% for history
-      compactionStrategy: 'sliding-window',
-      preserveRecentCount: 10,
-    });
+    // Create plugins for unified AgentContext
+    this._planPlugin = new PlanPlugin();
+    this._memoryPlugin = new MemoryPlugin(this.memory);
 
-    // Create context provider for TaskAgent
-    this.contextProvider = new TaskAgentContextProvider({
+    // Create unified AgentContext (replaces contextManager, contextProvider, historyManager)
+    this._agentContext = AgentContext.create({
       model: config.model,
-      instructions: config.instructions,
-      plan: this.state.plan,
-      memory: this.memory,
-      historyManager: this.historyManager,
+      systemPrompt: config.instructions ?? '',
+      tools: cachedTools,
+      maxContextTokens: contextTokens,
+      responseReserve: 0.15,
+      autoCompact: true,
+      strategy: 'proactive',
+      history: {
+        maxMessages: 50,
+        preserveRecent: 10,
+      },
     });
 
-    // Create unified ContextManager with compactors
-    const estimator = new ApproximateTokenEstimator();
-    this.contextManager = new ContextManager(
-      this.contextProvider,
-      {
-        maxContextTokens: contextTokens,
-        compactionThreshold: 0.75,
-        hardLimit: 0.9,
-        responseReserve: 0.15,
-        autoCompact: true,
-        strategy: 'proactive',
-      },
-      [
-        new TruncateCompactor(estimator),
-        new MemoryEvictionCompactor(estimator),
-      ],
-      estimator
-    );
+    // Register plugins with AgentContext
+    this._agentContext.registerPlugin(this._planPlugin);
+    this._agentContext.registerPlugin(this._memoryPlugin);
+
+    // Set initial plan in plugin
+    this._planPlugin.setPlan(this.state.plan);
 
     // Create external dependency handler
     this.externalHandler = new ExternalDependencyHandler(this._allTools);
@@ -648,14 +597,13 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     // Create checkpoint manager
     this.checkpointManager = new CheckpointManager(this.agentStorage, DEFAULT_CHECKPOINT_STRATEGY);
 
-    // Create plan executor with unified components
+    // Create plan executor with unified AgentContext
     this.planExecutor = new PlanExecutor(
       this.agent,
       this.memory,
-      this.contextManager,
-      this.contextProvider,
+      this._agentContext,
+      this._planPlugin,
       this.idempotencyCache!,
-      this.historyManager,
       this.externalHandler,
       this.checkpointManager,
       this.hooks,
@@ -713,87 +661,35 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
   // ===== Unified Context Access =====
 
   /**
-   * Get unified context access interface.
+   * Get unified AgentContext.
    *
-   * Provides AgentContext-compatible access to TaskAgent's internal managers,
-   * allowing users to interact with the same unified API across all agent types.
+   * AgentContext provides the unified API for context management across all agent types.
    *
    * @example
    * ```typescript
    * const taskAgent = TaskAgent.create({ ... });
    *
-   * // Access context features (same API as AgentContext)
+   * // Access context features
    * taskAgent.context.addMessage('user', 'Hello');
    * const budget = await taskAgent.context.getBudget();
    * const metrics = await taskAgent.context.getMetrics();
    *
-   * // Direct access to managers
-   * await taskAgent.context.memory.store('key', 'desc', value);
-   * const cached = await taskAgent.context.cache.get(tool, args);
+   * // Direct access to composed managers
+   * await taskAgent.context.memory.set('key', 'desc', value);
    * ```
    */
-  get context(): TaskAgentContextAccess {
-    // Ensure components are initialized
-    if (!this.idempotencyCache || !this.historyManager || !this.contextManager) {
+  get context(): AgentContext {
+    if (!this._agentContext) {
       throw new Error('TaskAgent components not initialized. Call start() first or use create().');
     }
-
-    const self = this;
-    return {
-      get memory() { return self.memory; },
-      get cache() { return self.idempotencyCache!; },
-      get history() { return self.historyManager!; },
-      get contextManager() { return self.contextManager!; },
-      get permissions() { return self._permissionManager; },
-      get tools() { return self._toolManager; },
-
-      addMessage(role: 'user' | 'assistant' | 'system', content: string): void {
-        // Fire and forget - don't await since interface is sync
-        self.historyManager?.addMessage(role, content).catch(err => {
-          console.warn('Failed to add message to history:', err);
-        });
-      },
-
-      async getBudget() {
-        if (!self.contextManager) {
-          throw new Error('Context manager not initialized');
-        }
-        // Try to get cached budget first, otherwise prepare context
-        const cached = self.contextManager.getCurrentBudget();
-        if (cached) {
-          return cached;
-        }
-        const prepared = await self.contextManager.prepare();
-        return prepared.budget;
-      },
-
-      async getMetrics() {
-        const memoryStats = await self.memory.getStats();
-        const cacheStats = self.idempotencyCache?.getStats() ?? {
-          entries: 0,
-          hits: 0,
-          misses: 0,
-          hitRate: 0,
-        };
-        const messages = await self.historyManager?.getMessages() ?? [];
-
-        return {
-          historyMessageCount: messages.length,
-          memoryStats: {
-            totalEntries: memoryStats.totalEntries,
-            totalSizeBytes: memoryStats.totalSizeBytes,
-          },
-          cacheStats,
-        };
-      },
-    };
+    return this._agentContext;
   }
 
   /**
    * Check if context is available (components initialized)
    */
   hasContext(): boolean {
-    return !!(this.idempotencyCache && this.historyManager && this.contextManager);
+    return !!this._agentContext;
   }
 
   /**
