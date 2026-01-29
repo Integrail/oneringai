@@ -21,25 +21,30 @@ A comprehensive guide to using all features of the @oneringai/agents library.
    - Fulfillment Criteria
    - PlanExecutor Internals
    - Advanced Configuration
-9. [Context Management](#context-management) **ENHANCED**
-   - Strategy Deep Dive (Proactive, Aggressive, Lazy, Rolling Window, Adaptive)
-   - Custom Strategies
-   - Token Estimation
-   - Lifecycle Hooks
-10. [Tools & Function Calling](#tools--function-calling)
-11. [Dynamic Tool Management](#dynamic-tool-management)
-12. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
-13. [Multimodal (Vision)](#multimodal-vision)
-14. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
-15. [Image Generation](#image-generation) **NEW**
-16. [Video Generation](#video-generation) **NEW**
-17. [Web Search](#web-search) **NEW**
-18. [Streaming](#streaming)
-19. [External API Integration](#external-api-integration) **NEW**
-20. [OAuth for External APIs](#oauth-for-external-apis)
-21. [Model Registry](#model-registry)
-22. [Advanced Features](#advanced-features)
-23. [Production Deployment](#production-deployment)
+9. [Research Agent](#research-agent) **NEW**
+   - Pluggable Research Sources
+   - Auto-Spill for Large Outputs
+   - Memory Batch Retrieval
+   - Custom Source Implementation
+10. [Context Management](#context-management) **ENHANCED**
+    - Strategy Deep Dive (Proactive, Aggressive, Lazy, Rolling Window, Adaptive)
+    - Custom Strategies
+    - Token Estimation
+    - Lifecycle Hooks
+11. [Tools & Function Calling](#tools--function-calling)
+12. [Dynamic Tool Management](#dynamic-tool-management)
+13. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
+14. [Multimodal (Vision)](#multimodal-vision)
+15. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
+16. [Image Generation](#image-generation) **NEW**
+17. [Video Generation](#video-generation) **NEW**
+18. [Web Search](#web-search) **NEW**
+19. [Streaming](#streaming)
+20. [External API Integration](#external-api-integration) **NEW**
+21. [OAuth for External APIs](#oauth-for-external-apis)
+22. [Model Registry](#model-registry)
+23. [Advanced Features](#advanced-features)
+24. [Production Deployment](#production-deployment)
 
 ---
 
@@ -2859,6 +2864,490 @@ agent.on('agent:completed', async ({ result, metrics: planMetrics }) => {
     tokensUsed: planMetrics.totalTokens,
   });
 });
+```
+
+---
+
+## Research Agent
+
+The **ResearchAgent** is a specialized agent for conducting multi-source research with pluggable data sources. It extends TaskAgent with research-specific capabilities including automatic large output handling, hierarchical memory tiers, and batch retrieval.
+
+### Core Capabilities
+
+- **Pluggable Sources** - Generic `IResearchSource` interface supports any data source
+- **Auto-Spill** - Large tool outputs automatically stored in memory with tracking
+- **Smart Cleanup** - Raw data evicted after summarization to free context
+- **Batch Retrieval** - Efficient `memory_retrieve_batch` for synthesis phase
+- **Tiered Memory** - Raw → Summary → Findings workflow with priority-based eviction
+- **25MB Default Memory** - Configurable for large research tasks with many sources
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     ResearchAgent                           │
+│  - Extends TaskAgent                                        │
+│  - Research-specific tools                                  │
+│  - Source management                                        │
+└───────────────────────────┬─────────────────────────────────┘
+                            │
+         ┌──────────────────┼──────────────────┐
+         │                  │                  │
+         ▼                  ▼                  ▼
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│ IResearchSource │ │ AutoSpillPlugin │ │ WorkingMemory   │
+│ - Web search    │ │ - Track outputs │ │ - raw tier      │
+│ - File search   │ │ - Auto-spill    │ │ - summary tier  │
+│ - Vector DB     │ │ - Cleanup       │ │ - findings tier │
+│ - Custom APIs   │ │                 │ │                 │
+└─────────────────┘ └─────────────────┘ └─────────────────┘
+```
+
+### Basic Research Agent
+
+```typescript
+import {
+  Connector,
+  ResearchAgent,
+  createWebSearchSource,
+  Vendor,
+  Services,
+} from '@oneringai/agents';
+
+// Setup connectors
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+Connector.create({
+  name: 'serper',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Create web search source
+const webSource = createWebSearchSource('serper', {
+  name: 'web-serper',
+  defaultCountry: 'us',
+  defaultLanguage: 'en',
+});
+
+// Create research agent
+const agent = await ResearchAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  sources: [webSource],
+});
+
+// Execute research
+const result = await agent.research({
+  topic: 'AI developments in 2026',
+  queries: ['latest AI breakthroughs', 'AI regulation updates'],
+  maxResultsPerQuery: 10,
+});
+
+console.log(result.findings);
+
+// Clean up
+await agent.destroy();
+```
+
+### Pluggable Research Sources
+
+The `IResearchSource` interface enables any data source to be used for research:
+
+```typescript
+interface IResearchSource {
+  /** Unique source name */
+  readonly name: string;
+  /** Human-readable description */
+  readonly description: string;
+  /** Source type: 'web', 'knowledge', 'file', 'api' */
+  readonly type: 'web' | 'knowledge' | 'file' | 'api';
+
+  /** Search for relevant content */
+  search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+
+  /** Fetch full content by reference (URL, ID, path) */
+  fetch(reference: string, options?: FetchOptions): Promise<FetchedContent>;
+
+  /** Check if source is available */
+  isAvailable(): Promise<boolean>;
+
+  /** Get source capabilities */
+  getCapabilities(): SourceCapabilities;
+}
+```
+
+#### Built-in Sources
+
+**Web Search Source:**
+```typescript
+import { createWebSearchSource } from '@oneringai/agents';
+
+// Create from connector name
+const webSource = createWebSearchSource('serper-connector', {
+  name: 'web-search',
+  description: 'Web search via Serper',
+  defaultCountry: 'us',
+  defaultLanguage: 'en',
+});
+```
+
+**File Search Source:**
+```typescript
+import { createFileSearchSource } from '@oneringai/agents';
+
+// Search files in a directory
+const fileSource = createFileSearchSource('./docs', {
+  name: 'local-docs',
+  description: 'Local documentation files',
+  includePatterns: ['**/*.md', '**/*.txt'],
+  excludePatterns: ['node_modules/**'],
+  searchMode: 'content', // 'filename' | 'content' | 'both'
+});
+```
+
+#### Custom Sources
+
+Implement `IResearchSource` for any data source:
+
+```typescript
+import type { IResearchSource, SearchResponse, FetchedContent } from '@oneringai/agents';
+
+// Vector database source
+const vectorSource: IResearchSource = {
+  name: 'pinecone-kb',
+  description: 'Knowledge base via Pinecone',
+  type: 'knowledge',
+
+  async search(query, options) {
+    const results = await pinecone.query({
+      vector: await embed(query),
+      topK: options?.maxResults ?? 10,
+    });
+
+    return {
+      success: true,
+      query,
+      results: results.matches.map((m, i) => ({
+        id: m.id,
+        title: m.metadata?.title ?? m.id,
+        snippet: m.metadata?.snippet ?? '',
+        reference: m.id,
+        relevance: m.score,
+        metadata: m.metadata,
+      })),
+      totalResults: results.matches.length,
+    };
+  },
+
+  async fetch(reference, options) {
+    const doc = await pinecone.fetch([reference]);
+    return {
+      success: true,
+      reference,
+      content: doc.records[reference]?.metadata?.content ?? null,
+      contentType: 'text/plain',
+    };
+  },
+
+  async isAvailable() {
+    return true;
+  },
+
+  getCapabilities() {
+    return {
+      canSearch: true,
+      canFetch: true,
+      hasRelevanceScores: true,
+      maxResultsPerSearch: 100,
+      contentTypes: ['text/plain'],
+    };
+  },
+};
+
+// Use with ResearchAgent
+const agent = await ResearchAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  sources: [vectorSource],
+});
+```
+
+### Auto-Spill for Large Outputs
+
+The **AutoSpillPlugin** automatically stores large tool outputs in memory's raw tier, preventing context overflow while keeping data available for later retrieval.
+
+#### Configuration
+
+```typescript
+const agent = await ResearchAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  sources: [webSource],
+
+  // Auto-spill configuration
+  autoSpill: {
+    sizeThreshold: 10 * 1024,         // 10KB - outputs larger than this are spilled
+    tools: ['research_fetch'],         // Only spill these tools (optional)
+    toolPatterns: [/^web_/],           // Regex patterns for tool names (optional)
+    maxTrackedEntries: 100,            // Max entries to track
+    autoCleanupAfterIterations: 5,     // Auto-cleanup consumed entries
+    keyPrefix: 'autospill',            // Key prefix for spilled entries
+  },
+});
+```
+
+#### How It Works
+
+1. **Detection**: When a tool output exceeds `sizeThreshold`, it's automatically stored in memory's `raw` tier
+2. **Tracking**: The plugin tracks all spilled entries with metadata (source tool, size, timestamp)
+3. **Notification**: The agent is informed about spilled data via context plugins
+4. **Consumption**: When the agent summarizes raw data, it marks entries as "consumed"
+5. **Cleanup**: Consumed entries are automatically cleaned up, or manually via `cleanupConsumed()`
+
+```typescript
+// Access auto-spill plugin
+const autoSpill = agent.getAutoSpillPlugin();
+
+// Get spilled entries
+const entries = autoSpill.getEntries();
+const unconsumed = autoSpill.getUnconsumed();
+const consumed = autoSpill.getConsumed();
+
+// Manual cleanup
+await autoSpill.cleanupConsumed();
+await autoSpill.cleanup(['raw.autospill_web_fetch_123']);
+await autoSpill.cleanupAll();
+
+// Event listeners
+autoSpill.on('spilled', ({ key, tool, sizeBytes }) => {
+  console.log(`Spilled ${sizeBytes} bytes from ${tool} to ${key}`);
+});
+
+autoSpill.on('consumed', ({ key, summaryKey }) => {
+  console.log(`${key} was summarized into ${summaryKey}`);
+});
+
+autoSpill.on('cleaned', ({ keys, reason }) => {
+  console.log(`Cleaned ${keys.length} entries (${reason})`);
+});
+```
+
+### Memory Batch Retrieval
+
+The `memory_retrieve_batch` tool allows efficient retrieval of multiple memory entries in a single call, reducing token usage during synthesis.
+
+```typescript
+// In agent tools, memory_retrieve_batch is available automatically
+
+// Retrieve by pattern (glob-like)
+const findings = await agent.context.executeTool('memory_retrieve_batch', {
+  pattern: 'findings.*',
+});
+
+// Retrieve by specific keys
+const specific = await agent.context.executeTool('memory_retrieve_batch', {
+  keys: ['findings.search1', 'findings.search2', 'summary.overview'],
+});
+
+// Retrieve all from a tier
+const allRaw = await agent.context.executeTool('memory_retrieve_batch', {
+  tier: 'raw',
+});
+
+// Include metadata
+const withMeta = await agent.context.executeTool('memory_retrieve_batch', {
+  pattern: 'findings.*',
+  includeMetadata: true,
+});
+
+// Result format
+// {
+//   entries: { 'findings.topic1': {...}, 'findings.topic2': {...} },
+//   count: 2,
+//   metadata: { 'findings.topic1': { tier, priority, pinned, description } },
+//   filter: 'pattern:findings.*'
+// }
+```
+
+### Research-Specific Tools
+
+ResearchAgent adds these tools automatically:
+
+| Tool | Description |
+|------|-------------|
+| `research_search` | Search across all configured sources |
+| `research_fetch` | Fetch full content from a source |
+| `research_store_finding` | Store a research finding in memory |
+| `research_list_sources` | List available research sources |
+
+```typescript
+// These tools are available to the LLM during research
+
+// search across sources
+{
+  "name": "research_search",
+  "parameters": {
+    "query": "AI breakthroughs 2026",
+    "sources": ["web-serper"],    // Optional: specific sources
+    "maxResults": 10              // Optional: limit results
+  }
+}
+
+// fetch full content
+{
+  "name": "research_fetch",
+  "parameters": {
+    "source": "web-serper",
+    "reference": "https://example.com/article"
+  }
+}
+
+// store a finding
+{
+  "name": "research_store_finding",
+  "parameters": {
+    "key": "ai_breakthroughs",
+    "content": "Key findings about AI...",
+    "sources": ["https://example.com/article"],
+    "confidence": 0.9
+  }
+}
+```
+
+### Memory Size Configuration
+
+ResearchAgent uses 25MB default memory (configurable) to support large research tasks:
+
+```typescript
+const agent = await ResearchAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  sources: [webSource],
+
+  // Memory configuration
+  memory: {
+    maxSizeBytes: 50 * 1024 * 1024,  // 50MB for very large research
+    softLimitPercent: 80,             // Start eviction at 80%
+  },
+});
+```
+
+### Research Workflow Example
+
+Complete workflow for multi-query research:
+
+```typescript
+import {
+  Connector,
+  ResearchAgent,
+  createWebSearchSource,
+  Vendor,
+  Services,
+} from '@oneringai/agents';
+
+// Setup
+Connector.create({
+  name: 'openai',
+  vendor: Vendor.OpenAI,
+  auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY! },
+});
+
+Connector.create({
+  name: 'serper',
+  serviceType: Services.Serper,
+  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
+  baseURL: 'https://google.serper.dev',
+});
+
+// Create sources
+const webSource = createWebSearchSource('serper');
+
+// Create agent with research-optimized settings
+const agent = await ResearchAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  sources: [webSource],
+  taskType: 'research', // Optimizes memory priorities
+  autoSpill: {
+    sizeThreshold: 10 * 1024,
+  },
+  context: {
+    strategy: 'proactive',
+    autoCompact: true,
+  },
+});
+
+// Define research plan
+const researchPlan = {
+  topic: 'State of AI in Healthcare 2026',
+  queries: [
+    'AI diagnosis accuracy healthcare 2026',
+    'FDA approved AI medical devices 2026',
+    'AI drug discovery breakthroughs',
+    'healthcare AI ethics regulations',
+  ],
+  maxResultsPerQuery: 5,
+};
+
+// Execute research
+const result = await agent.research(researchPlan);
+
+// Access results
+console.log('=== Research Complete ===');
+console.log(`Topic: ${result.topic}`);
+console.log(`Queries processed: ${result.queriesProcessed}`);
+console.log(`Sources used: ${result.sourcesUsed.join(', ')}`);
+console.log('\n=== Findings ===');
+for (const finding of result.findings) {
+  console.log(`- ${finding.key}: ${finding.summary}`);
+}
+
+// Generate final report
+const report = await agent.run(`
+  Based on the research findings in memory, create a comprehensive report
+  about "${researchPlan.topic}".
+
+  Use memory_retrieve_batch with pattern "findings.*" to get all findings.
+  Structure the report with:
+  1. Executive Summary
+  2. Key Developments
+  3. Regulatory Landscape
+  4. Ethical Considerations
+  5. Future Outlook
+`);
+
+console.log('\n=== Final Report ===');
+console.log(report.output_text);
+
+// Cleanup
+await agent.destroy();
+```
+
+### Best Practices
+
+1. **Use Appropriate Sources** - Match source type to research needs (web for news, vector for knowledge bases)
+
+2. **Configure Auto-Spill Threshold** - Set based on your context window; 10KB is good for most models
+
+3. **Use Tiered Memory** - Store raw data in `raw` tier, summaries in `summary`, conclusions in `findings`
+
+4. **Batch Retrieval for Synthesis** - Use `memory_retrieve_batch` to get all findings before final synthesis
+
+5. **Clean Up After Summarization** - Mark raw entries as consumed after creating summaries
+
+6. **Monitor Memory Usage** - Check memory stats if research involves many queries
+
+```typescript
+// Check memory stats
+const stats = agent.getMemoryStats();
+console.log(`Memory: ${stats.usedBytes} / ${stats.maxBytes} bytes`);
+console.log(`Entries: ${stats.entryCount}`);
 ```
 
 ---

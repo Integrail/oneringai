@@ -19,6 +19,7 @@
 - 🎛️ **Dynamic Tool Management** - Enable/disable tools at runtime, namespaces, priority-based selection
 - 💾 **Session Persistence** - Save and resume conversations for all agent types
 - 🤖 **Task Agents** - Autonomous agents with working memory, context management, and state persistence
+- 🔬 **Research Agent** - NEW: Generic research agent with pluggable sources (web, vector, file, API)
 - 🎯 **Context Management** - Smart strategies (proactive, aggressive, lazy, rolling-window, adaptive)
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
@@ -429,7 +430,62 @@ await agent.start({
 - 🔄 **Tool Idempotency** - Prevent duplicate side effects
 - 🔬 **Task Types** - Optimized prompts and priorities for research, coding, and analysis
 
-### 5. Context Management
+### 5. Research Agent (NEW)
+
+A specialized agent for multi-source research with pluggable data sources:
+
+```typescript
+import { ResearchAgent, createWebSearchSource, createFileSearchSource } from '@oneringai/agents';
+
+// Create research sources
+const webSource = createWebSearchSource('serper-main');
+const fileSource = createFileSearchSource('./docs');
+
+// Create research agent
+const agent = await ResearchAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  sources: [webSource, fileSource],
+  autoSpill: {
+    sizeThreshold: 10 * 1024, // Auto-spill outputs > 10KB
+  },
+});
+
+// Execute research
+const result = await agent.research({
+  topic: 'AI developments in 2026',
+  queries: ['latest AI breakthroughs', 'AI regulation updates'],
+  maxResultsPerQuery: 10,
+});
+
+console.log(result.findings); // Processed research findings
+```
+
+**Features:**
+- 🔌 **Pluggable Sources** - Web search, vector databases, file systems, custom APIs
+- 📊 **Auto-Spill** - Large tool outputs automatically stored in memory with tracking
+- 🗑️ **Smart Cleanup** - Raw data evicted after summarization
+- 📦 **Batch Retrieval** - Efficient `memory_retrieve_batch` for synthesis
+- 🏗️ **Tiered Memory** - Raw → Summary → Findings workflow
+- 📈 **25MB Default Memory** - Configurable for large research tasks
+
+**Built-in Sources:**
+- `createWebSearchSource(connector)` - Web search via SearchProvider
+- `createFileSearchSource(path)` - File system search with glob/grep
+
+**Custom Sources:**
+```typescript
+// Implement IResearchSource for custom data sources
+const vectorSource: IResearchSource = {
+  name: 'vector-db',
+  type: 'knowledge',
+  async search(query, options) { /* ... */ },
+  async fetch(reference, options) { /* ... */ },
+  // ...
+};
+```
+
+### 6. Context Management
 
 **AgentContext** is the unified "swiss army knife" for managing agent state. It provides a simple, coordinated API for all context-related operations:
 
@@ -486,7 +542,7 @@ const metrics = await agent.context?.getMetrics();
 - **coding** - Preserves code context, truncates verbose outputs
 - **analysis** - Balanced data and reasoning preservation
 
-### 6. Audio Capabilities (NEW)
+### 7. Audio Capabilities (NEW)
 
 Text-to-Speech and Speech-to-Text with multiple providers:
 
@@ -535,7 +591,7 @@ const english = await stt.translate(frenchAudio);
 - **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-tts`)
 - **STT**: OpenAI (`whisper-1`, `gpt-4o-transcribe`), Groq (`whisper-large-v3` - 12x cheaper!)
 
-### 7. Model Registry
+### 8. Model Registry
 
 Complete metadata for 23+ models:
 
@@ -563,7 +619,7 @@ console.log(`Cached: $${cachedCost}`);  // $0.0293 (90% discount)
 - **Anthropic (5)**: Claude 4.5 series, Claude 4.x
 - **Google (7)**: Gemini 3, Gemini 2.5
 
-### 8. Streaming
+### 9. Streaming
 
 Real-time responses:
 
@@ -575,7 +631,7 @@ for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
 }
 ```
 
-### 9. OAuth for External APIs
+### 10. OAuth for External APIs
 
 ```typescript
 import { OAuthManager, FileStorage } from '@oneringai/agents';
@@ -592,7 +648,7 @@ const oauth = new OAuthManager({
 const authUrl = await oauth.startAuthFlow('user123');
 ```
 
-### 10. Developer Tools (NEW)
+### 11. Developer Tools (NEW)
 
 File system and shell tools for building coding assistants:
 
@@ -634,7 +690,7 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
-### 11. External API Integration (NEW)
+### 12. External API Integration (NEW)
 
 Connect your AI agents to 35+ external services with enterprise-grade resilience:
 

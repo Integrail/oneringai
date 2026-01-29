@@ -497,6 +497,7 @@ export function forPlan(
  * Default configuration values
  */
 export const DEFAULT_MEMORY_CONFIG: WorkingMemoryConfig = {
+  maxSizeBytes: 25 * 1024 * 1024, // 25MB default
   descriptionMaxLength: 150,
   softLimitPercent: 80,
   contextAllocationPercent: 20,

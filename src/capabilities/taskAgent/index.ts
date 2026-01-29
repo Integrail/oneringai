@@ -47,6 +47,8 @@ export {
   memoryRetrieveDefinition,
   memoryDeleteDefinition,
   memoryListDefinition,
+  memoryCleanupRawDefinition,
+  memoryRetrieveBatchDefinition,
 } from './memoryTools.js';
 
 export { createContextTools } from './contextTools.js';

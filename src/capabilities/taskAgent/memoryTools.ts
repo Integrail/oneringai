@@ -167,6 +167,61 @@ export const memoryCleanupRawDefinition: FunctionToolDefinition = {
 };
 
 /**
+ * Tool definition for memory_retrieve_batch
+ */
+export const memoryRetrieveBatchDefinition: FunctionToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'memory_retrieve_batch',
+    description: `Retrieve multiple memory entries at once. More efficient than multiple memory_retrieve calls.
+
+Use this for:
+- Getting all findings before synthesis: pattern="findings.*"
+- Getting specific entries by keys: keys=["findings.search1", "findings.search2"]
+- Getting all entries from a tier: tier="findings"
+
+Returns all matching entries with their full values in one call.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'Glob-like pattern to match keys (e.g., "findings.*", "search.*", "*"). Supports * as wildcard.',
+        },
+        keys: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific keys to retrieve. Use this when you know exact keys.',
+        },
+        tier: {
+          type: 'string',
+          enum: ['raw', 'summary', 'findings'],
+          description: 'Retrieve all entries from a specific tier.',
+        },
+        includeMetadata: {
+          type: 'boolean',
+          description: 'If true, include metadata (priority, tier, pinned) with each entry. Default: false.',
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+/**
+ * Match a key against a glob-like pattern
+ * Supports * as wildcard (matches any characters)
+ */
+function matchPattern(key: string, pattern: string): boolean {
+  // Convert glob pattern to regex
+  const regexPattern = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // Escape special regex chars except *
+    .replace(/\*/g, '.*'); // Convert * to .*
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(key);
+}
+
+/**
  * Create all memory tools
  */
 export function createMemoryTools(): ToolFunction[] {
@@ -349,6 +404,91 @@ export function createMemoryTools(): ToolFunction[] {
       idempotency: { safe: true },
       output: { expectedSize: 'small' },
       describeCall: (args) => `${(args.keys as string[]).length} keys`,
+    },
+
+    // memory_retrieve_batch
+    {
+      definition: memoryRetrieveBatchDefinition,
+      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+        if (!context || !context.memory) {
+          throw new ToolExecutionError('memory_retrieve_batch', 'Memory tools require TaskAgent context');
+        }
+
+        const pattern = args.pattern as string | undefined;
+        const keys = args.keys as string[] | undefined;
+        const tier = args.tier as MemoryTier | undefined;
+        const includeMetadata = args.includeMetadata as boolean | undefined;
+
+        // Get all entries to match against
+        const allEntries = await context.memory.list();
+
+        // Determine which keys to retrieve
+        let keysToRetrieve: string[] = [];
+
+        if (keys && keys.length > 0) {
+          // Explicit keys provided
+          keysToRetrieve = keys;
+        } else if (pattern) {
+          // Pattern matching
+          keysToRetrieve = allEntries
+            .filter((e) => matchPattern(e.key, pattern))
+            .map((e) => e.key);
+        } else if (tier) {
+          // Tier filter
+          const prefix = `${tier}.`;
+          keysToRetrieve = allEntries
+            .filter((e) => e.key.startsWith(prefix))
+            .map((e) => e.key);
+        } else {
+          // No filter - return all
+          keysToRetrieve = allEntries.map((e) => e.key);
+        }
+
+        // Retrieve all values
+        const results: Record<string, unknown> = {};
+        const metadata: Record<string, { tier: string; priority: string; pinned: boolean; description: string }> = {};
+        const notFound: string[] = [];
+
+        for (const key of keysToRetrieve) {
+          const value = await context.memory.get(key);
+          if (value !== undefined) {
+            results[key] = value;
+
+            if (includeMetadata) {
+              const entry = allEntries.find((e) => e.key === key);
+              if (entry) {
+                metadata[key] = {
+                  tier: getTierFromKey(key) ?? 'none',
+                  priority: entry.effectivePriority ?? 'normal',
+                  pinned: entry.pinned ?? false,
+                  description: entry.description,
+                };
+              }
+            }
+          } else {
+            notFound.push(key);
+          }
+        }
+
+        return {
+          entries: results,
+          count: Object.keys(results).length,
+          ...(includeMetadata ? { metadata } : {}),
+          ...(notFound.length > 0 ? { notFound } : {}),
+          filter: pattern ? `pattern:${pattern}` : tier ? `tier:${tier}` : keys ? `keys:${keys.length}` : 'all',
+        };
+      },
+      idempotency: { safe: true },
+      output: { expectedSize: 'variable' },
+      describeCall: (args) => {
+        const pattern = args.pattern as string | undefined;
+        const keys = args.keys as string[] | undefined;
+        const tier = args.tier as string | undefined;
+        if (pattern) return `pattern:${pattern}`;
+        if (tier) return `tier:${tier}`;
+        if (keys) return `${keys.length} keys`;
+        return 'all';
+      },
     },
   ];
 }

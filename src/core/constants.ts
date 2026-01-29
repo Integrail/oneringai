@@ -118,8 +118,8 @@ export const ROLLING_WINDOW_DEFAULTS = {
  * Working memory configuration
  */
 export const MEMORY_DEFAULTS = {
-  /** Default maximum memory size in bytes (1MB) */
-  MAX_SIZE_BYTES: 1_048_576,
+  /** Default maximum memory size in bytes (25MB) */
+  MAX_SIZE_BYTES: 25 * 1024 * 1024,
 
   /** Soft limit percentage to trigger warnings */
   SOFT_LIMIT_PERCENT: 80,

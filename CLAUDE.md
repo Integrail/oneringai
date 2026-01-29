@@ -66,6 +66,7 @@ const Vendor = { OpenAI, Anthropic, Google, GoogleVertex, Groq, Together, Grok, 
 | **Agent** | Basic agentic loop | `src/core/Agent.ts` |
 | **TaskAgent** | Task-based with plans, memory, checkpoints | `src/capabilities/taskAgent/TaskAgent.ts` |
 | **UniversalAgent** | Interactive + planning + executing modes | `src/capabilities/universalAgent/UniversalAgent.ts` |
+| **ResearchAgent** | Generic research with pluggable sources | `src/capabilities/researchAgent/ResearchAgent.ts` |
 
 All extend **BaseAgent** and share unified tool management (`agent.tools === agent.context.tools`).
 
@@ -88,7 +89,7 @@ src/
 │   ├── context/                # Context management
 │   │   ├── ContextManager.ts, types.ts
 │   │   ├── strategies/         # Proactive, Aggressive, Lazy, RollingWindow, Adaptive
-│   │   └── plugins/            # MemoryPlugin, PlanPlugin, ToolOutputPlugin
+│   │   └── plugins/            # MemoryPlugin, PlanPlugin, ToolOutputPlugin, AutoSpillPlugin
 │   ├── history/                # ConversationHistoryManager
 │   ├── permissions/            # ToolPermissionManager
 │   └── mcp/                    # MCPClient, MCPRegistry
@@ -102,6 +103,7 @@ src/
 │   ├── agents/                 # AgenticLoop.ts, HookManager.ts
 │   ├── taskAgent/              # TaskAgent, WorkingMemory, PlanExecutor, memoryTools
 │   ├── universalAgent/         # UniversalAgent, ModeManager, metaTools
+│   ├── researchAgent/          # ResearchAgent, IResearchSource, WebSearchSource, FileSearchSource
 │   ├── search/                 # SearchProvider (Serper, Brave, Tavily, RapidAPI)
 │   ├── scrape/                 # ScrapeProvider (ZenRows)
 │   ├── images/                 # ImageGeneration
@@ -155,7 +157,7 @@ toolManager.setCircuitBreakerConfig('tool', { failureThreshold: 3, resetTimeoutM
 | CONTEXT_DEFAULTS | MAX_TOKENS=128000, COMPACTION_THRESHOLD=0.75 |
 | AGENT_DEFAULTS | MAX_ITERATIONS=10, DEFAULT_TEMPERATURE=0.7 |
 | CIRCUIT_BREAKER_DEFAULTS | FAILURE_THRESHOLD=5, RESET_TIMEOUT_MS=60000 |
-| MEMORY_DEFAULTS | MAX_SIZE_BYTES=1MB, SOFT_LIMIT_PERCENT=80 |
+| MEMORY_DEFAULTS | MAX_SIZE_BYTES=25MB, SOFT_LIMIT_PERCENT=80 |
 
 ## Context Management Strategies
 
@@ -190,6 +192,66 @@ type TaskAwareScope = { type: 'session' } | { type: 'plan' } | { type: 'persiste
 ```typescript
 const info = getModelInfo('gpt-5.2');
 const cost = calculateCost('gpt-5.2-thinking', inputTokens, outputTokens);
+```
+
+## ResearchAgent (NEW)
+
+Generic research agent supporting any data sources (web, vector, file, API, etc.):
+
+```typescript
+import { ResearchAgent, createWebSearchSource, createFileSearchSource } from '@oneringai/agents';
+
+// Create sources (implements IResearchSource)
+const webSource = createWebSearchSource('serper-main');
+const fileSource = createFileSearchSource('./docs');
+
+// Create research agent
+const agent = ResearchAgent.create({
+  connector: 'openai',
+  model: 'gpt-4-turbo',
+  sources: [webSource, fileSource],
+});
+
+// Built-in research tools: research_search, research_fetch, research_store_finding, research_list_sources
+```
+
+### IResearchSource Interface
+
+```typescript
+interface IResearchSource {
+  name: string;
+  description: string;
+  type: 'web' | 'vector' | 'file' | 'api' | 'database' | 'custom';
+  search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+  fetch(reference: string, options?: FetchOptions): Promise<FetchedContent>;
+}
+```
+
+### AutoSpillPlugin
+
+Automatically spills large tool outputs to memory:
+
+```typescript
+const autoSpill = new AutoSpillPlugin(memory, {
+  sizeThreshold: 10 * 1024,  // 10KB
+  toolPatterns: [/^web_fetch/, /^research_/],
+});
+
+// Integrated with ResearchAgent automatically
+// Manual usage: autoSpill.onToolOutput(toolName, output)
+// Cleanup: await autoSpill.cleanupConsumed()
+```
+
+### memory_retrieve_batch Tool
+
+Efficient batch retrieval of memory entries:
+
+```typescript
+// Pattern matching
+await memory_retrieve_batch({ pattern: 'findings.*' });
+
+// By tier
+await memory_retrieve_batch({ tier: 'findings', includeMetadata: true });
 ```
 
 ## MCP Integration

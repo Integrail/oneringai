@@ -896,7 +896,7 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements 
    * Get the configured memory limit
    */
   getLimit(): number {
-    return this.config.maxSizeBytes ?? 512 * 1024; // Default 512KB
+    return this.config.maxSizeBytes ?? 25 * 1024 * 1024; // Default 25MB
   }
 
   /**

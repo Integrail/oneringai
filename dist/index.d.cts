@@ -3814,7 +3814,7 @@ interface SearchResult {
 /**
  * Search options
  */
-interface SearchOptions {
+interface SearchOptions$1 {
     /** Number of results to return (default: 10, max provider-specific) */
     numResults?: number;
     /** Language code (e.g., 'en', 'fr') */
@@ -3829,7 +3829,7 @@ interface SearchOptions {
 /**
  * Search response
  */
-interface SearchResponse {
+interface SearchResponse$1 {
     /** Whether the search succeeded */
     success: boolean;
     /** Search query */
@@ -3856,7 +3856,7 @@ interface ISearchProvider {
      * @param query - Search query string
      * @param options - Search options
      */
-    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+    search(query: string, options?: SearchOptions$1): Promise<SearchResponse$1>;
 }
 /**
  * SearchProvider factory configuration
@@ -3886,7 +3886,7 @@ declare class SerperProvider implements ISearchProvider {
     readonly connector: Connector;
     readonly name = "serper";
     constructor(connector: Connector);
-    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+    search(query: string, options?: SearchOptions$1): Promise<SearchResponse$1>;
 }
 
 /**
@@ -3898,7 +3898,7 @@ declare class BraveProvider implements ISearchProvider {
     readonly connector: Connector;
     readonly name = "brave";
     constructor(connector: Connector);
-    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+    search(query: string, options?: SearchOptions$1): Promise<SearchResponse$1>;
 }
 
 /**
@@ -3910,7 +3910,7 @@ declare class TavilyProvider implements ISearchProvider {
     readonly connector: Connector;
     readonly name = "tavily";
     constructor(connector: Connector);
-    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+    search(query: string, options?: SearchOptions$1): Promise<SearchResponse$1>;
 }
 
 /**
@@ -3922,7 +3922,7 @@ declare class RapidAPIProvider implements ISearchProvider {
     readonly connector: Connector;
     readonly name = "rapidapi";
     constructor(connector: Connector);
-    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+    search(query: string, options?: SearchOptions$1): Promise<SearchResponse$1>;
 }
 
 /**
@@ -5635,6 +5635,492 @@ declare class PlanningAgent {
  * Simple plan generation without tools (fallback)
  */
 declare function generateSimplePlan(goal: string, context?: string): Promise<Plan>;
+
+/**
+ * AutoSpillPlugin - Automatically spills large tool outputs to memory
+ *
+ * This plugin monitors tool outputs and automatically stores large results
+ * in working memory's raw tier. This prevents context overflow while keeping
+ * data available for later retrieval.
+ *
+ * Features:
+ * - Configurable size threshold for auto-spill
+ * - Tracks spilled entries with source metadata
+ * - Provides cleanup methods (manual and auto on summarization)
+ * - Integrates with WorkingMemory's hierarchical tier system
+ */
+
+/**
+ * Auto-spill configuration
+ */
+interface AutoSpillConfig {
+    /** Minimum size (bytes) to trigger auto-spill. Default: 10KB */
+    sizeThreshold?: number;
+    /** Tools to auto-spill. If not provided, uses toolPatterns or spills all large outputs */
+    tools?: string[];
+    /** Regex patterns for tools to auto-spill (e.g., /^web_/ for all web tools) */
+    toolPatterns?: RegExp[];
+    /** Maximum entries to track (oldest are cleaned up). Default: 100 */
+    maxTrackedEntries?: number;
+    /** Auto-cleanup consumed entries after this many iterations. Default: 5 */
+    autoCleanupAfterIterations?: number;
+    /** Key prefix for spilled entries. Default: 'autospill' */
+    keyPrefix?: string;
+}
+
+/**
+ * ResearchAgent Types
+ *
+ * Generic interfaces for research sources that work with any data provider:
+ * - Web search (Serper, Brave, Tavily)
+ * - Vector databases (Pinecone, Weaviate, Qdrant)
+ * - File systems (local, S3, GCS)
+ * - APIs (REST, GraphQL)
+ * - Databases (SQL, MongoDB)
+ */
+/**
+ * A single search result from any source
+ */
+interface SourceResult {
+    /** Unique identifier for this result */
+    id: string;
+    /** Human-readable title */
+    title: string;
+    /** Brief description or snippet */
+    snippet: string;
+    /** Reference for fetching full content (URL, path, ID, etc.) */
+    reference: string;
+    /** Relevance score (0-1, higher is better) */
+    relevance?: number;
+    /** Source-specific metadata */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Response from a search operation
+ */
+interface SearchResponse {
+    /** Whether the search succeeded */
+    success: boolean;
+    /** Original query */
+    query: string;
+    /** Results found */
+    results: SourceResult[];
+    /** Total results available (may be more than returned) */
+    totalResults?: number;
+    /** Error message if failed */
+    error?: string;
+    /** Source-specific metadata */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Fetched content from a source
+ */
+interface FetchedContent {
+    /** Whether fetch succeeded */
+    success: boolean;
+    /** Reference that was fetched */
+    reference: string;
+    /** The actual content */
+    content: unknown;
+    /** Content type hint (text, html, json, binary, etc.) */
+    contentType?: string;
+    /** Size in bytes */
+    sizeBytes?: number;
+    /** Error message if failed */
+    error?: string;
+    /** Source-specific metadata */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Options for search operations
+ */
+interface SearchOptions {
+    /** Maximum results to return */
+    maxResults?: number;
+    /** Minimum relevance score (0-1) */
+    minRelevance?: number;
+    /** Source-specific options */
+    sourceOptions?: Record<string, unknown>;
+}
+/**
+ * Options for fetch operations
+ */
+interface FetchOptions {
+    /** Maximum content size to fetch (bytes) */
+    maxSize?: number;
+    /** Timeout in milliseconds */
+    timeoutMs?: number;
+    /** Source-specific options */
+    sourceOptions?: Record<string, unknown>;
+}
+/**
+ * Generic research source interface
+ *
+ * Implement this interface to add any data source to ResearchAgent:
+ * - Web: search queries, fetch URLs
+ * - Vector DB: similarity search, fetch documents
+ * - File system: glob patterns, read files
+ * - API: query endpoints, fetch resources
+ */
+interface IResearchSource {
+    /** Unique name for this source */
+    readonly name: string;
+    /** Human-readable description */
+    readonly description: string;
+    /** Type of source (for categorization) */
+    readonly type: 'web' | 'vector' | 'file' | 'api' | 'database' | 'custom';
+    /**
+     * Search this source for relevant results
+     *
+     * @param query - Search query (interpreted by source)
+     * @param options - Search options
+     * @returns Search response with results
+     */
+    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+    /**
+     * Fetch full content for a result
+     *
+     * @param reference - Reference from SourceResult
+     * @param options - Fetch options
+     * @returns Fetched content
+     */
+    fetch(reference: string, options?: FetchOptions): Promise<FetchedContent>;
+    /**
+     * Optional: Check if source is available/configured
+     */
+    isAvailable?(): Promise<boolean>;
+    /**
+     * Optional: Get source capabilities
+     */
+    getCapabilities?(): SourceCapabilities;
+}
+/**
+ * Source capabilities for discovery
+ */
+interface SourceCapabilities {
+    /** Whether source supports search */
+    canSearch: boolean;
+    /** Whether source supports fetch */
+    canFetch: boolean;
+    /** Whether results include relevance scores */
+    hasRelevanceScores: boolean;
+    /** Maximum results per search */
+    maxResultsPerSearch?: number;
+    /** Supported content types */
+    contentTypes?: string[];
+}
+/**
+ * Research finding stored in memory
+ */
+interface ResearchFinding {
+    /** Source that provided this finding */
+    source: string;
+    /** Original query that found this */
+    query: string;
+    /** Key insight or summary */
+    summary: string;
+    /** Supporting details */
+    details?: string;
+    /** References used */
+    references: string[];
+    /** Confidence level (0-1) */
+    confidence?: number;
+    /** When this was found */
+    timestamp: number;
+}
+/**
+ * Research plan for systematic research
+ */
+interface ResearchPlan {
+    /** Research goal/question */
+    goal: string;
+    /** Queries to execute */
+    queries: ResearchQuery[];
+    /** Sources to use (empty = all available) */
+    sources?: string[];
+    /** Maximum results per query */
+    maxResultsPerQuery?: number;
+    /** Maximum total findings */
+    maxTotalFindings?: number;
+}
+/**
+ * A query in the research plan
+ */
+interface ResearchQuery {
+    /** Query string */
+    query: string;
+    /** Specific sources for this query (empty = all) */
+    sources?: string[];
+    /** Priority (higher = more important) */
+    priority?: number;
+}
+/**
+ * Research execution result
+ */
+interface ResearchResult {
+    /** Whether research completed successfully */
+    success: boolean;
+    /** Original goal */
+    goal: string;
+    /** Queries executed */
+    queriesExecuted: number;
+    /** Results found */
+    resultsFound: number;
+    /** Results processed */
+    resultsProcessed: number;
+    /** Findings generated */
+    findingsCount: number;
+    /** Final synthesis (if generated) */
+    synthesis?: string;
+    /** Error if failed */
+    error?: string;
+    /** Execution metrics */
+    metrics?: {
+        totalDurationMs: number;
+        searchDurationMs: number;
+        processDurationMs: number;
+        synthesizeDurationMs: number;
+    };
+}
+/**
+ * Research progress event
+ */
+interface ResearchProgress {
+    phase: 'searching' | 'processing' | 'synthesizing' | 'complete';
+    currentQuery?: string;
+    currentSource?: string;
+    queriesCompleted: number;
+    totalQueries: number;
+    resultsProcessed: number;
+    totalResults: number;
+    findingsGenerated: number;
+}
+
+/**
+ * ResearchAgent - Generic research agent supporting any data sources
+ *
+ * Extends TaskAgent with research-specific capabilities:
+ * - Multiple configurable sources (web, vector, file, API, etc.)
+ * - Automatic memory management (spill large outputs, cleanup raw data)
+ * - Research-specific tools for source interaction
+ * - Built-in research protocol with search → process → synthesize phases
+ *
+ * Design principles:
+ * - DRY: Reuses TaskAgent, AgentContext, WorkingMemory
+ * - Generic: Works with any IResearchSource implementation
+ * - LLM-driven: Agent decides how to use sources, not hardcoded flow
+ */
+
+/**
+ * Research-specific hooks
+ */
+interface ResearchAgentHooks extends TaskAgentHooks {
+    /** Called when a source search completes */
+    onSearchComplete?: (source: string, query: string, resultCount: number) => Promise<void>;
+    /** Called when content is fetched */
+    onContentFetched?: (source: string, reference: string, sizeBytes: number) => Promise<void>;
+    /** Called when a finding is stored */
+    onFindingStored?: (key: string, finding: ResearchFinding) => Promise<void>;
+    /** Called on research progress updates */
+    onProgress?: (progress: ResearchProgress) => Promise<void>;
+}
+/**
+ * ResearchAgent configuration
+ */
+interface ResearchAgentConfig extends Omit<TaskAgentConfig, 'hooks'> {
+    /** Research sources to use */
+    sources: IResearchSource[];
+    /** Default search options for all sources */
+    defaultSearchOptions?: SearchOptions;
+    /** Default fetch options for all sources */
+    defaultFetchOptions?: FetchOptions;
+    /** Auto-spill configuration */
+    autoSpill?: AutoSpillConfig;
+    /** Research-specific hooks */
+    hooks?: ResearchAgentHooks;
+    /** Auto-summarize fetched content above this size (bytes). Default: 20KB */
+    autoSummarizeThreshold?: number;
+    /** Include research-specific tools. Default: true */
+    includeResearchTools?: boolean;
+}
+/**
+ * ResearchAgent - extends TaskAgent with research capabilities
+ */
+declare class ResearchAgent extends TaskAgent {
+    private sources;
+    private autoSpillPlugin?;
+    private researchHooks?;
+    private defaultSearchOptions;
+    private defaultFetchOptions;
+    /**
+     * Create a new ResearchAgent
+     */
+    static create(config: ResearchAgentConfig): ResearchAgent;
+    /**
+     * Initialize research-specific components
+     */
+    private initializeResearch;
+    /**
+     * Setup automatic memory management
+     */
+    private setupAutoMemoryManagement;
+    /**
+     * Get all registered sources
+     */
+    getSources(): IResearchSource[];
+    /**
+     * Get a specific source by name
+     */
+    getSource(name: string): IResearchSource | undefined;
+    /**
+     * Add a source at runtime
+     */
+    addSource(source: IResearchSource): void;
+    /**
+     * Remove a source
+     */
+    removeSource(name: string): boolean;
+    /**
+     * Search across all sources (or specified sources)
+     */
+    searchSources(query: string, options?: SearchOptions & {
+        sources?: string[];
+    }): Promise<Map<string, Awaited<ReturnType<IResearchSource['search']>>>>;
+    /**
+     * Fetch content from a specific source
+     */
+    fetchFromSource(sourceName: string, reference: string, options?: FetchOptions): Promise<ReturnType<IResearchSource['fetch']>>;
+    /**
+     * Store a research finding in memory
+     */
+    storeFinding(key: string, finding: ResearchFinding): Promise<void>;
+    /**
+     * Get all stored findings
+     */
+    getFindings(): Promise<Record<string, ResearchFinding>>;
+    /**
+     * Cleanup raw data that has been processed
+     * Call this after creating summaries/findings from raw content
+     */
+    cleanupProcessedRaw(rawKeys: string[]): Promise<number>;
+    /**
+     * Execute a research plan
+     * This is a high-level orchestration method that can be used
+     * for structured research, or the LLM can drive research via tools
+     */
+    executeResearchPlan(plan: ResearchPlan): Promise<ResearchResult>;
+    /**
+     * Get auto-spill statistics
+     */
+    getAutoSpillStats(): {
+        totalSpilled: number;
+        consumed: number;
+        unconsumed: number;
+        totalSizeBytes: number;
+    };
+    destroy(): Promise<void>;
+}
+/**
+ * Create research-specific tools for source interaction
+ * These tools use closure over the sources and config rather than accessing agent from context
+ */
+declare function createResearchTools(sources: IResearchSource[]): ToolFunction[];
+
+/**
+ * WebSearchSource - Web search research source using SearchProvider
+ *
+ * Bridges the existing SearchProvider/webFetch infrastructure to IResearchSource.
+ */
+
+/**
+ * Web search source configuration
+ */
+interface WebSearchSourceConfig {
+    /** Source name (e.g., 'web-serper', 'web-brave') */
+    name: string;
+    /** Description */
+    description?: string;
+    /** Connector name or instance for search */
+    searchConnector: string | Connector;
+    /** Optional: Connector for fetching (if different from search) */
+    fetchConnector?: string | Connector;
+    /** Default country code */
+    defaultCountry?: string;
+    /** Default language */
+    defaultLanguage?: string;
+}
+/**
+ * WebSearchSource - Uses SearchProvider for web search
+ */
+declare class WebSearchSource implements IResearchSource {
+    readonly name: string;
+    readonly description: string;
+    readonly type: "web";
+    private searchProvider;
+    private defaultCountry?;
+    private defaultLanguage?;
+    constructor(config: WebSearchSourceConfig);
+    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+    fetch(reference: string, options?: FetchOptions): Promise<FetchedContent>;
+    isAvailable(): Promise<boolean>;
+    getCapabilities(): SourceCapabilities;
+}
+/**
+ * Create a web search source from a connector name
+ */
+declare function createWebSearchSource(connectorName: string, options?: Partial<WebSearchSourceConfig>): WebSearchSource;
+
+/**
+ * FileSearchSource - File system research source
+ *
+ * Enables research across local or remote file systems using glob patterns and grep.
+ */
+
+/**
+ * File search source configuration
+ */
+interface FileSearchSourceConfig {
+    /** Source name */
+    name: string;
+    /** Description */
+    description?: string;
+    /** Base directory for searches */
+    basePath: string;
+    /** File patterns to include (glob) */
+    includePatterns?: string[];
+    /** File patterns to exclude (glob) */
+    excludePatterns?: string[];
+    /** Maximum file size to read (bytes) */
+    maxFileSize?: number;
+    /** Search mode: 'filename' (match filenames), 'content' (grep-like), 'both' */
+    searchMode?: 'filename' | 'content' | 'both';
+}
+/**
+ * FileSearchSource - Search and read files
+ */
+declare class FileSearchSource implements IResearchSource {
+    readonly name: string;
+    readonly description: string;
+    readonly type: "file";
+    private basePath;
+    private includePatterns;
+    private excludePatterns;
+    private maxFileSize;
+    private searchMode;
+    constructor(config: FileSearchSourceConfig);
+    search(query: string, options?: SearchOptions): Promise<SearchResponse>;
+    fetch(reference: string, options?: FetchOptions): Promise<FetchedContent>;
+    isAvailable(): Promise<boolean>;
+    getCapabilities(): SourceCapabilities;
+    private matchesQuery;
+    private calculateRelevance;
+    private findContentMatch;
+    private getContentType;
+}
+/**
+ * Create a file search source
+ */
+declare function createFileSearchSource(basePath: string, options?: Partial<FileSearchSourceConfig>): FileSearchSource;
 
 /**
  * Result of a compaction operation
@@ -9711,4 +10197,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContext, type AgentContextConfig, type AgentContextEvents, type HistoryMessage$1 as AgentContextHistoryMessage, type AgentContextMetrics, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, ConnectorTools, ConsoleMetrics, ContextBudget, ContextManagerConfig, ConversationHistoryManager, type ConversationHistoryManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DependencyCycleError, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, IContextCompactor, IContextComponent, IContextStrategy, IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMCPClient, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator, ITokenStorage, IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, ParallelTasksError, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, PlanningAgent, type PlanningAgentConfig, PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedAgentContextState, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, TokenContentType, Tool, ToolCall, type ToolCallRecord, type ToolCondition, ToolContext, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, toConnectorOptions, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContext, type AgentContextConfig, type AgentContextEvents, type HistoryMessage$1 as AgentContextHistoryMessage, type AgentContextMetrics, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, ConnectorTools, ConsoleMetrics, ContextBudget, ContextManagerConfig, ConversationHistoryManager, type ConversationHistoryManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DependencyCycleError, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileConnectorStorage, type FileConnectorStorageConfig, FileSearchSource, type FileSearchSourceConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, IContextCompactor, IContextComponent, IContextStrategy, IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMCPClient, type IMemoryStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator, ITokenStorage, IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, ParallelTasksError, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, PlanningAgent, type PlanningAgentConfig, PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, ResearchAgent, type ResearchAgentConfig, type ResearchAgentHooks, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedAgentContextState, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, TokenContentType, Tool, ToolCall, type ToolCallRecord, type ToolCondition, ToolContext, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, WebSearchSource, type WebSearchSourceConfig, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, toConnectorOptions, index as tools, updateTaskStatus, validatePath, writeFile };

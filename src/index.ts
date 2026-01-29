@@ -189,6 +189,34 @@ export type {
 } from './capabilities/taskAgent/index.js';
 export { DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY } from './capabilities/taskAgent/index.js';
 
+// ============ ResearchAgent (Generic Research Capabilities) ============
+export {
+  ResearchAgent,
+  createResearchTools,
+  WebSearchSource,
+  createWebSearchSource,
+  FileSearchSource,
+  createFileSearchSource,
+} from './capabilities/researchAgent/index.js';
+export type {
+  ResearchAgentConfig,
+  ResearchAgentHooks,
+  IResearchSource,
+  SourceResult,
+  SearchResponse as ResearchSearchResponse,
+  FetchedContent,
+  SearchOptions as ResearchSearchOptions,
+  FetchOptions as ResearchFetchOptions,
+  SourceCapabilities,
+  ResearchFinding,
+  ResearchPlan,
+  ResearchQuery,
+  ResearchResult,
+  ResearchProgress,
+  WebSearchSourceConfig,
+  FileSearchSourceConfig,
+} from './capabilities/researchAgent/index.js';
+
 // ============ Context Management (Universal) ============
 export { ContextManager } from './core/context/index.js';
 export type {

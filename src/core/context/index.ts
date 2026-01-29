@@ -60,6 +60,7 @@ export {
   PlanPlugin,
   MemoryPlugin,
   ToolOutputPlugin,
+  AutoSpillPlugin,
 } from './plugins/index.js';
 
 // Type exports
@@ -70,5 +71,9 @@ export type {
   ToolOutput,
   SerializedToolOutputState,
   ToolOutputPluginConfig,
+  SpilledEntry,
+  AutoSpillConfig,
+  SerializedAutoSpillState,
+  AutoSpillEvents,
 } from './plugins/index.js';
 

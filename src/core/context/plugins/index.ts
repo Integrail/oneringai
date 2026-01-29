@@ -26,3 +26,11 @@ export type {
   SerializedToolOutputState,
   ToolOutputPluginConfig,
 } from './ToolOutputPlugin.js';
+
+export { AutoSpillPlugin } from './AutoSpillPlugin.js';
+export type {
+  SpilledEntry,
+  AutoSpillConfig,
+  SerializedAutoSpillState,
+  AutoSpillEvents,
+} from './AutoSpillPlugin.js';
