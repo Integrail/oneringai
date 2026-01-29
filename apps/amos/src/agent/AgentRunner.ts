@@ -2,16 +2,22 @@
  * AgentRunner - Wrapper around UniversalAgent for AMOS
  *
  * Provides a simplified interface for the app to interact with the agent.
+ *
+ * Phase 1 Improvements:
+ * - Extracted permission config building to permissionUtils.ts (DRY)
+ * - Added proper types from library (UniversalResponse, UniversalEvent)
+ * - Type-safe response and event mapping
  */
 
 import {
   UniversalAgent,
   FileSessionStorage,
   type ToolFunction,
-  type UniversalAgentConfig,
-  type AgentPermissionsConfig,
-  type PermissionCheckContext,
   type ApprovalDecision,
+  type UniversalResponse,
+  type UniversalEvent,
+  type AgentMode,
+  type UniversalAgentContextAccess,
 } from '@oneringai/agents';
 import type {
   IAgentRunner,
@@ -20,7 +26,15 @@ import type {
   AmosConfig,
   TokenUsage,
   ToolApprovalContext,
+  TaskInfo,
+  ContextMetrics,
+  HistoryEntry,
+  ContextBudgetInfo,
+  ContextBreakdownInfo,
+  CacheStatsInfo,
+  MemoryEntryInfo,
 } from '../config/types.js';
+import { buildPermissionsConfig } from './permissionUtils.js';
 
 export class AgentRunner implements IAgentRunner {
   private agent: UniversalAgent | null = null;
@@ -34,7 +48,6 @@ export class AgentRunner implements IAgentRunner {
   private _instructions: string | null = null;
 
   // For interactive tool approval
-  private _pendingApprovalResolve: ((decision: ApprovalDecision) => void) | null = null;
   private _onApprovalRequired: ((context: ToolApprovalContext) => Promise<ApprovalDecision>) | null = null;
 
   constructor(
@@ -84,31 +97,12 @@ export class AgentRunner implements IAgentRunner {
         }
       : undefined;
 
+    // Build permissions config using shared utility (DRY - Phase 1.1)
+    const permissionsConfig = buildPermissionsConfig(this.config, this._onApprovalRequired ?? undefined);
+
     // If we have a session to resume, use resume method
     if (this.config.session.activeSessionId && sessionConfig) {
       try {
-        // Build permissions config for resume
-        const resumePermissionsConfig: AgentPermissionsConfig = {
-          defaultScope: this.config.permissions.defaultScope,
-          defaultRiskLevel: this.config.permissions.defaultRiskLevel,
-          allowlist: this.config.permissions.allowlist,
-          blocklist: this.config.permissions.blocklist,
-          tools: this.config.permissions.toolOverrides,
-          onApprovalRequired: this.config.permissions.promptForApproval
-            ? async (context: PermissionCheckContext): Promise<ApprovalDecision> => {
-                if (this._onApprovalRequired) {
-                  return this._onApprovalRequired({
-                    toolName: context.toolCall.function.name,
-                    args: context.toolCall.function.arguments,
-                    riskLevel: context.config?.riskLevel,
-                    reason: context.config?.approvalMessage || 'Tool requires approval',
-                  });
-                }
-                return { approved: true, scope: 'session' };
-              }
-            : undefined,
-        };
-
         this.agent = await UniversalAgent.resume(
           this.config.session.activeSessionId,
           {
@@ -123,7 +117,7 @@ export class AgentRunner implements IAgentRunner {
               requireApproval: this.config.planning.requireApproval,
             },
             session: sessionConfig,
-            permissions: resumePermissionsConfig,
+            permissions: permissionsConfig,
           }
         );
         return;
@@ -132,50 +126,21 @@ export class AgentRunner implements IAgentRunner {
       }
     }
 
-    // Build permissions config from app config
-    const permissionsConfig: AgentPermissionsConfig = {
-      defaultScope: this.config.permissions.defaultScope,
-      defaultRiskLevel: this.config.permissions.defaultRiskLevel,
-      allowlist: this.config.permissions.allowlist,
-      blocklist: this.config.permissions.blocklist,
-      tools: this.config.permissions.toolOverrides,
-      onApprovalRequired: this.config.permissions.promptForApproval
-        ? async (context: PermissionCheckContext): Promise<ApprovalDecision> => {
-            // If we have an approval handler set, use it
-            if (this._onApprovalRequired) {
-              return this._onApprovalRequired({
-                toolName: context.toolCall.function.name,
-                args: context.toolCall.function.arguments,
-                riskLevel: context.config?.riskLevel,
-                reason: context.config?.approvalMessage || 'Tool requires approval',
-              });
-            }
-            // Default: approve with session scope
-            return { approved: true, scope: 'session' };
-          }
-        : undefined,
-    };
-
-    // Create new agent
-    const agentConfig: UniversalAgentConfig = {
+    // Create new agent with shared permissions config
+    this.agent = UniversalAgent.create({
       connector: connectorName,
       model: model,
       tools: this.tools,
       temperature: this._currentTemperature,
       instructions: this._instructions || undefined,
-
       planning: {
         enabled: this.config.planning.enabled,
         autoDetect: this.config.planning.autoDetect,
         requireApproval: this.config.planning.requireApproval,
       },
-
       session: sessionConfig,
-
       permissions: permissionsConfig,
-    };
-
-    this.agent = UniversalAgent.create(agentConfig);
+    });
   }
 
   /**
@@ -352,7 +317,7 @@ export class AgentRunner implements IAgentRunner {
   /**
    * Get current mode
    */
-  getMode(): 'interactive' | 'planning' | 'executing' {
+  getMode(): AgentMode {
     return this.agent?.getMode() ?? 'interactive';
   }
 
@@ -361,6 +326,240 @@ export class AgentRunner implements IAgentRunner {
    */
   getPlan(): unknown {
     return this.agent?.getPlan() ?? null;
+  }
+
+  /**
+   * Get context access (Phase 2 - provides access to UniversalAgent's context)
+   */
+  getContext(): UniversalAgentContextAccess | null {
+    return this.agent?.context ?? null;
+  }
+
+  /**
+   * Get context metrics (Phase 2 - unified metrics from context)
+   *
+   * Returns metrics including:
+   * - History message count
+   * - Memory statistics
+   * - Current mode
+   * - Plan status
+   */
+  async getContextMetrics(): Promise<ContextMetrics | null> {
+    const context = this.agent?.context;
+    if (!context) {
+      return null;
+    }
+
+    try {
+      const metrics = await context.getMetrics();
+      return {
+        historyMessageCount: metrics.historyMessageCount,
+        memoryStats: metrics.memoryStats,
+        mode: metrics.mode,
+        hasPlan: metrics.hasPlan,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get conversation history (Phase 2 - access to history via context)
+   *
+   * @param count - Number of recent messages to return (default: all)
+   * @returns Array of history entries
+   */
+  async getConversationHistory(count?: number): Promise<HistoryEntry[]> {
+    const context = this.agent?.context;
+    if (!context) {
+      return [];
+    }
+
+    try {
+      const history = context.history;
+      // Note: IHistoryManager methods are async
+      const messages = count
+        ? await history.getRecentMessages(count)
+        : await history.getMessages();
+
+      return messages.map((msg) => ({
+        id: msg.id || `msg-${Date.now()}`,
+        role: msg.role as 'user' | 'assistant' | 'system',
+        content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+        timestamp: msg.timestamp ? new Date(msg.timestamp) : new Date(),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Context Inspection (Phase 3 - detailed context inspection)
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get detailed context budget information
+   *
+   * Uses the context builder to calculate current token usage and budget.
+   *
+   * @returns Context budget info or null if not available
+   */
+  async getContextBudget(): Promise<ContextBudgetInfo | null> {
+    const context = this.agent?.context;
+    if (!context) {
+      return null;
+    }
+
+    try {
+      const contextBuilder = context.contextBuilder;
+      const config = contextBuilder.getConfig();
+
+      // Build context to get current usage
+      const built = await contextBuilder.build('', {});
+
+      const total = config.maxTokens ?? 128000;
+      const responseReserve = config.responseReserve ?? 0.15;
+      const reserved = Math.floor(total * responseReserve);
+      const used = built.estimatedTokens;
+      const available = total - reserved - used;
+
+      // Calculate utilization percentage (relative to available budget after reserve)
+      const availableBudget = total - reserved;
+      const utilizationPercent = availableBudget > 0
+        ? (used / availableBudget) * 100
+        : 0;
+
+      // Determine status
+      const utilizationRatio = (used + reserved) / total;
+      let status: 'ok' | 'warning' | 'critical';
+      if (utilizationRatio >= 0.9) {
+        status = 'critical';
+      } else if (utilizationRatio >= 0.75) {
+        status = 'warning';
+      } else {
+        status = 'ok';
+      }
+
+      return {
+        total,
+        reserved,
+        used,
+        available: Math.max(0, available),
+        utilizationPercent,
+        status,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get detailed token breakdown by component
+   *
+   * @returns Component breakdown or null if not available
+   */
+  async getContextBreakdown(): Promise<ContextBreakdownInfo | null> {
+    const context = this.agent?.context;
+    if (!context) {
+      return null;
+    }
+
+    try {
+      const contextBuilder = context.contextBuilder;
+
+      // Build context to get token breakdown
+      const built = await contextBuilder.build('', {});
+
+      const totalUsed = built.estimatedTokens;
+      const components: ContextBreakdownInfo['components'] = [];
+
+      for (const [name, tokens] of Object.entries(built.tokenBreakdown)) {
+        const percent = totalUsed > 0 ? (tokens / totalUsed) * 100 : 0;
+        components.push({
+          name,
+          tokens,
+          percent,
+        });
+      }
+
+      // Sort by tokens descending
+      components.sort((a, b) => b.tokens - a.tokens);
+
+      return {
+        totalUsed,
+        components,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get cache statistics
+   *
+   * Note: UniversalAgent does not expose IdempotencyCache through context.
+   * This returns null as cache stats are not available for this agent type.
+   *
+   * @returns Cache stats or null if not available
+   */
+  async getCacheStats(): Promise<CacheStatsInfo | null> {
+    // UniversalAgent doesn't expose cache through context
+    // Cache is used internally by TaskAgent but not exposed here
+    return null;
+  }
+
+  /**
+   * Get all memory entries
+   *
+   * @returns Array of memory entry information
+   */
+  async getMemoryEntries(): Promise<MemoryEntryInfo[]> {
+    const context = this.agent?.context;
+    if (!context) {
+      return [];
+    }
+
+    try {
+      const memory = context.memory;
+      const index = await memory.getIndex();
+
+      return index.entries.map((entry) => {
+        // Format scope as string
+        let scopeStr: string;
+        if (typeof entry.scope === 'string') {
+          scopeStr = entry.scope;
+        } else if (entry.scope && typeof entry.scope === 'object' && 'type' in entry.scope) {
+          const s = entry.scope as { type: string; taskIds?: string[] };
+          if (s.type === 'task' && s.taskIds) {
+            scopeStr = `task (${s.taskIds.length} tasks)`;
+          } else {
+            scopeStr = s.type;
+          }
+        } else {
+          scopeStr = 'session';
+        }
+
+        // Parse size string to bytes (e.g., "1.5 KB" -> 1536)
+        let sizeBytes = 0;
+        const sizeMatch = entry.size.match(/^([\d.]+)\s*(B|KB|MB|GB)$/i);
+        if (sizeMatch) {
+          const value = parseFloat(sizeMatch[1]);
+          const unit = sizeMatch[2].toUpperCase();
+          const multipliers: Record<string, number> = { B: 1, KB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 };
+          sizeBytes = Math.round(value * (multipliers[unit] || 1));
+        }
+
+        return {
+          key: entry.key,
+          description: entry.description,
+          sizeBytes,
+          scope: scopeStr,
+          priority: entry.effectivePriority,
+        };
+      });
+    } catch {
+      return [];
+    }
   }
 
   /**
@@ -476,36 +675,40 @@ export class AgentRunner implements IAgentRunner {
     return this.agent?.permissions.isBlocked(toolName) ?? false;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Response & Event Mapping (Phase 1.2 - Type-safe)
+  // ─────────────────────────────────────────────────────────────────────────────
+
   /**
    * Format response from UniversalAgent
+   * Now properly typed with UniversalResponse
    */
-  private formatResponse(response: any, duration: number): AgentResponse {
+  private formatResponse(response: UniversalResponse, duration: number): AgentResponse {
     const usage: TokenUsage | undefined = response.usage
       ? {
-          inputTokens: response.usage.inputTokens || response.usage.input_tokens || 0,
-          outputTokens: response.usage.outputTokens || response.usage.output_tokens || 0,
-          totalTokens: (response.usage.inputTokens || response.usage.input_tokens || 0) +
-                       (response.usage.outputTokens || response.usage.output_tokens || 0),
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+          totalTokens: response.usage.totalTokens,
         }
       : undefined;
 
     return {
-      text: response.text || response.output_text || '',
-      mode: response.mode || 'interactive',
+      text: response.text,
+      mode: response.mode,
       plan: response.plan
         ? {
             goal: response.plan.goal,
-            tasks: response.plan.tasks?.map((t: any) => ({
-              id: t.id,
-              name: t.name,
-              description: t.description,
-              status: t.status,
-              result: t.result,
-            })) || [],
-            approved: response.plan.approved ?? false,
+            tasks: response.plan.tasks?.map((t) => this.mapTask(t)) || [],
+            approved: response.planStatus === 'approved' || response.planStatus === 'executing' || response.planStatus === 'completed',
           }
         : undefined,
-      taskProgress: response.taskProgress,
+      taskProgress: response.taskProgress
+        ? {
+            current: response.taskProgress.completed,
+            total: response.taskProgress.total,
+            currentTask: response.taskProgress.current ? this.mapTask(response.taskProgress.current) : undefined,
+          }
+        : undefined,
       usage,
       duration,
       needsUserAction: response.needsUserAction,
@@ -513,10 +716,23 @@ export class AgentRunner implements IAgentRunner {
   }
 
   /**
-   * Map stream event from UniversalAgent
+   * Map a Task from the library to TaskInfo for AMOS
    */
-  private mapStreamEvent(event: any): StreamEvent {
-    // Map UniversalAgent events to our StreamEvent type
+  private mapTask(task: { id: string; name: string; description?: string; status: string; result?: unknown }): TaskInfo {
+    return {
+      id: task.id,
+      name: task.name,
+      description: task.description || '',
+      status: task.status as TaskInfo['status'],
+      result: task.result ? String(task.result) : undefined,
+    };
+  }
+
+  /**
+   * Map stream event from UniversalAgent
+   * Now properly typed with UniversalEvent discriminated union
+   */
+  private mapStreamEvent(event: UniversalEvent): StreamEvent {
     switch (event.type) {
       case 'text:delta':
         return { type: 'text:delta', delta: event.delta };
@@ -535,18 +751,11 @@ export class AgentRunner implements IAgentRunner {
       case 'plan:created':
         return {
           type: 'plan:created',
-          plan: event.plan
-            ? {
-                goal: event.plan.goal,
-                tasks: event.plan.tasks?.map((t: any) => ({
-                  id: t.id,
-                  name: t.name,
-                  description: t.description,
-                  status: t.status,
-                })) || [],
-                approved: false,
-              }
-            : undefined,
+          plan: {
+            goal: event.plan.goal,
+            tasks: event.plan.tasks?.map((t) => this.mapTask(t)) || [],
+            approved: false,
+          },
         };
 
       case 'plan:approved':
@@ -555,67 +764,77 @@ export class AgentRunner implements IAgentRunner {
       case 'task:started':
         return {
           type: 'task:started',
-          task: event.task
-            ? {
-                id: event.task.id,
-                name: event.task.name,
-                description: event.task.description,
-                status: 'in_progress',
-              }
-            : undefined,
+          task: this.mapTask(event.task),
         };
 
       case 'task:completed':
         return {
           type: 'task:completed',
-          task: event.task
-            ? {
-                id: event.task.id,
-                name: event.task.name,
-                description: event.task.description,
-                status: 'completed',
-                result: event.result,
-              }
-            : undefined,
+          task: {
+            ...this.mapTask(event.task),
+            status: 'completed',
+            result: event.result ? String(event.result) : undefined,
+          },
         };
 
       case 'task:failed':
         return {
           type: 'task:failed',
-          task: event.task
-            ? {
-                id: event.task.id,
-                name: event.task.name,
-                description: event.task.description,
-                status: 'failed',
-              }
-            : undefined,
-          error: event.error,
+          task: {
+            ...this.mapTask(event.task),
+            status: 'failed',
+          },
+          error: new Error(event.error),
         };
 
       case 'tool:start':
         return {
           type: 'tool:start',
-          tool: { name: event.name || event.tool?.name, args: event.args },
+          tool: { name: event.name, args: event.args },
         };
 
       case 'tool:complete':
         return {
           type: 'tool:complete',
-          tool: {
-            name: event.name || event.tool?.name,
-            result: event.result,
-          },
+          tool: { name: event.name, result: event.result },
+        };
+
+      case 'tool:error':
+        return {
+          type: 'error',
+          error: new Error(event.error),
         };
 
       case 'error':
-        return { type: 'error', error: event.error };
+        return {
+          type: 'error',
+          error: new Error(event.error),
+        };
 
-      case 'done':
-        return { type: 'done', usage: event.usage };
+      case 'execution:done':
+        return {
+          type: 'done',
+          usage: undefined, // ExecutionResult doesn't include usage
+        };
+
+      // Handle other events that AMOS doesn't need to process specially
+      case 'plan:analyzing':
+      case 'plan:modified':
+      case 'plan:awaiting_approval':
+      case 'plan:rejected':
+      case 'task:progress':
+      case 'task:skipped':
+      case 'execution:paused':
+      case 'execution:resumed':
+      case 'needs:approval':
+      case 'needs:input':
+      case 'needs:clarification':
+        // Pass through with type for extensibility
+        return { type: event.type as StreamEvent['type'] };
 
       default:
-        return { type: event.type, ...event };
+        // Exhaustive check - should never reach here with proper typing
+        return { type: 'done' };
     }
   }
 }

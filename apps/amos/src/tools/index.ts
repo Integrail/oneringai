@@ -2,4 +2,4 @@
  * Tools module exports
  */
 
-export { ToolLoader } from './ToolLoader.js';
+export { ToolLoader, buildDeveloperToolsConfig, createDeveloperTools } from './ToolLoader.js';

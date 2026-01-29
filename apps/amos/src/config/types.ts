@@ -271,6 +271,116 @@ export interface IAgentRunner {
   getBlocklist(): string[];
   toolNeedsApproval(toolName: string): boolean;
   toolIsBlocked(toolName: string): boolean;
+
+  // Context Access (Phase 2 - unified context management)
+  getContextMetrics(): Promise<ContextMetrics | null>;
+  getConversationHistory(count?: number): Promise<HistoryEntry[]>;
+
+  // Context Inspection (Phase 3 - detailed context inspection)
+  getContextBudget(): Promise<ContextBudgetInfo | null>;
+  getContextBreakdown(): Promise<ContextBreakdownInfo | null>;
+  getCacheStats(): Promise<CacheStatsInfo | null>;
+  getMemoryEntries(): Promise<MemoryEntryInfo[]>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Context Types (Phase 2 - from UniversalAgent context access)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Context metrics from UniversalAgent's context access
+ */
+export interface ContextMetrics {
+  /** Number of messages in conversation history */
+  historyMessageCount: number;
+  /** Memory statistics */
+  memoryStats: {
+    totalEntries: number;
+    totalSizeBytes: number;
+  };
+  /** Current agent mode */
+  mode: 'interactive' | 'planning' | 'executing';
+  /** Whether a plan is active */
+  hasPlan: boolean;
+}
+
+/**
+ * A single entry in the conversation history
+ */
+export interface HistoryEntry {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: Date;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Context Inspection Types (Phase 3 - detailed context inspection)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Detailed context budget information
+ */
+export interface ContextBudgetInfo {
+  /** Total tokens available for the model */
+  total: number;
+  /** Tokens reserved for response generation */
+  reserved: number;
+  /** Tokens currently used by context */
+  used: number;
+  /** Tokens available for additional context */
+  available: number;
+  /** Utilization as percentage (0-100) */
+  utilizationPercent: number;
+  /** Budget status indicator */
+  status: 'ok' | 'warning' | 'critical';
+}
+
+/**
+ * Token breakdown by component
+ */
+export interface ContextBreakdownInfo {
+  /** Total tokens used across all components */
+  totalUsed: number;
+  /** Individual component token usage */
+  components: Array<{
+    /** Component name */
+    name: string;
+    /** Tokens used by this component */
+    tokens: number;
+    /** Percentage of total used tokens */
+    percent: number;
+  }>;
+}
+
+/**
+ * Cache statistics
+ */
+export interface CacheStatsInfo {
+  /** Number of cached entries */
+  entries: number;
+  /** Number of cache hits */
+  hits: number;
+  /** Number of cache misses */
+  misses: number;
+  /** Hit rate as percentage (0-100) */
+  hitRate: number;
+}
+
+/**
+ * Memory entry information
+ */
+export interface MemoryEntryInfo {
+  /** Entry key */
+  key: string;
+  /** Human-readable description */
+  description: string;
+  /** Size in bytes */
+  sizeBytes: number;
+  /** Scope type */
+  scope: string;
+  /** Priority level */
+  priority: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -4,6 +4,9 @@
  * Loads built-in tools and custom tools from the filesystem.
  * Manages enabled/disabled state.
  * Includes developer tools (filesystem + shell) for coding agent capabilities.
+ *
+ * Phase 1.3 Improvements:
+ * - Extracted developer tools config building to dedicated function (DRY)
  */
 
 import { readdir } from 'node:fs/promises';
@@ -23,6 +26,66 @@ import {
   type ShellToolConfig,
 } from '@oneringai/agents';
 import type { IToolLoader, AmosConfig } from '../config/types.js';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Developer Tools Configuration (Phase 1.3 - Extracted)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build configuration for developer tools (filesystem + shell)
+ *
+ * Extracted to a separate function for:
+ * 1. DRY - Reusable configuration logic
+ * 2. Testability - Can be unit tested independently
+ * 3. Clarity - Configuration logic is isolated
+ */
+export function buildDeveloperToolsConfig(config: AmosConfig | null): {
+  filesystem: FilesystemToolConfig;
+  shell: ShellToolConfig;
+} {
+  const devToolsConfig = config?.developerTools;
+  const workingDir = devToolsConfig?.workingDirectory || process.cwd();
+
+  return {
+    filesystem: {
+      workingDirectory: workingDir,
+      allowedDirectories: devToolsConfig?.allowedDirectories || [],
+      blockedDirectories: devToolsConfig?.blockedDirectories || ['node_modules', '.git', 'dist', 'build'],
+      maxFileSize: 10 * 1024 * 1024, // 10MB
+      maxResults: 100,
+    },
+    shell: {
+      workingDirectory: workingDir,
+      defaultTimeout: devToolsConfig?.commandTimeout || 30000,
+      blockedCommands: devToolsConfig?.blockedCommands || ['rm -rf /', 'mkfs', 'dd if=', ':(){:|:&};:'],
+      allowBackground: true,
+      maxOutputSize: 1024 * 1024, // 1MB
+    },
+  };
+}
+
+/**
+ * Create all developer tools with given configuration
+ *
+ * Returns an array of all developer tools:
+ * - Filesystem: read_file, write_file, edit_file, glob, grep, list_directory
+ * - Shell: bash
+ */
+export function createDeveloperTools(config: AmosConfig | null): ToolFunction[] {
+  const { filesystem: fsConfig, shell: shellConfig } = buildDeveloperToolsConfig(config);
+
+  return [
+    // Filesystem tools
+    createReadFileTool(fsConfig),
+    createWriteFileTool(fsConfig),
+    createEditFileTool(fsConfig),
+    createGlobTool(fsConfig),
+    createGrepTool(fsConfig),
+    createListDirectoryTool(fsConfig),
+    // Shell tool
+    createBashTool(shellConfig),
+  ];
+}
 
 export class ToolLoader implements IToolLoader {
   private tools: Map<string, ToolFunction> = new Map();
@@ -204,37 +267,9 @@ export class ToolLoader implements IToolLoader {
 
     // Developer tools (filesystem + shell) - only if enabled
     if (this.config?.developerTools?.enabled !== false) {
-      const devToolsConfig = this.config?.developerTools;
-      const workingDir = devToolsConfig?.workingDirectory || process.cwd();
-
-      // Filesystem tool configuration
-      const fsConfig: FilesystemToolConfig = {
-        workingDirectory: workingDir,
-        allowedDirectories: devToolsConfig?.allowedDirectories || [],
-        blockedDirectories: devToolsConfig?.blockedDirectories || ['node_modules', '.git', 'dist', 'build'],
-        maxFileSize: 10 * 1024 * 1024, // 10MB
-        maxResults: 100,
-      };
-
-      // Shell tool configuration
-      const shellConfig: ShellToolConfig = {
-        workingDirectory: workingDir,
-        defaultTimeout: devToolsConfig?.commandTimeout || 30000,
-        blockedCommands: devToolsConfig?.blockedCommands || ['rm -rf /', 'mkfs', 'dd if=', ':(){:|:&};:'],
-        allowBackground: true,
-        maxOutputSize: 1024 * 1024, // 1MB
-      };
-
-      // Add filesystem tools
-      tools.push(createReadFileTool(fsConfig));
-      tools.push(createWriteFileTool(fsConfig));
-      tools.push(createEditFileTool(fsConfig));
-      tools.push(createGlobTool(fsConfig));
-      tools.push(createGrepTool(fsConfig));
-      tools.push(createListDirectoryTool(fsConfig));
-
-      // Add shell tool
-      tools.push(createBashTool(shellConfig));
+      // Use extracted helper function (Phase 1.3 - DRY)
+      const devTools = createDeveloperTools(this.config);
+      tools.push(...devTools);
     }
 
     return tools;

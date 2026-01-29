@@ -236,10 +236,9 @@ export class AmosApp implements IAmosApp {
 
             case 'tool:start':
               if (event.tool && config.ui.showTiming) {
-                const details = this.getToolDescription(
-                  event.tool.name,
-                  event.tool.args
-                );
+                // Cast args to expected type (safe - args is Record<string, unknown> from library)
+                const toolArgs = event.tool.args as Record<string, unknown> | string | undefined;
+                const details = this.getToolDescription(event.tool.name, toolArgs);
                 if (details) {
                   this.terminal.printDim(`  🔧 ${event.tool.name}: ${details}`);
                 } else {
@@ -532,7 +531,9 @@ export class AmosApp implements IAmosApp {
                           context.riskLevel === 'high' ? '⚠️  HIGH RISK' :
                           context.riskLevel === 'medium' ? '⚡ MEDIUM RISK' : '';
 
-    const details = this.formatToolDetails(context.toolName, context.args || '{}');
+    // Cast args to expected type (safe - args is Record<string, unknown> from ToolApprovalContext)
+    const toolArgs = (context.args ?? {}) as Record<string, unknown> | string;
+    const details = this.formatToolDetails(context.toolName, toolArgs);
 
     this.terminal.print('');
     if (details) {
