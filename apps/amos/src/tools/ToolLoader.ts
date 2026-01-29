@@ -27,12 +27,13 @@ import {
   createBashTool,
   type FilesystemToolConfig,
   type ShellToolConfig,
-  webFetch,
-  webSearch,
+  tools as agentTools,
 } from '@oneringai/agents';
-// Note: webScrape needs to be imported separately as it may not be in main exports
 import type { IToolLoader, AmosConfig, IConnectorManager } from '../config/types.js';
 import { ExternalToolManager, type ExternalToolInfo } from './ExternalToolManager.js';
+
+// Web tools from the library (via namespace)
+const { webFetch, webSearch } = agentTools;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Developer Tools Configuration (Phase 1.3 - Extracted)

@@ -38,6 +38,7 @@ On first run, you'll be prompted to configure an API key.
 | `/connector <sub>` | | Manage API keys (add, edit, delete) |
 | `/prompt <sub>` | | Manage system prompts |
 | `/tool <sub>` | | Manage tools (list, enable, disable) |
+| `/external [sub]` | `/ext` | Manage external tools (search, scrape, fetch) |
 | `/context [sub]` | `/ctx` | Context inspection (budget, breakdown, memory) |
 | `/session <sub>` | | Session management (save, load, list) |
 | `/config [sub]` | | View/edit configuration |

@@ -25,11 +25,13 @@ import {
   ConfigCommand,
   PromptCommand,
   ContextCommand,
+  ExternalCommand,
   ClearCommand,
   ExitCommand,
   StatusCommand,
   HistoryCommand,
 } from './commands/index.js';
+import { ExternalToolManager } from './tools/ExternalToolManager.js';
 
 export class AmosApp implements IAmosApp {
   private configManager: ConfigManager;
@@ -77,6 +79,14 @@ export class AmosApp implements IAmosApp {
 
     // Initialize tool loader (pass config for developer tools settings)
     this.toolLoader.setConfig(config);
+
+    // Set up external tool manager
+    const externalToolManager = new ExternalToolManager(
+      config.externalTools,
+      this.connectorManager
+    );
+    this.toolLoader.setExternalToolManager(externalToolManager);
+
     await this.toolLoader.initialize();
     this.toolLoader.applyConfig(config.tools.enabledTools, config.tools.disabledTools);
 
@@ -387,6 +397,7 @@ export class AmosApp implements IAmosApp {
       new SessionCommand(),
       new ConfigCommand(),
       new ContextCommand(),
+      new ExternalCommand(),
       new ClearCommand(),
       new ExitCommand(),
       new StatusCommand(),

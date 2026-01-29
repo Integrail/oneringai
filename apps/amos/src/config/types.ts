@@ -206,6 +206,31 @@ export interface IToolLoader {
   disableTool(name: string): void;
   isEnabled(name: string): boolean;
   getEnabledTools(): ToolFunction[];
+
+  // External tools
+  getExternalToolInfo(): ExternalToolInfo[];
+}
+
+/**
+ * External tool info for status display
+ */
+export interface ExternalToolInfo {
+  /** Tool name (e.g., 'web_search', 'web_scrape', 'web_fetch') */
+  name: string;
+  /** Display name */
+  displayName: string;
+  /** Description */
+  description: string;
+  /** Provider type (null for tools that don't need connectors) */
+  providerType: ExternalProviderType | null;
+  /** Whether this tool requires a connector */
+  requiresConnector: boolean;
+  /** Whether the tool is available (has connector or doesn't need one) */
+  available: boolean;
+  /** Configured connector name (if any) */
+  connectorName: string | null;
+  /** Available providers for this tool type */
+  supportedProviders: string[];
 }
 
 export interface IPromptManager {

@@ -12,3 +12,4 @@ export { ConfigCommand } from './ConfigCommand.js';
 export { PromptCommand } from './PromptCommand.js';
 export { ContextCommand } from './ContextCommand.js';
 export { ClearCommand, ExitCommand, StatusCommand, HistoryCommand } from './UtilCommands.js';
+export { ExternalCommand } from './ExternalCommand.js';

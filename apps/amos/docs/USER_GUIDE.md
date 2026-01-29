@@ -364,6 +364,44 @@ AMOS includes built-in tools that the AI can use to accomplish tasks.
 **Developer Tools (Shell):**
 - `bash` - Execute shell commands
 
+**External Tools (Web):**
+- `web_fetch` - Fetch web page content (no API key needed)
+- `web_search` - Search the web (requires Serper, Brave, Tavily, or RapidAPI)
+- `web_scrape` - Scrape web pages with anti-bot protection (requires ZenRows)
+
+### External Tools Setup
+
+External tools like `web_search` and `web_scrape` require API connectors to function. Use the `/external` command to manage them.
+
+```
+/external                    # Show status of all external tools
+/external list               # List all external tools with status
+/external setup              # Interactive setup for external tools
+/external setup search       # Setup search provider
+/external setup scrape       # Setup scrape provider
+/external enable <tool>      # Enable an external tool
+/external disable <tool>     # Disable an external tool
+/external providers          # List available providers
+```
+
+**Available Search Providers:**
+- `serper` - Google search via Serper.dev (fast, 2,500 free queries)
+- `brave` - Brave's independent search index
+- `tavily` - AI-optimized search with summaries
+- `rapidapi` - Real-time web search via RapidAPI
+
+**Available Scrape Providers:**
+- `zenrows` - Enterprise scraping with anti-bot protection
+
+Example setup:
+```
+/external setup search
+# Choose 'serper'
+# Enter connector name (or accept default)
+# Enter API key
+# Search tool is now available!
+```
+
 ### Viewing Tools
 
 ```

@@ -13,33 +13,14 @@ import type {
   ExternalToolsConfig,
   ExternalProviderConfig,
   ExternalProviderType,
+  ExternalToolInfo,
   SearchProvider,
   ScrapeProvider,
   IConnectorManager,
 } from '../config/types.js';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// External Tool Info
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface ExternalToolInfo {
-  /** Tool name (e.g., 'web_search', 'web_scrape', 'web_fetch') */
-  name: string;
-  /** Display name */
-  displayName: string;
-  /** Description */
-  description: string;
-  /** Provider type (null for tools that don't need connectors) */
-  providerType: ExternalProviderType | null;
-  /** Whether this tool requires a connector */
-  requiresConnector: boolean;
-  /** Whether the tool is available (has connector or doesn't need one) */
-  available: boolean;
-  /** Configured connector name (if any) */
-  connectorName: string | null;
-  /** Available providers for this tool type */
-  supportedProviders: string[];
-}
+// Re-export for convenience
+export type { ExternalToolInfo };
 
 export interface ConnectorRequirement {
   providerType: ExternalProviderType;
