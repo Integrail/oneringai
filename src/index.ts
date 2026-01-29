@@ -160,6 +160,9 @@ export {
   PlanExecutor,
   CheckpointManager,
   createMemoryTools,
+  createContextTools,
+  PlanningAgent,
+  generateSimplePlan,
 } from './capabilities/taskAgent/index.js';
 export type {
   TaskAgentConfig,
@@ -181,6 +184,8 @@ export type {
   PlanExecutorEvents,
   PlanExecutionResult,
   CheckpointStrategy,
+  PlanningAgentConfig,
+  GeneratedPlan,
 } from './capabilities/taskAgent/index.js';
 export { DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY } from './capabilities/taskAgent/index.js';
 

@@ -2719,6 +2719,39 @@ var ToolManager = class extends EventEmitter {
       totalUsage: meta.usageCount
     });
   }
+  /**
+   * Summarize tool result for logging (handles various result types)
+   */
+  summarizeResult(result) {
+    if (result === null || result === void 0) {
+      return { type: "null" };
+    }
+    if (typeof result !== "object") {
+      return { type: typeof result, value: String(result).slice(0, 100) };
+    }
+    const obj = result;
+    if ("success" in obj) {
+      const summary = {
+        success: obj.success
+      };
+      if ("error" in obj) summary.error = obj.error;
+      if ("count" in obj) summary.count = obj.count;
+      if ("results" in obj && Array.isArray(obj.results)) {
+        summary.resultCount = obj.results.length;
+      }
+      if ("provider" in obj) summary.provider = obj.provider;
+      return summary;
+    }
+    if (Array.isArray(result)) {
+      return { type: "array", length: result.length };
+    }
+    const keys = Object.keys(obj);
+    return {
+      type: "object",
+      keys: keys.slice(0, 10),
+      keyCount: keys.length
+    };
+  }
   // ==========================================================================
   // Statistics
   // ==========================================================================
@@ -2772,7 +2805,12 @@ var ToolManager = class extends EventEmitter {
       });
       const duration = Date.now() - startTime;
       this.recordExecution(toolName, duration, true);
-      this.toolLogger.debug({ toolName, duration }, "Tool execution completed");
+      const resultSummary = this.summarizeResult(result);
+      this.toolLogger.debug({
+        toolName,
+        duration,
+        resultSummary
+      }, "Tool execution completed");
       metrics.timing("tool.duration", duration, { tool: toolName });
       metrics.increment("tool.success", 1, { tool: toolName });
       return result;
@@ -16878,6 +16916,8 @@ var TavilyProvider = class {
 };
 
 // src/capabilities/search/providers/RapidAPIProvider.ts
+init_Logger();
+var rapidapiLogger = logger.child({ component: "RapidAPIProvider" });
 var RapidAPIProvider = class {
   constructor(connector) {
     this.connector = connector;
@@ -16885,6 +16925,7 @@ var RapidAPIProvider = class {
   name = "rapidapi";
   async search(query, options = {}) {
     const numResults = Math.min(options.numResults || 10, 100);
+    rapidapiLogger.debug({ query, numResults, options }, "RapidAPI search started");
     try {
       const queryParams = {
         q: query,
@@ -16900,22 +16941,38 @@ var RapidAPIProvider = class {
       };
       const baseURL = this.connector.baseURL;
       const host = baseURL ? new URL(baseURL).host : "real-time-web-search.p.rapidapi.com";
+      rapidapiLogger.debug({ baseURL, host }, "Using RapidAPI host");
       let apiKey = "";
       try {
         apiKey = this.connector.getApiKey();
-      } catch {
+        rapidapiLogger.debug({ hasApiKey: !!apiKey, keyLength: apiKey?.length }, "Got API key");
+      } catch (e) {
+        rapidapiLogger.error({ error: e.message }, "Failed to get API key");
         throw new Error("RapidAPI provider requires API key authentication");
       }
       const queryString = buildQueryString(queryParams);
-      const response = await this.connector.fetchJSON(`/search?${queryString}`, {
+      const requestUrl = `/search?${queryString}`;
+      rapidapiLogger.debug({ requestUrl, method: "GET" }, "Making RapidAPI request");
+      const response = await this.connector.fetchJSON(requestUrl, {
         method: "GET",
         headers: {
           "X-RapidAPI-Key": apiKey,
           "X-RapidAPI-Host": host
         }
       });
-      const organicResults = response.data?.organic || response.organic || [];
+      rapidapiLogger.debug({
+        hasResponse: !!response,
+        hasData: !!response?.data,
+        dataKeys: response?.data ? Object.keys(response.data) : [],
+        hasOrganicResults: !!(response?.data?.organic_results || response?.data?.organic),
+        organicResultsCount: (response?.data?.organic_results || response?.data?.organic || []).length
+      }, "RapidAPI response received");
+      const organicResults = response.data?.organic_results || response.data?.organic || response.organic_results || response.organic || [];
       if (!Array.isArray(organicResults)) {
+        rapidapiLogger.error({
+          responseType: typeof organicResults,
+          response: JSON.stringify(response).slice(0, 500)
+        }, "Invalid response format - organic is not an array");
         throw new Error("Invalid response from RapidAPI Search");
       }
       const results = organicResults.slice(0, numResults).map((result, index) => ({
@@ -16924,6 +16981,11 @@ var RapidAPIProvider = class {
         snippet: result.snippet || result.description || "",
         position: index + 1
       }));
+      rapidapiLogger.debug({
+        success: true,
+        resultCount: results.length,
+        firstTitle: results[0]?.title
+      }, "RapidAPI search completed successfully");
       return {
         success: true,
         query,
@@ -16932,6 +16994,10 @@ var RapidAPIProvider = class {
         count: results.length
       };
     } catch (error) {
+      rapidapiLogger.error({
+        error: error.message,
+        stack: error.stack
+      }, "RapidAPI search failed");
       return {
         success: false,
         query,
@@ -20458,6 +20524,20 @@ Use the planning tools to make changes, then finalize when complete.`;
     this.planningComplete = true;
   }
 };
+async function generateSimplePlan(goal, context) {
+  return createPlan({
+    goal,
+    context,
+    tasks: [
+      {
+        name: "execute_goal",
+        description: `Execute the goal: ${goal}`
+      }
+    ],
+    allowDynamicTasks: true
+    // Allow agent to modify plan
+  });
+}
 var ContextManager = class extends EventEmitter {
   config;
   provider;
@@ -25852,6 +25932,7 @@ With screenshot:
 
 // src/tools/web/webSearch.ts
 init_Connector();
+init_Logger();
 
 // src/tools/web/searchProviders/serper.ts
 async function searchWithSerper(query, numResults, apiKey) {
@@ -25938,6 +26019,7 @@ async function searchWithTavily(query, numResults, apiKey) {
 }
 
 // src/tools/web/webSearch.ts
+var searchLogger = logger.child({ component: "webSearch" });
 var webSearch = {
   definition: {
     type: "function",
@@ -26082,13 +26164,35 @@ IMPORTANT:
   }
 };
 async function executeWithConnector(args, numResults) {
+  searchLogger.debug({ connectorName: args.connectorName }, "Starting search with connector");
   try {
+    const connector = Connector.get(args.connectorName);
+    searchLogger.debug({
+      connectorFound: !!connector,
+      serviceType: connector?.serviceType
+    }, "Connector lookup result");
     const searchProvider = SearchProvider.create({ connector: args.connectorName });
+    searchLogger.debug({ provider: searchProvider.name }, "SearchProvider created");
+    searchLogger.debug({ query: args.query, numResults }, "Executing search");
     const response = await searchProvider.search(args.query, {
       numResults,
       country: args.country,
       language: args.language
     });
+    if (response.success) {
+      searchLogger.debug({
+        success: true,
+        count: response.count,
+        firstResultTitle: response.results[0]?.title,
+        firstResultUrl: response.results[0]?.url
+      }, "Search completed successfully");
+    } else {
+      searchLogger.warn({
+        success: false,
+        error: response.error,
+        provider: response.provider
+      }, "Search failed");
+    }
     return {
       success: response.success,
       query: response.query,
@@ -26098,6 +26202,11 @@ async function executeWithConnector(args, numResults) {
       error: response.error
     };
   } catch (error) {
+    searchLogger.error({
+      error: error.message,
+      stack: error.stack,
+      connectorName: args.connectorName
+    }, "Search threw exception");
     return {
       success: false,
       query: args.query,
@@ -28072,6 +28181,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolCallDescription, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile4 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, toConnectorOptions, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolCallDescription, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile4 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, toConnectorOptions, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

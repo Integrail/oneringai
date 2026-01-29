@@ -35,7 +35,8 @@ async function main() {
   console.log('──────────────────────────────────\n');
 
   // Public image URL (can also use data URIs)
-  const imageUrl1 = 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/320px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg';
+  // Note: Using a reliable image hosting service that OpenAI can access
+  const imageUrl1 = 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400';
 
   const input1 = createMessageWithImages(
     'What do you see in this image? Describe it in detail.',
@@ -61,8 +62,8 @@ async function main() {
   console.log('Example 2: Compare Multiple Images');
   console.log('──────────────────────────────────\n');
 
-  const imageUrl2 = 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/320px-Cat03.jpg';
-  const imageUrl3 = 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4d/Cat_November_2010-1a.jpg/320px-Cat_November_2010-1a.jpg';
+  const imageUrl2 = 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=400';
+  const imageUrl3 = 'https://images.unsplash.com/photo-1573865526739-10659fec78a5?w=400';
 
   const input2 = createMessageWithImages(
     'What are the similarities and differences between these two images?',
@@ -94,7 +95,7 @@ async function main() {
   // First turn: Ask about an image
   builder.addUserMessageWithImages(
     'What architectural style is this building?',
-    ['https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/Eiffel_Tower_2022_11_9.jpg/320px-Eiffel_Tower_2022_11_9.jpg']
+    ['https://images.unsplash.com/photo-1511739001486-6bfe10ce65f4?w=400']
   );
 
   const agent3 = Agent.create({
@@ -144,7 +145,7 @@ async function main() {
         {
           type: ContentType.INPUT_IMAGE_URL,
           image_url: {
-            url: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/dd/Gfp-wisconsin-madison-the-nature-boardwalk.jpg/320px-Gfp-wisconsin-madison-the-nature-boardwalk.jpg',
+            url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
             detail: 'low', // Force low detail for faster processing
           },
         },

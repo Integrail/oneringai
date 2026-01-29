@@ -2745,6 +2745,39 @@ var ToolManager = class extends eventemitter3.EventEmitter {
       totalUsage: meta.usageCount
     });
   }
+  /**
+   * Summarize tool result for logging (handles various result types)
+   */
+  summarizeResult(result) {
+    if (result === null || result === void 0) {
+      return { type: "null" };
+    }
+    if (typeof result !== "object") {
+      return { type: typeof result, value: String(result).slice(0, 100) };
+    }
+    const obj = result;
+    if ("success" in obj) {
+      const summary = {
+        success: obj.success
+      };
+      if ("error" in obj) summary.error = obj.error;
+      if ("count" in obj) summary.count = obj.count;
+      if ("results" in obj && Array.isArray(obj.results)) {
+        summary.resultCount = obj.results.length;
+      }
+      if ("provider" in obj) summary.provider = obj.provider;
+      return summary;
+    }
+    if (Array.isArray(result)) {
+      return { type: "array", length: result.length };
+    }
+    const keys = Object.keys(obj);
+    return {
+      type: "object",
+      keys: keys.slice(0, 10),
+      keyCount: keys.length
+    };
+  }
   // ==========================================================================
   // Statistics
   // ==========================================================================
@@ -2798,7 +2831,12 @@ var ToolManager = class extends eventemitter3.EventEmitter {
       });
       const duration = Date.now() - startTime;
       this.recordExecution(toolName, duration, true);
-      this.toolLogger.debug({ toolName, duration }, "Tool execution completed");
+      const resultSummary = this.summarizeResult(result);
+      this.toolLogger.debug({
+        toolName,
+        duration,
+        resultSummary
+      }, "Tool execution completed");
       exports.metrics.timing("tool.duration", duration, { tool: toolName });
       exports.metrics.increment("tool.success", 1, { tool: toolName });
       return result;
@@ -16904,6 +16942,8 @@ var TavilyProvider = class {
 };
 
 // src/capabilities/search/providers/RapidAPIProvider.ts
+init_Logger();
+var rapidapiLogger = exports.logger.child({ component: "RapidAPIProvider" });
 var RapidAPIProvider = class {
   constructor(connector) {
     this.connector = connector;
@@ -16911,6 +16951,7 @@ var RapidAPIProvider = class {
   name = "rapidapi";
   async search(query, options = {}) {
     const numResults = Math.min(options.numResults || 10, 100);
+    rapidapiLogger.debug({ query, numResults, options }, "RapidAPI search started");
     try {
       const queryParams = {
         q: query,
@@ -16926,22 +16967,38 @@ var RapidAPIProvider = class {
       };
       const baseURL = this.connector.baseURL;
       const host = baseURL ? new URL(baseURL).host : "real-time-web-search.p.rapidapi.com";
+      rapidapiLogger.debug({ baseURL, host }, "Using RapidAPI host");
       let apiKey = "";
       try {
         apiKey = this.connector.getApiKey();
-      } catch {
+        rapidapiLogger.debug({ hasApiKey: !!apiKey, keyLength: apiKey?.length }, "Got API key");
+      } catch (e) {
+        rapidapiLogger.error({ error: e.message }, "Failed to get API key");
         throw new Error("RapidAPI provider requires API key authentication");
       }
       const queryString = buildQueryString(queryParams);
-      const response = await this.connector.fetchJSON(`/search?${queryString}`, {
+      const requestUrl = `/search?${queryString}`;
+      rapidapiLogger.debug({ requestUrl, method: "GET" }, "Making RapidAPI request");
+      const response = await this.connector.fetchJSON(requestUrl, {
         method: "GET",
         headers: {
           "X-RapidAPI-Key": apiKey,
           "X-RapidAPI-Host": host
         }
       });
-      const organicResults = response.data?.organic || response.organic || [];
+      rapidapiLogger.debug({
+        hasResponse: !!response,
+        hasData: !!response?.data,
+        dataKeys: response?.data ? Object.keys(response.data) : [],
+        hasOrganicResults: !!(response?.data?.organic_results || response?.data?.organic),
+        organicResultsCount: (response?.data?.organic_results || response?.data?.organic || []).length
+      }, "RapidAPI response received");
+      const organicResults = response.data?.organic_results || response.data?.organic || response.organic_results || response.organic || [];
       if (!Array.isArray(organicResults)) {
+        rapidapiLogger.error({
+          responseType: typeof organicResults,
+          response: JSON.stringify(response).slice(0, 500)
+        }, "Invalid response format - organic is not an array");
         throw new Error("Invalid response from RapidAPI Search");
       }
       const results = organicResults.slice(0, numResults).map((result, index) => ({
@@ -16950,6 +17007,11 @@ var RapidAPIProvider = class {
         snippet: result.snippet || result.description || "",
         position: index + 1
       }));
+      rapidapiLogger.debug({
+        success: true,
+        resultCount: results.length,
+        firstTitle: results[0]?.title
+      }, "RapidAPI search completed successfully");
       return {
         success: true,
         query,
@@ -16958,6 +17020,10 @@ var RapidAPIProvider = class {
         count: results.length
       };
     } catch (error) {
+      rapidapiLogger.error({
+        error: error.message,
+        stack: error.stack
+      }, "RapidAPI search failed");
       return {
         success: false,
         query,
@@ -20484,6 +20550,20 @@ Use the planning tools to make changes, then finalize when complete.`;
     this.planningComplete = true;
   }
 };
+async function generateSimplePlan(goal, context) {
+  return createPlan({
+    goal,
+    context,
+    tasks: [
+      {
+        name: "execute_goal",
+        description: `Execute the goal: ${goal}`
+      }
+    ],
+    allowDynamicTasks: true
+    // Allow agent to modify plan
+  });
+}
 var ContextManager = class extends eventemitter3.EventEmitter {
   config;
   provider;
@@ -25878,6 +25958,7 @@ With screenshot:
 
 // src/tools/web/webSearch.ts
 init_Connector();
+init_Logger();
 
 // src/tools/web/searchProviders/serper.ts
 async function searchWithSerper(query, numResults, apiKey) {
@@ -25964,6 +26045,7 @@ async function searchWithTavily(query, numResults, apiKey) {
 }
 
 // src/tools/web/webSearch.ts
+var searchLogger = exports.logger.child({ component: "webSearch" });
 var webSearch = {
   definition: {
     type: "function",
@@ -26108,13 +26190,35 @@ IMPORTANT:
   }
 };
 async function executeWithConnector(args, numResults) {
+  searchLogger.debug({ connectorName: args.connectorName }, "Starting search with connector");
   try {
+    const connector = exports.Connector.get(args.connectorName);
+    searchLogger.debug({
+      connectorFound: !!connector,
+      serviceType: connector?.serviceType
+    }, "Connector lookup result");
     const searchProvider = SearchProvider.create({ connector: args.connectorName });
+    searchLogger.debug({ provider: searchProvider.name }, "SearchProvider created");
+    searchLogger.debug({ query: args.query, numResults }, "Executing search");
     const response = await searchProvider.search(args.query, {
       numResults,
       country: args.country,
       language: args.language
     });
+    if (response.success) {
+      searchLogger.debug({
+        success: true,
+        count: response.count,
+        firstResultTitle: response.results[0]?.title,
+        firstResultUrl: response.results[0]?.url
+      }, "Search completed successfully");
+    } else {
+      searchLogger.warn({
+        success: false,
+        error: response.error,
+        provider: response.provider
+      }, "Search failed");
+    }
     return {
       success: response.success,
       query: response.query,
@@ -26124,6 +26228,11 @@ async function executeWithConnector(args, numResults) {
       error: response.error
     };
   } catch (error) {
+    searchLogger.error({
+      error: error.message,
+      stack: error.stack,
+      connectorName: args.connectorName
+    }, "Search threw exception");
     return {
       success: false,
       query: args.query,
@@ -28158,6 +28267,7 @@ exports.ModeManager = ModeManager;
 exports.ModelNotSupportedError = ModelNotSupportedError;
 exports.ParallelTasksError = ParallelTasksError;
 exports.PlanExecutor = PlanExecutor;
+exports.PlanningAgent = PlanningAgent;
 exports.ProactiveCompactionStrategy = ProactiveCompactionStrategy;
 exports.ProviderAuthError = ProviderAuthError;
 exports.ProviderConfigAgent = ProviderConfigAgent;
@@ -28227,6 +28337,7 @@ exports.canTaskExecute = canTaskExecute;
 exports.createAgentStorage = createAgentStorage;
 exports.createAuthenticatedFetch = createAuthenticatedFetch;
 exports.createBashTool = createBashTool;
+exports.createContextTools = createContextTools;
 exports.createEditFileTool = createEditFileTool;
 exports.createEmptyHistory = createEmptyHistory;
 exports.createEmptyMemory = createEmptyMemory;
@@ -28259,6 +28370,7 @@ exports.extractNumber = extractNumber;
 exports.forPlan = forPlan;
 exports.forTasks = forTasks;
 exports.generateEncryptionKey = generateEncryptionKey;
+exports.generateSimplePlan = generateSimplePlan;
 exports.generateWebAPITool = generateWebAPITool;
 exports.getActiveImageModels = getActiveImageModels;
 exports.getActiveModels = getActiveModels;

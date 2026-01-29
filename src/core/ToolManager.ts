@@ -621,6 +621,48 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     });
   }
 
+  /**
+   * Summarize tool result for logging (handles various result types)
+   */
+  private summarizeResult(result: unknown): Record<string, unknown> {
+    if (result === null || result === undefined) {
+      return { type: 'null' };
+    }
+
+    if (typeof result !== 'object') {
+      return { type: typeof result, value: String(result).slice(0, 100) };
+    }
+
+    const obj = result as Record<string, unknown>;
+
+    // Handle common result patterns
+    if ('success' in obj) {
+      const summary: Record<string, unknown> = {
+        success: obj.success,
+      };
+      if ('error' in obj) summary.error = obj.error;
+      if ('count' in obj) summary.count = obj.count;
+      if ('results' in obj && Array.isArray(obj.results)) {
+        summary.resultCount = obj.results.length;
+      }
+      if ('provider' in obj) summary.provider = obj.provider;
+      return summary;
+    }
+
+    // Handle array results
+    if (Array.isArray(result)) {
+      return { type: 'array', length: result.length };
+    }
+
+    // Generic object summary
+    const keys = Object.keys(obj);
+    return {
+      type: 'object',
+      keys: keys.slice(0, 10),
+      keyCount: keys.length,
+    };
+  }
+
   // ==========================================================================
   // Statistics
   // ==========================================================================
@@ -697,7 +739,13 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
       // Update metadata
       this.recordExecution(toolName, duration, true);
 
-      this.toolLogger.debug({ toolName, duration }, 'Tool execution completed');
+      // Log result summary (truncated for large results)
+      const resultSummary = this.summarizeResult(result);
+      this.toolLogger.debug({
+        toolName,
+        duration,
+        resultSummary,
+      }, 'Tool execution completed');
 
       metrics.timing('tool.duration', duration, { tool: toolName });
       metrics.increment('tool.success', 1, { tool: toolName });

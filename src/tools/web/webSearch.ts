@@ -10,6 +10,9 @@ import { ToolFunction } from '../../domain/entities/Tool.js';
 import { Connector } from '../../core/Connector.js';
 import { SearchProvider } from '../../capabilities/search/index.js';
 import type { SearchResult, SearchResponse } from '../../capabilities/search/index.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
+
+const searchLogger = logger.child({ component: 'webSearch' });
 
 // Backward compatibility - import old providers
 import { searchWithSerper } from './searchProviders/serper.js';
@@ -208,14 +211,40 @@ async function executeWithConnector(
   args: WebSearchArgs,
   numResults: number
 ): Promise<WebSearchResult> {
+  searchLogger.debug({ connectorName: args.connectorName }, 'Starting search with connector');
   try {
-    const searchProvider = SearchProvider.create({ connector: args.connectorName! });
+    // Check if connector exists
+    const connector = Connector.get(args.connectorName!);
+    searchLogger.debug({
+      connectorFound: !!connector,
+      serviceType: connector?.serviceType,
+    }, 'Connector lookup result');
 
+    const searchProvider = SearchProvider.create({ connector: args.connectorName! });
+    searchLogger.debug({ provider: searchProvider.name }, 'SearchProvider created');
+
+    searchLogger.debug({ query: args.query, numResults }, 'Executing search');
     const response: SearchResponse = await searchProvider.search(args.query, {
       numResults,
       country: args.country,
       language: args.language,
     });
+
+    // Log detailed results
+    if (response.success) {
+      searchLogger.debug({
+        success: true,
+        count: response.count,
+        firstResultTitle: response.results[0]?.title,
+        firstResultUrl: response.results[0]?.url,
+      }, 'Search completed successfully');
+    } else {
+      searchLogger.warn({
+        success: false,
+        error: response.error,
+        provider: response.provider,
+      }, 'Search failed');
+    }
 
     return {
       success: response.success,
@@ -226,6 +255,11 @@ async function executeWithConnector(
       error: response.error,
     };
   } catch (error: any) {
+    searchLogger.error({
+      error: error.message,
+      stack: error.stack,
+      connectorName: args.connectorName,
+    }, 'Search threw exception');
     return {
       success: false,
       query: args.query,

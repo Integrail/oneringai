@@ -90,26 +90,19 @@ export class AmosApp implements IAmosApp {
 
     // Register external tool connectors BEFORE tool loading
     // These connectors are required for web_search and web_scrape tools to work
-    console.log('[AmosApp.initialize] Registering external tool connectors...');
     await this.registerExternalToolConnectors(config);
 
     // Initialize tool loader (pass config for developer tools settings)
-    console.log('[AmosApp.initialize] Setting config on ToolLoader...');
-    console.log('[AmosApp.initialize] externalTools config:', JSON.stringify(config.externalTools, null, 2));
     this.toolLoader.setConfig(config);
 
     // Set up external tool manager
-    console.log('[AmosApp.initialize] Creating ExternalToolManager...');
     const externalToolManager = new ExternalToolManager(
       config.externalTools,
       this.connectorManager
     );
     this.toolLoader.setExternalToolManager(externalToolManager);
-    console.log('[AmosApp.initialize] ExternalToolManager set on ToolLoader');
 
-    console.log('[AmosApp.initialize] Initializing ToolLoader...');
     await this.toolLoader.initialize();
-    console.log('[AmosApp.initialize] ToolLoader initialized');
     this.toolLoader.applyConfig(config.tools.enabledTools, config.tools.disabledTools);
 
     // Create agent if we have an active connector
