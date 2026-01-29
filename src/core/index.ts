@@ -29,6 +29,23 @@ export { Connector } from './Connector.js';
 export { Agent } from './Agent.js';
 export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 
+// ============================================================================
+// AgentContext - Unified "Swiss Army Knife" for all context management
+// ============================================================================
+export { AgentContext } from './AgentContext.js';
+export type {
+  AgentContextConfig,
+  AgentContextEvents,
+  AgentContextMetrics,
+  HistoryMessage,
+  ToolCallRecord,
+  SerializedAgentContextState,
+} from './AgentContext.js';
+
+// IdempotencyCache - Tool result caching (moved from taskAgent to core)
+export { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
+export type { IdempotencyCacheConfig, CacheStats } from './IdempotencyCache.js';
+
 // Lifecycle hooks (from BaseAgent - not exported directly but types are useful)
 export type {
   AgentLifecycleHooks,

@@ -2701,6 +2701,314 @@ agent.on('agent:completed', async ({ result, metrics: planMetrics }) => {
 
 The library includes a **powerful, universal context management system** that automatically handles the complexity of managing LLM context windows across all agent types. This section covers everything from basic automatic management to advanced custom strategies.
 
+### AgentContext - The Unified API (NEW)
+
+**AgentContext** is the "swiss army knife" for agent state management. It provides a single, unified facade that composes all context-related managers:
+
+```typescript
+import { AgentContext } from '@oneringai/agents';
+
+// Create a context instance
+const ctx = AgentContext.create({
+  model: 'gpt-4',
+  systemPrompt: 'You are a helpful assistant.',
+  tools: [weatherTool, searchTool],
+  memory: {
+    maxSizeBytes: 1024 * 1024, // 1MB
+  },
+  cache: {
+    enabled: true,
+    ttlMs: 3600000, // 1 hour
+  },
+  strategy: 'adaptive', // Compaction strategy
+});
+
+// Add messages
+ctx.addMessage('user', 'What is the weather in Paris?');
+ctx.addMessage('assistant', 'Let me check that for you.');
+
+// Execute tools (with automatic caching)
+const result = await ctx.executeTool('get_weather', { location: 'Paris' });
+
+// Access composed managers directly
+ctx.tools.disable('risky_tool');         // ToolManager
+await ctx.memory.set('key', 'desc', val); // WorkingMemory
+ctx.permissions.allowlistAdd('safe_tool'); // ToolPermissionManager
+const stats = ctx.cache.getStats();       // IdempotencyCache
+
+// Prepare context for LLM call
+const prepared = await ctx.prepare();
+console.log(`Tokens: ${prepared.budget.used}/${prepared.budget.total}`);
+console.log(`Status: ${prepared.budget.status}`); // 'ok', 'warning', 'critical'
+
+// Get comprehensive metrics
+const metrics = await ctx.getMetrics();
+console.log(metrics.historyMessageCount);
+console.log(metrics.memoryStats.utilizationPercent);
+console.log(metrics.cacheStats.hits);
+```
+
+#### AgentContext Components
+
+AgentContext composes these existing managers (DRY - no duplication!):
+
+| Component | Access | Purpose |
+|-----------|--------|---------|
+| **ToolManager** | `ctx.tools` | Tool registration, execution, circuit breakers |
+| **WorkingMemory** | `ctx.memory` | Key-value store with scopes, priority, eviction |
+| **IdempotencyCache** | `ctx.cache` | Tool result caching to prevent duplicates |
+| **ToolPermissionManager** | `ctx.permissions` | Approval workflows, allowlists, blocklists |
+| **History** | `ctx.getHistory()` | Built-in conversation tracking |
+
+#### Using AgentContext with Agent
+
+You can enable AgentContext-based tracking in the base Agent class:
+
+```typescript
+import { Agent, AgentContext } from '@oneringai/agents';
+
+// Option 1: Pass config to auto-create AgentContext
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool],
+  context: {
+    strategy: 'adaptive',
+    autoCompact: true,
+    memory: { maxSizeBytes: 2 * 1024 * 1024 },
+  },
+});
+
+// Agent automatically tracks messages and tool calls
+await agent.run('What is the weather?');
+
+// Access the context
+const ctx = agent.context;
+if (ctx) {
+  const history = ctx.getHistory();
+  const metrics = await ctx.getMetrics();
+  console.log(`Messages: ${metrics.historyMessageCount}`);
+}
+
+// Option 2: Pass existing AgentContext instance
+const sharedContext = AgentContext.create({ model: 'gpt-4' });
+const agent1 = Agent.create({ connector: 'openai', model: 'gpt-4', context: sharedContext });
+const agent2 = Agent.create({ connector: 'anthropic', model: 'claude', context: sharedContext });
+// Both agents share the same context state
+```
+
+#### AgentContext Configuration
+
+```typescript
+interface AgentContextConfig {
+  /** Model name (used for token limits) */
+  model?: string;
+
+  /** Max context tokens (overrides model default) */
+  maxContextTokens?: number;
+
+  /** System prompt */
+  systemPrompt?: string;
+
+  /** Instructions */
+  instructions?: string;
+
+  /** Tools to register */
+  tools?: ToolFunction[];
+
+  /** Tool permissions configuration */
+  permissions?: AgentPermissionsConfig;
+
+  /** Memory configuration */
+  memory?: {
+    storage?: IMemoryStorage;  // Custom backend
+    maxSizeBytes?: number;     // Default: 1MB
+    softLimitPercent?: number; // Default: 80%
+  };
+
+  /** Cache configuration */
+  cache?: {
+    enabled?: boolean;  // Default: true
+    ttlMs?: number;     // Default: 3600000 (1 hour)
+  };
+
+  /** History configuration */
+  history?: {
+    maxMessages?: number;    // Default: 100
+    preserveRecent?: number; // Default: 20
+  };
+
+  /** Compaction strategy */
+  strategy?: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive';
+
+  /** Response token reserve (0.0 - 1.0). Default: 0.15 */
+  responseReserve?: number;
+
+  /** Enable auto-compaction. Default: true */
+  autoCompact?: boolean;
+}
+```
+
+#### Session Persistence
+
+AgentContext supports full state serialization:
+
+```typescript
+// Save state
+const state = await ctx.getState();
+// state contains: history, tool calls, permissions, plugin state
+
+// Restore state (e.g., after app restart)
+const ctx = AgentContext.create({ model: 'gpt-4' });
+await ctx.restoreState(savedState);
+// All history, permissions, and plugin state restored
+```
+
+#### Plugin System
+
+Extend AgentContext with custom plugins:
+
+```typescript
+import { IContextPlugin, BaseContextPlugin, AgentContext } from '@oneringai/agents';
+
+// Create a custom plugin
+class MyPlugin extends BaseContextPlugin {
+  readonly name = 'my-plugin';
+  readonly priority = 5; // Lower = kept longer during compaction
+
+  private data: string[] = [];
+
+  async getComponent() {
+    return {
+      name: 'my-plugin',
+      content: this.data.join('\n'),
+      priority: this.priority,
+      compactable: true,
+    };
+  }
+
+  addData(item: string) {
+    this.data.push(item);
+  }
+
+  // Optional: Custom compaction
+  async compact(targetTokens: number, estimator: ITokenEstimator): Promise<number> {
+    const before = this.data.length;
+    this.data = this.data.slice(-5); // Keep last 5
+    return before - this.data.length;
+  }
+}
+
+// Use the plugin
+const ctx = AgentContext.create({ model: 'gpt-4' });
+const plugin = new MyPlugin();
+ctx.registerPlugin(plugin);
+plugin.addData('Custom data');
+```
+
+#### Events
+
+Monitor AgentContext activity:
+
+```typescript
+const ctx = AgentContext.create({ model: 'gpt-4' });
+
+// History events
+ctx.on('message:added', ({ message }) => {
+  console.log(`New ${message.role} message`);
+});
+
+ctx.on('history:compacted', ({ removedCount }) => {
+  console.log(`Removed ${removedCount} old messages`);
+});
+
+// Tool events
+ctx.on('tool:executed', ({ record }) => {
+  console.log(`${record.name}: ${record.durationMs}ms, cached: ${record.cached}`);
+});
+
+ctx.on('tool:cached', ({ name, args }) => {
+  console.log(`Cache hit for ${name}`);
+});
+
+// Budget events
+ctx.on('budget:warning', ({ budget }) => {
+  console.log(`Context at ${budget.utilizationPercent}%`);
+});
+
+ctx.on('budget:critical', ({ budget }) => {
+  console.log(`Critical: ${budget.utilizationPercent}% used!`);
+});
+
+// Compaction events
+ctx.on('compacted', ({ log, tokensFreed }) => {
+  console.log(`Freed ${tokensFreed} tokens`);
+  log.forEach(entry => console.log(`  - ${entry}`));
+});
+```
+
+#### Accessing Context in TaskAgent and UniversalAgent
+
+TaskAgent and UniversalAgent provide unified context access through a compatible interface:
+
+```typescript
+import { TaskAgent, UniversalAgent } from '@oneringai/agents';
+
+// TaskAgent context access
+const taskAgent = TaskAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [myTool],
+});
+
+// Access internal managers via context getter
+taskAgent.context.memory.set('key', 'description', value);
+taskAgent.context.tools.disable('tool_name');
+taskAgent.context.addMessage('user', 'Hello');
+const budget = await taskAgent.context.getBudget();
+const metrics = await taskAgent.context.getMetrics();
+
+// UniversalAgent context access
+const uniAgent = UniversalAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+});
+
+uniAgent.context.addMessage('system', 'New instruction');
+const mode = uniAgent.getMode();
+const hasActivePlan = uniAgent.context.getMetrics().then(m => m.hasPlan);
+```
+
+**TaskAgentContextAccess Interface:**
+```typescript
+interface TaskAgentContextAccess {
+  readonly memory: WorkingMemory;
+  readonly cache: IdempotencyCache;
+  readonly history: IHistoryManager;
+  readonly contextManager: ContextManager;
+  readonly permissions: ToolPermissionManager;
+  readonly tools: ToolManager;
+  addMessage(role: 'user' | 'assistant' | 'system', content: string): void;
+  getBudget(): Promise<ContextBudget>;
+  getMetrics(): Promise<{ historyMessageCount, memoryStats, cacheStats }>;
+}
+```
+
+**UniversalAgentContextAccess Interface:**
+```typescript
+interface UniversalAgentContextAccess {
+  readonly memory: WorkingMemory;
+  readonly history: IHistoryManager;
+  readonly contextBuilder: IContextBuilder;
+  readonly permissions: ToolPermissionManager;
+  readonly tools: ToolManager;
+  addMessage(role: 'user' | 'assistant' | 'system', content: string): void;
+  getMetrics(): Promise<{ historyMessageCount, memoryStats, mode, hasPlan }>;
+}
+```
+
+---
+
 ### Why Context Management Matters
 
 LLMs have fixed context windows (e.g., 128K tokens for GPT-4, 200K for Claude). As conversations grow, you must:

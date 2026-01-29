@@ -18,6 +18,9 @@ import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposabl
 import { ITextProvider } from '../domain/interfaces/ITextProvider.js';
 import { ISessionStorage } from './SessionManager.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
+import { AgentContext } from './AgentContext.js';
+import type { AgentContextConfig, SerializedAgentContextState } from './AgentContext.js';
+import { isOutputTextDelta } from '../domain/entities/StreamEvent.js';
 
 /**
  * Session configuration for Agent (same as BaseSessionConfig)
@@ -39,6 +42,18 @@ export interface AgentConfig extends BaseAgentConfig {
 
   /** Vendor-specific options (e.g., Google's thinkingLevel: 'low' | 'high') */
   vendorOptions?: Record<string, any>;
+
+  /**
+   * Optional unified context management.
+   * When provided (as AgentContext instance or config), Agent will:
+   * - Track conversation history
+   * - Cache tool results (if enabled)
+   * - Provide unified memory access
+   * - Support session persistence via context
+   *
+   * Pass an AgentContext instance or AgentContextConfig to enable.
+   */
+  context?: AgentContext | AgentContextConfig;
 
   // Enterprise features
   hooks?: HookConfig;
@@ -71,6 +86,9 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
   private provider: ITextProvider;
   private agenticLoop: AgenticLoop;
   private boundListeners: Map<keyof AgenticLoopEvents, (...args: any[]) => void> = new Map();
+
+  // ===== Optional Context Management =====
+  private _context: AgentContext | null = null;
 
   // ===== Static Factory =====
 
@@ -135,6 +153,23 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
     // Create provider from connector
     this.provider = createProvider(this.connector);
 
+    // Initialize optional context management
+    if (config.context) {
+      if (config.context instanceof AgentContext) {
+        this._context = config.context;
+      } else {
+        // Create AgentContext from config, merging with agent config
+        this._context = AgentContext.create({
+          model: config.model,
+          systemPrompt: config.instructions,
+          tools: config.tools,
+          permissions: config.permissions,
+          ...config.context,
+        });
+      }
+      this._logger.debug('AgentContext initialized');
+    }
+
     // Sync tool permission configs from ToolManager to PermissionManager
     this._toolManager.on('tool:registered', ({ name }) => {
       const permission = this._toolManager.getPermission(name);
@@ -165,8 +200,69 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
   }
 
   protected prepareSessionState(): void {
-    // Agent has no additional state beyond what BaseAgent handles
-    // (tool state and approval state are handled by BaseAgent)
+    // If context is enabled, save context state to session
+    if (this._context && this._session) {
+      // Store context state in session's metadata (uses [key: string]: unknown)
+      this._context.getState().then(contextState => {
+        if (this._session) {
+          this._session.metadata = {
+            ...this._session.metadata,
+            agentContext: contextState,
+          };
+        }
+      });
+    }
+  }
+
+  // ===== Context Access =====
+
+  /**
+   * Get the optional AgentContext (if configured).
+   * Returns null if context management was not enabled.
+   *
+   * @example
+   * ```typescript
+   * const agent = Agent.create({
+   *   connector: 'openai',
+   *   model: 'gpt-4',
+   *   context: { autoCompact: true },
+   * });
+   *
+   * // Access context features
+   * if (agent.context) {
+   *   const history = agent.context.getHistory();
+   *   const budget = await agent.context.getBudget();
+   *   agent.context.memory.store('key', 'desc', value);
+   * }
+   * ```
+   */
+  get context(): AgentContext | null {
+    return this._context;
+  }
+
+  /**
+   * Check if context management is enabled
+   */
+  hasContext(): boolean {
+    return this._context !== null;
+  }
+
+  /**
+   * Get context state for session persistence.
+   * Returns null if context is not enabled.
+   */
+  async getContextState(): Promise<SerializedAgentContextState | null> {
+    if (!this._context) return null;
+    return this._context.getState();
+  }
+
+  /**
+   * Restore context from saved state.
+   * No-op if context is not enabled.
+   */
+  async restoreContextState(state: SerializedAgentContextState): Promise<void> {
+    if (!this._context) return;
+    await this._context.restoreState(state);
   }
 
   // ===== Main API =====
@@ -196,6 +292,15 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
 
     const startTime = Date.now();
 
+    // Track user input in context if enabled
+    if (this._context) {
+      const userContent = typeof input === 'string'
+        ? input
+        : input.map(i => JSON.stringify(i)).join('\n');
+      this._context.addMessage('user', userContent);
+      this._context.setCurrentInput(userContent);
+    }
+
     try {
       // Get enabled tool definitions (respects enable/disable)
       const tools = this.getEnabledToolDefinitions();
@@ -219,6 +324,11 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
       const response = await this.agenticLoop.execute(loopConfig);
 
       const duration = Date.now() - startTime;
+
+      // Track assistant response in context if enabled
+      if (this._context && response.output_text) {
+        this._context.addMessage('assistant', response.output_text);
+      }
 
       this._logger.info({ duration }, 'Agent run completed');
 
@@ -277,6 +387,18 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
 
     const startTime = Date.now();
 
+    // Track user input in context if enabled
+    if (this._context) {
+      const userContent = typeof input === 'string'
+        ? input
+        : input.map(i => JSON.stringify(i)).join('\n');
+      this._context.addMessage('user', userContent);
+      this._context.setCurrentInput(userContent);
+    }
+
+    // Accumulate streamed response for context tracking
+    let accumulatedResponse = '';
+
     try {
       // Get enabled tool definitions (respects enable/disable)
       const tools = this.getEnabledToolDefinitions();
@@ -297,7 +419,18 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
         agentType: 'agent',
       };
 
-      yield* this.agenticLoop.executeStreaming(loopConfig);
+      for await (const event of this.agenticLoop.executeStreaming(loopConfig)) {
+        // Accumulate text deltas for context tracking
+        if (this._context && isOutputTextDelta(event)) {
+          accumulatedResponse += event.delta;
+        }
+        yield event;
+      }
+
+      // Track accumulated response in context if enabled
+      if (this._context && accumulatedResponse) {
+        this._context.addMessage('assistant', accumulatedResponse);
+      }
 
       const duration = Date.now() - startTime;
 
@@ -506,6 +639,12 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
       this.agenticLoop.off(eventName, handler);
     }
     this.boundListeners.clear();
+
+    // Destroy context if we own it (created from config, not passed in)
+    if (this._context && !(this._config.context instanceof AgentContext)) {
+      this._context.destroy();
+    }
+    this._context = null;
 
     // Run cleanup callbacks
     for (const callback of this._cleanupCallbacks) {

@@ -49,6 +49,8 @@ describe('Services', () => {
         'storage',
         'email',
         'monitoring',
+        'search',
+        'scrape',
         'other',
       ];
 

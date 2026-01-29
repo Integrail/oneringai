@@ -1827,7 +1827,129 @@ npm run test:integration  # Run only integration tests (requires API keys)
 
 ## Context Management (NEW)
 
-The library includes a universal context management system with multiple strategies:
+The library provides a two-tier context management architecture:
+
+### AgentContext - Unified Facade (Primary API)
+
+**AgentContext** (`src/core/AgentContext.ts`) is the "swiss army knife" for agent state management. It composes all context-related managers into a single, coordinated interface:
+
+```typescript
+import { AgentContext } from '@oneringai/agents';
+
+// Create context with full configuration
+const ctx = AgentContext.create({
+  model: 'gpt-4',
+  systemPrompt: 'You are a helpful assistant.',
+  tools: [weatherTool, searchTool],
+  permissions: { defaultScope: 'session' },
+  memory: { maxSizeBytes: 1024 * 1024 },
+  cache: { enabled: true, ttlMs: 3600000 },
+  strategy: 'adaptive',
+});
+
+// === Built-in History ===
+ctx.addMessage('user', 'Hello');
+ctx.addMessage('assistant', 'Hi there!');
+const history = ctx.getHistory(); // HistoryMessage[]
+
+// === Tool Execution (with automatic caching) ===
+const result = await ctx.executeTool('get_weather', { location: 'Paris' });
+
+// === Direct Access to Composed Managers ===
+ctx.tools.disable('dangerous_tool');       // ToolManager
+await ctx.memory.set('key', 'desc', val);  // WorkingMemory
+ctx.permissions.allowlistAdd('safe_tool'); // ToolPermissionManager
+const stats = ctx.cache.getStats();        // IdempotencyCache
+
+// === Context Preparation ===
+const prepared = await ctx.prepare(); // Assembles all components, handles compaction
+console.log(`Budget: ${prepared.budget.used}/${prepared.budget.total} tokens`);
+console.log(`Status: ${prepared.budget.status}`); // 'ok' | 'warning' | 'critical'
+
+// === Metrics ===
+const metrics = await ctx.getMetrics();
+// { historyMessageCount, toolCallCount, cacheStats, memoryStats, utilizationPercent }
+
+// === Session Persistence ===
+const state = await ctx.getState();    // Serialize everything
+await ctx.restoreState(savedState);    // Restore from saved state
+```
+
+**AgentContext Composes:**
+
+| Component | Property | Purpose |
+|-----------|----------|---------|
+| ToolManager | `ctx.tools` | Registration, execution, circuit breakers |
+| WorkingMemory | `ctx.memory` | Key-value store with scopes, priority, eviction |
+| IdempotencyCache | `ctx.cache` | Tool result caching (deduplication) |
+| ToolPermissionManager | `ctx.permissions` | Approval workflows, allowlists, blocklists |
+| History | built-in | Conversation tracking (addMessage, getHistory) |
+
+**Design Principle:** AgentContext uses composition, not duplication. It wraps existing managers and provides a coordinated API.
+
+### Using AgentContext with Agent
+
+Enable context tracking in the base Agent class:
+
+```typescript
+import { Agent } from '@oneringai/agents';
+
+// Pass config to auto-create AgentContext
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [myTool],
+  context: {
+    strategy: 'adaptive',
+    autoCompact: true,
+    memory: { maxSizeBytes: 2 * 1024 * 1024 },
+  },
+});
+
+// Agent automatically tracks messages and tool calls
+await agent.run('What is the weather?');
+
+// Access context
+const ctx = agent.context;
+const history = ctx?.getHistory();
+const metrics = await ctx?.getMetrics();
+```
+
+### Context Access in TaskAgent and UniversalAgent
+
+TaskAgent and UniversalAgent provide unified context access:
+
+```typescript
+// TaskAgent
+const taskAgent = TaskAgent.create({ connector: 'openai', model: 'gpt-4' });
+taskAgent.context.memory.set('key', 'desc', value);
+taskAgent.context.addMessage('user', 'Hello');
+const budget = await taskAgent.context.getBudget();
+
+// UniversalAgent
+const uniAgent = UniversalAgent.create({ connector: 'openai', model: 'gpt-4' });
+uniAgent.context.addMessage('system', 'New instructions');
+const metrics = await uniAgent.context.getMetrics();
+```
+
+**TaskAgentContextAccess Interface:**
+```typescript
+interface TaskAgentContextAccess {
+  readonly memory: WorkingMemory;
+  readonly cache: IdempotencyCache;
+  readonly history: IHistoryManager;
+  readonly contextManager: ContextManager;
+  readonly permissions: ToolPermissionManager;
+  readonly tools: ToolManager;
+  addMessage(role: 'user' | 'assistant' | 'system', content: string): void;
+  getBudget(): Promise<ContextBudget>;
+  getMetrics(): Promise<{ historyMessageCount, memoryStats, cacheStats }>;
+}
+```
+
+### ContextManager - Strategy-based Context Preparation (Advanced)
+
+For custom agents or advanced use cases, use ContextManager directly:
 
 ```typescript
 import {
@@ -1874,13 +1996,31 @@ contextManager.setStrategy('aggressive');
 
 **Token Estimation with Content Type:**
 
-The `estimateTokens` method supports content-type-aware estimation:
-
 ```typescript
 // Estimate with content type for better accuracy
-contextManager.estimateTokens(codeString, 'code');    // ~3 chars/token
-contextManager.estimateTokens(proseText, 'prose');    // ~4 chars/token
-contextManager.estimateTokens(mixedContent, 'mixed'); // ~3.5 chars/token (default)
+ctx.estimateTokens(codeString, 'code');    // ~3 chars/token
+ctx.estimateTokens(proseText, 'prose');    // ~4 chars/token
+ctx.estimateTokens(mixedContent, 'mixed'); // ~3.5 chars/token (default)
+```
+
+### Plugin System
+
+Extend AgentContext with custom plugins:
+
+```typescript
+import { IContextPlugin, BaseContextPlugin } from '@oneringai/agents';
+
+class MyPlugin extends BaseContextPlugin {
+  readonly name = 'my-plugin';
+  readonly priority = 5;
+  private data: string[] = [];
+
+  async getComponent() {
+    return { name: 'my-plugin', content: this.data.join('\n'), priority: 5, compactable: true };
+  }
+}
+
+ctx.registerPlugin(new MyPlugin());
 ```
 
 **See:** `USER_GUIDE.md` for complete documentation.
@@ -2593,9 +2733,11 @@ These are handled internally and don't require manual implementation.
 2. `src/core/constants.ts` - Centralized configuration defaults (all default values)
 3. `src/core/BaseAgent.ts` - Abstract base class for all agents (lifecycle hooks, tool methods)
 4. `src/core/Agent.ts` - Agent class (extends BaseAgent)
-5. `src/core/ToolManager.ts` - Unified tool management + execution (implements IToolExecutor, circuit breaker)
-6. `src/core/SessionManager.ts` - Unified session persistence
-7. `src/core/Vendor.ts` - Vendor enum
+5. `src/core/AgentContext.ts` - **NEW** Unified "swiss army knife" for context management (composes ToolManager, WorkingMemory, IdempotencyCache, ToolPermissionManager)
+6. `src/core/ToolManager.ts` - Unified tool management + execution (implements IToolExecutor, circuit breaker)
+7. `src/core/IdempotencyCache.ts` - Tool result caching (moved from taskAgent to core)
+8. `src/core/SessionManager.ts` - Unified session persistence
+9. `src/core/Vendor.ts` - Vendor enum
 
 ### Provider Factories
 8. `src/core/createProvider.ts` - Provider factory (text)

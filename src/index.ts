@@ -30,6 +30,17 @@
 export { Connector, Agent, Vendor, VENDORS, isVendor, createProvider } from './core/index.js';
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
+// AgentContext - Unified "Swiss Army Knife" for context management
+export { AgentContext } from './core/index.js';
+export type {
+  AgentContextConfig,
+  AgentContextEvents,
+  AgentContextMetrics,
+  HistoryMessage as AgentContextHistoryMessage,
+  ToolCallRecord,
+  SerializedAgentContextState,
+} from './core/index.js';
+
 // Audio Capabilities
 export { TextToSpeech, SpeechToText } from './core/index.js';
 export type { TextToSpeechConfig, SpeechToTextConfig } from './core/index.js';
@@ -154,6 +165,7 @@ export type {
   TaskAgentConfig,
   TaskAgentSessionConfig,
   TaskAgentHooks,
+  TaskAgentContextAccess,
   AgentHandle,
   PlanResult,
   PlanUpdates,
@@ -715,6 +727,7 @@ export type {
   UniversalAgentConfig,
   UniversalAgentSessionConfig,
   UniversalAgentPlanningConfig,
+  UniversalAgentContextAccess,
   UniversalResponse,
   UniversalEvent,
   AgentMode,

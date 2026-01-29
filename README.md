@@ -422,20 +422,50 @@ await agent.start({
 
 ### 5. Context Management
 
-Five strategies for different use cases:
+**AgentContext** is the unified "swiss army knife" for managing agent state. It provides a simple, coordinated API for all context-related operations:
 
 ```typescript
-import { ContextManager } from '@oneringai/agents';
+import { Agent, AgentContext } from '@oneringai/agents';
 
-const contextManager = new ContextManager(provider, {
-  strategy: 'adaptive',  // or 'proactive', 'aggressive', 'lazy', 'rolling-window'
-}, compactors, estimator);
+// Option 1: Use AgentContext directly (standalone)
+const ctx = AgentContext.create({
+  model: 'gpt-4',
+  systemPrompt: 'You are a helpful assistant.',
+  tools: [weatherTool, searchTool],
+});
 
-// Automatically manages context window
-// - Tracks token usage
-// - Compacts when approaching limits
-// - Adapts based on usage patterns
+ctx.addMessage('user', 'What is the weather in Paris?');
+await ctx.executeTool('get_weather', { location: 'Paris' });
+const prepared = await ctx.prepare(); // Ready for LLM call
+
+// Option 2: Enable context tracking in Agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { // Enables AgentContext-based tracking
+    strategy: 'adaptive', // proactive, aggressive, lazy, rolling-window, adaptive
+    autoCompact: true,
+  },
+});
+
+// Agent auto-tracks messages, tool calls, and manages context
+await agent.run('Check the weather');
+const metrics = await agent.context?.getMetrics();
 ```
+
+**AgentContext composes:**
+- **ToolManager** - Tool registration, execution, circuit breakers
+- **WorkingMemory** - Key-value store with eviction
+- **IdempotencyCache** - Tool result caching
+- **ToolPermissionManager** - Approval workflows
+- **Built-in history** - Conversation tracking
+
+**Five compaction strategies** for different use cases:
+- **proactive** (default) - Balanced, compact at 75%
+- **aggressive** - Early compaction at 60%, for long conversations
+- **lazy** - Minimal compaction at 90%, for short tasks
+- **rolling-window** - Fixed message window, zero overhead
+- **adaptive** - Self-optimizing based on usage patterns
 
 ### 6. Audio Capabilities (NEW)
 

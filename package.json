@@ -36,6 +36,7 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "test:unit": "vitest run tests/unit",
+    "test:unit:coverage": "vitest run tests/unit --coverage",
     "test:integration": "vitest run tests/integration",
     "test:oauth": "vitest run tests/unit/oauth",
     "lint": "eslint src",

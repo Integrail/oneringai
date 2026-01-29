@@ -32,6 +32,8 @@ import type { IHistoryManager, SerializedHistoryState } from '../../domain/inter
 import type { IContextBuilder, ContextSource } from '../../domain/interfaces/IContextBuilder.js';
 import { DefaultContextBuilder } from '../../core/context/DefaultContextBuilder.js';
 import type { AgentPermissionsConfig } from '../../core/permissions/types.js';
+import type { ToolPermissionManager } from '../../core/permissions/ToolPermissionManager.js';
+import type { ToolManager } from '../../core/ToolManager.js';
 import type {
   UniversalResponse,
   UniversalEvent,
@@ -41,6 +43,38 @@ import type {
   PlanChange,
   ExecutionResult,
 } from './types.js';
+
+// ============================================================================
+// Unified Context Access Interface
+// ============================================================================
+
+/**
+ * UniversalAgentContextAccess provides AgentContext-compatible access
+ * to UniversalAgent's internal managers for unified API access.
+ */
+export interface UniversalAgentContextAccess {
+  /** Working memory */
+  readonly memory: WorkingMemory;
+  /** History manager */
+  readonly history: IHistoryManager;
+  /** Context builder */
+  readonly contextBuilder: IContextBuilder;
+  /** Permission manager (from BaseAgent) */
+  readonly permissions: ToolPermissionManager;
+  /** Tool manager (from BaseAgent) */
+  readonly tools: ToolManager;
+
+  /** Add a message to history (fire and forget) */
+  addMessage(role: 'user' | 'assistant' | 'system', content: string): void;
+
+  /** Get context metrics */
+  getMetrics(): Promise<{
+    historyMessageCount: number;
+    memoryStats: { totalEntries: number; totalSizeBytes: number };
+    mode: AgentMode;
+    hasPlan: boolean;
+  }>;
+}
 
 // ============================================================================
 // Configuration
@@ -1367,6 +1401,68 @@ Always be helpful, clear, and ask for clarification when needed.`;
    */
   get toolManager() {
     return this._toolManager;
+  }
+
+  // ============================================================================
+  // Unified Context Access
+  // ============================================================================
+
+  /**
+   * Get unified context access interface.
+   *
+   * Provides AgentContext-compatible access to UniversalAgent's internal managers,
+   * allowing users to interact with the same unified API across all agent types.
+   *
+   * @example
+   * ```typescript
+   * const agent = UniversalAgent.create({ ... });
+   *
+   * // Access context features (same API as AgentContext)
+   * agent.context.addMessage('user', 'Hello');
+   * const metrics = await agent.context.getMetrics();
+   *
+   * // Direct access to managers
+   * await agent.context.memory.store('key', 'desc', value);
+   * ```
+   */
+  get context(): UniversalAgentContextAccess {
+    const self = this;
+    return {
+      get memory() { return self.workingMemory; },
+      get history() { return self.historyManager; },
+      get contextBuilder() { return self.contextBuilder; },
+      get permissions() { return self._permissionManager; },
+      get tools() { return self._toolManager; },
+
+      addMessage(role: 'user' | 'assistant' | 'system', content: string): void {
+        // Fire and forget - don't await since interface is sync
+        self.historyManager.addMessage(role, content).catch(err => {
+          console.warn('Failed to add message to history:', err);
+        });
+      },
+
+      async getMetrics() {
+        const memoryStats = await self.workingMemory.getStats();
+        const messages = await self.historyManager.getMessages();
+
+        return {
+          historyMessageCount: messages.length,
+          memoryStats: {
+            totalEntries: memoryStats.totalEntries,
+            totalSizeBytes: memoryStats.totalSizeBytes,
+          },
+          mode: self.modeManager.getMode(),
+          hasPlan: self.currentPlan !== null,
+        };
+      },
+    };
+  }
+
+  /**
+   * Check if context is available (always true for UniversalAgent)
+   */
+  hasContext(): boolean {
+    return true;
   }
 
   // ============================================================================

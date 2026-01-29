@@ -9875,11 +9875,2109 @@ function assertNotDestroyed(obj, operation) {
 
 // src/core/Agent.ts
 init_Metrics();
+
+// src/core/IdempotencyCache.ts
+var DEFAULT_IDEMPOTENCY_CONFIG = {
+  defaultTtlMs: 36e5,
+  // 1 hour
+  maxEntries: 1e3
+};
+var IdempotencyCache = class {
+  config;
+  cache = /* @__PURE__ */ new Map();
+  hits = 0;
+  misses = 0;
+  cleanupInterval;
+  constructor(config = DEFAULT_IDEMPOTENCY_CONFIG) {
+    this.config = config;
+    this.cleanupInterval = setInterval(() => {
+      this.pruneExpired();
+    }, 3e5);
+  }
+  /**
+   * Check if a tool's results should be cached.
+   * Prefers 'cacheable' field, falls back to inverted 'safe' for backward compatibility.
+   *
+   * Logic:
+   * - If 'cacheable' is defined, use it directly
+   * - If only 'safe' is defined, cache when safe=false (backward compat)
+   * - If neither defined, don't cache
+   */
+  shouldCache(tool) {
+    const idempotency = tool.idempotency;
+    if (!idempotency) return false;
+    if (idempotency.cacheable !== void 0) {
+      return idempotency.cacheable;
+    }
+    if (idempotency.safe !== void 0) {
+      return !idempotency.safe;
+    }
+    return false;
+  }
+  /**
+   * Get cached result for tool call
+   */
+  async get(tool, args) {
+    if (!this.shouldCache(tool)) {
+      this.misses++;
+      return void 0;
+    }
+    const key = this.generateKey(tool, args);
+    const cached = this.cache.get(key);
+    if (!cached) {
+      this.misses++;
+      return void 0;
+    }
+    if (Date.now() > cached.expiresAt) {
+      this.cache.delete(key);
+      this.misses++;
+      return void 0;
+    }
+    this.hits++;
+    return cached.value;
+  }
+  /**
+   * Cache result for tool call
+   */
+  async set(tool, args, result) {
+    if (!this.shouldCache(tool)) {
+      return;
+    }
+    const key = this.generateKey(tool, args);
+    const ttl = tool.idempotency?.ttlMs ?? this.config.defaultTtlMs;
+    const expiresAt = Date.now() + ttl;
+    this.cache.set(key, { value: result, expiresAt });
+    if (this.cache.size > this.config.maxEntries) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) {
+        this.cache.delete(firstKey);
+      }
+    }
+  }
+  /**
+   * Check if tool call is cached
+   */
+  async has(tool, args) {
+    if (!this.shouldCache(tool)) {
+      return false;
+    }
+    const key = this.generateKey(tool, args);
+    const cached = this.cache.get(key);
+    if (!cached) {
+      return false;
+    }
+    if (Date.now() > cached.expiresAt) {
+      this.cache.delete(key);
+      return false;
+    }
+    return true;
+  }
+  /**
+   * Invalidate cached result
+   */
+  async invalidate(tool, args) {
+    if (!tool.idempotency) {
+      return;
+    }
+    const key = this.generateKey(tool, args);
+    this.cache.delete(key);
+  }
+  /**
+   * Invalidate all cached results for a tool
+   */
+  async invalidateTool(tool) {
+    const toolName = tool.definition.function.name;
+    const keysToDelete = [];
+    for (const key of this.cache.keys()) {
+      if (key.startsWith(`${toolName}:`)) {
+        keysToDelete.push(key);
+      }
+    }
+    for (const key of keysToDelete) {
+      this.cache.delete(key);
+    }
+  }
+  /**
+   * Prune expired entries from cache
+   */
+  pruneExpired() {
+    const now = Date.now();
+    const toDelete = [];
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiresAt) {
+        toDelete.push(key);
+      }
+    }
+    toDelete.forEach((key) => this.cache.delete(key));
+    return toDelete.length;
+  }
+  /**
+   * Clear all cached results
+   */
+  async clear() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = void 0;
+    }
+    this.cache.clear();
+    this.hits = 0;
+    this.misses = 0;
+  }
+  /**
+   * Get cache statistics
+   */
+  getStats() {
+    const total = this.hits + this.misses;
+    const hitRate = total > 0 ? this.hits / total : 0;
+    return {
+      entries: this.cache.size,
+      hits: this.hits,
+      misses: this.misses,
+      hitRate
+    };
+  }
+  /**
+   * Generate cache key for tool + args
+   */
+  generateKey(tool, args) {
+    const toolName = tool.definition.function.name;
+    if (tool.idempotency?.keyFn) {
+      return `${toolName}:${tool.idempotency.keyFn(args)}`;
+    }
+    const sortedArgs = Object.keys(args).sort().reduce((obj, key) => {
+      obj[key] = args[key];
+      return obj;
+    }, {});
+    const argsHash = this.hashObject(sortedArgs);
+    return `${toolName}:${argsHash}`;
+  }
+  /**
+   * Simple hash function for objects
+   */
+  hashObject(obj) {
+    const str = JSON.stringify(obj);
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+      hash = hash & hash;
+    }
+    return hash.toString(36);
+  }
+};
+
+// src/domain/entities/Memory.ts
+function isTaskAwareScope(scope) {
+  return typeof scope === "object" && scope !== null && "type" in scope;
+}
+function isSimpleScope(scope) {
+  return scope === "session" || scope === "persistent";
+}
+function scopeEquals(a, b) {
+  if (isSimpleScope(a) && isSimpleScope(b)) {
+    return a === b;
+  }
+  if (isTaskAwareScope(a) && isTaskAwareScope(b)) {
+    if (a.type !== b.type) return false;
+    if (a.type === "task" && b.type === "task") {
+      if (a.taskIds.length !== b.taskIds.length) return false;
+      const sortedA = [...a.taskIds].sort();
+      const sortedB = [...b.taskIds].sort();
+      return sortedA.every((id, i) => id === sortedB[i]);
+    }
+    return true;
+  }
+  return false;
+}
+function scopeMatches(entryScope, filterScope) {
+  if (scopeEquals(entryScope, filterScope)) return true;
+  if (isSimpleScope(filterScope)) return false;
+  if (isTaskAwareScope(entryScope) && isTaskAwareScope(filterScope)) {
+    return entryScope.type === filterScope.type;
+  }
+  return false;
+}
+var MEMORY_PRIORITY_VALUES = {
+  critical: 4,
+  high: 3,
+  normal: 2,
+  low: 1
+};
+var TERMINAL_MEMORY_STATUSES = ["completed", "failed", "skipped", "cancelled"];
+function isTerminalMemoryStatus(status) {
+  return TERMINAL_MEMORY_STATUSES.includes(status);
+}
+var staticPriorityCalculator = (entry) => {
+  if (entry.pinned) return "critical";
+  return entry.basePriority;
+};
+function detectStaleEntries(entries, completedTaskId, taskStates) {
+  const stale = [];
+  for (const entry of entries) {
+    if (entry.pinned) continue;
+    const scope = entry.scope;
+    if (!isTaskAwareScope(scope) || scope.type !== "task") continue;
+    if (!scope.taskIds.includes(completedTaskId)) continue;
+    const allTerminal = scope.taskIds.every((taskId) => {
+      const status = taskStates.get(taskId);
+      return status ? isTerminalMemoryStatus(status) : false;
+    });
+    if (allTerminal) {
+      stale.push({
+        key: entry.key,
+        description: entry.description,
+        reason: "task_completed",
+        previousPriority: entry.basePriority,
+        newPriority: "low",
+        taskIds: scope.taskIds
+      });
+    }
+  }
+  return stale;
+}
+function forTasks(key, description, value, taskIds, options) {
+  return {
+    key,
+    description,
+    value,
+    scope: { type: "task", taskIds },
+    priority: options?.priority,
+    pinned: options?.pinned
+  };
+}
+function forPlan(key, description, value, options) {
+  return {
+    key,
+    description,
+    value,
+    scope: { type: "plan" },
+    priority: options?.priority,
+    pinned: options?.pinned
+  };
+}
+var DEFAULT_MEMORY_CONFIG = {
+  descriptionMaxLength: 150,
+  softLimitPercent: 80,
+  contextAllocationPercent: 20
+};
+function validateMemoryKey(key) {
+  if (!key || key.length === 0) {
+    throw new Error("Memory key cannot be empty");
+  }
+  if (key.startsWith(".") || key.endsWith(".") || key.includes("..")) {
+    throw new Error("Invalid memory key format: keys cannot start/end with dots or contain consecutive dots");
+  }
+  if (!/^[a-zA-Z0-9._-]+$/.test(key)) {
+    throw new Error("Invalid memory key format: only alphanumeric, dots, dashes, and underscores allowed");
+  }
+}
+function calculateEntrySize(value) {
+  if (value === void 0) {
+    return 0;
+  }
+  const serialized = JSON.stringify(value);
+  if (typeof Buffer !== "undefined") {
+    return Buffer.byteLength(serialized, "utf8");
+  }
+  return new Blob([serialized]).size;
+}
+function createMemoryEntry(input, config = DEFAULT_MEMORY_CONFIG) {
+  validateMemoryKey(input.key);
+  if (input.description.length > config.descriptionMaxLength) {
+    throw new Error(`Description exceeds maximum length of ${config.descriptionMaxLength} characters`);
+  }
+  if (input.scope && isTaskAwareScope(input.scope) && input.scope.type === "task") {
+    if (input.scope.taskIds.length === 0) {
+      console.warn(`Memory entry "${input.key}" has empty taskIds array - will have low priority`);
+    }
+  }
+  const now = Date.now();
+  const sizeBytes = calculateEntrySize(input.value);
+  const pinned = input.pinned ?? false;
+  const priority = pinned ? "critical" : input.priority ?? "normal";
+  return {
+    key: input.key,
+    description: input.description,
+    value: input.value,
+    sizeBytes,
+    scope: input.scope ?? "session",
+    basePriority: priority,
+    pinned,
+    createdAt: now,
+    lastAccessedAt: now,
+    accessCount: 0
+  };
+}
+function formatSizeHuman(bytes) {
+  if (bytes === 0) return "0B";
+  if (bytes < 1024) return `${bytes}B`;
+  const kb = bytes / 1024;
+  if (bytes < 1024 * 1024) {
+    return `${kb.toFixed(1).replace(/\.0$/, "")}KB`;
+  }
+  const mb = bytes / (1024 * 1024);
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${mb.toFixed(1).replace(/\.0$/, "")}MB`;
+  }
+  const gb = bytes / (1024 * 1024 * 1024);
+  return `${gb.toFixed(1).replace(/\.0$/, "")}GB`;
+}
+function formatScope(scope) {
+  if (isSimpleScope(scope)) {
+    return scope;
+  }
+  if (scope.type === "task") {
+    return `task:${scope.taskIds.join(",")}`;
+  }
+  return scope.type;
+}
+function formatEntryFlags(entry) {
+  const flags = [];
+  if (entry.pinned) {
+    flags.push("pinned");
+  } else if (entry.effectivePriority !== "normal") {
+    flags.push(entry.effectivePriority);
+  }
+  flags.push(formatScope(entry.scope));
+  return flags.join(", ");
+}
+function formatMemoryIndex(index) {
+  const lines = [];
+  const utilPercent = Number.isInteger(index.utilizationPercent) ? index.utilizationPercent.toString() : index.utilizationPercent.toFixed(1).replace(/\.0$/, "");
+  lines.push(`## Working Memory (${index.totalSizeHuman} / ${index.limitHuman} - ${utilPercent}%)`);
+  lines.push("");
+  if (index.entries.length === 0) {
+    lines.push("Memory is empty.");
+  } else {
+    const pinned = index.entries.filter((e) => e.pinned);
+    const critical = index.entries.filter((e) => !e.pinned && e.effectivePriority === "critical");
+    const high = index.entries.filter((e) => !e.pinned && e.effectivePriority === "high");
+    const normal = index.entries.filter((e) => !e.pinned && e.effectivePriority === "normal");
+    const low = index.entries.filter((e) => !e.pinned && e.effectivePriority === "low");
+    if (pinned.length > 0) {
+      lines.push("**Pinned (never evicted):**");
+      for (const entry of pinned) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (critical.length > 0) {
+      lines.push("**Critical priority:**");
+      for (const entry of critical) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (high.length > 0) {
+      lines.push("**High priority:**");
+      for (const entry of high) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (normal.length > 0) {
+      lines.push("**Normal priority:**");
+      for (const entry of normal) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (low.length > 0) {
+      lines.push("**Low priority (evicted first):**");
+      for (const entry of low) {
+        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
+      }
+      lines.push("");
+    }
+    if (index.utilizationPercent > 80) {
+      lines.push("Warning: Memory utilization is high. Consider deleting unused entries.");
+      lines.push("");
+    }
+  }
+  lines.push('Use `memory_retrieve("key")` to load full content.');
+  lines.push('Use `memory_persist("key")` to keep data after task completion.');
+  return lines.join("\n");
+}
+
+// src/capabilities/taskAgent/WorkingMemory.ts
+var WorkingMemory = class extends EventEmitter {
+  storage;
+  config;
+  priorityCalculator;
+  priorityContext;
+  /**
+   * Create a WorkingMemory instance
+   *
+   * @param storage - Storage backend for memory entries
+   * @param config - Memory configuration (limits, etc.)
+   * @param priorityCalculator - Strategy for computing effective priority (default: static)
+   */
+  constructor(storage, config = DEFAULT_MEMORY_CONFIG, priorityCalculator = staticPriorityCalculator) {
+    super();
+    this.storage = storage;
+    this.config = config;
+    this.priorityCalculator = priorityCalculator;
+    this.priorityContext = {};
+  }
+  /**
+   * Set the priority calculator (for switching strategies at runtime)
+   */
+  setPriorityCalculator(calculator) {
+    this.priorityCalculator = calculator;
+  }
+  /**
+   * Update priority context (e.g., task states for TaskAgent)
+   */
+  setPriorityContext(context) {
+    this.priorityContext = context;
+  }
+  /**
+   * Get the current priority context
+   */
+  getPriorityContext() {
+    return this.priorityContext;
+  }
+  /**
+   * Compute effective priority for an entry using the current calculator
+   */
+  computeEffectivePriority(entry) {
+    return this.priorityCalculator(entry, this.priorityContext);
+  }
+  /**
+   * Get all entries with their computed effective priorities
+   * This is a performance optimization to avoid repeated getAll() + map() calls
+   */
+  async getEntriesWithPriority() {
+    const entries = await this.storage.getAll();
+    return entries.map((entry) => ({
+      entry,
+      effectivePriority: this.computeEffectivePriority(entry)
+    }));
+  }
+  /**
+   * Get evictable entries sorted by eviction priority
+   * Filters out pinned and critical entries, sorts by priority then by strategy
+   */
+  getEvictableEntries(entriesWithPriority, strategy) {
+    return entriesWithPriority.filter(({ entry, effectivePriority }) => {
+      if (entry.pinned) return false;
+      if (effectivePriority === "critical") return false;
+      return true;
+    }).sort((a, b) => {
+      const priorityDiff = MEMORY_PRIORITY_VALUES[a.effectivePriority] - MEMORY_PRIORITY_VALUES[b.effectivePriority];
+      if (priorityDiff !== 0) return priorityDiff;
+      if (strategy === "lru") {
+        return a.entry.lastAccessedAt - b.entry.lastAccessedAt;
+      } else {
+        return b.entry.sizeBytes - a.entry.sizeBytes;
+      }
+    });
+  }
+  /**
+   * Store a value in working memory
+   *
+   * @param key - Unique key for the entry
+   * @param description - Short description for the index (max 150 chars)
+   * @param value - The data to store
+   * @param options - Optional scope, priority, and pinned settings
+   */
+  async store(key, description, value, options) {
+    const input = {
+      key,
+      description,
+      value,
+      scope: options?.scope ?? "session",
+      priority: options?.priority,
+      pinned: options?.pinned
+    };
+    const entry = createMemoryEntry(input, this.config);
+    const currentSize = await this.storage.getTotalSize();
+    const existing = await this.storage.get(key);
+    const existingSize = existing?.sizeBytes ?? 0;
+    const newTotalSize = currentSize - existingSize + entry.sizeBytes;
+    const limit = this.getLimit();
+    if (newTotalSize > limit) {
+      throw new Error(`Memory limit exceeded: ${newTotalSize} bytes > ${limit} bytes`);
+    }
+    const utilization = newTotalSize / limit * 100;
+    if (utilization > this.config.softLimitPercent) {
+      this.emit("limit_warning", { utilizationPercent: utilization });
+    }
+    await this.storage.set(key, entry);
+    this.emit("stored", { key, description, scope: entry.scope });
+  }
+  /**
+   * Store a value scoped to specific tasks
+   * Convenience method for task-aware memory
+   */
+  async storeForTasks(key, description, value, taskIds, options) {
+    await this.store(key, description, value, {
+      scope: { type: "task", taskIds },
+      priority: options?.priority,
+      pinned: options?.pinned
+    });
+  }
+  /**
+   * Store a value scoped to the entire plan
+   * Convenience method for plan-scoped memory
+   */
+  async storeForPlan(key, description, value, options) {
+    await this.store(key, description, value, {
+      scope: { type: "plan" },
+      priority: options?.priority,
+      pinned: options?.pinned
+    });
+  }
+  /**
+   * Retrieve a value from working memory
+   *
+   * Note: Access stats update is not strictly atomic. Under very high concurrency,
+   * accessCount may be slightly inaccurate. This is acceptable for memory management
+   * purposes where exact counts are not critical.
+   */
+  async retrieve(key) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      return void 0;
+    }
+    const value = entry.value;
+    const freshEntry = await this.storage.get(key);
+    if (freshEntry) {
+      freshEntry.lastAccessedAt = Date.now();
+      freshEntry.accessCount += 1;
+      await this.storage.set(key, freshEntry);
+    }
+    this.emit("retrieved", { key });
+    return value;
+  }
+  /**
+   * Retrieve multiple values
+   */
+  async retrieveMany(keys) {
+    const result = {};
+    for (const key of keys) {
+      const value = await this.retrieve(key);
+      if (value !== void 0) {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
+  /**
+   * Delete a value from working memory
+   */
+  async delete(key) {
+    await this.storage.delete(key);
+    this.emit("deleted", { key });
+  }
+  /**
+   * Check if key exists
+   */
+  async has(key) {
+    return this.storage.has(key);
+  }
+  /**
+   * Promote an entry to persistent scope
+   * Works with both simple and task-aware scopes
+   */
+  async persist(key) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    const isPersistent = isSimpleScope(entry.scope) ? entry.scope === "persistent" : isTaskAwareScope(entry.scope) && entry.scope.type === "persistent";
+    if (!isPersistent) {
+      entry.scope = { type: "persistent" };
+      await this.storage.set(key, entry);
+    }
+  }
+  /**
+   * Pin an entry (never evicted)
+   */
+  async pin(key) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    if (!entry.pinned) {
+      entry.pinned = true;
+      entry.basePriority = "critical";
+      await this.storage.set(key, entry);
+    }
+  }
+  /**
+   * Unpin an entry
+   */
+  async unpin(key, newPriority = "normal") {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    if (entry.pinned) {
+      entry.pinned = false;
+      entry.basePriority = newPriority;
+      await this.storage.set(key, entry);
+    }
+  }
+  /**
+   * Set the base priority of an entry
+   */
+  async setPriority(key, priority) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    entry.basePriority = priority;
+    await this.storage.set(key, entry);
+  }
+  /**
+   * Update the scope of an entry without re-storing the value
+   */
+  async updateScope(key, scope) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    entry.scope = scope;
+    await this.storage.set(key, entry);
+  }
+  /**
+   * Add task IDs to an existing task-scoped entry
+   * If entry is not task-scoped, converts it to task-scoped
+   */
+  async addTasksToScope(key, taskIds) {
+    const entry = await this.storage.get(key);
+    if (!entry) {
+      throw new Error(`Key "${key}" not found in memory`);
+    }
+    if (isTaskAwareScope(entry.scope) && entry.scope.type === "task") {
+      const existingIds = new Set(entry.scope.taskIds);
+      for (const id of taskIds) {
+        existingIds.add(id);
+      }
+      entry.scope = { type: "task", taskIds: Array.from(existingIds) };
+    } else {
+      entry.scope = { type: "task", taskIds };
+    }
+    await this.storage.set(key, entry);
+  }
+  /**
+   * Clear all entries of a specific scope
+   */
+  async clearScope(scope) {
+    await this.storage.clearScope(scope);
+  }
+  /**
+   * Clear all entries
+   */
+  async clear() {
+    await this.storage.clear();
+  }
+  /**
+   * Get memory index with computed effective priorities
+   */
+  async getIndex() {
+    const entriesWithPriority = await this.getEntriesWithPriority();
+    const totalSizeBytes = await this.storage.getTotalSize();
+    const limitBytes = this.getLimit();
+    const sortedEntries = [...entriesWithPriority].sort((a, b) => {
+      if (a.entry.pinned && !b.entry.pinned) return -1;
+      if (!a.entry.pinned && b.entry.pinned) return 1;
+      const priorityDiff = MEMORY_PRIORITY_VALUES[b.effectivePriority] - MEMORY_PRIORITY_VALUES[a.effectivePriority];
+      if (priorityDiff !== 0) return priorityDiff;
+      return b.entry.lastAccessedAt - a.entry.lastAccessedAt;
+    });
+    const indexEntries = sortedEntries.map(({ entry, effectivePriority }) => ({
+      key: entry.key,
+      description: entry.description,
+      size: formatSizeHuman(entry.sizeBytes),
+      scope: entry.scope,
+      effectivePriority,
+      pinned: entry.pinned
+    }));
+    return {
+      entries: indexEntries,
+      totalSizeBytes,
+      totalSizeHuman: formatSizeHuman(totalSizeBytes),
+      limitBytes,
+      limitHuman: formatSizeHuman(limitBytes),
+      utilizationPercent: totalSizeBytes / limitBytes * 100
+    };
+  }
+  /**
+   * Format index for context injection
+   */
+  async formatIndex() {
+    const index = await this.getIndex();
+    return formatMemoryIndex(index);
+  }
+  /**
+   * Evict entries using specified strategy
+   *
+   * Eviction order:
+   * 1. Never evict pinned entries
+   * 2. Evict low priority first, then normal, then high (never critical)
+   * 3. Within same priority, use strategy (LRU or largest size)
+   *
+   * @param count - Number of entries to evict
+   * @param strategy - Eviction strategy ('lru' or 'size')
+   * @returns Keys of evicted entries
+   */
+  async evict(count, strategy = "lru") {
+    const entriesWithPriority = await this.getEntriesWithPriority();
+    const evictable = this.getEvictableEntries(entriesWithPriority, strategy);
+    const toEvict = evictable.slice(0, count);
+    const evictedKeys = [];
+    for (const { entry } of toEvict) {
+      await this.storage.delete(entry.key);
+      evictedKeys.push(entry.key);
+    }
+    if (evictedKeys.length > 0) {
+      this.emit("evicted", { keys: evictedKeys, reason: strategy });
+    }
+    return evictedKeys;
+  }
+  /**
+   * Evict entries using priority-aware LRU algorithm
+   * @deprecated Use evict(count, 'lru') instead
+   */
+  async evictLRU(count) {
+    return this.evict(count, "lru");
+  }
+  /**
+   * Evict largest entries first (priority-aware)
+   * @deprecated Use evict(count, 'size') instead
+   */
+  async evictBySize(count) {
+    return this.evict(count, "size");
+  }
+  /**
+   * Handle task completion - detect and notify about stale entries
+   *
+   * Call this when a task completes to:
+   * 1. Update priority context with new task state
+   * 2. Detect entries that became stale
+   * 3. Emit event to notify LLM about stale entries
+   *
+   * @param taskId - The completed task ID
+   * @param taskStates - Current task states map
+   * @returns Information about stale entries
+   */
+  async onTaskComplete(taskId, taskStates) {
+    this.priorityContext.taskStates = taskStates;
+    const entries = await this.storage.getAll();
+    const staleEntries = detectStaleEntries(entries, taskId, taskStates);
+    if (staleEntries.length > 0) {
+      this.emit("stale_entries", { entries: staleEntries });
+    }
+    return staleEntries;
+  }
+  /**
+   * Evict entries for completed tasks
+   *
+   * Removes entries that were scoped only to completed tasks.
+   * Use after onTaskComplete() if you want automatic cleanup.
+   *
+   * @param taskStates - Current task states map
+   * @returns Keys of evicted entries
+   */
+  async evictCompletedTaskEntries(taskStates) {
+    const entries = await this.storage.getAll();
+    const evictedKeys = [];
+    for (const entry of entries) {
+      if (entry.pinned) continue;
+      if (!isTaskAwareScope(entry.scope) || entry.scope.type !== "task") continue;
+      const allTerminal = entry.scope.taskIds.every((taskId) => {
+        const status = taskStates.get(taskId);
+        return status ? isTerminalMemoryStatus(status) : false;
+      });
+      if (allTerminal) {
+        await this.storage.delete(entry.key);
+        evictedKeys.push(entry.key);
+      }
+    }
+    if (evictedKeys.length > 0) {
+      this.emit("evicted", { keys: evictedKeys, reason: "task_completed" });
+    }
+    return evictedKeys;
+  }
+  /**
+   * Get limited memory access for tools
+   *
+   * This provides a simplified interface for tools to interact with memory
+   * without exposing the full WorkingMemory API.
+   */
+  getAccess() {
+    return {
+      get: async (key) => this.retrieve(key),
+      set: async (key, description, value, options) => this.store(key, description, value, options),
+      delete: async (key) => this.delete(key),
+      has: async (key) => this.has(key),
+      list: async () => {
+        const index = await this.getIndex();
+        return index.entries.map((e) => ({
+          key: e.key,
+          description: e.description,
+          effectivePriority: e.effectivePriority,
+          pinned: e.pinned
+        }));
+      }
+    };
+  }
+  /**
+   * Get statistics about memory usage
+   */
+  async getStats() {
+    const entriesWithPriority = await this.getEntriesWithPriority();
+    const totalSizeBytes = await this.storage.getTotalSize();
+    const limit = this.getLimit();
+    const byPriority = {
+      critical: 0,
+      high: 0,
+      normal: 0,
+      low: 0
+    };
+    let pinnedCount = 0;
+    for (const { entry, effectivePriority } of entriesWithPriority) {
+      byPriority[effectivePriority]++;
+      if (entry.pinned) pinnedCount++;
+    }
+    return {
+      totalEntries: entriesWithPriority.length,
+      totalSizeBytes,
+      utilizationPercent: totalSizeBytes / limit * 100,
+      byPriority,
+      pinnedCount
+    };
+  }
+  /**
+   * Get the configured memory limit
+   */
+  getLimit() {
+    return this.config.maxSizeBytes ?? 512 * 1024;
+  }
+  /**
+   * Destroy the WorkingMemory instance
+   * Removes all event listeners and clears internal state
+   */
+  destroy() {
+    this.removeAllListeners();
+    this.priorityContext = {};
+  }
+};
+
+// src/infrastructure/storage/InMemoryStorage.ts
+var InMemoryStorage = class {
+  store = /* @__PURE__ */ new Map();
+  async get(key) {
+    return this.store.get(key);
+  }
+  async set(key, entry) {
+    this.store.set(key, entry);
+  }
+  async delete(key) {
+    this.store.delete(key);
+  }
+  async has(key) {
+    return this.store.has(key);
+  }
+  async getAll() {
+    return Array.from(this.store.values());
+  }
+  async getByScope(scope) {
+    return Array.from(this.store.values()).filter((entry) => scopeMatches(entry.scope, scope));
+  }
+  async clearScope(scope) {
+    const toDelete = [];
+    for (const [key, entry] of this.store.entries()) {
+      if (scopeMatches(entry.scope, scope)) {
+        toDelete.push(key);
+      }
+    }
+    for (const key of toDelete) {
+      this.store.delete(key);
+    }
+  }
+  async clear() {
+    this.store.clear();
+  }
+  async getTotalSize() {
+    let total = 0;
+    for (const entry of this.store.values()) {
+      total += entry.sizeBytes;
+    }
+    return total;
+  }
+};
+var InMemoryPlanStorage = class {
+  plans = /* @__PURE__ */ new Map();
+  async savePlan(plan) {
+    this.plans.set(plan.id, JSON.parse(JSON.stringify(plan)));
+  }
+  async getPlan(planId) {
+    const plan = this.plans.get(planId);
+    return plan ? JSON.parse(JSON.stringify(plan)) : void 0;
+  }
+  async updateTask(planId, task) {
+    const plan = this.plans.get(planId);
+    if (!plan) {
+      throw new Error(`Plan ${planId} not found`);
+    }
+    const taskIndex = plan.tasks.findIndex((t) => t.id === task.id);
+    if (taskIndex === -1) {
+      throw new Error(`Task ${task.id} not found in plan ${planId}`);
+    }
+    plan.tasks[taskIndex] = JSON.parse(JSON.stringify(task));
+  }
+  async addTask(planId, task) {
+    const plan = this.plans.get(planId);
+    if (!plan) {
+      throw new Error(`Plan ${planId} not found`);
+    }
+    plan.tasks.push(JSON.parse(JSON.stringify(task)));
+  }
+  async deletePlan(planId) {
+    this.plans.delete(planId);
+  }
+  async listPlans(filter) {
+    const allPlans = Array.from(this.plans.values());
+    if (!filter || !filter.status) {
+      return allPlans.map((p) => JSON.parse(JSON.stringify(p)));
+    }
+    return allPlans.filter((plan) => filter.status.includes(plan.status)).map((p) => JSON.parse(JSON.stringify(p)));
+  }
+  async findByWebhookId(webhookId) {
+    for (const plan of this.plans.values()) {
+      for (const task of plan.tasks) {
+        if (task.externalDependency?.webhookId === webhookId) {
+          return {
+            plan: JSON.parse(JSON.stringify(plan)),
+            task: JSON.parse(JSON.stringify(task))
+          };
+        }
+      }
+    }
+    return void 0;
+  }
+};
+var InMemoryAgentStateStorage = class {
+  agents = /* @__PURE__ */ new Map();
+  async save(state) {
+    this.agents.set(state.id, JSON.parse(JSON.stringify(state)));
+  }
+  async load(agentId) {
+    const state = this.agents.get(agentId);
+    return state ? JSON.parse(JSON.stringify(state)) : void 0;
+  }
+  async delete(agentId) {
+    this.agents.delete(agentId);
+  }
+  async list(filter) {
+    const allStates = Array.from(this.agents.values());
+    if (!filter || !filter.status) {
+      return allStates.map((s) => JSON.parse(JSON.stringify(s)));
+    }
+    return allStates.filter((state) => filter.status.includes(state.status)).map((s) => JSON.parse(JSON.stringify(s)));
+  }
+  async patch(agentId, updates) {
+    const state = this.agents.get(agentId);
+    if (!state) {
+      throw new Error(`Agent ${agentId} not found`);
+    }
+    Object.assign(state, updates);
+  }
+};
+function createAgentStorage(options = {}) {
+  return {
+    memory: options.memory ?? new InMemoryStorage(),
+    plan: options.plan ?? new InMemoryPlanStorage(),
+    agent: options.agent ?? new InMemoryAgentStateStorage()
+  };
+}
+
+// src/core/context/types.ts
+var DEFAULT_CONTEXT_CONFIG = {
+  maxContextTokens: 128e3,
+  compactionThreshold: 0.75,
+  hardLimit: 0.9,
+  responseReserve: 0.15,
+  estimator: "approximate",
+  autoCompact: true,
+  strategy: "proactive",
+  strategyOptions: {}
+};
+
+// src/core/context/utils/ContextUtils.ts
+function estimateComponentTokens(component, estimator) {
+  if (typeof component.content === "string") {
+    return estimator.estimateTokens(component.content);
+  }
+  return estimator.estimateDataTokens(component.content);
+}
+function sortCompactableByPriority(components) {
+  return components.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
+}
+function findCompactorForComponent(component, compactors) {
+  return compactors.find((c) => c.canCompact(component));
+}
+async function executeCompactionLoop(options) {
+  const {
+    components,
+    tokensToFree,
+    compactors,
+    estimator,
+    calculateTargetSize,
+    maxRounds = 1,
+    logPrefix = ""
+  } = options;
+  const log = [];
+  let current = [...components];
+  let freedTokens = 0;
+  let round = 0;
+  const sortedComponents = sortCompactableByPriority(current);
+  while (freedTokens < tokensToFree && round < maxRounds) {
+    round++;
+    let roundFreed = 0;
+    for (const component of sortedComponents) {
+      if (freedTokens >= tokensToFree) break;
+      const compactor = findCompactorForComponent(component, compactors);
+      if (!compactor) continue;
+      const beforeSize = estimateComponentTokens(component, estimator);
+      const targetSize = calculateTargetSize(beforeSize, round);
+      if (targetSize >= beforeSize) continue;
+      const compacted = await compactor.compact(component, targetSize);
+      const index = current.findIndex((c) => c.name === component.name);
+      if (index !== -1) {
+        current[index] = compacted;
+      }
+      const afterSize = estimateComponentTokens(compacted, estimator);
+      const saved = beforeSize - afterSize;
+      freedTokens += saved;
+      roundFreed += saved;
+      const prefix = logPrefix ? `${logPrefix}: ` : "";
+      const roundInfo = maxRounds > 1 ? `Round ${round}: ` : "";
+      log.push(
+        `${prefix}${roundInfo}${compactor.name} compacted "${component.name}" by ${saved} tokens`
+      );
+    }
+    if (roundFreed === 0) break;
+  }
+  return { components: current, log, tokensFreed: freedTokens };
+}
+
+// src/core/context/strategies/BaseCompactionStrategy.ts
+var BaseCompactionStrategy = class {
+  metrics = {
+    compactionCount: 0,
+    totalTokensFreed: 0,
+    avgTokensFreedPerCompaction: 0
+  };
+  /**
+   * Get the maximum number of compaction rounds.
+   * Override in subclasses for multi-round strategies.
+   */
+  getMaxRounds() {
+    return 1;
+  }
+  /**
+   * Get the log prefix for compaction messages.
+   * Override to customize logging.
+   */
+  getLogPrefix() {
+    return this.name.charAt(0).toUpperCase() + this.name.slice(1);
+  }
+  /**
+   * Compact components to fit within budget.
+   * Uses the shared compaction loop with strategy-specific target calculation.
+   */
+  async compact(components, budget, compactors, estimator) {
+    const targetUsage = Math.floor(budget.total * this.getTargetUtilization());
+    const tokensToFree = budget.used - targetUsage;
+    const result = await executeCompactionLoop({
+      components,
+      tokensToFree,
+      compactors,
+      estimator,
+      calculateTargetSize: this.calculateTargetSize.bind(this),
+      maxRounds: this.getMaxRounds(),
+      logPrefix: this.getLogPrefix()
+    });
+    this.updateMetrics(result.tokensFreed);
+    return result;
+  }
+  /**
+   * Update internal metrics after compaction
+   */
+  updateMetrics(tokensFreed) {
+    this.metrics.compactionCount++;
+    this.metrics.totalTokensFreed += tokensFreed;
+    this.metrics.avgTokensFreedPerCompaction = this.metrics.totalTokensFreed / this.metrics.compactionCount;
+  }
+  /**
+   * Get strategy metrics
+   */
+  getMetrics() {
+    return { ...this.metrics };
+  }
+  /**
+   * Reset metrics (useful for testing)
+   */
+  resetMetrics() {
+    this.metrics = {
+      compactionCount: 0,
+      totalTokensFreed: 0,
+      avgTokensFreedPerCompaction: 0
+    };
+  }
+};
+
+// src/core/constants.ts
+var TASK_DEFAULTS = {
+  /** Default timeout for task execution in milliseconds (5 minutes) */
+  TIMEOUT_MS: 3e5};
+var CONTEXT_DEFAULTS = {
+  /** Default maximum context tokens (128K) */
+  MAX_TOKENS: 128e3};
+var PROACTIVE_STRATEGY_DEFAULTS = {
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.65,
+  /** Base reduction factor for round 1 */
+  BASE_REDUCTION_FACTOR: 0.5,
+  /** Reduction step per round (more aggressive each round) */
+  REDUCTION_STEP: 0.15,
+  /** Maximum compaction rounds */
+  MAX_ROUNDS: 3
+};
+var AGGRESSIVE_STRATEGY_DEFAULTS = {
+  /** Threshold to trigger compaction */
+  THRESHOLD: 0.6,
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.5,
+  /** Reduction factor (keep 30% of original) */
+  REDUCTION_FACTOR: 0.3
+};
+var LAZY_STRATEGY_DEFAULTS = {
+  /** Target utilization after compaction */
+  TARGET_UTILIZATION: 0.85,
+  /** Reduction factor (keep 70% of original) */
+  REDUCTION_FACTOR: 0.7
+};
+var ADAPTIVE_STRATEGY_DEFAULTS = {
+  /** Number of compactions to learn from */
+  LEARNING_WINDOW: 10,
+  /** Compactions per minute threshold to switch to aggressive */
+  SWITCH_THRESHOLD: 5,
+  /** Low utilization threshold to switch to lazy */
+  LOW_UTILIZATION_THRESHOLD: 70,
+  /** Low frequency threshold to switch to lazy */
+  LOW_FREQUENCY_THRESHOLD: 0.5
+};
+var ROLLING_WINDOW_DEFAULTS = {
+  /** Default maximum messages to keep */
+  MAX_MESSAGES: 20
+};
+
+// src/core/context/strategies/ProactiveStrategy.ts
+var DEFAULT_OPTIONS = {
+  targetUtilization: PROACTIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  baseReductionFactor: PROACTIVE_STRATEGY_DEFAULTS.BASE_REDUCTION_FACTOR,
+  reductionStep: PROACTIVE_STRATEGY_DEFAULTS.REDUCTION_STEP,
+  maxRounds: PROACTIVE_STRATEGY_DEFAULTS.MAX_ROUNDS
+};
+var ProactiveCompactionStrategy = class extends BaseCompactionStrategy {
+  name = "proactive";
+  options;
+  constructor(options = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS, ...options };
+  }
+  shouldCompact(budget, _config) {
+    return budget.status === "warning" || budget.status === "critical";
+  }
+  calculateTargetSize(beforeSize, round) {
+    const reductionFactor = this.options.baseReductionFactor - (round - 1) * this.options.reductionStep;
+    return Math.floor(beforeSize * Math.max(reductionFactor, 0.1));
+  }
+  getTargetUtilization() {
+    return this.options.targetUtilization;
+  }
+  getMaxRounds() {
+    return this.options.maxRounds;
+  }
+  getLogPrefix() {
+    return "Proactive";
+  }
+};
+
+// src/core/context/strategies/AggressiveStrategy.ts
+var DEFAULT_OPTIONS2 = {
+  threshold: AGGRESSIVE_STRATEGY_DEFAULTS.THRESHOLD,
+  targetUtilization: AGGRESSIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  reductionFactor: AGGRESSIVE_STRATEGY_DEFAULTS.REDUCTION_FACTOR
+};
+var AggressiveCompactionStrategy = class extends BaseCompactionStrategy {
+  name = "aggressive";
+  options;
+  constructor(options = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS2, ...options };
+  }
+  shouldCompact(budget, _config) {
+    const utilizationRatio = (budget.used + budget.reserved) / budget.total;
+    return utilizationRatio >= this.options.threshold;
+  }
+  calculateTargetSize(beforeSize, _round) {
+    return Math.floor(beforeSize * this.options.reductionFactor);
+  }
+  getTargetUtilization() {
+    return this.options.targetUtilization;
+  }
+  getLogPrefix() {
+    return "Aggressive";
+  }
+};
+
+// src/core/context/strategies/LazyStrategy.ts
+var DEFAULT_OPTIONS3 = {
+  targetUtilization: LAZY_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
+  reductionFactor: LAZY_STRATEGY_DEFAULTS.REDUCTION_FACTOR
+};
+var LazyCompactionStrategy = class extends BaseCompactionStrategy {
+  name = "lazy";
+  options;
+  constructor(options = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS3, ...options };
+  }
+  shouldCompact(budget, _config) {
+    return budget.status === "critical";
+  }
+  calculateTargetSize(beforeSize, _round) {
+    return Math.floor(beforeSize * this.options.reductionFactor);
+  }
+  getTargetUtilization() {
+    return this.options.targetUtilization;
+  }
+  getLogPrefix() {
+    return "Lazy";
+  }
+};
+
+// src/core/context/strategies/RollingWindowStrategy.ts
+var RollingWindowStrategy = class {
+  constructor(options = {}) {
+    this.options = options;
+  }
+  name = "rolling-window";
+  shouldCompact(_budget, _config) {
+    return false;
+  }
+  async prepareComponents(components) {
+    return components.map((component) => {
+      if (Array.isArray(component.content)) {
+        const maxMessages = this.options.maxMessages ?? ROLLING_WINDOW_DEFAULTS.MAX_MESSAGES;
+        if (component.content.length > maxMessages) {
+          return {
+            ...component,
+            content: component.content.slice(-maxMessages),
+            metadata: {
+              ...component.metadata,
+              windowed: true,
+              originalLength: component.content.length,
+              keptLength: maxMessages
+            }
+          };
+        }
+      }
+      return component;
+    });
+  }
+  async compact() {
+    return { components: [], log: [], tokensFreed: 0 };
+  }
+};
+
+// src/core/context/strategies/AdaptiveStrategy.ts
+var AdaptiveStrategy = class {
+  constructor(options = {}) {
+    this.options = options;
+    this.currentStrategy = new ProactiveCompactionStrategy();
+  }
+  name = "adaptive";
+  currentStrategy;
+  metrics = {
+    avgUtilization: 0,
+    compactionFrequency: 0,
+    lastCompactions: []
+  };
+  shouldCompact(budget, config) {
+    this.updateMetrics(budget);
+    this.maybeAdapt();
+    return this.currentStrategy.shouldCompact(budget, config);
+  }
+  async compact(components, budget, compactors, estimator) {
+    const result = await this.currentStrategy.compact(components, budget, compactors, estimator);
+    this.metrics.lastCompactions.push(Date.now());
+    const window = this.options.learningWindow ?? ADAPTIVE_STRATEGY_DEFAULTS.LEARNING_WINDOW;
+    if (this.metrics.lastCompactions.length > window) {
+      this.metrics.lastCompactions.shift();
+    }
+    return {
+      ...result,
+      log: [`[Adaptive: using ${this.currentStrategy.name}]`, ...result.log]
+    };
+  }
+  updateMetrics(budget) {
+    const alpha = 0.1;
+    this.metrics.avgUtilization = alpha * budget.utilizationPercent + (1 - alpha) * this.metrics.avgUtilization;
+  }
+  maybeAdapt() {
+    const now = Date.now();
+    if (this.metrics.lastCompactions.length >= 2) {
+      const firstCompaction = this.metrics.lastCompactions[0];
+      if (firstCompaction !== void 0) {
+        const timeSpan = now - firstCompaction;
+        this.metrics.compactionFrequency = this.metrics.lastCompactions.length / timeSpan * 6e4;
+      }
+    }
+    const threshold = this.options.switchThreshold ?? ADAPTIVE_STRATEGY_DEFAULTS.SWITCH_THRESHOLD;
+    if (this.metrics.compactionFrequency > threshold) {
+      if (this.currentStrategy.name !== "aggressive") {
+        this.currentStrategy = new AggressiveCompactionStrategy();
+      }
+    } else if (this.metrics.compactionFrequency < ADAPTIVE_STRATEGY_DEFAULTS.LOW_FREQUENCY_THRESHOLD && this.metrics.avgUtilization < ADAPTIVE_STRATEGY_DEFAULTS.LOW_UTILIZATION_THRESHOLD) {
+      if (this.currentStrategy.name !== "lazy") {
+        this.currentStrategy = new LazyCompactionStrategy();
+      }
+    } else {
+      if (this.currentStrategy.name !== "proactive") {
+        this.currentStrategy = new ProactiveCompactionStrategy();
+      }
+    }
+  }
+  getMetrics() {
+    return {
+      ...this.metrics,
+      currentStrategy: this.currentStrategy.name
+    };
+  }
+};
+
+// src/core/context/strategies/index.ts
+function createStrategy(name, options = {}) {
+  switch (name) {
+    case "proactive":
+      return new ProactiveCompactionStrategy(options);
+    case "aggressive":
+      return new AggressiveCompactionStrategy(options);
+    case "lazy":
+      return new LazyCompactionStrategy(options);
+    case "rolling-window":
+      return new RollingWindowStrategy(options);
+    case "adaptive":
+      return new AdaptiveStrategy(options);
+    default:
+      throw new Error(`Unknown context strategy: ${name}`);
+  }
+}
+
+// src/core/AgentContext.ts
+var DEFAULT_AGENT_CONTEXT_CONFIG = {
+  model: "gpt-4",
+  maxContextTokens: 128e3,
+  systemPrompt: "",
+  instructions: "",
+  history: {
+    maxMessages: 100,
+    preserveRecent: 20
+  },
+  strategy: "proactive",
+  responseReserve: 0.15,
+  autoCompact: true
+};
+var AgentContext = class _AgentContext extends EventEmitter {
+  // ===== Composed Managers (reused, not duplicated) =====
+  _tools;
+  _memory;
+  _cache;
+  _permissions;
+  // ===== Built-in State =====
+  _systemPrompt;
+  _instructions;
+  _history = [];
+  _toolCalls = [];
+  _currentInput = "";
+  // ===== Plugins =====
+  _plugins = /* @__PURE__ */ new Map();
+  // ===== Configuration =====
+  _config;
+  _maxContextTokens;
+  _strategy;
+  _estimator;
+  _cacheEnabled;
+  // ===== Metrics =====
+  _compactionCount = 0;
+  _totalTokensFreed = 0;
+  _lastBudget = null;
+  // ============================================================================
+  // Constructor & Factory
+  // ============================================================================
+  constructor(config = {}) {
+    super();
+    this._config = {
+      ...DEFAULT_AGENT_CONTEXT_CONFIG,
+      ...config,
+      history: { ...DEFAULT_AGENT_CONTEXT_CONFIG.history, ...config.history }
+    };
+    this._systemPrompt = config.systemPrompt ?? "";
+    this._instructions = config.instructions ?? "";
+    this._maxContextTokens = config.maxContextTokens ?? getModelInfo(config.model ?? "gpt-4")?.features.input.tokens ?? 128e3;
+    this._strategy = createStrategy(this._config.strategy, {});
+    this._estimator = this.createEstimator();
+    this._tools = new ToolManager();
+    if (config.tools) {
+      for (const tool of config.tools) {
+        this._tools.register(tool);
+      }
+    }
+    this._permissions = new ToolPermissionManager(config.permissions);
+    const memoryStorage = config.memory?.storage ?? new InMemoryStorage();
+    const memoryConfig = {
+      ...DEFAULT_MEMORY_CONFIG,
+      ...config.memory
+    };
+    this._memory = new WorkingMemory(memoryStorage, memoryConfig);
+    this._cacheEnabled = config.cache?.enabled !== false;
+    const cacheConfig = {
+      ...DEFAULT_IDEMPOTENCY_CONFIG,
+      ...config.cache
+    };
+    this._cache = new IdempotencyCache(cacheConfig);
+  }
+  /**
+   * Create a new AgentContext
+   */
+  static create(config = {}) {
+    return new _AgentContext(config);
+  }
+  // ============================================================================
+  // Public Accessors (expose composed managers for direct access)
+  // ============================================================================
+  /** Tool manager - register, enable/disable, execute tools */
+  get tools() {
+    return this._tools;
+  }
+  /** Working memory - store/retrieve agent state */
+  get memory() {
+    return this._memory;
+  }
+  /** Tool result cache - automatic deduplication */
+  get cache() {
+    return this._cache;
+  }
+  /** Tool permissions - approval workflow */
+  get permissions() {
+    return this._permissions;
+  }
+  // ============================================================================
+  // Core Context (Built-in)
+  // ============================================================================
+  /** Get/set system prompt */
+  get systemPrompt() {
+    return this._systemPrompt;
+  }
+  set systemPrompt(value) {
+    this._systemPrompt = value;
+  }
+  /** Get/set instructions */
+  get instructions() {
+    return this._instructions;
+  }
+  set instructions(value) {
+    this._instructions = value;
+  }
+  /** Set current input for this turn */
+  setCurrentInput(input) {
+    this._currentInput = input;
+  }
+  /** Get current input */
+  getCurrentInput() {
+    return this._currentInput;
+  }
+  // ============================================================================
+  // History Management (Built-in)
+  // ============================================================================
+  /**
+   * Add a message to history
+   */
+  addMessage(role, content, metadata) {
+    const message = {
+      id: this.generateId(),
+      role,
+      content,
+      timestamp: Date.now(),
+      metadata
+    };
+    this._history.push(message);
+    this.emit("message:added", { message });
+    return message;
+  }
+  /**
+   * Get all history messages
+   */
+  getHistory() {
+    return [...this._history];
+  }
+  /**
+   * Get recent N messages
+   */
+  getRecentHistory(count) {
+    return this._history.slice(-count);
+  }
+  /**
+   * Get message count
+   */
+  getMessageCount() {
+    return this._history.length;
+  }
+  /**
+   * Clear history
+   */
+  clearHistory(reason) {
+    this._history = [];
+    this.emit("history:cleared", { reason });
+  }
+  /**
+   * Get all tool call records
+   */
+  getToolCalls() {
+    return [...this._toolCalls];
+  }
+  // ============================================================================
+  // Tool Execution (with caching integration)
+  // ============================================================================
+  /**
+   * Execute a tool with automatic caching
+   *
+   * This is the recommended way to execute tools - it integrates:
+   * - Permission checking
+   * - Result caching (if tool is cacheable)
+   * - History recording
+   * - Metrics tracking
+   */
+  async executeTool(toolName, args, context) {
+    const tool = this._tools.get(toolName);
+    if (!tool) {
+      throw new Error(`Tool '${toolName}' not found`);
+    }
+    const startTime = Date.now();
+    let result;
+    let error;
+    let cached = false;
+    try {
+      if (this._cacheEnabled) {
+        const cachedResult = await this._cache.get(tool, args);
+        if (cachedResult !== void 0) {
+          cached = true;
+          result = cachedResult;
+          this.emit("tool:cached", { name: toolName, args });
+        }
+      }
+      if (!cached) {
+        const fullContext = {
+          agentId: context?.agentId ?? "agent-context",
+          taskId: context?.taskId,
+          memory: this._memory.getAccess(),
+          idempotencyCache: this._cache,
+          signal: context?.signal
+        };
+        this._tools.setToolContext(fullContext);
+        result = await this._tools.execute(toolName, args);
+        if (this._cacheEnabled) {
+          await this._cache.set(tool, args, result);
+        }
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      throw err;
+    } finally {
+      const record = {
+        id: this.generateId(),
+        name: toolName,
+        args,
+        result: error ? void 0 : result,
+        error,
+        durationMs: Date.now() - startTime,
+        cached,
+        timestamp: Date.now()
+      };
+      this._toolCalls.push(record);
+      this.emit("tool:executed", { record });
+    }
+    return result;
+  }
+  // ============================================================================
+  // Plugin System
+  // ============================================================================
+  /**
+   * Register a context plugin
+   */
+  registerPlugin(plugin) {
+    if (this._plugins.has(plugin.name)) {
+      throw new Error(`Plugin '${plugin.name}' is already registered`);
+    }
+    this._plugins.set(plugin.name, plugin);
+    this.emit("plugin:registered", { name: plugin.name });
+  }
+  /**
+   * Unregister a plugin
+   */
+  unregisterPlugin(name) {
+    const plugin = this._plugins.get(name);
+    if (plugin) {
+      plugin.destroy?.();
+      this._plugins.delete(name);
+      this.emit("plugin:unregistered", { name });
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Get a plugin by name
+   */
+  getPlugin(name) {
+    return this._plugins.get(name);
+  }
+  /**
+   * List all registered plugins
+   */
+  listPlugins() {
+    return Array.from(this._plugins.keys());
+  }
+  // ============================================================================
+  // Context Preparation (Unified)
+  // ============================================================================
+  /**
+   * Prepare context for LLM call
+   *
+   * Assembles all components:
+   * - System prompt, instructions
+   * - Conversation history
+   * - Memory index
+   * - Plugin components
+   * - Current input
+   *
+   * Handles compaction automatically if budget is exceeded.
+   */
+  async prepare() {
+    const components = await this.buildComponents();
+    this.emit("context:preparing", { componentCount: components.length });
+    let budget = this.calculateBudget(components);
+    this._lastBudget = budget;
+    if (budget.status === "warning") {
+      this.emit("budget:warning", { budget });
+    } else if (budget.status === "critical") {
+      this.emit("budget:critical", { budget });
+    }
+    const needsCompaction = this._config.autoCompact && this._strategy.shouldCompact(budget, {
+      ...DEFAULT_CONTEXT_CONFIG,
+      maxContextTokens: this._maxContextTokens,
+      responseReserve: this._config.responseReserve
+    });
+    if (needsCompaction) {
+      const result = await this.doCompaction(components, budget);
+      this.emit("context:prepared", { budget: result.budget, compacted: true });
+      return result;
+    }
+    this.emit("context:prepared", { budget, compacted: false });
+    return { components, budget, compacted: false };
+  }
+  /**
+   * Get current budget without full preparation
+   */
+  async getBudget() {
+    const components = await this.buildComponents();
+    return this.calculateBudget(components);
+  }
+  /**
+   * Force compaction
+   */
+  async compact() {
+    const components = await this.buildComponents();
+    const budget = this.calculateBudget(components);
+    return this.doCompaction(components, budget);
+  }
+  // ============================================================================
+  // Configuration
+  // ============================================================================
+  /**
+   * Set compaction strategy
+   */
+  setStrategy(strategy) {
+    this._strategy = createStrategy(strategy, {});
+  }
+  /**
+   * Get max context tokens
+   */
+  getMaxContextTokens() {
+    return this._maxContextTokens;
+  }
+  /**
+   * Set max context tokens
+   */
+  setMaxContextTokens(tokens) {
+    this._maxContextTokens = tokens;
+  }
+  /**
+   * Enable/disable caching
+   */
+  setCacheEnabled(enabled) {
+    this._cacheEnabled = enabled;
+  }
+  /**
+   * Check if caching is enabled
+   */
+  isCacheEnabled() {
+    return this._cacheEnabled;
+  }
+  // ============================================================================
+  // Introspection
+  // ============================================================================
+  /**
+   * Estimate tokens for content
+   */
+  estimateTokens(content, type) {
+    return this._estimator.estimateTokens(content, type);
+  }
+  /**
+   * Get utilization percentage
+   */
+  getUtilization() {
+    return this._lastBudget?.utilizationPercent ?? 0;
+  }
+  /**
+   * Get last calculated budget
+   */
+  getLastBudget() {
+    return this._lastBudget;
+  }
+  /**
+   * Get comprehensive metrics
+   */
+  async getMetrics() {
+    const memoryStats = await this._memory.getStats();
+    return {
+      historyMessageCount: this._history.length,
+      toolCallCount: this._toolCalls.length,
+      cacheStats: this._cache.getStats(),
+      memoryStats: {
+        totalEntries: memoryStats.totalEntries,
+        totalSizeBytes: memoryStats.totalSizeBytes,
+        utilizationPercent: memoryStats.utilizationPercent
+      },
+      pluginCount: this._plugins.size,
+      utilizationPercent: this._lastBudget?.utilizationPercent ?? 0
+    };
+  }
+  // ============================================================================
+  // Session Persistence (Unified)
+  // ============================================================================
+  /**
+   * Get state for session persistence
+   *
+   * Serializes ALL state:
+   * - History and tool calls
+   * - Tool enable/disable state
+   * - Memory state
+   * - Permission state
+   * - Plugin state
+   */
+  async getState() {
+    const pluginStates = {};
+    for (const [name, plugin] of this._plugins) {
+      const state = plugin.getState?.();
+      if (state !== void 0) {
+        pluginStates[name] = state;
+      }
+    }
+    const memoryStats = await this._memory.getStats();
+    return {
+      version: 1,
+      core: {
+        systemPrompt: this._systemPrompt,
+        instructions: this._instructions,
+        history: this._history,
+        toolCalls: this._toolCalls
+      },
+      tools: this._tools.getState(),
+      memoryStats: {
+        entryCount: memoryStats.totalEntries,
+        sizeBytes: memoryStats.totalSizeBytes
+      },
+      permissions: this._permissions.getState(),
+      plugins: pluginStates,
+      config: {
+        model: this._config.model,
+        maxContextTokens: this._maxContextTokens,
+        strategy: this._strategy.name
+      }
+    };
+  }
+  /**
+   * Restore from saved state
+   *
+   * Restores ALL state from a previous session.
+   */
+  async restoreState(state) {
+    this._systemPrompt = state.core.systemPrompt || "";
+    this._instructions = state.core.instructions || "";
+    this._history = state.core.history || [];
+    this._toolCalls = state.core.toolCalls || [];
+    if (state.config.maxContextTokens) {
+      this._maxContextTokens = state.config.maxContextTokens;
+    }
+    if (state.config.strategy) {
+      this._strategy = createStrategy(state.config.strategy, {});
+    }
+    if (state.tools) {
+      this._tools.loadState(state.tools);
+    }
+    if (state.permissions) {
+      this._permissions.loadState(state.permissions);
+    }
+    for (const [name, pluginState] of Object.entries(state.plugins)) {
+      const plugin = this._plugins.get(name);
+      if (plugin?.restoreState) {
+        plugin.restoreState(pluginState);
+      }
+    }
+  }
+  // ============================================================================
+  // Cleanup
+  // ============================================================================
+  /**
+   * Destroy the context and release resources
+   */
+  destroy() {
+    for (const plugin of this._plugins.values()) {
+      plugin.destroy?.();
+    }
+    this._plugins.clear();
+    this._cache.clear();
+    this._history = [];
+    this._toolCalls = [];
+    this.removeAllListeners();
+  }
+  // ============================================================================
+  // Private Methods
+  // ============================================================================
+  /**
+   * Build all context components
+   */
+  async buildComponents() {
+    const components = [];
+    if (this._systemPrompt) {
+      components.push({
+        name: "system_prompt",
+        content: this._systemPrompt,
+        priority: 0,
+        compactable: false
+      });
+    }
+    if (this._instructions) {
+      components.push({
+        name: "instructions",
+        content: this._instructions,
+        priority: 0,
+        compactable: false
+      });
+    }
+    if (this._history.length > 0) {
+      components.push({
+        name: "conversation_history",
+        content: this.formatHistoryForContext(),
+        priority: 6,
+        // Medium priority
+        compactable: true,
+        metadata: {
+          messageCount: this._history.length
+        }
+      });
+    }
+    const memoryIndex = await this._memory.formatIndex();
+    const isEmpty = !memoryIndex || memoryIndex.trim().length === 0 || memoryIndex.includes("Memory is empty.");
+    if (!isEmpty) {
+      components.push({
+        name: "memory_index",
+        content: memoryIndex,
+        priority: 8,
+        // Higher = compact first
+        compactable: true
+      });
+    }
+    for (const plugin of this._plugins.values()) {
+      try {
+        const component = await plugin.getComponent();
+        if (component) {
+          components.push(component);
+        }
+      } catch (error) {
+        console.warn(`Plugin '${plugin.name}' failed to get component:`, error);
+      }
+    }
+    if (this._currentInput) {
+      components.push({
+        name: "current_input",
+        content: this._currentInput,
+        priority: 0,
+        compactable: false
+      });
+    }
+    return components;
+  }
+  /**
+   * Format history for context
+   */
+  formatHistoryForContext() {
+    return this._history.map((m) => {
+      const roleLabel = m.role.charAt(0).toUpperCase() + m.role.slice(1);
+      return `${roleLabel}: ${m.content}`;
+    }).join("\n\n");
+  }
+  /**
+   * Calculate budget
+   */
+  calculateBudget(components) {
+    const breakdown = {};
+    let used = 0;
+    for (const component of components) {
+      const tokens = estimateComponentTokens(component, this._estimator);
+      breakdown[component.name] = tokens;
+      used += tokens;
+    }
+    const total = this._maxContextTokens;
+    const reserved = Math.floor(total * this._config.responseReserve);
+    const available = total - reserved - used;
+    const utilizationRatio = (used + reserved) / total;
+    const utilizationPercent = used / (total - reserved) * 100;
+    let status;
+    if (utilizationRatio >= 0.9) {
+      status = "critical";
+    } else if (utilizationRatio >= 0.75) {
+      status = "warning";
+    } else {
+      status = "ok";
+    }
+    return {
+      total,
+      reserved,
+      used,
+      available,
+      utilizationPercent,
+      status,
+      breakdown
+    };
+  }
+  /**
+   * Perform compaction
+   */
+  async doCompaction(components, budget) {
+    const log = [];
+    let tokensFreed = 0;
+    let currentBudget = budget;
+    const compactable = components.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
+    for (const component of compactable) {
+      if (currentBudget.status === "ok") break;
+      let freed = 0;
+      if (component.name === "conversation_history") {
+        freed = this.compactHistory();
+        if (freed > 0) log.push(`Compacted history: freed ~${freed} tokens`);
+      } else if (component.name === "memory_index") {
+        freed = await this.compactMemory();
+        if (freed > 0) log.push(`Compacted memory: freed ~${freed} tokens`);
+      } else {
+        const plugin = this._plugins.get(component.name);
+        if (plugin?.compact) {
+          freed = await plugin.compact(currentBudget.available, this._estimator);
+          if (freed > 0) log.push(`Compacted ${component.name}: freed ~${freed} tokens`);
+        }
+      }
+      tokensFreed += freed;
+      const newComponents = await this.buildComponents();
+      currentBudget = this.calculateBudget(newComponents);
+    }
+    this._compactionCount++;
+    this._totalTokensFreed += tokensFreed;
+    const finalComponents = await this.buildComponents();
+    const finalBudget = this.calculateBudget(finalComponents);
+    this.emit("compacted", { log, tokensFreed });
+    return {
+      components: finalComponents,
+      budget: finalBudget,
+      compacted: true,
+      compactionLog: log
+    };
+  }
+  /**
+   * Compact history
+   */
+  compactHistory() {
+    const preserve = this._config.history.preserveRecent;
+    const before = this._history.length;
+    if (before <= preserve) return 0;
+    const removed = this._history.slice(0, -preserve);
+    this._history = this._history.slice(-preserve);
+    const tokensFreed = removed.reduce(
+      (sum, m) => sum + this._estimator.estimateTokens(m.content),
+      0
+    );
+    this.emit("history:compacted", { removedCount: removed.length });
+    return tokensFreed;
+  }
+  /**
+   * Compact memory
+   */
+  async compactMemory() {
+    const beforeIndex = await this._memory.formatIndex();
+    const beforeTokens = this._estimator.estimateTokens(beforeIndex);
+    await this._memory.evict(3, "lru");
+    const afterIndex = await this._memory.formatIndex();
+    const afterTokens = this._estimator.estimateTokens(afterIndex);
+    return Math.max(0, beforeTokens - afterTokens);
+  }
+  /**
+   * Create token estimator
+   */
+  createEstimator() {
+    return {
+      estimateTokens: (text, contentType) => {
+        if (!text || text.length === 0) return 0;
+        const ratio = contentType === "code" ? 3 : contentType === "prose" ? 4 : 3.5;
+        return Math.ceil(text.length / ratio);
+      },
+      estimateDataTokens: (data, contentType) => {
+        const serialized = JSON.stringify(data);
+        const ratio = contentType === "code" ? 3 : contentType === "prose" ? 4 : 3.5;
+        return Math.ceil(serialized.length / ratio);
+      }
+    };
+  }
+  /**
+   * Generate unique ID
+   */
+  generateId() {
+    return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  }
+};
+
+// src/core/Agent.ts
 var Agent = class _Agent extends BaseAgent {
   // ===== Agent-specific State =====
   provider;
   agenticLoop;
   boundListeners = /* @__PURE__ */ new Map();
+  // ===== Optional Context Management =====
+  _context = null;
   // ===== Static Factory =====
   /**
    * Create a new agent
@@ -9929,6 +12027,20 @@ var Agent = class _Agent extends BaseAgent {
       connector: this.connector.name
     });
     this.provider = createProvider(this.connector);
+    if (config.context) {
+      if (config.context instanceof AgentContext) {
+        this._context = config.context;
+      } else {
+        this._context = AgentContext.create({
+          model: config.model,
+          systemPrompt: config.instructions,
+          tools: config.tools,
+          permissions: config.permissions,
+          ...config.context
+        });
+      }
+      this._logger.debug("AgentContext initialized");
+    }
     this._toolManager.on("tool:registered", ({ name }) => {
       const permission = this._toolManager.getPermission(name);
       if (permission) {
@@ -9949,6 +12061,62 @@ var Agent = class _Agent extends BaseAgent {
     return "agent";
   }
   prepareSessionState() {
+    if (this._context && this._session) {
+      this._context.getState().then((contextState) => {
+        if (this._session) {
+          this._session.metadata = {
+            ...this._session.metadata,
+            agentContext: contextState
+          };
+        }
+      });
+    }
+  }
+  // ===== Context Access =====
+  /**
+   * Get the optional AgentContext (if configured).
+   * Returns null if context management was not enabled.
+   *
+   * @example
+   * ```typescript
+   * const agent = Agent.create({
+   *   connector: 'openai',
+   *   model: 'gpt-4',
+   *   context: { autoCompact: true },
+   * });
+   *
+   * // Access context features
+   * if (agent.context) {
+   *   const history = agent.context.getHistory();
+   *   const budget = await agent.context.getBudget();
+   *   agent.context.memory.store('key', 'desc', value);
+   * }
+   * ```
+   */
+  get context() {
+    return this._context;
+  }
+  /**
+   * Check if context management is enabled
+   */
+  hasContext() {
+    return this._context !== null;
+  }
+  /**
+   * Get context state for session persistence.
+   * Returns null if context is not enabled.
+   */
+  async getContextState() {
+    if (!this._context) return null;
+    return this._context.getState();
+  }
+  /**
+   * Restore context from saved state.
+   * No-op if context is not enabled.
+   */
+  async restoreContextState(state) {
+    if (!this._context) return;
+    await this._context.restoreState(state);
   }
   // ===== Main API =====
   /**
@@ -9967,6 +12135,11 @@ var Agent = class _Agent extends BaseAgent {
       connector: this.connector.name
     });
     const startTime = Date.now();
+    if (this._context) {
+      const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
+      this._context.addMessage("user", userContent);
+      this._context.setCurrentInput(userContent);
+    }
     try {
       const tools = this.getEnabledToolDefinitions();
       const loopConfig = {
@@ -9986,6 +12159,9 @@ var Agent = class _Agent extends BaseAgent {
       };
       const response = await this.agenticLoop.execute(loopConfig);
       const duration = Date.now() - startTime;
+      if (this._context && response.output_text) {
+        this._context.addMessage("assistant", response.output_text);
+      }
       this._logger.info({ duration }, "Agent run completed");
       metrics.timing("agent.run.duration", duration, {
         model: this.model,
@@ -10027,6 +12203,12 @@ var Agent = class _Agent extends BaseAgent {
       connector: this.connector.name
     });
     const startTime = Date.now();
+    if (this._context) {
+      const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
+      this._context.addMessage("user", userContent);
+      this._context.setCurrentInput(userContent);
+    }
+    let accumulatedResponse = "";
     try {
       const tools = this.getEnabledToolDefinitions();
       const loopConfig = {
@@ -10044,7 +12226,15 @@ var Agent = class _Agent extends BaseAgent {
         permissionManager: this._permissionManager,
         agentType: "agent"
       };
-      yield* this.agenticLoop.executeStreaming(loopConfig);
+      for await (const event of this.agenticLoop.executeStreaming(loopConfig)) {
+        if (this._context && isOutputTextDelta(event)) {
+          accumulatedResponse += event.delta;
+        }
+        yield event;
+      }
+      if (this._context && accumulatedResponse) {
+        this._context.addMessage("assistant", accumulatedResponse);
+      }
       const duration = Date.now() - startTime;
       this._logger.info({ duration }, "Agent stream completed");
       metrics.timing("agent.stream.duration", duration, {
@@ -10209,6 +12399,10 @@ var Agent = class _Agent extends BaseAgent {
       this.agenticLoop.off(eventName, handler);
     }
     this.boundListeners.clear();
+    if (this._context && !(this._config.context instanceof AgentContext)) {
+      this._context.destroy();
+    }
+    this._context = null;
     for (const callback of this._cleanupCallbacks) {
       try {
         callback();
@@ -10264,52 +12458,6 @@ var Agent = class _Agent extends BaseAgent {
       throw error;
     }
   }
-};
-
-// src/core/constants.ts
-var TASK_DEFAULTS = {
-  /** Default timeout for task execution in milliseconds (5 minutes) */
-  TIMEOUT_MS: 3e5};
-var CONTEXT_DEFAULTS = {
-  /** Default maximum context tokens (128K) */
-  MAX_TOKENS: 128e3};
-var PROACTIVE_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.65,
-  /** Base reduction factor for round 1 */
-  BASE_REDUCTION_FACTOR: 0.5,
-  /** Reduction step per round (more aggressive each round) */
-  REDUCTION_STEP: 0.15,
-  /** Maximum compaction rounds */
-  MAX_ROUNDS: 3
-};
-var AGGRESSIVE_STRATEGY_DEFAULTS = {
-  /** Threshold to trigger compaction */
-  THRESHOLD: 0.6,
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.5,
-  /** Reduction factor (keep 30% of original) */
-  REDUCTION_FACTOR: 0.3
-};
-var LAZY_STRATEGY_DEFAULTS = {
-  /** Target utilization after compaction */
-  TARGET_UTILIZATION: 0.85,
-  /** Reduction factor (keep 70% of original) */
-  REDUCTION_FACTOR: 0.7
-};
-var ADAPTIVE_STRATEGY_DEFAULTS = {
-  /** Number of compactions to learn from */
-  LEARNING_WINDOW: 10,
-  /** Compactions per minute threshold to switch to aggressive */
-  SWITCH_THRESHOLD: 5,
-  /** Low utilization threshold to switch to lazy */
-  LOW_UTILIZATION_THRESHOLD: 70,
-  /** Low frequency threshold to switch to lazy */
-  LOW_FREQUENCY_THRESHOLD: 0.5
-};
-var ROLLING_WINDOW_DEFAULTS = {
-  /** Default maximum messages to keep */
-  MAX_MESSAGES: 20
 };
 (class {
   static DEFAULT_PATHS = [
@@ -14971,1175 +17119,6 @@ function updateAgentStatus(state, status) {
   }
   return updated;
 }
-
-// src/domain/entities/Memory.ts
-function isTaskAwareScope(scope) {
-  return typeof scope === "object" && scope !== null && "type" in scope;
-}
-function isSimpleScope(scope) {
-  return scope === "session" || scope === "persistent";
-}
-function scopeEquals(a, b) {
-  if (isSimpleScope(a) && isSimpleScope(b)) {
-    return a === b;
-  }
-  if (isTaskAwareScope(a) && isTaskAwareScope(b)) {
-    if (a.type !== b.type) return false;
-    if (a.type === "task" && b.type === "task") {
-      if (a.taskIds.length !== b.taskIds.length) return false;
-      const sortedA = [...a.taskIds].sort();
-      const sortedB = [...b.taskIds].sort();
-      return sortedA.every((id, i) => id === sortedB[i]);
-    }
-    return true;
-  }
-  return false;
-}
-function scopeMatches(entryScope, filterScope) {
-  if (scopeEquals(entryScope, filterScope)) return true;
-  if (isSimpleScope(filterScope)) return false;
-  if (isTaskAwareScope(entryScope) && isTaskAwareScope(filterScope)) {
-    return entryScope.type === filterScope.type;
-  }
-  return false;
-}
-var MEMORY_PRIORITY_VALUES = {
-  critical: 4,
-  high: 3,
-  normal: 2,
-  low: 1
-};
-var TERMINAL_MEMORY_STATUSES = ["completed", "failed", "skipped", "cancelled"];
-function isTerminalMemoryStatus(status) {
-  return TERMINAL_MEMORY_STATUSES.includes(status);
-}
-var staticPriorityCalculator = (entry) => {
-  if (entry.pinned) return "critical";
-  return entry.basePriority;
-};
-function detectStaleEntries(entries, completedTaskId, taskStates) {
-  const stale = [];
-  for (const entry of entries) {
-    if (entry.pinned) continue;
-    const scope = entry.scope;
-    if (!isTaskAwareScope(scope) || scope.type !== "task") continue;
-    if (!scope.taskIds.includes(completedTaskId)) continue;
-    const allTerminal = scope.taskIds.every((taskId) => {
-      const status = taskStates.get(taskId);
-      return status ? isTerminalMemoryStatus(status) : false;
-    });
-    if (allTerminal) {
-      stale.push({
-        key: entry.key,
-        description: entry.description,
-        reason: "task_completed",
-        previousPriority: entry.basePriority,
-        newPriority: "low",
-        taskIds: scope.taskIds
-      });
-    }
-  }
-  return stale;
-}
-function forTasks(key, description, value, taskIds, options) {
-  return {
-    key,
-    description,
-    value,
-    scope: { type: "task", taskIds },
-    priority: options?.priority,
-    pinned: options?.pinned
-  };
-}
-function forPlan(key, description, value, options) {
-  return {
-    key,
-    description,
-    value,
-    scope: { type: "plan" },
-    priority: options?.priority,
-    pinned: options?.pinned
-  };
-}
-var DEFAULT_MEMORY_CONFIG = {
-  descriptionMaxLength: 150,
-  softLimitPercent: 80,
-  contextAllocationPercent: 20
-};
-function validateMemoryKey(key) {
-  if (!key || key.length === 0) {
-    throw new Error("Memory key cannot be empty");
-  }
-  if (key.startsWith(".") || key.endsWith(".") || key.includes("..")) {
-    throw new Error("Invalid memory key format: keys cannot start/end with dots or contain consecutive dots");
-  }
-  if (!/^[a-zA-Z0-9._-]+$/.test(key)) {
-    throw new Error("Invalid memory key format: only alphanumeric, dots, dashes, and underscores allowed");
-  }
-}
-function calculateEntrySize(value) {
-  if (value === void 0) {
-    return 0;
-  }
-  const serialized = JSON.stringify(value);
-  if (typeof Buffer !== "undefined") {
-    return Buffer.byteLength(serialized, "utf8");
-  }
-  return new Blob([serialized]).size;
-}
-function createMemoryEntry(input, config = DEFAULT_MEMORY_CONFIG) {
-  validateMemoryKey(input.key);
-  if (input.description.length > config.descriptionMaxLength) {
-    throw new Error(`Description exceeds maximum length of ${config.descriptionMaxLength} characters`);
-  }
-  if (input.scope && isTaskAwareScope(input.scope) && input.scope.type === "task") {
-    if (input.scope.taskIds.length === 0) {
-      console.warn(`Memory entry "${input.key}" has empty taskIds array - will have low priority`);
-    }
-  }
-  const now = Date.now();
-  const sizeBytes = calculateEntrySize(input.value);
-  const pinned = input.pinned ?? false;
-  const priority = pinned ? "critical" : input.priority ?? "normal";
-  return {
-    key: input.key,
-    description: input.description,
-    value: input.value,
-    sizeBytes,
-    scope: input.scope ?? "session",
-    basePriority: priority,
-    pinned,
-    createdAt: now,
-    lastAccessedAt: now,
-    accessCount: 0
-  };
-}
-function formatSizeHuman(bytes) {
-  if (bytes === 0) return "0B";
-  if (bytes < 1024) return `${bytes}B`;
-  const kb = bytes / 1024;
-  if (bytes < 1024 * 1024) {
-    return `${kb.toFixed(1).replace(/\.0$/, "")}KB`;
-  }
-  const mb = bytes / (1024 * 1024);
-  if (bytes < 1024 * 1024 * 1024) {
-    return `${mb.toFixed(1).replace(/\.0$/, "")}MB`;
-  }
-  const gb = bytes / (1024 * 1024 * 1024);
-  return `${gb.toFixed(1).replace(/\.0$/, "")}GB`;
-}
-function formatScope(scope) {
-  if (isSimpleScope(scope)) {
-    return scope;
-  }
-  if (scope.type === "task") {
-    return `task:${scope.taskIds.join(",")}`;
-  }
-  return scope.type;
-}
-function formatEntryFlags(entry) {
-  const flags = [];
-  if (entry.pinned) {
-    flags.push("pinned");
-  } else if (entry.effectivePriority !== "normal") {
-    flags.push(entry.effectivePriority);
-  }
-  flags.push(formatScope(entry.scope));
-  return flags.join(", ");
-}
-function formatMemoryIndex(index) {
-  const lines = [];
-  const utilPercent = Number.isInteger(index.utilizationPercent) ? index.utilizationPercent.toString() : index.utilizationPercent.toFixed(1).replace(/\.0$/, "");
-  lines.push(`## Working Memory (${index.totalSizeHuman} / ${index.limitHuman} - ${utilPercent}%)`);
-  lines.push("");
-  if (index.entries.length === 0) {
-    lines.push("Memory is empty.");
-  } else {
-    const pinned = index.entries.filter((e) => e.pinned);
-    const critical = index.entries.filter((e) => !e.pinned && e.effectivePriority === "critical");
-    const high = index.entries.filter((e) => !e.pinned && e.effectivePriority === "high");
-    const normal = index.entries.filter((e) => !e.pinned && e.effectivePriority === "normal");
-    const low = index.entries.filter((e) => !e.pinned && e.effectivePriority === "low");
-    if (pinned.length > 0) {
-      lines.push("**Pinned (never evicted):**");
-      for (const entry of pinned) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (critical.length > 0) {
-      lines.push("**Critical priority:**");
-      for (const entry of critical) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (high.length > 0) {
-      lines.push("**High priority:**");
-      for (const entry of high) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (normal.length > 0) {
-      lines.push("**Normal priority:**");
-      for (const entry of normal) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (low.length > 0) {
-      lines.push("**Low priority (evicted first):**");
-      for (const entry of low) {
-        lines.push(`- \`${entry.key}\` (${entry.size}): ${entry.description} [${formatEntryFlags(entry)}]`);
-      }
-      lines.push("");
-    }
-    if (index.utilizationPercent > 80) {
-      lines.push("Warning: Memory utilization is high. Consider deleting unused entries.");
-      lines.push("");
-    }
-  }
-  lines.push('Use `memory_retrieve("key")` to load full content.');
-  lines.push('Use `memory_persist("key")` to keep data after task completion.');
-  return lines.join("\n");
-}
-
-// src/infrastructure/storage/InMemoryStorage.ts
-var InMemoryStorage = class {
-  store = /* @__PURE__ */ new Map();
-  async get(key) {
-    return this.store.get(key);
-  }
-  async set(key, entry) {
-    this.store.set(key, entry);
-  }
-  async delete(key) {
-    this.store.delete(key);
-  }
-  async has(key) {
-    return this.store.has(key);
-  }
-  async getAll() {
-    return Array.from(this.store.values());
-  }
-  async getByScope(scope) {
-    return Array.from(this.store.values()).filter((entry) => scopeMatches(entry.scope, scope));
-  }
-  async clearScope(scope) {
-    const toDelete = [];
-    for (const [key, entry] of this.store.entries()) {
-      if (scopeMatches(entry.scope, scope)) {
-        toDelete.push(key);
-      }
-    }
-    for (const key of toDelete) {
-      this.store.delete(key);
-    }
-  }
-  async clear() {
-    this.store.clear();
-  }
-  async getTotalSize() {
-    let total = 0;
-    for (const entry of this.store.values()) {
-      total += entry.sizeBytes;
-    }
-    return total;
-  }
-};
-var InMemoryPlanStorage = class {
-  plans = /* @__PURE__ */ new Map();
-  async savePlan(plan) {
-    this.plans.set(plan.id, JSON.parse(JSON.stringify(plan)));
-  }
-  async getPlan(planId) {
-    const plan = this.plans.get(planId);
-    return plan ? JSON.parse(JSON.stringify(plan)) : void 0;
-  }
-  async updateTask(planId, task) {
-    const plan = this.plans.get(planId);
-    if (!plan) {
-      throw new Error(`Plan ${planId} not found`);
-    }
-    const taskIndex = plan.tasks.findIndex((t) => t.id === task.id);
-    if (taskIndex === -1) {
-      throw new Error(`Task ${task.id} not found in plan ${planId}`);
-    }
-    plan.tasks[taskIndex] = JSON.parse(JSON.stringify(task));
-  }
-  async addTask(planId, task) {
-    const plan = this.plans.get(planId);
-    if (!plan) {
-      throw new Error(`Plan ${planId} not found`);
-    }
-    plan.tasks.push(JSON.parse(JSON.stringify(task)));
-  }
-  async deletePlan(planId) {
-    this.plans.delete(planId);
-  }
-  async listPlans(filter) {
-    const allPlans = Array.from(this.plans.values());
-    if (!filter || !filter.status) {
-      return allPlans.map((p) => JSON.parse(JSON.stringify(p)));
-    }
-    return allPlans.filter((plan) => filter.status.includes(plan.status)).map((p) => JSON.parse(JSON.stringify(p)));
-  }
-  async findByWebhookId(webhookId) {
-    for (const plan of this.plans.values()) {
-      for (const task of plan.tasks) {
-        if (task.externalDependency?.webhookId === webhookId) {
-          return {
-            plan: JSON.parse(JSON.stringify(plan)),
-            task: JSON.parse(JSON.stringify(task))
-          };
-        }
-      }
-    }
-    return void 0;
-  }
-};
-var InMemoryAgentStateStorage = class {
-  agents = /* @__PURE__ */ new Map();
-  async save(state) {
-    this.agents.set(state.id, JSON.parse(JSON.stringify(state)));
-  }
-  async load(agentId) {
-    const state = this.agents.get(agentId);
-    return state ? JSON.parse(JSON.stringify(state)) : void 0;
-  }
-  async delete(agentId) {
-    this.agents.delete(agentId);
-  }
-  async list(filter) {
-    const allStates = Array.from(this.agents.values());
-    if (!filter || !filter.status) {
-      return allStates.map((s) => JSON.parse(JSON.stringify(s)));
-    }
-    return allStates.filter((state) => filter.status.includes(state.status)).map((s) => JSON.parse(JSON.stringify(s)));
-  }
-  async patch(agentId, updates) {
-    const state = this.agents.get(agentId);
-    if (!state) {
-      throw new Error(`Agent ${agentId} not found`);
-    }
-    Object.assign(state, updates);
-  }
-};
-function createAgentStorage(options = {}) {
-  return {
-    memory: options.memory ?? new InMemoryStorage(),
-    plan: options.plan ?? new InMemoryPlanStorage(),
-    agent: options.agent ?? new InMemoryAgentStateStorage()
-  };
-}
-var WorkingMemory = class extends EventEmitter {
-  storage;
-  config;
-  priorityCalculator;
-  priorityContext;
-  /**
-   * Create a WorkingMemory instance
-   *
-   * @param storage - Storage backend for memory entries
-   * @param config - Memory configuration (limits, etc.)
-   * @param priorityCalculator - Strategy for computing effective priority (default: static)
-   */
-  constructor(storage, config = DEFAULT_MEMORY_CONFIG, priorityCalculator = staticPriorityCalculator) {
-    super();
-    this.storage = storage;
-    this.config = config;
-    this.priorityCalculator = priorityCalculator;
-    this.priorityContext = {};
-  }
-  /**
-   * Set the priority calculator (for switching strategies at runtime)
-   */
-  setPriorityCalculator(calculator) {
-    this.priorityCalculator = calculator;
-  }
-  /**
-   * Update priority context (e.g., task states for TaskAgent)
-   */
-  setPriorityContext(context) {
-    this.priorityContext = context;
-  }
-  /**
-   * Get the current priority context
-   */
-  getPriorityContext() {
-    return this.priorityContext;
-  }
-  /**
-   * Compute effective priority for an entry using the current calculator
-   */
-  computeEffectivePriority(entry) {
-    return this.priorityCalculator(entry, this.priorityContext);
-  }
-  /**
-   * Get all entries with their computed effective priorities
-   * This is a performance optimization to avoid repeated getAll() + map() calls
-   */
-  async getEntriesWithPriority() {
-    const entries = await this.storage.getAll();
-    return entries.map((entry) => ({
-      entry,
-      effectivePriority: this.computeEffectivePriority(entry)
-    }));
-  }
-  /**
-   * Get evictable entries sorted by eviction priority
-   * Filters out pinned and critical entries, sorts by priority then by strategy
-   */
-  getEvictableEntries(entriesWithPriority, strategy) {
-    return entriesWithPriority.filter(({ entry, effectivePriority }) => {
-      if (entry.pinned) return false;
-      if (effectivePriority === "critical") return false;
-      return true;
-    }).sort((a, b) => {
-      const priorityDiff = MEMORY_PRIORITY_VALUES[a.effectivePriority] - MEMORY_PRIORITY_VALUES[b.effectivePriority];
-      if (priorityDiff !== 0) return priorityDiff;
-      if (strategy === "lru") {
-        return a.entry.lastAccessedAt - b.entry.lastAccessedAt;
-      } else {
-        return b.entry.sizeBytes - a.entry.sizeBytes;
-      }
-    });
-  }
-  /**
-   * Store a value in working memory
-   *
-   * @param key - Unique key for the entry
-   * @param description - Short description for the index (max 150 chars)
-   * @param value - The data to store
-   * @param options - Optional scope, priority, and pinned settings
-   */
-  async store(key, description, value, options) {
-    const input = {
-      key,
-      description,
-      value,
-      scope: options?.scope ?? "session",
-      priority: options?.priority,
-      pinned: options?.pinned
-    };
-    const entry = createMemoryEntry(input, this.config);
-    const currentSize = await this.storage.getTotalSize();
-    const existing = await this.storage.get(key);
-    const existingSize = existing?.sizeBytes ?? 0;
-    const newTotalSize = currentSize - existingSize + entry.sizeBytes;
-    const limit = this.getLimit();
-    if (newTotalSize > limit) {
-      throw new Error(`Memory limit exceeded: ${newTotalSize} bytes > ${limit} bytes`);
-    }
-    const utilization = newTotalSize / limit * 100;
-    if (utilization > this.config.softLimitPercent) {
-      this.emit("limit_warning", { utilizationPercent: utilization });
-    }
-    await this.storage.set(key, entry);
-    this.emit("stored", { key, description, scope: entry.scope });
-  }
-  /**
-   * Store a value scoped to specific tasks
-   * Convenience method for task-aware memory
-   */
-  async storeForTasks(key, description, value, taskIds, options) {
-    await this.store(key, description, value, {
-      scope: { type: "task", taskIds },
-      priority: options?.priority,
-      pinned: options?.pinned
-    });
-  }
-  /**
-   * Store a value scoped to the entire plan
-   * Convenience method for plan-scoped memory
-   */
-  async storeForPlan(key, description, value, options) {
-    await this.store(key, description, value, {
-      scope: { type: "plan" },
-      priority: options?.priority,
-      pinned: options?.pinned
-    });
-  }
-  /**
-   * Retrieve a value from working memory
-   *
-   * Note: Access stats update is not strictly atomic. Under very high concurrency,
-   * accessCount may be slightly inaccurate. This is acceptable for memory management
-   * purposes where exact counts are not critical.
-   */
-  async retrieve(key) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      return void 0;
-    }
-    const value = entry.value;
-    const freshEntry = await this.storage.get(key);
-    if (freshEntry) {
-      freshEntry.lastAccessedAt = Date.now();
-      freshEntry.accessCount += 1;
-      await this.storage.set(key, freshEntry);
-    }
-    this.emit("retrieved", { key });
-    return value;
-  }
-  /**
-   * Retrieve multiple values
-   */
-  async retrieveMany(keys) {
-    const result = {};
-    for (const key of keys) {
-      const value = await this.retrieve(key);
-      if (value !== void 0) {
-        result[key] = value;
-      }
-    }
-    return result;
-  }
-  /**
-   * Delete a value from working memory
-   */
-  async delete(key) {
-    await this.storage.delete(key);
-    this.emit("deleted", { key });
-  }
-  /**
-   * Check if key exists
-   */
-  async has(key) {
-    return this.storage.has(key);
-  }
-  /**
-   * Promote an entry to persistent scope
-   * Works with both simple and task-aware scopes
-   */
-  async persist(key) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    const isPersistent = isSimpleScope(entry.scope) ? entry.scope === "persistent" : isTaskAwareScope(entry.scope) && entry.scope.type === "persistent";
-    if (!isPersistent) {
-      entry.scope = { type: "persistent" };
-      await this.storage.set(key, entry);
-    }
-  }
-  /**
-   * Pin an entry (never evicted)
-   */
-  async pin(key) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    if (!entry.pinned) {
-      entry.pinned = true;
-      entry.basePriority = "critical";
-      await this.storage.set(key, entry);
-    }
-  }
-  /**
-   * Unpin an entry
-   */
-  async unpin(key, newPriority = "normal") {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    if (entry.pinned) {
-      entry.pinned = false;
-      entry.basePriority = newPriority;
-      await this.storage.set(key, entry);
-    }
-  }
-  /**
-   * Set the base priority of an entry
-   */
-  async setPriority(key, priority) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    entry.basePriority = priority;
-    await this.storage.set(key, entry);
-  }
-  /**
-   * Update the scope of an entry without re-storing the value
-   */
-  async updateScope(key, scope) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    entry.scope = scope;
-    await this.storage.set(key, entry);
-  }
-  /**
-   * Add task IDs to an existing task-scoped entry
-   * If entry is not task-scoped, converts it to task-scoped
-   */
-  async addTasksToScope(key, taskIds) {
-    const entry = await this.storage.get(key);
-    if (!entry) {
-      throw new Error(`Key "${key}" not found in memory`);
-    }
-    if (isTaskAwareScope(entry.scope) && entry.scope.type === "task") {
-      const existingIds = new Set(entry.scope.taskIds);
-      for (const id of taskIds) {
-        existingIds.add(id);
-      }
-      entry.scope = { type: "task", taskIds: Array.from(existingIds) };
-    } else {
-      entry.scope = { type: "task", taskIds };
-    }
-    await this.storage.set(key, entry);
-  }
-  /**
-   * Clear all entries of a specific scope
-   */
-  async clearScope(scope) {
-    await this.storage.clearScope(scope);
-  }
-  /**
-   * Clear all entries
-   */
-  async clear() {
-    await this.storage.clear();
-  }
-  /**
-   * Get memory index with computed effective priorities
-   */
-  async getIndex() {
-    const entriesWithPriority = await this.getEntriesWithPriority();
-    const totalSizeBytes = await this.storage.getTotalSize();
-    const limitBytes = this.getLimit();
-    const sortedEntries = [...entriesWithPriority].sort((a, b) => {
-      if (a.entry.pinned && !b.entry.pinned) return -1;
-      if (!a.entry.pinned && b.entry.pinned) return 1;
-      const priorityDiff = MEMORY_PRIORITY_VALUES[b.effectivePriority] - MEMORY_PRIORITY_VALUES[a.effectivePriority];
-      if (priorityDiff !== 0) return priorityDiff;
-      return b.entry.lastAccessedAt - a.entry.lastAccessedAt;
-    });
-    const indexEntries = sortedEntries.map(({ entry, effectivePriority }) => ({
-      key: entry.key,
-      description: entry.description,
-      size: formatSizeHuman(entry.sizeBytes),
-      scope: entry.scope,
-      effectivePriority,
-      pinned: entry.pinned
-    }));
-    return {
-      entries: indexEntries,
-      totalSizeBytes,
-      totalSizeHuman: formatSizeHuman(totalSizeBytes),
-      limitBytes,
-      limitHuman: formatSizeHuman(limitBytes),
-      utilizationPercent: totalSizeBytes / limitBytes * 100
-    };
-  }
-  /**
-   * Format index for context injection
-   */
-  async formatIndex() {
-    const index = await this.getIndex();
-    return formatMemoryIndex(index);
-  }
-  /**
-   * Evict entries using specified strategy
-   *
-   * Eviction order:
-   * 1. Never evict pinned entries
-   * 2. Evict low priority first, then normal, then high (never critical)
-   * 3. Within same priority, use strategy (LRU or largest size)
-   *
-   * @param count - Number of entries to evict
-   * @param strategy - Eviction strategy ('lru' or 'size')
-   * @returns Keys of evicted entries
-   */
-  async evict(count, strategy = "lru") {
-    const entriesWithPriority = await this.getEntriesWithPriority();
-    const evictable = this.getEvictableEntries(entriesWithPriority, strategy);
-    const toEvict = evictable.slice(0, count);
-    const evictedKeys = [];
-    for (const { entry } of toEvict) {
-      await this.storage.delete(entry.key);
-      evictedKeys.push(entry.key);
-    }
-    if (evictedKeys.length > 0) {
-      this.emit("evicted", { keys: evictedKeys, reason: strategy });
-    }
-    return evictedKeys;
-  }
-  /**
-   * Evict entries using priority-aware LRU algorithm
-   * @deprecated Use evict(count, 'lru') instead
-   */
-  async evictLRU(count) {
-    return this.evict(count, "lru");
-  }
-  /**
-   * Evict largest entries first (priority-aware)
-   * @deprecated Use evict(count, 'size') instead
-   */
-  async evictBySize(count) {
-    return this.evict(count, "size");
-  }
-  /**
-   * Handle task completion - detect and notify about stale entries
-   *
-   * Call this when a task completes to:
-   * 1. Update priority context with new task state
-   * 2. Detect entries that became stale
-   * 3. Emit event to notify LLM about stale entries
-   *
-   * @param taskId - The completed task ID
-   * @param taskStates - Current task states map
-   * @returns Information about stale entries
-   */
-  async onTaskComplete(taskId, taskStates) {
-    this.priorityContext.taskStates = taskStates;
-    const entries = await this.storage.getAll();
-    const staleEntries = detectStaleEntries(entries, taskId, taskStates);
-    if (staleEntries.length > 0) {
-      this.emit("stale_entries", { entries: staleEntries });
-    }
-    return staleEntries;
-  }
-  /**
-   * Evict entries for completed tasks
-   *
-   * Removes entries that were scoped only to completed tasks.
-   * Use after onTaskComplete() if you want automatic cleanup.
-   *
-   * @param taskStates - Current task states map
-   * @returns Keys of evicted entries
-   */
-  async evictCompletedTaskEntries(taskStates) {
-    const entries = await this.storage.getAll();
-    const evictedKeys = [];
-    for (const entry of entries) {
-      if (entry.pinned) continue;
-      if (!isTaskAwareScope(entry.scope) || entry.scope.type !== "task") continue;
-      const allTerminal = entry.scope.taskIds.every((taskId) => {
-        const status = taskStates.get(taskId);
-        return status ? isTerminalMemoryStatus(status) : false;
-      });
-      if (allTerminal) {
-        await this.storage.delete(entry.key);
-        evictedKeys.push(entry.key);
-      }
-    }
-    if (evictedKeys.length > 0) {
-      this.emit("evicted", { keys: evictedKeys, reason: "task_completed" });
-    }
-    return evictedKeys;
-  }
-  /**
-   * Get limited memory access for tools
-   *
-   * This provides a simplified interface for tools to interact with memory
-   * without exposing the full WorkingMemory API.
-   */
-  getAccess() {
-    return {
-      get: async (key) => this.retrieve(key),
-      set: async (key, description, value, options) => this.store(key, description, value, options),
-      delete: async (key) => this.delete(key),
-      has: async (key) => this.has(key),
-      list: async () => {
-        const index = await this.getIndex();
-        return index.entries.map((e) => ({
-          key: e.key,
-          description: e.description,
-          effectivePriority: e.effectivePriority,
-          pinned: e.pinned
-        }));
-      }
-    };
-  }
-  /**
-   * Get statistics about memory usage
-   */
-  async getStats() {
-    const entriesWithPriority = await this.getEntriesWithPriority();
-    const totalSizeBytes = await this.storage.getTotalSize();
-    const limit = this.getLimit();
-    const byPriority = {
-      critical: 0,
-      high: 0,
-      normal: 0,
-      low: 0
-    };
-    let pinnedCount = 0;
-    for (const { entry, effectivePriority } of entriesWithPriority) {
-      byPriority[effectivePriority]++;
-      if (entry.pinned) pinnedCount++;
-    }
-    return {
-      totalEntries: entriesWithPriority.length,
-      totalSizeBytes,
-      utilizationPercent: totalSizeBytes / limit * 100,
-      byPriority,
-      pinnedCount
-    };
-  }
-  /**
-   * Get the configured memory limit
-   */
-  getLimit() {
-    return this.config.maxSizeBytes ?? 512 * 1024;
-  }
-  /**
-   * Destroy the WorkingMemory instance
-   * Removes all event listeners and clears internal state
-   */
-  destroy() {
-    this.removeAllListeners();
-    this.priorityContext = {};
-  }
-};
-
-// src/core/context/types.ts
-var DEFAULT_CONTEXT_CONFIG = {
-  maxContextTokens: 128e3,
-  compactionThreshold: 0.75,
-  hardLimit: 0.9,
-  responseReserve: 0.15,
-  estimator: "approximate",
-  autoCompact: true,
-  strategy: "proactive",
-  strategyOptions: {}
-};
-
-// src/core/context/utils/ContextUtils.ts
-function estimateComponentTokens(component, estimator) {
-  if (typeof component.content === "string") {
-    return estimator.estimateTokens(component.content);
-  }
-  return estimator.estimateDataTokens(component.content);
-}
-function sortCompactableByPriority(components) {
-  return components.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
-}
-function findCompactorForComponent(component, compactors) {
-  return compactors.find((c) => c.canCompact(component));
-}
-async function executeCompactionLoop(options) {
-  const {
-    components,
-    tokensToFree,
-    compactors,
-    estimator,
-    calculateTargetSize,
-    maxRounds = 1,
-    logPrefix = ""
-  } = options;
-  const log = [];
-  let current = [...components];
-  let freedTokens = 0;
-  let round = 0;
-  const sortedComponents = sortCompactableByPriority(current);
-  while (freedTokens < tokensToFree && round < maxRounds) {
-    round++;
-    let roundFreed = 0;
-    for (const component of sortedComponents) {
-      if (freedTokens >= tokensToFree) break;
-      const compactor = findCompactorForComponent(component, compactors);
-      if (!compactor) continue;
-      const beforeSize = estimateComponentTokens(component, estimator);
-      const targetSize = calculateTargetSize(beforeSize, round);
-      if (targetSize >= beforeSize) continue;
-      const compacted = await compactor.compact(component, targetSize);
-      const index = current.findIndex((c) => c.name === component.name);
-      if (index !== -1) {
-        current[index] = compacted;
-      }
-      const afterSize = estimateComponentTokens(compacted, estimator);
-      const saved = beforeSize - afterSize;
-      freedTokens += saved;
-      roundFreed += saved;
-      const prefix = logPrefix ? `${logPrefix}: ` : "";
-      const roundInfo = maxRounds > 1 ? `Round ${round}: ` : "";
-      log.push(
-        `${prefix}${roundInfo}${compactor.name} compacted "${component.name}" by ${saved} tokens`
-      );
-    }
-    if (roundFreed === 0) break;
-  }
-  return { components: current, log, tokensFreed: freedTokens };
-}
-
-// src/core/context/strategies/BaseCompactionStrategy.ts
-var BaseCompactionStrategy = class {
-  metrics = {
-    compactionCount: 0,
-    totalTokensFreed: 0,
-    avgTokensFreedPerCompaction: 0
-  };
-  /**
-   * Get the maximum number of compaction rounds.
-   * Override in subclasses for multi-round strategies.
-   */
-  getMaxRounds() {
-    return 1;
-  }
-  /**
-   * Get the log prefix for compaction messages.
-   * Override to customize logging.
-   */
-  getLogPrefix() {
-    return this.name.charAt(0).toUpperCase() + this.name.slice(1);
-  }
-  /**
-   * Compact components to fit within budget.
-   * Uses the shared compaction loop with strategy-specific target calculation.
-   */
-  async compact(components, budget, compactors, estimator) {
-    const targetUsage = Math.floor(budget.total * this.getTargetUtilization());
-    const tokensToFree = budget.used - targetUsage;
-    const result = await executeCompactionLoop({
-      components,
-      tokensToFree,
-      compactors,
-      estimator,
-      calculateTargetSize: this.calculateTargetSize.bind(this),
-      maxRounds: this.getMaxRounds(),
-      logPrefix: this.getLogPrefix()
-    });
-    this.updateMetrics(result.tokensFreed);
-    return result;
-  }
-  /**
-   * Update internal metrics after compaction
-   */
-  updateMetrics(tokensFreed) {
-    this.metrics.compactionCount++;
-    this.metrics.totalTokensFreed += tokensFreed;
-    this.metrics.avgTokensFreedPerCompaction = this.metrics.totalTokensFreed / this.metrics.compactionCount;
-  }
-  /**
-   * Get strategy metrics
-   */
-  getMetrics() {
-    return { ...this.metrics };
-  }
-  /**
-   * Reset metrics (useful for testing)
-   */
-  resetMetrics() {
-    this.metrics = {
-      compactionCount: 0,
-      totalTokensFreed: 0,
-      avgTokensFreedPerCompaction: 0
-    };
-  }
-};
-
-// src/core/context/strategies/ProactiveStrategy.ts
-var DEFAULT_OPTIONS = {
-  targetUtilization: PROACTIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
-  baseReductionFactor: PROACTIVE_STRATEGY_DEFAULTS.BASE_REDUCTION_FACTOR,
-  reductionStep: PROACTIVE_STRATEGY_DEFAULTS.REDUCTION_STEP,
-  maxRounds: PROACTIVE_STRATEGY_DEFAULTS.MAX_ROUNDS
-};
-var ProactiveCompactionStrategy = class extends BaseCompactionStrategy {
-  name = "proactive";
-  options;
-  constructor(options = {}) {
-    super();
-    this.options = { ...DEFAULT_OPTIONS, ...options };
-  }
-  shouldCompact(budget, _config) {
-    return budget.status === "warning" || budget.status === "critical";
-  }
-  calculateTargetSize(beforeSize, round) {
-    const reductionFactor = this.options.baseReductionFactor - (round - 1) * this.options.reductionStep;
-    return Math.floor(beforeSize * Math.max(reductionFactor, 0.1));
-  }
-  getTargetUtilization() {
-    return this.options.targetUtilization;
-  }
-  getMaxRounds() {
-    return this.options.maxRounds;
-  }
-  getLogPrefix() {
-    return "Proactive";
-  }
-};
-
-// src/core/context/strategies/AggressiveStrategy.ts
-var DEFAULT_OPTIONS2 = {
-  threshold: AGGRESSIVE_STRATEGY_DEFAULTS.THRESHOLD,
-  targetUtilization: AGGRESSIVE_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
-  reductionFactor: AGGRESSIVE_STRATEGY_DEFAULTS.REDUCTION_FACTOR
-};
-var AggressiveCompactionStrategy = class extends BaseCompactionStrategy {
-  name = "aggressive";
-  options;
-  constructor(options = {}) {
-    super();
-    this.options = { ...DEFAULT_OPTIONS2, ...options };
-  }
-  shouldCompact(budget, _config) {
-    const utilizationRatio = (budget.used + budget.reserved) / budget.total;
-    return utilizationRatio >= this.options.threshold;
-  }
-  calculateTargetSize(beforeSize, _round) {
-    return Math.floor(beforeSize * this.options.reductionFactor);
-  }
-  getTargetUtilization() {
-    return this.options.targetUtilization;
-  }
-  getLogPrefix() {
-    return "Aggressive";
-  }
-};
-
-// src/core/context/strategies/LazyStrategy.ts
-var DEFAULT_OPTIONS3 = {
-  targetUtilization: LAZY_STRATEGY_DEFAULTS.TARGET_UTILIZATION,
-  reductionFactor: LAZY_STRATEGY_DEFAULTS.REDUCTION_FACTOR
-};
-var LazyCompactionStrategy = class extends BaseCompactionStrategy {
-  name = "lazy";
-  options;
-  constructor(options = {}) {
-    super();
-    this.options = { ...DEFAULT_OPTIONS3, ...options };
-  }
-  shouldCompact(budget, _config) {
-    return budget.status === "critical";
-  }
-  calculateTargetSize(beforeSize, _round) {
-    return Math.floor(beforeSize * this.options.reductionFactor);
-  }
-  getTargetUtilization() {
-    return this.options.targetUtilization;
-  }
-  getLogPrefix() {
-    return "Lazy";
-  }
-};
-
-// src/core/context/strategies/RollingWindowStrategy.ts
-var RollingWindowStrategy = class {
-  constructor(options = {}) {
-    this.options = options;
-  }
-  name = "rolling-window";
-  shouldCompact(_budget, _config) {
-    return false;
-  }
-  async prepareComponents(components) {
-    return components.map((component) => {
-      if (Array.isArray(component.content)) {
-        const maxMessages = this.options.maxMessages ?? ROLLING_WINDOW_DEFAULTS.MAX_MESSAGES;
-        if (component.content.length > maxMessages) {
-          return {
-            ...component,
-            content: component.content.slice(-maxMessages),
-            metadata: {
-              ...component.metadata,
-              windowed: true,
-              originalLength: component.content.length,
-              keptLength: maxMessages
-            }
-          };
-        }
-      }
-      return component;
-    });
-  }
-  async compact() {
-    return { components: [], log: [], tokensFreed: 0 };
-  }
-};
-
-// src/core/context/strategies/AdaptiveStrategy.ts
-var AdaptiveStrategy = class {
-  constructor(options = {}) {
-    this.options = options;
-    this.currentStrategy = new ProactiveCompactionStrategy();
-  }
-  name = "adaptive";
-  currentStrategy;
-  metrics = {
-    avgUtilization: 0,
-    compactionFrequency: 0,
-    lastCompactions: []
-  };
-  shouldCompact(budget, config) {
-    this.updateMetrics(budget);
-    this.maybeAdapt();
-    return this.currentStrategy.shouldCompact(budget, config);
-  }
-  async compact(components, budget, compactors, estimator) {
-    const result = await this.currentStrategy.compact(components, budget, compactors, estimator);
-    this.metrics.lastCompactions.push(Date.now());
-    const window = this.options.learningWindow ?? ADAPTIVE_STRATEGY_DEFAULTS.LEARNING_WINDOW;
-    if (this.metrics.lastCompactions.length > window) {
-      this.metrics.lastCompactions.shift();
-    }
-    return {
-      ...result,
-      log: [`[Adaptive: using ${this.currentStrategy.name}]`, ...result.log]
-    };
-  }
-  updateMetrics(budget) {
-    const alpha = 0.1;
-    this.metrics.avgUtilization = alpha * budget.utilizationPercent + (1 - alpha) * this.metrics.avgUtilization;
-  }
-  maybeAdapt() {
-    const now = Date.now();
-    if (this.metrics.lastCompactions.length >= 2) {
-      const firstCompaction = this.metrics.lastCompactions[0];
-      if (firstCompaction !== void 0) {
-        const timeSpan = now - firstCompaction;
-        this.metrics.compactionFrequency = this.metrics.lastCompactions.length / timeSpan * 6e4;
-      }
-    }
-    const threshold = this.options.switchThreshold ?? ADAPTIVE_STRATEGY_DEFAULTS.SWITCH_THRESHOLD;
-    if (this.metrics.compactionFrequency > threshold) {
-      if (this.currentStrategy.name !== "aggressive") {
-        this.currentStrategy = new AggressiveCompactionStrategy();
-      }
-    } else if (this.metrics.compactionFrequency < ADAPTIVE_STRATEGY_DEFAULTS.LOW_FREQUENCY_THRESHOLD && this.metrics.avgUtilization < ADAPTIVE_STRATEGY_DEFAULTS.LOW_UTILIZATION_THRESHOLD) {
-      if (this.currentStrategy.name !== "lazy") {
-        this.currentStrategy = new LazyCompactionStrategy();
-      }
-    } else {
-      if (this.currentStrategy.name !== "proactive") {
-        this.currentStrategy = new ProactiveCompactionStrategy();
-      }
-    }
-  }
-  getMetrics() {
-    return {
-      ...this.metrics,
-      currentStrategy: this.currentStrategy.name
-    };
-  }
-};
-
-// src/core/context/strategies/index.ts
-function createStrategy(name, options = {}) {
-  switch (name) {
-    case "proactive":
-      return new ProactiveCompactionStrategy(options);
-    case "aggressive":
-      return new AggressiveCompactionStrategy(options);
-    case "lazy":
-      return new LazyCompactionStrategy(options);
-    case "rolling-window":
-      return new RollingWindowStrategy(options);
-    case "adaptive":
-      return new AdaptiveStrategy(options);
-    default:
-      throw new Error(`Unknown context strategy: ${name}`);
-  }
-}
-
-// src/core/context/ContextManager.ts
 var ContextManager = class extends EventEmitter {
   config;
   provider;
@@ -16641,196 +17620,6 @@ var ApproximateTokenEstimator = class {
     } catch {
       return 100;
     }
-  }
-};
-
-// src/capabilities/taskAgent/IdempotencyCache.ts
-var DEFAULT_IDEMPOTENCY_CONFIG = {
-  defaultTtlMs: 36e5,
-  // 1 hour
-  maxEntries: 1e3
-};
-var IdempotencyCache = class {
-  config;
-  cache = /* @__PURE__ */ new Map();
-  hits = 0;
-  misses = 0;
-  cleanupInterval;
-  constructor(config = DEFAULT_IDEMPOTENCY_CONFIG) {
-    this.config = config;
-    this.cleanupInterval = setInterval(() => {
-      this.pruneExpired();
-    }, 3e5);
-  }
-  /**
-   * Check if a tool's results should be cached.
-   * Prefers 'cacheable' field, falls back to inverted 'safe' for backward compatibility.
-   *
-   * Logic:
-   * - If 'cacheable' is defined, use it directly
-   * - If only 'safe' is defined, cache when safe=false (backward compat)
-   * - If neither defined, don't cache
-   */
-  shouldCache(tool) {
-    const idempotency = tool.idempotency;
-    if (!idempotency) return false;
-    if (idempotency.cacheable !== void 0) {
-      return idempotency.cacheable;
-    }
-    if (idempotency.safe !== void 0) {
-      return !idempotency.safe;
-    }
-    return false;
-  }
-  /**
-   * Get cached result for tool call
-   */
-  async get(tool, args) {
-    if (!this.shouldCache(tool)) {
-      this.misses++;
-      return void 0;
-    }
-    const key = this.generateKey(tool, args);
-    const cached = this.cache.get(key);
-    if (!cached) {
-      this.misses++;
-      return void 0;
-    }
-    if (Date.now() > cached.expiresAt) {
-      this.cache.delete(key);
-      this.misses++;
-      return void 0;
-    }
-    this.hits++;
-    return cached.value;
-  }
-  /**
-   * Cache result for tool call
-   */
-  async set(tool, args, result) {
-    if (!this.shouldCache(tool)) {
-      return;
-    }
-    const key = this.generateKey(tool, args);
-    const ttl = tool.idempotency?.ttlMs ?? this.config.defaultTtlMs;
-    const expiresAt = Date.now() + ttl;
-    this.cache.set(key, { value: result, expiresAt });
-    if (this.cache.size > this.config.maxEntries) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey) {
-        this.cache.delete(firstKey);
-      }
-    }
-  }
-  /**
-   * Check if tool call is cached
-   */
-  async has(tool, args) {
-    if (!this.shouldCache(tool)) {
-      return false;
-    }
-    const key = this.generateKey(tool, args);
-    const cached = this.cache.get(key);
-    if (!cached) {
-      return false;
-    }
-    if (Date.now() > cached.expiresAt) {
-      this.cache.delete(key);
-      return false;
-    }
-    return true;
-  }
-  /**
-   * Invalidate cached result
-   */
-  async invalidate(tool, args) {
-    if (!tool.idempotency) {
-      return;
-    }
-    const key = this.generateKey(tool, args);
-    this.cache.delete(key);
-  }
-  /**
-   * Invalidate all cached results for a tool
-   */
-  async invalidateTool(tool) {
-    const toolName = tool.definition.function.name;
-    const keysToDelete = [];
-    for (const key of this.cache.keys()) {
-      if (key.startsWith(`${toolName}:`)) {
-        keysToDelete.push(key);
-      }
-    }
-    for (const key of keysToDelete) {
-      this.cache.delete(key);
-    }
-  }
-  /**
-   * Prune expired entries from cache
-   */
-  pruneExpired() {
-    const now = Date.now();
-    const toDelete = [];
-    for (const [key, entry] of this.cache.entries()) {
-      if (now > entry.expiresAt) {
-        toDelete.push(key);
-      }
-    }
-    toDelete.forEach((key) => this.cache.delete(key));
-    return toDelete.length;
-  }
-  /**
-   * Clear all cached results
-   */
-  async clear() {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = void 0;
-    }
-    this.cache.clear();
-    this.hits = 0;
-    this.misses = 0;
-  }
-  /**
-   * Get cache statistics
-   */
-  getStats() {
-    const total = this.hits + this.misses;
-    const hitRate = total > 0 ? this.hits / total : 0;
-    return {
-      entries: this.cache.size,
-      hits: this.hits,
-      misses: this.misses,
-      hitRate
-    };
-  }
-  /**
-   * Generate cache key for tool + args
-   */
-  generateKey(tool, args) {
-    const toolName = tool.definition.function.name;
-    if (tool.idempotency?.keyFn) {
-      return `${toolName}:${tool.idempotency.keyFn(args)}`;
-    }
-    const sortedArgs = Object.keys(args).sort().reduce((obj, key) => {
-      obj[key] = args[key];
-      return obj;
-    }, {});
-    const argsHash = this.hashObject(sortedArgs);
-    return `${toolName}:${argsHash}`;
-  }
-  /**
-   * Simple hash function for objects
-   */
-  hashObject(obj) {
-    const str = JSON.stringify(obj);
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
-    return hash.toString(36);
   }
 };
 
@@ -18934,6 +19723,93 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:validation_uncertain", taskValidationFailedHandler));
   }
   // ===== Public API =====
+  // ===== Unified Context Access =====
+  /**
+   * Get unified context access interface.
+   *
+   * Provides AgentContext-compatible access to TaskAgent's internal managers,
+   * allowing users to interact with the same unified API across all agent types.
+   *
+   * @example
+   * ```typescript
+   * const taskAgent = TaskAgent.create({ ... });
+   *
+   * // Access context features (same API as AgentContext)
+   * taskAgent.context.addMessage('user', 'Hello');
+   * const budget = await taskAgent.context.getBudget();
+   * const metrics = await taskAgent.context.getMetrics();
+   *
+   * // Direct access to managers
+   * await taskAgent.context.memory.store('key', 'desc', value);
+   * const cached = await taskAgent.context.cache.get(tool, args);
+   * ```
+   */
+  get context() {
+    if (!this.idempotencyCache || !this.historyManager || !this.contextManager) {
+      throw new Error("TaskAgent components not initialized. Call start() first or use create().");
+    }
+    const self = this;
+    return {
+      get memory() {
+        return self.memory;
+      },
+      get cache() {
+        return self.idempotencyCache;
+      },
+      get history() {
+        return self.historyManager;
+      },
+      get contextManager() {
+        return self.contextManager;
+      },
+      get permissions() {
+        return self._permissionManager;
+      },
+      get tools() {
+        return self._toolManager;
+      },
+      addMessage(role, content) {
+        self.historyManager?.addMessage(role, content).catch((err) => {
+          console.warn("Failed to add message to history:", err);
+        });
+      },
+      async getBudget() {
+        if (!self.contextManager) {
+          throw new Error("Context manager not initialized");
+        }
+        const cached = self.contextManager.getCurrentBudget();
+        if (cached) {
+          return cached;
+        }
+        const prepared = await self.contextManager.prepare();
+        return prepared.budget;
+      },
+      async getMetrics() {
+        const memoryStats = await self.memory.getStats();
+        const cacheStats = self.idempotencyCache?.getStats() ?? {
+          entries: 0,
+          hits: 0,
+          misses: 0,
+          hitRate: 0
+        };
+        const messages = await self.historyManager?.getMessages() ?? [];
+        return {
+          historyMessageCount: messages.length,
+          memoryStats: {
+            totalEntries: memoryStats.totalEntries,
+            totalSizeBytes: memoryStats.totalSizeBytes
+          },
+          cacheStats
+        };
+      }
+    };
+  }
+  /**
+   * Check if context is available (components initialized)
+   */
+  hasContext() {
+    return !!(this.idempotencyCache && this.historyManager && this.contextManager);
+  }
   /**
    * Start executing a plan
    */
@@ -26322,6 +27198,71 @@ Currently working on: ${progress.current.name}`;
     return this._toolManager;
   }
   // ============================================================================
+  // Unified Context Access
+  // ============================================================================
+  /**
+   * Get unified context access interface.
+   *
+   * Provides AgentContext-compatible access to UniversalAgent's internal managers,
+   * allowing users to interact with the same unified API across all agent types.
+   *
+   * @example
+   * ```typescript
+   * const agent = UniversalAgent.create({ ... });
+   *
+   * // Access context features (same API as AgentContext)
+   * agent.context.addMessage('user', 'Hello');
+   * const metrics = await agent.context.getMetrics();
+   *
+   * // Direct access to managers
+   * await agent.context.memory.store('key', 'desc', value);
+   * ```
+   */
+  get context() {
+    const self = this;
+    return {
+      get memory() {
+        return self.workingMemory;
+      },
+      get history() {
+        return self.historyManager;
+      },
+      get contextBuilder() {
+        return self.contextBuilder;
+      },
+      get permissions() {
+        return self._permissionManager;
+      },
+      get tools() {
+        return self._toolManager;
+      },
+      addMessage(role, content) {
+        self.historyManager.addMessage(role, content).catch((err) => {
+          console.warn("Failed to add message to history:", err);
+        });
+      },
+      async getMetrics() {
+        const memoryStats = await self.workingMemory.getStats();
+        const messages = await self.historyManager.getMessages();
+        return {
+          historyMessageCount: messages.length,
+          memoryStats: {
+            totalEntries: memoryStats.totalEntries,
+            totalSizeBytes: memoryStats.totalSizeBytes
+          },
+          mode: self.modeManager.getMode(),
+          hasPlan: self.currentPlan !== null
+        };
+      }
+    };
+  }
+  /**
+   * Check if context is available (always true for UniversalAgent)
+   */
+  hasContext() {
+    return true;
+  }
+  // ============================================================================
   // Runtime Configuration
   // ============================================================================
   setAutoApproval(value) {
@@ -26388,6 +27329,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_BUILDER_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DefaultContextBuilder, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolCallDescription, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile4 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, toConnectorOptions, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_BUILDER_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DefaultContextBuilder, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PlanExecutor, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskAgentContextProvider, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolCallDescription, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile4 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, toConnectorOptions, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

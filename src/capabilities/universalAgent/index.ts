@@ -3,7 +3,7 @@
  */
 
 export { UniversalAgent } from './UniversalAgent.js';
-export type { UniversalAgentEvents } from './UniversalAgent.js';
+export type { UniversalAgentEvents, UniversalAgentContextAccess } from './UniversalAgent.js';
 
 export { ModeManager } from './ModeManager.js';
 export type { ModeManagerEvents } from './ModeManager.js';

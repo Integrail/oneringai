@@ -48,6 +48,45 @@ import { getModelInfo } from '../../domain/entities/Model.js';
 import type { AgentPermissionsConfig } from '../../core/permissions/types.js';
 import { CONTEXT_DEFAULTS } from '../../core/constants.js';
 
+// ============================================================================
+// Unified Context Access Interface
+// ============================================================================
+
+/**
+ * TaskAgentContextAccess provides AgentContext-compatible access
+ * to TaskAgent's internal managers for unified API access.
+ *
+ * This allows users to interact with TaskAgent using the same
+ * patterns as AgentContext without breaking TaskAgent's internal architecture.
+ */
+export interface TaskAgentContextAccess {
+  /** Working memory */
+  readonly memory: WorkingMemory;
+  /** Tool result cache */
+  readonly cache: IdempotencyCache;
+  /** History manager */
+  readonly history: IHistoryManager;
+  /** Context manager for LLM context preparation */
+  readonly contextManager: ContextManager;
+  /** Permission manager (from BaseAgent) */
+  readonly permissions: import('../../core/permissions/ToolPermissionManager.js').ToolPermissionManager;
+  /** Tool manager (from BaseAgent) */
+  readonly tools: import('../../core/ToolManager.js').ToolManager;
+
+  /** Add a message to history (fire and forget) */
+  addMessage(role: 'user' | 'assistant' | 'system', content: string): void;
+
+  /** Get current context budget */
+  getBudget(): Promise<import('../../core/context/types.js').ContextBudget>;
+
+  /** Get context metrics */
+  getMetrics(): Promise<{
+    historyMessageCount: number;
+    memoryStats: { totalEntries: number; totalSizeBytes: number };
+    cacheStats: import('../../core/IdempotencyCache.js').CacheStats;
+  }>;
+}
+
 /**
  * TaskAgent hooks for customization
  */
@@ -670,6 +709,92 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
   }
 
   // ===== Public API =====
+
+  // ===== Unified Context Access =====
+
+  /**
+   * Get unified context access interface.
+   *
+   * Provides AgentContext-compatible access to TaskAgent's internal managers,
+   * allowing users to interact with the same unified API across all agent types.
+   *
+   * @example
+   * ```typescript
+   * const taskAgent = TaskAgent.create({ ... });
+   *
+   * // Access context features (same API as AgentContext)
+   * taskAgent.context.addMessage('user', 'Hello');
+   * const budget = await taskAgent.context.getBudget();
+   * const metrics = await taskAgent.context.getMetrics();
+   *
+   * // Direct access to managers
+   * await taskAgent.context.memory.store('key', 'desc', value);
+   * const cached = await taskAgent.context.cache.get(tool, args);
+   * ```
+   */
+  get context(): TaskAgentContextAccess {
+    // Ensure components are initialized
+    if (!this.idempotencyCache || !this.historyManager || !this.contextManager) {
+      throw new Error('TaskAgent components not initialized. Call start() first or use create().');
+    }
+
+    const self = this;
+    return {
+      get memory() { return self.memory; },
+      get cache() { return self.idempotencyCache!; },
+      get history() { return self.historyManager!; },
+      get contextManager() { return self.contextManager!; },
+      get permissions() { return self._permissionManager; },
+      get tools() { return self._toolManager; },
+
+      addMessage(role: 'user' | 'assistant' | 'system', content: string): void {
+        // Fire and forget - don't await since interface is sync
+        self.historyManager?.addMessage(role, content).catch(err => {
+          console.warn('Failed to add message to history:', err);
+        });
+      },
+
+      async getBudget() {
+        if (!self.contextManager) {
+          throw new Error('Context manager not initialized');
+        }
+        // Try to get cached budget first, otherwise prepare context
+        const cached = self.contextManager.getCurrentBudget();
+        if (cached) {
+          return cached;
+        }
+        const prepared = await self.contextManager.prepare();
+        return prepared.budget;
+      },
+
+      async getMetrics() {
+        const memoryStats = await self.memory.getStats();
+        const cacheStats = self.idempotencyCache?.getStats() ?? {
+          entries: 0,
+          hits: 0,
+          misses: 0,
+          hitRate: 0,
+        };
+        const messages = await self.historyManager?.getMessages() ?? [];
+
+        return {
+          historyMessageCount: messages.length,
+          memoryStats: {
+            totalEntries: memoryStats.totalEntries,
+            totalSizeBytes: memoryStats.totalSizeBytes,
+          },
+          cacheStats,
+        };
+      },
+    };
+  }
+
+  /**
+   * Check if context is available (components initialized)
+   */
+  hasContext(): boolean {
+    return !!(this.idempotencyCache && this.historyManager && this.contextManager);
+  }
 
   /**
    * Start executing a plan

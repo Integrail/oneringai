@@ -12,6 +12,7 @@ export type {
   TaskAgentSessionConfig,
   TaskAgentHooks,
   TaskAgentEvents,
+  TaskAgentContextAccess,
   AgentHandle,
   PlanResult,
   PlanUpdates,
