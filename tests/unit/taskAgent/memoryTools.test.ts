@@ -10,6 +10,8 @@ import {
   memoryRetrieveDefinition,
   memoryDeleteDefinition,
   memoryListDefinition,
+  memoryCleanupRawDefinition,
+  memoryRetrieveBatchDefinition,
 } from '@/capabilities/taskAgent/memoryTools.js';
 import { ToolFunction } from '@/domain/entities/Tool.js';
 import { ToolContext, WorkingMemoryAccess } from '@/domain/interfaces/IToolContext.js';
@@ -346,6 +348,209 @@ describe('Memory Tools', () => {
       const required = listTool.definition.function.parameters?.required || [];
 
       expect(required).toHaveLength(0);
+    });
+  });
+
+  describe('memory_cleanup_raw tool', () => {
+    let cleanupRawTool: ToolFunction;
+
+    beforeEach(() => {
+      const tools = createMemoryTools();
+      cleanupRawTool = tools.find((t) => t.definition.function.name === 'memory_cleanup_raw')!;
+    });
+
+    it('should have correct definition', () => {
+      expect(cleanupRawTool.definition.function.name).toBe('memory_cleanup_raw');
+      expect(cleanupRawTool.definition.function.description).toContain('raw tier');
+      expect(cleanupRawTool.definition.function.parameters?.properties?.keys).toBeDefined();
+      expect(cleanupRawTool.definition.function.parameters?.required).toContain('keys');
+    });
+
+    it('should delete only raw tier entries', async () => {
+      // Setup entries with different tiers
+      memoryStore.set('raw.data1', { description: 'Raw data 1', value: 'content1' });
+      memoryStore.set('raw.data2', { description: 'Raw data 2', value: 'content2' });
+      memoryStore.set('findings.important', { description: 'Finding', value: 'finding1' });
+
+      const result = await cleanupRawTool.execute(
+        { keys: ['raw.data1', 'raw.data2', 'findings.important'] },
+        mockContext
+      );
+
+      // Should only delete raw keys
+      expect(mockMemory.delete).toHaveBeenCalledWith('raw.data1');
+      expect(mockMemory.delete).toHaveBeenCalledWith('raw.data2');
+      expect(mockMemory.delete).not.toHaveBeenCalledWith('findings.important');
+      expect(result.success).toBe(true);
+      expect(result.deleted).toBe(2);
+      expect(result.skipped).toContain('findings.important');
+    });
+
+    it('should skip non-raw tier entries', async () => {
+      memoryStore.set('summary.overview', { description: 'Summary', value: 'content' });
+      memoryStore.set('findings.key1', { description: 'Finding', value: 'content' });
+
+      const result = await cleanupRawTool.execute(
+        { keys: ['summary.overview', 'findings.key1'] },
+        mockContext
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.deleted).toBe(0);
+      expect(result.skipped).toHaveLength(2);
+    });
+
+    it('should handle non-existent keys gracefully', async () => {
+      const result = await cleanupRawTool.execute(
+        { keys: ['raw.nonexistent1', 'raw.nonexistent2'] },
+        mockContext
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.deleted).toBe(0);
+    });
+
+    it('should be marked as idempotent', () => {
+      expect(cleanupRawTool.idempotency?.safe).toBe(true);
+    });
+  });
+
+  describe('memory_retrieve_batch tool', () => {
+    let batchTool: ToolFunction;
+
+    beforeEach(() => {
+      const tools = createMemoryTools();
+      batchTool = tools.find((t) => t.definition.function.name === 'memory_retrieve_batch')!;
+
+      // Setup test data with different tiers
+      memoryStore.set('findings.topic1', { description: 'Finding 1', value: { summary: 'Topic 1 findings' } });
+      memoryStore.set('findings.topic2', { description: 'Finding 2', value: { summary: 'Topic 2 findings' } });
+      memoryStore.set('summary.overview', { description: 'Summary', value: { text: 'Overview text' } });
+      memoryStore.set('raw.data1', { description: 'Raw data', value: { content: 'Raw content' } });
+    });
+
+    it('should have correct definition', () => {
+      expect(batchTool.definition.function.name).toBe('memory_retrieve_batch');
+      expect(batchTool.definition.function.description).toContain('multiple memory entries');
+      expect(batchTool.definition.function.parameters?.properties?.pattern).toBeDefined();
+      expect(batchTool.definition.function.parameters?.properties?.keys).toBeDefined();
+      expect(batchTool.definition.function.parameters?.properties?.tier).toBeDefined();
+      expect(batchTool.definition.function.parameters?.properties?.includeMetadata).toBeDefined();
+    });
+
+    it('should retrieve entries by pattern', async () => {
+      const result = await batchTool.execute(
+        { pattern: 'findings.*' },
+        mockContext
+      );
+
+      expect(result.count).toBe(2);
+      expect(result.entries['findings.topic1']).toEqual({ summary: 'Topic 1 findings' });
+      expect(result.entries['findings.topic2']).toEqual({ summary: 'Topic 2 findings' });
+      expect(result.filter).toBe('pattern:findings.*');
+    });
+
+    it('should retrieve entries by specific keys', async () => {
+      const result = await batchTool.execute(
+        { keys: ['findings.topic1', 'summary.overview'] },
+        mockContext
+      );
+
+      expect(result.count).toBe(2);
+      expect(result.entries['findings.topic1']).toBeDefined();
+      expect(result.entries['summary.overview']).toBeDefined();
+      expect(result.entries['findings.topic2']).toBeUndefined();
+    });
+
+    it('should retrieve entries by tier', async () => {
+      const result = await batchTool.execute(
+        { tier: 'findings' },
+        mockContext
+      );
+
+      expect(result.count).toBe(2);
+      expect(result.entries['findings.topic1']).toBeDefined();
+      expect(result.entries['findings.topic2']).toBeDefined();
+      expect(result.entries['summary.overview']).toBeUndefined();
+    });
+
+    it('should retrieve all entries when no filter provided', async () => {
+      const result = await batchTool.execute({}, mockContext);
+
+      expect(result.count).toBe(4);
+      expect(result.filter).toBe('all');
+    });
+
+    it('should include metadata when requested', async () => {
+      const result = await batchTool.execute(
+        { pattern: 'findings.*', includeMetadata: true },
+        mockContext
+      );
+
+      expect(result.metadata).toBeDefined();
+      expect(result.metadata['findings.topic1']).toEqual({
+        tier: 'findings',
+        priority: 'normal',
+        pinned: false,
+        description: 'Finding 1',
+      });
+    });
+
+    it('should handle non-existent keys', async () => {
+      const result = await batchTool.execute(
+        { keys: ['nonexistent1', 'nonexistent2', 'findings.topic1'] },
+        mockContext
+      );
+
+      expect(result.count).toBe(1);
+      expect(result.notFound).toContain('nonexistent1');
+      expect(result.notFound).toContain('nonexistent2');
+    });
+
+    it('should support wildcard patterns', async () => {
+      const result = await batchTool.execute(
+        { pattern: '*.topic1' },
+        mockContext
+      );
+
+      expect(result.count).toBe(1);
+      expect(result.entries['findings.topic1']).toBeDefined();
+    });
+
+    it('should support complex patterns', async () => {
+      const result = await batchTool.execute(
+        { pattern: '*.*' },
+        mockContext
+      );
+
+      // Should match all dot-separated keys
+      expect(result.count).toBe(4);
+    });
+
+    it('should be marked as idempotent', () => {
+      expect(batchTool.idempotency?.safe).toBe(true);
+    });
+
+    it('should have variable expected output size', () => {
+      expect(batchTool.output?.expectedSize).toBe('variable');
+    });
+
+    it('should throw ToolExecutionError without context', async () => {
+      await expect(batchTool.execute({ pattern: '*' })).rejects.toThrow(ToolExecutionError);
+    });
+  });
+
+  describe('new tool definitions', () => {
+    it('memoryCleanupRawDefinition should be valid', () => {
+      expect(memoryCleanupRawDefinition.type).toBe('function');
+      expect(memoryCleanupRawDefinition.function.name).toBe('memory_cleanup_raw');
+      expect(memoryCleanupRawDefinition.function.parameters).toBeDefined();
+    });
+
+    it('memoryRetrieveBatchDefinition should be valid', () => {
+      expect(memoryRetrieveBatchDefinition.type).toBe('function');
+      expect(memoryRetrieveBatchDefinition.function.name).toBe('memory_retrieve_batch');
+      expect(memoryRetrieveBatchDefinition.function.parameters).toBeDefined();
     });
   });
 });

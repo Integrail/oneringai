@@ -125,6 +125,11 @@ export class ResearchAgent extends TaskAgent {
    * Initialize research-specific components
    */
   private initializeResearch(config: ResearchAgentConfig): void {
+    // Initialize instance properties (needed because Object.setPrototypeOf doesn't run field initializers)
+    this.sources = new Map();
+    this.defaultSearchOptions = { maxResults: 10 };
+    this.defaultFetchOptions = { maxSize: 1024 * 1024 };
+
     // Register sources
     for (const source of config.sources) {
       this.sources.set(source.name, source);
