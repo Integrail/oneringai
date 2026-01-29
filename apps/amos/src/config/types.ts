@@ -102,6 +102,9 @@ export interface StoredConnectorConfig {
 export interface ConnectorAuth {
   type: 'api_key' | 'oauth' | 'jwt';
   apiKey?: string;
+  // Custom header configuration for API key auth
+  headerName?: string;   // e.g., 'X-API-KEY', 'X-Subscription-Token'
+  headerPrefix?: string; // e.g., '', 'Bearer' (empty string = no prefix)
   // OAuth fields
   clientId?: string;
   clientSecret?: string;

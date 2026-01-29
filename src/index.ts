@@ -730,3 +730,32 @@ export type {
   ToolCallResult as UniversalToolCallResult,
   ModeState,
 } from './capabilities/universalAgent/index.js';
+
+// ============ MCP (Model Context Protocol) ============
+export { MCPClient, MCPRegistry } from './core/mcp/index.js';
+export type {
+  IMCPClient,
+  MCPClientConnectionState,
+  MCPTool,
+  MCPToolResult,
+  MCPResource,
+  MCPResourceContent,
+  MCPPrompt,
+  MCPPromptResult,
+  MCPServerCapabilities,
+  MCPClientState,
+  MCPServerConfig,
+  MCPConfiguration,
+  MCPTransportType,
+  StdioTransportConfig,
+  HTTPTransportConfig,
+  TransportConfig,
+} from './core/mcp/index.js';
+export {
+  MCPError,
+  MCPConnectionError,
+  MCPTimeoutError,
+  MCPProtocolError,
+  MCPToolError,
+  MCPResourceError,
+} from './core/mcp/index.js';

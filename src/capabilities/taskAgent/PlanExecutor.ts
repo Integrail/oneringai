@@ -15,7 +15,7 @@ import { TokenBucketRateLimiter } from '../../infrastructure/resilience/index.js
 import { WorkingMemory } from './WorkingMemory.js';
 import { AgentContext } from '../../core/AgentContext.js';
 import { PlanPlugin } from '../../core/context/plugins/PlanPlugin.js';
-import { IdempotencyCache } from './IdempotencyCache.js';
+import { IdempotencyCache } from '../../core/IdempotencyCache.js';
 import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { CheckpointManager } from './CheckpointManager.js';
 import type { TaskAgentHooks, TaskContext, ErrorContext } from './TaskAgent.js';

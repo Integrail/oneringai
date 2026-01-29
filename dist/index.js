@@ -1,7 +1,7 @@
 import * as crypto2 from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs11 from 'fs';
+import * as fs12 from 'fs';
 import { promises, existsSync } from 'fs';
 import { EventEmitter } from 'eventemitter3';
 import * as path3 from 'path';
@@ -11,11 +11,11 @@ import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import * as os from 'os';
 import { homedir } from 'os';
-import '@modelcontextprotocol/sdk/client/index.js';
-import '@modelcontextprotocol/sdk/client/stdio.js';
-import '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import '@modelcontextprotocol/sdk/types.js';
-import * as fs10 from 'fs/promises';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { ListToolsResultSchema, CallToolResultSchema, ListResourcesResultSchema, ReadResourceResultSchema, ListPromptsResultSchema, GetPromptResultSchema } from '@modelcontextprotocol/sdk/types.js';
+import * as fs11 from 'fs/promises';
 import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
@@ -583,7 +583,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs11.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs12.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1100,7 +1100,7 @@ function addJitter(delay, factor = 0.1) {
 }
 async function backoffWait(attempt, config = DEFAULT_BACKOFF_CONFIG) {
   const delay = calculateBackoff(attempt, config);
-  await new Promise((resolve3) => setTimeout(resolve3, delay));
+  await new Promise((resolve4) => setTimeout(resolve4, delay));
   return delay;
 }
 function* backoffSequence(config = DEFAULT_BACKOFF_CONFIG, maxAttempts) {
@@ -1234,10 +1234,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path3.dirname(filePath);
-          if (!fs11.existsSync(dir)) {
-            fs11.mkdirSync(dir, { recursive: true });
+          if (!fs12.existsSync(dir)) {
+            fs12.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs11.createWriteStream(filePath, {
+          this.fileStream = fs12.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -2023,7 +2023,7 @@ var init_Connector = __esm({
       }
       // ============ Private Helpers ============
       sleep(ms) {
-        return new Promise((resolve3) => setTimeout(resolve3, ms));
+        return new Promise((resolve4) => setTimeout(resolve4, ms));
       }
       logRequest(url, options) {
         const logData = {
@@ -12277,13 +12277,13 @@ var AgenticLoop = class extends EventEmitter {
    * Execute function with timeout
    */
   async executeWithTimeout(fn, timeoutMs) {
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const timer = setTimeout(() => {
         reject(new ToolTimeoutError("tool", timeoutMs));
       }, timeoutMs);
       fn().then((result) => {
         clearTimeout(timer);
-        resolve3(result);
+        resolve4(result);
       }).catch((error) => {
         clearTimeout(timer);
         reject(error);
@@ -12424,8 +12424,8 @@ var AgenticLoop = class extends EventEmitter {
   _doPause(reason) {
     if (this.paused) return;
     this.paused = true;
-    this.pausePromise = new Promise((resolve3) => {
-      this.resumeCallback = resolve3;
+    this.pausePromise = new Promise((resolve4) => {
+      this.resumeCallback = resolve4;
     });
     if (this.context) {
       this.context.paused = true;
@@ -13006,8 +13006,8 @@ var Agent = class _Agent extends BaseAgent {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs12 = __require("fs");
-      const content = fs12.readFileSync(configPath, "utf-8");
+      const fs13 = __require("fs");
+      const content = fs13.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -13036,10 +13036,10 @@ var Agent = class _Agent extends BaseAgent {
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs12 = __require("fs");
+    const fs13 = __require("fs");
     for (const path5 of this.DEFAULT_PATHS) {
       try {
-        fs12.accessSync(resolve(path5));
+        fs13.accessSync(resolve(path5));
         return resolve(path5);
       } catch {
       }
@@ -13087,6 +13087,736 @@ var Agent = class _Agent extends BaseAgent {
     }
   }
 });
+
+// src/domain/errors/MCPError.ts
+var MCPError = class extends Error {
+  constructor(message, serverName, cause) {
+    super(message);
+    this.serverName = serverName;
+    this.cause = cause;
+    this.name = "MCPError";
+    if (cause) {
+      this.stack = `${this.stack}
+Caused by: ${cause.stack}`;
+    }
+  }
+};
+var MCPConnectionError = class extends MCPError {
+  constructor(message, serverName, cause) {
+    super(message, serverName, cause);
+    this.name = "MCPConnectionError";
+  }
+};
+var MCPTimeoutError = class extends MCPError {
+  constructor(message, timeoutMs, serverName, cause) {
+    super(message, serverName, cause);
+    this.timeoutMs = timeoutMs;
+    this.name = "MCPTimeoutError";
+  }
+};
+var MCPProtocolError = class extends MCPError {
+  constructor(message, serverName, cause) {
+    super(message, serverName, cause);
+    this.name = "MCPProtocolError";
+  }
+};
+var MCPToolError = class extends MCPError {
+  constructor(message, toolName, serverName, cause) {
+    super(message, serverName, cause);
+    this.toolName = toolName;
+    this.name = "MCPToolError";
+  }
+};
+var MCPResourceError = class extends MCPError {
+  constructor(message, resourceUri, serverName, cause) {
+    super(message, serverName, cause);
+    this.resourceUri = resourceUri;
+    this.name = "MCPResourceError";
+  }
+};
+
+// src/domain/entities/MCPConfig.ts
+function applyServerDefaults(config, defaults) {
+  return {
+    name: config.name,
+    displayName: config.displayName,
+    description: config.description,
+    transport: config.transport,
+    transportConfig: config.transportConfig,
+    autoConnect: config.autoConnect ?? defaults?.autoConnect ?? false,
+    autoReconnect: config.autoReconnect ?? defaults?.autoReconnect ?? true,
+    reconnectIntervalMs: config.reconnectIntervalMs ?? defaults?.reconnectIntervalMs ?? 5e3,
+    maxReconnectAttempts: config.maxReconnectAttempts ?? defaults?.maxReconnectAttempts ?? 10,
+    requestTimeoutMs: config.requestTimeoutMs ?? defaults?.requestTimeoutMs ?? 3e4,
+    healthCheckIntervalMs: config.healthCheckIntervalMs ?? defaults?.healthCheckIntervalMs ?? 6e4,
+    toolNamespace: config.toolNamespace ?? `mcp:${config.name}`,
+    permissions: config.permissions
+  };
+}
+
+// src/infrastructure/mcp/adapters/MCPToolAdapter.ts
+function createMCPToolAdapter(tool, client, namespace) {
+  const fullName = `${namespace}:${tool.name}`;
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: fullName,
+        description: tool.description || `MCP tool '${tool.name}' from server '${client.name}'`,
+        parameters: tool.inputSchema
+      }
+    },
+    async execute(args) {
+      try {
+        const result = await client.callTool(tool.name, args);
+        if (result.content?.length === 1 && result.content[0]?.type === "text") {
+          return result.content[0].text ?? "";
+        }
+        return result;
+      } catch (error) {
+        if (error instanceof MCPToolError) {
+          throw error;
+        }
+        throw new MCPToolError(
+          `Failed to execute MCP tool '${tool.name}'`,
+          tool.name,
+          client.name,
+          error
+        );
+      }
+    },
+    describeCall(args) {
+      const commonKeys = [
+        "file_path",
+        "path",
+        "uri",
+        "url",
+        "query",
+        "message",
+        "name",
+        "id",
+        "key"
+      ];
+      for (const key of commonKeys) {
+        if (key in args && typeof args[key] === "string") {
+          return args[key];
+        }
+      }
+      for (const value of Object.values(args)) {
+        if (typeof value === "string" && value.length > 0) {
+          return value.length > 60 ? `${value.substring(0, 60)}...` : value;
+        }
+      }
+      return tool.name;
+    }
+  };
+}
+function createMCPToolAdapters(tools, client, namespace) {
+  return tools.map((tool) => createMCPToolAdapter(tool, client, namespace));
+}
+
+// src/core/mcp/MCPClient.ts
+var MCPClient = class extends EventEmitter {
+  name;
+  config;
+  client = null;
+  transport = null;
+  _state = "disconnected";
+  _capabilities;
+  _tools = [];
+  reconnectAttempts = 0;
+  reconnectTimer;
+  healthCheckTimer;
+  subscribedResources = /* @__PURE__ */ new Set();
+  registeredToolNames = /* @__PURE__ */ new Set();
+  _isDestroyed = false;
+  constructor(config, defaults) {
+    super();
+    this.name = config.name;
+    this.config = applyServerDefaults(config, defaults);
+  }
+  // Getters
+  get state() {
+    return this._state;
+  }
+  get capabilities() {
+    return this._capabilities;
+  }
+  get tools() {
+    return this._tools;
+  }
+  // Lifecycle methods
+  async connect() {
+    if (this._state === "connected" || this._state === "connecting") {
+      return;
+    }
+    this._state = "connecting";
+    this.emit("connecting");
+    try {
+      this.transport = this.createTransport();
+      this.client = new Client(
+        {
+          name: "@oneringai/agents",
+          version: "0.2.0"
+        },
+        {
+          capabilities: {
+            // Request all capabilities (empty object means we support all)
+          }
+        }
+      );
+      await this.client.connect(this.transport);
+      this._capabilities = {};
+      this._state = "connected";
+      this.reconnectAttempts = 0;
+      await this.refreshTools();
+      this.emit("connected");
+      this.startHealthCheck();
+    } catch (error) {
+      this.stopHealthCheck();
+      if (this.client) {
+        try {
+          await this.client.close();
+        } catch {
+        }
+        this.client = null;
+      }
+      this.transport = null;
+      this._tools = [];
+      this._capabilities = void 0;
+      this._state = "failed";
+      const mcpError = new MCPConnectionError(
+        `Failed to connect to MCP server '${this.name}'`,
+        this.name,
+        error
+      );
+      this.emit("failed", mcpError);
+      this.emit("error", mcpError);
+      if (this.config.autoReconnect) {
+        this.scheduleReconnect();
+      } else {
+        throw mcpError;
+      }
+    }
+  }
+  async disconnect() {
+    this.stopHealthCheck();
+    this.stopReconnect();
+    if (this.client && this.transport) {
+      try {
+        await this.client.close();
+      } catch (error) {
+      }
+    }
+    this.client = null;
+    this.transport = null;
+    this._state = "disconnected";
+    this._tools = [];
+    this.emit("disconnected");
+  }
+  async reconnect() {
+    await this.disconnect();
+    await this.connect();
+  }
+  isConnected() {
+    return this._state === "connected";
+  }
+  async ping() {
+    if (!this.client || !this.isConnected()) {
+      return false;
+    }
+    try {
+      await this.client.ping();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+  // Tool methods
+  async listTools() {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request({ method: "tools/list" }, ListToolsResultSchema);
+      this._tools = response.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema
+      }));
+      return this._tools;
+    } catch (error) {
+      throw new MCPError(`Failed to list tools from server '${this.name}'`, this.name, error);
+    }
+  }
+  async callTool(name, args) {
+    this.ensureConnected();
+    this.emit("tool:called", name, args);
+    try {
+      const response = await this.client.request(
+        {
+          method: "tools/call",
+          params: {
+            name,
+            arguments: args
+          }
+        },
+        CallToolResultSchema
+      );
+      const result = {
+        content: response.content.map((item) => ({
+          type: item.type,
+          text: "text" in item ? item.text : void 0,
+          data: "data" in item ? item.data : void 0,
+          mimeType: "mimeType" in item ? item.mimeType : void 0,
+          uri: "uri" in item ? item.uri : void 0
+        })),
+        isError: response.isError
+      };
+      this.emit("tool:result", name, result);
+      if (result.isError) {
+        const errorText = result.content.find((c) => c.type === "text")?.text || "Unknown error";
+        throw new MCPToolError(errorText, name, this.name);
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof MCPToolError) {
+        throw error;
+      }
+      throw new MCPToolError(
+        `Failed to call tool '${name}' on server '${this.name}'`,
+        name,
+        this.name,
+        error
+      );
+    }
+  }
+  registerTools(toolManager) {
+    if (this._tools.length === 0) {
+      return;
+    }
+    const toolFunctions = createMCPToolAdapters(this._tools, this, this.config.toolNamespace);
+    for (const toolFn of toolFunctions) {
+      const toolName = toolFn.definition.function.name;
+      toolManager.register(toolFn, {
+        namespace: this.config.toolNamespace,
+        enabled: true,
+        permission: this.config.permissions ? {
+          scope: this.config.permissions.defaultScope,
+          riskLevel: this.config.permissions.defaultRiskLevel
+        } : void 0
+      });
+      this.registeredToolNames.add(toolName);
+    }
+  }
+  unregisterTools(toolManager) {
+    for (const toolName of this.registeredToolNames) {
+      toolManager.unregister(toolName);
+    }
+    this.registeredToolNames.clear();
+  }
+  // Resource methods
+  async listResources() {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request({ method: "resources/list" }, ListResourcesResultSchema);
+      return response.resources.map((resource) => ({
+        uri: resource.uri,
+        name: resource.name,
+        description: resource.description,
+        mimeType: resource.mimeType
+      }));
+    } catch (error) {
+      throw new MCPError(
+        `Failed to list resources from server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  async readResource(uri) {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request(
+        {
+          method: "resources/read",
+          params: { uri }
+        },
+        ReadResourceResultSchema
+      );
+      const content = response.contents?.[0];
+      if (!content) {
+        throw new MCPError(`No content returned for resource '${uri}'`, this.name);
+      }
+      return {
+        uri: content.uri,
+        mimeType: content.mimeType,
+        text: "text" in content ? content.text : void 0,
+        blob: "blob" in content ? content.blob : void 0
+      };
+    } catch (error) {
+      throw new MCPError(
+        `Failed to read resource '${uri}' from server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  async subscribeResource(uri) {
+    this.ensureConnected();
+    if (!this._capabilities?.resources?.subscribe) {
+      throw new MCPError(`Server '${this.name}' does not support resource subscriptions`, this.name);
+    }
+    try {
+      await this.client.request(
+        {
+          method: "resources/subscribe",
+          params: { uri }
+        },
+        {}
+        // No specific schema for subscription acknowledgment
+      );
+      this.subscribedResources.add(uri);
+    } catch (error) {
+      throw new MCPError(
+        `Failed to subscribe to resource '${uri}' on server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  async unsubscribeResource(uri) {
+    this.ensureConnected();
+    try {
+      await this.client.request(
+        {
+          method: "resources/unsubscribe",
+          params: { uri }
+        },
+        {}
+        // No specific schema for unsubscribe acknowledgment
+      );
+      this.subscribedResources.delete(uri);
+    } catch (error) {
+      throw new MCPError(
+        `Failed to unsubscribe from resource '${uri}' on server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  // Prompt methods
+  async listPrompts() {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request({ method: "prompts/list" }, ListPromptsResultSchema);
+      return response.prompts.map((prompt) => ({
+        name: prompt.name,
+        description: prompt.description,
+        arguments: prompt.arguments
+      }));
+    } catch (error) {
+      throw new MCPError(`Failed to list prompts from server '${this.name}'`, this.name, error);
+    }
+  }
+  async getPrompt(name, args) {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request(
+        {
+          method: "prompts/get",
+          params: {
+            name,
+            arguments: args
+          }
+        },
+        GetPromptResultSchema
+      );
+      return {
+        description: response.description,
+        messages: response.messages.map((msg) => ({
+          role: msg.role,
+          content: {
+            type: msg.content.type,
+            text: "text" in msg.content ? msg.content.text : void 0,
+            data: "data" in msg.content ? msg.content.data : void 0,
+            mimeType: "mimeType" in msg.content ? msg.content.mimeType : void 0,
+            uri: "uri" in msg.content ? msg.content.uri : void 0
+          }
+        }))
+      };
+    } catch (error) {
+      throw new MCPError(
+        `Failed to get prompt '${name}' from server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  // State management
+  getState() {
+    return {
+      name: this.name,
+      state: this._state,
+      capabilities: this._capabilities,
+      subscribedResources: Array.from(this.subscribedResources),
+      lastConnectedAt: this._state === "connected" ? Date.now() : void 0,
+      connectionAttempts: this.reconnectAttempts
+    };
+  }
+  loadState(state) {
+    this.subscribedResources = new Set(state.subscribedResources);
+    this.reconnectAttempts = state.connectionAttempts;
+  }
+  /**
+   * Check if the MCPClient instance has been destroyed
+   */
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  destroy() {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
+    this.stopHealthCheck();
+    this.stopReconnect();
+    if (this.client) {
+      this.client.close().catch(() => {
+      });
+      this.client = null;
+    }
+    this.transport = null;
+    this._tools = [];
+    this._capabilities = void 0;
+    this._state = "disconnected";
+    this.subscribedResources.clear();
+    this.registeredToolNames.clear();
+    this.removeAllListeners();
+  }
+  // Private helper methods
+  createTransport() {
+    const { transport, transportConfig } = this.config;
+    if (transport === "stdio") {
+      const stdioConfig = transportConfig;
+      return new StdioClientTransport({
+        command: stdioConfig.command,
+        args: stdioConfig.args,
+        env: stdioConfig.env
+      });
+    }
+    if (transport === "http" || transport === "https") {
+      const httpConfig = transportConfig;
+      const headers = { ...httpConfig.headers };
+      if (httpConfig.token) {
+        headers["Authorization"] = `Bearer ${httpConfig.token}`;
+      }
+      return new StreamableHTTPClientTransport(new URL(httpConfig.url), {
+        sessionId: httpConfig.sessionId,
+        requestInit: {
+          headers,
+          ...httpConfig.timeoutMs && { signal: AbortSignal.timeout(httpConfig.timeoutMs) }
+        },
+        reconnectionOptions: httpConfig.reconnection ? {
+          maxReconnectionDelay: httpConfig.reconnection.maxReconnectionDelay ?? 3e4,
+          initialReconnectionDelay: httpConfig.reconnection.initialReconnectionDelay ?? 1e3,
+          reconnectionDelayGrowFactor: httpConfig.reconnection.reconnectionDelayGrowFactor ?? 1.5,
+          maxRetries: httpConfig.reconnection.maxRetries ?? 2
+        } : void 0
+      });
+    }
+    throw new MCPError(`Transport '${transport}' not supported`, this.name);
+  }
+  ensureConnected() {
+    if (!this.client || !this.isConnected()) {
+      throw new MCPConnectionError(`MCP server '${this.name}' is not connected`, this.name);
+    }
+  }
+  async refreshTools() {
+    try {
+      await this.listTools();
+    } catch (error) {
+      this.emit("error", error);
+    }
+  }
+  startHealthCheck() {
+    if (this.config.healthCheckIntervalMs <= 0) {
+      return;
+    }
+    this.healthCheckTimer = setInterval(async () => {
+      const alive = await this.ping();
+      if (!alive && this._state === "connected") {
+        this.emit("error", new MCPConnectionError(`Health check failed for server '${this.name}'`, this.name));
+        if (this.config.autoReconnect) {
+          await this.reconnect();
+        }
+      }
+    }, this.config.healthCheckIntervalMs);
+  }
+  stopHealthCheck() {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = void 0;
+    }
+  }
+  scheduleReconnect() {
+    if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
+      this.emit("error", new MCPConnectionError(`Max reconnect attempts reached for server '${this.name}'`, this.name));
+      return;
+    }
+    this.reconnectAttempts++;
+    this._state = "reconnecting";
+    this.emit("reconnecting", this.reconnectAttempts);
+    const delay = this.config.reconnectIntervalMs * Math.pow(2, this.reconnectAttempts - 1);
+    this.reconnectTimer = setTimeout(async () => {
+      try {
+        await this.connect();
+      } catch (error) {
+      }
+    }, delay);
+  }
+  stopReconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = void 0;
+    }
+  }
+};
+var MCPRegistry = class {
+  static clients = /* @__PURE__ */ new Map();
+  /**
+   * Create and register an MCP client
+   */
+  static create(config, defaults) {
+    if (this.clients.has(config.name)) {
+      throw new MCPError(`MCP server '${config.name}' is already registered`);
+    }
+    const client = new MCPClient(config, defaults);
+    this.clients.set(config.name, client);
+    return client;
+  }
+  /**
+   * Get a registered MCP client
+   */
+  static get(name) {
+    const client = this.clients.get(name);
+    if (!client) {
+      throw new MCPError(`MCP server '${name}' not found in registry`);
+    }
+    return client;
+  }
+  /**
+   * Check if an MCP client is registered
+   */
+  static has(name) {
+    return this.clients.has(name);
+  }
+  /**
+   * List all registered MCP client names
+   */
+  static list() {
+    return Array.from(this.clients.keys());
+  }
+  /**
+   * Get info about a registered MCP client
+   */
+  static getInfo(name) {
+    const client = this.get(name);
+    return {
+      name: client.name,
+      state: client.state,
+      connected: client.isConnected(),
+      toolCount: client.tools.length
+    };
+  }
+  /**
+   * Get info about all registered MCP clients
+   */
+  static getAllInfo() {
+    return Array.from(this.clients.keys()).map((name) => this.getInfo(name));
+  }
+  /**
+   * Create multiple clients from MCP configuration
+   */
+  static createFromConfig(config) {
+    const clients = [];
+    for (const serverConfig of config.servers) {
+      const client = this.create(serverConfig, config.defaults);
+      clients.push(client);
+    }
+    return clients;
+  }
+  /**
+   * Load MCP configuration from file and create clients
+   */
+  static async loadFromConfigFile(path5) {
+    try {
+      const configPath = resolve(path5);
+      const content = await promises.readFile(configPath, "utf-8");
+      const config = JSON.parse(content);
+      if (!config.mcp) {
+        throw new MCPError("Configuration file does not contain MCP section");
+      }
+      const interpolatedConfig = this.interpolateEnvVars(config.mcp);
+      return this.createFromConfig(interpolatedConfig);
+    } catch (error) {
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(`Failed to load MCP configuration from '${path5}'`, void 0, error);
+    }
+  }
+  /**
+   * Connect all servers with autoConnect enabled
+   */
+  static async connectAll() {
+    const connectPromises = [];
+    for (const client of this.clients.values()) {
+      if (!client.isConnected()) {
+        connectPromises.push(client.connect());
+      }
+    }
+    await Promise.all(connectPromises);
+  }
+  /**
+   * Disconnect all servers
+   */
+  static async disconnectAll() {
+    const disconnectPromises = [];
+    for (const client of this.clients.values()) {
+      if (client.isConnected()) {
+        disconnectPromises.push(client.disconnect());
+      }
+    }
+    await Promise.all(disconnectPromises);
+  }
+  /**
+   * Destroy all clients and clear registry
+   */
+  static destroyAll() {
+    for (const client of this.clients.values()) {
+      client.destroy();
+    }
+    this.clients.clear();
+  }
+  /**
+   * Clear the registry (for testing)
+   */
+  static clear() {
+    this.destroyAll();
+  }
+  /**
+   * Interpolate environment variables in configuration
+   * Replaces ${ENV_VAR} with process.env.ENV_VAR
+   */
+  static interpolateEnvVars(config) {
+    const jsonString = JSON.stringify(config);
+    const interpolated = jsonString.replace(/\$\{([^}]+)\}/g, (_match, envVar) => {
+      const value = process.env[envVar];
+      if (value === void 0) {
+        throw new MCPError(`Environment variable '${envVar}' is not set`);
+      }
+      return value;
+    });
+    return JSON.parse(interpolated);
+  }
+};
 
 // src/core/TextToSpeech.ts
 init_Connector();
@@ -13610,7 +14340,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
       const blob = new Blob([audio]);
       return new File([blob], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs11.createReadStream(audio);
+      return fs12.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -14163,7 +14893,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs10.writeFile(filePath, response.audio);
+    await fs11.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -14511,7 +15241,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs10.readFile(filePath);
+    const audio = await fs11.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -14837,7 +15567,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([image], "image.png", { type: "image/png" });
     }
-    return fs11.createReadStream(image);
+    return fs12.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -14984,8 +15714,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs12 = await import('fs');
-      const buffer = fs12.readFileSync(image);
+      const fs13 = await import('fs');
+      const buffer = fs13.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -15263,7 +15993,7 @@ var ErrorHandler = class extends EventEmitter {
     return Math.min(jitter, this.config.maxRetryDelayMs);
   }
   delay(ms) {
-    return new Promise((resolve3) => setTimeout(resolve3, ms));
+    return new Promise((resolve4) => setTimeout(resolve4, ms));
   }
 };
 var globalErrorHandler = new ErrorHandler();
@@ -15933,8 +16663,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([image], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs12 = await import('fs');
-      const data = fs12.readFileSync(image);
+      const fs13 = await import('fs');
+      const data = fs13.readFileSync(image);
       return new File([data], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -16206,7 +16936,7 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
       if (status.status === "completed" || status.status === "failed") {
         return status;
       }
-      await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
     }
     throw new ProviderError("google", `Video generation timed out after ${timeoutMs}ms`);
   }
@@ -16231,8 +16961,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs12 = await import('fs/promises');
-    const data = await fs12.readFile(image);
+    const fs13 = await import('fs/promises');
+    const data = await fs13.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -16614,7 +17344,7 @@ var VideoGeneration = class _VideoGeneration {
           `Video generation failed: ${status.error || "Unknown error"}`
         );
       }
-      await new Promise((resolve3) => setTimeout(resolve3, pollInterval));
+      await new Promise((resolve4) => setTimeout(resolve4, pollInterval));
     }
     throw new ProviderError(
       this.connector.vendor || "unknown",
@@ -17990,8 +18720,8 @@ var ExternalDependencyHandler = class extends EventEmitter {
           return;
         }
         const delay = calculateBackoff(attempts, backoffConfig);
-        await new Promise((resolve3) => {
-          const timer = setTimeout(resolve3, delay);
+        await new Promise((resolve4) => {
+          const timer = setTimeout(resolve4, delay);
           this.activePolls.set(task.id, timer);
         });
         if (this.cancelledPolls.has(task.id)) {
@@ -18193,7 +18923,7 @@ var TokenBucketRateLimiter = class {
    * Wait for a token to become available
    */
   async waitForToken(waitTime) {
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const timeout = setTimeout(() => {
         const index = this.waitQueue.findIndex((w) => w.timeout === timeout);
         if (index !== -1) {
@@ -18202,12 +18932,12 @@ var TokenBucketRateLimiter = class {
         this.refill();
         if (this.tokens > 0) {
           this.tokens--;
-          resolve3();
+          resolve4();
         } else {
           reject(new RateLimitError(this.getWaitTime(), "Token still unavailable after wait"));
         }
       }, waitTime);
-      this.waitQueue.push({ resolve: resolve3, reject, timeout });
+      this.waitQueue.push({ resolve: resolve4, reject, timeout });
     });
   }
   /**
@@ -18694,13 +19424,13 @@ var PlanExecutor = class extends EventEmitter {
    * Execute task core logic with timeout
    */
   async executeTaskWithTimeout(plan, task, timeoutMs) {
-    return new Promise((resolve3, reject) => {
+    return new Promise((resolve4, reject) => {
       const timeoutId = setTimeout(() => {
         reject(new TaskTimeoutError(task.id, task.name, timeoutMs));
       }, timeoutMs);
       this.executeTaskCore(plan, task).then(() => {
         clearTimeout(timeoutId);
-        resolve3();
+        resolve4();
       }).catch((error) => {
         clearTimeout(timeoutId);
         reject(error);
@@ -22790,8 +23520,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs10.mkdir(this.directory, { recursive: true });
-      await fs10.chmod(this.directory, 448);
+      await fs11.mkdir(this.directory, { recursive: true });
+      await fs11.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -22807,13 +23537,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs10.writeFile(filePath, encrypted, "utf8");
-    await fs10.chmod(filePath, 384);
+    await fs11.writeFile(filePath, encrypted, "utf8");
+    await fs11.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs10.readFile(filePath, "utf8");
+      const encrypted = await fs11.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -22822,7 +23552,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs10.unlink(filePath);
+        await fs11.unlink(filePath);
       } catch {
       }
       return null;
@@ -22831,7 +23561,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs10.unlink(filePath);
+      await fs11.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -22841,7 +23571,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs10.access(filePath);
+      await fs11.access(filePath);
       return true;
     } catch {
       return false;
@@ -22852,7 +23582,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs10.readdir(this.directory);
+      const files = await fs11.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -22863,10 +23593,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs10.readdir(this.directory);
+      const files = await fs11.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs10.unlink(path3.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs11.unlink(path3.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -23271,14 +24001,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs10.writeFile(filePath, json, "utf8");
-    await fs10.chmod(filePath, 384);
+    await fs11.writeFile(filePath, json, "utf8");
+    await fs11.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs10.readFile(filePath, "utf8");
+      const json = await fs11.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -23291,7 +24021,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs10.unlink(filePath);
+      await fs11.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -23305,7 +24035,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs10.access(filePath);
+      await fs11.access(filePath);
       return true;
     } catch {
       return false;
@@ -23331,13 +24061,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs10.readdir(this.directory);
+      const files = await fs11.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs10.unlink(path3.join(this.directory, f)).catch(() => {
+          (f) => fs11.unlink(path3.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -23364,8 +24094,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs10.mkdir(this.directory, { recursive: true });
-      await fs10.chmod(this.directory, 448);
+      await fs11.mkdir(this.directory, { recursive: true });
+      await fs11.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -23376,7 +24106,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs10.readFile(this.indexPath, "utf8");
+      const json = await fs11.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -23394,8 +24124,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs10.writeFile(this.indexPath, json, "utf8");
-    await fs10.chmod(this.indexPath, 384);
+    await fs11.writeFile(this.indexPath, json, "utf8");
+    await fs11.chmod(this.indexPath, 384);
   }
 };
 
@@ -23539,8 +24269,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs11.existsSync(filePath)) {
-      fs11.unlinkSync(filePath);
+    if (fs12.existsSync(filePath)) {
+      fs12.unlinkSync(filePath);
     }
   } catch {
   }
@@ -23591,7 +24321,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs11.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs12.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -23608,14 +24338,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs11.existsSync(tempFile) && fs11.statSync(tempFile).size > 0) {
+      if (fs12.existsSync(tempFile) && fs12.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs11.existsSync(tempFile) && fs11.statSync(tempFile).size > 0) {
+      if (fs12.existsSync(tempFile) && fs12.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -23642,7 +24372,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs11.existsSync(tempFile) && fs11.statSync(tempFile).size > 0) {
+    if (fs12.existsSync(tempFile) && fs12.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -23655,7 +24385,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs11.readFileSync(filePath);
+    const imageBuffer = fs12.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -25007,7 +25737,7 @@ EXAMPLES:
         ...process.env,
         ...mergedConfig.env
       };
-      return new Promise((resolve3) => {
+      return new Promise((resolve4) => {
         const startTime = Date.now();
         const childProcess = spawn(command, [], {
           shell: mergedConfig.shell,
@@ -25030,7 +25760,7 @@ EXAMPLES:
               backgroundProcesses.delete(bgId);
             }, 3e5);
           });
-          resolve3({
+          resolve4({
             success: true,
             backgroundId: bgId,
             stdout: `Command started in background with ID: ${bgId}`
@@ -25074,7 +25804,7 @@ EXAMPLES:
             truncated = true;
           }
           if (killed) {
-            resolve3({
+            resolve4({
               success: false,
               stdout,
               stderr,
@@ -25085,7 +25815,7 @@ EXAMPLES:
               error: `Command timed out after ${effectiveTimeout}ms`
             });
           } else {
-            resolve3({
+            resolve4({
               success: code === 0,
               stdout,
               stderr,
@@ -25099,7 +25829,7 @@ EXAMPLES:
         });
         childProcess.on("error", (error) => {
           clearTimeout(timeoutId);
-          resolve3({
+          resolve4({
             success: false,
             error: `Failed to execute command: ${error.message}`,
             duration: Date.now() - startTime
@@ -28181,6 +28911,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolCallDescription, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile4 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, toConnectorOptions, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolCallDescription, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile4 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, toConnectorOptions, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

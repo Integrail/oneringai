@@ -175,8 +175,17 @@ export class ConnectorManager implements IConnectorManager {
       vendor = Vendor.Custom;
     }
 
+    // Header configuration for different search/scrape providers
+    const providerHeaders: Record<string, { headerName: string; headerPrefix: string }> = {
+      serper: { headerName: 'X-API-KEY', headerPrefix: '' },
+      'brave-search': { headerName: 'X-Subscription-Token', headerPrefix: '' },
+      tavily: { headerName: 'Authorization', headerPrefix: 'Bearer' }, // Tavily uses body, but this is fallback
+      'rapidapi-search': { headerName: 'X-RapidAPI-Key', headerPrefix: '' },
+      zenrows: { headerName: 'Authorization', headerPrefix: 'Bearer' },
+    };
+
     // Build auth config based on type
-    let auth: { type: 'api_key'; apiKey: string } | {
+    let auth: { type: 'api_key'; apiKey: string; headerName?: string; headerPrefix?: string } | {
       type: 'oauth';
       flow: 'authorization_code' | 'client_credentials' | 'jwt_bearer';
       clientId: string;
@@ -187,7 +196,14 @@ export class ConnectorManager implements IConnectorManager {
     };
 
     if (config.auth.type === 'api_key' && config.auth.apiKey) {
-      auth = { type: 'api_key', apiKey: config.auth.apiKey };
+      // Get header config from stored config, or use provider defaults
+      const headerConfig = serviceType ? providerHeaders[serviceType] : undefined;
+      auth = {
+        type: 'api_key',
+        apiKey: config.auth.apiKey,
+        headerName: config.auth.headerName || headerConfig?.headerName,
+        headerPrefix: config.auth.headerPrefix ?? headerConfig?.headerPrefix,
+      };
     } else if (config.auth.type === 'oauth') {
       auth = {
         type: 'oauth',
