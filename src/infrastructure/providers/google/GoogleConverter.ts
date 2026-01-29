@@ -4,7 +4,6 @@
  */
 
 // Import types - the new SDK may have different type names
-import { randomUUID } from 'crypto';
 import type {
   Content as GeminiContent,
   Part,
@@ -12,12 +11,19 @@ import type {
 } from '@google/genai';
 import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
-import { InputItem, MessageRole, OutputItem } from '../../../domain/entities/Message.js';
+import { InputItem, MessageRole } from '../../../domain/entities/Message.js';
 import { convertToolsToStandardFormat } from '../shared/ToolConversionUtils.js';
 import { Content, ContentType } from '../../../domain/entities/Content.js';
 import { Tool } from '../../../domain/entities/Tool.js';
 import { fetchImageAsBase64 } from '../../../utils/imageUtils.js';
 import { InvalidToolArgumentsError } from '../../../domain/errors/AIErrors.js';
+import {
+  buildLLMResponse,
+  createTextContent,
+  createToolUseContent,
+  mapGoogleStatus,
+  generateToolCallId,
+} from '../shared/ResponseBuilder.js';
 
 export class GoogleConverter {
   // Track tool call ID → tool name mapping for tool results
@@ -301,38 +307,24 @@ export class GoogleConverter {
     // Convert Google parts to our content
     const content = this.convertGeminiPartsToContent(geminiContent?.parts || []);
 
-    const output: OutputItem[] = [
-      {
-        type: 'message',
-        id: response.id || `google_msg_${randomUUID()}`,
-        role: MessageRole.ASSISTANT,
-        content,
-      },
-    ];
-
-    const outputText = this.extractOutputText(geminiContent?.parts || []);
-
-    // Debug output text extraction
+    // Debug output
     if (process.env.DEBUG_GOOGLE) {
-      console.error('[DEBUG] Extracted output_text:', outputText);
       console.error('[DEBUG] Content array:', JSON.stringify(content, null, 2));
       console.error('[DEBUG] Raw parts:', JSON.stringify(geminiContent?.parts, null, 2));
     }
 
-    return {
-      id: `resp_google_${randomUUID()}`,
-      object: 'response',
-      created_at: Math.floor(Date.now() / 1000),
-      status: this.mapFinishReason(candidate?.finishReason),
+    return buildLLMResponse({
+      provider: 'google',
       model: response.modelVersion || 'gemini',
-      output,
-      output_text: outputText,
+      status: mapGoogleStatus(candidate?.finishReason),
+      content,
+      messageId: response.id,
       usage: {
-        input_tokens: response.usageMetadata?.promptTokenCount || 0,
-        output_tokens: response.usageMetadata?.candidatesTokenCount || 0,
-        total_tokens: response.usageMetadata?.totalTokenCount || 0,
+        inputTokens: response.usageMetadata?.promptTokenCount || 0,
+        outputTokens: response.usageMetadata?.candidatesTokenCount || 0,
+        totalTokens: response.usageMetadata?.totalTokenCount || 0,
       },
-    };
+    });
   }
 
   /**
@@ -343,13 +335,9 @@ export class GoogleConverter {
 
     for (const part of parts) {
       if ('text' in part && part.text) {
-        content.push({
-          type: ContentType.OUTPUT_TEXT,
-          text: part.text,
-          annotations: [],
-        });
+        content.push(createTextContent(part.text));
       } else if ('functionCall' in part && part.functionCall) {
-        const toolId = `google_${randomUUID()}`;
+        const toolId = generateToolCallId('google');
         const functionName = part.functionCall.name || '';
 
         // Store thought signature if present (required for Gemini 3+)
@@ -366,44 +354,11 @@ export class GoogleConverter {
           console.error(`[DEBUG] Part keys:`, Object.keys(part));
         }
 
-        content.push({
-          type: ContentType.TOOL_USE,
-          id: toolId,
-          name: functionName,
-          arguments: JSON.stringify(part.functionCall.args || {}),
-        });
+        content.push(createToolUseContent(toolId, functionName, part.functionCall.args || {}));
       }
     }
 
     return content;
-  }
-
-  /**
-   * Extract output text from Google parts
-   */
-  private extractOutputText(parts: Part[]): string {
-    return parts
-      .filter((p): p is { text: string } => 'text' in p && typeof p.text === 'string')
-      .map((p) => p.text)
-      .join('\n');
-  }
-
-  /**
-   * Map Google finish reason → our status
-   */
-  private mapFinishReason(finishReason: string | undefined): 'completed' | 'incomplete' | 'failed' {
-    switch (finishReason) {
-      case 'STOP':
-        return 'completed';
-      case 'MAX_TOKENS':
-        return 'incomplete';
-      case 'SAFETY':
-      case 'RECITATION':
-        return 'failed';
-      case 'OTHER':
-      default:
-        return 'incomplete';
-    }
   }
 
   /**

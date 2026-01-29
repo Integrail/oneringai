@@ -636,18 +636,18 @@ describe('UniversalAgent', () => {
 
     it('should set auto-approval', () => {
       agent.setAutoApproval(false);
-      expect((agent as any).config.planning.requireApproval).toBe(true);
+      expect((agent as any)._config.planning.requireApproval).toBe(true);
 
       agent.setAutoApproval(true);
-      expect((agent as any).config.planning.requireApproval).toBe(false);
+      expect((agent as any)._config.planning.requireApproval).toBe(false);
     });
 
     it('should enable/disable planning', () => {
       agent.setPlanningEnabled(false);
-      expect((agent as any).config.planning.enabled).toBe(false);
+      expect((agent as any)._config.planning.enabled).toBe(false);
 
       agent.setPlanningEnabled(true);
-      expect((agent as any).config.planning.enabled).toBe(true);
+      expect((agent as any)._config.planning.enabled).toBe(true);
     });
   });
 

@@ -3,10 +3,10 @@
  *
  * Note: The main Agent class is now in src/core/Agent.ts
  * This module exports internal implementation details.
+ * Tool management is unified in src/core/ToolManager.ts
  */
 
-// Internal implementation (still needed by core/Agent.ts)
-export { ToolRegistry } from './ToolRegistry.js';
+// Internal implementation
 export { AgenticLoop } from './AgenticLoop.js';
 export { ExecutionContext } from './ExecutionContext.js';
 export { HookManager } from './HookManager.js';

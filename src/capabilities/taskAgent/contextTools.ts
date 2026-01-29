@@ -112,36 +112,17 @@ function createContextBreakdownTool(): ToolFunction {
         };
       }
 
+      // Build components array from dynamic breakdown
+      const components = Object.entries(budget.breakdown).map(([name, tokens]) => ({
+        name,
+        tokens,
+        percent: budget.used > 0 ? Math.round((tokens / budget.used) * 1000) / 10 : 0,
+      }));
+
       return {
         total_used: budget.used,
         breakdown: budget.breakdown,
-        components: [
-          {
-            name: 'system_prompt',
-            tokens: budget.breakdown.systemPrompt,
-            percent: Math.round((budget.breakdown.systemPrompt / budget.used) * 1000) / 10,
-          },
-          {
-            name: 'instructions',
-            tokens: budget.breakdown.instructions,
-            percent: Math.round((budget.breakdown.instructions / budget.used) * 1000) / 10,
-          },
-          {
-            name: 'memory_index',
-            tokens: budget.breakdown.memoryIndex,
-            percent: Math.round((budget.breakdown.memoryIndex / budget.used) * 1000) / 10,
-          },
-          {
-            name: 'conversation_history',
-            tokens: budget.breakdown.conversationHistory,
-            percent: Math.round((budget.breakdown.conversationHistory / budget.used) * 1000) / 10,
-          },
-          {
-            name: 'current_input',
-            tokens: budget.breakdown.currentInput,
-            percent: Math.round((budget.breakdown.currentInput / budget.used) * 1000) / 10,
-          },
-        ],
+        components,
       };
     },
     idempotency: {

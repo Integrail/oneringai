@@ -28,7 +28,7 @@ describe('Memory Tools', () => {
         const entry = memoryStore.get(key);
         return entry?.value;
       }),
-      set: vi.fn(async (key: string, description: string, value: unknown) => {
+      set: vi.fn(async (key: string, description: string, value: unknown, options?: any) => {
         memoryStore.set(key, { description, value });
       }),
       delete: vi.fn(async (key: string) => {
@@ -36,7 +36,12 @@ describe('Memory Tools', () => {
       }),
       has: vi.fn(async (key: string) => memoryStore.has(key)),
       list: vi.fn(async () =>
-        Array.from(memoryStore.entries()).map(([key, { description }]) => ({ key, description }))
+        Array.from(memoryStore.entries()).map(([key, { description }]) => ({
+          key,
+          description,
+          effectivePriority: 'normal' as const,
+          pinned: false,
+        }))
       ),
     };
 
@@ -254,15 +259,21 @@ describe('Memory Tools', () => {
 
       const result = await listTool.execute({}, mockContext);
 
-      expect(result).toEqual([
-        { key: 'user.profile', description: 'User profile data' },
-        { key: 'order.items', description: 'Order items' },
-      ]);
+      expect(result).toEqual({
+        entries: [
+          { key: 'user.profile', description: 'User profile data', priority: 'normal', pinned: false },
+          { key: 'order.items', description: 'Order items', priority: 'normal', pinned: false },
+        ],
+        count: 2,
+      });
     });
 
-    it('should return empty array when memory is empty', async () => {
+    it('should return empty entries when memory is empty', async () => {
       const result = await listTool.execute({}, mockContext);
-      expect(result).toEqual([]);
+      expect(result).toEqual({
+        entries: [],
+        count: 0,
+      });
     });
 
     it('should be marked as idempotent', () => {

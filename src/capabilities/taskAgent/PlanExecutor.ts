@@ -1,5 +1,8 @@
 /**
  * PlanExecutor - executes plans with LLM integration
+ *
+ * Uses the unified ContextManager with TaskAgentContextProvider
+ * and IHistoryManager interface for history management.
  */
 
 import { EventEmitter } from 'eventemitter3';
@@ -11,9 +14,10 @@ import { calculateCost } from '../../domain/entities/Model.js';
 import { TaskTimeoutError, TaskValidationError, ParallelTasksError, TaskFailure } from '../../domain/errors/AIErrors.js';
 import { TokenBucketRateLimiter } from '../../infrastructure/resilience/index.js';
 import { WorkingMemory } from './WorkingMemory.js';
-import { ContextManager } from './ContextManager.js';
+import { ContextManager } from '../../core/context/ContextManager.js';
+import type { TaskAgentContextProvider } from '../../infrastructure/context/providers/TaskAgentContextProvider.js';
 import { IdempotencyCache } from './IdempotencyCache.js';
-import { HistoryManager } from './HistoryManager.js';
+import type { IHistoryManager } from '../../domain/interfaces/IHistoryManager.js';
 import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { CheckpointManager } from './CheckpointManager.js';
 import type { TaskAgentHooks, TaskContext, ErrorContext } from './TaskAgent.js';
@@ -73,8 +77,9 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
   private agent: Agent;
   private memory: WorkingMemory;
   private contextManager: ContextManager;
-  private idempotencyCache: IdempotencyCache; // TODO: Integrate in tool execution (Task #4)
-  private historyManager: HistoryManager;
+  private contextProvider: TaskAgentContextProvider;
+  private idempotencyCache: IdempotencyCache;
+  private historyManager: IHistoryManager;
   private externalHandler: ExternalDependencyHandler;
   private checkpointManager: CheckpointManager;
   private hooks: TaskAgentHooks | undefined;
@@ -97,8 +102,9 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     agent: Agent,
     memory: WorkingMemory,
     contextManager: ContextManager,
+    contextProvider: TaskAgentContextProvider,
     idempotencyCache: IdempotencyCache,
-    historyManager: HistoryManager,
+    historyManager: IHistoryManager,
     externalHandler: ExternalDependencyHandler,
     checkpointManager: CheckpointManager,
     hooks: TaskAgentHooks | undefined,
@@ -108,6 +114,7 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     this.agent = agent;
     this.memory = memory;
     this.contextManager = contextManager;
+    this.contextProvider = contextProvider;
     this.idempotencyCache = idempotencyCache;
     this.historyManager = historyManager;
     this.externalHandler = externalHandler;
@@ -460,24 +467,17 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
     // Build task prompt
     const taskPrompt = this.buildTaskPrompt(plan, task);
 
-    // Prepare context (check for compaction needs)
-    await this.contextManager.prepareContext(
-      {
-        systemPrompt: this.buildSystemPrompt(plan),
-        instructions: '',
-        memoryIndex: await this.memory.formatIndex(),
-        conversationHistory: this.historyManager.getRecentMessages().map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-        currentInput: taskPrompt,
-      },
-      this.memory as any,
-      this.historyManager
-    );
+    // Update context provider with current input and plan state
+    this.contextProvider.updateConfig({
+      currentInput: taskPrompt,
+      plan: plan,
+    });
 
-    // Add task prompt to history
-    this.historyManager.addMessage('user', taskPrompt);
+    // Prepare context using unified ContextManager (handles compaction automatically)
+    await this.contextManager.prepare();
+
+    // Add task prompt to history (async)
+    await this.historyManager.addMessage('user', taskPrompt);
 
     this.emit('llm:call', { iteration: task.attempts });
 
@@ -535,8 +535,8 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
       await this.checkpointManager.onLLMCall(this.currentState);
     }
 
-    // Add response to history
-    this.historyManager.addMessage('assistant', response.output_text || '');
+    // Add response to history (async)
+    await this.historyManager.addMessage('assistant', response.output_text || '');
 
     // Validate task completion (unless validation is disabled or not configured)
     const validationResult = await this.validateTaskCompletion(task, response.output_text || '');
@@ -609,24 +609,6 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
       await this.externalHandler.startWaiting(task);
       this.emit('task:waiting_external', { task });
     }
-  }
-
-  /**
-   * Build system prompt for task execution
-   */
-  private buildSystemPrompt(plan: Plan): string {
-    return `You are an autonomous agent executing a plan.
-
-**Goal:** ${plan.goal}
-${plan.context ? `**Context:** ${plan.context}\n` : ''}
-**Your Role:** Execute tasks step by step using the available tools. Use working memory to store and retrieve information between tasks.
-
-**Important Instructions:**
-1. When you complete a task successfully, acknowledge it clearly
-2. Use memory_store to save important data for future tasks
-3. Use memory_retrieve to access previously stored data
-4. If a task requires information from a previous task, retrieve it from memory
-5. Be systematic and thorough in completing each task`;
   }
 
   /**

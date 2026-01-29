@@ -1,7 +1,7 @@
 # @oneringai/agents - Complete User Guide
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-28
+**Last Updated:** 2026-01-29
 
 A comprehensive guide to using all features of the @oneringai/agents library.
 
@@ -3039,6 +3039,54 @@ const loaded = await sessionManager.load(sessionId);
 if (loaded?.customData?.toolState) {
   agent.tools.loadState(loaded.customData.toolState);
 }
+```
+
+### Circuit Breaker Protection
+
+ToolManager includes built-in circuit breaker protection for each tool. When a tool fails repeatedly, the circuit breaker prevents further calls to avoid cascading failures.
+
+```typescript
+// Get circuit breaker states for all tools
+const states = agent.tools.getCircuitBreakerStates();
+// Returns: Map<toolName, { state: 'closed' | 'open' | 'half-open', failures: number, lastFailure: Date }>
+
+for (const [toolName, state] of states) {
+  console.log(`${toolName}: ${state.state} (${state.failures} failures)`);
+}
+
+// Get metrics for a specific tool
+const metrics = agent.tools.getToolCircuitBreakerMetrics('risky_tool');
+console.log(`Successes: ${metrics.successCount}, Failures: ${metrics.failureCount}`);
+
+// Manually reset a circuit breaker
+agent.tools.resetToolCircuitBreaker('risky_tool');
+```
+
+**Configure circuit breaker per tool:**
+
+```typescript
+agent.tools.setCircuitBreakerConfig('external_api', {
+  failureThreshold: 3,     // Open after 3 failures
+  successThreshold: 2,     // Close after 2 successes in half-open
+  resetTimeoutMs: 60000,   // Try half-open after 60s
+  windowMs: 300000,        // Track failures in 5 min window
+});
+```
+
+**Circuit breaker states:**
+- **Closed** (normal) - Tool executes normally
+- **Open** (tripped) - Tool calls fail immediately without execution
+- **Half-Open** (testing) - One call allowed to test recovery
+
+### Tool Execution
+
+ToolManager implements `IToolExecutor` for direct tool execution:
+
+```typescript
+// Execute tool directly (used internally by agentic loop)
+const result = await agent.tools.execute('get_weather', { location: 'Paris' });
+
+// Execute returns the tool's result or throws on error
 ```
 
 ---

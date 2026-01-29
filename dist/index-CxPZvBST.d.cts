@@ -1,6 +1,5 @@
-import EventEmitter$2, { EventEmitter as EventEmitter$1 } from 'eventemitter3';
-import { I as IProvider } from './IProvider-BP49c93d.js';
-import { EventEmitter } from 'events';
+import { EventEmitter } from 'eventemitter3';
+import { I as IProvider } from './IProvider-BP49c93d.cjs';
 
 /**
  * Tool entities with blocking/non-blocking execution support
@@ -190,6 +189,40 @@ declare function defaultDescribeCall(args: Record<string, unknown>, maxLength?: 
  * @returns Human-readable description
  */
 declare function getToolCallDescription<TArgs>(tool: ToolFunction<TArgs>, args: TArgs): string;
+
+/**
+ * Tool executor interface
+ */
+
+interface IToolExecutor {
+    /**
+     * Execute a tool function
+     * @param toolName - Name of the tool to execute
+     * @param args - Parsed arguments object
+     * @returns Tool execution result
+     */
+    execute(toolName: string, args: any): Promise<any>;
+    /**
+     * Check if tool is available
+     */
+    hasToolFunction(toolName: string): boolean;
+    /**
+     * Get tool definition
+     */
+    getToolDefinition(toolName: string): Tool | undefined;
+    /**
+     * Register a new tool
+     */
+    registerTool(tool: ToolFunction): void;
+    /**
+     * Unregister a tool
+     */
+    unregisterTool(toolName: string): void;
+    /**
+     * List all registered tools
+     */
+    listTools(): string[];
+}
 
 /**
  * Tool Permission Types
@@ -1071,40 +1104,6 @@ declare class ExecutionContext {
 }
 
 /**
- * Tool executor interface
- */
-
-interface IToolExecutor {
-    /**
-     * Execute a tool function
-     * @param toolName - Name of the tool to execute
-     * @param args - Parsed arguments object
-     * @returns Tool execution result
-     */
-    execute(toolName: string, args: any): Promise<any>;
-    /**
-     * Check if tool is available
-     */
-    hasToolFunction(toolName: string): boolean;
-    /**
-     * Get tool definition
-     */
-    getToolDefinition(toolName: string): Tool | undefined;
-    /**
-     * Register a new tool
-     */
-    registerTool(tool: ToolFunction): void;
-    /**
-     * Unregister a tool
-     */
-    unregisterTool(toolName: string): void;
-    /**
-     * List all registered tools
-     */
-    listTools(): string[];
-}
-
-/**
  * Event types for agentic loop execution
  * These events are emitted asynchronously for notifications (UI updates, logging, etc.)
  */
@@ -1309,7 +1308,7 @@ interface AgenticLoopConfig {
      */
     taskName?: string;
 }
-declare class AgenticLoop extends EventEmitter$1<AgenticLoopEvents> {
+declare class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     private provider;
     private toolExecutor;
     private hookManager;
@@ -1574,197 +1573,6 @@ interface HookSignatures {
 }
 
 /**
- * Generic Circuit Breaker implementation
- *
- * Prevents cascading failures by failing fast when a system is down.
- * Works for any async operation (LLM calls, tool execution, etc.)
- */
-
-/**
- * Circuit breaker states
- */
-type CircuitState = 'closed' | 'open' | 'half-open';
-/**
- * Circuit breaker configuration
- */
-interface CircuitBreakerConfig {
-    /** Number of failures before opening circuit */
-    failureThreshold: number;
-    /** Number of successes to close from half-open */
-    successThreshold: number;
-    /** Time to wait in open state before trying half-open (ms) */
-    resetTimeoutMs: number;
-    /** Time window for counting failures (ms) */
-    windowMs: number;
-    /** Classify errors - return true if error should count as failure */
-    isRetryable?: (error: Error) => boolean;
-}
-/**
- * Circuit breaker metrics
- */
-interface CircuitBreakerMetrics {
-    name: string;
-    state: CircuitState;
-    totalRequests: number;
-    successCount: number;
-    failureCount: number;
-    rejectedCount: number;
-    recentFailures: number;
-    consecutiveSuccesses: number;
-    lastFailureTime?: number;
-    lastSuccessTime?: number;
-    lastStateChange: number;
-    nextRetryTime?: number;
-    failureRate: number;
-    successRate: number;
-}
-/**
- * Circuit breaker events
- */
-interface CircuitBreakerEvents {
-    opened: {
-        name: string;
-        failureCount: number;
-        lastError: string;
-        nextRetryTime: number;
-    };
-    'half-open': {
-        name: string;
-        timestamp: number;
-    };
-    closed: {
-        name: string;
-        successCount: number;
-        timestamp: number;
-    };
-}
-/**
- * Default configuration
- */
-declare const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig;
-/**
- * Circuit breaker error - thrown when circuit is open
- */
-declare class CircuitOpenError extends Error {
-    readonly breakerName: string;
-    readonly nextRetryTime: number;
-    readonly failureCount: number;
-    readonly lastError: string;
-    constructor(breakerName: string, nextRetryTime: number, failureCount: number, lastError: string);
-}
-/**
- * Generic circuit breaker for any async operation
- */
-declare class CircuitBreaker<T = any> extends EventEmitter$2<CircuitBreakerEvents> {
-    readonly name: string;
-    private state;
-    private config;
-    private failures;
-    private lastError;
-    private consecutiveSuccesses;
-    private openedAt?;
-    private lastStateChange;
-    private totalRequests;
-    private successCount;
-    private failureCount;
-    private rejectedCount;
-    private lastFailureTime?;
-    private lastSuccessTime?;
-    constructor(name: string, config?: Partial<CircuitBreakerConfig>);
-    /**
-     * Execute function with circuit breaker protection
-     */
-    execute(fn: () => Promise<T>): Promise<T>;
-    /**
-     * Record successful execution
-     */
-    private recordSuccess;
-    /**
-     * Record failed execution
-     */
-    private recordFailure;
-    /**
-     * Transition to new state
-     */
-    private transitionTo;
-    /**
-     * Remove failures outside the time window
-     */
-    private pruneOldFailures;
-    /**
-     * Get current state
-     */
-    getState(): CircuitState;
-    /**
-     * Get current metrics
-     */
-    getMetrics(): CircuitBreakerMetrics;
-    /**
-     * Manually reset circuit breaker (force close)
-     */
-    reset(): void;
-    /**
-     * Check if circuit is allowing requests
-     */
-    isOpen(): boolean;
-    /**
-     * Get configuration
-     */
-    getConfig(): CircuitBreakerConfig;
-}
-
-declare class ToolRegistry implements IToolExecutor {
-    private tools;
-    private circuitBreakers;
-    private logger;
-    constructor();
-    /**
-     * Register a new tool
-     */
-    registerTool(tool: ToolFunction): void;
-    /**
-     * Unregister a tool
-     */
-    unregisterTool(toolName: string): void;
-    /**
-     * Get or create circuit breaker for a tool
-     */
-    private getCircuitBreaker;
-    /**
-     * Execute a tool function
-     */
-    execute(toolName: string, args: any): Promise<any>;
-    /**
-     * Check if tool is available
-     */
-    hasToolFunction(toolName: string): boolean;
-    /**
-     * Get tool definition
-     */
-    getToolDefinition(toolName: string): Tool | undefined;
-    /**
-     * List all registered tools
-     */
-    listTools(): string[];
-    /**
-     * Clear all registered tools
-     */
-    clear(): void;
-    /**
-     * Get circuit breaker states for all tools
-     */
-    getCircuitBreakerStates(): Map<string, CircuitState>;
-    /**
-     * Get circuit breaker metrics for a specific tool
-     */
-    getToolCircuitBreakerMetrics(toolName: string): CircuitBreakerMetrics | undefined;
-    /**
-     * Manually reset a tool's circuit breaker
-     */
-    resetToolCircuitBreaker(toolName: string): void;
-}
-
-/**
  * Hook manager - handles hook registration and execution
  * Includes error isolation, timeouts, and optional parallel execution
  */
@@ -1777,7 +1585,7 @@ declare class HookManager {
     private disabledHooks;
     private maxConsecutiveErrors;
     private emitter;
-    constructor(config: HookConfig | undefined, emitter: EventEmitter$1, errorHandling?: {
+    constructor(config: HookConfig | undefined, emitter: EventEmitter, errorHandling?: {
         maxConsecutiveErrors?: number;
     });
     /**
@@ -1830,4 +1638,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type FunctionToolDefinition as $, type AgenticLoopEvents as A, ContentType as B, type CircuitState as C, DEFAULT_PERMISSION_CONFIG as D, ExecutionContext as E, type Content as F, type InputTextContent as G, type HookConfig as H, type InputItem as I, type InputImageContent as J, type ToolUseContent as K, type LLMResponse as L, type ModelCapabilities as M, type ToolResultContent as N, type OutputTextContent as O, type PermissionScope as P, type Message as Q, type RiskLevel as R, type SerializedApprovalState as S, type ToolFunction as T, type OutputItem as U, type CompactionItem as V, type ReasoningItem as W, ToolCallState as X, defaultDescribeCall as Y, getToolCallDescription as Z, type Tool as _, type ToolPermissionConfig$1 as a, type BuiltInTool as a0, type ToolResult as a1, type ToolExecutionContext as a2, type JSONSchema as a3, type ResponseCreatedEvent as a4, type ResponseInProgressEvent as a5, type OutputTextDeltaEvent as a6, type OutputTextDoneEvent as a7, type ToolCallStartEvent as a8, type ToolCallArgumentsDeltaEvent as a9, type CircuitBreakerConfig as aA, type CircuitBreakerEvents as aB, DEFAULT_CIRCUIT_BREAKER_CONFIG as aC, AgenticLoop as aD, type AgenticLoopConfig as aE, type ExecutionStartEvent as aF, type ExecutionCompleteEvent as aG, type ToolStartEvent as aH, type ToolCompleteEvent as aI, type LLMRequestEvent as aJ, type LLMResponseEvent as aK, type ToolCallArgumentsDoneEvent as aa, type ToolExecutionStartEvent as ab, type ToolExecutionDoneEvent as ac, type IterationCompleteEvent$1 as ad, type ResponseCompleteEvent as ae, type ErrorEvent as af, isStreamEvent as ag, isOutputTextDelta as ah, isToolCallStart as ai, isToolCallArgumentsDelta as aj, isToolCallArgumentsDone as ak, isResponseComplete as al, isErrorEvent as am, ToolRegistry as an, HookManager as ao, type AgenticLoopEventName as ap, type HookName as aq, type Hook as ar, type ModifyingHook as as, type BeforeToolContext as at, type AfterToolContext as au, type ApproveToolContext as av, type ToolModification as aw, type ApprovalResult as ax, type IToolExecutor as ay, CircuitOpenError as az, ToolPermissionManager as b, type HistoryMode as c, type AgentPermissionsConfig as d, type AgentResponse as e, type StreamEvent as f, type ExecutionMetrics as g, type AuditEntry as h, type CircuitBreakerMetrics as i, type ITextProvider as j, type TokenUsage as k, type ToolCall as l, StreamEventType as m, CircuitBreaker as n, type TextGenerateOptions as o, MessageRole as p, type ToolPermissionConfig as q, type ApprovalCacheEntry as r, type SerializedApprovalEntry as s, type PermissionCheckResult as t, type ApprovalDecision as u, type PermissionCheckContext as v, type PermissionManagerEvent as w, APPROVAL_STATE_VERSION as x, DEFAULT_ALLOWLIST as y, type DefaultAllowlistedTool as z };
+export { type ToolResult as $, type AgentPermissionsConfig as A, type Content as B, ContentType as C, DEFAULT_PERMISSION_CONFIG as D, ExecutionContext as E, type FunctionToolDefinition as F, type InputTextContent as G, type HookConfig as H, type IToolExecutor as I, type InputImageContent as J, type ToolUseContent as K, type LLMResponse as L, type ModelCapabilities as M, type ToolResultContent as N, type OutputTextContent as O, type PermissionScope as P, type Message as Q, type RiskLevel as R, type SerializedApprovalState as S, type ToolFunction as T, type OutputItem as U, type CompactionItem as V, type ReasoningItem as W, ToolCallState as X, defaultDescribeCall as Y, getToolCallDescription as Z, type BuiltInTool as _, type ToolPermissionConfig$1 as a, type ToolExecutionContext as a0, type JSONSchema as a1, type ResponseCreatedEvent as a2, type ResponseInProgressEvent as a3, type OutputTextDeltaEvent as a4, type OutputTextDoneEvent as a5, type ToolCallStartEvent as a6, type ToolCallArgumentsDeltaEvent as a7, type ToolCallArgumentsDoneEvent as a8, type ToolExecutionStartEvent as a9, type ToolCompleteEvent as aA, type LLMRequestEvent as aB, type LLMResponseEvent as aC, type ToolExecutionDoneEvent as aa, type IterationCompleteEvent$1 as ab, type ResponseCompleteEvent as ac, type ErrorEvent as ad, isStreamEvent as ae, isOutputTextDelta as af, isToolCallStart as ag, isToolCallArgumentsDelta as ah, isToolCallArgumentsDone as ai, isResponseComplete as aj, isErrorEvent as ak, HookManager as al, type AgenticLoopEventName as am, type HookName as an, type Hook as ao, type ModifyingHook as ap, type BeforeToolContext as aq, type AfterToolContext as ar, type ApproveToolContext as as, type ToolModification as at, type ApprovalResult as au, AgenticLoop as av, type AgenticLoopConfig as aw, type ExecutionStartEvent as ax, type ExecutionCompleteEvent as ay, type ToolStartEvent as az, type Tool as b, ToolPermissionManager as c, type HistoryMode as d, type AgenticLoopEvents as e, type InputItem as f, type AgentResponse as g, type StreamEvent as h, type ExecutionMetrics as i, type AuditEntry as j, type ITextProvider as k, type TokenUsage as l, type ToolCall as m, StreamEventType as n, type TextGenerateOptions as o, MessageRole as p, type ToolPermissionConfig as q, type ApprovalCacheEntry as r, type SerializedApprovalEntry as s, type PermissionCheckResult as t, type ApprovalDecision as u, type PermissionCheckContext as v, type PermissionManagerEvent as w, APPROVAL_STATE_VERSION as x, DEFAULT_ALLOWLIST as y, type DefaultAllowlistedTool as z };

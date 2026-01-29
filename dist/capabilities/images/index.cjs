@@ -3,7 +3,7 @@
 var crypto = require('crypto');
 var jose = require('jose');
 var fs2 = require('fs');
-var EventEmitter = require('eventemitter3');
+var eventemitter3 = require('eventemitter3');
 var path = require('path');
 var OpenAI = require('openai');
 var genai = require('@google/genai');
@@ -30,7 +30,6 @@ function _interopNamespace(e) {
 
 var crypto__namespace = /*#__PURE__*/_interopNamespace(crypto);
 var fs2__namespace = /*#__PURE__*/_interopNamespace(fs2);
-var EventEmitter__default = /*#__PURE__*/_interopDefault(EventEmitter);
 var path__namespace = /*#__PURE__*/_interopNamespace(path);
 var OpenAI__default = /*#__PURE__*/_interopDefault(OpenAI);
 
@@ -800,7 +799,7 @@ var CircuitOpenError = class extends Error {
     this.name = "CircuitOpenError";
   }
 };
-var CircuitBreaker = class extends EventEmitter__default.default {
+var CircuitBreaker = class extends eventemitter3.EventEmitter {
   constructor(name, config = {}) {
     super();
     this.name = name;

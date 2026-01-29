@@ -1,5 +1,5 @@
 /**
- * ToolManager - Dynamic tool management for agents
+ * ToolManager - Unified tool management and execution for agents
  *
  * Provides advanced tool management capabilities:
  * - Enable/disable tools at runtime without removing them
@@ -7,12 +7,24 @@
  * - Priority-based selection
  * - Context-aware tool selection
  * - Usage statistics
+ * - Circuit breaker protection for tool execution
+ * - Implements IToolExecutor for use with AgenticLoop
  *
- * Backward compatible: Works with existing ToolFunction interface
+ * This is the single source of truth for tool management (replaces ToolRegistry).
  */
 
 import { EventEmitter } from 'eventemitter3';
-import type { ToolFunction, ToolPermissionConfig } from '../domain/entities/Tool.js';
+import type { Tool, ToolFunction, ToolPermissionConfig } from '../domain/entities/Tool.js';
+import type { IToolExecutor } from '../domain/interfaces/IToolExecutor.js';
+import type { ToolContext } from '../domain/interfaces/IToolContext.js';
+import { CircuitBreaker } from '../infrastructure/resilience/CircuitBreaker.js';
+import type { CircuitState, CircuitBreakerConfig } from '../infrastructure/resilience/CircuitBreaker.js';
+import { ToolNotFoundError, ToolExecutionError } from '../domain/errors/AIErrors.js';
+import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
+import { metrics } from '../infrastructure/observability/Metrics.js';
+
+// Re-export CircuitState for convenience
+export type { CircuitState, CircuitBreakerConfig } from '../infrastructure/resilience/CircuitBreaker.js';
 
 // ============================================================================
 // Types
@@ -60,6 +72,8 @@ export interface ToolRegistration {
   metadata: ToolMetadata;
   /** Effective permission config (merged from tool.permission and options.permission) */
   permission?: ToolPermissionConfig;
+  /** Circuit breaker configuration for this tool (uses shared CircuitBreakerConfig from resilience) */
+  circuitBreakerConfig?: Partial<CircuitBreakerConfig>;
 }
 
 export interface ToolMetadata {
@@ -103,14 +117,34 @@ export type ToolManagerEvent =
 // ToolManager Class
 // ============================================================================
 
-export class ToolManager extends EventEmitter {
+export class ToolManager extends EventEmitter implements IToolExecutor {
   private registry: Map<string, ToolRegistration> = new Map();
   private namespaceIndex: Map<string, Set<string>> = new Map();
+  private circuitBreakers: Map<string, CircuitBreaker> = new Map();
+  private toolLogger: FrameworkLogger;
+
+  /** Optional tool context for execution (set by agent before runs) */
+  private _toolContext: ToolContext | undefined;
 
   constructor() {
     super();
     // Initialize default namespace
     this.namespaceIndex.set('default', new Set());
+    this.toolLogger = logger.child({ component: 'ToolManager' });
+  }
+
+  /**
+   * Set tool context for execution (called by agent before runs)
+   */
+  setToolContext(context: ToolContext | undefined): void {
+    this._toolContext = context;
+  }
+
+  /**
+   * Get current tool context
+   */
+  getToolContext(): ToolContext | undefined {
+    return this._toolContext;
   }
 
   // ==========================================================================
@@ -185,6 +219,9 @@ export class ToolManager extends EventEmitter {
     this.removeFromNamespace(name, registration.namespace);
     this.registry.delete(name);
 
+    // Clean up circuit breaker
+    this.circuitBreakers.delete(name);
+
     this.emit('tool:unregistered', { name });
     return true;
   }
@@ -196,6 +233,7 @@ export class ToolManager extends EventEmitter {
     this.registry.clear();
     this.namespaceIndex.clear();
     this.namespaceIndex.set('default', new Set());
+    this.circuitBreakers.clear();
   }
 
   // ==========================================================================
@@ -573,6 +611,203 @@ export class ToolManager extends EventEmitter {
       mostUsed,
       totalExecutions,
     };
+  }
+
+  // ==========================================================================
+  // Execution (IToolExecutor implementation)
+  // ==========================================================================
+
+  /**
+   * Execute a tool function with circuit breaker protection
+   * Implements IToolExecutor interface
+   */
+  async execute(toolName: string, args: any): Promise<any> {
+    const registration = this.registry.get(toolName);
+    if (!registration) {
+      throw new ToolNotFoundError(toolName);
+    }
+
+    // Check if tool is enabled
+    if (!registration.enabled) {
+      throw new ToolExecutionError(toolName, 'Tool is disabled');
+    }
+
+    // Get or create circuit breaker for this tool
+    const breaker = this.getOrCreateCircuitBreaker(toolName, registration);
+
+    this.toolLogger.debug({ toolName, args }, 'Tool execution started');
+
+    const startTime = Date.now();
+    metrics.increment('tool.executed', 1, { tool: toolName });
+
+    try {
+      // Execute with circuit breaker protection
+      const result = await breaker.execute(async () => {
+        return await registration.tool.execute(args, this._toolContext);
+      });
+
+      const duration = Date.now() - startTime;
+
+      // Update metadata
+      this.recordExecution(toolName, duration, true);
+
+      this.toolLogger.debug({ toolName, duration }, 'Tool execution completed');
+
+      metrics.timing('tool.duration', duration, { tool: toolName });
+      metrics.increment('tool.success', 1, { tool: toolName });
+
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+
+      // Update metadata
+      this.recordExecution(toolName, duration, false);
+
+      this.toolLogger.error({
+        toolName,
+        error: (error as Error).message,
+        duration,
+      }, 'Tool execution failed');
+
+      metrics.increment('tool.failed', 1, {
+        tool: toolName,
+        error: (error as Error).name,
+      });
+
+      throw new ToolExecutionError(
+        toolName,
+        (error as Error).message,
+        error as Error
+      );
+    }
+  }
+
+  /**
+   * Check if tool is available (IToolExecutor interface)
+   */
+  hasToolFunction(toolName: string): boolean {
+    return this.registry.has(toolName);
+  }
+
+  /**
+   * Get tool definition (IToolExecutor interface)
+   */
+  getToolDefinition(toolName: string): Tool | undefined {
+    const registration = this.registry.get(toolName);
+    return registration?.tool.definition;
+  }
+
+  /**
+   * Register a tool (IToolExecutor interface - delegates to register())
+   */
+  registerTool(tool: ToolFunction): void {
+    this.register(tool);
+  }
+
+  /**
+   * Unregister a tool (IToolExecutor interface - delegates to unregister())
+   */
+  unregisterTool(toolName: string): void {
+    this.unregister(toolName);
+  }
+
+  /**
+   * List all registered tool names (IToolExecutor interface - delegates to list())
+   */
+  listTools(): string[] {
+    return this.list();
+  }
+
+  // ==========================================================================
+  // Circuit Breaker Management
+  // ==========================================================================
+
+  /**
+   * Get or create circuit breaker for a tool
+   */
+  private getOrCreateCircuitBreaker(toolName: string, registration: ToolRegistration): CircuitBreaker {
+    let breaker = this.circuitBreakers.get(toolName);
+
+    if (!breaker) {
+      // Use tool's config or defaults
+      const config = registration.circuitBreakerConfig || {
+        failureThreshold: 3,
+        successThreshold: 2,
+        resetTimeoutMs: 60000, // 1 minute
+        windowMs: 300000, // 5 minutes
+      };
+
+      breaker = new CircuitBreaker(`tool:${toolName}`, config);
+
+      // Forward circuit breaker events to logger and metrics
+      breaker.on('opened', (data) => {
+        this.toolLogger.warn(data, `Circuit breaker opened for tool: ${toolName}`);
+        metrics.increment('circuit_breaker.opened', 1, {
+          breaker: data.name,
+          tool: toolName,
+        });
+      });
+
+      breaker.on('closed', (data) => {
+        this.toolLogger.info(data, `Circuit breaker closed for tool: ${toolName}`);
+        metrics.increment('circuit_breaker.closed', 1, {
+          breaker: data.name,
+          tool: toolName,
+        });
+      });
+
+      this.circuitBreakers.set(toolName, breaker);
+    }
+
+    return breaker;
+  }
+
+  /**
+   * Get circuit breaker states for all tools
+   */
+  getCircuitBreakerStates(): Map<string, CircuitState> {
+    const states = new Map<string, CircuitState>();
+    for (const [toolName, breaker] of this.circuitBreakers.entries()) {
+      states.set(toolName, breaker.getState());
+    }
+    return states;
+  }
+
+  /**
+   * Get circuit breaker metrics for a specific tool
+   */
+  getToolCircuitBreakerMetrics(toolName: string) {
+    const breaker = this.circuitBreakers.get(toolName);
+    return breaker?.getMetrics();
+  }
+
+  /**
+   * Manually reset a tool's circuit breaker
+   */
+  resetToolCircuitBreaker(toolName: string): void {
+    const breaker = this.circuitBreakers.get(toolName);
+    if (breaker) {
+      breaker.reset();
+      this.toolLogger.info({ toolName }, 'Tool circuit breaker manually reset');
+    }
+  }
+
+  /**
+   * Configure circuit breaker for a tool
+   */
+  setCircuitBreakerConfig(toolName: string, config: CircuitBreakerConfig): boolean {
+    const registration = this.registry.get(toolName);
+    if (!registration) return false;
+
+    registration.circuitBreakerConfig = config;
+
+    // If breaker already exists, recreate it with new config
+    if (this.circuitBreakers.has(toolName)) {
+      this.circuitBreakers.delete(toolName);
+      // Will be recreated on next execution
+    }
+
+    return true;
   }
 
   // ==========================================================================

@@ -130,18 +130,30 @@ export interface IContextProvider {
 }
 
 /**
+ * Content type for more accurate token estimation
+ * Named differently from TokenContentType in Content.ts to avoid conflicts
+ */
+export type TokenContentType = 'code' | 'prose' | 'mixed';
+
+/**
  * Abstract interface for token estimation
  */
 export interface ITokenEstimator {
   /**
    * Estimate token count for text
+   *
+   * @param text - The text to estimate
+   * @param contentType - Type of content for more accurate estimation:
+   *   - 'code': Code is typically denser (~3 chars/token)
+   *   - 'prose': Natural language text (~4 chars/token)
+   *   - 'mixed': Mix of code and prose (~3.5 chars/token)
    */
-  estimateTokens(text: string, model?: string): number;
+  estimateTokens(text: string, contentType?: TokenContentType): number;
 
   /**
    * Estimate tokens for structured data
    */
-  estimateDataTokens(data: unknown, model?: string): number;
+  estimateDataTokens(data: unknown, contentType?: TokenContentType): number;
 }
 
 /**

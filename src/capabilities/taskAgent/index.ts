@@ -1,5 +1,9 @@
 /**
  * TaskAgent capability exports
+ *
+ * NOTE: ContextManager and HistoryManager are now unified in core:
+ * - Use ContextManager from '@oneringai/agents' (core/context)
+ * - Use ConversationHistoryManager from '@oneringai/agents' (core/history)
  */
 
 export { TaskAgent } from './TaskAgent.js';
@@ -20,25 +24,12 @@ export type {
 export { WorkingMemory } from './WorkingMemory.js';
 export type { WorkingMemoryEvents, EvictionStrategy } from './WorkingMemory.js';
 
-export { ContextManager } from './ContextManager.js';
-export type {
-  ContextManagerConfig,
-  ContextComponents,
-  ContextBudget,
-  CompactionStrategy,
-  PreparedContext,
-  IHistoryManager,
-  IMemoryManager,
-} from './ContextManager.js';
-export { DEFAULT_CONTEXT_CONFIG, DEFAULT_COMPACTION_STRATEGY } from './ContextManager.js';
+// ContextManager is now unified in core/context/ContextManager.ts
+// HistoryManager is now unified in core/history/ConversationHistoryManager.ts
 
 export { IdempotencyCache } from './IdempotencyCache.js';
 export type { IdempotencyCacheConfig, CacheStats } from './IdempotencyCache.js';
 export { DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
-
-export { HistoryManager } from './HistoryManager.js';
-export type { HistoryManagerConfig, SummarizerFunction } from './HistoryManager.js';
-export { DEFAULT_HISTORY_CONFIG, DEFAULT_SUMMARIZATION_PROMPT } from './HistoryManager.js';
 
 export { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 export type { ExternalDependencyEvents } from './ExternalDependencyHandler.js';

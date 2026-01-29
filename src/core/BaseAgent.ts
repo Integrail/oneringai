@@ -15,12 +15,22 @@
 import { EventEmitter } from 'eventemitter3';
 import { Connector } from './Connector.js';
 import { ToolManager } from './ToolManager.js';
-import { SessionManager, Session, ISessionStorage } from './SessionManager.js';
+import { SessionManager, Session, ISessionStorage, SerializedPlan, SerializedMemory } from './SessionManager.js';
 import { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
 import type { AgentPermissionsConfig, SerializedApprovalState } from './permissions/types.js';
 import type { ToolFunction } from '../domain/entities/Tool.js';
 import type { SerializedToolState } from './ToolManager.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
+
+/**
+ * Options for tool registration
+ */
+export interface ToolRegistrationOptions {
+  /** Namespace for the tool (e.g., 'user', '_meta', 'mcp:fs') */
+  namespace?: string;
+  /** Whether the tool is enabled by default */
+  enabled?: boolean;
+}
 
 /**
  * Base session configuration (shared by all agent types)
@@ -139,8 +149,41 @@ export abstract class BaseAgent<
   /**
    * Prepare session state before saving.
    * Subclasses override to add their specific state (plan, memory, etc.)
+   *
+   * Default implementation does nothing - override in subclasses.
    */
-  protected abstract prepareSessionState(): void;
+  protected prepareSessionState(): void {
+    // Default: no additional state to prepare
+    // Subclasses override to add plan, memory, mode, etc.
+  }
+
+  /**
+   * Restore session state after loading.
+   * Subclasses override to restore their specific state (plan, memory, etc.)
+   * Called after tool state and approval state are restored.
+   *
+   * Default implementation does nothing - override in subclasses.
+   */
+  protected async restoreSessionState(_session: Session): Promise<void> {
+    // Default: no additional state to restore
+    // Subclasses override to restore plan, memory, mode, etc.
+  }
+
+  /**
+   * Get plan state for session serialization.
+   * Subclasses with plans override this.
+   */
+  protected getSerializedPlan(): SerializedPlan | undefined {
+    return undefined;
+  }
+
+  /**
+   * Get memory state for session serialization.
+   * Subclasses with working memory override this.
+   */
+  protected getSerializedMemory(): SerializedMemory | undefined {
+    return undefined;
+  }
 
   // ===== Protected Initialization Helpers =====
 
@@ -159,17 +202,30 @@ export abstract class BaseAgent<
    */
   protected initializeToolManager(
     existingManager?: ToolManager,
-    tools?: ToolFunction[]
+    tools?: ToolFunction[],
+    options?: ToolRegistrationOptions
   ): ToolManager {
     const manager = existingManager ?? new ToolManager();
 
     if (tools) {
-      for (const tool of tools) {
-        manager.register(tool);
-      }
+      this.registerTools(manager, tools, options);
     }
 
     return manager;
+  }
+
+  /**
+   * Register multiple tools with the tool manager
+   * Utility method to avoid code duplication across agent types
+   */
+  protected registerTools(
+    manager: ToolManager,
+    tools: ToolFunction[],
+    options?: ToolRegistrationOptions
+  ): void {
+    for (const tool of tools) {
+      manager.register(tool, options);
+    }
   }
 
   /**
@@ -254,9 +310,10 @@ export abstract class BaseAgent<
           );
         }
 
-        this._logger.info({ sessionId }, 'Session loaded');
+        // Let subclass restore its specific state (plan, memory, mode, etc.)
+        await this.restoreSessionState(session);
 
-        // Subclasses can override loadSessionInternal to emit their own events
+        this._logger.info({ sessionId }, 'Session loaded');
 
         // Setup auto-save if configured
         if (this._config.session?.autoSave) {
@@ -319,13 +376,22 @@ export abstract class BaseAgent<
     this._session.toolState = this._toolManager.getState();
     this._session.custom['approvalState'] = this._permissionManager.getState();
 
-    // Let subclass add its specific state
+    // Get plan and memory state from subclass hooks
+    const plan = this.getSerializedPlan();
+    if (plan) {
+      this._session.plan = plan;
+    }
+
+    const memory = this.getSerializedMemory();
+    if (memory) {
+      this._session.memory = memory;
+    }
+
+    // Let subclass add any additional specific state
     this.prepareSessionState();
 
     await this._sessionManager.save(this._session);
     this._logger.debug({ sessionId: this._session.id }, 'Session saved');
-
-    // Subclasses can override saveSession to emit their own events
   }
 
   /**
@@ -359,6 +425,65 @@ export abstract class BaseAgent<
    */
   get permissions(): ToolPermissionManager {
     return this._permissionManager;
+  }
+
+  // ===== Tool Management =====
+
+  /**
+   * Add a tool to the agent
+   */
+  addTool(tool: ToolFunction): void {
+    this._toolManager.register(tool);
+    if (!this._config.tools) {
+      this._config.tools = [];
+    }
+    this._config.tools.push(tool);
+
+    // Sync permission config if tool has one
+    if (tool.permission) {
+      this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+    }
+  }
+
+  /**
+   * Remove a tool from the agent
+   */
+  removeTool(toolName: string): void {
+    this._toolManager.unregister(toolName);
+    if (this._config.tools) {
+      this._config.tools = this._config.tools.filter(
+        (t) => t.definition.function.name !== toolName
+      );
+    }
+  }
+
+  /**
+   * List registered tools (returns enabled tool names)
+   */
+  listTools(): string[] {
+    return this._toolManager.listEnabled();
+  }
+
+  /**
+   * Replace all tools with a new array
+   */
+  setTools(tools: ToolFunction[]): void {
+    this._toolManager.clear();
+    for (const tool of tools) {
+      this._toolManager.register(tool);
+      if (tool.permission) {
+        this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+      }
+    }
+    this._config.tools = [...tools];
+  }
+
+  /**
+   * Get enabled tool definitions (for passing to LLM).
+   * This is a helper that extracts definitions from enabled tools.
+   */
+  protected getEnabledToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[] {
+    return this._toolManager.getEnabled().map((t) => t.definition);
   }
 
   // ===== Lifecycle =====

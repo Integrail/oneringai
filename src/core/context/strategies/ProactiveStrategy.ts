@@ -2,112 +2,70 @@
  * Proactive Compaction Strategy
  *
  * - Monitors context budget continuously
- * - Compacts proactively when reaching threshold
+ * - Compacts proactively when reaching warning/critical threshold
+ * - Uses multi-round compaction with increasing aggressiveness
  * - Follows priority-based compaction order
+ *
+ * Good for: General purpose, balanced approach
  */
 
-import type {
-  IContextStrategy,
-  IContextComponent,
-  ContextBudget,
-  ContextManagerConfig,
-  IContextCompactor,
-  ITokenEstimator,
-} from '../types.js';
+import type { ContextBudget, ContextManagerConfig } from '../types.js';
+import { BaseCompactionStrategy } from './BaseCompactionStrategy.js';
 
-export class ProactiveCompactionStrategy implements IContextStrategy {
+/**
+ * Options for ProactiveCompactionStrategy
+ */
+export interface ProactiveStrategyOptions {
+  /** Target utilization after compaction (default: 0.65) */
+  targetUtilization?: number;
+  /** Base reduction factor for round 1 (default: 0.50) */
+  baseReductionFactor?: number;
+  /** Reduction step per round (default: 0.15) */
+  reductionStep?: number;
+  /** Maximum compaction rounds (default: 3) */
+  maxRounds?: number;
+}
+
+/**
+ * Default options for proactive strategy
+ */
+const DEFAULT_OPTIONS: Required<ProactiveStrategyOptions> = {
+  targetUtilization: 0.65,
+  baseReductionFactor: 0.50,
+  reductionStep: 0.15,
+  maxRounds: 3,
+};
+
+export class ProactiveCompactionStrategy extends BaseCompactionStrategy {
   readonly name = 'proactive';
+  private options: Required<ProactiveStrategyOptions>;
 
-  private metrics = {
-    compactionCount: 0,
-    totalTokensFreed: 0,
-    avgTokensFreedPerCompaction: 0,
-  };
+  constructor(options: ProactiveStrategyOptions = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS, ...options };
+  }
 
   shouldCompact(budget: ContextBudget, _config: ContextManagerConfig): boolean {
     // Compact when we hit warning or critical
     return budget.status === 'warning' || budget.status === 'critical';
   }
 
-  async compact(
-    components: IContextComponent[],
-    budget: ContextBudget,
-    compactors: IContextCompactor[],
-    estimator: ITokenEstimator
-  ): Promise<{ components: IContextComponent[]; log: string[]; tokensFreed: number }> {
-    const log: string[] = [];
-    let current = [...components];
-
-    // Calculate target - aim for 65% to give breathing room
-    const targetUsage = Math.floor(budget.total * 0.65);
-    const tokensToFree = budget.used - targetUsage;
-
-    let freedTokens = 0;
-    let round = 0;
-    const maxRounds = 3;
-
-    // Sort components by priority (higher = compact first)
-    const sortedComponents = current
-      .filter((c) => c.compactable)
-      .sort((a, b) => b.priority - a.priority);
-
-    while (freedTokens < tokensToFree && round < maxRounds) {
-      round++;
-      let roundFreed = 0;
-
-      for (const component of sortedComponents) {
-        if (freedTokens >= tokensToFree) break;
-
-        // Find compactor for this component
-        const compactor = compactors.find((c) => c.canCompact(component));
-        if (!compactor) continue;
-
-        // Estimate current size
-        const beforeSize = this.estimateComponent(component, estimator);
-
-        // Calculate target size (more aggressive in later rounds)
-        const reductionFactor = 0.5 - (round - 1) * 0.15; // 50%, 35%, 20%
-        const targetSize = Math.floor(beforeSize * reductionFactor);
-
-        // Compact
-        const compacted = await compactor.compact(component, targetSize);
-
-        // Update component
-        const index = current.findIndex((c) => c.name === component.name);
-        current[index] = compacted;
-
-        // Track savings
-        const afterSize = this.estimateComponent(compacted, estimator);
-        const saved = beforeSize - afterSize;
-        freedTokens += saved;
-        roundFreed += saved;
-
-        log.push(
-          `Round ${round}: ${compactor.name} compacted "${component.name}" by ${saved} tokens`
-        );
-      }
-
-      // If we didn't free anything this round, stop
-      if (roundFreed === 0) break;
-    }
-
-    // Update metrics
-    this.metrics.compactionCount++;
-    this.metrics.totalTokensFreed += freedTokens;
-    this.metrics.avgTokensFreedPerCompaction =
-      this.metrics.totalTokensFreed / this.metrics.compactionCount;
-
-    return { components: current, log, tokensFreed: freedTokens };
+  calculateTargetSize(beforeSize: number, round: number): number {
+    // More aggressive in later rounds: 50%, 35%, 20%
+    const reductionFactor =
+      this.options.baseReductionFactor - (round - 1) * this.options.reductionStep;
+    return Math.floor(beforeSize * Math.max(reductionFactor, 0.1)); // Never below 10%
   }
 
-  private estimateComponent(component: IContextComponent, estimator: ITokenEstimator): number {
-    if (typeof component.content === 'string') {
-      return estimator.estimateTokens(component.content);
-    }
-    return estimator.estimateDataTokens(component.content);
+  getTargetUtilization(): number {
+    return this.options.targetUtilization;
   }
 
-  getMetrics() {
-    return { ...this.metrics };
+  protected getMaxRounds(): number {
+    return this.options.maxRounds;
+  }
+
+  protected getLogPrefix(): string {
+    return 'Proactive';
   }
 }

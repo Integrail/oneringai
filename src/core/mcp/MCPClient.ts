@@ -127,6 +127,21 @@ export class MCPClient extends EventEmitter implements IMCPClient {
       // Start health check
       this.startHealthCheck();
     } catch (error) {
+      // Clean up partially created resources
+      this.stopHealthCheck(); // In case error occurred after startHealthCheck()
+
+      if (this.client) {
+        try {
+          await this.client.close();
+        } catch {
+          // Ignore close errors during cleanup
+        }
+        this.client = null;
+      }
+      this.transport = null;
+      this._tools = [];
+      this._capabilities = undefined;
+
       this._state = 'failed';
       const mcpError = new MCPConnectionError(
         `Failed to connect to MCP server '${this.name}'`,
@@ -472,7 +487,14 @@ export class MCPClient extends EventEmitter implements IMCPClient {
     this.stopReconnect();
     if (this.client) {
       this.client.close().catch(() => {});
+      this.client = null;
     }
+    this.transport = null;
+    this._tools = [];
+    this._capabilities = undefined;
+    this._state = 'disconnected';
+    this.subscribedResources.clear();
+    this.registeredToolNames.clear();
     this.removeAllListeners();
   }
 

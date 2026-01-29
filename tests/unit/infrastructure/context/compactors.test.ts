@@ -181,20 +181,30 @@ describe('ApproximateTokenEstimator', () => {
   const estimator = new ApproximateTokenEstimator();
 
   describe('estimateTokens()', () => {
-    it('should estimate tokens for text', () => {
+    it('should estimate tokens for text (default mixed)', () => {
       const text = 'Hello, world!'; // 13 chars
       const tokens = estimator.estimateTokens(text);
-      expect(tokens).toBe(4); // ceil(13/4)
+      expect(tokens).toBe(4); // ceil(13/3.5) = 4
     });
 
     it('should return 0 for empty string', () => {
       expect(estimator.estimateTokens('')).toBe(0);
     });
 
-    it('should handle long text', () => {
+    it('should handle long text (default mixed)', () => {
       const text = 'a'.repeat(1000);
       const tokens = estimator.estimateTokens(text);
-      expect(tokens).toBe(250); // 1000/4
+      expect(tokens).toBe(286); // ceil(1000/3.5) = 286
+    });
+
+    it('should use different ratios for content types', () => {
+      const text = 'a'.repeat(1000);
+      // Code: ~3 chars/token
+      expect(estimator.estimateTokens(text, 'code')).toBe(334); // ceil(1000/3)
+      // Prose: ~4 chars/token
+      expect(estimator.estimateTokens(text, 'prose')).toBe(250); // ceil(1000/4)
+      // Mixed: ~3.5 chars/token
+      expect(estimator.estimateTokens(text, 'mixed')).toBe(286); // ceil(1000/3.5)
     });
   });
 

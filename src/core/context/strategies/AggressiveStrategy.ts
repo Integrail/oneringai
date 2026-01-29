@@ -3,87 +3,60 @@
  *
  * - Compacts earlier (60% threshold instead of 75%)
  * - Targets lower usage (50% instead of 65%)
- * - More aggressive per-component reduction
- * - Good for: Long-running agents, constrained context
+ * - More aggressive per-component reduction (30%)
+ * - Single-round compaction
+ *
+ * Good for: Long-running agents, constrained context windows
  */
 
-import type {
-  IContextStrategy,
-  IContextComponent,
-  ContextBudget,
-  ContextManagerConfig,
-  IContextCompactor,
-  ITokenEstimator,
-} from '../types.js';
+import type { ContextBudget, ContextManagerConfig } from '../types.js';
+import { BaseCompactionStrategy } from './BaseCompactionStrategy.js';
 
+/**
+ * Options for AggressiveCompactionStrategy
+ */
 export interface AggressiveStrategyOptions {
   /** Threshold to trigger compaction (default: 0.60) */
   threshold?: number;
   /** Target utilization after compaction (default: 0.50) */
-  target?: number;
+  targetUtilization?: number;
+  /** Reduction factor - target this fraction of original size (default: 0.30) */
+  reductionFactor?: number;
 }
 
-export class AggressiveCompactionStrategy implements IContextStrategy {
-  readonly name = 'aggressive';
+/**
+ * Default options for aggressive strategy
+ */
+const DEFAULT_OPTIONS: Required<AggressiveStrategyOptions> = {
+  threshold: 0.60,
+  targetUtilization: 0.50,
+  reductionFactor: 0.30,
+};
 
-  constructor(private options: AggressiveStrategyOptions = {}) {}
+export class AggressiveCompactionStrategy extends BaseCompactionStrategy {
+  readonly name = 'aggressive';
+  private options: Required<AggressiveStrategyOptions>;
+
+  constructor(options: AggressiveStrategyOptions = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS, ...options };
+  }
 
   shouldCompact(budget: ContextBudget, _config: ContextManagerConfig): boolean {
-    const threshold = this.options.threshold ?? 0.6; // Compact at 60%
     const utilizationRatio = (budget.used + budget.reserved) / budget.total;
-    return utilizationRatio >= threshold;
+    return utilizationRatio >= this.options.threshold;
   }
 
-  async compact(
-    components: IContextComponent[],
-    budget: ContextBudget,
-    compactors: IContextCompactor[],
-    estimator: ITokenEstimator
-  ): Promise<{ components: IContextComponent[]; log: string[]; tokensFreed: number }> {
-    const log: string[] = [];
-    let current = [...components];
-
-    const target = this.options.target ?? 0.5; // Target 50%
-    const targetUsage = Math.floor(budget.total * target);
-    const tokensToFree = budget.used - targetUsage;
-
-    let freedTokens = 0;
-
-    // Sort by priority
-    const sortedComponents = current
-      .filter((c) => c.compactable)
-      .sort((a, b) => b.priority - a.priority);
-
-    for (const component of sortedComponents) {
-      if (freedTokens >= tokensToFree) break;
-
-      const compactor = compactors.find((c) => c.canCompact(component));
-      if (!compactor) continue;
-
-      const beforeSize = this.estimateComponent(component, estimator);
-
-      // More aggressive: target 30% of original size
-      const targetSize = Math.floor(beforeSize * 0.3);
-
-      const compacted = await compactor.compact(component, targetSize);
-
-      const index = current.findIndex((c) => c.name === component.name);
-      current[index] = compacted;
-
-      const afterSize = this.estimateComponent(compacted, estimator);
-      const saved = beforeSize - afterSize;
-      freedTokens += saved;
-
-      log.push(`Aggressive: ${compactor.name} compacted "${component.name}" by ${saved} tokens`);
-    }
-
-    return { components: current, log, tokensFreed: freedTokens };
+  calculateTargetSize(beforeSize: number, _round: number): number {
+    // Aggressive: target 30% of original size
+    return Math.floor(beforeSize * this.options.reductionFactor);
   }
 
-  private estimateComponent(component: IContextComponent, estimator: ITokenEstimator): number {
-    if (typeof component.content === 'string') {
-      return estimator.estimateTokens(component.content);
-    }
-    return estimator.estimateDataTokens(component.content);
+  getTargetUtilization(): number {
+    return this.options.targetUtilization;
+  }
+
+  protected getLogPrefix(): string {
+    return 'Aggressive';
   }
 }

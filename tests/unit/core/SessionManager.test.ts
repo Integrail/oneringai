@@ -3,7 +3,16 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { SessionManager, createEmptyHistory, createEmptyMemory } from '../../../src/core/SessionManager.js';
+import {
+  SessionManager,
+  createEmptyHistory,
+  createEmptyMemory,
+  validateSession,
+  migrateSession,
+  SessionValidationError,
+  SESSION_FORMAT_VERSION,
+  HISTORY_FORMAT_VERSION,
+} from '../../../src/core/SessionManager.js';
 import { InMemorySessionStorage } from '../../../src/infrastructure/storage/InMemorySessionStorage.js';
 import type { Session } from '../../../src/core/SessionManager.js';
 
@@ -340,6 +349,131 @@ describe('SessionManager', () => {
       const session = manager.create('agent');
 
       await expect(manager.save(session)).rejects.toThrow('Storage error');
+    });
+  });
+
+  describe('session validation', () => {
+    it('should validate session on load by default', async () => {
+      const session = sessionManager.create('agent');
+      await sessionManager.save(session);
+
+      const loaded = await sessionManager.load(session.id);
+      expect(loaded).not.toBeNull();
+      expect(loaded?.id).toBe(session.id);
+    });
+
+    it('should emit warning for missing optional fields', async () => {
+      const warningListener = vi.fn();
+      sessionManager.on('session:warning', warningListener);
+
+      // Create a minimal session directly in storage (bypassing validation)
+      const minimalSession: Partial<Session> = {
+        id: 'test-minimal',
+        agentType: 'agent',
+        createdAt: new Date(),
+        lastActiveAt: new Date(),
+        history: { version: 1, entries: [] },
+        toolState: { enabled: {}, namespaces: {}, priorities: {}, permissions: {} },
+        // Missing: custom, metadata
+      };
+      await storage.save(minimalSession as Session);
+
+      const loaded = await sessionManager.load('test-minimal');
+
+      // Should have been migrated to add missing fields
+      expect(loaded).not.toBeNull();
+      expect(loaded?.custom).toEqual({});
+      expect(loaded?.metadata).toEqual({});
+
+      // Warning should have been emitted
+      expect(warningListener).toHaveBeenCalled();
+    });
+
+    it('should emit migrated event when auto-migrating', async () => {
+      const migratedListener = vi.fn();
+      sessionManager.on('session:migrated', migratedListener);
+
+      // Create session missing optional fields
+      const incompleteSession: Partial<Session> = {
+        id: 'test-migrate',
+        agentType: 'agent',
+        createdAt: new Date(),
+        lastActiveAt: new Date(),
+        history: { version: 1, entries: [] },
+        toolState: { enabled: {}, namespaces: {}, priorities: {}, permissions: {} },
+      };
+      await storage.save(incompleteSession as Session);
+
+      await sessionManager.load('test-migrate');
+
+      expect(migratedListener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'test-migrate',
+          migrations: expect.any(Array),
+        })
+      );
+    });
+
+    it('should throw SessionValidationError for invalid session', async () => {
+      // Save a completely invalid session directly to storage
+      const invalidSession = {
+        // Missing required fields: id, agentType
+        someField: 'value',
+      };
+      await storage.save(invalidSession as Session);
+
+      // Can't load without an id - test with corrupted data
+      const corruptedSession: Partial<Session> = {
+        id: 'corrupted',
+        // Missing agentType - critical error
+      };
+
+      // Directly insert into storage
+      (storage as any).sessions.set('corrupted', corruptedSession);
+
+      await expect(sessionManager.load('corrupted')).rejects.toThrow('Session validation failed');
+    });
+
+    it('should skip validation when disabled', async () => {
+      const managerNoValidation = new SessionManager({
+        storage,
+        validateOnLoad: false,
+      });
+
+      // Create session missing fields
+      const incompleteSession = {
+        id: 'test-no-validate',
+        agentType: 'agent',
+        createdAt: new Date(),
+        lastActiveAt: new Date(),
+        // Missing: history, toolState, custom, metadata
+      };
+
+      (storage as any).sessions.set('test-no-validate', incompleteSession);
+
+      // Should load without error (no validation)
+      const loaded = await managerNoValidation.load('test-no-validate');
+      expect(loaded).not.toBeNull();
+      expect(loaded?.id).toBe('test-no-validate');
+    });
+
+    it('should reject sessions with incompatible version', async () => {
+      const futureSession: Partial<Session> = {
+        id: 'future-session',
+        agentType: 'agent',
+        createdAt: new Date(),
+        lastActiveAt: new Date(),
+        history: { version: 999, entries: [] }, // Future version
+        toolState: { enabled: {}, namespaces: {}, priorities: {}, permissions: {} },
+        custom: {},
+        metadata: {},
+      };
+
+      (storage as any).sessions.set('future-session', futureSession);
+
+      await expect(sessionManager.load('future-session')).rejects.toThrow(
+        'History version 999 is newer than supported version'
+      );
     });
   });
 });

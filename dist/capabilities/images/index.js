@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
 import * as fs2 from 'fs';
-import EventEmitter from 'eventemitter3';
+import { EventEmitter } from 'eventemitter3';
 import * as path from 'path';
 import OpenAI from 'openai';
 import { GoogleGenAI } from '@google/genai';

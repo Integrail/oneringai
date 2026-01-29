@@ -16,6 +16,60 @@ import type { SerializedApprovalState } from './permissions/types.js';
 import type { MemoryScope, MemoryPriority } from '../domain/entities/Memory.js';
 
 // ============================================================================
+// Version Constants
+// ============================================================================
+
+/** Current session format version */
+export const SESSION_FORMAT_VERSION = 1;
+/** Current history format version */
+export const HISTORY_FORMAT_VERSION = 1;
+/** Current memory format version */
+export const MEMORY_FORMAT_VERSION = 1;
+/** Current plan format version */
+export const PLAN_FORMAT_VERSION = 1;
+
+// ============================================================================
+// Validation Types
+// ============================================================================
+
+export interface SessionValidationResult {
+  /** Whether the session is valid */
+  valid: boolean;
+  /** Validation errors (critical issues) */
+  errors: string[];
+  /** Validation warnings (non-critical issues) */
+  warnings: string[];
+  /** Whether the session can be migrated to fix issues */
+  canMigrate: boolean;
+  /** Suggested migrations */
+  migrations: SessionMigration[];
+}
+
+export interface SessionMigration {
+  /** Field to migrate */
+  field: string;
+  /** Type of migration */
+  type: 'add_default' | 'upgrade_version' | 'fix_type';
+  /** Description of the migration */
+  description: string;
+  /** Function to apply the migration */
+  apply: (session: Partial<Session>) => void;
+}
+
+/**
+ * Error thrown when session validation fails
+ */
+export class SessionValidationError extends Error {
+  constructor(
+    public readonly sessionId: string,
+    public readonly errors: string[]
+  ) {
+    super(`Session validation failed for ${sessionId}: ${errors.join(', ')}`);
+    this.name = 'SessionValidationError';
+  }
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -188,23 +242,233 @@ export type SessionManagerEvent =
   | 'session:saved'
   | 'session:loaded'
   | 'session:deleted'
-  | 'session:error';
+  | 'session:error'
+  | 'session:warning'
+  | 'session:migrated';
 
 export interface SessionManagerConfig {
   storage: ISessionStorage;
   /** Default metadata for new sessions */
   defaultMetadata?: Partial<SessionMetadata>;
+  /** Validate sessions on load (default: true) */
+  validateOnLoad?: boolean;
+  /** Auto-migrate sessions with fixable issues (default: true) */
+  autoMigrate?: boolean;
+}
+
+// ============================================================================
+// Session Validation
+// ============================================================================
+
+/**
+ * Validate a session object and return validation results
+ */
+export function validateSession(session: unknown): SessionValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const migrations: SessionMigration[] = [];
+
+  // Check if session is an object
+  if (!session || typeof session !== 'object') {
+    return {
+      valid: false,
+      errors: ['Session is not an object'],
+      warnings: [],
+      canMigrate: false,
+      migrations: [],
+    };
+  }
+
+  const s = session as Partial<Session>;
+
+  // Required fields check
+  if (!s.id || typeof s.id !== 'string') {
+    errors.push('Missing or invalid session id');
+  }
+
+  if (!s.agentType || typeof s.agentType !== 'string') {
+    errors.push('Missing or invalid agentType');
+  }
+
+  // Date fields (can be strings from JSON)
+  if (!s.createdAt) {
+    warnings.push('Missing createdAt, will use current time');
+    migrations.push({
+      field: 'createdAt',
+      type: 'add_default',
+      description: 'Add default createdAt timestamp',
+      apply: (sess) => {
+        sess.createdAt = new Date();
+      },
+    });
+  }
+
+  if (!s.lastActiveAt) {
+    warnings.push('Missing lastActiveAt, will use current time');
+    migrations.push({
+      field: 'lastActiveAt',
+      type: 'add_default',
+      description: 'Add default lastActiveAt timestamp',
+      apply: (sess) => {
+        sess.lastActiveAt = new Date();
+      },
+    });
+  }
+
+  // History validation
+  if (!s.history) {
+    warnings.push('Missing history, will create empty history');
+    migrations.push({
+      field: 'history',
+      type: 'add_default',
+      description: 'Add empty history',
+      apply: (sess) => {
+        sess.history = { version: HISTORY_FORMAT_VERSION, entries: [] };
+      },
+    });
+  } else if (typeof s.history === 'object') {
+    const historyVersion = (s.history as SerializedHistory).version;
+    if (historyVersion === undefined) {
+      warnings.push('History missing version, assuming version 1');
+      migrations.push({
+        field: 'history.version',
+        type: 'add_default',
+        description: 'Add history version',
+        apply: (sess) => {
+          if (sess.history) {
+            (sess.history as SerializedHistory).version = 1;
+          }
+        },
+      });
+    } else if (historyVersion > HISTORY_FORMAT_VERSION) {
+      errors.push(
+        `History version ${historyVersion} is newer than supported version ${HISTORY_FORMAT_VERSION}`
+      );
+    }
+  }
+
+  // ToolState validation
+  if (!s.toolState) {
+    warnings.push('Missing toolState, will create empty toolState');
+    migrations.push({
+      field: 'toolState',
+      type: 'add_default',
+      description: 'Add empty toolState',
+      apply: (sess) => {
+        sess.toolState = { enabled: {}, namespaces: {}, priorities: {}, permissions: {} };
+      },
+    });
+  }
+
+  // Custom object validation
+  if (!s.custom || typeof s.custom !== 'object') {
+    warnings.push('Missing custom object, will create empty object');
+    migrations.push({
+      field: 'custom',
+      type: 'add_default',
+      description: 'Add empty custom object',
+      apply: (sess) => {
+        sess.custom = {};
+      },
+    });
+  }
+
+  // Metadata validation
+  if (!s.metadata || typeof s.metadata !== 'object') {
+    warnings.push('Missing metadata, will create empty metadata');
+    migrations.push({
+      field: 'metadata',
+      type: 'add_default',
+      description: 'Add empty metadata',
+      apply: (sess) => {
+        sess.metadata = {};
+      },
+    });
+  }
+
+  // Optional: Memory validation (if present)
+  if (s.memory && typeof s.memory === 'object') {
+    const memoryVersion = (s.memory as SerializedMemory).version;
+    if (memoryVersion === undefined) {
+      warnings.push('Memory missing version, assuming version 1');
+      migrations.push({
+        field: 'memory.version',
+        type: 'add_default',
+        description: 'Add memory version',
+        apply: (sess) => {
+          if (sess.memory) {
+            (sess.memory as SerializedMemory).version = 1;
+          }
+        },
+      });
+    } else if (memoryVersion > MEMORY_FORMAT_VERSION) {
+      errors.push(
+        `Memory version ${memoryVersion} is newer than supported version ${MEMORY_FORMAT_VERSION}`
+      );
+    }
+  }
+
+  // Optional: Plan validation (if present)
+  if (s.plan && typeof s.plan === 'object') {
+    const planVersion = (s.plan as SerializedPlan).version;
+    if (planVersion === undefined) {
+      warnings.push('Plan missing version, assuming version 1');
+      migrations.push({
+        field: 'plan.version',
+        type: 'add_default',
+        description: 'Add plan version',
+        apply: (sess) => {
+          if (sess.plan) {
+            (sess.plan as SerializedPlan).version = 1;
+          }
+        },
+      });
+    } else if (planVersion > PLAN_FORMAT_VERSION) {
+      errors.push(
+        `Plan version ${planVersion} is newer than supported version ${PLAN_FORMAT_VERSION}`
+      );
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    canMigrate: errors.length === 0 && migrations.length > 0,
+    migrations,
+  };
+}
+
+/**
+ * Apply migrations to a session
+ */
+export function migrateSession(
+  session: Partial<Session>,
+  migrations: SessionMigration[]
+): Session {
+  for (const migration of migrations) {
+    migration.apply(session);
+  }
+  return session as Session;
 }
 
 export class SessionManager extends EventEmitter {
   private storage: ISessionStorage;
   private defaultMetadata: Partial<SessionMetadata>;
   private autoSaveTimers: Map<string, NodeJS.Timeout> = new Map();
+  private validateOnLoad: boolean;
+  private autoMigrate: boolean;
+
+  // Track in-flight saves to prevent race conditions
+  private savesInFlight: Set<string> = new Set();
+  private pendingSaves: Set<string> = new Set();
 
   constructor(config: SessionManagerConfig) {
     super();
     this.storage = config.storage;
     this.defaultMetadata = config.defaultMetadata ?? {};
+    this.validateOnLoad = config.validateOnLoad ?? true;
+    this.autoMigrate = config.autoMigrate ?? true;
   }
 
   // ==========================================================================
@@ -253,13 +517,43 @@ export class SessionManager extends EventEmitter {
    */
   async load(sessionId: string): Promise<Session | null> {
     try {
-      const session = await this.storage.load(sessionId);
-      if (session) {
-        // Ensure dates are Date objects (might be strings from JSON)
-        session.createdAt = new Date(session.createdAt);
-        session.lastActiveAt = new Date(session.lastActiveAt);
-        this.emit('session:loaded', { sessionId });
+      let session = await this.storage.load(sessionId);
+      if (!session) {
+        return null;
       }
+
+      // Validate session if enabled
+      if (this.validateOnLoad) {
+        const validation = validateSession(session);
+
+        // Log warnings
+        if (validation.warnings.length > 0) {
+          this.emit('session:warning', {
+            sessionId,
+            warnings: validation.warnings,
+          });
+        }
+
+        // Handle validation errors
+        if (!validation.valid) {
+          throw new SessionValidationError(sessionId, validation.errors);
+        }
+
+        // Apply migrations if needed and enabled
+        if (validation.canMigrate && this.autoMigrate) {
+          session = migrateSession(session, validation.migrations);
+          this.emit('session:migrated', {
+            sessionId,
+            migrations: validation.migrations.map((m) => m.description),
+          });
+        }
+      }
+
+      // Ensure dates are Date objects (might be strings from JSON)
+      session.createdAt = new Date(session.createdAt);
+      session.lastActiveAt = new Date(session.lastActiveAt);
+
+      this.emit('session:loaded', { sessionId });
       return session;
     } catch (error) {
       this.emit('session:error', { sessionId, error, operation: 'load' });
@@ -387,15 +681,40 @@ export class SessionManager extends EventEmitter {
     this.stopAutoSave(session.id);
 
     const timer = setInterval(async () => {
+      const sessionId = session.id;
+
+      // Skip if a save is already in-flight for this session
+      if (this.savesInFlight.has(sessionId)) {
+        this.pendingSaves.add(sessionId);
+        return;
+      }
+
+      this.savesInFlight.add(sessionId);
+
       try {
         await this.save(session);
         onSave?.(session);
       } catch (error) {
         this.emit('session:error', {
-          sessionId: session.id,
+          sessionId,
           error,
           operation: 'auto-save',
         });
+      } finally {
+        this.savesInFlight.delete(sessionId);
+
+        // If a save was pending while we were saving, do another save
+        if (this.pendingSaves.has(sessionId)) {
+          this.pendingSaves.delete(sessionId);
+          // Schedule an immediate save (async, don't await)
+          this.save(session).catch((error) => {
+            this.emit('session:error', {
+              sessionId,
+              error,
+              operation: 'auto-save-retry',
+            });
+          });
+        }
       }
     }, intervalMs);
 

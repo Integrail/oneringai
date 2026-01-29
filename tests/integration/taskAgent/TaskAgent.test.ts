@@ -668,7 +668,9 @@ describe('TaskAgent Integration', () => {
 
       await agent.getMemory().store('test', 'Test', { value: 1 });
 
-      expect(handler).toHaveBeenCalledWith({ key: 'test', description: 'Test' });
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ key: 'test', description: 'Test' })
+      );
     });
   });
 

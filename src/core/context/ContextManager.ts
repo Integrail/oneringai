@@ -15,6 +15,7 @@ import type {
 } from './types.js';
 import { DEFAULT_CONTEXT_CONFIG } from './types.js';
 import { createStrategy as createStrategyFn } from './strategies/index.js';
+import { estimateComponentTokens } from './utils/ContextUtils.js';
 
 /**
  * Context manager events
@@ -203,10 +204,7 @@ export class ContextManager extends EventEmitter<ContextManagerEvents> {
    * Estimate tokens for a component
    */
   private estimateComponent(component: IContextComponent): number {
-    if (typeof component.content === 'string') {
-      return this.estimator.estimateTokens(component.content);
-    }
-    return this.estimator.estimateDataTokens(component.content);
+    return estimateComponentTokens(component, this.estimator);
   }
 
   /**

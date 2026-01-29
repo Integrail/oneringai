@@ -198,4 +198,16 @@ export abstract class BaseTextProvider extends BaseProvider implements ITextProv
    * List available models (optional)
    */
   async listModels?(): Promise<string[]>;
+
+  /**
+   * Clean up provider resources (circuit breaker listeners, etc.)
+   * Should be called when the provider is no longer needed.
+   */
+  destroy(): void {
+    if (this.circuitBreaker) {
+      this.circuitBreaker.removeAllListeners();
+      this.circuitBreaker = undefined;
+    }
+    this._isObservabilityInitialized = false;
+  }
 }

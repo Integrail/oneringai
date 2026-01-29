@@ -1,15 +1,25 @@
 /**
  * TaskAgent - autonomous task-based agent
+ *
+ * Extends BaseAgent to inherit:
+ * - Connector resolution
+ * - Tool manager initialization
+ * - Permission manager initialization
+ * - Session management
+ * - Lifecycle/cleanup
+ *
+ * Uses unified ContextManager with TaskAgentContextProvider
+ * and IHistoryManager interface for clean architecture.
  */
 
-import { EventEmitter } from 'eventemitter3';
+import { BaseAgent, BaseAgentConfig, BaseSessionConfig } from '../../core/BaseAgent.js';
 import { Connector } from '../../core/Connector.js';
 import { Agent } from '../../core/Agent.js';
-import { ToolManager } from '../../core/ToolManager.js';
 import {
-  SessionManager,
   Session,
   ISessionStorage,
+  SerializedPlan,
+  SerializedMemory,
 } from '../../core/SessionManager.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import { Plan, PlanInput, Task, TaskInput, TaskValidationResult, createPlan, createTask, detectDependencyCycle } from '../../domain/entities/Task.js';
@@ -19,15 +29,23 @@ import type { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
 import { DEFAULT_MEMORY_CONFIG } from '../../domain/entities/Memory.js';
 import { IAgentStorage, createAgentStorage } from '../../infrastructure/storage/InMemoryStorage.js';
 import { WorkingMemory } from './WorkingMemory.js';
-import { ContextManager, DEFAULT_CONTEXT_CONFIG, DEFAULT_COMPACTION_STRATEGY } from './ContextManager.js';
+// Unified ContextManager from core
+import { ContextManager } from '../../core/context/ContextManager.js';
+import { TaskAgentContextProvider } from '../../infrastructure/context/providers/TaskAgentContextProvider.js';
+import { TruncateCompactor } from '../../infrastructure/context/compactors/TruncateCompactor.js';
+import { MemoryEvictionCompactor } from '../../infrastructure/context/compactors/MemoryEvictionCompactor.js';
+import { ApproximateTokenEstimator } from '../../infrastructure/context/estimators/ApproximateEstimator.js';
 import { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
-import { HistoryManager, DEFAULT_HISTORY_CONFIG } from './HistoryManager.js';
+// Unified IHistoryManager
+import type { IHistoryManager } from '../../domain/interfaces/IHistoryManager.js';
+import { ConversationHistoryManager } from '../../core/history/ConversationHistoryManager.js';
 import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { PlanExecutor } from './PlanExecutor.js';
 import { CheckpointManager, DEFAULT_CHECKPOINT_STRATEGY } from './CheckpointManager.js';
 import { createMemoryTools } from './memoryTools.js';
 import { createContextTools } from './contextTools.js';
 import { getModelInfo } from '../../domain/entities/Model.js';
+import type { AgentPermissionsConfig } from '../../core/permissions/types.js';
 
 /**
  * TaskAgent hooks for customization
@@ -163,28 +181,23 @@ export interface PlanUpdateOptions {
 }
 
 /**
- * Session configuration for TaskAgent
+ * Session configuration for TaskAgent - extends BaseSessionConfig
  */
-export interface TaskAgentSessionConfig {
-  /** Storage backend for sessions */
-  storage: ISessionStorage;
-  /** Resume existing session by ID */
-  id?: string;
-  /** Auto-save session after each task completion */
-  autoSave?: boolean;
-  /** Auto-save interval in milliseconds */
-  autoSaveIntervalMs?: number;
+export interface TaskAgentSessionConfig extends BaseSessionConfig {
+  // TaskAgent-specific session options can be added here
 }
 
 /**
- * TaskAgent configuration
+ * TaskAgent configuration - extends BaseAgentConfig
  */
-export interface TaskAgentConfig {
-  connector: string | Connector;
-  model: string;
-  tools?: ToolFunction[];
+export interface TaskAgentConfig extends BaseAgentConfig {
+  /** System instructions for the agent */
   instructions?: string;
+
+  /** Temperature for generation */
   temperature?: number;
+
+  /** Maximum iterations for tool calling loop */
   maxIterations?: number;
 
   /** Storage for persistence (agent state, checkpoints) */
@@ -196,25 +209,15 @@ export interface TaskAgentConfig {
   /** Hooks for customization */
   hooks?: TaskAgentHooks;
 
-  // === NEW: Optional session support ===
-  /** Session configuration for persistence (opt-in) */
+  /** Session configuration - extends base type */
   session?: TaskAgentSessionConfig;
 
-  // === NEW: Advanced tool management ===
-  /** Provide a pre-configured ToolManager (advanced) */
-  toolManager?: ToolManager;
-
-  // === NEW: Tool permission system ===
-  /**
-   * Permission configuration for tool execution approval.
-   * Controls allowlist/blocklist, default scopes, and approval callbacks.
-   * Passed through to the internal Agent.
-   */
-  permissions?: import('../../core/permissions/types.js').AgentPermissionsConfig;
+  /** Permission configuration for tool execution approval */
+  permissions?: AgentPermissionsConfig;
 }
 
 /**
- * TaskAgent events
+ * TaskAgent events - extends BaseAgentEvents
  */
 export interface TaskAgentEvents {
   'task:start': { task: Task };
@@ -224,14 +227,21 @@ export interface TaskAgentEvents {
   'task:waiting': { task: Task; dependency: any };
   'plan:updated': { plan: Plan };
   'agent:suspended': { reason: string };
-  'agent:resumed': {};
+  'agent:resumed': Record<string, never>;
   'agent:completed': { result: PlanResult };
   'memory:stored': { key: string; description: string };
   'memory:limit_warning': { utilization: number };
+  // Inherited from BaseAgentEvents
+  'session:saved': { sessionId: string };
+  'session:loaded': { sessionId: string };
+  destroyed: void;
 }
 
 /**
  * TaskAgent - autonomous task-based agent.
+ *
+ * Extends BaseAgent to inherit connector resolution, tool management,
+ * permission management, session management, and lifecycle.
  *
  * Features:
  * - Plan-driven execution
@@ -240,10 +250,10 @@ export interface TaskAgentEvents {
  * - Suspend/resume capability
  * - State persistence for long-running agents
  */
-export class TaskAgent extends EventEmitter<TaskAgentEvents> {
+export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
   readonly id: string;
   protected state: AgentState;
-  protected storage: IAgentStorage;
+  protected agentStorage: IAgentStorage;
   protected memory: WorkingMemory;
   protected hooks?: TaskAgentHooks;
   protected executionPromise?: Promise<PlanResult>;
@@ -251,59 +261,144 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
   // Internal components
   protected agent?: Agent;
   protected contextManager?: ContextManager;
+  protected contextProvider?: TaskAgentContextProvider;
   protected idempotencyCache?: IdempotencyCache;
-  protected historyManager?: HistoryManager;
+  protected historyManager?: IHistoryManager;
   protected externalHandler?: ExternalDependencyHandler;
   protected planExecutor?: PlanExecutor;
   protected checkpointManager?: CheckpointManager;
-  protected _tools: ToolFunction[] = [];
-  protected _toolManager: ToolManager;
-  protected config: TaskAgentConfig;
-
-  // Session management (NEW)
-  protected _sessionManager: SessionManager | null = null;
-  protected _session: Session | null = null;
+  protected _allTools: ToolFunction[] = [];
 
   // Event listener cleanup tracking
   private eventCleanupFunctions: Array<() => void> = [];
 
+  // ===== Static Factory =====
+
   /**
-   * Advanced tool management. Returns ToolManager for fine-grained control.
+   * Create a new TaskAgent
    */
-  get tools(): ToolManager {
-    return this._toolManager;
+  static create(config: TaskAgentConfig): TaskAgent {
+    // Resolve connector (use Connector.get directly since we're in static method)
+    const connector =
+      typeof config.connector === 'string' ? Connector.get(config.connector) : config.connector;
+
+    if (!connector) {
+      throw new Error(`Connector "${config.connector}" not found`);
+    }
+
+    // Create agent storage
+    const agentStorage = config.storage ?? createAgentStorage({});
+
+    // Create working memory
+    const memoryConfig = config.memoryConfig ?? DEFAULT_MEMORY_CONFIG;
+    const memory = new WorkingMemory(agentStorage.memory, memoryConfig);
+
+    // Generate agent ID
+    const id = `task-agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Create empty initial plan (will be set on start)
+    const emptyPlan = createPlan({ goal: '', tasks: [] });
+
+    const agentStateConfig = {
+      connectorName: typeof config.connector === 'string' ? config.connector : connector.name,
+      model: config.model,
+      temperature: config.temperature,
+      maxIterations: config.maxIterations,
+      toolNames: (config.tools ?? []).map((t) => t.definition.function.name),
+    };
+
+    const state = createAgentState(id, agentStateConfig, emptyPlan);
+
+    const taskAgent = new TaskAgent(id, state, agentStorage, memory, config, config.hooks);
+
+    // Initialize components
+    taskAgent.initializeComponents(config);
+
+    return taskAgent;
   }
 
   /**
-   * Permission management. Returns ToolPermissionManager for approval control.
-   * Delegates to internal Agent's permission manager.
+   * Resume an existing agent from storage
    */
-  get permissions() {
-    return this.agent?.permissions;
+  static async resume(
+    agentId: string,
+    options: { storage: IAgentStorage; tools?: ToolFunction[]; hooks?: TaskAgentHooks; session?: { storage: ISessionStorage } }
+  ): Promise<TaskAgent> {
+    const state = await options.storage.agent.load(agentId);
+    if (!state) {
+      throw new Error(`Agent ${agentId} not found in storage`);
+    }
+
+    // Validate tool names match saved state
+    const stateToolNames = new Set(state.config.toolNames ?? []);
+    const currentToolNames = new Set(
+      (options.tools ?? []).map((t) => t.definition.function.name)
+    );
+
+    const missing = [...stateToolNames].filter((n) => !currentToolNames.has(n));
+    const added = [...currentToolNames].filter((n) => !stateToolNames.has(n));
+
+    if (missing.length > 0) {
+      console.warn(
+        `[TaskAgent.resume] Warning: Missing tools from saved state: ${missing.join(', ')}. ` +
+          `Tasks requiring these tools may fail.`
+      );
+    }
+
+    if (added.length > 0) {
+      console.info(
+        `[TaskAgent.resume] Info: New tools not in saved state: ${added.join(', ')}`
+      );
+    }
+
+    // Recreate config from state
+    const config: TaskAgentConfig = {
+      connector: state.config.connectorName,
+      model: state.config.model,
+      tools: options.tools ?? [],
+      temperature: state.config.temperature,
+      maxIterations: state.config.maxIterations,
+      storage: options.storage,
+      hooks: options.hooks,
+      session: options.session,
+    };
+
+    // Create working memory from stored state
+    const memory = new WorkingMemory(options.storage.memory, DEFAULT_MEMORY_CONFIG);
+
+    const taskAgent = new TaskAgent(agentId, state, options.storage, memory, config, options.hooks);
+
+    // Initialize components
+    taskAgent.initializeComponents(config);
+
+    return taskAgent;
   }
+
+  // ===== Constructor =====
 
   protected constructor(
     id: string,
     state: AgentState,
-    storage: IAgentStorage,
+    agentStorage: IAgentStorage,
     memory: WorkingMemory,
     config: TaskAgentConfig,
     hooks?: TaskAgentHooks
   ) {
-    super();
+    // Call BaseAgent constructor - it handles connector resolution,
+    // tool manager init, permission manager init
+    super(config, 'TaskAgent');
+
     this.id = id;
     this.state = state;
-    this.storage = storage;
+    this.agentStorage = agentStorage;
     this.memory = memory;
-    this.config = config;
     this.hooks = hooks;
 
-    // Initialize ToolManager
-    this._toolManager = config.toolManager ?? new ToolManager();
-
     // Forward memory events to agent (with cleanup tracking)
-    const storedHandler = (data: any) => this.emit('memory:stored', data);
-    const limitWarningHandler = (data: any) => this.emit('memory:limit_warning', { utilization: data.utilizationPercent });
+    const storedHandler = (data: { key: string; description: string }) =>
+      this.emit('memory:stored', data);
+    const limitWarningHandler = (data: { utilizationPercent: number }) =>
+      this.emit('memory:limit_warning', { utilization: data.utilizationPercent });
 
     memory.on('stored', storedHandler);
     memory.on('limit_warning', limitWarningHandler);
@@ -312,63 +407,93 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     this.eventCleanupFunctions.push(() => memory.off('stored', storedHandler));
     this.eventCleanupFunctions.push(() => memory.off('limit_warning', limitWarningHandler));
 
-    // Setup session if configured
-    if (config.session) {
-      this._sessionManager = new SessionManager({ storage: config.session.storage });
-
-      if (config.session.id) {
-        // Will be loaded asynchronously in start()
-      } else {
-        // Create new session
-        this._session = this._sessionManager.create('task-agent', {
-          title: `TaskAgent ${id}`,
-        });
-      }
-    }
+    // Initialize session (from BaseAgent)
+    this.initializeSession(config.session);
   }
 
-  /**
-   * Create a new TaskAgent
-   */
-  static create(config: TaskAgentConfig): TaskAgent {
-    // Resolve connector
-    const connector =
-      typeof config.connector === 'string' ? Connector.get(config.connector) : config.connector;
+  // ===== Abstract Method Implementations =====
 
-    if (!connector) {
-      throw new Error(`Connector "${config.connector}" not found`);
+  protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent' {
+    return 'task-agent';
+  }
+
+  protected prepareSessionState(): void {
+    // TaskAgent-specific session state is handled by getSerializedPlan() and getSerializedMemory()
+    // Store any additional custom state here if needed
+  }
+
+  protected async restoreSessionState(session: Session): Promise<void> {
+    // Restore plan from session
+    if (session.plan?.data) {
+      this.state.plan = session.plan.data as Plan;
     }
 
-    // Create storage
-    const storage = config.storage ?? createAgentStorage({});
+    // Memory entries are stored in agent storage, not in session
+    // The session just tracks metadata - actual restoration happens through agentStorage.memory
+    this._logger.debug({ sessionId: session.id }, 'TaskAgent session state restored');
+  }
 
-    // Create working memory
-    const memoryConfig = config.memoryConfig ?? DEFAULT_MEMORY_CONFIG;
-    const memory = new WorkingMemory(storage.memory, memoryConfig);
+  protected getSerializedPlan(): SerializedPlan | undefined {
+    if (!this.state.plan) {
+      return undefined;
+    }
+    return {
+      version: 1,
+      data: this.state.plan,
+    };
+  }
 
-    // Generate agent ID
-    const id = `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  protected getSerializedMemory(): SerializedMemory | undefined {
+    // Note: This is called synchronously from saveSession, but we need async for memory index
+    // BaseAgent's saveSession will handle this, but we return undefined here
+    // and override saveSession to handle memory properly
+    return undefined;
+  }
 
-    // Create empty initial plan (will be set on start)
-    const emptyPlan = createPlan({ goal: '', tasks: [] });
+  // Override saveSession to handle async memory serialization
+  async saveSession(): Promise<void> {
+    // Ensure any pending session load is complete
+    await this.ensureSessionLoaded();
 
-    const agentConfig = {
-      connectorName: typeof config.connector === 'string' ? config.connector : connector.name,
-      model: config.model,
-      temperature: config.temperature,
-      maxIterations: config.maxIterations,
-      toolNames: (config.tools ?? []).map((t) => t.definition.function.name),
+    if (!this._sessionManager || !this._session) {
+      throw new Error(
+        'Session not enabled. Configure session in agent config to use this feature.'
+      );
+    }
+
+    // Update common session state
+    this._session.toolState = this._toolManager.getState();
+    this._session.custom['approvalState'] = this._permissionManager.getState();
+
+    // Get plan state
+    const plan = this.getSerializedPlan();
+    if (plan) {
+      this._session.plan = plan;
+    }
+
+    // Get memory state (async)
+    const memoryIndex = await this.memory.getIndex();
+    this._session.memory = {
+      version: 1,
+      entries: memoryIndex.entries.map((e) => ({
+        key: e.key,
+        description: e.description,
+        value: null, // Don't serialize full values, they're in agent storage
+        scope: e.scope,
+        sizeBytes: 0,
+        basePriority: e.effectivePriority,
+        pinned: e.pinned,
+      })),
     };
 
-    const state = createAgentState(id, agentConfig, emptyPlan);
+    // Let subclass add any additional specific state
+    this.prepareSessionState();
 
-    const taskAgent = new TaskAgent(id, state, storage, memory, config, config.hooks);
-
-    // Initialize components
-    taskAgent.initializeComponents(config);
-
-    return taskAgent;
+    await this._sessionManager.save(this._session);
+    this._logger.debug({ sessionId: this._session.id }, 'TaskAgent session saved');
   }
+
+  // ===== Component Initialization =====
 
   /**
    * Wrap a tool with idempotency cache and enhanced context
@@ -412,12 +537,10 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     // Combine user tools with memory tools and context tools
     const memoryTools = createMemoryTools();
     const contextTools = createContextTools();
-    this._tools = [...(config.tools ?? []), ...memoryTools, ...contextTools];
+    this._allTools = [...(config.tools ?? []), ...memoryTools, ...contextTools];
 
-    // Register tools with ToolManager
-    for (const tool of this._tools) {
-      this._toolManager.register(tool);
-    }
+    // Register tools with ToolManager (use inherited method from BaseAgent)
+    this.registerTools(this._toolManager, this._allTools);
 
     // Create idempotency cache first (needed for wrapping tools)
     this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
@@ -441,32 +564,55 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     const modelInfo = getModelInfo(config.model);
     const contextTokens = modelInfo?.features.input.tokens ?? 128000;
 
-    // Create context manager
+    // Create unified history manager (IHistoryManager interface)
+    this.historyManager = new ConversationHistoryManager({
+      maxMessages: 50,
+      maxTokens: Math.floor(contextTokens * 0.3), // Reserve 30% for history
+      compactionStrategy: 'sliding-window',
+      preserveRecentCount: 10,
+    });
+
+    // Create context provider for TaskAgent
+    this.contextProvider = new TaskAgentContextProvider({
+      model: config.model,
+      instructions: config.instructions,
+      plan: this.state.plan,
+      memory: this.memory,
+      historyManager: this.historyManager,
+    });
+
+    // Create unified ContextManager with compactors
+    const estimator = new ApproximateTokenEstimator();
     this.contextManager = new ContextManager(
+      this.contextProvider,
       {
-        ...DEFAULT_CONTEXT_CONFIG,
         maxContextTokens: contextTokens,
+        compactionThreshold: 0.75,
+        hardLimit: 0.9,
+        responseReserve: 0.15,
+        autoCompact: true,
+        strategy: 'proactive',
       },
-      DEFAULT_COMPACTION_STRATEGY
+      [
+        new TruncateCompactor(estimator),
+        new MemoryEvictionCompactor(estimator),
+      ],
+      estimator
     );
 
-    // Note: idempotencyCache already created above for tool wrapping
-
-    // Create history manager
-    this.historyManager = new HistoryManager(DEFAULT_HISTORY_CONFIG);
-
     // Create external dependency handler
-    this.externalHandler = new ExternalDependencyHandler(this._tools);
+    this.externalHandler = new ExternalDependencyHandler(this._allTools);
 
     // Create checkpoint manager
-    this.checkpointManager = new CheckpointManager(this.storage, DEFAULT_CHECKPOINT_STRATEGY);
+    this.checkpointManager = new CheckpointManager(this.agentStorage, DEFAULT_CHECKPOINT_STRATEGY);
 
-    // Create plan executor
+    // Create plan executor with unified components
     this.planExecutor = new PlanExecutor(
       this.agent,
       this.memory,
       this.contextManager,
-      this.idempotencyCache,
+      this.contextProvider,
+      this.idempotencyCache!,
       this.historyManager,
       this.externalHandler,
       this.checkpointManager,
@@ -477,18 +623,30 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     );
 
     // Forward events from plan executor to task agent (with cleanup tracking)
-    const taskStartHandler = (data: any) => this.emit('task:start', data);
-    const taskCompleteHandler = (data: any) => {
+    this.setupPlanExecutorEvents();
+  }
+
+  /**
+   * Setup event forwarding from PlanExecutor
+   */
+  private setupPlanExecutorEvents(): void {
+    if (!this.planExecutor) return;
+
+    const taskStartHandler = (data: { task: Task }) => this.emit('task:start', data);
+    const taskCompleteHandler = (data: { task: Task; result: unknown }) => {
       this.emit('task:complete', { task: data.task, result: { success: true, output: data.result } });
       // Call afterTask hook
       if (this.hooks?.afterTask) {
         this.hooks.afterTask(data.task, { success: true, output: data.result });
       }
     };
-    const taskFailedHandler = (data: any) => this.emit('task:failed', data);
-    const taskSkippedHandler = (data: any) => this.emit('task:failed', { task: data.task, error: new Error(data.reason) });
-    const taskWaitingExternalHandler = (data: any) => this.emit('task:waiting', { task: data.task, dependency: data.task.externalDependency });
-    const taskValidationFailedHandler = (data: any) => this.emit('task:validation_failed', data);
+    const taskFailedHandler = (data: { task: Task; error: Error }) => this.emit('task:failed', data);
+    const taskSkippedHandler = (data: { task: Task; reason: string }) =>
+      this.emit('task:failed', { task: data.task, error: new Error(data.reason) });
+    const taskWaitingExternalHandler = (data: { task: Task }) =>
+      this.emit('task:waiting', { task: data.task, dependency: data.task.externalDependency });
+    const taskValidationFailedHandler = (data: { task: Task; validation: TaskValidationResult }) =>
+      this.emit('task:validation_failed', data);
 
     this.planExecutor.on('task:start', taskStartHandler);
     this.planExecutor.on('task:complete', taskCompleteHandler);
@@ -496,7 +654,7 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     this.planExecutor.on('task:skipped', taskSkippedHandler);
     this.planExecutor.on('task:waiting_external', taskWaitingExternalHandler);
     this.planExecutor.on('task:validation_failed', taskValidationFailedHandler);
-    this.planExecutor.on('task:validation_uncertain', taskValidationFailedHandler); // Reuse same handler for uncertain
+    this.planExecutor.on('task:validation_uncertain', taskValidationFailedHandler);
 
     // Track cleanup functions
     this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:start', taskStartHandler));
@@ -508,61 +666,7 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:validation_uncertain', taskValidationFailedHandler));
   }
 
-  /**
-   * Resume an existing agent from storage
-   */
-  static async resume(
-    agentId: string,
-    options: { storage: IAgentStorage; tools?: ToolFunction[]; hooks?: TaskAgentHooks }
-  ): Promise<TaskAgent> {
-    const state = await options.storage.agent.load(agentId);
-    if (!state) {
-      throw new Error(`Agent ${agentId} not found in storage`);
-    }
-
-    // Validate tool names match saved state
-    const stateToolNames = new Set(state.config.toolNames ?? []);
-    const currentToolNames = new Set(
-      (options.tools ?? []).map((t) => t.definition.function.name)
-    );
-
-    const missing = [...stateToolNames].filter((n) => !currentToolNames.has(n));
-    const added = [...currentToolNames].filter((n) => !stateToolNames.has(n));
-
-    if (missing.length > 0) {
-      console.warn(
-        `[TaskAgent.resume] Warning: Missing tools from saved state: ${missing.join(', ')}. ` +
-          `Tasks requiring these tools may fail.`
-      );
-    }
-
-    if (added.length > 0) {
-      console.info(
-        `[TaskAgent.resume] Info: New tools not in saved state: ${added.join(', ')}`
-      );
-    }
-
-    // Recreate config from state
-    const config: TaskAgentConfig = {
-      connector: state.config.connectorName,
-      model: state.config.model,
-      tools: options.tools ?? [],
-      temperature: state.config.temperature,
-      maxIterations: state.config.maxIterations,
-      storage: options.storage,
-      hooks: options.hooks,
-    };
-
-    // Create working memory from stored state
-    const memory = new WorkingMemory(options.storage.memory, DEFAULT_MEMORY_CONFIG);
-
-    const taskAgent = new TaskAgent(agentId, state, options.storage, memory, config, options.hooks);
-
-    // Initialize components
-    taskAgent.initializeComponents(config);
-
-    return taskAgent;
-  }
+  // ===== Public API =====
 
   /**
    * Start executing a plan
@@ -596,7 +700,6 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
       });
 
     // For sync-like behavior in tests, await completion
-    // TODO: Make this configurable for true background execution
     await this.executionPromise.catch(() => {
       // Swallow error here, it will be re-thrown when wait() is called
     });
@@ -627,6 +730,7 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
 
   /**
    * Resume execution after pause
+   * Note: Named resumeExecution to avoid conflict with BaseAgent if any
    */
   async resume(): Promise<void> {
     this.state = updateAgentStatus(this.state, 'running');
@@ -765,6 +869,8 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     this.emit('plan:updated', { plan });
   }
 
+  // ===== State Introspection =====
+
   /**
    * Get current agent state
    */
@@ -789,83 +895,7 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     return this.memory;
   }
 
-  // ============ Session Management (NEW) ============
-
-  /**
-   * Get the current session ID (if session is enabled)
-   */
-  getSessionId(): string | null {
-    return this._session?.id ?? null;
-  }
-
-  /**
-   * Check if this agent has session support enabled
-   */
-  hasSession(): boolean {
-    return this._session !== null;
-  }
-
-  /**
-   * Save the current session to storage
-   * @throws Error if session is not enabled
-   */
-  async saveSession(): Promise<void> {
-    if (!this._sessionManager || !this._session) {
-      throw new Error('Session not enabled. Configure session in TaskAgentConfig to use this feature.');
-    }
-
-    // Update session state before saving
-    this._session.toolState = this._toolManager.getState();
-
-    // Serialize plan if exists
-    if (this.state.plan) {
-      this._session.plan = {
-        version: 1,
-        data: this.state.plan,
-      };
-    }
-
-    // Serialize memory
-    const memoryEntries = await this.memory.getIndex();
-    this._session.memory = {
-      version: 1,
-      entries: memoryEntries.entries.map((e) => ({
-        key: e.key,
-        description: e.description,
-        value: null, // Don't serialize full values, they're in storage
-        scope: e.scope,
-        sizeBytes: 0, // Size is stored as human-readable in index
-        basePriority: e.effectivePriority, // Store computed priority
-        pinned: e.pinned,
-      })),
-    };
-
-    await this._sessionManager.save(this._session);
-  }
-
-  /**
-   * Get the current session (for advanced use)
-   */
-  getSession(): Session | null {
-    return this._session;
-  }
-
-  /**
-   * Update session custom data
-   */
-  updateSessionData(key: string, value: unknown): void {
-    if (!this._session) {
-      throw new Error('Session not enabled');
-    }
-    this._session.custom[key] = value;
-  }
-
-  /**
-   * Get session custom data
-   */
-  getSessionData<T = unknown>(key: string): T | undefined {
-    return this._session?.custom[key] as T | undefined;
-  }
+  // ===== Plan Execution =====
 
   /**
    * Execute the plan (internal)
@@ -948,29 +978,34 @@ export class TaskAgent extends EventEmitter<TaskAgentEvents> {
     }
   }
 
+  // ===== Cleanup =====
+
   /**
    * Cleanup resources
    */
   async destroy(): Promise<void> {
+    if (this._isDestroyed) {
+      return;
+    }
+
+    this._logger.debug('TaskAgent destroy started');
+
     // Remove all event listeners first
     this.eventCleanupFunctions.forEach((cleanup) => cleanup());
     this.eventCleanupFunctions = [];
-
-    // Cleanup session manager
-    if (this._sessionManager) {
-      if (this._session) {
-        this._sessionManager.stopAutoSave(this._session.id);
-      }
-      this._sessionManager.destroy();
-    }
-
-    // Cleanup tool manager
-    this._toolManager.removeAllListeners();
 
     // Cleanup components
     this.externalHandler?.cleanup();
     await this.checkpointManager?.cleanup();
     this.planExecutor?.cleanup();
     this.agent?.destroy();
+
+    // Run cleanup callbacks
+    await this.runCleanupCallbacks();
+
+    // Call base destroy (handles session, tool manager, permission manager cleanup)
+    this.baseDestroy();
+
+    this._logger.debug('TaskAgent destroyed');
   }
 }

@@ -671,8 +671,9 @@ src/
 │   ├── index.ts                      # Core exports
 │   ├── Vendor.ts                     # Vendor enum
 │   ├── Connector.ts                  # Connector registry
-│   ├── Agent.ts                      # Agent class
-│   ├── ToolManager.ts                # Dynamic tool management
+│   ├── BaseAgent.ts                  # Abstract base class for all agents
+│   ├── Agent.ts                      # Agent class (extends BaseAgent)
+│   ├── ToolManager.ts                # Unified tool management + execution (implements IToolExecutor)
 │   ├── SessionManager.ts             # Unified session persistence
 │   ├── createProvider.ts             # Provider factory (text)
 │   ├── createAudioProvider.ts        # Provider factory (audio)
@@ -680,15 +681,17 @@ src/
 │   ├── createVideoProvider.ts        # Provider factory (video)
 │   ├── TextToSpeech.ts               # TTS capability class
 │   ├── SpeechToText.ts               # STT capability class
-│   └── context/                      # Universal context management
-│       ├── ContextManager.ts         # Strategy-based context manager
-│       ├── types.ts                  # Core interfaces
-│       └── strategies/               # Compaction strategies
-│           ├── ProactiveStrategy.ts
-│           ├── AggressiveStrategy.ts
-│           ├── LazyStrategy.ts
-│           ├── RollingWindowStrategy.ts
-│           └── AdaptiveStrategy.ts
+│   ├── context/                      # Universal context management
+│   │   ├── ContextManager.ts         # Strategy-based context manager
+│   │   ├── types.ts                  # Core interfaces (IContextProvider, ITokenEstimator)
+│   │   └── strategies/               # Compaction strategies
+│   │       ├── ProactiveStrategy.ts
+│   │       ├── AggressiveStrategy.ts
+│   │       ├── LazyStrategy.ts
+│   │       ├── RollingWindowStrategy.ts
+│   │       └── AdaptiveStrategy.ts
+│   └── history/                      # Unified history management
+│       └── ConversationHistoryManager.ts  # IHistoryManager implementation
 ├── domain/                           # Domain layer
 │   ├── entities/                     # Data structures
 │   │   ├── Message.ts                # InputItem, OutputItem
@@ -711,7 +714,8 @@ src/
 │   │   ├── ITextProvider.ts
 │   │   ├── IAudioProvider.ts         # TTS/STT interfaces
 │   │   ├── IVideoProvider.ts         # Video generation interface
-│   │   ├── IToolExecutor.ts
+│   │   ├── IToolExecutor.ts          # Tool execution interface (implemented by ToolManager)
+│   │   ├── IHistoryManager.ts        # History management interface
 │   │   ├── IMemoryStorage.ts
 │   │   └── IToolContext.ts
 │   ├── types/                        # Shared types
@@ -722,12 +726,12 @@ src/
 │   │   ├── AgenticLoop.ts            # Tool calling loop
 │   │   └── ToolExecutor.ts           # Tool execution
 │   ├── taskAgent/                    # Task-based agents
-│   │   ├── TaskAgent.ts              # Main orchestrator
+│   │   ├── TaskAgent.ts              # Main orchestrator (uses unified ContextManager & IHistoryManager)
 │   │   ├── WorkingMemory.ts          # Memory management
-│   │   ├── HistoryManager.ts         # Conversation tracking
 │   │   ├── IdempotencyCache.ts       # Tool call caching
 │   │   ├── PlanExecutor.ts           # Plan execution
 │   │   ├── CheckpointManager.ts      # State persistence
+│   │   ├── ExternalDependencyHandler.ts  # External dependency handling
 │   │   ├── PlanningAgent.ts          # AI-driven planning
 │   │   ├── memoryTools.ts            # Built-in memory tools
 │   │   └── contextTools.ts           # Context inspection tools
@@ -1816,11 +1820,11 @@ executor.on('memory:stale_entries', ({ entries, taskId }) => {
 });
 ```
 
-## Tool Management (NEW)
+## Tool Management
 
 ### ToolManager (`src/core/ToolManager.ts`)
 
-Dynamic tool management for all agent types. Provides runtime enable/disable, namespaces, priority, and context-aware selection.
+**Unified tool management and execution** for all agent types. ToolManager is the single source of truth for tool registration, execution, and lifecycle management. It implements `IToolExecutor` interface and includes circuit breaker protection.
 
 ```typescript
 import { ToolManager } from '@oneringai/agents';
@@ -1841,6 +1845,9 @@ toolManager.enable('get_weather');
 // Get enabled tools
 const enabled = toolManager.getEnabled();
 
+// Execute tools (implements IToolExecutor)
+const result = await toolManager.execute('get_weather', { location: 'Paris' });
+
 // Context-aware selection
 const selected = toolManager.selectForContext({
   mode: 'interactive',
@@ -1850,15 +1857,34 @@ const selected = toolManager.selectForContext({
 // State persistence
 const state = toolManager.getState();
 toolManager.loadState(state);
+
+// Circuit breaker management
+const states = toolManager.getCircuitBreakerStates();
+toolManager.resetToolCircuitBreaker('get_weather');
 ```
 
 **Features:**
+- **Unified execution** - Single `execute()` method with circuit breaker protection
+- **IToolExecutor interface** - Compatible with AgenticLoop and other consumers
+- **Circuit breaker** - Per-tool failure protection with configurable thresholds
 - **Dynamic registration** - Add/remove tools at runtime
 - **Enable/disable** - Toggle tools without unregistering
 - **Namespaces** - Organize tools by category
 - **Priority** - Control tool selection order
 - **Context-aware** - Select tools based on current context
 - **State serialization** - Persist tool configuration
+- **Metrics & logging** - Execution timing, success/failure tracking
+
+**Circuit Breaker Configuration:**
+
+```typescript
+toolManager.setCircuitBreakerConfig('risky_tool', {
+  failureThreshold: 3,      // Open after 3 failures
+  successThreshold: 2,      // Close after 2 successes in half-open
+  resetTimeoutMs: 60000,    // Try half-open after 1 minute
+  windowMs: 300000,         // Track failures in 5-minute window
+});
+```
 
 **Integration with Agent:**
 
@@ -1866,12 +1892,16 @@ toolManager.loadState(state);
 const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
-  tools: [weatherTool, emailTool],  // Still works!
+  tools: [weatherTool, emailTool],
 });
 
 // Access ToolManager
 agent.tools.disable('email_tool');
 agent.tools.enable('email_tool');
+
+// Circuit breaker introspection
+const cbStates = agent.getToolCircuitBreakerStates();
+agent.resetToolCircuitBreaker('email_tool');
 
 // Backward compatible methods still work
 agent.addTool(newTool);
@@ -2173,37 +2203,60 @@ These are handled internally and don't require manual implementation.
 
 ## Key Files
 
-1. `src/core/Connector.ts` - Connector registry
-2. `src/core/Agent.ts` - Agent creation
-3. `src/core/ToolManager.ts` - Dynamic tool management
-4. `src/core/SessionManager.ts` - Unified session persistence
-5. `src/core/createProvider.ts` - Provider factory (text)
-6. `src/core/createAudioProvider.ts` - Provider factory (audio)
-7. `src/core/createImageProvider.ts` - Provider factory (image)
-8. `src/core/createVideoProvider.ts` - Provider factory (video)
-9. `src/core/TextToSpeech.ts` - TTS capability class
-10. `src/core/SpeechToText.ts` - STT capability class
-11. `src/core/Vendor.ts` - Vendor enum
-12. `src/core/context/` - Universal context management
-13. `src/domain/entities/Model.ts` - LLM model registry (23+ models)
-14. `src/domain/entities/TTSModel.ts` - TTS model registry
-15. `src/domain/entities/STTModel.ts` - STT model registry
-16. `src/domain/entities/ImageModel.ts` - Image model registry
-17. `src/domain/entities/VideoModel.ts` - Video model registry (6 models)
-18. `src/domain/entities/Memory.ts` - Memory entities, scopes, priorities, utilities
-19. `src/domain/entities/Services.ts` - External service definitions (35+ services)
-20. `src/tools/connector/ConnectorTools.ts` - Connector-based tools for external APIs
-21. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
-22. `src/capabilities/taskAgent/` - Task agent implementation (WorkingMemory, PlanExecutor, etc.)
-23. `src/capabilities/universalAgent/` - Universal agent
-24. `src/capabilities/images/` - Image generation capability
-25. `src/capabilities/video/` - Video generation capability
-26. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
-27. `src/infrastructure/context/` - Context strategies, compactors, providers
-28. `src/infrastructure/storage/` - Session and data storage
+### Core Architecture
+1. `src/core/Connector.ts` - Connector registry (auth single source of truth)
+2. `src/core/BaseAgent.ts` - Abstract base class for all agents (shared functionality)
+3. `src/core/Agent.ts` - Agent class (extends BaseAgent)
+4. `src/core/ToolManager.ts` - Unified tool management + execution (implements IToolExecutor, circuit breaker)
+5. `src/core/SessionManager.ts` - Unified session persistence
+6. `src/core/Vendor.ts` - Vendor enum
+
+### Provider Factories
+7. `src/core/createProvider.ts` - Provider factory (text)
+8. `src/core/createAudioProvider.ts` - Provider factory (audio)
+9. `src/core/createImageProvider.ts` - Provider factory (image)
+10. `src/core/createVideoProvider.ts` - Provider factory (video)
+
+### Audio Capabilities
+11. `src/core/TextToSpeech.ts` - TTS capability class
+12. `src/core/SpeechToText.ts` - STT capability class
+
+### Context & History Management
+13. `src/core/context/` - Universal context management (ContextManager, strategies)
+14. `src/core/history/ConversationHistoryManager.ts` - IHistoryManager implementation
+
+### Domain Layer
+15. `src/domain/entities/Model.ts` - LLM model registry (23+ models)
+16. `src/domain/entities/TTSModel.ts` - TTS model registry
+17. `src/domain/entities/STTModel.ts` - STT model registry
+18. `src/domain/entities/ImageModel.ts` - Image model registry
+19. `src/domain/entities/VideoModel.ts` - Video model registry (6 models)
+20. `src/domain/entities/Memory.ts` - Memory entities, scopes, priorities, utilities
+21. `src/domain/entities/Services.ts` - External service definitions (35+ services)
+22. `src/domain/interfaces/IHistoryManager.ts` - History manager interface
+23. `src/domain/interfaces/IToolExecutor.ts` - Tool executor interface
+
+### Capabilities
+24. `src/capabilities/agents/AgenticLoop.ts` - Tool calling loop
+25. `src/capabilities/taskAgent/` - Task agent (WorkingMemory, PlanExecutor)
+26. `src/capabilities/universalAgent/` - Universal agent
+27. `src/capabilities/images/` - Image generation capability
+28. `src/capabilities/video/` - Video generation capability
+
+### Tools
+29. `src/tools/connector/ConnectorTools.ts` - Connector-based tools for external APIs
+30. `src/tools/filesystem/` - File system tools (read, write, edit, glob, grep)
+31. `src/tools/shell/` - Shell execution tools (bash)
+
+### Infrastructure
+32. `src/infrastructure/providers/` - LLM, audio, image, and video provider implementations
+33. `src/infrastructure/context/` - Context strategies, compactors, providers
+34. `src/infrastructure/storage/` - Session and data storage
 
 ---
 
 **Version**: 0.2.0
-**Last Updated**: 2026-01-28
+**Last Updated**: 2026-01-29
 **Architecture**: Connector-First (v2)
+
+> **Note**: For detailed improvement plans and architectural recommendations, see [IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.md).

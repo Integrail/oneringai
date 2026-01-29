@@ -1,6 +1,13 @@
 /**
  * UniversalAgent - Unified agent combining interactive, planning, and task execution
  *
+ * Extends BaseAgent to inherit:
+ * - Connector resolution
+ * - Tool manager initialization
+ * - Permission manager initialization
+ * - Session management
+ * - Lifecycle/cleanup
+ *
  * Features:
  * - Mode-fluid: Automatically switches between interactive, planning, and executing
  * - User intervention: Users can interrupt, modify plans, provide feedback
@@ -9,15 +16,13 @@
  * - Dynamic tools: Enable/disable tools at runtime
  */
 
-import { EventEmitter } from 'eventemitter3';
-import { Connector } from '../../core/Connector.js';
+import { BaseAgent, BaseAgentConfig, BaseSessionConfig } from '../../core/BaseAgent.js';
 import { Agent } from '../../core/Agent.js';
-import { ToolManager } from '../../core/ToolManager.js';
-import { SessionManager, Session, ISessionStorage } from '../../core/SessionManager.js';
+import { Session, ISessionStorage, SerializedPlan } from '../../core/SessionManager.js';
 import { Plan, Task, createPlan, createTask, TaskInput } from '../../domain/entities/Task.js';
 import { StreamEventType } from '../../domain/entities/StreamEvent.js';
 import { WorkingMemory } from '../taskAgent/WorkingMemory.js';
-import { DEFAULT_MEMORY_CONFIG } from '../../domain/entities/Memory.js';
+import { DEFAULT_MEMORY_CONFIG, WorkingMemoryConfig } from '../../domain/entities/Memory.js';
 import { InMemoryStorage } from '../../infrastructure/storage/InMemoryStorage.js';
 import { PlanningAgent } from '../taskAgent/PlanningAgent.js';
 import { ModeManager } from './ModeManager.js';
@@ -26,8 +31,8 @@ import { ConversationHistoryManager } from '../../core/history/ConversationHisto
 import type { IHistoryManager, SerializedHistoryState } from '../../domain/interfaces/IHistoryManager.js';
 import type { IContextBuilder, ContextSource } from '../../domain/interfaces/IContextBuilder.js';
 import { DefaultContextBuilder } from '../../core/context/DefaultContextBuilder.js';
+import type { AgentPermissionsConfig } from '../../core/permissions/types.js';
 import type {
-  UniversalAgentConfig,
   UniversalResponse,
   UniversalEvent,
   AgentMode,
@@ -36,6 +41,63 @@ import type {
   PlanChange,
   ExecutionResult,
 } from './types.js';
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+/**
+ * Session configuration for UniversalAgent - extends BaseSessionConfig
+ */
+export interface UniversalAgentSessionConfig extends BaseSessionConfig {
+  // UniversalAgent-specific session options can be added here
+}
+
+/**
+ * Planning configuration
+ */
+export interface UniversalAgentPlanningConfig {
+  /** Whether planning is enabled (default: true) */
+  enabled?: boolean;
+  /** Whether to auto-detect complex tasks (default: true) */
+  autoDetect?: boolean;
+  /** Model to use for planning (defaults to agent model) */
+  model?: string;
+  /** Whether approval is required (default: true) */
+  requireApproval?: boolean;
+}
+
+/**
+ * UniversalAgent configuration - extends BaseAgentConfig
+ */
+export interface UniversalAgentConfig extends BaseAgentConfig {
+  /** System instructions for the agent */
+  instructions?: string;
+
+  /** Temperature for generation */
+  temperature?: number;
+
+  /** Maximum iterations for tool calling loop */
+  maxIterations?: number;
+
+  /** Planning configuration */
+  planning?: UniversalAgentPlanningConfig;
+
+  /** Memory configuration */
+  memoryConfig?: WorkingMemoryConfig;
+
+  /** Session configuration - extends base type */
+  session?: UniversalAgentSessionConfig;
+
+  /** Permission configuration for tool execution approval */
+  permissions?: AgentPermissionsConfig;
+
+  /** Custom history manager (optional) */
+  historyManager?: IHistoryManager;
+
+  /** Custom context builder (optional) */
+  contextBuilder?: IContextBuilder;
+}
 
 // ============================================================================
 // Events
@@ -51,22 +113,20 @@ export interface UniversalAgentEvents {
   'task:failed': { task: Task; error: string };
   'execution:completed': { result: ExecutionResult };
   'error': { error: Error; recoverable: boolean };
+  // Inherited from BaseAgentEvents
+  'session:saved': { sessionId: string };
+  'session:loaded': { sessionId: string };
+  destroyed: void;
 }
 
 // ============================================================================
 // UniversalAgent Class
 // ============================================================================
 
-export class UniversalAgent extends EventEmitter {
-  readonly name: string;
-  readonly connector: Connector;
-  readonly model: string;
-
+export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAgentEvents> {
   // Core components
-  private config: UniversalAgentConfig;
   private agent: Agent;                    // Interactive agent (with meta-tools)
   private executionAgent?: Agent;           // Execution agent (without meta-tools) - created on demand
-  private _toolManager: ToolManager;
   private modeManager: ModeManager;
   private planningAgent?: PlanningAgent;
   private workingMemory: WorkingMemory;
@@ -75,14 +135,9 @@ export class UniversalAgent extends EventEmitter {
   private historyManager: IHistoryManager;
   private contextBuilder: IContextBuilder;
 
-  // Session management
-  private _sessionManager: SessionManager | null = null;
-  private _session: Session | null = null;
-
   // Execution state
   private currentPlan: Plan | null = null;
   private executionHistory: Array<{ input: string; response: UniversalResponse; timestamp: Date }> = [];
-  private isDestroyed = false;
 
   // ============================================================================
   // Static Factory
@@ -110,8 +165,8 @@ export class UniversalAgent extends EventEmitter {
       },
     });
 
-    // Load session
-    await agent.loadSession(sessionId);
+    // Wait for session to load
+    await agent.ensureSessionLoaded();
 
     return agent;
   }
@@ -121,33 +176,17 @@ export class UniversalAgent extends EventEmitter {
   // ============================================================================
 
   private constructor(config: UniversalAgentConfig) {
-    super();
+    // Call BaseAgent constructor - handles connector, tool manager, permission manager init
+    super(config, 'UniversalAgent');
 
-    // Resolve connector
-    this.connector =
-      typeof config.connector === 'string'
-        ? Connector.get(config.connector)
-        : config.connector;
-
-    this.name = config.name ?? `universal-agent-${Date.now()}`;
-    this.model = config.model;
-    this.config = config;
-
-    // Initialize ToolManager
-    this._toolManager = config.toolManager ?? new ToolManager();
-
-    // Register user tools
+    // Register user tools with namespace
     if (config.tools) {
-      for (const tool of config.tools) {
-        this._toolManager.register(tool, { namespace: 'user' });
-      }
+      this.registerTools(this._toolManager, config.tools, { namespace: 'user' });
     }
 
     // Register meta-tools for mode transitions
     const metaTools = getMetaTools();
-    for (const tool of metaTools) {
-      this._toolManager.register(tool, { namespace: '_meta' });
-    }
+    this.registerTools(this._toolManager, metaTools, { namespace: '_meta' });
 
     // Create base agent for LLM calls
     const allTools = this._toolManager.getEnabled();
@@ -193,23 +232,90 @@ export class UniversalAgent extends EventEmitter {
     // Register default context sources
     this.registerDefaultContextSources();
 
-    // Setup session if configured
-    if (config.session) {
-      this._sessionManager = new SessionManager({ storage: config.session.storage });
+    // Initialize session (from BaseAgent)
+    this.initializeSession(config.session);
+  }
 
-      if (!config.session.id) {
-        // Create new session
-        this._session = this._sessionManager.create('universal-agent', {
-          title: this.name,
-        });
+  // ============================================================================
+  // Abstract Method Implementations
+  // ============================================================================
 
-        // Setup auto-save if configured
-        if (config.session.autoSave) {
-          const interval = config.session.autoSaveIntervalMs ?? 30000;
-          this._sessionManager.enableAutoSave(this._session, interval);
-        }
-      }
+  protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent' {
+    return 'universal-agent';
+  }
+
+  protected prepareSessionState(): void {
+    // Store mode state and execution history
+    if (this._session) {
+      this._session.mode = this.modeManager.getMode();
+      this._session.custom['modeState'] = this.modeManager.serialize();
+      this._session.custom['executionHistory'] = this.executionHistory;
     }
+  }
+
+  protected async restoreSessionState(session: Session): Promise<void> {
+    // Restore mode state
+    if (session.custom['modeState']) {
+      this.modeManager.restore(session.custom['modeState'] as ReturnType<ModeManager['serialize']>);
+    }
+
+    // Restore plan
+    if (session.plan?.data) {
+      this.currentPlan = session.plan.data as Plan;
+    }
+
+    // Restore execution history
+    if (session.custom['executionHistory']) {
+      this.executionHistory = session.custom['executionHistory'] as typeof this.executionHistory;
+    }
+
+    // Restore conversation history (using pluggable IHistoryManager)
+    if (session.custom['historyState']) {
+      await this.historyManager.restoreState(session.custom['historyState'] as SerializedHistoryState);
+    }
+
+    this._logger.debug({ sessionId: session.id }, 'UniversalAgent session state restored');
+  }
+
+  protected getSerializedPlan(): SerializedPlan | undefined {
+    if (!this.currentPlan) {
+      return undefined;
+    }
+    return {
+      version: 1,
+      data: this.currentPlan,
+    };
+  }
+
+  // Override saveSession to handle async history serialization
+  async saveSession(): Promise<void> {
+    // Ensure any pending session load is complete
+    await this.ensureSessionLoaded();
+
+    if (!this._sessionManager || !this._session) {
+      throw new Error(
+        'Session not enabled. Configure session in agent config to use this feature.'
+      );
+    }
+
+    // Update common session state
+    this._session.toolState = this._toolManager.getState();
+    this._session.custom['approvalState'] = this._permissionManager.getState();
+
+    // Get plan state
+    const plan = this.getSerializedPlan();
+    if (plan) {
+      this._session.plan = plan;
+    }
+
+    // Store history state (async)
+    this._session.custom['historyState'] = await this.historyManager.getState();
+
+    // Let prepareSessionState add mode state and execution history
+    this.prepareSessionState();
+
+    await this._sessionManager.save(this._session);
+    this._logger.debug({ sessionId: this._session.id }, 'UniversalAgent session saved');
   }
 
   // ============================================================================
@@ -220,7 +326,7 @@ export class UniversalAgent extends EventEmitter {
    * Chat with the agent - the main entry point
    */
   async chat(input: string): Promise<UniversalResponse> {
-    if (this.isDestroyed) {
+    if (this._isDestroyed) {
       throw new Error('Agent has been destroyed');
     }
 
@@ -252,7 +358,7 @@ export class UniversalAgent extends EventEmitter {
     });
 
     // Auto-save session if enabled
-    if (this.config.session?.autoSave && this._session) {
+    if (this._config.session?.autoSave && this._session) {
       await this.saveSession().catch(() => {
         // Ignore auto-save errors
       });
@@ -265,7 +371,7 @@ export class UniversalAgent extends EventEmitter {
    * Stream chat response
    */
   async *stream(input: string): AsyncIterableIterator<UniversalEvent> {
-    if (this.isDestroyed) {
+    if (this._isDestroyed) {
       throw new Error('Agent has been destroyed');
     }
 
@@ -451,7 +557,6 @@ export class UniversalAgent extends EventEmitter {
         fullText += delta;
         yield { type: 'text:delta', delta };
       } else if (event.type === StreamEventType.TOOL_EXECUTION_START) {
-        // TOOL_EXECUTION_START has the parsed arguments
         yield { type: 'tool:start', name: (event as any).tool_name || 'unknown', args: (event as any).arguments || null };
       } else if (event.type === StreamEventType.TOOL_EXECUTION_DONE) {
         yield { type: 'tool:complete', name: (event as any).tool_name || 'unknown', result: (event as any).result, durationMs: (event as any).execution_time_ms || 0 };
@@ -495,7 +600,7 @@ export class UniversalAgent extends EventEmitter {
 
     yield { type: 'plan:created', plan };
 
-    if (this.config.planning?.requireApproval !== false) {
+    if (this._config.planning?.requireApproval !== false) {
       yield { type: 'plan:awaiting_approval', plan };
       yield { type: 'needs:approval', plan };
 
@@ -573,7 +678,6 @@ export class UniversalAgent extends EventEmitter {
             taskResultText += delta;
             yield { type: 'task:progress', task, status: delta };
           } else if (event.type === StreamEventType.TOOL_EXECUTION_START) {
-            // TOOL_EXECUTION_START has the parsed arguments
             yield { type: 'tool:start', name: (event as any).tool_name || 'unknown', args: (event as any).arguments || null };
           } else if (event.type === StreamEventType.TOOL_EXECUTION_DONE) {
             yield { type: 'tool:complete', name: (event as any).tool_name || 'unknown', result: (event as any).result, durationMs: (event as any).execution_time_ms || 0 };
@@ -639,7 +743,7 @@ export class UniversalAgent extends EventEmitter {
     this.emit('plan:created', { plan });
 
     const summary = this.formatPlanSummary(plan);
-    const requireApproval = this.config.planning?.requireApproval !== false;
+    const requireApproval = this._config.planning?.requireApproval !== false;
 
     return {
       text: summary,
@@ -806,7 +910,6 @@ export class UniversalAgent extends EventEmitter {
     // Execute next pending task
     const nextTask = pendingTasks[0];
     if (!nextTask) {
-      // Should never happen since we checked pendingTasks.length above
       throw new Error('No pending task found');
     }
 
@@ -993,7 +1096,7 @@ export class UniversalAgent extends EventEmitter {
   }
 
   private shouldSwitchToPlanning(intent: IntentAnalysis): boolean {
-    if (this.config.planning?.enabled !== false && this.config.planning?.autoDetect !== false) {
+    if (this._config.planning?.enabled !== false && this._config.planning?.autoDetect !== false) {
       return intent.type === 'complex' && (intent.complexity === 'high' || intent.complexity === 'medium');
     }
     return false;
@@ -1012,13 +1115,13 @@ export class UniversalAgent extends EventEmitter {
     const userTools = this._toolManager.getEnabled().filter(t => !isMetaTool(t.definition.function.name));
 
     return Agent.create({
-      connector: this.config.connector,
-      model: this.config.model,
+      connector: this._config.connector,
+      model: this._config.model,
       tools: userTools,
       instructions: this.buildExecutionInstructions(),
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations ?? 20,
-      permissions: this.config.permissions,
+      temperature: this._config.temperature,
+      maxIterations: this._config.maxIterations ?? 20,
+      permissions: this._config.permissions,
     });
   }
 
@@ -1034,7 +1137,7 @@ Guidelines:
 - Report results clearly and concisely
 - If you encounter errors, explain what went wrong
 
-${this.config.instructions ?? ''}`;
+${this._config.instructions ?? ''}`;
   }
 
   // ============================================================================
@@ -1240,78 +1343,6 @@ Always be helpful, clear, and ask for clarification when needed.`;
   }
 
   // ============================================================================
-  // Session Management
-  // ============================================================================
-
-  getSessionId(): string | null {
-    return this._session?.id ?? null;
-  }
-
-  hasSession(): boolean {
-    return this._session !== null;
-  }
-
-  async saveSession(): Promise<void> {
-    if (!this._sessionManager || !this._session) {
-      throw new Error('Session not enabled');
-    }
-
-    // Update session state
-    this._session.toolState = this._toolManager.getState();
-    this._session.mode = this.modeManager.getMode();
-
-    if (this.currentPlan) {
-      this._session.plan = { version: 1, data: this.currentPlan };
-    }
-
-    this._session.custom['modeState'] = this.modeManager.serialize();
-    this._session.custom['executionHistory'] = this.executionHistory;
-    this._session.custom['historyState'] = await this.historyManager.getState();
-
-    await this._sessionManager.save(this._session);
-  }
-
-  private async loadSession(sessionId: string): Promise<void> {
-    if (!this._sessionManager) return;
-
-    const session = await this._sessionManager.load(sessionId);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-
-    this._session = session;
-
-    // Restore tool state
-    if (session.toolState) {
-      this._toolManager.loadState(session.toolState);
-    }
-
-    // Restore mode state
-    if (session.custom['modeState']) {
-      this.modeManager.restore(session.custom['modeState'] as ReturnType<ModeManager['serialize']>);
-    }
-
-    // Restore plan
-    if (session.plan?.data) {
-      this.currentPlan = session.plan.data as Plan;
-    }
-
-    // Restore execution history
-    if (session.custom['executionHistory']) {
-      this.executionHistory = session.custom['executionHistory'] as typeof this.executionHistory;
-    }
-
-    // Restore conversation history (using pluggable IHistoryManager)
-    if (session.custom['historyState']) {
-      await this.historyManager.restoreState(session.custom['historyState'] as SerializedHistoryState);
-    }
-  }
-
-  getSession(): Session | null {
-    return this._session;
-  }
-
-  // ============================================================================
   // Public Getters
   // ============================================================================
 
@@ -1330,16 +1361,12 @@ Always be helpful, clear, and ask for clarification when needed.`;
     return this.getTaskProgress();
   }
 
-  get toolManager(): ToolManager {
-    return this._toolManager;
-  }
-
   /**
-   * Permission management. Returns ToolPermissionManager for approval control.
-   * Delegates to internal Agent's permission manager.
+   * Access to tool manager (alias for `tools` getter from BaseAgent)
+   * @deprecated Use `tools` instead for consistency with other agents
    */
-  get permissions() {
-    return this.agent.permissions;
+  get toolManager() {
+    return this._toolManager;
   }
 
   // ============================================================================
@@ -1347,14 +1374,14 @@ Always be helpful, clear, and ask for clarification when needed.`;
   // ============================================================================
 
   setAutoApproval(value: boolean): void {
-    if (this.config.planning) {
-      this.config.planning.requireApproval = !value;
+    if (this._config.planning) {
+      this._config.planning.requireApproval = !value;
     }
   }
 
   setPlanningEnabled(value: boolean): void {
-    if (this.config.planning) {
-      this.config.planning.enabled = value;
+    if (this._config.planning) {
+      this._config.planning.enabled = value;
     }
   }
 
@@ -1393,36 +1420,40 @@ Always be helpful, clear, and ask for clarification when needed.`;
     return this._isPaused || this.modeManager.isPaused();
   }
 
-  onCleanup(callback: () => void): void {
-    this.agent.onCleanup(callback);
-  }
-
   // ============================================================================
   // Cleanup
   // ============================================================================
 
   destroy(): void {
-    if (this.isDestroyed) return;
-    this.isDestroyed = true;
+    if (this._isDestroyed) return;
 
-    // Cleanup session
-    if (this._sessionManager && this._session) {
-      this._sessionManager.stopAutoSave(this._session.id);
-      this._sessionManager.destroy();
+    this._logger.debug('UniversalAgent destroy started');
+
+    // Run cleanup callbacks (synchronously, matching Agent behavior)
+    for (const callback of this._cleanupCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        this._logger.error({ error: (error as Error).message }, 'Cleanup callback error');
+      }
     }
+    this._cleanupCallbacks = [];
 
     // Cleanup components
     this.agent.destroy();
     if (this.executionAgent) {
       this.executionAgent.destroy();
     }
-    this._toolManager.removeAllListeners();
     this.modeManager.removeAllListeners();
-    this.removeAllListeners();
 
     // Clear conversation history (using pluggable IHistoryManager)
     this.historyManager.clear().catch(() => {
       // Ignore cleanup errors
     });
+
+    // Call base destroy (handles session, tool manager, permission manager cleanup)
+    this.baseDestroy();
+
+    this._logger.debug('UniversalAgent destroyed');
   }
 }

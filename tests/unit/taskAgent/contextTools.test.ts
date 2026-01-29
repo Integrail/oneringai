@@ -213,12 +213,12 @@ describe('Context Tools', () => {
       expect(result.components).toHaveLength(5);
 
       // Check system prompt component
-      const systemPrompt = result.components.find((c: any) => c.name === 'system_prompt');
+      const systemPrompt = result.components.find((c: any) => c.name === 'systemPrompt');
       expect(systemPrompt.tokens).toBe(10000);
       expect(systemPrompt.percent).toBe(20.0); // 10000/50000 = 20%
 
       // Check conversation history component
-      const history = result.components.find((c: any) => c.name === 'conversation_history');
+      const history = result.components.find((c: any) => c.name === 'conversationHistory');
       expect(history.tokens).toBe(18000);
       expect(history.percent).toBe(36.0); // 18000/50000 = 36%
     });
@@ -266,7 +266,7 @@ describe('Context Tools', () => {
 
       const result = await contextBreakdown.execute({}, mockContext);
 
-      const systemPrompt = result.components.find((c: any) => c.name === 'system_prompt');
+      const systemPrompt = result.components.find((c: any) => c.name === 'systemPrompt');
       expect(systemPrompt.percent).toBe(33.3);
     });
   });

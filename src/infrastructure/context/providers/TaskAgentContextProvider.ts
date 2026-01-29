@@ -1,11 +1,14 @@
 /**
  * Context provider for TaskAgent
+ *
+ * Provides context components for the unified ContextManager.
+ * Works with IHistoryManager interface for history management.
  */
 
 import type { IContextProvider, IContextComponent } from '../../../core/context/types.js';
 import type { Plan } from '../../../domain/entities/Task.js';
 import type { WorkingMemory } from '../../../capabilities/taskAgent/WorkingMemory.js';
-import type { HistoryManager } from '../../../capabilities/taskAgent/HistoryManager.js';
+import type { IHistoryManager, HistoryMessage } from '../../../domain/interfaces/IHistoryManager.js';
 import { getModelInfo } from '../../../domain/entities/Model.js';
 
 export interface TaskAgentContextProviderConfig {
@@ -13,7 +16,7 @@ export interface TaskAgentContextProviderConfig {
   instructions?: string;
   plan: Plan;
   memory: WorkingMemory;
-  historyManager: HistoryManager;
+  historyManager: IHistoryManager;
   currentInput?: string;
 }
 
@@ -74,11 +77,11 @@ export class TaskAgentContextProvider implements IContextProvider {
       },
     });
 
-    // Conversation history (can truncate)
-    const messages = this.config.historyManager.getRecentMessages();
+    // Conversation history (can truncate) - use async IHistoryManager
+    const messages = await this.config.historyManager.getRecentMessages();
     components.push({
       name: 'conversation_history',
-      content: messages.map((m) => ({
+      content: messages.map((m: HistoryMessage) => ({
         role: m.role,
         content: m.content,
       })),
@@ -181,14 +184,16 @@ ${plan.tasks
 
   /**
    * Extract tool outputs from conversation history
+   * Looks for tool results stored in message metadata
    */
-  private extractToolOutputs(messages: any[]): any[] {
-    const toolOutputs: any[] = [];
+  private extractToolOutputs(messages: HistoryMessage[]): Array<{ tool: string; output: unknown }> {
+    const toolOutputs: Array<{ tool: string; output: unknown }> = [];
 
     for (const msg of messages) {
-      // Look for tool call results in the message
-      if (msg.role === 'assistant' && msg.toolCalls) {
-        for (const toolCall of msg.toolCalls) {
+      // Look for tool call results in message metadata
+      if (msg.role === 'assistant' && msg.metadata?.toolCalls) {
+        const toolCalls = msg.metadata.toolCalls as Array<{ name: string; result?: unknown }>;
+        for (const toolCall of toolCalls) {
           if (toolCall.result) {
             toolOutputs.push({
               tool: toolCall.name,

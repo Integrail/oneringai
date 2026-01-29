@@ -1,23 +1,32 @@
 /**
- * Anthropic converter - Converts between our Responses API format and Anthropic Messages API
+ * Anthropic Converter - Converts between our Responses API format and Anthropic Messages API
+ *
+ * Extends BaseConverter for common patterns:
+ * - Input normalization
+ * - Tool conversion
+ * - Response building
+ * - Resource cleanup
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { BaseConverter } from '../base/BaseConverter.js';
 import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
 import { LLMResponse } from '../../../domain/entities/Response.js';
-import { InputItem, MessageRole, OutputItem } from '../../../domain/entities/Message.js';
+import { InputItem } from '../../../domain/entities/Message.js';
 import { Content, ContentType } from '../../../domain/entities/Content.js';
 import { Tool } from '../../../domain/entities/Tool.js';
-import { InvalidToolArgumentsError } from '../../../domain/errors/AIErrors.js';
-import { convertToolsToStandardFormat, transformForAnthropic } from '../shared/ToolConversionUtils.js';
+import { convertToolsToStandardFormat, transformForAnthropic, ProviderToolFormat } from '../shared/ToolConversionUtils.js';
+import { mapAnthropicStatus, ResponseStatus } from '../shared/ResponseBuilder.js';
 
-export class AnthropicConverter {
+export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreateParams, Anthropic.Message> {
+  readonly providerName = 'anthropic';
+
   /**
-   * Convert our format → Anthropic Messages API format
+   * Convert our format -> Anthropic Messages API format
    */
   convertRequest(options: TextGenerateOptions): Anthropic.MessageCreateParams {
     const messages = this.convertMessages(options.input);
-    const tools = this.convertTools(options.tools);
+    const tools = this.convertAnthropicTools(options.tools);
 
     const params: Anthropic.MessageCreateParams = {
       model: options.model,
@@ -44,7 +53,69 @@ export class AnthropicConverter {
   }
 
   /**
-   * Convert our InputItem[] → Anthropic messages
+   * Convert Anthropic response -> our LLMResponse format
+   */
+  convertResponse(response: Anthropic.Message): LLMResponse {
+    return this.buildResponse({
+      rawId: response.id,
+      model: response.model,
+      status: this.mapProviderStatus(response.stop_reason),
+      content: this.convertProviderContent(response.content),
+      messageId: response.id,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
+    });
+  }
+
+  // ==========================================================================
+  // BaseConverter Abstract Method Implementations
+  // ==========================================================================
+
+  /**
+   * Transform standardized tool to Anthropic format
+   */
+  protected transformTool(tool: ProviderToolFormat): Anthropic.Tool {
+    return {
+      ...transformForAnthropic(tool),
+      input_schema: {
+        type: 'object',
+        ...tool.parameters,
+      } as Anthropic.Tool.InputSchema,
+    };
+  }
+
+  /**
+   * Convert Anthropic content blocks to our Content[]
+   */
+  protected convertProviderContent(blocks: unknown[]): Content[] {
+    const content: Content[] = [];
+
+    for (const block of blocks as Anthropic.ContentBlock[]) {
+      if (block.type === 'text') {
+        content.push(this.createText(block.text));
+      } else if (block.type === 'tool_use') {
+        content.push(this.createToolUse(block.id, block.name, block.input as Record<string, unknown>));
+      }
+    }
+
+    return content;
+  }
+
+  /**
+   * Map Anthropic stop_reason to ResponseStatus
+   */
+  protected mapProviderStatus(status: unknown): ResponseStatus {
+    return mapAnthropicStatus(status as string | null);
+  }
+
+  // ==========================================================================
+  // Anthropic-Specific Conversion Methods
+  // ==========================================================================
+
+  /**
+   * Convert our InputItem[] -> Anthropic messages
    */
   private convertMessages(input: string | InputItem[]): Anthropic.MessageParam[] {
     if (typeof input === 'string') {
@@ -55,8 +126,8 @@ export class AnthropicConverter {
 
     for (const item of input) {
       if (item.type === 'message') {
-        // Map roles: 'developer' → 'user' (Anthropic doesn't have developer role)
-        const role = item.role === MessageRole.DEVELOPER ? 'user' : item.role;
+        // Map roles: 'developer' -> 'user' (Anthropic doesn't have developer role)
+        const role = this.mapRole(item.role);
 
         // Convert content
         const content = this.convertContent(item.content);
@@ -72,10 +143,10 @@ export class AnthropicConverter {
   }
 
   /**
-   * Convert our Content[] → Anthropic content blocks
+   * Convert our Content[] -> Anthropic content blocks
    */
   private convertContent(content: Content[]): Anthropic.MessageParam['content'] {
-    const blocks: any[] = [];
+    const blocks: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam | Anthropic.ToolUseBlockParam | Anthropic.ToolResultBlockParam> = [];
 
     for (const c of content) {
       switch (c.type) {
@@ -83,200 +154,122 @@ export class AnthropicConverter {
         case ContentType.OUTPUT_TEXT:
           blocks.push({
             type: 'text',
-            text: c.text,
+            text: (c as { text: string }).text,
           });
           break;
 
-        case ContentType.INPUT_IMAGE_URL:
-          // Anthropic supports image URLs in Claude 3.5+
-          // Try URL first, will fall back to base64 if needed
-          if (c.image_url.url.startsWith('data:')) {
-            // Parse data URI
-            const matches = c.image_url.url.match(/^data:image\/(\w+);base64,(.+)$/);
-            if (matches) {
-              const mediaType = `image/${matches[1]}` as Anthropic.ImageBlockParam['source']['media_type'];
-              const data = matches[2];
-              blocks.push({
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: mediaType,
-                  data,
-                },
-              });
-            }
-          } else {
-            // Use URL (Claude 3.5+ supports this)
-            blocks.push({
-              type: 'image',
-              source: {
-                type: 'url',
-                url: c.image_url.url,
-              },
-            });
+        case ContentType.INPUT_IMAGE_URL: {
+          const imgContent = c as { image_url: { url: string } };
+          const block = this.convertImageToAnthropicBlock(imgContent.image_url.url);
+          if (block) {
+            blocks.push(block);
           }
           break;
+        }
 
-        case ContentType.TOOL_RESULT:
-          // Anthropic requires non-empty content when is_error is true
-          // When there's an error with empty content, use the error message as content
-          const isError = !!c.error;
-          let toolResultContent: string;
-
-          if (typeof c.content === 'string') {
-            // For error cases with empty content, use the error message
-            toolResultContent = c.content || (isError ? c.error! : '');
-          } else {
-            toolResultContent = JSON.stringify(c.content);
-          }
-
-          // Anthropic API rejects empty content when is_error is true
-          if (isError && !toolResultContent) {
-            toolResultContent = c.error || 'Tool execution failed';
-          }
-
-          blocks.push({
-            type: 'tool_result',
-            tool_use_id: c.tool_use_id,
-            content: toolResultContent,
-            is_error: isError,
-          });
+        case ContentType.TOOL_RESULT: {
+          const resultContent = c as {
+            tool_use_id: string;
+            content: string | unknown;
+            error?: string;
+          };
+          blocks.push(this.convertToolResultToAnthropicBlock(resultContent));
           break;
+        }
 
-        case ContentType.TOOL_USE:
-          // This appears in assistant messages
-          // Safe JSON parse with error handling
-          let parsedInput: unknown;
-          try {
-            parsedInput = JSON.parse(c.arguments);
-          } catch (parseError) {
-            throw new InvalidToolArgumentsError(
-              c.name,
-              c.arguments,
-              parseError instanceof Error ? parseError : new Error(String(parseError))
-            );
-          }
+        case ContentType.TOOL_USE: {
+          const toolContent = c as { id: string; name: string; arguments: string };
+          const parsedInput = this.parseToolArguments(toolContent.name, toolContent.arguments);
           blocks.push({
             type: 'tool_use',
-            id: c.id,
-            name: c.name,
-            input: parsedInput,
+            id: toolContent.id,
+            name: toolContent.name,
+            input: parsedInput as Record<string, unknown>,
           });
           break;
+        }
       }
     }
 
     // If only one text block, return as string
     if (blocks.length === 1 && blocks[0]?.type === 'text') {
-      return (blocks[0] as Anthropic.TextBlock).text;
+      return (blocks[0] as Anthropic.TextBlockParam).text;
     }
 
     return blocks;
   }
 
   /**
-   * Convert our Tool[] → Anthropic tools
+   * Convert image URL to Anthropic image block
    */
-  private convertTools(tools?: Tool[]): Anthropic.Tool[] | undefined {
-    if (!tools || tools.length === 0) {
-      return undefined;
-    }
+  private convertImageToAnthropicBlock(url: string): Anthropic.ImageBlockParam | null {
+    const parsed = this.parseDataUri(url);
 
-    // Use shared conversion utilities (DRY)
-    const standardTools = convertToolsToStandardFormat(tools);
-    return standardTools.map(tool => ({
-      ...transformForAnthropic(tool),
-      input_schema: {
-        type: 'object',
-        ...tool.parameters,
-      } as any,
-    }));
+    if (parsed) {
+      // Base64 data URI
+      return {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: parsed.mediaType as Anthropic.ImageBlockParam['source']['media_type'],
+          data: parsed.data,
+        },
+      };
+    } else {
+      // URL (Claude 3.5+ supports this)
+      // Note: Anthropic SDK types may not include 'url' source type yet
+      return {
+        type: 'image',
+        source: {
+          type: 'url',
+          url,
+        },
+      } as unknown as Anthropic.ImageBlockParam;
+    }
   }
 
   /**
-   * Convert Anthropic response → our LLMResponse format
+   * Convert tool result to Anthropic block
+   * Anthropic requires non-empty content when is_error is true
    */
-  convertResponse(response: Anthropic.Message): LLMResponse {
-    const output: OutputItem[] = [
-      {
-        type: 'message',
-        id: response.id,
-        role: MessageRole.ASSISTANT,
-        content: this.convertAnthropicContent(response.content),
-      },
-    ];
+  private convertToolResultToAnthropicBlock(resultContent: {
+    tool_use_id: string;
+    content: string | unknown;
+    error?: string;
+  }): Anthropic.ToolResultBlockParam {
+    const isError = !!resultContent.error;
+    let toolResultContent: string;
+
+    if (typeof resultContent.content === 'string') {
+      // For error cases with empty content, use the error message
+      toolResultContent = resultContent.content || (isError ? resultContent.error! : '');
+    } else {
+      toolResultContent = JSON.stringify(resultContent.content);
+    }
+
+    // Anthropic API rejects empty content when is_error is true
+    if (isError && !toolResultContent) {
+      toolResultContent = resultContent.error || 'Tool execution failed';
+    }
 
     return {
-      id: `resp_anthropic_${response.id}`,
-      object: 'response',
-      created_at: Math.floor(Date.now() / 1000),
-      status: this.mapStopReason(response.stop_reason),
-      model: response.model,
-      output,
-      output_text: this.extractOutputText(response.content),
-      usage: {
-        input_tokens: response.usage.input_tokens,
-        output_tokens: response.usage.output_tokens,
-        total_tokens: response.usage.input_tokens + response.usage.output_tokens,
-      },
+      type: 'tool_result',
+      tool_use_id: resultContent.tool_use_id,
+      content: toolResultContent,
+      is_error: isError,
     };
   }
 
   /**
-   * Convert Anthropic content blocks → our Content[]
+   * Convert our Tool[] -> Anthropic tools
+   * Uses shared conversion utilities (DRY)
    */
-  private convertAnthropicContent(
-    blocks: Array<Anthropic.ContentBlock>
-  ): Content[] {
-    const content: Content[] = [];
-
-    for (const block of blocks) {
-      if (block.type === 'text') {
-        content.push({
-          type: ContentType.OUTPUT_TEXT,
-          text: block.text,
-          annotations: [],
-        });
-      } else if (block.type === 'tool_use') {
-        content.push({
-          type: ContentType.TOOL_USE,
-          id: block.id,
-          name: block.name,
-          arguments: JSON.stringify(block.input), // Convert object to JSON string
-        });
-      }
+  private convertAnthropicTools(tools?: Tool[]): Anthropic.Tool[] | undefined {
+    if (!tools || tools.length === 0) {
+      return undefined;
     }
 
-    return content;
-  }
-
-  /**
-   * Extract output text from Anthropic content blocks
-   */
-  private extractOutputText(blocks: Array<Anthropic.ContentBlock>): string {
-    const textBlocks = blocks.filter(
-      (b): b is Anthropic.TextBlock => b.type === 'text'
-    );
-    return textBlocks.map((b) => b.text).join('\n');
-  }
-
-  /**
-   * Map Anthropic stop_reason → our status
-   */
-  private mapStopReason(
-    stopReason: string | null
-  ): 'completed' | 'incomplete' | 'failed' {
-    switch (stopReason) {
-      case 'end_turn':
-        return 'completed';
-      case 'tool_use':
-        return 'completed'; // Tool use is normal completion
-      case 'max_tokens':
-        return 'incomplete';
-      case 'stop_sequence':
-        return 'completed';
-      default:
-        return 'incomplete';
-    }
+    const standardTools = convertToolsToStandardFormat(tools);
+    return standardTools.map((tool) => this.transformTool(tool));
   }
 }

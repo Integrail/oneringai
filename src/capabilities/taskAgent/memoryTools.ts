@@ -201,7 +201,16 @@ export function createMemoryTools(): ToolFunction[] {
           throw new ToolExecutionError('memory_list', 'Memory tools require TaskAgent context');
         }
 
-        return await context.memory.list();
+        const entries = await context.memory.list();
+        return {
+          entries: entries.map((e: { key: string; description: string; effectivePriority?: import('../../domain/entities/Memory.js').MemoryPriority; pinned?: boolean }) => ({
+            key: e.key,
+            description: e.description,
+            priority: e.effectivePriority,
+            pinned: e.pinned,
+          })),
+          count: entries.length,
+        };
       },
       idempotency: { safe: true },
       output: { expectedSize: 'small' },

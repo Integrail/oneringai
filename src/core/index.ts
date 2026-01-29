@@ -47,7 +47,7 @@ export type { SpeechToTextConfig } from './SpeechToText.js';
 // Image capabilities
 export { createImageProvider } from './createImageProvider.js';
 
-// Tool management
+// Tool management (unified - handles registration, execution, and circuit breakers)
 export { ToolManager } from './ToolManager.js';
 export type {
   ToolOptions,
@@ -59,6 +59,8 @@ export type {
   SerializedToolState,
   ToolManagerEvent,
 } from './ToolManager.js';
+// Note: CircuitBreakerConfig, CircuitState are re-exported from ToolManager but
+// canonically exported from infrastructure/resilience/index.js
 
 // Session management
 export { SessionManager, createEmptyHistory, createEmptyMemory, addHistoryEntry } from './SessionManager.js';

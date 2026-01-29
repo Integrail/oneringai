@@ -1,46 +1,39 @@
 /**
- * Anthropic stream converter - converts Anthropic SSE events to our unified StreamEvent format
+ * Anthropic Stream Converter - Converts Anthropic SSE events to our unified StreamEvent format
+ *
+ * Extends BaseStreamConverter for common patterns:
+ * - State management (response ID, sequence numbers)
+ * - Tool call buffering
+ * - Usage tracking
+ * - Resource cleanup
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { StreamEvent, StreamEventType } from '../../../domain/entities/StreamEvent.js';
+import { StreamEvent } from '../../../domain/entities/StreamEvent.js';
+import { BaseStreamConverter } from '../base/BaseStreamConverter.js';
+
+/**
+ * Block info tracked during streaming
+ */
+interface ContentBlockInfo {
+  type: string;
+  id?: string;
+  name?: string;
+}
 
 /**
  * Converts Anthropic streaming events to our unified StreamEvent format
  */
-export class AnthropicStreamConverter {
-  private responseId: string = '';
-  private model: string = '';
-  private sequenceNumber: number = 0;
-  private contentBlockIndex: Map<number, { type: string; id?: string; name?: string; accumulatedArgs?: string }> = new Map();
-  private usage: { input_tokens: number; output_tokens: number } = { input_tokens: 0, output_tokens: 0 };
+export class AnthropicStreamConverter extends BaseStreamConverter<Anthropic.MessageStreamEvent> {
+  readonly providerName = 'anthropic';
+
+  /** Map of content block index to block info */
+  private contentBlockIndex: Map<number, ContentBlockInfo> = new Map();
 
   /**
-   * Convert Anthropic stream to our StreamEvent format
+   * Convert a single Anthropic event to our StreamEvent(s)
    */
-  async *convertStream(
-    anthropicStream: AsyncIterable<Anthropic.MessageStreamEvent>,
-    model: string
-  ): AsyncIterableIterator<StreamEvent> {
-    this.model = model;
-    this.sequenceNumber = 0;
-    this.contentBlockIndex.clear();
-    this.usage = { input_tokens: 0, output_tokens: 0 };
-
-    for await (const event of anthropicStream) {
-      const converted = this.convertEvent(event);
-      if (converted) {
-        for (const evt of converted) {
-          yield evt;
-        }
-      }
-    }
-  }
-
-  /**
-   * Convert single Anthropic event to our event(s)
-   */
-  private convertEvent(event: Anthropic.MessageStreamEvent): StreamEvent[] {
+  protected convertEvent(event: Anthropic.MessageStreamEvent): StreamEvent[] {
     const eventType = event.type;
 
     switch (eventType) {
@@ -69,6 +62,18 @@ export class AnthropicStreamConverter {
   }
 
   /**
+   * Clear all internal state
+   */
+  override clear(): void {
+    super.clear();
+    this.contentBlockIndex.clear();
+  }
+
+  // ==========================================================================
+  // Anthropic-Specific Event Handlers
+  // ==========================================================================
+
+  /**
    * Handle message_start event
    */
   private handleMessageStart(event: Anthropic.MessageStartEvent): StreamEvent[] {
@@ -76,17 +81,10 @@ export class AnthropicStreamConverter {
 
     // Capture input_tokens from message_start (only place it's available)
     if (event.message.usage) {
-      this.usage.input_tokens = event.message.usage.input_tokens || 0;
+      this.updateUsage(event.message.usage.input_tokens, undefined);
     }
 
-    return [
-      {
-        type: StreamEventType.RESPONSE_CREATED,
-        response_id: this.responseId,
-        model: this.model,
-        created_at: Date.now(),
-      },
-    ];
+    return [this.emitResponseCreated(this.responseId)];
   }
 
   /**
@@ -105,18 +103,9 @@ export class AnthropicStreamConverter {
         type: 'tool_use',
         id: block.id,
         name: block.name,
-        accumulatedArgs: '', // Initialize args accumulator
       });
 
-      return [
-        {
-          type: StreamEventType.TOOL_CALL_START,
-          response_id: this.responseId,
-          item_id: `msg_${this.responseId}`,
-          tool_call_id: block.id,
-          tool_name: block.name,
-        },
-      ];
+      return [this.emitToolCallStart(block.id, block.name, `msg_${this.responseId}`)];
     }
 
     return [];
@@ -134,34 +123,14 @@ export class AnthropicStreamConverter {
 
     if (delta.type === 'text_delta') {
       return [
-        {
-          type: StreamEventType.OUTPUT_TEXT_DELTA,
-          response_id: this.responseId,
-          item_id: `msg_${this.responseId}`,
-          output_index: 0,
-          content_index: index,
-          delta: delta.text,
-          sequence_number: this.sequenceNumber++,
-        },
+        this.emitTextDelta(delta.text, {
+          itemId: `msg_${this.responseId}`,
+          contentIndex: index,
+        }),
       ];
     } else if (delta.type === 'input_json_delta') {
-      // Accumulate tool arguments
-      if (blockInfo.accumulatedArgs !== undefined) {
-        blockInfo.accumulatedArgs += delta.partial_json;
-      }
-
-      // Tool arguments delta
-      return [
-        {
-          type: StreamEventType.TOOL_CALL_ARGUMENTS_DELTA,
-          response_id: this.responseId,
-          item_id: `msg_${this.responseId}`,
-          tool_call_id: blockInfo.id || '',
-          tool_name: blockInfo.name || '',
-          delta: delta.partial_json,
-          sequence_number: this.sequenceNumber++,
-        },
-      ];
+      const toolCallId = blockInfo.id || '';
+      return [this.emitToolCallArgsDelta(toolCallId, delta.partial_json, blockInfo.name)];
     }
 
     return [];
@@ -178,15 +147,7 @@ export class AnthropicStreamConverter {
 
     // If this was a tool use block, emit arguments done
     if (blockInfo.type === 'tool_use') {
-      return [
-        {
-          type: StreamEventType.TOOL_CALL_ARGUMENTS_DONE,
-          response_id: this.responseId,
-          tool_call_id: blockInfo.id || '',
-          tool_name: blockInfo.name || '',
-          arguments: blockInfo.accumulatedArgs || '{}', // Use accumulated args
-        },
-      ];
+      return [this.emitToolCallArgsDone(blockInfo.id || '', blockInfo.name)];
     }
 
     return [];
@@ -199,7 +160,7 @@ export class AnthropicStreamConverter {
     // Extract usage info (Anthropic sends output_tokens in message_delta)
     // Note: input_tokens is only available in message_start, not in delta
     if (event.usage) {
-      this.usage.output_tokens = event.usage.output_tokens || 0;
+      this.updateUsage(undefined, event.usage.output_tokens);
     }
 
     // No events to emit - we'll include usage in message_stop
@@ -210,38 +171,6 @@ export class AnthropicStreamConverter {
    * Handle message_stop event (final event)
    */
   private handleMessageStop(): StreamEvent[] {
-    return [
-      {
-        type: StreamEventType.RESPONSE_COMPLETE,
-        response_id: this.responseId,
-        status: 'completed',
-        usage: {
-          input_tokens: this.usage.input_tokens,
-          output_tokens: this.usage.output_tokens,
-          total_tokens: this.usage.input_tokens + this.usage.output_tokens,
-        },
-        iterations: 1,
-      },
-    ];
-  }
-
-  /**
-   * Clear all internal state
-   * Should be called after each stream completes to prevent memory leaks
-   */
-  clear(): void {
-    this.responseId = '';
-    this.model = '';
-    this.sequenceNumber = 0;
-    this.contentBlockIndex.clear();
-    this.usage = { input_tokens: 0, output_tokens: 0 };
-  }
-
-  /**
-   * Reset converter state for a new stream
-   * Alias for clear()
-   */
-  reset(): void {
-    this.clear();
+    return [this.emitResponseComplete('completed')];
   }
 }

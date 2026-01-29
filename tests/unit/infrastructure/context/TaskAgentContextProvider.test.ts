@@ -150,12 +150,14 @@ describe('TaskAgentContextProvider', () => {
         {
           role: MessageRole.ASSISTANT,
           content: 'Response',
-          toolCalls: [
-            {
-              name: 'get_weather',
-              result: { temp: 72, condition: 'sunny' },
-            },
-          ],
+          metadata: {
+            toolCalls: [
+              {
+                name: 'get_weather',
+                result: { temp: 72, condition: 'sunny' },
+              },
+            ],
+          },
         },
       ]);
 
@@ -240,10 +242,12 @@ describe('TaskAgentContextProvider', () => {
         {
           role: MessageRole.ASSISTANT,
           content: 'Let me check',
-          toolCalls: [
-            { name: 'tool1', result: { data: 'result1' } },
-            { name: 'tool2', result: { data: 'result2' } },
-          ],
+          metadata: {
+            toolCalls: [
+              { name: 'tool1', result: { data: 'result1' } },
+              { name: 'tool2', result: { data: 'result2' } },
+            ],
+          },
         },
       ]);
 
@@ -261,10 +265,13 @@ describe('TaskAgentContextProvider', () => {
       mockHistoryManager.getRecentMessages = vi.fn().mockReturnValue([
         {
           role: MessageRole.ASSISTANT,
-          toolCalls: [
-            { name: 'tool1', result: { data: 'result1' } },
-            { name: 'tool2' }, // No result
-          ],
+          content: 'Let me check',
+          metadata: {
+            toolCalls: [
+              { name: 'tool1', result: { data: 'result1' } },
+              { name: 'tool2' }, // No result
+            ],
+          },
         },
       ]);
 

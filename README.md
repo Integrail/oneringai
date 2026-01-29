@@ -723,6 +723,8 @@ MIT License - See [LICENSE](./LICENSE) file.
 ---
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-28
+**Last Updated:** 2026-01-29
 
 For detailed documentation on all features, see the **[Complete User Guide](./USER_GUIDE.md)**.
+
+For internal development and architecture improvement plans, see **[IMPROVEMENT_PLAN.md](./IMPROVEMENT_PLAN.md)**.

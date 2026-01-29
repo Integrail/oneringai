@@ -1,14 +1,13 @@
 'use strict';
 
-var crypto = require('crypto');
+var crypto2 = require('crypto');
 var jose = require('jose');
 var fs11 = require('fs');
-var EventEmitter = require('eventemitter3');
+var eventemitter3 = require('eventemitter3');
 var path3 = require('path');
 var OpenAI2 = require('openai');
 var Anthropic = require('@anthropic-ai/sdk');
 var genai = require('@google/genai');
-var events = require('events');
 var os = require('os');
 require('@modelcontextprotocol/sdk/client/index.js');
 require('@modelcontextprotocol/sdk/client/stdio.js');
@@ -40,9 +39,8 @@ function _interopNamespace(e) {
   return Object.freeze(n);
 }
 
-var crypto__namespace = /*#__PURE__*/_interopNamespace(crypto);
+var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
 var fs11__namespace = /*#__PURE__*/_interopNamespace(fs11);
-var EventEmitter__default = /*#__PURE__*/_interopDefault(EventEmitter);
 var path3__namespace = /*#__PURE__*/_interopNamespace(path3);
 var OpenAI2__default = /*#__PURE__*/_interopDefault(OpenAI2);
 var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
@@ -67,10 +65,10 @@ var SALT_LENGTH = 64;
 var TAG_LENGTH = 16;
 var KEY_LENGTH = 32;
 function encrypt(text, password) {
-  const salt = crypto__namespace.randomBytes(SALT_LENGTH);
-  const key = crypto__namespace.pbkdf2Sync(password, salt, 1e5, KEY_LENGTH, "sha512");
-  const iv = crypto__namespace.randomBytes(IV_LENGTH);
-  const cipher = crypto__namespace.createCipheriv(ALGORITHM, key, iv);
+  const salt = crypto2__namespace.randomBytes(SALT_LENGTH);
+  const key = crypto2__namespace.pbkdf2Sync(password, salt, 1e5, KEY_LENGTH, "sha512");
+  const iv = crypto2__namespace.randomBytes(IV_LENGTH);
+  const cipher = crypto2__namespace.createCipheriv(ALGORITHM, key, iv);
   let encrypted = cipher.update(text, "utf8", "hex");
   encrypted += cipher.final("hex");
   const tag = cipher.getAuthTag();
@@ -83,8 +81,8 @@ function decrypt(encryptedData, password) {
   const iv = buffer.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH);
   const tag = buffer.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
   const encrypted = buffer.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH);
-  const key = crypto__namespace.pbkdf2Sync(password, salt, 1e5, KEY_LENGTH, "sha512");
-  const decipher = crypto__namespace.createDecipheriv(ALGORITHM, key, iv);
+  const key = crypto2__namespace.pbkdf2Sync(password, salt, 1e5, KEY_LENGTH, "sha512");
+  const decipher = crypto2__namespace.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(tag);
   let decrypted = decipher.update(encrypted);
   decrypted = Buffer.concat([decrypted, decipher.final()]);
@@ -95,7 +93,7 @@ function getEncryptionKey() {
     return process.env.OAUTH_ENCRYPTION_KEY;
   }
   if (!global.__oauthEncryptionKey) {
-    global.__oauthEncryptionKey = crypto__namespace.randomBytes(32).toString("hex");
+    global.__oauthEncryptionKey = crypto2__namespace.randomBytes(32).toString("hex");
     console.warn(
       "WARNING: Using auto-generated encryption key. Tokens will not persist across restarts. Set OAUTH_ENCRYPTION_KEY environment variable for production!"
     );
@@ -103,7 +101,7 @@ function getEncryptionKey() {
   return global.__oauthEncryptionKey;
 }
 function generateEncryptionKey() {
-  return crypto__namespace.randomBytes(32).toString("hex");
+  return crypto2__namespace.randomBytes(32).toString("hex");
 }
 
 // src/connectors/oauth/infrastructure/storage/MemoryStorage.ts
@@ -266,8 +264,8 @@ var TokenStore = class {
   }
 };
 function generatePKCE() {
-  const codeVerifier = base64URLEncode(crypto__namespace.randomBytes(32));
-  const hash = crypto__namespace.createHash("sha256").update(codeVerifier).digest();
+  const codeVerifier = base64URLEncode(crypto2__namespace.randomBytes(32));
+  const hash = crypto2__namespace.createHash("sha256").update(codeVerifier).digest();
   const codeChallenge = base64URLEncode(hash);
   return {
     codeVerifier,
@@ -278,7 +276,7 @@ function base64URLEncode(buffer) {
   return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
 }
 function generateState() {
-  return crypto__namespace.randomBytes(16).toString("hex");
+  return crypto2__namespace.randomBytes(16).toString("hex");
 }
 
 // src/connectors/oauth/flows/AuthCodePKCE.ts
@@ -829,7 +827,7 @@ var CircuitOpenError = class extends Error {
     this.name = "CircuitOpenError";
   }
 };
-var CircuitBreaker = class extends EventEmitter__default.default {
+var CircuitBreaker = class extends eventemitter3.EventEmitter {
   constructor(name, config = {}) {
     super();
     this.name = name;
@@ -1972,27 +1970,6 @@ var Connector = class _Connector {
   }
 };
 
-// src/core/Vendor.ts
-var Vendor = {
-  OpenAI: "openai",
-  Anthropic: "anthropic",
-  Google: "google",
-  GoogleVertex: "google-vertex",
-  Groq: "groq",
-  Together: "together",
-  Perplexity: "perplexity",
-  Grok: "grok",
-  DeepSeek: "deepseek",
-  Mistral: "mistral",
-  Ollama: "ollama",
-  Custom: "custom"
-  // OpenAI-compatible endpoint
-};
-var VENDORS = Object.values(Vendor);
-function isVendor(value) {
-  return VENDORS.includes(value);
-}
-
 // src/domain/errors/AIErrors.ts
 var AIError = class _AIError extends Error {
   constructor(message, code, statusCode, originalError) {
@@ -2198,6 +2175,1927 @@ var ParallelTasksError = class _ParallelTasksError extends AIError {
     return this.failures.map((f) => f.taskId);
   }
 };
+
+// src/core/ToolManager.ts
+var ToolManager = class extends eventemitter3.EventEmitter {
+  registry = /* @__PURE__ */ new Map();
+  namespaceIndex = /* @__PURE__ */ new Map();
+  circuitBreakers = /* @__PURE__ */ new Map();
+  toolLogger;
+  /** Optional tool context for execution (set by agent before runs) */
+  _toolContext;
+  constructor() {
+    super();
+    this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
+    this.toolLogger = logger.child({ component: "ToolManager" });
+  }
+  /**
+   * Set tool context for execution (called by agent before runs)
+   */
+  setToolContext(context) {
+    this._toolContext = context;
+  }
+  /**
+   * Get current tool context
+   */
+  getToolContext() {
+    return this._toolContext;
+  }
+  // ==========================================================================
+  // Registration
+  // ==========================================================================
+  /**
+   * Register a tool with optional configuration
+   */
+  register(tool, options = {}) {
+    const name = this.getToolName(tool);
+    if (this.registry.has(name)) {
+      const existing = this.registry.get(name);
+      existing.tool = tool;
+      if (options.enabled !== void 0) existing.enabled = options.enabled;
+      if (options.namespace !== void 0) {
+        this.moveToNamespace(name, existing.namespace, options.namespace);
+        existing.namespace = options.namespace;
+      }
+      if (options.priority !== void 0) existing.priority = options.priority;
+      if (options.conditions !== void 0) existing.conditions = options.conditions;
+      if (options.permission !== void 0) existing.permission = options.permission;
+      return;
+    }
+    const namespace = options.namespace ?? "default";
+    const effectivePermission = options.permission ?? tool.permission;
+    const registration = {
+      tool,
+      enabled: options.enabled ?? true,
+      namespace,
+      priority: options.priority ?? 0,
+      conditions: options.conditions ?? [],
+      metadata: {
+        registeredAt: /* @__PURE__ */ new Date(),
+        usageCount: 0,
+        totalExecutionMs: 0,
+        avgExecutionMs: 0,
+        successCount: 0,
+        failureCount: 0
+      },
+      permission: effectivePermission
+    };
+    this.registry.set(name, registration);
+    this.addToNamespace(name, namespace);
+    this.emit("tool:registered", { name, namespace, enabled: registration.enabled });
+  }
+  /**
+   * Register multiple tools at once
+   */
+  registerMany(tools, options = {}) {
+    for (const tool of tools) {
+      this.register(tool, options);
+    }
+  }
+  /**
+   * Unregister a tool by name
+   */
+  unregister(name) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    this.removeFromNamespace(name, registration.namespace);
+    this.registry.delete(name);
+    this.circuitBreakers.delete(name);
+    this.emit("tool:unregistered", { name });
+    return true;
+  }
+  /**
+   * Clear all tools
+   */
+  clear() {
+    this.registry.clear();
+    this.namespaceIndex.clear();
+    this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
+    this.circuitBreakers.clear();
+  }
+  // ==========================================================================
+  // Enable/Disable
+  // ==========================================================================
+  /**
+   * Enable a tool by name
+   */
+  enable(name) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    if (!registration.enabled) {
+      registration.enabled = true;
+      this.emit("tool:enabled", { name });
+    }
+    return true;
+  }
+  /**
+   * Disable a tool by name (keeps it registered but inactive)
+   */
+  disable(name) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    if (registration.enabled) {
+      registration.enabled = false;
+      this.emit("tool:disabled", { name });
+    }
+    return true;
+  }
+  /**
+   * Toggle a tool's enabled state
+   */
+  toggle(name) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    registration.enabled = !registration.enabled;
+    this.emit(registration.enabled ? "tool:enabled" : "tool:disabled", { name });
+    return registration.enabled;
+  }
+  /**
+   * Check if a tool is enabled
+   */
+  isEnabled(name) {
+    const registration = this.registry.get(name);
+    return registration?.enabled ?? false;
+  }
+  /**
+   * Set enabled state for multiple tools
+   */
+  setEnabled(names, enabled) {
+    for (const name of names) {
+      if (enabled) {
+        this.enable(name);
+      } else {
+        this.disable(name);
+      }
+    }
+  }
+  // ==========================================================================
+  // Namespaces
+  // ==========================================================================
+  /**
+   * Set the namespace for a tool
+   */
+  setNamespace(toolName, namespace) {
+    const registration = this.registry.get(toolName);
+    if (!registration) return false;
+    const oldNamespace = registration.namespace;
+    if (oldNamespace === namespace) return true;
+    this.moveToNamespace(toolName, oldNamespace, namespace);
+    registration.namespace = namespace;
+    return true;
+  }
+  /**
+   * Enable all tools in a namespace
+   */
+  enableNamespace(namespace) {
+    const tools = this.namespaceIndex.get(namespace);
+    if (!tools) return;
+    for (const name of tools) {
+      this.enable(name);
+    }
+    this.emit("namespace:enabled", { namespace });
+  }
+  /**
+   * Disable all tools in a namespace
+   */
+  disableNamespace(namespace) {
+    const tools = this.namespaceIndex.get(namespace);
+    if (!tools) return;
+    for (const name of tools) {
+      this.disable(name);
+    }
+    this.emit("namespace:disabled", { namespace });
+  }
+  /**
+   * Get all namespace names
+   */
+  getNamespaces() {
+    return Array.from(this.namespaceIndex.keys());
+  }
+  /**
+   * Create a namespace with tools
+   */
+  createNamespace(namespace, tools, options = {}) {
+    for (const tool of tools) {
+      this.register(tool, { ...options, namespace });
+    }
+  }
+  // ==========================================================================
+  // Priority
+  // ==========================================================================
+  /**
+   * Set priority for a tool
+   */
+  setPriority(name, priority) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    registration.priority = priority;
+    return true;
+  }
+  /**
+   * Get priority for a tool
+   */
+  getPriority(name) {
+    return this.registry.get(name)?.priority;
+  }
+  /**
+   * Get permission config for a tool
+   */
+  getPermission(name) {
+    return this.registry.get(name)?.permission;
+  }
+  /**
+   * Set permission config for a tool
+   */
+  setPermission(name, permission) {
+    const registration = this.registry.get(name);
+    if (!registration) return false;
+    registration.permission = permission;
+    return true;
+  }
+  // ==========================================================================
+  // Query
+  // ==========================================================================
+  /**
+   * Get a tool by name
+   */
+  get(name) {
+    return this.registry.get(name)?.tool;
+  }
+  /**
+   * Check if a tool exists
+   */
+  has(name) {
+    return this.registry.has(name);
+  }
+  /**
+   * Get all enabled tools (sorted by priority)
+   */
+  getEnabled() {
+    return this.getSortedByPriority().filter((reg) => reg.enabled).map((reg) => reg.tool);
+  }
+  /**
+   * Get all tools (enabled and disabled)
+   */
+  getAll() {
+    return Array.from(this.registry.values()).map((reg) => reg.tool);
+  }
+  /**
+   * Get tools by namespace
+   */
+  getByNamespace(namespace) {
+    const toolNames = this.namespaceIndex.get(namespace);
+    if (!toolNames) return [];
+    return Array.from(toolNames).map((name) => this.registry.get(name)).filter((reg) => reg.enabled).sort((a, b) => b.priority - a.priority).map((reg) => reg.tool);
+  }
+  /**
+   * Get tool registration info
+   */
+  getRegistration(name) {
+    return this.registry.get(name);
+  }
+  /**
+   * List all tool names
+   */
+  list() {
+    return Array.from(this.registry.keys());
+  }
+  /**
+   * List enabled tool names
+   */
+  listEnabled() {
+    return Array.from(this.registry.entries()).filter(([_, reg]) => reg.enabled).map(([name]) => name);
+  }
+  /**
+   * Get count of registered tools
+   */
+  get size() {
+    return this.registry.size;
+  }
+  // ==========================================================================
+  // Selection
+  // ==========================================================================
+  /**
+   * Select tools based on context (uses conditions and smart filtering)
+   */
+  selectForContext(context) {
+    const sorted = this.getSortedByPriority();
+    const selected = [];
+    for (const reg of sorted) {
+      if (!reg.enabled) continue;
+      if (reg.conditions.length > 0) {
+        const allConditionsMet = reg.conditions.every((cond) => cond.predicate(context));
+        if (!allConditionsMet) continue;
+      }
+      if (context.recentTools?.includes(this.getToolName(reg.tool))) {
+        continue;
+      }
+      selected.push(reg.tool);
+    }
+    if (context.tokenBudget !== void 0) {
+      return this.filterByTokenBudget(selected, context.tokenBudget);
+    }
+    return selected;
+  }
+  /**
+   * Select tools by matching capability description
+   */
+  selectByCapability(description) {
+    const lowerDesc = description.toLowerCase();
+    const keywords = lowerDesc.split(/\s+/);
+    return this.getEnabled().filter((tool) => {
+      const toolDesc = (tool.definition.function.description ?? "").toLowerCase();
+      const toolName = tool.definition.function.name.toLowerCase();
+      return keywords.some((kw) => toolDesc.includes(kw) || toolName.includes(kw));
+    });
+  }
+  /**
+   * Filter tools to fit within a token budget
+   */
+  selectWithinBudget(budget) {
+    return this.filterByTokenBudget(this.getEnabled(), budget);
+  }
+  // ==========================================================================
+  // Execution Tracking
+  // ==========================================================================
+  /**
+   * Record tool execution (called by agent/loop)
+   */
+  recordExecution(name, executionMs, success) {
+    const registration = this.registry.get(name);
+    if (!registration) return;
+    const meta = registration.metadata;
+    meta.usageCount++;
+    meta.lastUsed = /* @__PURE__ */ new Date();
+    meta.totalExecutionMs += executionMs;
+    meta.avgExecutionMs = meta.totalExecutionMs / meta.usageCount;
+    if (success) {
+      meta.successCount++;
+    } else {
+      meta.failureCount++;
+    }
+    this.emit("tool:executed", {
+      name,
+      executionMs,
+      success,
+      totalUsage: meta.usageCount
+    });
+  }
+  // ==========================================================================
+  // Statistics
+  // ==========================================================================
+  /**
+   * Get comprehensive statistics
+   */
+  getStats() {
+    const registrations = Array.from(this.registry.values());
+    const enabledCount = registrations.filter((r) => r.enabled).length;
+    const toolsByNamespace = {};
+    for (const [ns, tools] of this.namespaceIndex) {
+      toolsByNamespace[ns] = tools.size;
+    }
+    const mostUsed = registrations.filter((r) => r.metadata.usageCount > 0).sort((a, b) => b.metadata.usageCount - a.metadata.usageCount).slice(0, 10).map((r) => ({
+      name: this.getToolName(r.tool),
+      count: r.metadata.usageCount
+    }));
+    const totalExecutions = registrations.reduce((sum, r) => sum + r.metadata.usageCount, 0);
+    return {
+      totalTools: this.registry.size,
+      enabledTools: enabledCount,
+      disabledTools: this.registry.size - enabledCount,
+      namespaces: this.getNamespaces(),
+      toolsByNamespace,
+      mostUsed,
+      totalExecutions
+    };
+  }
+  // ==========================================================================
+  // Execution (IToolExecutor implementation)
+  // ==========================================================================
+  /**
+   * Execute a tool function with circuit breaker protection
+   * Implements IToolExecutor interface
+   */
+  async execute(toolName, args) {
+    const registration = this.registry.get(toolName);
+    if (!registration) {
+      throw new ToolNotFoundError(toolName);
+    }
+    if (!registration.enabled) {
+      throw new ToolExecutionError(toolName, "Tool is disabled");
+    }
+    const breaker = this.getOrCreateCircuitBreaker(toolName, registration);
+    this.toolLogger.debug({ toolName, args }, "Tool execution started");
+    const startTime = Date.now();
+    metrics.increment("tool.executed", 1, { tool: toolName });
+    try {
+      const result = await breaker.execute(async () => {
+        return await registration.tool.execute(args, this._toolContext);
+      });
+      const duration = Date.now() - startTime;
+      this.recordExecution(toolName, duration, true);
+      this.toolLogger.debug({ toolName, duration }, "Tool execution completed");
+      metrics.timing("tool.duration", duration, { tool: toolName });
+      metrics.increment("tool.success", 1, { tool: toolName });
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.recordExecution(toolName, duration, false);
+      this.toolLogger.error({
+        toolName,
+        error: error.message,
+        duration
+      }, "Tool execution failed");
+      metrics.increment("tool.failed", 1, {
+        tool: toolName,
+        error: error.name
+      });
+      throw new ToolExecutionError(
+        toolName,
+        error.message,
+        error
+      );
+    }
+  }
+  /**
+   * Check if tool is available (IToolExecutor interface)
+   */
+  hasToolFunction(toolName) {
+    return this.registry.has(toolName);
+  }
+  /**
+   * Get tool definition (IToolExecutor interface)
+   */
+  getToolDefinition(toolName) {
+    const registration = this.registry.get(toolName);
+    return registration?.tool.definition;
+  }
+  /**
+   * Register a tool (IToolExecutor interface - delegates to register())
+   */
+  registerTool(tool) {
+    this.register(tool);
+  }
+  /**
+   * Unregister a tool (IToolExecutor interface - delegates to unregister())
+   */
+  unregisterTool(toolName) {
+    this.unregister(toolName);
+  }
+  /**
+   * List all registered tool names (IToolExecutor interface - delegates to list())
+   */
+  listTools() {
+    return this.list();
+  }
+  // ==========================================================================
+  // Circuit Breaker Management
+  // ==========================================================================
+  /**
+   * Get or create circuit breaker for a tool
+   */
+  getOrCreateCircuitBreaker(toolName, registration) {
+    let breaker = this.circuitBreakers.get(toolName);
+    if (!breaker) {
+      const config = registration.circuitBreakerConfig || {
+        failureThreshold: 3,
+        successThreshold: 2,
+        resetTimeoutMs: 6e4,
+        // 1 minute
+        windowMs: 3e5
+        // 5 minutes
+      };
+      breaker = new CircuitBreaker(`tool:${toolName}`, config);
+      breaker.on("opened", (data) => {
+        this.toolLogger.warn(data, `Circuit breaker opened for tool: ${toolName}`);
+        metrics.increment("circuit_breaker.opened", 1, {
+          breaker: data.name,
+          tool: toolName
+        });
+      });
+      breaker.on("closed", (data) => {
+        this.toolLogger.info(data, `Circuit breaker closed for tool: ${toolName}`);
+        metrics.increment("circuit_breaker.closed", 1, {
+          breaker: data.name,
+          tool: toolName
+        });
+      });
+      this.circuitBreakers.set(toolName, breaker);
+    }
+    return breaker;
+  }
+  /**
+   * Get circuit breaker states for all tools
+   */
+  getCircuitBreakerStates() {
+    const states = /* @__PURE__ */ new Map();
+    for (const [toolName, breaker] of this.circuitBreakers.entries()) {
+      states.set(toolName, breaker.getState());
+    }
+    return states;
+  }
+  /**
+   * Get circuit breaker metrics for a specific tool
+   */
+  getToolCircuitBreakerMetrics(toolName) {
+    const breaker = this.circuitBreakers.get(toolName);
+    return breaker?.getMetrics();
+  }
+  /**
+   * Manually reset a tool's circuit breaker
+   */
+  resetToolCircuitBreaker(toolName) {
+    const breaker = this.circuitBreakers.get(toolName);
+    if (breaker) {
+      breaker.reset();
+      this.toolLogger.info({ toolName }, "Tool circuit breaker manually reset");
+    }
+  }
+  /**
+   * Configure circuit breaker for a tool
+   */
+  setCircuitBreakerConfig(toolName, config) {
+    const registration = this.registry.get(toolName);
+    if (!registration) return false;
+    registration.circuitBreakerConfig = config;
+    if (this.circuitBreakers.has(toolName)) {
+      this.circuitBreakers.delete(toolName);
+    }
+    return true;
+  }
+  // ==========================================================================
+  // Persistence
+  // ==========================================================================
+  /**
+   * Get serializable state (for session persistence)
+   */
+  getState() {
+    const enabled = {};
+    const namespaces = {};
+    const priorities = {};
+    const permissions = {};
+    for (const [name, reg] of this.registry) {
+      enabled[name] = reg.enabled;
+      namespaces[name] = reg.namespace;
+      priorities[name] = reg.priority;
+      if (reg.permission) {
+        permissions[name] = reg.permission;
+      }
+    }
+    return { enabled, namespaces, priorities, permissions };
+  }
+  /**
+   * Load state (restores enabled/disabled, namespaces, priorities, permissions)
+   * Note: Tools must be re-registered separately (they contain functions)
+   */
+  loadState(state) {
+    for (const [name, isEnabled] of Object.entries(state.enabled)) {
+      const reg = this.registry.get(name);
+      if (reg) {
+        reg.enabled = isEnabled;
+      }
+    }
+    for (const [name, namespace] of Object.entries(state.namespaces)) {
+      this.setNamespace(name, namespace);
+    }
+    for (const [name, priority] of Object.entries(state.priorities)) {
+      this.setPriority(name, priority);
+    }
+    if (state.permissions) {
+      for (const [name, permission] of Object.entries(state.permissions)) {
+        this.setPermission(name, permission);
+      }
+    }
+  }
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+  getToolName(tool) {
+    return tool.definition.function.name;
+  }
+  getSortedByPriority() {
+    return Array.from(this.registry.values()).sort((a, b) => b.priority - a.priority);
+  }
+  addToNamespace(toolName, namespace) {
+    if (!this.namespaceIndex.has(namespace)) {
+      this.namespaceIndex.set(namespace, /* @__PURE__ */ new Set());
+    }
+    this.namespaceIndex.get(namespace).add(toolName);
+  }
+  removeFromNamespace(toolName, namespace) {
+    this.namespaceIndex.get(namespace)?.delete(toolName);
+  }
+  moveToNamespace(toolName, oldNamespace, newNamespace) {
+    this.removeFromNamespace(toolName, oldNamespace);
+    this.addToNamespace(toolName, newNamespace);
+  }
+  filterByTokenBudget(tools, budget) {
+    const result = [];
+    let usedTokens = 0;
+    for (const tool of tools) {
+      const toolTokens = this.estimateToolTokens(tool);
+      if (usedTokens + toolTokens <= budget) {
+        result.push(tool);
+        usedTokens += toolTokens;
+      }
+    }
+    return result;
+  }
+  estimateToolTokens(tool) {
+    const def = tool.definition.function;
+    const nameTokens = Math.ceil((def.name?.length ?? 0) / 4);
+    const descTokens = Math.ceil((def.description?.length ?? 0) / 4);
+    const paramTokens = def.parameters ? Math.ceil(JSON.stringify(def.parameters).length / 4) : 0;
+    return nameTokens + descTokens + paramTokens + 20;
+  }
+};
+var HISTORY_FORMAT_VERSION = 1;
+var MEMORY_FORMAT_VERSION = 1;
+var PLAN_FORMAT_VERSION = 1;
+var SessionValidationError = class extends Error {
+  constructor(sessionId, errors) {
+    super(`Session validation failed for ${sessionId}: ${errors.join(", ")}`);
+    this.sessionId = sessionId;
+    this.errors = errors;
+    this.name = "SessionValidationError";
+  }
+};
+function validateSession(session) {
+  const errors = [];
+  const warnings = [];
+  const migrations = [];
+  if (!session || typeof session !== "object") {
+    return {
+      valid: false,
+      errors: ["Session is not an object"],
+      warnings: [],
+      canMigrate: false,
+      migrations: []
+    };
+  }
+  const s = session;
+  if (!s.id || typeof s.id !== "string") {
+    errors.push("Missing or invalid session id");
+  }
+  if (!s.agentType || typeof s.agentType !== "string") {
+    errors.push("Missing or invalid agentType");
+  }
+  if (!s.createdAt) {
+    warnings.push("Missing createdAt, will use current time");
+    migrations.push({
+      field: "createdAt",
+      type: "add_default",
+      description: "Add default createdAt timestamp",
+      apply: (sess) => {
+        sess.createdAt = /* @__PURE__ */ new Date();
+      }
+    });
+  }
+  if (!s.lastActiveAt) {
+    warnings.push("Missing lastActiveAt, will use current time");
+    migrations.push({
+      field: "lastActiveAt",
+      type: "add_default",
+      description: "Add default lastActiveAt timestamp",
+      apply: (sess) => {
+        sess.lastActiveAt = /* @__PURE__ */ new Date();
+      }
+    });
+  }
+  if (!s.history) {
+    warnings.push("Missing history, will create empty history");
+    migrations.push({
+      field: "history",
+      type: "add_default",
+      description: "Add empty history",
+      apply: (sess) => {
+        sess.history = { version: HISTORY_FORMAT_VERSION, entries: [] };
+      }
+    });
+  } else if (typeof s.history === "object") {
+    const historyVersion = s.history.version;
+    if (historyVersion === void 0) {
+      warnings.push("History missing version, assuming version 1");
+      migrations.push({
+        field: "history.version",
+        type: "add_default",
+        description: "Add history version",
+        apply: (sess) => {
+          if (sess.history) {
+            sess.history.version = 1;
+          }
+        }
+      });
+    } else if (historyVersion > HISTORY_FORMAT_VERSION) {
+      errors.push(
+        `History version ${historyVersion} is newer than supported version ${HISTORY_FORMAT_VERSION}`
+      );
+    }
+  }
+  if (!s.toolState) {
+    warnings.push("Missing toolState, will create empty toolState");
+    migrations.push({
+      field: "toolState",
+      type: "add_default",
+      description: "Add empty toolState",
+      apply: (sess) => {
+        sess.toolState = { enabled: {}, namespaces: {}, priorities: {}, permissions: {} };
+      }
+    });
+  }
+  if (!s.custom || typeof s.custom !== "object") {
+    warnings.push("Missing custom object, will create empty object");
+    migrations.push({
+      field: "custom",
+      type: "add_default",
+      description: "Add empty custom object",
+      apply: (sess) => {
+        sess.custom = {};
+      }
+    });
+  }
+  if (!s.metadata || typeof s.metadata !== "object") {
+    warnings.push("Missing metadata, will create empty metadata");
+    migrations.push({
+      field: "metadata",
+      type: "add_default",
+      description: "Add empty metadata",
+      apply: (sess) => {
+        sess.metadata = {};
+      }
+    });
+  }
+  if (s.memory && typeof s.memory === "object") {
+    const memoryVersion = s.memory.version;
+    if (memoryVersion === void 0) {
+      warnings.push("Memory missing version, assuming version 1");
+      migrations.push({
+        field: "memory.version",
+        type: "add_default",
+        description: "Add memory version",
+        apply: (sess) => {
+          if (sess.memory) {
+            sess.memory.version = 1;
+          }
+        }
+      });
+    } else if (memoryVersion > MEMORY_FORMAT_VERSION) {
+      errors.push(
+        `Memory version ${memoryVersion} is newer than supported version ${MEMORY_FORMAT_VERSION}`
+      );
+    }
+  }
+  if (s.plan && typeof s.plan === "object") {
+    const planVersion = s.plan.version;
+    if (planVersion === void 0) {
+      warnings.push("Plan missing version, assuming version 1");
+      migrations.push({
+        field: "plan.version",
+        type: "add_default",
+        description: "Add plan version",
+        apply: (sess) => {
+          if (sess.plan) {
+            sess.plan.version = 1;
+          }
+        }
+      });
+    } else if (planVersion > PLAN_FORMAT_VERSION) {
+      errors.push(
+        `Plan version ${planVersion} is newer than supported version ${PLAN_FORMAT_VERSION}`
+      );
+    }
+  }
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    canMigrate: errors.length === 0 && migrations.length > 0,
+    migrations
+  };
+}
+function migrateSession(session, migrations) {
+  for (const migration of migrations) {
+    migration.apply(session);
+  }
+  return session;
+}
+var SessionManager = class extends eventemitter3.EventEmitter {
+  storage;
+  defaultMetadata;
+  autoSaveTimers = /* @__PURE__ */ new Map();
+  validateOnLoad;
+  autoMigrate;
+  // Track in-flight saves to prevent race conditions
+  savesInFlight = /* @__PURE__ */ new Set();
+  pendingSaves = /* @__PURE__ */ new Set();
+  constructor(config) {
+    super();
+    this.storage = config.storage;
+    this.defaultMetadata = config.defaultMetadata ?? {};
+    this.validateOnLoad = config.validateOnLoad ?? true;
+    this.autoMigrate = config.autoMigrate ?? true;
+  }
+  // ==========================================================================
+  // Lifecycle
+  // ==========================================================================
+  /**
+   * Create a new session
+   */
+  create(agentType, metadata) {
+    const now = /* @__PURE__ */ new Date();
+    const session = {
+      id: this.generateId(),
+      agentType,
+      createdAt: now,
+      lastActiveAt: now,
+      history: { version: 1, entries: [] },
+      toolState: { enabled: {}, namespaces: {}, priorities: {} },
+      custom: {},
+      metadata: {
+        ...this.defaultMetadata,
+        ...metadata
+      }
+    };
+    this.emit("session:created", { sessionId: session.id, agentType });
+    return session;
+  }
+  /**
+   * Save a session to storage
+   */
+  async save(session) {
+    try {
+      session.lastActiveAt = /* @__PURE__ */ new Date();
+      await this.storage.save(session);
+      this.emit("session:saved", { sessionId: session.id });
+    } catch (error) {
+      this.emit("session:error", { sessionId: session.id, error, operation: "save" });
+      throw error;
+    }
+  }
+  /**
+   * Load a session from storage
+   */
+  async load(sessionId) {
+    try {
+      let session = await this.storage.load(sessionId);
+      if (!session) {
+        return null;
+      }
+      if (this.validateOnLoad) {
+        const validation = validateSession(session);
+        if (validation.warnings.length > 0) {
+          this.emit("session:warning", {
+            sessionId,
+            warnings: validation.warnings
+          });
+        }
+        if (!validation.valid) {
+          throw new SessionValidationError(sessionId, validation.errors);
+        }
+        if (validation.canMigrate && this.autoMigrate) {
+          session = migrateSession(session, validation.migrations);
+          this.emit("session:migrated", {
+            sessionId,
+            migrations: validation.migrations.map((m) => m.description)
+          });
+        }
+      }
+      session.createdAt = new Date(session.createdAt);
+      session.lastActiveAt = new Date(session.lastActiveAt);
+      this.emit("session:loaded", { sessionId });
+      return session;
+    } catch (error) {
+      this.emit("session:error", { sessionId, error, operation: "load" });
+      throw error;
+    }
+  }
+  /**
+   * Delete a session from storage
+   */
+  async delete(sessionId) {
+    try {
+      this.stopAutoSave(sessionId);
+      await this.storage.delete(sessionId);
+      this.emit("session:deleted", { sessionId });
+    } catch (error) {
+      this.emit("session:error", { sessionId, error, operation: "delete" });
+      throw error;
+    }
+  }
+  /**
+   * Check if a session exists
+   */
+  async exists(sessionId) {
+    return this.storage.exists(sessionId);
+  }
+  // ==========================================================================
+  // Query
+  // ==========================================================================
+  /**
+   * List sessions with optional filtering
+   */
+  async list(filter) {
+    return this.storage.list(filter);
+  }
+  /**
+   * Search sessions by query string
+   */
+  async search(query, filter) {
+    if (this.storage.search) {
+      return this.storage.search(query, filter);
+    }
+    const all = await this.storage.list(filter);
+    const lowerQuery = query.toLowerCase();
+    return all.filter(
+      (s) => s.metadata.title?.toLowerCase().includes(lowerQuery) || s.metadata.tags?.some((t) => t.toLowerCase().includes(lowerQuery))
+    );
+  }
+  // ==========================================================================
+  // Advanced Operations
+  // ==========================================================================
+  /**
+   * Fork a session (create a copy with new ID)
+   */
+  async fork(sessionId, newMetadata) {
+    const original = await this.load(sessionId);
+    if (!original) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    const forked = {
+      ...original,
+      id: this.generateId(),
+      createdAt: /* @__PURE__ */ new Date(),
+      lastActiveAt: /* @__PURE__ */ new Date(),
+      metadata: {
+        ...original.metadata,
+        ...newMetadata,
+        forkedFrom: sessionId
+      },
+      // Deep clone mutable fields
+      history: JSON.parse(JSON.stringify(original.history)),
+      toolState: JSON.parse(JSON.stringify(original.toolState)),
+      custom: JSON.parse(JSON.stringify(original.custom))
+    };
+    if (original.memory) {
+      forked.memory = JSON.parse(JSON.stringify(original.memory));
+    }
+    if (original.plan) {
+      forked.plan = JSON.parse(JSON.stringify(original.plan));
+    }
+    await this.save(forked);
+    return forked;
+  }
+  /**
+   * Update session metadata
+   */
+  async updateMetadata(sessionId, metadata) {
+    const session = await this.load(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    session.metadata = { ...session.metadata, ...metadata };
+    await this.save(session);
+  }
+  // ==========================================================================
+  // Auto-Save
+  // ==========================================================================
+  /**
+   * Enable auto-save for a session
+   */
+  enableAutoSave(session, intervalMs, onSave) {
+    this.stopAutoSave(session.id);
+    const timer = setInterval(async () => {
+      const sessionId = session.id;
+      if (this.savesInFlight.has(sessionId)) {
+        this.pendingSaves.add(sessionId);
+        return;
+      }
+      this.savesInFlight.add(sessionId);
+      try {
+        await this.save(session);
+        onSave?.(session);
+      } catch (error) {
+        this.emit("session:error", {
+          sessionId,
+          error,
+          operation: "auto-save"
+        });
+      } finally {
+        this.savesInFlight.delete(sessionId);
+        if (this.pendingSaves.has(sessionId)) {
+          this.pendingSaves.delete(sessionId);
+          this.save(session).catch((error) => {
+            this.emit("session:error", {
+              sessionId,
+              error,
+              operation: "auto-save-retry"
+            });
+          });
+        }
+      }
+    }, intervalMs);
+    this.autoSaveTimers.set(session.id, timer);
+  }
+  /**
+   * Disable auto-save for a session
+   */
+  stopAutoSave(sessionId) {
+    const timer = this.autoSaveTimers.get(sessionId);
+    if (timer) {
+      clearInterval(timer);
+      this.autoSaveTimers.delete(sessionId);
+    }
+  }
+  /**
+   * Stop all auto-save timers
+   */
+  stopAllAutoSave() {
+    for (const timer of this.autoSaveTimers.values()) {
+      clearInterval(timer);
+    }
+    this.autoSaveTimers.clear();
+  }
+  // ==========================================================================
+  // Utilities
+  // ==========================================================================
+  /**
+   * Generate a unique session ID
+   */
+  generateId() {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 10);
+    return `sess_${timestamp}_${random}`;
+  }
+  /**
+   * Cleanup resources
+   */
+  destroy() {
+    this.stopAllAutoSave();
+    this.removeAllListeners();
+  }
+};
+function createEmptyHistory() {
+  return { version: 1, entries: [] };
+}
+function createEmptyMemory() {
+  return { version: 1, entries: [] };
+}
+function addHistoryEntry(history, type, content, metadata) {
+  history.entries.push({
+    type,
+    content,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    metadata
+  });
+}
+
+// src/core/permissions/types.ts
+var APPROVAL_STATE_VERSION = 1;
+var DEFAULT_PERMISSION_CONFIG = {
+  scope: "once",
+  riskLevel: "low"
+};
+var DEFAULT_ALLOWLIST = [
+  // Filesystem read-only tools
+  "read_file",
+  "glob",
+  "grep",
+  "list_directory",
+  // Memory management (internal state - safe)
+  "memory_store",
+  "memory_retrieve",
+  "memory_delete",
+  "memory_list",
+  // Context introspection (read-only)
+  "context_inspect",
+  "context_breakdown",
+  "cache_stats",
+  "memory_stats",
+  // Meta-tools (internal coordination)
+  "_start_planning",
+  "_modify_plan",
+  "_report_progress",
+  "_request_approval"
+  // CRITICAL: Must be allowlisted to avoid circular dependency!
+];
+
+// src/core/permissions/ToolPermissionManager.ts
+var ToolPermissionManager = class extends eventemitter3.EventEmitter {
+  // Approval cache (session-level)
+  approvalCache = /* @__PURE__ */ new Map();
+  // Allow/block lists
+  allowlist = /* @__PURE__ */ new Set();
+  blocklist = /* @__PURE__ */ new Set();
+  // Per-tool configurations
+  toolConfigs = /* @__PURE__ */ new Map();
+  // Defaults
+  defaultScope;
+  defaultRiskLevel;
+  // Optional approval callback
+  onApprovalRequired;
+  constructor(config) {
+    super();
+    this.defaultScope = config?.defaultScope ?? DEFAULT_PERMISSION_CONFIG.scope;
+    this.defaultRiskLevel = config?.defaultRiskLevel ?? DEFAULT_PERMISSION_CONFIG.riskLevel;
+    for (const toolName of DEFAULT_ALLOWLIST) {
+      this.allowlist.add(toolName);
+    }
+    if (config?.allowlist) {
+      for (const toolName of config.allowlist) {
+        this.allowlist.add(toolName);
+      }
+    }
+    if (config?.blocklist) {
+      for (const toolName of config.blocklist) {
+        this.blocklist.add(toolName);
+      }
+    }
+    if (config?.tools) {
+      for (const [toolName, toolConfig] of Object.entries(config.tools)) {
+        this.toolConfigs.set(toolName, toolConfig);
+      }
+    }
+    this.onApprovalRequired = config?.onApprovalRequired;
+  }
+  // ==========================================================================
+  // Core Permission Checking
+  // ==========================================================================
+  /**
+   * Check if a tool needs approval before execution
+   *
+   * @param toolName - Name of the tool
+   * @param _args - Optional arguments (for args-specific approval, reserved for future use)
+   * @returns PermissionCheckResult with allowed/needsApproval/blocked status
+   */
+  checkPermission(toolName, _args) {
+    const config = this.getEffectiveConfig(toolName);
+    if (this.blocklist.has(toolName)) {
+      return {
+        allowed: false,
+        needsApproval: false,
+        blocked: true,
+        reason: "Tool is blocklisted",
+        config
+      };
+    }
+    if (this.allowlist.has(toolName)) {
+      return {
+        allowed: true,
+        needsApproval: false,
+        blocked: false,
+        reason: "Tool is allowlisted",
+        config
+      };
+    }
+    const scope = config.scope ?? this.defaultScope;
+    switch (scope) {
+      case "always":
+        return {
+          allowed: true,
+          needsApproval: false,
+          blocked: false,
+          reason: 'Tool scope is "always"',
+          config
+        };
+      case "never":
+        return {
+          allowed: false,
+          needsApproval: false,
+          blocked: true,
+          reason: 'Tool scope is "never"',
+          config
+        };
+      case "session":
+        if (this.isApprovedForSession(toolName)) {
+          return {
+            allowed: true,
+            needsApproval: false,
+            blocked: false,
+            reason: "Tool approved for session",
+            config
+          };
+        }
+        return {
+          allowed: false,
+          needsApproval: true,
+          blocked: false,
+          reason: "Session approval required",
+          config
+        };
+      case "once":
+      default:
+        return {
+          allowed: false,
+          needsApproval: true,
+          blocked: false,
+          reason: "Per-call approval required",
+          config
+        };
+    }
+  }
+  /**
+   * Check if a tool call needs approval (uses ToolCall object)
+   */
+  needsApproval(toolCall) {
+    const result = this.checkPermission(toolCall.function.name);
+    return result.needsApproval;
+  }
+  /**
+   * Check if a tool is blocked
+   */
+  isBlocked(toolName) {
+    return this.checkPermission(toolName).blocked;
+  }
+  /**
+   * Check if a tool is approved (either allowlisted or session-approved)
+   */
+  isApproved(toolName) {
+    return this.checkPermission(toolName).allowed;
+  }
+  // ==========================================================================
+  // Approval Management
+  // ==========================================================================
+  /**
+   * Approve a tool (record approval)
+   *
+   * @param toolName - Name of the tool
+   * @param decision - Approval decision with scope
+   */
+  approve(toolName, decision) {
+    const scope = decision?.scope ?? "session";
+    const config = this.getEffectiveConfig(toolName);
+    let expiresAt;
+    if (scope === "session" && config.sessionTTLMs) {
+      expiresAt = new Date(Date.now() + config.sessionTTLMs);
+    }
+    const entry = {
+      toolName,
+      scope,
+      approvedAt: /* @__PURE__ */ new Date(),
+      approvedBy: decision?.approvedBy,
+      expiresAt
+    };
+    this.approvalCache.set(toolName, entry);
+    this.emit("tool:approved", {
+      toolName,
+      scope,
+      approvedBy: decision?.approvedBy
+    });
+  }
+  /**
+   * Approve a tool for the entire session
+   */
+  approveForSession(toolName, approvedBy) {
+    this.approve(toolName, { scope: "session", approvedBy });
+  }
+  /**
+   * Revoke a tool's approval
+   */
+  revoke(toolName) {
+    if (this.approvalCache.has(toolName)) {
+      this.approvalCache.delete(toolName);
+      this.emit("tool:revoked", { toolName });
+    }
+  }
+  /**
+   * Deny a tool execution (for audit trail)
+   */
+  deny(toolName, reason) {
+    this.emit("tool:denied", { toolName, reason });
+  }
+  /**
+   * Check if a tool has been approved for the current session
+   */
+  isApprovedForSession(toolName) {
+    const entry = this.approvalCache.get(toolName);
+    if (!entry) return false;
+    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+      this.approvalCache.delete(toolName);
+      return false;
+    }
+    return entry.scope === "session" || entry.scope === "always";
+  }
+  // ==========================================================================
+  // Allowlist / Blocklist Management
+  // ==========================================================================
+  /**
+   * Add a tool to the allowlist (always allowed)
+   */
+  allowlistAdd(toolName) {
+    this.blocklist.delete(toolName);
+    this.allowlist.add(toolName);
+    this.emit("allowlist:added", { toolName });
+  }
+  /**
+   * Remove a tool from the allowlist
+   */
+  allowlistRemove(toolName) {
+    if (this.allowlist.delete(toolName)) {
+      this.emit("allowlist:removed", { toolName });
+    }
+  }
+  /**
+   * Check if a tool is in the allowlist
+   */
+  isAllowlisted(toolName) {
+    return this.allowlist.has(toolName);
+  }
+  /**
+   * Get all allowlisted tools
+   */
+  getAllowlist() {
+    return Array.from(this.allowlist);
+  }
+  /**
+   * Add a tool to the blocklist (always blocked)
+   */
+  blocklistAdd(toolName) {
+    this.allowlist.delete(toolName);
+    this.blocklist.add(toolName);
+    this.emit("blocklist:added", { toolName });
+  }
+  /**
+   * Remove a tool from the blocklist
+   */
+  blocklistRemove(toolName) {
+    if (this.blocklist.delete(toolName)) {
+      this.emit("blocklist:removed", { toolName });
+    }
+  }
+  /**
+   * Check if a tool is in the blocklist
+   */
+  isBlocklisted(toolName) {
+    return this.blocklist.has(toolName);
+  }
+  /**
+   * Get all blocklisted tools
+   */
+  getBlocklist() {
+    return Array.from(this.blocklist);
+  }
+  // ==========================================================================
+  // Tool Configuration
+  // ==========================================================================
+  /**
+   * Set permission config for a specific tool
+   */
+  setToolConfig(toolName, config) {
+    this.toolConfigs.set(toolName, config);
+  }
+  /**
+   * Get permission config for a specific tool
+   */
+  getToolConfig(toolName) {
+    return this.toolConfigs.get(toolName);
+  }
+  /**
+   * Get effective config (tool-specific or defaults)
+   */
+  getEffectiveConfig(toolName) {
+    const toolConfig = this.toolConfigs.get(toolName);
+    return {
+      scope: toolConfig?.scope ?? this.defaultScope,
+      riskLevel: toolConfig?.riskLevel ?? this.defaultRiskLevel,
+      approvalMessage: toolConfig?.approvalMessage,
+      sensitiveArgs: toolConfig?.sensitiveArgs,
+      sessionTTLMs: toolConfig?.sessionTTLMs
+    };
+  }
+  // ==========================================================================
+  // Approval Request Handler
+  // ==========================================================================
+  /**
+   * Request approval for a tool call
+   *
+   * If an onApprovalRequired callback is set, it will be called.
+   * Otherwise, this auto-approves for backward compatibility.
+   *
+   * NOTE: If you want to require explicit approval, you MUST either:
+   * 1. Set onApprovalRequired callback in AgentPermissionsConfig
+   * 2. Register an 'approve:tool' hook in the AgenticLoop
+   * 3. Add tools to the blocklist if they should never run
+   *
+   * This auto-approval behavior preserves backward compatibility with
+   * existing code that doesn't use the permission system.
+   */
+  async requestApproval(context) {
+    if (this.onApprovalRequired) {
+      const decision = await this.onApprovalRequired(context);
+      if (decision.approved) {
+        this.approve(context.toolCall.function.name, decision);
+      } else {
+        this.deny(context.toolCall.function.name, decision.reason ?? "User denied");
+      }
+      return decision;
+    }
+    return {
+      approved: true,
+      reason: "Auto-approved (no approval handler configured)"
+    };
+  }
+  // ==========================================================================
+  // Query Methods
+  // ==========================================================================
+  /**
+   * Get all tools that have session approvals
+   */
+  getApprovedTools() {
+    const approved = [];
+    for (const [toolName, entry] of this.approvalCache) {
+      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+        continue;
+      }
+      approved.push(toolName);
+    }
+    return approved;
+  }
+  /**
+   * Get the approval entry for a tool
+   */
+  getApprovalEntry(toolName) {
+    const entry = this.approvalCache.get(toolName);
+    if (!entry) return void 0;
+    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+      this.approvalCache.delete(toolName);
+      return void 0;
+    }
+    return entry;
+  }
+  // ==========================================================================
+  // Session Management
+  // ==========================================================================
+  /**
+   * Clear all session approvals
+   */
+  clearSession() {
+    this.approvalCache.clear();
+    this.emit("session:cleared", {});
+  }
+  // ==========================================================================
+  // Persistence (for Session integration)
+  // ==========================================================================
+  /**
+   * Serialize approval state for persistence
+   */
+  getState() {
+    const approvals = {};
+    for (const [toolName, entry] of this.approvalCache) {
+      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+        continue;
+      }
+      approvals[toolName] = {
+        toolName: entry.toolName,
+        scope: entry.scope,
+        approvedAt: entry.approvedAt.toISOString(),
+        approvedBy: entry.approvedBy,
+        expiresAt: entry.expiresAt?.toISOString(),
+        argsHash: entry.argsHash
+      };
+    }
+    return {
+      version: APPROVAL_STATE_VERSION,
+      approvals,
+      blocklist: Array.from(this.blocklist),
+      allowlist: Array.from(this.allowlist)
+    };
+  }
+  /**
+   * Load approval state from persistence
+   */
+  loadState(state) {
+    this.approvalCache.clear();
+    if (state.version !== APPROVAL_STATE_VERSION) {
+      console.warn(`ToolPermissionManager: Unknown state version ${state.version}, ignoring`);
+      return;
+    }
+    for (const [toolName, entry] of Object.entries(state.approvals)) {
+      const approvedAt = new Date(entry.approvedAt);
+      const expiresAt = entry.expiresAt ? new Date(entry.expiresAt) : void 0;
+      if (expiresAt && expiresAt < /* @__PURE__ */ new Date()) {
+        continue;
+      }
+      this.approvalCache.set(toolName, {
+        toolName: entry.toolName,
+        scope: entry.scope,
+        approvedAt,
+        approvedBy: entry.approvedBy,
+        expiresAt,
+        argsHash: entry.argsHash
+      });
+    }
+    for (const toolName of state.blocklist) {
+      this.blocklist.add(toolName);
+    }
+    for (const toolName of state.allowlist) {
+      this.blocklist.delete(toolName);
+      this.allowlist.add(toolName);
+    }
+  }
+  // ==========================================================================
+  // Utility Methods
+  // ==========================================================================
+  /**
+   * Get defaults
+   */
+  getDefaults() {
+    return {
+      scope: this.defaultScope,
+      riskLevel: this.defaultRiskLevel
+    };
+  }
+  /**
+   * Set defaults
+   */
+  setDefaults(defaults) {
+    if (defaults.scope) this.defaultScope = defaults.scope;
+    if (defaults.riskLevel) this.defaultRiskLevel = defaults.riskLevel;
+  }
+  /**
+   * Get summary statistics
+   */
+  getStats() {
+    return {
+      approvedCount: this.getApprovedTools().length,
+      allowlistedCount: this.allowlist.size,
+      blocklistedCount: this.blocklist.size,
+      configuredCount: this.toolConfigs.size
+    };
+  }
+  /**
+   * Reset to initial state
+   */
+  reset() {
+    this.approvalCache.clear();
+    this.allowlist.clear();
+    this.blocklist.clear();
+    this.toolConfigs.clear();
+    this.defaultScope = DEFAULT_PERMISSION_CONFIG.scope;
+    this.defaultRiskLevel = DEFAULT_PERMISSION_CONFIG.riskLevel;
+  }
+};
+
+// src/core/BaseAgent.ts
+var BaseAgent = class extends eventemitter3.EventEmitter {
+  // ===== Core Properties =====
+  name;
+  connector;
+  model;
+  // ===== Protected State =====
+  _config;
+  _toolManager;
+  _permissionManager;
+  _sessionManager = null;
+  _session = null;
+  _pendingSessionLoad = null;
+  _isDestroyed = false;
+  _cleanupCallbacks = [];
+  _logger;
+  // ===== Constructor =====
+  constructor(config, loggerComponent) {
+    super();
+    this._config = config;
+    this.connector = this.resolveConnector(config.connector);
+    this.name = config.name ?? `${this.getAgentType()}-${Date.now()}`;
+    this.model = config.model;
+    this._logger = logger.child({
+      component: loggerComponent,
+      agentName: this.name,
+      model: this.model,
+      connector: this.connector.name
+    });
+    this._toolManager = this.initializeToolManager(config.toolManager, config.tools);
+    this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
+  }
+  /**
+   * Prepare session state before saving.
+   * Subclasses override to add their specific state (plan, memory, etc.)
+   *
+   * Default implementation does nothing - override in subclasses.
+   */
+  prepareSessionState() {
+  }
+  /**
+   * Restore session state after loading.
+   * Subclasses override to restore their specific state (plan, memory, etc.)
+   * Called after tool state and approval state are restored.
+   *
+   * Default implementation does nothing - override in subclasses.
+   */
+  async restoreSessionState(_session) {
+  }
+  /**
+   * Get plan state for session serialization.
+   * Subclasses with plans override this.
+   */
+  getSerializedPlan() {
+    return void 0;
+  }
+  /**
+   * Get memory state for session serialization.
+   * Subclasses with working memory override this.
+   */
+  getSerializedMemory() {
+    return void 0;
+  }
+  // ===== Protected Initialization Helpers =====
+  /**
+   * Resolve connector from string name or instance
+   */
+  resolveConnector(ref) {
+    if (typeof ref === "string") {
+      return Connector.get(ref);
+    }
+    return ref;
+  }
+  /**
+   * Initialize tool manager with provided tools
+   */
+  initializeToolManager(existingManager, tools, options) {
+    const manager = existingManager ?? new ToolManager();
+    if (tools) {
+      this.registerTools(manager, tools, options);
+    }
+    return manager;
+  }
+  /**
+   * Register multiple tools with the tool manager
+   * Utility method to avoid code duplication across agent types
+   */
+  registerTools(manager, tools, options) {
+    for (const tool of tools) {
+      manager.register(tool, options);
+    }
+  }
+  /**
+   * Initialize permission manager
+   */
+  initializePermissionManager(config, tools) {
+    const manager = new ToolPermissionManager(config);
+    if (tools) {
+      for (const tool of tools) {
+        if (tool.permission) {
+          manager.setToolConfig(tool.definition.function.name, tool.permission);
+        }
+      }
+    }
+    return manager;
+  }
+  /**
+   * Initialize session management (call from subclass constructor after other setup)
+   */
+  initializeSession(sessionConfig) {
+    if (!sessionConfig) {
+      return;
+    }
+    this._sessionManager = new SessionManager({ storage: sessionConfig.storage });
+    if (sessionConfig.id) {
+      this._pendingSessionLoad = this.loadSessionInternal(sessionConfig.id);
+    } else {
+      this._session = this._sessionManager.create(this.getAgentType(), {
+        title: this.name
+      });
+      if (sessionConfig.autoSave) {
+        const interval = sessionConfig.autoSaveIntervalMs ?? 3e4;
+        this._sessionManager.enableAutoSave(this._session, interval);
+      }
+    }
+  }
+  /**
+   * Ensure any pending session load is complete
+   */
+  async ensureSessionLoaded() {
+    if (this._pendingSessionLoad) {
+      await this._pendingSessionLoad;
+      this._pendingSessionLoad = null;
+    }
+  }
+  /**
+   * Internal method to load session
+   */
+  async loadSessionInternal(sessionId) {
+    if (!this._sessionManager) return;
+    try {
+      const session = await this._sessionManager.load(sessionId);
+      if (session) {
+        this._session = session;
+        if (session.toolState) {
+          this._toolManager.loadState(session.toolState);
+        }
+        const inheritFromSession = this._config.permissions?.inheritFromSession !== false;
+        if (inheritFromSession && session.custom["approvalState"]) {
+          this._permissionManager.loadState(
+            session.custom["approvalState"]
+          );
+        }
+        await this.restoreSessionState(session);
+        this._logger.info({ sessionId }, "Session loaded");
+        if (this._config.session?.autoSave) {
+          const interval = this._config.session.autoSaveIntervalMs ?? 3e4;
+          this._sessionManager.enableAutoSave(this._session, interval);
+        }
+      } else {
+        this._logger.warn({ sessionId }, "Session not found, creating new session");
+        this._session = this._sessionManager.create(this.getAgentType(), {
+          title: this.name
+        });
+      }
+    } catch (error) {
+      this._logger.error(
+        { error: error.message, sessionId },
+        "Failed to load session"
+      );
+      throw error;
+    }
+  }
+  // ===== Public Session API =====
+  /**
+   * Get the current session ID (if session is enabled)
+   */
+  getSessionId() {
+    return this._session?.id ?? null;
+  }
+  /**
+   * Check if this agent has session support enabled
+   */
+  hasSession() {
+    return this._session !== null;
+  }
+  /**
+   * Get the current session (for advanced use)
+   */
+  getSession() {
+    return this._session;
+  }
+  /**
+   * Save the current session to storage
+   * @throws Error if session is not enabled
+   */
+  async saveSession() {
+    await this.ensureSessionLoaded();
+    if (!this._sessionManager || !this._session) {
+      throw new Error(
+        "Session not enabled. Configure session in agent config to use this feature."
+      );
+    }
+    this._session.toolState = this._toolManager.getState();
+    this._session.custom["approvalState"] = this._permissionManager.getState();
+    const plan = this.getSerializedPlan();
+    if (plan) {
+      this._session.plan = plan;
+    }
+    const memory = this.getSerializedMemory();
+    if (memory) {
+      this._session.memory = memory;
+    }
+    this.prepareSessionState();
+    await this._sessionManager.save(this._session);
+    this._logger.debug({ sessionId: this._session.id }, "Session saved");
+  }
+  /**
+   * Update session custom data
+   */
+  updateSessionData(key, value) {
+    if (!this._session) {
+      throw new Error("Session not enabled");
+    }
+    this._session.custom[key] = value;
+  }
+  /**
+   * Get session custom data
+   */
+  getSessionData(key) {
+    return this._session?.custom[key];
+  }
+  // ===== Public Permission API =====
+  /**
+   * Advanced tool management. Returns ToolManager for fine-grained control.
+   */
+  get tools() {
+    return this._toolManager;
+  }
+  /**
+   * Permission management. Returns ToolPermissionManager for approval control.
+   */
+  get permissions() {
+    return this._permissionManager;
+  }
+  // ===== Tool Management =====
+  /**
+   * Add a tool to the agent
+   */
+  addTool(tool) {
+    this._toolManager.register(tool);
+    if (!this._config.tools) {
+      this._config.tools = [];
+    }
+    this._config.tools.push(tool);
+    if (tool.permission) {
+      this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+    }
+  }
+  /**
+   * Remove a tool from the agent
+   */
+  removeTool(toolName) {
+    this._toolManager.unregister(toolName);
+    if (this._config.tools) {
+      this._config.tools = this._config.tools.filter(
+        (t) => t.definition.function.name !== toolName
+      );
+    }
+  }
+  /**
+   * List registered tools (returns enabled tool names)
+   */
+  listTools() {
+    return this._toolManager.listEnabled();
+  }
+  /**
+   * Replace all tools with a new array
+   */
+  setTools(tools) {
+    this._toolManager.clear();
+    for (const tool of tools) {
+      this._toolManager.register(tool);
+      if (tool.permission) {
+        this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+      }
+    }
+    this._config.tools = [...tools];
+  }
+  /**
+   * Get enabled tool definitions (for passing to LLM).
+   * This is a helper that extracts definitions from enabled tools.
+   */
+  getEnabledToolDefinitions() {
+    return this._toolManager.getEnabled().map((t) => t.definition);
+  }
+  // ===== Lifecycle =====
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
+   * Register a cleanup callback
+   */
+  onCleanup(callback) {
+    this._cleanupCallbacks.push(callback);
+  }
+  /**
+   * Base cleanup for session and listeners.
+   * Subclasses should call super.baseDestroy() in their destroy() method.
+   */
+  baseDestroy() {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
+    this._logger.debug("Agent destroy started");
+    if (this._sessionManager) {
+      if (this._session) {
+        this._sessionManager.stopAutoSave(this._session.id);
+      }
+      this._sessionManager.destroy();
+    }
+    this._toolManager.removeAllListeners();
+    this._permissionManager.removeAllListeners();
+    this.removeAllListeners();
+  }
+  /**
+   * Run cleanup callbacks
+   */
+  async runCleanupCallbacks() {
+    for (const callback of this._cleanupCallbacks) {
+      try {
+        await callback();
+      } catch (error) {
+        this._logger.error({ error: error.message }, "Cleanup callback error");
+      }
+    }
+    this._cleanupCallbacks = [];
+  }
+};
+
+// src/core/Vendor.ts
+var Vendor = {
+  OpenAI: "openai",
+  Anthropic: "anthropic",
+  Google: "google",
+  GoogleVertex: "google-vertex",
+  Groq: "groq",
+  Together: "together",
+  Perplexity: "perplexity",
+  Grok: "grok",
+  DeepSeek: "deepseek",
+  Mistral: "mistral",
+  Ollama: "ollama",
+  Custom: "custom"
+  // OpenAI-compatible endpoint
+};
+var VENDORS = Object.values(Vendor);
+function isVendor(value) {
+  return VENDORS.includes(value);
+}
 
 // src/infrastructure/providers/base/BaseProvider.ts
 var BaseProvider = class {
@@ -2416,6 +4314,17 @@ var BaseTextProvider = class extends BaseProvider {
       }
     }
     return textParts.join("\n");
+  }
+  /**
+   * Clean up provider resources (circuit breaker listeners, etc.)
+   * Should be called when the provider is no longer needed.
+   */
+  destroy() {
+    if (this.circuitBreaker) {
+      this.circuitBreaker.removeAllListeners();
+      this.circuitBreaker = void 0;
+    }
+    this._isObservabilityInitialized = false;
   }
 };
 
@@ -4031,6 +5940,93 @@ var ContentType = /* @__PURE__ */ ((ContentType2) => {
   ContentType2["TOOL_RESULT"] = "tool_result";
   return ContentType2;
 })(ContentType || {});
+function buildLLMResponse(options) {
+  const {
+    provider,
+    rawId,
+    model,
+    status,
+    content,
+    usage,
+    messageId,
+    createdAt = Math.floor(Date.now() / 1e3)
+  } = options;
+  const responseId = rawId ? `resp_${provider}_${rawId}` : `resp_${provider}_${crypto2.randomUUID()}`;
+  const msgId = messageId || `msg_${provider}_${crypto2.randomUUID()}`;
+  const output = [
+    {
+      type: "message",
+      id: msgId,
+      role: "assistant" /* ASSISTANT */,
+      content
+    }
+  ];
+  const outputText = extractTextFromContent(content);
+  return {
+    id: responseId,
+    object: "response",
+    created_at: createdAt,
+    status,
+    model,
+    output,
+    output_text: outputText,
+    usage: {
+      input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens,
+      total_tokens: usage.totalTokens ?? usage.inputTokens + usage.outputTokens
+    }
+  };
+}
+function extractTextFromContent(content) {
+  return content.filter(
+    (c) => c.type === "output_text" /* OUTPUT_TEXT */
+  ).map((c) => c.text).join("\n");
+}
+function createTextContent(text) {
+  return {
+    type: "output_text" /* OUTPUT_TEXT */,
+    text,
+    annotations: []
+  };
+}
+function createToolUseContent(id, name, args) {
+  return {
+    type: "tool_use" /* TOOL_USE */,
+    id,
+    name,
+    arguments: typeof args === "string" ? args : JSON.stringify(args)
+  };
+}
+function mapAnthropicStatus(stopReason) {
+  switch (stopReason) {
+    case "end_turn":
+    case "tool_use":
+    case "stop_sequence":
+      return "completed";
+    case "max_tokens":
+      return "incomplete";
+    default:
+      return "incomplete";
+  }
+}
+function mapGoogleStatus(finishReason) {
+  switch (finishReason) {
+    case "STOP":
+      return "completed";
+    case "MAX_TOKENS":
+      return "incomplete";
+    case "SAFETY":
+    case "RECITATION":
+      return "failed";
+    case "OTHER":
+    default:
+      return "incomplete";
+  }
+}
+function generateToolCallId(provider) {
+  const uuid = crypto2.randomUUID();
+  return `${provider}_${uuid}` ;
+}
 
 // src/infrastructure/providers/shared/ToolConversionUtils.ts
 function extractFunctionTools(tools) {
@@ -4051,14 +6047,179 @@ function transformForAnthropic(tool) {
   };
 }
 
-// src/infrastructure/providers/anthropic/AnthropicConverter.ts
-var AnthropicConverter = class {
+// src/infrastructure/providers/base/BaseConverter.ts
+var BaseConverter = class {
+  // ==========================================================================
+  // Protected Helper Methods (shared by all providers)
+  // ==========================================================================
   /**
-   * Convert our format → Anthropic Messages API format
+   * Convert InputItem array to provider messages
+   * @param input - String or InputItem array
+   * @returns Normalized input ready for provider conversion
+   */
+  normalizeInput(input) {
+    if (typeof input === "string") {
+      return [
+        {
+          type: "message",
+          role: "user" /* USER */,
+          content: [{ type: "input_text" /* INPUT_TEXT */, text: input }]
+        }
+      ];
+    }
+    return input;
+  }
+  /**
+   * Map our role to provider-specific role
+   * Override in subclass if provider uses different role names
+   */
+  mapRole(role) {
+    if (role === "developer" /* DEVELOPER */) {
+      return "user";
+    }
+    return role;
+  }
+  /**
+   * Convert our Tool[] to provider-specific tool format
+   */
+  convertTools(tools) {
+    if (!tools || tools.length === 0) {
+      return void 0;
+    }
+    const standardTools = convertToolsToStandardFormat(tools);
+    return standardTools.map((tool) => this.transformTool(tool));
+  }
+  /**
+   * Parse tool arguments from JSON string
+   * Throws InvalidToolArgumentsError on parse failure
+   */
+  parseToolArguments(name, argsString) {
+    try {
+      return JSON.parse(argsString);
+    } catch (parseError) {
+      throw new InvalidToolArgumentsError(
+        name,
+        argsString,
+        parseError instanceof Error ? parseError : new Error(String(parseError))
+      );
+    }
+  }
+  /**
+   * Parse a data URI into components
+   * @returns Parsed image data or null if not a data URI
+   */
+  parseDataUri(url) {
+    const matches = url.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!matches || matches.length < 3) {
+      return null;
+    }
+    const format = matches[1];
+    const data = matches[2];
+    return {
+      format,
+      mediaType: `image/${format}`,
+      data
+    };
+  }
+  /**
+   * Check if URL is a data URI
+   */
+  isDataUri(url) {
+    return url.startsWith("data:");
+  }
+  /**
+   * Build standardized LLMResponse using shared utility
+   */
+  buildResponse(options) {
+    return buildLLMResponse({
+      provider: this.providerName,
+      ...options
+    });
+  }
+  /**
+   * Create a text content block
+   */
+  createText(text) {
+    return createTextContent(text);
+  }
+  /**
+   * Create a tool_use content block
+   */
+  createToolUse(id, name, args) {
+    return createToolUseContent(id, name, args);
+  }
+  /**
+   * Extract text from Content array
+   */
+  extractText(content) {
+    return content.filter((c) => c.type === "output_text" /* OUTPUT_TEXT */).map((c) => c.text).join("\n");
+  }
+  /**
+   * Handle content conversion for common content types
+   * Can be used as a starting point in subclass convertContent methods
+   */
+  handleCommonContent(content, _handlers) {
+    const handlers = _handlers;
+    switch (content.type) {
+      case "input_text" /* INPUT_TEXT */:
+      case "output_text" /* OUTPUT_TEXT */:
+        handlers.onText?.(content.text);
+        return true;
+      case "input_image_url" /* INPUT_IMAGE_URL */: {
+        const imgContent = content;
+        const parsed = this.parseDataUri(imgContent.image_url.url);
+        handlers.onImage?.(imgContent.image_url.url, parsed);
+        return true;
+      }
+      case "tool_use" /* TOOL_USE */: {
+        const toolContent = content;
+        const parsedArgs = this.parseToolArguments(toolContent.name, toolContent.arguments);
+        handlers.onToolUse?.(toolContent.id, toolContent.name, parsedArgs);
+        return true;
+      }
+      case "tool_result" /* TOOL_RESULT */: {
+        const resultContent = content;
+        const isError = !!resultContent.error;
+        handlers.onToolResult?.(
+          resultContent.tool_use_id,
+          resultContent.content,
+          isError,
+          resultContent.error
+        );
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
+  // ==========================================================================
+  // Resource Cleanup (required lifecycle method)
+  // ==========================================================================
+  /**
+   * Clean up any internal state/caches
+   * Should be called after each request/response cycle to prevent memory leaks
+   *
+   * Default implementation does nothing - override if subclass maintains state
+   */
+  clear() {
+  }
+  /**
+   * Alias for clear() - reset converter state
+   */
+  reset() {
+    this.clear();
+  }
+};
+
+// src/infrastructure/providers/anthropic/AnthropicConverter.ts
+var AnthropicConverter = class extends BaseConverter {
+  providerName = "anthropic";
+  /**
+   * Convert our format -> Anthropic Messages API format
    */
   convertRequest(options) {
     const messages = this.convertMessages(options.input);
-    const tools = this.convertTools(options.tools);
+    const tools = this.convertAnthropicTools(options.tools);
     const params = {
       model: options.model,
       max_tokens: options.max_output_tokens || 4096,
@@ -4076,7 +6237,61 @@ var AnthropicConverter = class {
     return params;
   }
   /**
-   * Convert our InputItem[] → Anthropic messages
+   * Convert Anthropic response -> our LLMResponse format
+   */
+  convertResponse(response) {
+    return this.buildResponse({
+      rawId: response.id,
+      model: response.model,
+      status: this.mapProviderStatus(response.stop_reason),
+      content: this.convertProviderContent(response.content),
+      messageId: response.id,
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens
+      }
+    });
+  }
+  // ==========================================================================
+  // BaseConverter Abstract Method Implementations
+  // ==========================================================================
+  /**
+   * Transform standardized tool to Anthropic format
+   */
+  transformTool(tool) {
+    return {
+      ...transformForAnthropic(tool),
+      input_schema: {
+        type: "object",
+        ...tool.parameters
+      }
+    };
+  }
+  /**
+   * Convert Anthropic content blocks to our Content[]
+   */
+  convertProviderContent(blocks) {
+    const content = [];
+    for (const block of blocks) {
+      if (block.type === "text") {
+        content.push(this.createText(block.text));
+      } else if (block.type === "tool_use") {
+        content.push(this.createToolUse(block.id, block.name, block.input));
+      }
+    }
+    return content;
+  }
+  /**
+   * Map Anthropic stop_reason to ResponseStatus
+   */
+  mapProviderStatus(status) {
+    return mapAnthropicStatus(status);
+  }
+  // ==========================================================================
+  // Anthropic-Specific Conversion Methods
+  // ==========================================================================
+  /**
+   * Convert our InputItem[] -> Anthropic messages
    */
   convertMessages(input) {
     if (typeof input === "string") {
@@ -4085,7 +6300,7 @@ var AnthropicConverter = class {
     const messages = [];
     for (const item of input) {
       if (item.type === "message") {
-        const role = item.role === "developer" /* DEVELOPER */ ? "user" : item.role;
+        const role = this.mapRole(item.role);
         const content = this.convertContent(item.content);
         messages.push({
           role,
@@ -4096,7 +6311,7 @@ var AnthropicConverter = class {
     return messages;
   }
   /**
-   * Convert our Content[] → Anthropic content blocks
+   * Convert our Content[] -> Anthropic content blocks
    */
   convertContent(content) {
     const blocks = [];
@@ -4109,67 +6324,30 @@ var AnthropicConverter = class {
             text: c.text
           });
           break;
-        case "input_image_url" /* INPUT_IMAGE_URL */:
-          if (c.image_url.url.startsWith("data:")) {
-            const matches = c.image_url.url.match(/^data:image\/(\w+);base64,(.+)$/);
-            if (matches) {
-              const mediaType = `image/${matches[1]}`;
-              const data = matches[2];
-              blocks.push({
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: mediaType,
-                  data
-                }
-              });
-            }
-          } else {
-            blocks.push({
-              type: "image",
-              source: {
-                type: "url",
-                url: c.image_url.url
-              }
-            });
+        case "input_image_url" /* INPUT_IMAGE_URL */: {
+          const imgContent = c;
+          const block = this.convertImageToAnthropicBlock(imgContent.image_url.url);
+          if (block) {
+            blocks.push(block);
           }
           break;
-        case "tool_result" /* TOOL_RESULT */:
-          const isError = !!c.error;
-          let toolResultContent;
-          if (typeof c.content === "string") {
-            toolResultContent = c.content || (isError ? c.error : "");
-          } else {
-            toolResultContent = JSON.stringify(c.content);
-          }
-          if (isError && !toolResultContent) {
-            toolResultContent = c.error || "Tool execution failed";
-          }
-          blocks.push({
-            type: "tool_result",
-            tool_use_id: c.tool_use_id,
-            content: toolResultContent,
-            is_error: isError
-          });
+        }
+        case "tool_result" /* TOOL_RESULT */: {
+          const resultContent = c;
+          blocks.push(this.convertToolResultToAnthropicBlock(resultContent));
           break;
-        case "tool_use" /* TOOL_USE */:
-          let parsedInput;
-          try {
-            parsedInput = JSON.parse(c.arguments);
-          } catch (parseError) {
-            throw new InvalidToolArgumentsError(
-              c.name,
-              c.arguments,
-              parseError instanceof Error ? parseError : new Error(String(parseError))
-            );
-          }
+        }
+        case "tool_use" /* TOOL_USE */: {
+          const toolContent = c;
+          const parsedInput = this.parseToolArguments(toolContent.name, toolContent.arguments);
           blocks.push({
             type: "tool_use",
-            id: c.id,
-            name: c.name,
+            id: toolContent.id,
+            name: toolContent.name,
             input: parsedInput
           });
           break;
+        }
       }
     }
     if (blocks.length === 1 && blocks[0]?.type === "text") {
@@ -4178,127 +6356,265 @@ var AnthropicConverter = class {
     return blocks;
   }
   /**
-   * Convert our Tool[] → Anthropic tools
+   * Convert image URL to Anthropic image block
    */
-  convertTools(tools) {
+  convertImageToAnthropicBlock(url) {
+    const parsed = this.parseDataUri(url);
+    if (parsed) {
+      return {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: parsed.mediaType,
+          data: parsed.data
+        }
+      };
+    } else {
+      return {
+        type: "image",
+        source: {
+          type: "url",
+          url
+        }
+      };
+    }
+  }
+  /**
+   * Convert tool result to Anthropic block
+   * Anthropic requires non-empty content when is_error is true
+   */
+  convertToolResultToAnthropicBlock(resultContent) {
+    const isError = !!resultContent.error;
+    let toolResultContent;
+    if (typeof resultContent.content === "string") {
+      toolResultContent = resultContent.content || (isError ? resultContent.error : "");
+    } else {
+      toolResultContent = JSON.stringify(resultContent.content);
+    }
+    if (isError && !toolResultContent) {
+      toolResultContent = resultContent.error || "Tool execution failed";
+    }
+    return {
+      type: "tool_result",
+      tool_use_id: resultContent.tool_use_id,
+      content: toolResultContent,
+      is_error: isError
+    };
+  }
+  /**
+   * Convert our Tool[] -> Anthropic tools
+   * Uses shared conversion utilities (DRY)
+   */
+  convertAnthropicTools(tools) {
     if (!tools || tools.length === 0) {
       return void 0;
     }
     const standardTools = convertToolsToStandardFormat(tools);
-    return standardTools.map((tool) => ({
-      ...transformForAnthropic(tool),
-      input_schema: {
-        type: "object",
-        ...tool.parameters
-      }
-    }));
-  }
-  /**
-   * Convert Anthropic response → our LLMResponse format
-   */
-  convertResponse(response) {
-    const output = [
-      {
-        type: "message",
-        id: response.id,
-        role: "assistant" /* ASSISTANT */,
-        content: this.convertAnthropicContent(response.content)
-      }
-    ];
-    return {
-      id: `resp_anthropic_${response.id}`,
-      object: "response",
-      created_at: Math.floor(Date.now() / 1e3),
-      status: this.mapStopReason(response.stop_reason),
-      model: response.model,
-      output,
-      output_text: this.extractOutputText(response.content),
-      usage: {
-        input_tokens: response.usage.input_tokens,
-        output_tokens: response.usage.output_tokens,
-        total_tokens: response.usage.input_tokens + response.usage.output_tokens
-      }
-    };
-  }
-  /**
-   * Convert Anthropic content blocks → our Content[]
-   */
-  convertAnthropicContent(blocks) {
-    const content = [];
-    for (const block of blocks) {
-      if (block.type === "text") {
-        content.push({
-          type: "output_text" /* OUTPUT_TEXT */,
-          text: block.text,
-          annotations: []
-        });
-      } else if (block.type === "tool_use") {
-        content.push({
-          type: "tool_use" /* TOOL_USE */,
-          id: block.id,
-          name: block.name,
-          arguments: JSON.stringify(block.input)
-          // Convert object to JSON string
-        });
-      }
-    }
-    return content;
-  }
-  /**
-   * Extract output text from Anthropic content blocks
-   */
-  extractOutputText(blocks) {
-    const textBlocks = blocks.filter(
-      (b) => b.type === "text"
-    );
-    return textBlocks.map((b) => b.text).join("\n");
-  }
-  /**
-   * Map Anthropic stop_reason → our status
-   */
-  mapStopReason(stopReason) {
-    switch (stopReason) {
-      case "end_turn":
-        return "completed";
-      case "tool_use":
-        return "completed";
-      // Tool use is normal completion
-      case "max_tokens":
-        return "incomplete";
-      case "stop_sequence":
-        return "completed";
-      default:
-        return "incomplete";
-    }
+    return standardTools.map((tool) => this.transformTool(tool));
   }
 };
 
-// src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts
-var AnthropicStreamConverter = class {
+// src/infrastructure/providers/base/BaseStreamConverter.ts
+var BaseStreamConverter = class {
+  // ==========================================================================
+  // Protected State (shared across all stream converters)
+  // ==========================================================================
+  /** Current response ID */
   responseId = "";
+  /** Model name */
   model = "";
+  /** Event sequence number for ordering */
   sequenceNumber = 0;
-  contentBlockIndex = /* @__PURE__ */ new Map();
-  usage = { input_tokens: 0, output_tokens: 0 };
+  /** Usage statistics */
+  usage = { inputTokens: 0, outputTokens: 0 };
+  /** Buffers for accumulating tool call arguments */
+  toolCallBuffers = /* @__PURE__ */ new Map();
+  // ==========================================================================
+  // Public API
+  // ==========================================================================
   /**
-   * Convert Anthropic stream to our StreamEvent format
+   * Convert provider stream to our StreamEvent format
+   *
+   * @param stream - Provider-specific async stream
+   * @param model - Model name (may not be available in all events)
    */
-  async *convertStream(anthropicStream, model) {
-    this.model = model;
-    this.sequenceNumber = 0;
-    this.contentBlockIndex.clear();
-    this.usage = { input_tokens: 0, output_tokens: 0 };
-    for await (const event of anthropicStream) {
-      const converted = this.convertEvent(event);
-      if (converted) {
+  async *convertStream(stream, model) {
+    this.reset();
+    if (model) {
+      this.model = model;
+    }
+    try {
+      for await (const event of stream) {
+        const converted = this.convertEvent(event);
         for (const evt of converted) {
           yield evt;
         }
       }
+    } finally {
     }
   }
   /**
-   * Convert single Anthropic event to our event(s)
+   * Clear all internal state
+   * Should be called after stream is fully processed
+   */
+  clear() {
+    this.responseId = "";
+    this.model = "";
+    this.sequenceNumber = 0;
+    this.usage = { inputTokens: 0, outputTokens: 0 };
+    this.toolCallBuffers.clear();
+  }
+  /**
+   * Reset converter state for a new stream
+   * Alias for clear()
+   */
+  reset() {
+    this.clear();
+  }
+  // ==========================================================================
+  // Protected Helper Methods
+  // ==========================================================================
+  /**
+   * Generate a response ID with provider prefix
+   */
+  generateResponseId() {
+    const uuid = crypto.randomUUID();
+    return `resp_${this.providerName}_${uuid}`;
+  }
+  /**
+   * Get next sequence number (auto-increments)
+   */
+  nextSequence() {
+    return this.sequenceNumber++;
+  }
+  /**
+   * Create RESPONSE_CREATED event
+   */
+  emitResponseCreated(responseId) {
+    if (responseId) {
+      this.responseId = responseId;
+    } else if (!this.responseId) {
+      this.responseId = this.generateResponseId();
+    }
+    return {
+      type: "response.created" /* RESPONSE_CREATED */,
+      response_id: this.responseId,
+      model: this.model,
+      created_at: Date.now()
+    };
+  }
+  /**
+   * Create OUTPUT_TEXT_DELTA event
+   */
+  emitTextDelta(delta, options) {
+    return {
+      type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
+      response_id: this.responseId,
+      item_id: options?.itemId || `msg_${this.responseId}`,
+      output_index: options?.outputIndex ?? 0,
+      content_index: options?.contentIndex ?? 0,
+      delta,
+      sequence_number: this.nextSequence()
+    };
+  }
+  /**
+   * Create TOOL_CALL_START event
+   */
+  emitToolCallStart(toolCallId, toolName, itemId) {
+    this.toolCallBuffers.set(toolCallId, {
+      id: toolCallId,
+      name: toolName,
+      args: ""
+    });
+    return {
+      type: "response.tool_call.start" /* TOOL_CALL_START */,
+      response_id: this.responseId,
+      item_id: itemId || `msg_${this.responseId}`,
+      tool_call_id: toolCallId,
+      tool_name: toolName
+    };
+  }
+  /**
+   * Create TOOL_CALL_ARGUMENTS_DELTA event and accumulate args
+   */
+  emitToolCallArgsDelta(toolCallId, delta, toolName) {
+    const buffer = this.toolCallBuffers.get(toolCallId);
+    if (buffer) {
+      buffer.args += delta;
+    }
+    return {
+      type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
+      response_id: this.responseId,
+      item_id: `msg_${this.responseId}`,
+      tool_call_id: toolCallId,
+      tool_name: toolName || buffer?.name || "",
+      delta,
+      sequence_number: this.nextSequence()
+    };
+  }
+  /**
+   * Create TOOL_CALL_ARGUMENTS_DONE event with accumulated args
+   */
+  emitToolCallArgsDone(toolCallId, toolName) {
+    const buffer = this.toolCallBuffers.get(toolCallId);
+    const args = buffer?.args || "{}";
+    const name = toolName || buffer?.name || "";
+    return {
+      type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
+      response_id: this.responseId,
+      tool_call_id: toolCallId,
+      tool_name: name,
+      arguments: args
+    };
+  }
+  /**
+   * Create RESPONSE_COMPLETE event
+   */
+  emitResponseComplete(status = "completed") {
+    return {
+      type: "response.complete" /* RESPONSE_COMPLETE */,
+      response_id: this.responseId,
+      status,
+      usage: {
+        input_tokens: this.usage.inputTokens,
+        output_tokens: this.usage.outputTokens,
+        total_tokens: this.usage.inputTokens + this.usage.outputTokens
+      },
+      iterations: 1
+    };
+  }
+  /**
+   * Update usage statistics
+   */
+  updateUsage(inputTokens, outputTokens) {
+    if (inputTokens !== void 0) {
+      this.usage.inputTokens = inputTokens;
+    }
+    if (outputTokens !== void 0) {
+      this.usage.outputTokens = outputTokens;
+    }
+  }
+  /**
+   * Get accumulated arguments for a tool call
+   */
+  getAccumulatedArgs(toolCallId) {
+    return this.toolCallBuffers.get(toolCallId)?.args || "{}";
+  }
+  /**
+   * Check if we have buffered data for a tool call
+   */
+  hasToolCallBuffer(toolCallId) {
+    return this.toolCallBuffers.has(toolCallId);
+  }
+};
+
+// src/infrastructure/providers/anthropic/AnthropicStreamConverter.ts
+var AnthropicStreamConverter = class extends BaseStreamConverter {
+  providerName = "anthropic";
+  /** Map of content block index to block info */
+  contentBlockIndex = /* @__PURE__ */ new Map();
+  /**
+   * Convert a single Anthropic event to our StreamEvent(s)
    */
   convertEvent(event) {
     const eventType = event.type;
@@ -4320,21 +6636,24 @@ var AnthropicStreamConverter = class {
     }
   }
   /**
+   * Clear all internal state
+   */
+  clear() {
+    super.clear();
+    this.contentBlockIndex.clear();
+  }
+  // ==========================================================================
+  // Anthropic-Specific Event Handlers
+  // ==========================================================================
+  /**
    * Handle message_start event
    */
   handleMessageStart(event) {
     this.responseId = event.message.id;
     if (event.message.usage) {
-      this.usage.input_tokens = event.message.usage.input_tokens || 0;
+      this.updateUsage(event.message.usage.input_tokens, void 0);
     }
-    return [
-      {
-        type: "response.created" /* RESPONSE_CREATED */,
-        response_id: this.responseId,
-        model: this.model,
-        created_at: Date.now()
-      }
-    ];
+    return [this.emitResponseCreated(this.responseId)];
   }
   /**
    * Handle content_block_start event
@@ -4349,19 +6668,9 @@ var AnthropicStreamConverter = class {
       this.contentBlockIndex.set(index, {
         type: "tool_use",
         id: block.id,
-        name: block.name,
-        accumulatedArgs: ""
-        // Initialize args accumulator
+        name: block.name
       });
-      return [
-        {
-          type: "response.tool_call.start" /* TOOL_CALL_START */,
-          response_id: this.responseId,
-          item_id: `msg_${this.responseId}`,
-          tool_call_id: block.id,
-          tool_name: block.name
-        }
-      ];
+      return [this.emitToolCallStart(block.id, block.name, `msg_${this.responseId}`)];
     }
     return [];
   }
@@ -4375,31 +6684,14 @@ var AnthropicStreamConverter = class {
     if (!blockInfo) return [];
     if (delta.type === "text_delta") {
       return [
-        {
-          type: "response.output_text.delta" /* OUTPUT_TEXT_DELTA */,
-          response_id: this.responseId,
-          item_id: `msg_${this.responseId}`,
-          output_index: 0,
-          content_index: index,
-          delta: delta.text,
-          sequence_number: this.sequenceNumber++
-        }
+        this.emitTextDelta(delta.text, {
+          itemId: `msg_${this.responseId}`,
+          contentIndex: index
+        })
       ];
     } else if (delta.type === "input_json_delta") {
-      if (blockInfo.accumulatedArgs !== void 0) {
-        blockInfo.accumulatedArgs += delta.partial_json;
-      }
-      return [
-        {
-          type: "response.tool_call_arguments.delta" /* TOOL_CALL_ARGUMENTS_DELTA */,
-          response_id: this.responseId,
-          item_id: `msg_${this.responseId}`,
-          tool_call_id: blockInfo.id || "",
-          tool_name: blockInfo.name || "",
-          delta: delta.partial_json,
-          sequence_number: this.sequenceNumber++
-        }
-      ];
+      const toolCallId = blockInfo.id || "";
+      return [this.emitToolCallArgsDelta(toolCallId, delta.partial_json, blockInfo.name)];
     }
     return [];
   }
@@ -4411,16 +6703,7 @@ var AnthropicStreamConverter = class {
     const blockInfo = this.contentBlockIndex.get(index);
     if (!blockInfo) return [];
     if (blockInfo.type === "tool_use") {
-      return [
-        {
-          type: "response.tool_call_arguments.done" /* TOOL_CALL_ARGUMENTS_DONE */,
-          response_id: this.responseId,
-          tool_call_id: blockInfo.id || "",
-          tool_name: blockInfo.name || "",
-          arguments: blockInfo.accumulatedArgs || "{}"
-          // Use accumulated args
-        }
-      ];
+      return [this.emitToolCallArgsDone(blockInfo.id || "", blockInfo.name)];
     }
     return [];
   }
@@ -4429,7 +6712,7 @@ var AnthropicStreamConverter = class {
    */
   handleMessageDelta(event) {
     if (event.usage) {
-      this.usage.output_tokens = event.usage.output_tokens || 0;
+      this.updateUsage(void 0, event.usage.output_tokens);
     }
     return [];
   }
@@ -4437,37 +6720,7 @@ var AnthropicStreamConverter = class {
    * Handle message_stop event (final event)
    */
   handleMessageStop() {
-    return [
-      {
-        type: "response.complete" /* RESPONSE_COMPLETE */,
-        response_id: this.responseId,
-        status: "completed",
-        usage: {
-          input_tokens: this.usage.input_tokens,
-          output_tokens: this.usage.output_tokens,
-          total_tokens: this.usage.input_tokens + this.usage.output_tokens
-        },
-        iterations: 1
-      }
-    ];
-  }
-  /**
-   * Clear all internal state
-   * Should be called after each stream completes to prevent memory leaks
-   */
-  clear() {
-    this.responseId = "";
-    this.model = "";
-    this.sequenceNumber = 0;
-    this.contentBlockIndex.clear();
-    this.usage = { input_tokens: 0, output_tokens: 0 };
-  }
-  /**
-   * Reset converter state for a new stream
-   * Alias for clear()
-   */
-  reset() {
-    this.clear();
+    return [this.emitResponseComplete("completed")];
   }
 };
 
@@ -4930,34 +7183,22 @@ var GoogleConverter = class {
     const candidate = response.candidates?.[0];
     const geminiContent = candidate?.content;
     const content = this.convertGeminiPartsToContent(geminiContent?.parts || []);
-    const output = [
-      {
-        type: "message",
-        id: response.id || `google_msg_${crypto.randomUUID()}`,
-        role: "assistant" /* ASSISTANT */,
-        content
-      }
-    ];
-    const outputText = this.extractOutputText(geminiContent?.parts || []);
     if (process.env.DEBUG_GOOGLE) {
-      console.error("[DEBUG] Extracted output_text:", outputText);
       console.error("[DEBUG] Content array:", JSON.stringify(content, null, 2));
       console.error("[DEBUG] Raw parts:", JSON.stringify(geminiContent?.parts, null, 2));
     }
-    return {
-      id: `resp_google_${crypto.randomUUID()}`,
-      object: "response",
-      created_at: Math.floor(Date.now() / 1e3),
-      status: this.mapFinishReason(candidate?.finishReason),
+    return buildLLMResponse({
+      provider: "google",
       model: response.modelVersion || "gemini",
-      output,
-      output_text: outputText,
+      status: mapGoogleStatus(candidate?.finishReason),
+      content,
+      messageId: response.id,
       usage: {
-        input_tokens: response.usageMetadata?.promptTokenCount || 0,
-        output_tokens: response.usageMetadata?.candidatesTokenCount || 0,
-        total_tokens: response.usageMetadata?.totalTokenCount || 0
+        inputTokens: response.usageMetadata?.promptTokenCount || 0,
+        outputTokens: response.usageMetadata?.candidatesTokenCount || 0,
+        totalTokens: response.usageMetadata?.totalTokenCount || 0
       }
-    };
+    });
   }
   /**
    * Convert Google parts → our Content[]
@@ -4966,13 +7207,9 @@ var GoogleConverter = class {
     const content = [];
     for (const part of parts) {
       if ("text" in part && part.text) {
-        content.push({
-          type: "output_text" /* OUTPUT_TEXT */,
-          text: part.text,
-          annotations: []
-        });
+        content.push(createTextContent(part.text));
       } else if ("functionCall" in part && part.functionCall) {
-        const toolId = `google_${crypto.randomUUID()}`;
+        const toolId = generateToolCallId("google");
         const functionName = part.functionCall.name || "";
         if ("thoughtSignature" in part && part.thoughtSignature) {
           const sig = part.thoughtSignature;
@@ -4985,38 +7222,10 @@ var GoogleConverter = class {
           console.error(`[DEBUG] NO thought signature in part for ${functionName}`);
           console.error(`[DEBUG] Part keys:`, Object.keys(part));
         }
-        content.push({
-          type: "tool_use" /* TOOL_USE */,
-          id: toolId,
-          name: functionName,
-          arguments: JSON.stringify(part.functionCall.args || {})
-        });
+        content.push(createToolUseContent(toolId, functionName, part.functionCall.args || {}));
       }
     }
     return content;
-  }
-  /**
-   * Extract output text from Google parts
-   */
-  extractOutputText(parts) {
-    return parts.filter((p) => "text" in p && typeof p.text === "string").map((p) => p.text).join("\n");
-  }
-  /**
-   * Map Google finish reason → our status
-   */
-  mapFinishReason(finishReason) {
-    switch (finishReason) {
-      case "STOP":
-        return "completed";
-      case "MAX_TOKENS":
-        return "incomplete";
-      case "SAFETY":
-      case "RECITATION":
-        return "failed";
-      case "OTHER":
-      default:
-        return "incomplete";
-    }
   }
   /**
    * Extract tool name from tool_use_id using tracked mapping
@@ -5177,7 +7386,7 @@ var GoogleStreamConverter = class {
    * Generate unique response ID using cryptographically secure UUID
    */
   generateResponseId() {
-    return `resp_google_${crypto.randomUUID()}`;
+    return `resp_google_${crypto2.randomUUID()}`;
   }
   /**
    * Clear all internal state
@@ -5603,1322 +7812,6 @@ function extractProviderConfig(connector) {
     maxRetries: connector.getOptions().maxRetries
   };
 }
-var ToolManager = class extends events.EventEmitter {
-  registry = /* @__PURE__ */ new Map();
-  namespaceIndex = /* @__PURE__ */ new Map();
-  constructor() {
-    super();
-    this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
-  }
-  // ==========================================================================
-  // Registration
-  // ==========================================================================
-  /**
-   * Register a tool with optional configuration
-   */
-  register(tool, options = {}) {
-    const name = this.getToolName(tool);
-    if (this.registry.has(name)) {
-      const existing = this.registry.get(name);
-      existing.tool = tool;
-      if (options.enabled !== void 0) existing.enabled = options.enabled;
-      if (options.namespace !== void 0) {
-        this.moveToNamespace(name, existing.namespace, options.namespace);
-        existing.namespace = options.namespace;
-      }
-      if (options.priority !== void 0) existing.priority = options.priority;
-      if (options.conditions !== void 0) existing.conditions = options.conditions;
-      if (options.permission !== void 0) existing.permission = options.permission;
-      return;
-    }
-    const namespace = options.namespace ?? "default";
-    const effectivePermission = options.permission ?? tool.permission;
-    const registration = {
-      tool,
-      enabled: options.enabled ?? true,
-      namespace,
-      priority: options.priority ?? 0,
-      conditions: options.conditions ?? [],
-      metadata: {
-        registeredAt: /* @__PURE__ */ new Date(),
-        usageCount: 0,
-        totalExecutionMs: 0,
-        avgExecutionMs: 0,
-        successCount: 0,
-        failureCount: 0
-      },
-      permission: effectivePermission
-    };
-    this.registry.set(name, registration);
-    this.addToNamespace(name, namespace);
-    this.emit("tool:registered", { name, namespace, enabled: registration.enabled });
-  }
-  /**
-   * Register multiple tools at once
-   */
-  registerMany(tools, options = {}) {
-    for (const tool of tools) {
-      this.register(tool, options);
-    }
-  }
-  /**
-   * Unregister a tool by name
-   */
-  unregister(name) {
-    const registration = this.registry.get(name);
-    if (!registration) return false;
-    this.removeFromNamespace(name, registration.namespace);
-    this.registry.delete(name);
-    this.emit("tool:unregistered", { name });
-    return true;
-  }
-  /**
-   * Clear all tools
-   */
-  clear() {
-    this.registry.clear();
-    this.namespaceIndex.clear();
-    this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
-  }
-  // ==========================================================================
-  // Enable/Disable
-  // ==========================================================================
-  /**
-   * Enable a tool by name
-   */
-  enable(name) {
-    const registration = this.registry.get(name);
-    if (!registration) return false;
-    if (!registration.enabled) {
-      registration.enabled = true;
-      this.emit("tool:enabled", { name });
-    }
-    return true;
-  }
-  /**
-   * Disable a tool by name (keeps it registered but inactive)
-   */
-  disable(name) {
-    const registration = this.registry.get(name);
-    if (!registration) return false;
-    if (registration.enabled) {
-      registration.enabled = false;
-      this.emit("tool:disabled", { name });
-    }
-    return true;
-  }
-  /**
-   * Toggle a tool's enabled state
-   */
-  toggle(name) {
-    const registration = this.registry.get(name);
-    if (!registration) return false;
-    registration.enabled = !registration.enabled;
-    this.emit(registration.enabled ? "tool:enabled" : "tool:disabled", { name });
-    return registration.enabled;
-  }
-  /**
-   * Check if a tool is enabled
-   */
-  isEnabled(name) {
-    const registration = this.registry.get(name);
-    return registration?.enabled ?? false;
-  }
-  /**
-   * Set enabled state for multiple tools
-   */
-  setEnabled(names, enabled) {
-    for (const name of names) {
-      if (enabled) {
-        this.enable(name);
-      } else {
-        this.disable(name);
-      }
-    }
-  }
-  // ==========================================================================
-  // Namespaces
-  // ==========================================================================
-  /**
-   * Set the namespace for a tool
-   */
-  setNamespace(toolName, namespace) {
-    const registration = this.registry.get(toolName);
-    if (!registration) return false;
-    const oldNamespace = registration.namespace;
-    if (oldNamespace === namespace) return true;
-    this.moveToNamespace(toolName, oldNamespace, namespace);
-    registration.namespace = namespace;
-    return true;
-  }
-  /**
-   * Enable all tools in a namespace
-   */
-  enableNamespace(namespace) {
-    const tools = this.namespaceIndex.get(namespace);
-    if (!tools) return;
-    for (const name of tools) {
-      this.enable(name);
-    }
-    this.emit("namespace:enabled", { namespace });
-  }
-  /**
-   * Disable all tools in a namespace
-   */
-  disableNamespace(namespace) {
-    const tools = this.namespaceIndex.get(namespace);
-    if (!tools) return;
-    for (const name of tools) {
-      this.disable(name);
-    }
-    this.emit("namespace:disabled", { namespace });
-  }
-  /**
-   * Get all namespace names
-   */
-  getNamespaces() {
-    return Array.from(this.namespaceIndex.keys());
-  }
-  /**
-   * Create a namespace with tools
-   */
-  createNamespace(namespace, tools, options = {}) {
-    for (const tool of tools) {
-      this.register(tool, { ...options, namespace });
-    }
-  }
-  // ==========================================================================
-  // Priority
-  // ==========================================================================
-  /**
-   * Set priority for a tool
-   */
-  setPriority(name, priority) {
-    const registration = this.registry.get(name);
-    if (!registration) return false;
-    registration.priority = priority;
-    return true;
-  }
-  /**
-   * Get priority for a tool
-   */
-  getPriority(name) {
-    return this.registry.get(name)?.priority;
-  }
-  /**
-   * Get permission config for a tool
-   */
-  getPermission(name) {
-    return this.registry.get(name)?.permission;
-  }
-  /**
-   * Set permission config for a tool
-   */
-  setPermission(name, permission) {
-    const registration = this.registry.get(name);
-    if (!registration) return false;
-    registration.permission = permission;
-    return true;
-  }
-  // ==========================================================================
-  // Query
-  // ==========================================================================
-  /**
-   * Get a tool by name
-   */
-  get(name) {
-    return this.registry.get(name)?.tool;
-  }
-  /**
-   * Check if a tool exists
-   */
-  has(name) {
-    return this.registry.has(name);
-  }
-  /**
-   * Get all enabled tools (sorted by priority)
-   */
-  getEnabled() {
-    return this.getSortedByPriority().filter((reg) => reg.enabled).map((reg) => reg.tool);
-  }
-  /**
-   * Get all tools (enabled and disabled)
-   */
-  getAll() {
-    return Array.from(this.registry.values()).map((reg) => reg.tool);
-  }
-  /**
-   * Get tools by namespace
-   */
-  getByNamespace(namespace) {
-    const toolNames = this.namespaceIndex.get(namespace);
-    if (!toolNames) return [];
-    return Array.from(toolNames).map((name) => this.registry.get(name)).filter((reg) => reg.enabled).sort((a, b) => b.priority - a.priority).map((reg) => reg.tool);
-  }
-  /**
-   * Get tool registration info
-   */
-  getRegistration(name) {
-    return this.registry.get(name);
-  }
-  /**
-   * List all tool names
-   */
-  list() {
-    return Array.from(this.registry.keys());
-  }
-  /**
-   * List enabled tool names
-   */
-  listEnabled() {
-    return Array.from(this.registry.entries()).filter(([_, reg]) => reg.enabled).map(([name]) => name);
-  }
-  /**
-   * Get count of registered tools
-   */
-  get size() {
-    return this.registry.size;
-  }
-  // ==========================================================================
-  // Selection
-  // ==========================================================================
-  /**
-   * Select tools based on context (uses conditions and smart filtering)
-   */
-  selectForContext(context) {
-    const sorted = this.getSortedByPriority();
-    const selected = [];
-    for (const reg of sorted) {
-      if (!reg.enabled) continue;
-      if (reg.conditions.length > 0) {
-        const allConditionsMet = reg.conditions.every((cond) => cond.predicate(context));
-        if (!allConditionsMet) continue;
-      }
-      if (context.recentTools?.includes(this.getToolName(reg.tool))) {
-        continue;
-      }
-      selected.push(reg.tool);
-    }
-    if (context.tokenBudget !== void 0) {
-      return this.filterByTokenBudget(selected, context.tokenBudget);
-    }
-    return selected;
-  }
-  /**
-   * Select tools by matching capability description
-   */
-  selectByCapability(description) {
-    const lowerDesc = description.toLowerCase();
-    const keywords = lowerDesc.split(/\s+/);
-    return this.getEnabled().filter((tool) => {
-      const toolDesc = (tool.definition.function.description ?? "").toLowerCase();
-      const toolName = tool.definition.function.name.toLowerCase();
-      return keywords.some((kw) => toolDesc.includes(kw) || toolName.includes(kw));
-    });
-  }
-  /**
-   * Filter tools to fit within a token budget
-   */
-  selectWithinBudget(budget) {
-    return this.filterByTokenBudget(this.getEnabled(), budget);
-  }
-  // ==========================================================================
-  // Execution Tracking
-  // ==========================================================================
-  /**
-   * Record tool execution (called by agent/loop)
-   */
-  recordExecution(name, executionMs, success) {
-    const registration = this.registry.get(name);
-    if (!registration) return;
-    const meta = registration.metadata;
-    meta.usageCount++;
-    meta.lastUsed = /* @__PURE__ */ new Date();
-    meta.totalExecutionMs += executionMs;
-    meta.avgExecutionMs = meta.totalExecutionMs / meta.usageCount;
-    if (success) {
-      meta.successCount++;
-    } else {
-      meta.failureCount++;
-    }
-    this.emit("tool:executed", {
-      name,
-      executionMs,
-      success,
-      totalUsage: meta.usageCount
-    });
-  }
-  // ==========================================================================
-  // Statistics
-  // ==========================================================================
-  /**
-   * Get comprehensive statistics
-   */
-  getStats() {
-    const registrations = Array.from(this.registry.values());
-    const enabledCount = registrations.filter((r) => r.enabled).length;
-    const toolsByNamespace = {};
-    for (const [ns, tools] of this.namespaceIndex) {
-      toolsByNamespace[ns] = tools.size;
-    }
-    const mostUsed = registrations.filter((r) => r.metadata.usageCount > 0).sort((a, b) => b.metadata.usageCount - a.metadata.usageCount).slice(0, 10).map((r) => ({
-      name: this.getToolName(r.tool),
-      count: r.metadata.usageCount
-    }));
-    const totalExecutions = registrations.reduce((sum, r) => sum + r.metadata.usageCount, 0);
-    return {
-      totalTools: this.registry.size,
-      enabledTools: enabledCount,
-      disabledTools: this.registry.size - enabledCount,
-      namespaces: this.getNamespaces(),
-      toolsByNamespace,
-      mostUsed,
-      totalExecutions
-    };
-  }
-  // ==========================================================================
-  // Persistence
-  // ==========================================================================
-  /**
-   * Get serializable state (for session persistence)
-   */
-  getState() {
-    const enabled = {};
-    const namespaces = {};
-    const priorities = {};
-    const permissions = {};
-    for (const [name, reg] of this.registry) {
-      enabled[name] = reg.enabled;
-      namespaces[name] = reg.namespace;
-      priorities[name] = reg.priority;
-      if (reg.permission) {
-        permissions[name] = reg.permission;
-      }
-    }
-    return { enabled, namespaces, priorities, permissions };
-  }
-  /**
-   * Load state (restores enabled/disabled, namespaces, priorities, permissions)
-   * Note: Tools must be re-registered separately (they contain functions)
-   */
-  loadState(state) {
-    for (const [name, isEnabled] of Object.entries(state.enabled)) {
-      const reg = this.registry.get(name);
-      if (reg) {
-        reg.enabled = isEnabled;
-      }
-    }
-    for (const [name, namespace] of Object.entries(state.namespaces)) {
-      this.setNamespace(name, namespace);
-    }
-    for (const [name, priority] of Object.entries(state.priorities)) {
-      this.setPriority(name, priority);
-    }
-    if (state.permissions) {
-      for (const [name, permission] of Object.entries(state.permissions)) {
-        this.setPermission(name, permission);
-      }
-    }
-  }
-  // ==========================================================================
-  // Private Helpers
-  // ==========================================================================
-  getToolName(tool) {
-    return tool.definition.function.name;
-  }
-  getSortedByPriority() {
-    return Array.from(this.registry.values()).sort((a, b) => b.priority - a.priority);
-  }
-  addToNamespace(toolName, namespace) {
-    if (!this.namespaceIndex.has(namespace)) {
-      this.namespaceIndex.set(namespace, /* @__PURE__ */ new Set());
-    }
-    this.namespaceIndex.get(namespace).add(toolName);
-  }
-  removeFromNamespace(toolName, namespace) {
-    this.namespaceIndex.get(namespace)?.delete(toolName);
-  }
-  moveToNamespace(toolName, oldNamespace, newNamespace) {
-    this.removeFromNamespace(toolName, oldNamespace);
-    this.addToNamespace(toolName, newNamespace);
-  }
-  filterByTokenBudget(tools, budget) {
-    const result = [];
-    let usedTokens = 0;
-    for (const tool of tools) {
-      const toolTokens = this.estimateToolTokens(tool);
-      if (usedTokens + toolTokens <= budget) {
-        result.push(tool);
-        usedTokens += toolTokens;
-      }
-    }
-    return result;
-  }
-  estimateToolTokens(tool) {
-    const def = tool.definition.function;
-    const nameTokens = Math.ceil((def.name?.length ?? 0) / 4);
-    const descTokens = Math.ceil((def.description?.length ?? 0) / 4);
-    const paramTokens = def.parameters ? Math.ceil(JSON.stringify(def.parameters).length / 4) : 0;
-    return nameTokens + descTokens + paramTokens + 20;
-  }
-};
-var SessionManager = class extends events.EventEmitter {
-  storage;
-  defaultMetadata;
-  autoSaveTimers = /* @__PURE__ */ new Map();
-  constructor(config) {
-    super();
-    this.storage = config.storage;
-    this.defaultMetadata = config.defaultMetadata ?? {};
-  }
-  // ==========================================================================
-  // Lifecycle
-  // ==========================================================================
-  /**
-   * Create a new session
-   */
-  create(agentType, metadata) {
-    const now = /* @__PURE__ */ new Date();
-    const session = {
-      id: this.generateId(),
-      agentType,
-      createdAt: now,
-      lastActiveAt: now,
-      history: { version: 1, entries: [] },
-      toolState: { enabled: {}, namespaces: {}, priorities: {} },
-      custom: {},
-      metadata: {
-        ...this.defaultMetadata,
-        ...metadata
-      }
-    };
-    this.emit("session:created", { sessionId: session.id, agentType });
-    return session;
-  }
-  /**
-   * Save a session to storage
-   */
-  async save(session) {
-    try {
-      session.lastActiveAt = /* @__PURE__ */ new Date();
-      await this.storage.save(session);
-      this.emit("session:saved", { sessionId: session.id });
-    } catch (error) {
-      this.emit("session:error", { sessionId: session.id, error, operation: "save" });
-      throw error;
-    }
-  }
-  /**
-   * Load a session from storage
-   */
-  async load(sessionId) {
-    try {
-      const session = await this.storage.load(sessionId);
-      if (session) {
-        session.createdAt = new Date(session.createdAt);
-        session.lastActiveAt = new Date(session.lastActiveAt);
-        this.emit("session:loaded", { sessionId });
-      }
-      return session;
-    } catch (error) {
-      this.emit("session:error", { sessionId, error, operation: "load" });
-      throw error;
-    }
-  }
-  /**
-   * Delete a session from storage
-   */
-  async delete(sessionId) {
-    try {
-      this.stopAutoSave(sessionId);
-      await this.storage.delete(sessionId);
-      this.emit("session:deleted", { sessionId });
-    } catch (error) {
-      this.emit("session:error", { sessionId, error, operation: "delete" });
-      throw error;
-    }
-  }
-  /**
-   * Check if a session exists
-   */
-  async exists(sessionId) {
-    return this.storage.exists(sessionId);
-  }
-  // ==========================================================================
-  // Query
-  // ==========================================================================
-  /**
-   * List sessions with optional filtering
-   */
-  async list(filter) {
-    return this.storage.list(filter);
-  }
-  /**
-   * Search sessions by query string
-   */
-  async search(query, filter) {
-    if (this.storage.search) {
-      return this.storage.search(query, filter);
-    }
-    const all = await this.storage.list(filter);
-    const lowerQuery = query.toLowerCase();
-    return all.filter(
-      (s) => s.metadata.title?.toLowerCase().includes(lowerQuery) || s.metadata.tags?.some((t) => t.toLowerCase().includes(lowerQuery))
-    );
-  }
-  // ==========================================================================
-  // Advanced Operations
-  // ==========================================================================
-  /**
-   * Fork a session (create a copy with new ID)
-   */
-  async fork(sessionId, newMetadata) {
-    const original = await this.load(sessionId);
-    if (!original) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-    const forked = {
-      ...original,
-      id: this.generateId(),
-      createdAt: /* @__PURE__ */ new Date(),
-      lastActiveAt: /* @__PURE__ */ new Date(),
-      metadata: {
-        ...original.metadata,
-        ...newMetadata,
-        forkedFrom: sessionId
-      },
-      // Deep clone mutable fields
-      history: JSON.parse(JSON.stringify(original.history)),
-      toolState: JSON.parse(JSON.stringify(original.toolState)),
-      custom: JSON.parse(JSON.stringify(original.custom))
-    };
-    if (original.memory) {
-      forked.memory = JSON.parse(JSON.stringify(original.memory));
-    }
-    if (original.plan) {
-      forked.plan = JSON.parse(JSON.stringify(original.plan));
-    }
-    await this.save(forked);
-    return forked;
-  }
-  /**
-   * Update session metadata
-   */
-  async updateMetadata(sessionId, metadata) {
-    const session = await this.load(sessionId);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-    session.metadata = { ...session.metadata, ...metadata };
-    await this.save(session);
-  }
-  // ==========================================================================
-  // Auto-Save
-  // ==========================================================================
-  /**
-   * Enable auto-save for a session
-   */
-  enableAutoSave(session, intervalMs, onSave) {
-    this.stopAutoSave(session.id);
-    const timer = setInterval(async () => {
-      try {
-        await this.save(session);
-        onSave?.(session);
-      } catch (error) {
-        this.emit("session:error", {
-          sessionId: session.id,
-          error,
-          operation: "auto-save"
-        });
-      }
-    }, intervalMs);
-    this.autoSaveTimers.set(session.id, timer);
-  }
-  /**
-   * Disable auto-save for a session
-   */
-  stopAutoSave(sessionId) {
-    const timer = this.autoSaveTimers.get(sessionId);
-    if (timer) {
-      clearInterval(timer);
-      this.autoSaveTimers.delete(sessionId);
-    }
-  }
-  /**
-   * Stop all auto-save timers
-   */
-  stopAllAutoSave() {
-    for (const timer of this.autoSaveTimers.values()) {
-      clearInterval(timer);
-    }
-    this.autoSaveTimers.clear();
-  }
-  // ==========================================================================
-  // Utilities
-  // ==========================================================================
-  /**
-   * Generate a unique session ID
-   */
-  generateId() {
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substring(2, 10);
-    return `sess_${timestamp}_${random}`;
-  }
-  /**
-   * Cleanup resources
-   */
-  destroy() {
-    this.stopAllAutoSave();
-    this.removeAllListeners();
-  }
-};
-function createEmptyHistory() {
-  return { version: 1, entries: [] };
-}
-function createEmptyMemory() {
-  return { version: 1, entries: [] };
-}
-function addHistoryEntry(history, type, content, metadata) {
-  history.entries.push({
-    type,
-    content,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    metadata
-  });
-}
-
-// src/core/permissions/types.ts
-var APPROVAL_STATE_VERSION = 1;
-var DEFAULT_PERMISSION_CONFIG = {
-  scope: "once",
-  riskLevel: "low"
-};
-var DEFAULT_ALLOWLIST = [
-  // Filesystem read-only tools
-  "read_file",
-  "glob",
-  "grep",
-  "list_directory",
-  // Memory management (internal state - safe)
-  "memory_store",
-  "memory_retrieve",
-  "memory_delete",
-  "memory_list",
-  // Context introspection (read-only)
-  "context_inspect",
-  "context_breakdown",
-  "cache_stats",
-  "memory_stats",
-  // Meta-tools (internal coordination)
-  "_start_planning",
-  "_modify_plan",
-  "_report_progress",
-  "_request_approval"
-  // CRITICAL: Must be allowlisted to avoid circular dependency!
-];
-
-// src/core/permissions/ToolPermissionManager.ts
-var ToolPermissionManager = class extends events.EventEmitter {
-  // Approval cache (session-level)
-  approvalCache = /* @__PURE__ */ new Map();
-  // Allow/block lists
-  allowlist = /* @__PURE__ */ new Set();
-  blocklist = /* @__PURE__ */ new Set();
-  // Per-tool configurations
-  toolConfigs = /* @__PURE__ */ new Map();
-  // Defaults
-  defaultScope;
-  defaultRiskLevel;
-  // Optional approval callback
-  onApprovalRequired;
-  constructor(config) {
-    super();
-    this.defaultScope = config?.defaultScope ?? DEFAULT_PERMISSION_CONFIG.scope;
-    this.defaultRiskLevel = config?.defaultRiskLevel ?? DEFAULT_PERMISSION_CONFIG.riskLevel;
-    for (const toolName of DEFAULT_ALLOWLIST) {
-      this.allowlist.add(toolName);
-    }
-    if (config?.allowlist) {
-      for (const toolName of config.allowlist) {
-        this.allowlist.add(toolName);
-      }
-    }
-    if (config?.blocklist) {
-      for (const toolName of config.blocklist) {
-        this.blocklist.add(toolName);
-      }
-    }
-    if (config?.tools) {
-      for (const [toolName, toolConfig] of Object.entries(config.tools)) {
-        this.toolConfigs.set(toolName, toolConfig);
-      }
-    }
-    this.onApprovalRequired = config?.onApprovalRequired;
-  }
-  // ==========================================================================
-  // Core Permission Checking
-  // ==========================================================================
-  /**
-   * Check if a tool needs approval before execution
-   *
-   * @param toolName - Name of the tool
-   * @param _args - Optional arguments (for args-specific approval, reserved for future use)
-   * @returns PermissionCheckResult with allowed/needsApproval/blocked status
-   */
-  checkPermission(toolName, _args) {
-    const config = this.getEffectiveConfig(toolName);
-    if (this.blocklist.has(toolName)) {
-      return {
-        allowed: false,
-        needsApproval: false,
-        blocked: true,
-        reason: "Tool is blocklisted",
-        config
-      };
-    }
-    if (this.allowlist.has(toolName)) {
-      return {
-        allowed: true,
-        needsApproval: false,
-        blocked: false,
-        reason: "Tool is allowlisted",
-        config
-      };
-    }
-    const scope = config.scope ?? this.defaultScope;
-    switch (scope) {
-      case "always":
-        return {
-          allowed: true,
-          needsApproval: false,
-          blocked: false,
-          reason: 'Tool scope is "always"',
-          config
-        };
-      case "never":
-        return {
-          allowed: false,
-          needsApproval: false,
-          blocked: true,
-          reason: 'Tool scope is "never"',
-          config
-        };
-      case "session":
-        if (this.isApprovedForSession(toolName)) {
-          return {
-            allowed: true,
-            needsApproval: false,
-            blocked: false,
-            reason: "Tool approved for session",
-            config
-          };
-        }
-        return {
-          allowed: false,
-          needsApproval: true,
-          blocked: false,
-          reason: "Session approval required",
-          config
-        };
-      case "once":
-      default:
-        return {
-          allowed: false,
-          needsApproval: true,
-          blocked: false,
-          reason: "Per-call approval required",
-          config
-        };
-    }
-  }
-  /**
-   * Check if a tool call needs approval (uses ToolCall object)
-   */
-  needsApproval(toolCall) {
-    const result = this.checkPermission(toolCall.function.name);
-    return result.needsApproval;
-  }
-  /**
-   * Check if a tool is blocked
-   */
-  isBlocked(toolName) {
-    return this.checkPermission(toolName).blocked;
-  }
-  /**
-   * Check if a tool is approved (either allowlisted or session-approved)
-   */
-  isApproved(toolName) {
-    return this.checkPermission(toolName).allowed;
-  }
-  // ==========================================================================
-  // Approval Management
-  // ==========================================================================
-  /**
-   * Approve a tool (record approval)
-   *
-   * @param toolName - Name of the tool
-   * @param decision - Approval decision with scope
-   */
-  approve(toolName, decision) {
-    const scope = decision?.scope ?? "session";
-    const config = this.getEffectiveConfig(toolName);
-    let expiresAt;
-    if (scope === "session" && config.sessionTTLMs) {
-      expiresAt = new Date(Date.now() + config.sessionTTLMs);
-    }
-    const entry = {
-      toolName,
-      scope,
-      approvedAt: /* @__PURE__ */ new Date(),
-      approvedBy: decision?.approvedBy,
-      expiresAt
-    };
-    this.approvalCache.set(toolName, entry);
-    this.emit("tool:approved", {
-      toolName,
-      scope,
-      approvedBy: decision?.approvedBy
-    });
-  }
-  /**
-   * Approve a tool for the entire session
-   */
-  approveForSession(toolName, approvedBy) {
-    this.approve(toolName, { scope: "session", approvedBy });
-  }
-  /**
-   * Revoke a tool's approval
-   */
-  revoke(toolName) {
-    if (this.approvalCache.has(toolName)) {
-      this.approvalCache.delete(toolName);
-      this.emit("tool:revoked", { toolName });
-    }
-  }
-  /**
-   * Deny a tool execution (for audit trail)
-   */
-  deny(toolName, reason) {
-    this.emit("tool:denied", { toolName, reason });
-  }
-  /**
-   * Check if a tool has been approved for the current session
-   */
-  isApprovedForSession(toolName) {
-    const entry = this.approvalCache.get(toolName);
-    if (!entry) return false;
-    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
-      this.approvalCache.delete(toolName);
-      return false;
-    }
-    return entry.scope === "session" || entry.scope === "always";
-  }
-  // ==========================================================================
-  // Allowlist / Blocklist Management
-  // ==========================================================================
-  /**
-   * Add a tool to the allowlist (always allowed)
-   */
-  allowlistAdd(toolName) {
-    this.blocklist.delete(toolName);
-    this.allowlist.add(toolName);
-    this.emit("allowlist:added", { toolName });
-  }
-  /**
-   * Remove a tool from the allowlist
-   */
-  allowlistRemove(toolName) {
-    if (this.allowlist.delete(toolName)) {
-      this.emit("allowlist:removed", { toolName });
-    }
-  }
-  /**
-   * Check if a tool is in the allowlist
-   */
-  isAllowlisted(toolName) {
-    return this.allowlist.has(toolName);
-  }
-  /**
-   * Get all allowlisted tools
-   */
-  getAllowlist() {
-    return Array.from(this.allowlist);
-  }
-  /**
-   * Add a tool to the blocklist (always blocked)
-   */
-  blocklistAdd(toolName) {
-    this.allowlist.delete(toolName);
-    this.blocklist.add(toolName);
-    this.emit("blocklist:added", { toolName });
-  }
-  /**
-   * Remove a tool from the blocklist
-   */
-  blocklistRemove(toolName) {
-    if (this.blocklist.delete(toolName)) {
-      this.emit("blocklist:removed", { toolName });
-    }
-  }
-  /**
-   * Check if a tool is in the blocklist
-   */
-  isBlocklisted(toolName) {
-    return this.blocklist.has(toolName);
-  }
-  /**
-   * Get all blocklisted tools
-   */
-  getBlocklist() {
-    return Array.from(this.blocklist);
-  }
-  // ==========================================================================
-  // Tool Configuration
-  // ==========================================================================
-  /**
-   * Set permission config for a specific tool
-   */
-  setToolConfig(toolName, config) {
-    this.toolConfigs.set(toolName, config);
-  }
-  /**
-   * Get permission config for a specific tool
-   */
-  getToolConfig(toolName) {
-    return this.toolConfigs.get(toolName);
-  }
-  /**
-   * Get effective config (tool-specific or defaults)
-   */
-  getEffectiveConfig(toolName) {
-    const toolConfig = this.toolConfigs.get(toolName);
-    return {
-      scope: toolConfig?.scope ?? this.defaultScope,
-      riskLevel: toolConfig?.riskLevel ?? this.defaultRiskLevel,
-      approvalMessage: toolConfig?.approvalMessage,
-      sensitiveArgs: toolConfig?.sensitiveArgs,
-      sessionTTLMs: toolConfig?.sessionTTLMs
-    };
-  }
-  // ==========================================================================
-  // Approval Request Handler
-  // ==========================================================================
-  /**
-   * Request approval for a tool call
-   *
-   * If an onApprovalRequired callback is set, it will be called.
-   * Otherwise, this auto-approves for backward compatibility.
-   *
-   * NOTE: If you want to require explicit approval, you MUST either:
-   * 1. Set onApprovalRequired callback in AgentPermissionsConfig
-   * 2. Register an 'approve:tool' hook in the AgenticLoop
-   * 3. Add tools to the blocklist if they should never run
-   *
-   * This auto-approval behavior preserves backward compatibility with
-   * existing code that doesn't use the permission system.
-   */
-  async requestApproval(context) {
-    if (this.onApprovalRequired) {
-      const decision = await this.onApprovalRequired(context);
-      if (decision.approved) {
-        this.approve(context.toolCall.function.name, decision);
-      } else {
-        this.deny(context.toolCall.function.name, decision.reason ?? "User denied");
-      }
-      return decision;
-    }
-    return {
-      approved: true,
-      reason: "Auto-approved (no approval handler configured)"
-    };
-  }
-  // ==========================================================================
-  // Query Methods
-  // ==========================================================================
-  /**
-   * Get all tools that have session approvals
-   */
-  getApprovedTools() {
-    const approved = [];
-    for (const [toolName, entry] of this.approvalCache) {
-      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
-        continue;
-      }
-      approved.push(toolName);
-    }
-    return approved;
-  }
-  /**
-   * Get the approval entry for a tool
-   */
-  getApprovalEntry(toolName) {
-    const entry = this.approvalCache.get(toolName);
-    if (!entry) return void 0;
-    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
-      this.approvalCache.delete(toolName);
-      return void 0;
-    }
-    return entry;
-  }
-  // ==========================================================================
-  // Session Management
-  // ==========================================================================
-  /**
-   * Clear all session approvals
-   */
-  clearSession() {
-    this.approvalCache.clear();
-    this.emit("session:cleared", {});
-  }
-  // ==========================================================================
-  // Persistence (for Session integration)
-  // ==========================================================================
-  /**
-   * Serialize approval state for persistence
-   */
-  getState() {
-    const approvals = {};
-    for (const [toolName, entry] of this.approvalCache) {
-      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
-        continue;
-      }
-      approvals[toolName] = {
-        toolName: entry.toolName,
-        scope: entry.scope,
-        approvedAt: entry.approvedAt.toISOString(),
-        approvedBy: entry.approvedBy,
-        expiresAt: entry.expiresAt?.toISOString(),
-        argsHash: entry.argsHash
-      };
-    }
-    return {
-      version: APPROVAL_STATE_VERSION,
-      approvals,
-      blocklist: Array.from(this.blocklist),
-      allowlist: Array.from(this.allowlist)
-    };
-  }
-  /**
-   * Load approval state from persistence
-   */
-  loadState(state) {
-    this.approvalCache.clear();
-    if (state.version !== APPROVAL_STATE_VERSION) {
-      console.warn(`ToolPermissionManager: Unknown state version ${state.version}, ignoring`);
-      return;
-    }
-    for (const [toolName, entry] of Object.entries(state.approvals)) {
-      const approvedAt = new Date(entry.approvedAt);
-      const expiresAt = entry.expiresAt ? new Date(entry.expiresAt) : void 0;
-      if (expiresAt && expiresAt < /* @__PURE__ */ new Date()) {
-        continue;
-      }
-      this.approvalCache.set(toolName, {
-        toolName: entry.toolName,
-        scope: entry.scope,
-        approvedAt,
-        approvedBy: entry.approvedBy,
-        expiresAt,
-        argsHash: entry.argsHash
-      });
-    }
-    for (const toolName of state.blocklist) {
-      this.blocklist.add(toolName);
-    }
-    for (const toolName of state.allowlist) {
-      this.blocklist.delete(toolName);
-      this.allowlist.add(toolName);
-    }
-  }
-  // ==========================================================================
-  // Utility Methods
-  // ==========================================================================
-  /**
-   * Get defaults
-   */
-  getDefaults() {
-    return {
-      scope: this.defaultScope,
-      riskLevel: this.defaultRiskLevel
-    };
-  }
-  /**
-   * Set defaults
-   */
-  setDefaults(defaults) {
-    if (defaults.scope) this.defaultScope = defaults.scope;
-    if (defaults.riskLevel) this.defaultRiskLevel = defaults.riskLevel;
-  }
-  /**
-   * Get summary statistics
-   */
-  getStats() {
-    return {
-      approvedCount: this.getApprovedTools().length,
-      allowlistedCount: this.allowlist.size,
-      blocklistedCount: this.blocklist.size,
-      configuredCount: this.toolConfigs.size
-    };
-  }
-  /**
-   * Reset to initial state
-   */
-  reset() {
-    this.approvalCache.clear();
-    this.allowlist.clear();
-    this.blocklist.clear();
-    this.toolConfigs.clear();
-    this.defaultScope = DEFAULT_PERMISSION_CONFIG.scope;
-    this.defaultRiskLevel = DEFAULT_PERMISSION_CONFIG.riskLevel;
-  }
-};
-
-// src/capabilities/agents/ToolRegistry.ts
-var ToolRegistry = class {
-  tools = /* @__PURE__ */ new Map();
-  circuitBreakers = /* @__PURE__ */ new Map();
-  logger;
-  constructor() {
-    this.logger = logger.child({ component: "ToolRegistry" });
-  }
-  /**
-   * Register a new tool
-   */
-  registerTool(tool) {
-    this.tools.set(tool.definition.function.name, tool);
-  }
-  /**
-   * Unregister a tool
-   */
-  unregisterTool(toolName) {
-    this.tools.delete(toolName);
-  }
-  /**
-   * Get or create circuit breaker for a tool
-   */
-  getCircuitBreaker(toolName, tool) {
-    let breaker = this.circuitBreakers.get(toolName);
-    if (!breaker) {
-      const config = tool.circuitBreaker || {
-        failureThreshold: 3,
-        successThreshold: 2,
-        resetTimeoutMs: 6e4,
-        // 1 minute
-        windowMs: 3e5
-        // 5 minutes
-      };
-      breaker = new CircuitBreaker(`tool:${toolName}`, config);
-      breaker.on("opened", (data) => {
-        this.logger.warn(data, `Circuit breaker opened for tool: ${toolName}`);
-        metrics.increment("circuit_breaker.opened", 1, {
-          breaker: data.name,
-          tool: toolName
-        });
-      });
-      breaker.on("closed", (data) => {
-        this.logger.info(data, `Circuit breaker closed for tool: ${toolName}`);
-        metrics.increment("circuit_breaker.closed", 1, {
-          breaker: data.name,
-          tool: toolName
-        });
-      });
-      this.circuitBreakers.set(toolName, breaker);
-    }
-    return breaker;
-  }
-  /**
-   * Execute a tool function
-   */
-  async execute(toolName, args) {
-    const tool = this.tools.get(toolName);
-    if (!tool) {
-      throw new ToolNotFoundError(toolName);
-    }
-    const breaker = this.getCircuitBreaker(toolName, tool);
-    this.logger.debug({ toolName, args }, "Tool execution started");
-    const startTime = Date.now();
-    metrics.increment("tool.executed", 1, { tool: toolName });
-    try {
-      const result = await breaker.execute(async () => {
-        return await tool.execute(args);
-      });
-      const duration = Date.now() - startTime;
-      this.logger.debug({ toolName, duration }, "Tool execution completed");
-      metrics.timing("tool.duration", duration, { tool: toolName });
-      metrics.increment("tool.success", 1, { tool: toolName });
-      return result;
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      this.logger.error({
-        toolName,
-        error: error.message,
-        duration
-      }, "Tool execution failed");
-      metrics.increment("tool.failed", 1, {
-        tool: toolName,
-        error: error.name
-      });
-      throw new ToolExecutionError(
-        toolName,
-        error.message,
-        error
-      );
-    }
-  }
-  /**
-   * Check if tool is available
-   */
-  hasToolFunction(toolName) {
-    return this.tools.has(toolName);
-  }
-  /**
-   * Get tool definition
-   */
-  getToolDefinition(toolName) {
-    const tool = this.tools.get(toolName);
-    return tool?.definition;
-  }
-  /**
-   * List all registered tools
-   */
-  listTools() {
-    return Array.from(this.tools.keys());
-  }
-  /**
-   * Clear all registered tools
-   */
-  clear() {
-    this.tools.clear();
-    this.circuitBreakers.clear();
-  }
-  /**
-   * Get circuit breaker states for all tools
-   */
-  getCircuitBreakerStates() {
-    const states = /* @__PURE__ */ new Map();
-    for (const [toolName, breaker] of this.circuitBreakers.entries()) {
-      states.set(toolName, breaker.getState());
-    }
-    return states;
-  }
-  /**
-   * Get circuit breaker metrics for a specific tool
-   */
-  getToolCircuitBreakerMetrics(toolName) {
-    const breaker = this.circuitBreakers.get(toolName);
-    return breaker?.getMetrics();
-  }
-  /**
-   * Manually reset a tool's circuit breaker
-   */
-  resetToolCircuitBreaker(toolName) {
-    const breaker = this.circuitBreakers.get(toolName);
-    if (breaker) {
-      breaker.reset();
-      this.logger.info({ toolName }, "Tool circuit breaker manually reset");
-    }
-  }
-};
 
 // src/domain/entities/Tool.ts
 var ToolCallState = /* @__PURE__ */ ((ToolCallState2) => {
@@ -7648,7 +8541,7 @@ var StreamState = class {
 };
 
 // src/capabilities/agents/AgenticLoop.ts
-var AgenticLoop = class extends EventEmitter.EventEmitter {
+var AgenticLoop = class extends eventemitter3.EventEmitter {
   constructor(provider, toolExecutor, hookConfig, errorHandling) {
     super();
     this.provider = provider;
@@ -7672,7 +8565,7 @@ var AgenticLoop = class extends EventEmitter.EventEmitter {
    * Execute agentic loop with tool calling
    */
   async execute(config) {
-    const executionId = `exec_${crypto.randomUUID()}`;
+    const executionId = `exec_${crypto2.randomUUID()}`;
     this.context = new ExecutionContext(executionId, {
       maxHistorySize: 10,
       historyMode: config.historyMode || "summary",
@@ -7813,7 +8706,7 @@ var AgenticLoop = class extends EventEmitter.EventEmitter {
    * Execute agentic loop with streaming and tool calling
    */
   async *executeStreaming(config) {
-    const executionId = `exec_${crypto.randomUUID()}`;
+    const executionId = `exec_${crypto2.randomUUID()}`;
     this.context = new ExecutionContext(executionId, {
       maxHistorySize: 10,
       historyMode: config.historyMode || "summary",
@@ -8779,43 +9672,12 @@ function assertNotDestroyed(obj, operation) {
 }
 
 // src/core/Agent.ts
-var Agent = class _Agent extends EventEmitter.EventEmitter {
-  // ============ Instance Properties ============
-  name;
-  connector;
-  model;
-  config;
+var Agent = class _Agent extends BaseAgent {
+  // ===== Agent-specific State =====
   provider;
-  toolRegistry;
   agenticLoop;
-  cleanupCallbacks = [];
   boundListeners = /* @__PURE__ */ new Map();
-  _isDestroyed = false;
-  logger;
-  // === NEW: Tool and Session Management ===
-  _toolManager;
-  _permissionManager;
-  _sessionManager = null;
-  _session = null;
-  _pendingSessionLoad = null;
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Advanced tool management. Returns ToolManager for fine-grained control.
-   * For simple cases, use addTool/removeTool instead.
-   */
-  get tools() {
-    return this._toolManager;
-  }
-  /**
-   * Permission management. Returns ToolPermissionManager for approval control.
-   * Use for runtime permission management, approval caching, and allowlist/blocklist.
-   */
-  get permissions() {
-    return this._permissionManager;
-  }
-  // ============ Static Factory ============
+  // ===== Static Factory =====
   /**
    * Create a new agent
    *
@@ -8852,127 +9714,50 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
         id: sessionId
       }
     });
-    if (agent._pendingSessionLoad) {
-      await agent._pendingSessionLoad;
-    }
+    await agent.ensureSessionLoaded();
     return agent;
   }
-  // ============ Constructor ============
+  // ===== Constructor =====
   constructor(config) {
-    super();
-    this.connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
-    this.name = config.name ?? `agent-${Date.now()}`;
-    this.model = config.model;
-    this.config = config;
-    this.logger = logger.child({
-      component: "Agent",
-      agentName: this.name,
-      model: this.model,
-      connector: this.connector.name
-    });
-    this.logger.debug({ config }, "Agent created");
+    super(config, "Agent");
+    this._logger.debug({ config }, "Agent created");
     metrics.increment("agent.created", 1, {
       model: this.model,
       connector: this.connector.name
     });
     this.provider = createProvider(this.connector);
-    this._toolManager = config.toolManager ?? new ToolManager();
-    this._permissionManager = new ToolPermissionManager(config.permissions);
-    if (config.tools) {
-      for (const tool of config.tools) {
-        this._toolManager.register(tool);
-        if (tool.permission) {
-          this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
-        }
-      }
-    }
     this._toolManager.on("tool:registered", ({ name }) => {
       const permission = this._toolManager.getPermission(name);
       if (permission) {
         this._permissionManager.setToolConfig(name, permission);
       }
     });
-    this.toolRegistry = new ToolRegistry();
-    if (config.tools) {
-      for (const tool of config.tools) {
-        this.toolRegistry.registerTool(tool);
-      }
-    }
-    this._toolManager.on("tool:registered", ({ name }) => {
-      const tool = this._toolManager.get(name);
-      if (tool && !this.toolRegistry.hasToolFunction(name)) {
-        this.toolRegistry.registerTool(tool);
-      }
-    });
-    this._toolManager.on("tool:unregistered", ({ name }) => {
-      if (this.toolRegistry.hasToolFunction(name)) {
-        this.toolRegistry.unregisterTool(name);
-      }
-    });
     this.agenticLoop = new AgenticLoop(
       this.provider,
-      this.toolRegistry,
+      this._toolManager,
       config.hooks,
       config.errorHandling
     );
     this.setupEventForwarding();
-    if (config.session) {
-      this._sessionManager = new SessionManager({ storage: config.session.storage });
-      if (config.session.id) {
-        this._pendingSessionLoad = this.loadSessionInternal(config.session.id);
-      } else {
-        this._session = this._sessionManager.create("agent", {
-          title: this.name
-        });
-        if (config.session.autoSave) {
-          const interval = config.session.autoSaveIntervalMs ?? 3e4;
-          this._sessionManager.enableAutoSave(this._session, interval);
-        }
-      }
-    }
+    this.initializeSession(config.session);
   }
-  /**
-   * Internal method to load session
-   */
-  async loadSessionInternal(sessionId) {
-    if (!this._sessionManager) return;
-    try {
-      const session = await this._sessionManager.load(sessionId);
-      if (session) {
-        this._session = session;
-        if (session.toolState) {
-          this._toolManager.loadState(session.toolState);
-        }
-        const inheritFromSession = this.config.permissions?.inheritFromSession !== false;
-        if (inheritFromSession && session.custom["approvalState"]) {
-          this._permissionManager.loadState(session.custom["approvalState"]);
-        }
-        this.logger.info({ sessionId }, "Session loaded");
-        if (this.config.session?.autoSave) {
-          const interval = this.config.session.autoSaveIntervalMs ?? 3e4;
-          this._sessionManager.enableAutoSave(this._session, interval);
-        }
-      } else {
-        this.logger.warn({ sessionId }, "Session not found, creating new session");
-        this._session = this._sessionManager.create("agent", {
-          title: this.name
-        });
-      }
-    } catch (error) {
-      this.logger.error({ error: error.message, sessionId }, "Failed to load session");
-      throw error;
-    }
+  // ===== Abstract Method Implementations =====
+  getAgentType() {
+    return "agent";
   }
-  // ============ Main API ============
+  prepareSessionState() {
+  }
+  // ===== Main API =====
   /**
    * Run the agent with input
    */
   async run(input) {
     assertNotDestroyed(this, "run agent");
+    await this.ensureSessionLoaded();
     const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
-    this.logger.info({
+    this._logger.info({
       inputPreview,
-      toolCount: this.config.tools?.length || 0
+      toolCount: this._config.tools?.length || 0
     }, "Agent run started");
     metrics.increment("agent.run.started", 1, {
       model: this.model,
@@ -8980,28 +9765,25 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
     });
     const startTime = Date.now();
     try {
-      const enabledTools = this._toolManager.getEnabled();
-      const tools = enabledTools.map((t) => t.definition);
+      const tools = this.getEnabledToolDefinitions();
       const loopConfig = {
         model: this.model,
         input,
-        instructions: this.config.instructions,
+        instructions: this._config.instructions,
         tools,
-        temperature: this.config.temperature,
-        maxIterations: this.config.maxIterations || 10,
-        vendorOptions: this.config.vendorOptions,
-        hooks: this.config.hooks,
-        historyMode: this.config.historyMode,
-        limits: this.config.limits,
-        errorHandling: this.config.errorHandling,
+        temperature: this._config.temperature,
+        maxIterations: this._config.maxIterations || 10,
+        vendorOptions: this._config.vendorOptions,
+        hooks: this._config.hooks,
+        historyMode: this._config.historyMode,
+        limits: this._config.limits,
+        errorHandling: this._config.errorHandling,
         permissionManager: this._permissionManager,
         agentType: "agent"
       };
       const response = await this.agenticLoop.execute(loopConfig);
       const duration = Date.now() - startTime;
-      this.logger.info({
-        duration
-      }, "Agent run completed");
+      this._logger.info({ duration }, "Agent run completed");
       metrics.timing("agent.run.duration", duration, {
         model: this.model,
         connector: this.connector.name
@@ -9014,7 +9796,7 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
       return response;
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.logger.error({
+      this._logger.error({
         error: error.message,
         duration
       }, "Agent run failed");
@@ -9031,10 +9813,11 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
    */
   async *stream(input) {
     assertNotDestroyed(this, "stream from agent");
+    await this.ensureSessionLoaded();
     const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
-    this.logger.info({
+    this._logger.info({
       inputPreview,
-      toolCount: this.config.tools?.length || 0
+      toolCount: this._config.tools?.length || 0
     }, "Agent stream started");
     metrics.increment("agent.stream.started", 1, {
       model: this.model,
@@ -9042,26 +9825,25 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
     });
     const startTime = Date.now();
     try {
-      const enabledTools = this._toolManager.getEnabled();
-      const tools = enabledTools.map((t) => t.definition);
+      const tools = this.getEnabledToolDefinitions();
       const loopConfig = {
         model: this.model,
         input,
-        instructions: this.config.instructions,
+        instructions: this._config.instructions,
         tools,
-        temperature: this.config.temperature,
-        maxIterations: this.config.maxIterations || 10,
-        vendorOptions: this.config.vendorOptions,
-        hooks: this.config.hooks,
-        historyMode: this.config.historyMode,
-        limits: this.config.limits,
-        errorHandling: this.config.errorHandling,
+        temperature: this._config.temperature,
+        maxIterations: this._config.maxIterations || 10,
+        vendorOptions: this._config.vendorOptions,
+        hooks: this._config.hooks,
+        historyMode: this._config.historyMode,
+        limits: this._config.limits,
+        errorHandling: this._config.errorHandling,
         permissionManager: this._permissionManager,
         agentType: "agent"
       };
       yield* this.agenticLoop.executeStreaming(loopConfig);
       const duration = Date.now() - startTime;
-      this.logger.info({ duration }, "Agent stream completed");
+      this._logger.info({ duration }, "Agent stream completed");
       metrics.timing("agent.stream.duration", duration, {
         model: this.model,
         connector: this.connector.name
@@ -9073,7 +9855,7 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
       });
     } catch (error) {
       const duration = Date.now() - startTime;
-      this.logger.error({
+      this._logger.error({
         error: error.message,
         duration
       }, "Agent stream failed");
@@ -9085,64 +9867,17 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
       throw error;
     }
   }
-  // ============ Tool Management ============
-  /**
-   * Add a tool to the agent
-   */
-  addTool(tool) {
-    this._toolManager.register(tool);
-    this.toolRegistry.registerTool(tool);
-    if (!this.config.tools) {
-      this.config.tools = [];
-    }
-    this.config.tools.push(tool);
-  }
-  /**
-   * Remove a tool from the agent
-   */
-  removeTool(toolName) {
-    this._toolManager.unregister(toolName);
-    this.toolRegistry.unregisterTool(toolName);
-    if (this.config.tools) {
-      this.config.tools = this.config.tools.filter(
-        (t) => t.definition.function.name !== toolName
-      );
-    }
-  }
-  /**
-   * List registered tools (returns enabled tool names)
-   */
-  listTools() {
-    return this._toolManager.listEnabled();
-  }
-  /**
-   * Replace all tools with a new array
-   */
-  setTools(tools) {
-    for (const name of this._toolManager.list()) {
-      this._toolManager.unregister(name);
-      this.toolRegistry.unregisterTool(name);
-    }
-    for (const tool of tools) {
-      this._toolManager.register(tool);
-      this.toolRegistry.registerTool(tool);
-      if (tool.permission) {
-        this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
-      }
-    }
-    this.config.tools = [...tools];
-  }
-  // ============ Permission Management (NEW) ============
+  // ===== Tool Management =====
+  // Note: addTool, removeTool, listTools, setTools are inherited from BaseAgent
+  // ===== Permission Convenience Methods =====
   /**
    * Approve a tool for the current session.
-   * Tool will not require further approval until session ends or approval is revoked.
    */
   approveToolForSession(toolName) {
     this._permissionManager.approveForSession(toolName);
   }
   /**
    * Revoke a tool's session approval.
-   * Tool will require approval again on next use.
    */
   revokeToolApproval(toolName) {
     this._permissionManager.revoke(toolName);
@@ -9157,8 +9892,7 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
    * Check if a tool needs approval before execution.
    */
   toolNeedsApproval(toolName) {
-    const result = this._permissionManager.checkPermission(toolName);
-    return result.needsApproval;
+    return this._permissionManager.checkPermission(toolName).needsApproval;
   }
   /**
    * Check if a tool is blocked (cannot execute at all).
@@ -9178,74 +9912,27 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
   blocklistTool(toolName) {
     this._permissionManager.blocklistAdd(toolName);
   }
-  // ============ Session Management (NEW) ============
-  /**
-   * Get the current session ID (if session is enabled)
-   */
-  getSessionId() {
-    return this._session?.id ?? null;
-  }
-  /**
-   * Check if this agent has session support enabled
-   */
-  hasSession() {
-    return this._session !== null;
-  }
-  /**
-   * Save the current session to storage
-   * @throws Error if session is not enabled
-   */
-  async saveSession() {
-    if (!this._sessionManager || !this._session) {
-      throw new Error("Session not enabled. Configure session in AgentConfig to use this feature.");
-    }
-    this._session.toolState = this._toolManager.getState();
-    this._session.custom["approvalState"] = this._permissionManager.getState();
-    await this._sessionManager.save(this._session);
-    this.logger.debug({ sessionId: this._session.id }, "Session saved");
-  }
-  /**
-   * Get the current session (for advanced use)
-   */
-  getSession() {
-    return this._session;
-  }
-  /**
-   * Update session custom data
-   */
-  updateSessionData(key, value) {
-    if (!this._session) {
-      throw new Error("Session not enabled");
-    }
-    this._session.custom[key] = value;
-  }
-  /**
-   * Get session custom data
-   */
-  getSessionData(key) {
-    return this._session?.custom[key];
-  }
-  // ============ Configuration Methods ============
+  // ===== Configuration Methods =====
   /**
    * Change the model
    */
   setModel(model) {
     this.model = model;
-    this.config.model = model;
+    this._config.model = model;
   }
   /**
    * Get current temperature
    */
   getTemperature() {
-    return this.config.temperature;
+    return this._config.temperature;
   }
   /**
    * Change the temperature
    */
   setTemperature(temperature) {
-    this.config.temperature = temperature;
+    this._config.temperature = temperature;
   }
-  // ============ Control Methods ============
+  // ===== Control Methods =====
   pause(reason) {
     this.agenticLoop.pause(reason);
   }
@@ -9255,21 +9942,18 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
   cancel(reason) {
     this.agenticLoop.cancel(reason);
   }
-  // ============ Introspection ============
+  // ===== Introspection =====
   getContext() {
     return this.agenticLoop.getContext();
   }
   getMetrics() {
-    const context = this.agenticLoop.getContext();
-    return context?.metrics || null;
+    return this.agenticLoop.getContext()?.metrics || null;
   }
   getSummary() {
-    const context = this.agenticLoop.getContext();
-    return context?.getSummary() || null;
+    return this.agenticLoop.getContext()?.getSummary() || null;
   }
   getAuditTrail() {
-    const context = this.agenticLoop.getContext();
-    return context?.getAuditTrail() || [];
+    return this.agenticLoop.getContext()?.getAuditTrail() || [];
   }
   /**
    * Get circuit breaker metrics for LLM provider
@@ -9284,20 +9968,20 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
    * Get circuit breaker states for all tools
    */
   getToolCircuitBreakerStates() {
-    return this.toolRegistry.getCircuitBreakerStates();
+    return this._toolManager.getCircuitBreakerStates();
   }
   /**
    * Get circuit breaker metrics for a specific tool
    */
   getToolCircuitBreakerMetrics(toolName) {
-    return this.toolRegistry.getToolCircuitBreakerMetrics(toolName);
+    return this._toolManager.getToolCircuitBreakerMetrics(toolName);
   }
   /**
    * Manually reset a tool's circuit breaker
    */
   resetToolCircuitBreaker(toolName) {
-    this.toolRegistry.resetToolCircuitBreaker(toolName);
-    this.logger.info({ toolName }, "Tool circuit breaker reset by user");
+    this._toolManager.resetToolCircuitBreaker(toolName);
+    this._logger.info({ toolName }, "Tool circuit breaker reset by user");
   }
   isRunning() {
     return this.agenticLoop.isRunning();
@@ -9308,16 +9992,12 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
   isCancelled() {
     return this.agenticLoop.isCancelled();
   }
-  // ============ Cleanup ============
-  onCleanup(callback) {
-    this.cleanupCallbacks.push(callback);
-  }
+  // ===== Cleanup =====
   destroy() {
     if (this._isDestroyed) {
       return;
     }
-    this._isDestroyed = true;
-    this.logger.debug("Agent destroy started");
+    this._logger.debug("Agent destroy started");
     try {
       this.agenticLoop.cancel("Agent destroyed");
     } catch {
@@ -9326,30 +10006,22 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
       this.agenticLoop.off(eventName, handler);
     }
     this.boundListeners.clear();
-    this.removeAllListeners();
-    if (this._sessionManager) {
-      if (this._session) {
-        this._sessionManager.stopAutoSave(this._session.id);
-      }
-      this._sessionManager.destroy();
-    }
-    this._toolManager.removeAllListeners();
-    this._permissionManager.removeAllListeners();
-    for (const callback of this.cleanupCallbacks) {
+    for (const callback of this._cleanupCallbacks) {
       try {
         callback();
       } catch (error) {
-        this.logger.error({ error: error.message }, "Cleanup callback error");
+        this._logger.error({ error: error.message }, "Cleanup callback error");
       }
     }
-    this.cleanupCallbacks = [];
+    this._cleanupCallbacks = [];
+    this.baseDestroy();
     metrics.increment("agent.destroyed", 1, {
       model: this.model,
       connector: this.connector.name
     });
-    this.logger.debug("Agent destroyed");
+    this._logger.debug("Agent destroyed");
   }
-  // ============ Private ============
+  // ===== Private =====
   setupEventForwarding() {
     const eventNames = [
       "execution:start",
@@ -9370,14 +10042,23 @@ var Agent = class _Agent extends EventEmitter.EventEmitter {
       "tool:timeout",
       "hook:error"
     ];
-    for (const eventName of eventNames) {
-      const handler = (data) => {
-        if (!this._isDestroyed) {
-          this.emit(eventName, data);
-        }
-      };
-      this.boundListeners.set(eventName, handler);
-      this.agenticLoop.on(eventName, handler);
+    const registered = [];
+    try {
+      for (const eventName of eventNames) {
+        const handler = (data) => {
+          if (!this._isDestroyed) {
+            this.emit(eventName, data);
+          }
+        };
+        this.agenticLoop.on(eventName, handler);
+        registered.push([eventName, handler]);
+        this.boundListeners.set(eventName, handler);
+      }
+    } catch (error) {
+      for (const [eventName, handler] of registered) {
+        this.agenticLoop.off(eventName, handler);
+      }
+      throw error;
     }
   }
 };
@@ -11460,6 +12141,210 @@ function extractGoogleConfig2(connector) {
     apiKey: auth.apiKey
   };
 }
+var DEFAULT_RETRYABLE_PATTERNS = [
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "rate limit",
+  "Rate limit",
+  "429",
+  "500",
+  "502",
+  "503",
+  "504",
+  "timeout",
+  "Timeout"
+];
+var ErrorHandler = class extends eventemitter3.EventEmitter {
+  config;
+  logger;
+  constructor(config = {}) {
+    super();
+    const isProduction = process.env.NODE_ENV === "production";
+    this.config = {
+      logErrors: config.logErrors ?? true,
+      includeStackTrace: config.includeStackTrace ?? !isProduction,
+      transformError: config.transformError ?? ((e) => e),
+      retryablePatterns: config.retryablePatterns ?? DEFAULT_RETRYABLE_PATTERNS,
+      maxRetries: config.maxRetries ?? 3,
+      baseRetryDelayMs: config.baseRetryDelayMs ?? 100,
+      maxRetryDelayMs: config.maxRetryDelayMs ?? 5e3
+    };
+    this.logger = logger.child({ component: "ErrorHandler" });
+  }
+  /**
+   * Handle an error with context.
+   * Logs the error, emits events, and records metrics.
+   *
+   * @param error - The error to handle
+   * @param context - Context information about where/how the error occurred
+   */
+  handle(error, context) {
+    const transformed = this.config.transformError(error, context);
+    const recoverable = this.isRecoverable(transformed);
+    if (this.config.logErrors) {
+      this.logError(transformed, context, recoverable);
+    }
+    this.recordMetrics(transformed, context, recoverable);
+    this.emit("error", { error: transformed, context, recoverable });
+    if (!recoverable) {
+      this.emit("error:fatal", { error: transformed, context });
+    }
+  }
+  /**
+   * Execute a function with automatic retry on retryable errors.
+   *
+   * @param fn - The function to execute
+   * @param context - Context for error handling
+   * @returns The result of the function
+   * @throws The last error if all retries are exhausted
+   */
+  async executeWithRetry(fn, context) {
+    let lastError;
+    for (let attempt = 1; attempt <= this.config.maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        const isLastAttempt = attempt === this.config.maxRetries;
+        const shouldRetry = !isLastAttempt && this.isRetryable(lastError);
+        if (!shouldRetry) {
+          this.handle(lastError, context);
+          throw lastError;
+        }
+        const delay = this.calculateRetryDelay(attempt);
+        this.emit("error:retrying", {
+          error: lastError,
+          context,
+          attempt,
+          delayMs: delay
+        });
+        if (this.config.logErrors) {
+          this.logger.warn(
+            {
+              error: lastError.message,
+              attempt,
+              maxAttempts: this.config.maxRetries,
+              delayMs: delay,
+              ...this.contextToLogFields(context)
+            },
+            `Retrying after error (attempt ${attempt}/${this.config.maxRetries})`
+          );
+        }
+        await this.delay(delay);
+      }
+    }
+    throw lastError;
+  }
+  /**
+   * Wrap a function with error handling (no retry).
+   * Useful for wrapping methods that already have their own retry logic.
+   *
+   * @param fn - The function to wrap
+   * @param contextFactory - Factory to create context from function arguments
+   * @returns A wrapped function with error handling
+   */
+  wrap(fn, contextFactory) {
+    return async (...args) => {
+      try {
+        return await fn(...args);
+      } catch (error) {
+        this.handle(error, contextFactory(...args));
+        throw error;
+      }
+    };
+  }
+  /**
+   * Check if an error is recoverable (can be retried or handled gracefully).
+   */
+  isRecoverable(error) {
+    if (this.isRetryable(error)) {
+      return true;
+    }
+    const recoverableTypes = [
+      "RateLimitError",
+      "TimeoutError",
+      "NetworkError",
+      "ConnectionError"
+    ];
+    return recoverableTypes.some(
+      (type) => error.name === type || error.constructor.name === type
+    );
+  }
+  /**
+   * Check if an error should be retried.
+   */
+  isRetryable(error) {
+    const errorString = `${error.name} ${error.message}`;
+    return this.config.retryablePatterns.some(
+      (pattern) => errorString.includes(pattern)
+    );
+  }
+  /**
+   * Add a retryable pattern.
+   */
+  addRetryablePattern(pattern) {
+    if (!this.config.retryablePatterns.includes(pattern)) {
+      this.config.retryablePatterns.push(pattern);
+    }
+  }
+  /**
+   * Remove a retryable pattern.
+   */
+  removeRetryablePattern(pattern) {
+    const index = this.config.retryablePatterns.indexOf(pattern);
+    if (index !== -1) {
+      this.config.retryablePatterns.splice(index, 1);
+    }
+  }
+  /**
+   * Get current configuration (read-only).
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+  // ===== Private Helpers =====
+  logError(error, context, recoverable) {
+    const level = recoverable ? "warn" : "error";
+    const logData = {
+      error: error.message,
+      errorName: error.name,
+      recoverable,
+      ...this.contextToLogFields(context)
+    };
+    if (this.config.includeStackTrace && error.stack) {
+      logData.stack = error.stack;
+    }
+    this.logger[level](logData, `Error in ${context.operation}`);
+  }
+  contextToLogFields(context) {
+    return {
+      agentType: context.agentType,
+      agentId: context.agentId,
+      operation: context.operation,
+      ...context.metadata || {}
+    };
+  }
+  recordMetrics(error, context, recoverable) {
+    metrics.increment("error.handled", 1, {
+      agentType: context.agentType,
+      operation: context.operation,
+      errorType: error.name,
+      recoverable: String(recoverable)
+    });
+  }
+  calculateRetryDelay(attempt) {
+    const exponentialDelay = this.config.baseRetryDelayMs * Math.pow(2, attempt - 1);
+    const jitter = exponentialDelay * (0.8 + Math.random() * 0.4);
+    return Math.min(jitter, this.config.maxRetryDelayMs);
+  }
+  delay(ms) {
+    return new Promise((resolve3) => setTimeout(resolve3, ms));
+  }
+};
+var globalErrorHandler = new ErrorHandler();
 
 // src/domain/entities/ImageModel.ts
 var IMAGE_MODELS = {
@@ -13547,7 +14432,7 @@ function createAgentStorage(options = {}) {
     agent: options.agent ?? new InMemoryAgentStateStorage()
   };
 }
-var WorkingMemory = class extends EventEmitter__default.default {
+var WorkingMemory = class extends eventemitter3.EventEmitter {
   storage;
   config;
   priorityCalculator;
@@ -14012,68 +14897,448 @@ var WorkingMemory = class extends EventEmitter__default.default {
     this.priorityContext = {};
   }
 };
+
+// src/core/context/types.ts
 var DEFAULT_CONTEXT_CONFIG = {
   maxContextTokens: 128e3,
   compactionThreshold: 0.75,
   hardLimit: 0.9,
   responseReserve: 0.15,
-  tokenEstimator: "approximate"
+  estimator: "approximate",
+  autoCompact: true,
+  strategy: "proactive",
+  strategyOptions: {}
 };
-var DEFAULT_COMPACTION_STRATEGY = {
-  priority: ["toolOutputs", "history", "memory"],
-  historyStrategy: "summarize",
-  memoryStrategy: "lru",
-  toolOutputMaxSize: 4e3
+
+// src/core/context/utils/ContextUtils.ts
+function estimateComponentTokens(component, estimator) {
+  if (typeof component.content === "string") {
+    return estimator.estimateTokens(component.content);
+  }
+  return estimator.estimateDataTokens(component.content);
+}
+function sortCompactableByPriority(components) {
+  return components.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
+}
+function findCompactorForComponent(component, compactors) {
+  return compactors.find((c) => c.canCompact(component));
+}
+async function executeCompactionLoop(options) {
+  const {
+    components,
+    tokensToFree,
+    compactors,
+    estimator,
+    calculateTargetSize,
+    maxRounds = 1,
+    logPrefix = ""
+  } = options;
+  const log = [];
+  let current = [...components];
+  let freedTokens = 0;
+  let round = 0;
+  const sortedComponents = sortCompactableByPriority(current);
+  while (freedTokens < tokensToFree && round < maxRounds) {
+    round++;
+    let roundFreed = 0;
+    for (const component of sortedComponents) {
+      if (freedTokens >= tokensToFree) break;
+      const compactor = findCompactorForComponent(component, compactors);
+      if (!compactor) continue;
+      const beforeSize = estimateComponentTokens(component, estimator);
+      const targetSize = calculateTargetSize(beforeSize, round);
+      if (targetSize >= beforeSize) continue;
+      const compacted = await compactor.compact(component, targetSize);
+      const index = current.findIndex((c) => c.name === component.name);
+      if (index !== -1) {
+        current[index] = compacted;
+      }
+      const afterSize = estimateComponentTokens(compacted, estimator);
+      const saved = beforeSize - afterSize;
+      freedTokens += saved;
+      roundFreed += saved;
+      const prefix = logPrefix ? `${logPrefix}: ` : "";
+      const roundInfo = maxRounds > 1 ? `Round ${round}: ` : "";
+      log.push(
+        `${prefix}${roundInfo}${compactor.name} compacted "${component.name}" by ${saved} tokens`
+      );
+    }
+    if (roundFreed === 0) break;
+  }
+  return { components: current, log, tokensFreed: freedTokens };
+}
+
+// src/core/context/strategies/BaseCompactionStrategy.ts
+var BaseCompactionStrategy = class {
+  metrics = {
+    compactionCount: 0,
+    totalTokensFreed: 0,
+    avgTokensFreedPerCompaction: 0
+  };
+  /**
+   * Get the maximum number of compaction rounds.
+   * Override in subclasses for multi-round strategies.
+   */
+  getMaxRounds() {
+    return 1;
+  }
+  /**
+   * Get the log prefix for compaction messages.
+   * Override to customize logging.
+   */
+  getLogPrefix() {
+    return this.name.charAt(0).toUpperCase() + this.name.slice(1);
+  }
+  /**
+   * Compact components to fit within budget.
+   * Uses the shared compaction loop with strategy-specific target calculation.
+   */
+  async compact(components, budget, compactors, estimator) {
+    const targetUsage = Math.floor(budget.total * this.getTargetUtilization());
+    const tokensToFree = budget.used - targetUsage;
+    const result = await executeCompactionLoop({
+      components,
+      tokensToFree,
+      compactors,
+      estimator,
+      calculateTargetSize: this.calculateTargetSize.bind(this),
+      maxRounds: this.getMaxRounds(),
+      logPrefix: this.getLogPrefix()
+    });
+    this.updateMetrics(result.tokensFreed);
+    return result;
+  }
+  /**
+   * Update internal metrics after compaction
+   */
+  updateMetrics(tokensFreed) {
+    this.metrics.compactionCount++;
+    this.metrics.totalTokensFreed += tokensFreed;
+    this.metrics.avgTokensFreedPerCompaction = this.metrics.totalTokensFreed / this.metrics.compactionCount;
+  }
+  /**
+   * Get strategy metrics
+   */
+  getMetrics() {
+    return { ...this.metrics };
+  }
+  /**
+   * Reset metrics (useful for testing)
+   */
+  resetMetrics() {
+    this.metrics = {
+      compactionCount: 0,
+      totalTokensFreed: 0,
+      avgTokensFreedPerCompaction: 0
+    };
+  }
 };
-var ContextManager = class extends EventEmitter__default.default {
+
+// src/core/context/strategies/ProactiveStrategy.ts
+var DEFAULT_OPTIONS = {
+  targetUtilization: 0.65,
+  baseReductionFactor: 0.5,
+  reductionStep: 0.15,
+  maxRounds: 3
+};
+var ProactiveCompactionStrategy = class extends BaseCompactionStrategy {
+  name = "proactive";
+  options;
+  constructor(options = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS, ...options };
+  }
+  shouldCompact(budget, _config) {
+    return budget.status === "warning" || budget.status === "critical";
+  }
+  calculateTargetSize(beforeSize, round) {
+    const reductionFactor = this.options.baseReductionFactor - (round - 1) * this.options.reductionStep;
+    return Math.floor(beforeSize * Math.max(reductionFactor, 0.1));
+  }
+  getTargetUtilization() {
+    return this.options.targetUtilization;
+  }
+  getMaxRounds() {
+    return this.options.maxRounds;
+  }
+  getLogPrefix() {
+    return "Proactive";
+  }
+};
+
+// src/core/context/strategies/AggressiveStrategy.ts
+var DEFAULT_OPTIONS2 = {
+  threshold: 0.6,
+  targetUtilization: 0.5,
+  reductionFactor: 0.3
+};
+var AggressiveCompactionStrategy = class extends BaseCompactionStrategy {
+  name = "aggressive";
+  options;
+  constructor(options = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS2, ...options };
+  }
+  shouldCompact(budget, _config) {
+    const utilizationRatio = (budget.used + budget.reserved) / budget.total;
+    return utilizationRatio >= this.options.threshold;
+  }
+  calculateTargetSize(beforeSize, _round) {
+    return Math.floor(beforeSize * this.options.reductionFactor);
+  }
+  getTargetUtilization() {
+    return this.options.targetUtilization;
+  }
+  getLogPrefix() {
+    return "Aggressive";
+  }
+};
+
+// src/core/context/strategies/LazyStrategy.ts
+var DEFAULT_OPTIONS3 = {
+  targetUtilization: 0.85,
+  reductionFactor: 0.7
+};
+var LazyCompactionStrategy = class extends BaseCompactionStrategy {
+  name = "lazy";
+  options;
+  constructor(options = {}) {
+    super();
+    this.options = { ...DEFAULT_OPTIONS3, ...options };
+  }
+  shouldCompact(budget, _config) {
+    return budget.status === "critical";
+  }
+  calculateTargetSize(beforeSize, _round) {
+    return Math.floor(beforeSize * this.options.reductionFactor);
+  }
+  getTargetUtilization() {
+    return this.options.targetUtilization;
+  }
+  getLogPrefix() {
+    return "Lazy";
+  }
+};
+
+// src/core/context/strategies/RollingWindowStrategy.ts
+var RollingWindowStrategy = class {
+  constructor(options = {}) {
+    this.options = options;
+  }
+  name = "rolling-window";
+  shouldCompact(_budget, _config) {
+    return false;
+  }
+  async prepareComponents(components) {
+    return components.map((component) => {
+      if (Array.isArray(component.content)) {
+        const maxMessages = this.options.maxMessages ?? 20;
+        if (component.content.length > maxMessages) {
+          return {
+            ...component,
+            content: component.content.slice(-maxMessages),
+            metadata: {
+              ...component.metadata,
+              windowed: true,
+              originalLength: component.content.length,
+              keptLength: maxMessages
+            }
+          };
+        }
+      }
+      return component;
+    });
+  }
+  async compact() {
+    return { components: [], log: [], tokensFreed: 0 };
+  }
+};
+
+// src/core/context/strategies/AdaptiveStrategy.ts
+var AdaptiveStrategy = class {
+  constructor(options = {}) {
+    this.options = options;
+    this.currentStrategy = new ProactiveCompactionStrategy();
+  }
+  name = "adaptive";
+  currentStrategy;
+  metrics = {
+    avgUtilization: 0,
+    compactionFrequency: 0,
+    lastCompactions: []
+  };
+  shouldCompact(budget, config) {
+    this.updateMetrics(budget);
+    this.maybeAdapt();
+    return this.currentStrategy.shouldCompact(budget, config);
+  }
+  async compact(components, budget, compactors, estimator) {
+    const result = await this.currentStrategy.compact(components, budget, compactors, estimator);
+    this.metrics.lastCompactions.push(Date.now());
+    const window = this.options.learningWindow ?? 10;
+    if (this.metrics.lastCompactions.length > window) {
+      this.metrics.lastCompactions.shift();
+    }
+    return {
+      ...result,
+      log: [`[Adaptive: using ${this.currentStrategy.name}]`, ...result.log]
+    };
+  }
+  updateMetrics(budget) {
+    const alpha = 0.1;
+    this.metrics.avgUtilization = alpha * budget.utilizationPercent + (1 - alpha) * this.metrics.avgUtilization;
+  }
+  maybeAdapt() {
+    const now = Date.now();
+    if (this.metrics.lastCompactions.length >= 2) {
+      const firstCompaction = this.metrics.lastCompactions[0];
+      if (firstCompaction !== void 0) {
+        const timeSpan = now - firstCompaction;
+        this.metrics.compactionFrequency = this.metrics.lastCompactions.length / timeSpan * 6e4;
+      }
+    }
+    const threshold = this.options.switchThreshold ?? 5;
+    if (this.metrics.compactionFrequency > threshold) {
+      if (this.currentStrategy.name !== "aggressive") {
+        this.currentStrategy = new AggressiveCompactionStrategy();
+      }
+    } else if (this.metrics.compactionFrequency < 0.5 && this.metrics.avgUtilization < 70) {
+      if (this.currentStrategy.name !== "lazy") {
+        this.currentStrategy = new LazyCompactionStrategy();
+      }
+    } else {
+      if (this.currentStrategy.name !== "proactive") {
+        this.currentStrategy = new ProactiveCompactionStrategy();
+      }
+    }
+  }
+  getMetrics() {
+    return {
+      ...this.metrics,
+      currentStrategy: this.currentStrategy.name
+    };
+  }
+};
+
+// src/core/context/strategies/index.ts
+function createStrategy(name, options = {}) {
+  switch (name) {
+    case "proactive":
+      return new ProactiveCompactionStrategy(options);
+    case "aggressive":
+      return new AggressiveCompactionStrategy(options);
+    case "lazy":
+      return new LazyCompactionStrategy(options);
+    case "rolling-window":
+      return new RollingWindowStrategy(options);
+    case "adaptive":
+      return new AdaptiveStrategy(options);
+    default:
+      throw new Error(`Unknown context strategy: ${name}`);
+  }
+}
+
+// src/core/context/ContextManager.ts
+var ContextManager = class extends eventemitter3.EventEmitter {
   config;
+  provider;
+  estimator;
+  compactors;
   strategy;
   lastBudget;
-  constructor(config = DEFAULT_CONTEXT_CONFIG, strategy = DEFAULT_COMPACTION_STRATEGY) {
+  constructor(provider, config = {}, compactors = [], estimator, strategy) {
     super();
-    this.config = config;
-    this.strategy = strategy;
+    this.provider = provider;
+    this.config = { ...DEFAULT_CONTEXT_CONFIG, ...config };
+    this.compactors = compactors.sort((a, b) => a.priority - b.priority);
+    if (estimator) {
+      this.estimator = estimator;
+    } else if (typeof this.config.estimator === "string") {
+      this.estimator = this.createEstimator(this.config.estimator);
+    } else {
+      this.estimator = this.config.estimator;
+    }
+    if (strategy) {
+      this.strategy = strategy;
+    } else {
+      this.strategy = this.createStrategy(this.config.strategy || "proactive");
+    }
   }
   /**
-   * Estimate token count for text
-   *
-   * @param text - The text to estimate tokens for
-   * @param contentType - Type of content for more accurate estimation:
-   *   - 'code': Code is typically denser (~3 chars/token)
-   *   - 'prose': Natural language text (~4 chars/token)
-   *   - 'mixed': Mix of code and prose (~3.5 chars/token)
-   * @returns Estimated token count
+   * Prepare context for LLM call
+   * Returns prepared components, automatically compacting if needed
    */
-  estimateTokens(text, contentType = "mixed") {
-    if (!text || text.length === 0) {
-      return 0;
+  async prepare() {
+    let components = await this.provider.getComponents();
+    if (this.strategy.prepareComponents) {
+      components = await this.strategy.prepareComponents(components);
     }
-    if (this.config.tokenEstimator === "approximate") {
-      const charsPerToken = contentType === "code" ? 3 : contentType === "prose" ? 4 : 3.5;
-      return Math.ceil(text.length / charsPerToken);
+    let budget = this.calculateBudget(components);
+    this.lastBudget = budget;
+    if (budget.status === "warning") {
+      this.emit("budget_warning", { budget });
+    } else if (budget.status === "critical") {
+      this.emit("budget_critical", { budget });
     }
-    return Math.ceil(text.length / 4);
-  }
-  /**
-   * Estimate budget for context components
-   */
-  estimateBudget(components) {
-    const breakdown = {
-      systemPrompt: this.estimateTokens(components.systemPrompt),
-      instructions: this.estimateTokens(components.instructions),
-      memoryIndex: this.estimateTokens(components.memoryIndex),
-      conversationHistory: components.conversationHistory.reduce(
-        (sum, msg) => sum + this.estimateTokens(msg.content),
-        0
-      ),
-      currentInput: this.estimateTokens(components.currentInput)
+    const needsCompaction = this.config.autoCompact && this.strategy.shouldCompact(budget, this.config);
+    if (needsCompaction) {
+      return await this.compactWithStrategy(components, budget);
+    }
+    return {
+      components,
+      budget,
+      compacted: false
     };
-    const used = Object.values(breakdown).reduce((sum, val) => sum + val, 0);
-    const total = this.config.maxContextTokens;
+  }
+  /**
+   * Compact using the current strategy
+   */
+  async compactWithStrategy(components, budget) {
+    this.emit("compacting", {
+      reason: `Context at ${budget.utilizationPercent.toFixed(1)}%`,
+      currentBudget: budget,
+      strategy: this.strategy.name
+    });
+    const result = await this.strategy.compact(components, budget, this.compactors, this.estimator);
+    let finalComponents = result.components;
+    if (this.strategy.postProcess) {
+      finalComponents = await this.strategy.postProcess(result.components, budget);
+    }
+    const newBudget = this.calculateBudget(finalComponents);
+    if (newBudget.status === "critical") {
+      throw new Error(
+        `Cannot fit context within limits after compaction (strategy: ${this.strategy.name}). Used: ${newBudget.used}, Limit: ${budget.total - budget.reserved}`
+      );
+    }
+    this.emit("compacted", {
+      log: result.log,
+      newBudget,
+      tokensFreed: result.tokensFreed
+    });
+    await this.provider.applyCompactedComponents(finalComponents);
+    return {
+      components: finalComponents,
+      budget: newBudget,
+      compacted: true,
+      compactionLog: result.log
+    };
+  }
+  /**
+   * Calculate budget for components
+   */
+  calculateBudget(components) {
+    const breakdown = {};
+    let used = 0;
+    for (const component of components) {
+      const tokens = this.estimateComponent(component);
+      breakdown[component.name] = tokens;
+      used += tokens;
+    }
+    const total = this.provider.getMaxContextSize();
     const reserved = Math.floor(total * this.config.responseReserve);
     const available = total - reserved - used;
-    const utilizationPercent = used / (total - reserved) * 100;
     const utilizationRatio = (used + reserved) / total;
+    const utilizationPercent = used / (total - reserved) * 100;
     let status;
     if (utilizationRatio >= this.config.hardLimit) {
       status = "critical";
@@ -14093,173 +15358,388 @@ var ContextManager = class extends EventEmitter__default.default {
     };
   }
   /**
-   * Prepare context, compacting if necessary
+   * Estimate tokens for a component
    */
-  async prepareContext(components, memory, history) {
-    let current = { ...components };
-    let budget = this.estimateBudget(current);
-    this.lastBudget = budget;
-    if (budget.status === "ok") {
-      return { components: current, budget, compacted: false };
-    }
-    this.emit("compacting", { reason: `Context at ${budget.utilizationPercent.toFixed(1)}%` });
-    const log = [];
-    let compactionRound = 0;
-    const maxRounds = 3;
-    while (budget.status !== "ok" && compactionRound < maxRounds) {
-      compactionRound++;
-      let didCompact = false;
-      for (const target of this.strategy.priority) {
-        budget = this.estimateBudget(current);
-        if (budget.status === "ok") {
-          break;
-        }
-        switch (target) {
-          case "toolOutputs":
-            if (current.conversationHistory.length > 0) {
-              const before = JSON.stringify(current);
-              current = this.truncateToolOutputsInHistory(current);
-              if (JSON.stringify(current) !== before) {
-                log.push(`Truncated tool outputs to ${this.strategy.toolOutputMaxSize} tokens`);
-                didCompact = true;
-              }
-            }
-            break;
-          case "history":
-            if (current.conversationHistory.length > 0) {
-              if (this.strategy.historyStrategy === "truncate") {
-                const keepRatio = Math.max(0.2, 1 - compactionRound * 0.3);
-                const maxMessages = Math.max(1, Math.floor(current.conversationHistory.length * keepRatio));
-                const before = current.conversationHistory.length;
-                current.conversationHistory = current.conversationHistory.slice(-maxMessages);
-                if (current.conversationHistory.length < before) {
-                  log.push(`Truncated history to ${maxMessages} messages`);
-                  didCompact = true;
-                }
-              } else {
-                await history.summarize();
-                log.push("Summarized conversation history");
-                didCompact = true;
-              }
-            }
-            break;
-          case "memory":
-            const entryCount = memory.getIndex ? (await memory.getIndex()).entries.length : 4;
-            const evictCount = Math.max(1, Math.ceil(entryCount * 0.25));
-            if (evictCount > 0) {
-              const evicted = await memory.evictLRU(evictCount);
-              if (evicted.length > 0) {
-                log.push(`Evicted ${evicted.length} memory entries: ${evicted.join(", ")}`);
-                didCompact = true;
-                if (memory.formatIndex) {
-                  current.memoryIndex = await memory.formatIndex();
-                }
-              }
-            }
-            break;
-        }
-      }
-      if (!didCompact) {
-        break;
-      }
-    }
-    budget = this.estimateBudget(current);
-    const totalCapacity = budget.total - budget.reserved;
-    const overage = budget.used - totalCapacity;
-    const overagePercent = overage / totalCapacity * 100;
-    if (overage > 0 && overagePercent > 5) {
-      throw new Error(
-        `Cannot fit context within limits after compaction. Used: ${budget.used}, Available: ${totalCapacity} (${overagePercent.toFixed(1)}% over)`
-      );
-    }
-    this.emit("compacted", { log });
-    return { components: current, budget, compacted: true, compactionLog: log };
+  estimateComponent(component) {
+    return estimateComponentTokens(component, this.estimator);
   }
   /**
-   * Truncate tool outputs in conversation history
+   * Switch to a different strategy at runtime
    */
-  truncateToolOutputsInHistory(components) {
-    const truncated = { ...components };
-    truncated.conversationHistory = components.conversationHistory.map((msg) => {
-      const tokens = this.estimateTokens(msg.content);
-      if (tokens > this.strategy.toolOutputMaxSize) {
-        const maxChars = this.strategy.toolOutputMaxSize * 4;
-        return {
-          ...msg,
-          content: msg.content.substring(0, maxChars) + "\n[truncated...]"
-        };
-      }
-      return msg;
+  setStrategy(strategy) {
+    const oldStrategy = this.strategy.name;
+    this.strategy = typeof strategy === "string" ? this.createStrategy(strategy) : strategy;
+    this.emit("strategy_switched", {
+      from: oldStrategy,
+      to: this.strategy.name,
+      reason: "manual"
     });
-    return truncated;
   }
   /**
-   * Truncate tool output to fit within limit
+   * Get current strategy
    */
-  truncateToolOutput(output, maxTokens) {
-    const serialized = JSON.stringify(output);
-    const tokens = this.estimateTokens(serialized);
-    if (tokens <= maxTokens) {
-      return output;
-    }
-    return {
-      _truncated: true,
-      _summary: this.createOutputSummary(output, maxTokens),
-      _originalSize: `${tokens} tokens`
-    };
+  getStrategy() {
+    return this.strategy;
   }
   /**
-   * Create summary of large output
+   * Get strategy metrics
    */
-  createOutputSummary(output, maxTokens) {
-    if (output === null) return "null";
-    if (output === void 0) return "undefined";
-    if (Array.isArray(output)) {
-      const firstItem = output[0];
-      const keys = firstItem && typeof firstItem === "object" ? Object.keys(firstItem) : [];
-      return `Array with ${output.length} items${keys.length > 0 ? `, first item keys: ${keys.join(", ")}` : ""}`;
-    }
-    if (typeof output === "object") {
-      const keys = Object.keys(output);
-      return `Object with ${keys.length} keys: ${keys.slice(0, 10).join(", ")}${keys.length > 10 ? ` ... and ${keys.length - 10} more` : ""}`;
-    }
-    if (typeof output === "string") {
-      const maxChars = maxTokens * 4;
-      return output.length > maxChars ? output.substring(0, maxChars) + "..." : output;
-    }
-    return String(output);
+  getStrategyMetrics() {
+    return this.strategy.getMetrics?.() ?? {};
   }
   /**
-   * Check if output should be auto-stored in memory
-   */
-  shouldAutoStore(output, threshold) {
-    const serialized = JSON.stringify(output);
-    const tokens = this.estimateTokens(serialized);
-    return tokens > threshold;
-  }
-  /**
-   * Get current context budget
+   * Get current budget
    */
   getCurrentBudget() {
     return this.lastBudget ?? null;
   }
   /**
-   * Get current configuration
+   * Get configuration
    */
   getConfig() {
     return { ...this.config };
-  }
-  /**
-   * Get current compaction strategy
-   */
-  getStrategy() {
-    return { ...this.strategy };
   }
   /**
    * Update configuration
    */
   updateConfig(updates) {
     this.config = { ...this.config, ...updates };
+  }
+  /**
+   * Add compactor
+   */
+  addCompactor(compactor) {
+    this.compactors.push(compactor);
+    this.compactors.sort((a, b) => a.priority - b.priority);
+  }
+  /**
+   * Get all compactors
+   */
+  getCompactors() {
+    return [...this.compactors];
+  }
+  /**
+   * Create estimator from name
+   */
+  createEstimator(_name) {
+    return {
+      estimateTokens: (text) => {
+        if (!text || text.length === 0) return 0;
+        return Math.ceil(text.length / 4);
+      },
+      estimateDataTokens: (data) => {
+        const serialized = JSON.stringify(data);
+        return Math.ceil(serialized.length / 4);
+      }
+    };
+  }
+  /**
+   * Create strategy from name or config
+   */
+  createStrategy(strategy) {
+    if (typeof strategy !== "string") {
+      return strategy;
+    }
+    return createStrategy(strategy, this.config.strategyOptions || {});
+  }
+};
+
+// src/infrastructure/context/providers/TaskAgentContextProvider.ts
+var TaskAgentContextProvider = class {
+  config;
+  constructor(config) {
+    this.config = config;
+  }
+  async getComponents() {
+    const components = [];
+    components.push({
+      name: "system_prompt",
+      content: this.buildSystemPrompt(),
+      priority: 0,
+      compactable: false
+    });
+    if (this.config.instructions) {
+      components.push({
+        name: "instructions",
+        content: this.config.instructions,
+        priority: 0,
+        compactable: false
+      });
+    }
+    components.push({
+      name: "plan",
+      content: this.serializePlan(this.config.plan),
+      priority: 1,
+      compactable: false
+    });
+    const memoryIndex = await this.config.memory.formatIndex();
+    components.push({
+      name: "memory_index",
+      content: memoryIndex,
+      priority: 8,
+      compactable: true,
+      metadata: {
+        strategy: "evict",
+        evict: async (count) => {
+          await this.config.memory.evictLRU(count);
+        },
+        getUpdatedContent: async () => {
+          return await this.config.memory.formatIndex();
+        }
+      }
+    });
+    const messages = await this.config.historyManager.getRecentMessages();
+    components.push({
+      name: "conversation_history",
+      content: messages.map((m) => ({
+        role: m.role,
+        content: m.content
+      })),
+      priority: 6,
+      compactable: true,
+      metadata: {
+        strategy: "truncate",
+        truncatable: true
+      }
+    });
+    const toolOutputs = this.extractToolOutputs(messages);
+    if (toolOutputs.length > 0) {
+      components.push({
+        name: "tool_outputs",
+        content: toolOutputs,
+        priority: 10,
+        compactable: true,
+        metadata: {
+          strategy: "truncate",
+          truncatable: true,
+          maxTokens: 4e3
+        }
+      });
+    }
+    if (this.config.currentInput) {
+      components.push({
+        name: "current_input",
+        content: this.config.currentInput,
+        priority: 0,
+        compactable: false
+      });
+    }
+    return components;
+  }
+  async applyCompactedComponents(components) {
+    const historyComponent = components.find((c) => c.name === "conversation_history");
+    if (historyComponent && Array.isArray(historyComponent.content)) ;
+  }
+  getMaxContextSize() {
+    const modelInfo = getModelInfo(this.config.model);
+    return modelInfo?.features.input.tokens ?? 128e3;
+  }
+  /**
+   * Update configuration (e.g., when task changes)
+   */
+  updateConfig(updates) {
+    this.config = { ...this.config, ...updates };
+  }
+  /**
+   * Build system prompt for TaskAgent
+   */
+  buildSystemPrompt() {
+    return `You are an autonomous task-based agent executing a plan.
+
+Your capabilities:
+- Access to working memory (use memory_store, memory_retrieve, memory_delete tools)
+- Tool execution for completing tasks
+- Context awareness (use context_inspect, context_breakdown tools)
+
+Guidelines:
+- Complete each task as specified in the plan
+- Store important information in memory for later tasks
+- Use tools efficiently
+- Be concise but thorough
+- Monitor your context usage`;
+  }
+  /**
+   * Serialize plan for context
+   */
+  serializePlan(plan) {
+    return `## Current Plan
+
+**Goal**: ${plan.goal}
+
+**Tasks**:
+${plan.tasks.map((t, i) => {
+      const status = t.status || "pending";
+      const deps = t.dependsOn && t.dependsOn.length > 0 ? ` (depends on: ${t.dependsOn.join(", ")})` : "";
+      return `${i + 1}. [${status}] ${t.name}: ${t.description}${deps}`;
+    }).join("\n")}`;
+  }
+  /**
+   * Extract tool outputs from conversation history
+   * Looks for tool results stored in message metadata
+   */
+  extractToolOutputs(messages) {
+    const toolOutputs = [];
+    for (const msg of messages) {
+      if (msg.role === "assistant" && msg.metadata?.toolCalls) {
+        const toolCalls = msg.metadata.toolCalls;
+        for (const toolCall of toolCalls) {
+          if (toolCall.result) {
+            toolOutputs.push({
+              tool: toolCall.name,
+              output: toolCall.result
+            });
+          }
+        }
+      }
+    }
+    return toolOutputs;
+  }
+};
+
+// src/infrastructure/context/compactors/TruncateCompactor.ts
+var TruncateCompactor = class {
+  constructor(estimator) {
+    this.estimator = estimator;
+  }
+  name = "truncate";
+  priority = 10;
+  canCompact(component) {
+    return component.compactable && (component.metadata?.strategy === "truncate" || component.metadata?.truncatable === true);
+  }
+  async compact(component, targetTokens) {
+    if (typeof component.content === "string") {
+      return this.truncateString(component, targetTokens);
+    }
+    if (Array.isArray(component.content)) {
+      return this.truncateArray(component, targetTokens);
+    }
+    return component;
+  }
+  estimateSavings(component) {
+    const current = this.estimator.estimateDataTokens(component.content);
+    return Math.floor(current * 0.5);
+  }
+  truncateString(component, targetTokens) {
+    const content = component.content;
+    const currentTokens = this.estimator.estimateTokens(content);
+    if (currentTokens <= targetTokens) {
+      return component;
+    }
+    const targetChars = targetTokens * 4;
+    const truncated = content.substring(0, targetChars) + "\n[truncated...]";
+    return {
+      ...component,
+      content: truncated,
+      metadata: {
+        ...component.metadata,
+        truncated: true,
+        originalLength: content.length,
+        truncatedLength: truncated.length
+      }
+    };
+  }
+  truncateArray(component, targetTokens) {
+    const content = component.content;
+    let tokens = 0;
+    const kept = [];
+    for (let i = content.length - 1; i >= 0; i--) {
+      const item = content[i];
+      const itemTokens = this.estimator.estimateDataTokens(item);
+      if (tokens + itemTokens > targetTokens && kept.length > 0) {
+        break;
+      }
+      kept.unshift(item);
+      tokens += itemTokens;
+    }
+    const droppedLength = content.length - kept.length;
+    if (droppedLength === 0) {
+      return component;
+    }
+    return {
+      ...component,
+      content: kept,
+      metadata: {
+        ...component.metadata,
+        truncated: true,
+        originalLength: content.length,
+        keptLength: kept.length,
+        droppedLength
+      }
+    };
+  }
+};
+
+// src/infrastructure/context/compactors/MemoryEvictionCompactor.ts
+var MemoryEvictionCompactor = class {
+  constructor(estimator) {
+    this.estimator = estimator;
+  }
+  name = "memory-eviction";
+  priority = 8;
+  canCompact(component) {
+    return component.compactable && (component.metadata?.strategy === "evict" || component.name === "memory_index");
+  }
+  async compact(component, targetTokens) {
+    if (component.metadata?.evict && typeof component.metadata.evict === "function") {
+      const currentTokens = this.estimator.estimateDataTokens(component.content);
+      const tokensToFree = Math.max(0, currentTokens - targetTokens);
+      const avgEntrySize = component.metadata.avgEntrySize || 100;
+      const entriesToEvict = Math.ceil(tokensToFree / avgEntrySize);
+      if (entriesToEvict > 0) {
+        await component.metadata.evict(entriesToEvict);
+        if (component.metadata.getUpdatedContent && typeof component.metadata.getUpdatedContent === "function") {
+          const updatedContent = await component.metadata.getUpdatedContent();
+          return {
+            ...component,
+            content: updatedContent,
+            metadata: {
+              ...component.metadata,
+              evicted: true,
+              evictedCount: entriesToEvict
+            }
+          };
+        }
+      }
+    }
+    return component;
+  }
+  estimateSavings(component) {
+    const avgEntrySize = component.metadata?.avgEntrySize || 100;
+    return avgEntrySize * 2;
+  }
+};
+
+// src/infrastructure/context/estimators/ApproximateEstimator.ts
+var ApproximateTokenEstimator = class {
+  /**
+   * Estimate tokens for text with content-type awareness
+   *
+   * @param text - The text to estimate tokens for
+   * @param contentType - Type of content:
+   *   - 'code': Code is typically denser (~3 chars/token)
+   *   - 'prose': Natural language text (~4 chars/token)
+   *   - 'mixed': Mix of code and prose (~3.5 chars/token)
+   */
+  estimateTokens(text, contentType = "mixed") {
+    if (!text || text.length === 0) {
+      return 0;
+    }
+    const charsPerToken = contentType === "code" ? 3 : contentType === "prose" ? 4 : 3.5;
+    return Math.ceil(text.length / charsPerToken);
+  }
+  /**
+   * Estimate tokens for structured data (always uses 'mixed' estimation)
+   */
+  estimateDataTokens(data, contentType = "mixed") {
+    if (data === null || data === void 0) {
+      return 1;
+    }
+    try {
+      const serialized = JSON.stringify(data);
+      return this.estimateTokens(serialized, contentType);
+    } catch {
+      return 100;
+    }
   }
 };
 
@@ -14453,179 +15933,203 @@ var IdempotencyCache = class {
   }
 };
 
-// src/capabilities/taskAgent/HistoryManager.ts
-var DEFAULT_HISTORY_CONFIG = {
-  maxDetailedMessages: 20,
-  compressionStrategy: "summarize",
-  summarizeBatchSize: 10,
-  preserveToolCalls: true,
-  summarizationMode: "truncate"
+// src/domain/interfaces/IHistoryManager.ts
+var DEFAULT_HISTORY_MANAGER_CONFIG = {
+  maxMessages: 50,
+  maxTokens: 32e3,
+  compactionStrategy: "sliding-window",
+  preserveRecentCount: 10
 };
-var DEFAULT_SUMMARIZATION_PROMPT = `Summarize the following conversation concisely, preserving:
-1. Key decisions and outcomes
-2. Important data/values mentioned
-3. Any errors or failures and their resolutions
-4. Critical context needed for future tasks
 
-Keep the summary under 500 tokens. Focus on information that would be needed to continue the conversation.`;
-var HistoryManager = class {
+// src/infrastructure/storage/InMemoryHistoryStorage.ts
+var InMemoryHistoryStorage = class {
   messages = [];
   summaries = [];
-  config;
-  summarizer;
-  constructor(config = {}) {
-    this.config = { ...DEFAULT_HISTORY_CONFIG, ...config };
+  async addMessage(message) {
+    this.messages.push(message);
   }
-  /**
-   * Set the summarizer function (typically injected by TaskAgent)
-   *
-   * @param fn - Function that takes messages and returns a summary string
-   */
-  setSummarizer(fn) {
-    this.summarizer = fn;
-  }
-  /**
-   * Check if summarizer is configured
-   */
-  hasSummarizer() {
-    return !!this.summarizer;
-  }
-  /**
-   * Add a message to history
-   */
-  addMessage(role, content) {
-    this.messages.push({
-      role,
-      content,
-      timestamp: Date.now()
-    });
-    if (this.messages.length > this.config.maxDetailedMessages) {
-      this.compact();
-    }
-  }
-  /**
-   * Get all messages (including summaries as system messages)
-   */
-  getMessages() {
-    const result = [];
-    for (const summary of this.summaries) {
-      result.push({
-        role: "system",
-        content: `[Summary of previous conversation]
-${summary.content}`,
-        timestamp: summary.timestamp
-      });
-    }
-    result.push(...this.messages);
-    return result;
-  }
-  /**
-   * Get recent messages only (no summaries)
-   */
-  getRecentMessages() {
+  async getMessages() {
     return [...this.messages];
   }
-  /**
-   * Compact history (summarize or truncate old messages)
-   */
-  compact() {
-    if (this.config.compressionStrategy === "truncate") {
-      const toRemove = this.messages.length - this.config.maxDetailedMessages;
-      this.messages = this.messages.slice(toRemove);
-    } else if (this.config.compressionStrategy === "drop") {
-      const toKeep = this.config.maxDetailedMessages;
-      this.messages = this.messages.slice(-toKeep);
+  async getRecentMessages(count) {
+    return this.messages.slice(-count);
+  }
+  async removeMessage(id) {
+    const index = this.messages.findIndex((m) => m.id === id);
+    if (index >= 0) {
+      this.messages.splice(index, 1);
     }
   }
-  /**
-   * Summarize history using configured mode
-   *
-   * Modes:
-   * - 'truncate': Just truncate old messages (fast, no LLM)
-   * - 'llm': Use injected summarizer (requires setSummarizer())
-   * - 'hybrid': Try LLM, fall back to truncate on error
-   */
-  async summarize() {
-    const mode = this.config.summarizationMode ?? "truncate";
-    if (mode === "truncate") {
-      this.compact();
-      return;
-    }
-    if (mode === "llm" || mode === "hybrid") {
-      if (!this.summarizer) {
-        if (mode === "hybrid") {
-          this.compact();
-          return;
-        }
-        throw new Error("Summarizer not configured. Call setSummarizer() first.");
-      }
-      try {
-        await this.summarizeWithLLM();
-      } catch (error) {
-        if (mode === "hybrid") {
-          console.warn("LLM summarization failed, falling back to truncate:", error);
-          this.compact();
-        } else {
-          throw error;
-        }
-      }
-    }
+  async removeOlderThan(timestamp) {
+    const originalLength = this.messages.length;
+    this.messages = this.messages.filter((m) => m.timestamp >= timestamp);
+    return originalLength - this.messages.length;
   }
-  /**
-   * Perform LLM-based summarization on oldest messages
-   * @internal
-   */
-  async summarizeWithLLM() {
-    if (!this.summarizer || this.messages.length < this.config.summarizeBatchSize) {
-      return;
-    }
-    const toSummarize = this.messages.slice(0, this.config.summarizeBatchSize);
-    const toKeep = this.messages.slice(this.config.summarizeBatchSize);
-    const summary = await this.summarizer(toSummarize);
-    this.summaries.push({
-      content: summary,
-      coversMessages: toSummarize.length,
-      timestamp: Date.now()
-    });
-    this.messages = toKeep;
-  }
-  /**
-   * Truncate messages to a limit
-   */
-  async truncate(messages, limit) {
-    return messages.slice(-limit);
-  }
-  /**
-   * Clear all history
-   */
-  clear() {
+  async clear() {
     this.messages = [];
     this.summaries = [];
   }
-  /**
-   * Get total message count
-   */
-  getMessageCount() {
+  async getCount() {
     return this.messages.length;
   }
-  /**
-   * Get history state for persistence
-   */
-  getState() {
+  async getState() {
     return {
+      version: 1,
       messages: [...this.messages],
       summaries: [...this.summaries]
     };
   }
-  /**
-   * Restore history from state
-   */
-  restoreState(state) {
+  async restoreState(state) {
     this.messages = [...state.messages];
-    this.summaries = [...state.summaries];
+    this.summaries = state.summaries ? [...state.summaries] : [];
   }
 };
-var ExternalDependencyHandler = class extends EventEmitter__default.default {
+
+// src/core/history/ConversationHistoryManager.ts
+var ConversationHistoryManager = class extends eventemitter3.EventEmitter {
+  storage;
+  config;
+  constructor(config = {}) {
+    super();
+    this.storage = config.storage ?? new InMemoryHistoryStorage();
+    this.config = {
+      ...DEFAULT_HISTORY_MANAGER_CONFIG,
+      ...config
+    };
+  }
+  /**
+   * Add a message to history
+   */
+  async addMessage(role, content, metadata) {
+    const message = {
+      id: crypto2.randomUUID(),
+      role,
+      content,
+      timestamp: Date.now(),
+      metadata
+    };
+    await this.storage.addMessage(message);
+    this.emit("message:added", { message });
+    const count = await this.storage.getCount();
+    if (count > this.config.maxMessages) {
+      await this.compact();
+    }
+    return message;
+  }
+  /**
+   * Get all messages
+   */
+  async getMessages() {
+    return this.storage.getMessages();
+  }
+  /**
+   * Get recent messages
+   */
+  async getRecentMessages(count) {
+    const limit = count ?? this.config.preserveRecentCount;
+    return this.storage.getRecentMessages(limit);
+  }
+  /**
+   * Format history for LLM context
+   */
+  async formatForContext(options) {
+    const maxTokens = options?.maxTokens ?? this.config.maxTokens;
+    const messages = await this.storage.getMessages();
+    if (messages.length === 0) {
+      return "";
+    }
+    const parts = [];
+    let estimatedTokens = 0;
+    const headerTokens = 50;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (!msg) continue;
+      const roleLabel = msg.role === "user" ? "User" : msg.role === "assistant" ? "Assistant" : "System";
+      const line = `**${roleLabel}**: ${msg.content}`;
+      const lineTokens = Math.ceil(line.length / 4);
+      if (estimatedTokens + lineTokens + headerTokens > maxTokens) {
+        break;
+      }
+      parts.unshift(line);
+      estimatedTokens += lineTokens;
+    }
+    if (parts.length === 0) {
+      return "";
+    }
+    return `## Conversation History
+
+${parts.join("\n\n")}`;
+  }
+  /**
+   * Compact history based on strategy
+   */
+  async compact() {
+    const count = await this.storage.getCount();
+    if (count <= this.config.maxMessages) {
+      return;
+    }
+    const toRemove = count - this.config.maxMessages + this.config.preserveRecentCount;
+    switch (this.config.compactionStrategy) {
+      case "truncate":
+      case "sliding-window": {
+        const messages = await this.storage.getMessages();
+        const cutoffIndex = Math.min(toRemove, messages.length - this.config.preserveRecentCount);
+        const cutoffMsg = cutoffIndex > 0 ? messages[cutoffIndex - 1] : void 0;
+        if (cutoffMsg) {
+          const cutoffTimestamp = cutoffMsg.timestamp + 1;
+          const removed = await this.storage.removeOlderThan(cutoffTimestamp);
+          this.emit("history:compacted", { removedCount: removed, strategy: this.config.compactionStrategy });
+        }
+        break;
+      }
+      case "summarize": {
+        const messages = await this.storage.getMessages();
+        const cutoffIndex = Math.min(toRemove, messages.length - this.config.preserveRecentCount);
+        const cutoffMsg = cutoffIndex > 0 ? messages[cutoffIndex - 1] : void 0;
+        if (cutoffMsg) {
+          const cutoffTimestamp = cutoffMsg.timestamp + 1;
+          const removed = await this.storage.removeOlderThan(cutoffTimestamp);
+          this.emit("history:compacted", { removedCount: removed, strategy: "truncate" });
+        }
+        break;
+      }
+    }
+  }
+  /**
+   * Clear all history
+   */
+  async clear() {
+    await this.storage.clear();
+    this.emit("history:cleared", {});
+  }
+  /**
+   * Get message count
+   */
+  async getMessageCount() {
+    return this.storage.getCount();
+  }
+  /**
+   * Get state for persistence
+   */
+  async getState() {
+    return this.storage.getState();
+  }
+  /**
+   * Restore from saved state
+   */
+  async restoreState(state) {
+    await this.storage.restoreState(state);
+    const count = await this.storage.getCount();
+    this.emit("history:restored", { messageCount: count });
+  }
+  /**
+   * Get configuration
+   */
+  getConfig() {
+    return { ...this.config };
+  }
+};
+var ExternalDependencyHandler = class extends eventemitter3.EventEmitter {
   activePolls = /* @__PURE__ */ new Map();
   activeScheduled = /* @__PURE__ */ new Map();
   cancelledPolls = /* @__PURE__ */ new Set();
@@ -15141,12 +16645,12 @@ function extractNumber(text, patterns = [
 
 // src/capabilities/taskAgent/PlanExecutor.ts
 var DEFAULT_TASK_TIMEOUT_MS = 3e5;
-var PlanExecutor = class extends EventEmitter__default.default {
+var PlanExecutor = class extends eventemitter3.EventEmitter {
   agent;
   memory;
   contextManager;
+  contextProvider;
   idempotencyCache;
-  // TODO: Integrate in tool execution (Task #4)
   historyManager;
   externalHandler;
   checkpointManager;
@@ -15163,11 +16667,12 @@ var PlanExecutor = class extends EventEmitter__default.default {
   };
   // Reference to current agent state (for checkpointing)
   currentState = null;
-  constructor(agent, memory, contextManager, idempotencyCache, historyManager, externalHandler, checkpointManager, hooks, config) {
+  constructor(agent, memory, contextManager, contextProvider, idempotencyCache, historyManager, externalHandler, checkpointManager, hooks, config) {
     super();
     this.agent = agent;
     this.memory = memory;
     this.contextManager = contextManager;
+    this.contextProvider = contextProvider;
     this.idempotencyCache = idempotencyCache;
     this.historyManager = historyManager;
     this.externalHandler = externalHandler;
@@ -15435,21 +16940,12 @@ var PlanExecutor = class extends EventEmitter__default.default {
    */
   async executeTaskCore(plan, task) {
     const taskPrompt = this.buildTaskPrompt(plan, task);
-    await this.contextManager.prepareContext(
-      {
-        systemPrompt: this.buildSystemPrompt(plan),
-        instructions: "",
-        memoryIndex: await this.memory.formatIndex(),
-        conversationHistory: this.historyManager.getRecentMessages().map((m) => ({
-          role: m.role,
-          content: m.content
-        })),
-        currentInput: taskPrompt
-      },
-      this.memory,
-      this.historyManager
-    );
-    this.historyManager.addMessage("user", taskPrompt);
+    this.contextProvider.updateConfig({
+      currentInput: taskPrompt,
+      plan
+    });
+    await this.contextManager.prepare();
+    await this.historyManager.addMessage("user", taskPrompt);
     this.emit("llm:call", { iteration: task.attempts });
     let messages = [{ role: "user", content: taskPrompt }];
     if (this.hooks?.beforeLLMCall) {
@@ -15488,7 +16984,7 @@ var PlanExecutor = class extends EventEmitter__default.default {
     if (this.currentState) {
       await this.checkpointManager.onLLMCall(this.currentState);
     }
-    this.historyManager.addMessage("assistant", response.output_text || "");
+    await this.historyManager.addMessage("assistant", response.output_text || "");
     const validationResult = await this.validateTaskCompletion(task, response.output_text || "");
     task.metadata = task.metadata || {};
     task.metadata.validationResult = validationResult;
@@ -15534,24 +17030,6 @@ var PlanExecutor = class extends EventEmitter__default.default {
       await this.externalHandler.startWaiting(task);
       this.emit("task:waiting_external", { task });
     }
-  }
-  /**
-   * Build system prompt for task execution
-   */
-  buildSystemPrompt(plan) {
-    return `You are an autonomous agent executing a plan.
-
-**Goal:** ${plan.goal}
-${plan.context ? `**Context:** ${plan.context}
-` : ""}
-**Your Role:** Execute tasks step by step using the available tools. Use working memory to store and retrieve information between tasks.
-
-**Important Instructions:**
-1. When you complete a task successfully, acknowledge it clearly
-2. Use memory_store to save important data for future tasks
-3. Use memory_retrieve to access previously stored data
-4. If a task requires information from a previous task, retrieve it from memory
-5. Be systematic and thorough in completing each task`;
   }
   /**
    * Build prompt for a specific task
@@ -16055,7 +17533,16 @@ function createMemoryTools() {
         if (!context || !context.memory) {
           throw new ToolExecutionError("memory_list", "Memory tools require TaskAgent context");
         }
-        return await context.memory.list();
+        const entries = await context.memory.list();
+        return {
+          entries: entries.map((e) => ({
+            key: e.key,
+            description: e.description,
+            priority: e.effectivePriority,
+            pinned: e.pinned
+          })),
+          count: entries.length
+        };
       },
       idempotency: { safe: true },
       output: { expectedSize: "small" }
@@ -16144,36 +17631,15 @@ function createContextBreakdownTool() {
           message: "Context has not been prepared yet"
         };
       }
+      const components = Object.entries(budget.breakdown).map(([name, tokens]) => ({
+        name,
+        tokens,
+        percent: budget.used > 0 ? Math.round(tokens / budget.used * 1e3) / 10 : 0
+      }));
       return {
         total_used: budget.used,
         breakdown: budget.breakdown,
-        components: [
-          {
-            name: "system_prompt",
-            tokens: budget.breakdown.systemPrompt,
-            percent: Math.round(budget.breakdown.systemPrompt / budget.used * 1e3) / 10
-          },
-          {
-            name: "instructions",
-            tokens: budget.breakdown.instructions,
-            percent: Math.round(budget.breakdown.instructions / budget.used * 1e3) / 10
-          },
-          {
-            name: "memory_index",
-            tokens: budget.breakdown.memoryIndex,
-            percent: Math.round(budget.breakdown.memoryIndex / budget.used * 1e3) / 10
-          },
-          {
-            name: "conversation_history",
-            tokens: budget.breakdown.conversationHistory,
-            percent: Math.round(budget.breakdown.conversationHistory / budget.used * 1e3) / 10
-          },
-          {
-            name: "current_input",
-            tokens: budget.breakdown.currentInput,
-            percent: Math.round(budget.breakdown.currentInput / budget.used * 1e3) / 10
-          }
-        ]
+        components
       };
     },
     idempotency: {
@@ -16262,66 +17728,26 @@ function createMemoryStatsTool() {
 }
 
 // src/capabilities/taskAgent/TaskAgent.ts
-var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
+var TaskAgent = class _TaskAgent extends BaseAgent {
   id;
   state;
-  storage;
+  agentStorage;
   memory;
   hooks;
   executionPromise;
   // Internal components
   agent;
   contextManager;
+  contextProvider;
   idempotencyCache;
   historyManager;
   externalHandler;
   planExecutor;
   checkpointManager;
-  _tools = [];
-  _toolManager;
-  config;
-  // Session management (NEW)
-  _sessionManager = null;
-  _session = null;
+  _allTools = [];
   // Event listener cleanup tracking
   eventCleanupFunctions = [];
-  /**
-   * Advanced tool management. Returns ToolManager for fine-grained control.
-   */
-  get tools() {
-    return this._toolManager;
-  }
-  /**
-   * Permission management. Returns ToolPermissionManager for approval control.
-   * Delegates to internal Agent's permission manager.
-   */
-  get permissions() {
-    return this.agent?.permissions;
-  }
-  constructor(id, state, storage, memory, config, hooks) {
-    super();
-    this.id = id;
-    this.state = state;
-    this.storage = storage;
-    this.memory = memory;
-    this.config = config;
-    this.hooks = hooks;
-    this._toolManager = config.toolManager ?? new ToolManager();
-    const storedHandler = (data) => this.emit("memory:stored", data);
-    const limitWarningHandler = (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent });
-    memory.on("stored", storedHandler);
-    memory.on("limit_warning", limitWarningHandler);
-    this.eventCleanupFunctions.push(() => memory.off("stored", storedHandler));
-    this.eventCleanupFunctions.push(() => memory.off("limit_warning", limitWarningHandler));
-    if (config.session) {
-      this._sessionManager = new SessionManager({ storage: config.session.storage });
-      if (config.session.id) ; else {
-        this._session = this._sessionManager.create("task-agent", {
-          title: `TaskAgent ${id}`
-        });
-      }
-    }
-  }
+  // ===== Static Factory =====
   /**
    * Create a new TaskAgent
    */
@@ -16330,120 +17756,22 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
     if (!connector) {
       throw new Error(`Connector "${config.connector}" not found`);
     }
-    const storage = config.storage ?? createAgentStorage({});
+    const agentStorage = config.storage ?? createAgentStorage({});
     const memoryConfig = config.memoryConfig ?? DEFAULT_MEMORY_CONFIG;
-    const memory = new WorkingMemory(storage.memory, memoryConfig);
-    const id = `agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const memory = new WorkingMemory(agentStorage.memory, memoryConfig);
+    const id = `task-agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const emptyPlan = createPlan({ goal: "", tasks: [] });
-    const agentConfig = {
+    const agentStateConfig = {
       connectorName: typeof config.connector === "string" ? config.connector : connector.name,
       model: config.model,
       temperature: config.temperature,
       maxIterations: config.maxIterations,
       toolNames: (config.tools ?? []).map((t) => t.definition.function.name)
     };
-    const state = createAgentState(id, agentConfig, emptyPlan);
-    const taskAgent = new _TaskAgent(id, state, storage, memory, config, config.hooks);
+    const state = createAgentState(id, agentStateConfig, emptyPlan);
+    const taskAgent = new _TaskAgent(id, state, agentStorage, memory, config, config.hooks);
     taskAgent.initializeComponents(config);
     return taskAgent;
-  }
-  /**
-   * Wrap a tool with idempotency cache and enhanced context
-   */
-  wrapToolWithCache(tool) {
-    return {
-      ...tool,
-      execute: async (args, context) => {
-        const enhancedContext = {
-          ...context,
-          contextManager: this.contextManager,
-          idempotencyCache: this.idempotencyCache
-        };
-        if (!this.idempotencyCache) {
-          return tool.execute(args, enhancedContext);
-        }
-        const cached = await this.idempotencyCache.get(tool, args);
-        if (cached !== void 0) {
-          return cached;
-        }
-        const result = await tool.execute(args, enhancedContext);
-        await this.idempotencyCache.set(tool, args, result);
-        return result;
-      }
-    };
-  }
-  /**
-   * Initialize internal components
-   */
-  initializeComponents(config) {
-    const memoryTools = createMemoryTools();
-    const contextTools = createContextTools();
-    this._tools = [...config.tools ?? [], ...memoryTools, ...contextTools];
-    for (const tool of this._tools) {
-      this._toolManager.register(tool);
-    }
-    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
-    const enabledTools = this._toolManager.getEnabled();
-    const cachedTools = enabledTools.map((tool) => this.wrapToolWithCache(tool));
-    this.agent = Agent.create({
-      connector: config.connector,
-      model: config.model,
-      tools: cachedTools,
-      instructions: config.instructions,
-      temperature: config.temperature,
-      maxIterations: config.maxIterations ?? 10,
-      permissions: config.permissions
-    });
-    const modelInfo = getModelInfo(config.model);
-    const contextTokens = modelInfo?.features.input.tokens ?? 128e3;
-    this.contextManager = new ContextManager(
-      {
-        ...DEFAULT_CONTEXT_CONFIG,
-        maxContextTokens: contextTokens
-      },
-      DEFAULT_COMPACTION_STRATEGY
-    );
-    this.historyManager = new HistoryManager(DEFAULT_HISTORY_CONFIG);
-    this.externalHandler = new ExternalDependencyHandler(this._tools);
-    this.checkpointManager = new CheckpointManager(this.storage, DEFAULT_CHECKPOINT_STRATEGY);
-    this.planExecutor = new PlanExecutor(
-      this.agent,
-      this.memory,
-      this.contextManager,
-      this.idempotencyCache,
-      this.historyManager,
-      this.externalHandler,
-      this.checkpointManager,
-      this.hooks,
-      {
-        maxIterations: config.maxIterations ?? 100
-      }
-    );
-    const taskStartHandler = (data) => this.emit("task:start", data);
-    const taskCompleteHandler = (data) => {
-      this.emit("task:complete", { task: data.task, result: { success: true, output: data.result } });
-      if (this.hooks?.afterTask) {
-        this.hooks.afterTask(data.task, { success: true, output: data.result });
-      }
-    };
-    const taskFailedHandler = (data) => this.emit("task:failed", data);
-    const taskSkippedHandler = (data) => this.emit("task:failed", { task: data.task, error: new Error(data.reason) });
-    const taskWaitingExternalHandler = (data) => this.emit("task:waiting", { task: data.task, dependency: data.task.externalDependency });
-    const taskValidationFailedHandler = (data) => this.emit("task:validation_failed", data);
-    this.planExecutor.on("task:start", taskStartHandler);
-    this.planExecutor.on("task:complete", taskCompleteHandler);
-    this.planExecutor.on("task:failed", taskFailedHandler);
-    this.planExecutor.on("task:skipped", taskSkippedHandler);
-    this.planExecutor.on("task:waiting_external", taskWaitingExternalHandler);
-    this.planExecutor.on("task:validation_failed", taskValidationFailedHandler);
-    this.planExecutor.on("task:validation_uncertain", taskValidationFailedHandler);
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:start", taskStartHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:complete", taskCompleteHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:failed", taskFailedHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:skipped", taskSkippedHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:waiting_external", taskWaitingExternalHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:validation_failed", taskValidationFailedHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:validation_uncertain", taskValidationFailedHandler));
   }
   /**
    * Resume an existing agent from storage
@@ -16476,13 +17804,215 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
       temperature: state.config.temperature,
       maxIterations: state.config.maxIterations,
       storage: options.storage,
-      hooks: options.hooks
+      hooks: options.hooks,
+      session: options.session
     };
     const memory = new WorkingMemory(options.storage.memory, DEFAULT_MEMORY_CONFIG);
     const taskAgent = new _TaskAgent(agentId, state, options.storage, memory, config, options.hooks);
     taskAgent.initializeComponents(config);
     return taskAgent;
   }
+  // ===== Constructor =====
+  constructor(id, state, agentStorage, memory, config, hooks) {
+    super(config, "TaskAgent");
+    this.id = id;
+    this.state = state;
+    this.agentStorage = agentStorage;
+    this.memory = memory;
+    this.hooks = hooks;
+    const storedHandler = (data) => this.emit("memory:stored", data);
+    const limitWarningHandler = (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent });
+    memory.on("stored", storedHandler);
+    memory.on("limit_warning", limitWarningHandler);
+    this.eventCleanupFunctions.push(() => memory.off("stored", storedHandler));
+    this.eventCleanupFunctions.push(() => memory.off("limit_warning", limitWarningHandler));
+    this.initializeSession(config.session);
+  }
+  // ===== Abstract Method Implementations =====
+  getAgentType() {
+    return "task-agent";
+  }
+  prepareSessionState() {
+  }
+  async restoreSessionState(session) {
+    if (session.plan?.data) {
+      this.state.plan = session.plan.data;
+    }
+    this._logger.debug({ sessionId: session.id }, "TaskAgent session state restored");
+  }
+  getSerializedPlan() {
+    if (!this.state.plan) {
+      return void 0;
+    }
+    return {
+      version: 1,
+      data: this.state.plan
+    };
+  }
+  getSerializedMemory() {
+    return void 0;
+  }
+  // Override saveSession to handle async memory serialization
+  async saveSession() {
+    await this.ensureSessionLoaded();
+    if (!this._sessionManager || !this._session) {
+      throw new Error(
+        "Session not enabled. Configure session in agent config to use this feature."
+      );
+    }
+    this._session.toolState = this._toolManager.getState();
+    this._session.custom["approvalState"] = this._permissionManager.getState();
+    const plan = this.getSerializedPlan();
+    if (plan) {
+      this._session.plan = plan;
+    }
+    const memoryIndex = await this.memory.getIndex();
+    this._session.memory = {
+      version: 1,
+      entries: memoryIndex.entries.map((e) => ({
+        key: e.key,
+        description: e.description,
+        value: null,
+        // Don't serialize full values, they're in agent storage
+        scope: e.scope,
+        sizeBytes: 0,
+        basePriority: e.effectivePriority,
+        pinned: e.pinned
+      }))
+    };
+    this.prepareSessionState();
+    await this._sessionManager.save(this._session);
+    this._logger.debug({ sessionId: this._session.id }, "TaskAgent session saved");
+  }
+  // ===== Component Initialization =====
+  /**
+   * Wrap a tool with idempotency cache and enhanced context
+   */
+  wrapToolWithCache(tool) {
+    return {
+      ...tool,
+      execute: async (args, context) => {
+        const enhancedContext = {
+          ...context,
+          contextManager: this.contextManager,
+          idempotencyCache: this.idempotencyCache
+        };
+        if (!this.idempotencyCache) {
+          return tool.execute(args, enhancedContext);
+        }
+        const cached = await this.idempotencyCache.get(tool, args);
+        if (cached !== void 0) {
+          return cached;
+        }
+        const result = await tool.execute(args, enhancedContext);
+        await this.idempotencyCache.set(tool, args, result);
+        return result;
+      }
+    };
+  }
+  /**
+   * Initialize internal components
+   */
+  initializeComponents(config) {
+    const memoryTools = createMemoryTools();
+    const contextTools = createContextTools();
+    this._allTools = [...config.tools ?? [], ...memoryTools, ...contextTools];
+    this.registerTools(this._toolManager, this._allTools);
+    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
+    const enabledTools = this._toolManager.getEnabled();
+    const cachedTools = enabledTools.map((tool) => this.wrapToolWithCache(tool));
+    this.agent = Agent.create({
+      connector: config.connector,
+      model: config.model,
+      tools: cachedTools,
+      instructions: config.instructions,
+      temperature: config.temperature,
+      maxIterations: config.maxIterations ?? 10,
+      permissions: config.permissions
+    });
+    const modelInfo = getModelInfo(config.model);
+    const contextTokens = modelInfo?.features.input.tokens ?? 128e3;
+    this.historyManager = new ConversationHistoryManager({
+      maxMessages: 50,
+      maxTokens: Math.floor(contextTokens * 0.3),
+      // Reserve 30% for history
+      compactionStrategy: "sliding-window",
+      preserveRecentCount: 10
+    });
+    this.contextProvider = new TaskAgentContextProvider({
+      model: config.model,
+      instructions: config.instructions,
+      plan: this.state.plan,
+      memory: this.memory,
+      historyManager: this.historyManager
+    });
+    const estimator = new ApproximateTokenEstimator();
+    this.contextManager = new ContextManager(
+      this.contextProvider,
+      {
+        maxContextTokens: contextTokens,
+        compactionThreshold: 0.75,
+        hardLimit: 0.9,
+        responseReserve: 0.15,
+        autoCompact: true,
+        strategy: "proactive"
+      },
+      [
+        new TruncateCompactor(estimator),
+        new MemoryEvictionCompactor(estimator)
+      ],
+      estimator
+    );
+    this.externalHandler = new ExternalDependencyHandler(this._allTools);
+    this.checkpointManager = new CheckpointManager(this.agentStorage, DEFAULT_CHECKPOINT_STRATEGY);
+    this.planExecutor = new PlanExecutor(
+      this.agent,
+      this.memory,
+      this.contextManager,
+      this.contextProvider,
+      this.idempotencyCache,
+      this.historyManager,
+      this.externalHandler,
+      this.checkpointManager,
+      this.hooks,
+      {
+        maxIterations: config.maxIterations ?? 100
+      }
+    );
+    this.setupPlanExecutorEvents();
+  }
+  /**
+   * Setup event forwarding from PlanExecutor
+   */
+  setupPlanExecutorEvents() {
+    if (!this.planExecutor) return;
+    const taskStartHandler = (data) => this.emit("task:start", data);
+    const taskCompleteHandler = (data) => {
+      this.emit("task:complete", { task: data.task, result: { success: true, output: data.result } });
+      if (this.hooks?.afterTask) {
+        this.hooks.afterTask(data.task, { success: true, output: data.result });
+      }
+    };
+    const taskFailedHandler = (data) => this.emit("task:failed", data);
+    const taskSkippedHandler = (data) => this.emit("task:failed", { task: data.task, error: new Error(data.reason) });
+    const taskWaitingExternalHandler = (data) => this.emit("task:waiting", { task: data.task, dependency: data.task.externalDependency });
+    const taskValidationFailedHandler = (data) => this.emit("task:validation_failed", data);
+    this.planExecutor.on("task:start", taskStartHandler);
+    this.planExecutor.on("task:complete", taskCompleteHandler);
+    this.planExecutor.on("task:failed", taskFailedHandler);
+    this.planExecutor.on("task:skipped", taskSkippedHandler);
+    this.planExecutor.on("task:waiting_external", taskWaitingExternalHandler);
+    this.planExecutor.on("task:validation_failed", taskValidationFailedHandler);
+    this.planExecutor.on("task:validation_uncertain", taskValidationFailedHandler);
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:start", taskStartHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:complete", taskCompleteHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:failed", taskFailedHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:skipped", taskSkippedHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:waiting_external", taskWaitingExternalHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:validation_failed", taskValidationFailedHandler));
+    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:validation_uncertain", taskValidationFailedHandler));
+  }
+  // ===== Public API =====
   /**
    * Start executing a plan
    */
@@ -16528,6 +18058,7 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
   }
   /**
    * Resume execution after pause
+   * Note: Named resumeExecution to avoid conflict with BaseAgent if any
    */
   async resume() {
     this.state = updateAgentStatus(this.state, "running");
@@ -16633,6 +18164,7 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
     plan.lastUpdatedAt = Date.now();
     this.emit("plan:updated", { plan });
   }
+  // ===== State Introspection =====
   /**
    * Get current agent state
    */
@@ -16654,73 +18186,7 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
   getMemory() {
     return this.memory;
   }
-  // ============ Session Management (NEW) ============
-  /**
-   * Get the current session ID (if session is enabled)
-   */
-  getSessionId() {
-    return this._session?.id ?? null;
-  }
-  /**
-   * Check if this agent has session support enabled
-   */
-  hasSession() {
-    return this._session !== null;
-  }
-  /**
-   * Save the current session to storage
-   * @throws Error if session is not enabled
-   */
-  async saveSession() {
-    if (!this._sessionManager || !this._session) {
-      throw new Error("Session not enabled. Configure session in TaskAgentConfig to use this feature.");
-    }
-    this._session.toolState = this._toolManager.getState();
-    if (this.state.plan) {
-      this._session.plan = {
-        version: 1,
-        data: this.state.plan
-      };
-    }
-    const memoryEntries = await this.memory.getIndex();
-    this._session.memory = {
-      version: 1,
-      entries: memoryEntries.entries.map((e) => ({
-        key: e.key,
-        description: e.description,
-        value: null,
-        // Don't serialize full values, they're in storage
-        scope: e.scope,
-        sizeBytes: 0,
-        // Size is stored as human-readable in index
-        basePriority: e.effectivePriority,
-        // Store computed priority
-        pinned: e.pinned
-      }))
-    };
-    await this._sessionManager.save(this._session);
-  }
-  /**
-   * Get the current session (for advanced use)
-   */
-  getSession() {
-    return this._session;
-  }
-  /**
-   * Update session custom data
-   */
-  updateSessionData(key, value) {
-    if (!this._session) {
-      throw new Error("Session not enabled");
-    }
-    this._session.custom[key] = value;
-  }
-  /**
-   * Get session custom data
-   */
-  getSessionData(key) {
-    return this._session?.custom[key];
-  }
+  // ===== Plan Execution =====
   /**
    * Execute the plan (internal)
    */
@@ -16781,23 +18247,24 @@ var TaskAgent = class _TaskAgent extends EventEmitter__default.default {
       throw err;
     }
   }
+  // ===== Cleanup =====
   /**
    * Cleanup resources
    */
   async destroy() {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._logger.debug("TaskAgent destroy started");
     this.eventCleanupFunctions.forEach((cleanup) => cleanup());
     this.eventCleanupFunctions = [];
-    if (this._sessionManager) {
-      if (this._session) {
-        this._sessionManager.stopAutoSave(this._session.id);
-      }
-      this._sessionManager.destroy();
-    }
-    this._toolManager.removeAllListeners();
     this.externalHandler?.cleanup();
     await this.checkpointManager?.cleanup();
     this.planExecutor?.cleanup();
     this.agent?.destroy();
+    await this.runCleanupCallbacks();
+    this.baseDestroy();
+    this._logger.debug("TaskAgent destroyed");
   }
 };
 
@@ -17137,707 +18604,6 @@ Use the planning tools to make changes, then finalize when complete.`;
   }
 };
 
-// src/core/context/types.ts
-var DEFAULT_CONTEXT_CONFIG2 = {
-  maxContextTokens: 128e3,
-  compactionThreshold: 0.75,
-  hardLimit: 0.9,
-  responseReserve: 0.15,
-  estimator: "approximate",
-  autoCompact: true,
-  strategy: "proactive",
-  strategyOptions: {}
-};
-
-// src/core/context/strategies/ProactiveStrategy.ts
-var ProactiveCompactionStrategy = class {
-  name = "proactive";
-  metrics = {
-    compactionCount: 0,
-    totalTokensFreed: 0,
-    avgTokensFreedPerCompaction: 0
-  };
-  shouldCompact(budget, _config) {
-    return budget.status === "warning" || budget.status === "critical";
-  }
-  async compact(components, budget, compactors, estimator) {
-    const log = [];
-    let current = [...components];
-    const targetUsage = Math.floor(budget.total * 0.65);
-    const tokensToFree = budget.used - targetUsage;
-    let freedTokens = 0;
-    let round = 0;
-    const maxRounds = 3;
-    const sortedComponents = current.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
-    while (freedTokens < tokensToFree && round < maxRounds) {
-      round++;
-      let roundFreed = 0;
-      for (const component of sortedComponents) {
-        if (freedTokens >= tokensToFree) break;
-        const compactor = compactors.find((c) => c.canCompact(component));
-        if (!compactor) continue;
-        const beforeSize = this.estimateComponent(component, estimator);
-        const reductionFactor = 0.5 - (round - 1) * 0.15;
-        const targetSize = Math.floor(beforeSize * reductionFactor);
-        const compacted = await compactor.compact(component, targetSize);
-        const index = current.findIndex((c) => c.name === component.name);
-        current[index] = compacted;
-        const afterSize = this.estimateComponent(compacted, estimator);
-        const saved = beforeSize - afterSize;
-        freedTokens += saved;
-        roundFreed += saved;
-        log.push(
-          `Round ${round}: ${compactor.name} compacted "${component.name}" by ${saved} tokens`
-        );
-      }
-      if (roundFreed === 0) break;
-    }
-    this.metrics.compactionCount++;
-    this.metrics.totalTokensFreed += freedTokens;
-    this.metrics.avgTokensFreedPerCompaction = this.metrics.totalTokensFreed / this.metrics.compactionCount;
-    return { components: current, log, tokensFreed: freedTokens };
-  }
-  estimateComponent(component, estimator) {
-    if (typeof component.content === "string") {
-      return estimator.estimateTokens(component.content);
-    }
-    return estimator.estimateDataTokens(component.content);
-  }
-  getMetrics() {
-    return { ...this.metrics };
-  }
-};
-
-// src/core/context/strategies/AggressiveStrategy.ts
-var AggressiveCompactionStrategy = class {
-  constructor(options = {}) {
-    this.options = options;
-  }
-  name = "aggressive";
-  shouldCompact(budget, _config) {
-    const threshold = this.options.threshold ?? 0.6;
-    const utilizationRatio = (budget.used + budget.reserved) / budget.total;
-    return utilizationRatio >= threshold;
-  }
-  async compact(components, budget, compactors, estimator) {
-    const log = [];
-    let current = [...components];
-    const target = this.options.target ?? 0.5;
-    const targetUsage = Math.floor(budget.total * target);
-    const tokensToFree = budget.used - targetUsage;
-    let freedTokens = 0;
-    const sortedComponents = current.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
-    for (const component of sortedComponents) {
-      if (freedTokens >= tokensToFree) break;
-      const compactor = compactors.find((c) => c.canCompact(component));
-      if (!compactor) continue;
-      const beforeSize = this.estimateComponent(component, estimator);
-      const targetSize = Math.floor(beforeSize * 0.3);
-      const compacted = await compactor.compact(component, targetSize);
-      const index = current.findIndex((c) => c.name === component.name);
-      current[index] = compacted;
-      const afterSize = this.estimateComponent(compacted, estimator);
-      const saved = beforeSize - afterSize;
-      freedTokens += saved;
-      log.push(`Aggressive: ${compactor.name} compacted "${component.name}" by ${saved} tokens`);
-    }
-    return { components: current, log, tokensFreed: freedTokens };
-  }
-  estimateComponent(component, estimator) {
-    if (typeof component.content === "string") {
-      return estimator.estimateTokens(component.content);
-    }
-    return estimator.estimateDataTokens(component.content);
-  }
-};
-
-// src/core/context/strategies/LazyStrategy.ts
-var LazyCompactionStrategy = class {
-  name = "lazy";
-  shouldCompact(budget, _config) {
-    return budget.status === "critical";
-  }
-  async compact(components, budget, compactors, estimator) {
-    const log = [];
-    let current = [...components];
-    const targetUsage = Math.floor(budget.total * 0.85);
-    const tokensToFree = budget.used - targetUsage;
-    let freedTokens = 0;
-    const sortedComponents = current.filter((c) => c.compactable).sort((a, b) => b.priority - a.priority);
-    for (const component of sortedComponents) {
-      if (freedTokens >= tokensToFree) break;
-      const compactor = compactors.find((c) => c.canCompact(component));
-      if (!compactor) continue;
-      const beforeSize = this.estimateComponent(component, estimator);
-      const targetSize = Math.floor(beforeSize * 0.7);
-      const compacted = await compactor.compact(component, targetSize);
-      const index = current.findIndex((c) => c.name === component.name);
-      current[index] = compacted;
-      const afterSize = this.estimateComponent(compacted, estimator);
-      const saved = beforeSize - afterSize;
-      freedTokens += saved;
-      log.push(`Lazy: ${compactor.name} compacted "${component.name}" by ${saved} tokens`);
-    }
-    return { components: current, log, tokensFreed: freedTokens };
-  }
-  estimateComponent(component, estimator) {
-    if (typeof component.content === "string") {
-      return estimator.estimateTokens(component.content);
-    }
-    return estimator.estimateDataTokens(component.content);
-  }
-};
-
-// src/core/context/strategies/RollingWindowStrategy.ts
-var RollingWindowStrategy = class {
-  constructor(options = {}) {
-    this.options = options;
-  }
-  name = "rolling-window";
-  shouldCompact(_budget, _config) {
-    return false;
-  }
-  async prepareComponents(components) {
-    return components.map((component) => {
-      if (Array.isArray(component.content)) {
-        const maxMessages = this.options.maxMessages ?? 20;
-        if (component.content.length > maxMessages) {
-          return {
-            ...component,
-            content: component.content.slice(-maxMessages),
-            metadata: {
-              ...component.metadata,
-              windowed: true,
-              originalLength: component.content.length,
-              keptLength: maxMessages
-            }
-          };
-        }
-      }
-      return component;
-    });
-  }
-  async compact() {
-    return { components: [], log: [], tokensFreed: 0 };
-  }
-};
-
-// src/core/context/strategies/AdaptiveStrategy.ts
-var AdaptiveStrategy = class {
-  constructor(options = {}) {
-    this.options = options;
-    this.currentStrategy = new ProactiveCompactionStrategy();
-  }
-  name = "adaptive";
-  currentStrategy;
-  metrics = {
-    avgUtilization: 0,
-    compactionFrequency: 0,
-    lastCompactions: []
-  };
-  shouldCompact(budget, config) {
-    this.updateMetrics(budget);
-    this.maybeAdapt();
-    return this.currentStrategy.shouldCompact(budget, config);
-  }
-  async compact(components, budget, compactors, estimator) {
-    const result = await this.currentStrategy.compact(components, budget, compactors, estimator);
-    this.metrics.lastCompactions.push(Date.now());
-    const window = this.options.learningWindow ?? 10;
-    if (this.metrics.lastCompactions.length > window) {
-      this.metrics.lastCompactions.shift();
-    }
-    return {
-      ...result,
-      log: [`[Adaptive: using ${this.currentStrategy.name}]`, ...result.log]
-    };
-  }
-  updateMetrics(budget) {
-    const alpha = 0.1;
-    this.metrics.avgUtilization = alpha * budget.utilizationPercent + (1 - alpha) * this.metrics.avgUtilization;
-  }
-  maybeAdapt() {
-    const now = Date.now();
-    if (this.metrics.lastCompactions.length >= 2) {
-      const firstCompaction = this.metrics.lastCompactions[0];
-      if (firstCompaction !== void 0) {
-        const timeSpan = now - firstCompaction;
-        this.metrics.compactionFrequency = this.metrics.lastCompactions.length / timeSpan * 6e4;
-      }
-    }
-    const threshold = this.options.switchThreshold ?? 5;
-    if (this.metrics.compactionFrequency > threshold) {
-      if (this.currentStrategy.name !== "aggressive") {
-        this.currentStrategy = new AggressiveCompactionStrategy();
-      }
-    } else if (this.metrics.compactionFrequency < 0.5 && this.metrics.avgUtilization < 70) {
-      if (this.currentStrategy.name !== "lazy") {
-        this.currentStrategy = new LazyCompactionStrategy();
-      }
-    } else {
-      if (this.currentStrategy.name !== "proactive") {
-        this.currentStrategy = new ProactiveCompactionStrategy();
-      }
-    }
-  }
-  getMetrics() {
-    return {
-      ...this.metrics,
-      currentStrategy: this.currentStrategy.name
-    };
-  }
-};
-
-// src/core/context/strategies/index.ts
-function createStrategy(name, options = {}) {
-  switch (name) {
-    case "proactive":
-      return new ProactiveCompactionStrategy();
-    case "aggressive":
-      return new AggressiveCompactionStrategy(options);
-    case "lazy":
-      return new LazyCompactionStrategy();
-    case "rolling-window":
-      return new RollingWindowStrategy(options);
-    case "adaptive":
-      return new AdaptiveStrategy(options);
-    default:
-      throw new Error(`Unknown context strategy: ${name}`);
-  }
-}
-
-// src/core/context/ContextManager.ts
-var ContextManager2 = class extends EventEmitter__default.default {
-  config;
-  provider;
-  estimator;
-  compactors;
-  strategy;
-  lastBudget;
-  constructor(provider, config = {}, compactors = [], estimator, strategy) {
-    super();
-    this.provider = provider;
-    this.config = { ...DEFAULT_CONTEXT_CONFIG2, ...config };
-    this.compactors = compactors.sort((a, b) => a.priority - b.priority);
-    if (estimator) {
-      this.estimator = estimator;
-    } else if (typeof this.config.estimator === "string") {
-      this.estimator = this.createEstimator(this.config.estimator);
-    } else {
-      this.estimator = this.config.estimator;
-    }
-    if (strategy) {
-      this.strategy = strategy;
-    } else {
-      this.strategy = this.createStrategy(this.config.strategy || "proactive");
-    }
-  }
-  /**
-   * Prepare context for LLM call
-   * Returns prepared components, automatically compacting if needed
-   */
-  async prepare() {
-    let components = await this.provider.getComponents();
-    if (this.strategy.prepareComponents) {
-      components = await this.strategy.prepareComponents(components);
-    }
-    let budget = this.calculateBudget(components);
-    this.lastBudget = budget;
-    if (budget.status === "warning") {
-      this.emit("budget_warning", { budget });
-    } else if (budget.status === "critical") {
-      this.emit("budget_critical", { budget });
-    }
-    const needsCompaction = this.config.autoCompact && this.strategy.shouldCompact(budget, this.config);
-    if (needsCompaction) {
-      return await this.compactWithStrategy(components, budget);
-    }
-    return {
-      components,
-      budget,
-      compacted: false
-    };
-  }
-  /**
-   * Compact using the current strategy
-   */
-  async compactWithStrategy(components, budget) {
-    this.emit("compacting", {
-      reason: `Context at ${budget.utilizationPercent.toFixed(1)}%`,
-      currentBudget: budget,
-      strategy: this.strategy.name
-    });
-    const result = await this.strategy.compact(components, budget, this.compactors, this.estimator);
-    let finalComponents = result.components;
-    if (this.strategy.postProcess) {
-      finalComponents = await this.strategy.postProcess(result.components, budget);
-    }
-    const newBudget = this.calculateBudget(finalComponents);
-    if (newBudget.status === "critical") {
-      throw new Error(
-        `Cannot fit context within limits after compaction (strategy: ${this.strategy.name}). Used: ${newBudget.used}, Limit: ${budget.total - budget.reserved}`
-      );
-    }
-    this.emit("compacted", {
-      log: result.log,
-      newBudget,
-      tokensFreed: result.tokensFreed
-    });
-    await this.provider.applyCompactedComponents(finalComponents);
-    return {
-      components: finalComponents,
-      budget: newBudget,
-      compacted: true,
-      compactionLog: result.log
-    };
-  }
-  /**
-   * Calculate budget for components
-   */
-  calculateBudget(components) {
-    const breakdown = {};
-    let used = 0;
-    for (const component of components) {
-      const tokens = this.estimateComponent(component);
-      breakdown[component.name] = tokens;
-      used += tokens;
-    }
-    const total = this.provider.getMaxContextSize();
-    const reserved = Math.floor(total * this.config.responseReserve);
-    const available = total - reserved - used;
-    const utilizationRatio = (used + reserved) / total;
-    const utilizationPercent = used / (total - reserved) * 100;
-    let status;
-    if (utilizationRatio >= this.config.hardLimit) {
-      status = "critical";
-    } else if (utilizationRatio >= this.config.compactionThreshold) {
-      status = "warning";
-    } else {
-      status = "ok";
-    }
-    return {
-      total,
-      reserved,
-      used,
-      available,
-      utilizationPercent,
-      status,
-      breakdown
-    };
-  }
-  /**
-   * Estimate tokens for a component
-   */
-  estimateComponent(component) {
-    if (typeof component.content === "string") {
-      return this.estimator.estimateTokens(component.content);
-    }
-    return this.estimator.estimateDataTokens(component.content);
-  }
-  /**
-   * Switch to a different strategy at runtime
-   */
-  setStrategy(strategy) {
-    const oldStrategy = this.strategy.name;
-    this.strategy = typeof strategy === "string" ? this.createStrategy(strategy) : strategy;
-    this.emit("strategy_switched", {
-      from: oldStrategy,
-      to: this.strategy.name,
-      reason: "manual"
-    });
-  }
-  /**
-   * Get current strategy
-   */
-  getStrategy() {
-    return this.strategy;
-  }
-  /**
-   * Get strategy metrics
-   */
-  getStrategyMetrics() {
-    return this.strategy.getMetrics?.() ?? {};
-  }
-  /**
-   * Get current budget
-   */
-  getCurrentBudget() {
-    return this.lastBudget ?? null;
-  }
-  /**
-   * Get configuration
-   */
-  getConfig() {
-    return { ...this.config };
-  }
-  /**
-   * Update configuration
-   */
-  updateConfig(updates) {
-    this.config = { ...this.config, ...updates };
-  }
-  /**
-   * Add compactor
-   */
-  addCompactor(compactor) {
-    this.compactors.push(compactor);
-    this.compactors.sort((a, b) => a.priority - b.priority);
-  }
-  /**
-   * Get all compactors
-   */
-  getCompactors() {
-    return [...this.compactors];
-  }
-  /**
-   * Create estimator from name
-   */
-  createEstimator(_name) {
-    return {
-      estimateTokens: (text) => {
-        if (!text || text.length === 0) return 0;
-        return Math.ceil(text.length / 4);
-      },
-      estimateDataTokens: (data) => {
-        const serialized = JSON.stringify(data);
-        return Math.ceil(serialized.length / 4);
-      }
-    };
-  }
-  /**
-   * Create strategy from name or config
-   */
-  createStrategy(strategy) {
-    if (typeof strategy !== "string") {
-      return strategy;
-    }
-    return createStrategy(strategy, this.config.strategyOptions || {});
-  }
-};
-
-// src/infrastructure/context/providers/TaskAgentContextProvider.ts
-var TaskAgentContextProvider = class {
-  config;
-  constructor(config) {
-    this.config = config;
-  }
-  async getComponents() {
-    const components = [];
-    components.push({
-      name: "system_prompt",
-      content: this.buildSystemPrompt(),
-      priority: 0,
-      compactable: false
-    });
-    if (this.config.instructions) {
-      components.push({
-        name: "instructions",
-        content: this.config.instructions,
-        priority: 0,
-        compactable: false
-      });
-    }
-    components.push({
-      name: "plan",
-      content: this.serializePlan(this.config.plan),
-      priority: 1,
-      compactable: false
-    });
-    const memoryIndex = await this.config.memory.formatIndex();
-    components.push({
-      name: "memory_index",
-      content: memoryIndex,
-      priority: 8,
-      compactable: true,
-      metadata: {
-        strategy: "evict",
-        evict: async (count) => {
-          await this.config.memory.evictLRU(count);
-        },
-        getUpdatedContent: async () => {
-          return await this.config.memory.formatIndex();
-        }
-      }
-    });
-    const messages = this.config.historyManager.getRecentMessages();
-    components.push({
-      name: "conversation_history",
-      content: messages.map((m) => ({
-        role: m.role,
-        content: m.content
-      })),
-      priority: 6,
-      compactable: true,
-      metadata: {
-        strategy: "truncate",
-        truncatable: true
-      }
-    });
-    const toolOutputs = this.extractToolOutputs(messages);
-    if (toolOutputs.length > 0) {
-      components.push({
-        name: "tool_outputs",
-        content: toolOutputs,
-        priority: 10,
-        compactable: true,
-        metadata: {
-          strategy: "truncate",
-          truncatable: true,
-          maxTokens: 4e3
-        }
-      });
-    }
-    if (this.config.currentInput) {
-      components.push({
-        name: "current_input",
-        content: this.config.currentInput,
-        priority: 0,
-        compactable: false
-      });
-    }
-    return components;
-  }
-  async applyCompactedComponents(components) {
-    const historyComponent = components.find((c) => c.name === "conversation_history");
-    if (historyComponent && Array.isArray(historyComponent.content)) ;
-  }
-  getMaxContextSize() {
-    const modelInfo = getModelInfo(this.config.model);
-    return modelInfo?.features.input.tokens ?? 128e3;
-  }
-  /**
-   * Update configuration (e.g., when task changes)
-   */
-  updateConfig(updates) {
-    this.config = { ...this.config, ...updates };
-  }
-  /**
-   * Build system prompt for TaskAgent
-   */
-  buildSystemPrompt() {
-    return `You are an autonomous task-based agent executing a plan.
-
-Your capabilities:
-- Access to working memory (use memory_store, memory_retrieve, memory_delete tools)
-- Tool execution for completing tasks
-- Context awareness (use context_inspect, context_breakdown tools)
-
-Guidelines:
-- Complete each task as specified in the plan
-- Store important information in memory for later tasks
-- Use tools efficiently
-- Be concise but thorough
-- Monitor your context usage`;
-  }
-  /**
-   * Serialize plan for context
-   */
-  serializePlan(plan) {
-    return `## Current Plan
-
-**Goal**: ${plan.goal}
-
-**Tasks**:
-${plan.tasks.map((t, i) => {
-      const status = t.status || "pending";
-      const deps = t.dependsOn && t.dependsOn.length > 0 ? ` (depends on: ${t.dependsOn.join(", ")})` : "";
-      return `${i + 1}. [${status}] ${t.name}: ${t.description}${deps}`;
-    }).join("\n")}`;
-  }
-  /**
-   * Extract tool outputs from conversation history
-   */
-  extractToolOutputs(messages) {
-    const toolOutputs = [];
-    for (const msg of messages) {
-      if (msg.role === "assistant" && msg.toolCalls) {
-        for (const toolCall of msg.toolCalls) {
-          if (toolCall.result) {
-            toolOutputs.push({
-              tool: toolCall.name,
-              output: toolCall.result
-            });
-          }
-        }
-      }
-    }
-    return toolOutputs;
-  }
-};
-
-// src/infrastructure/context/compactors/TruncateCompactor.ts
-var TruncateCompactor = class {
-  constructor(estimator) {
-    this.estimator = estimator;
-  }
-  name = "truncate";
-  priority = 10;
-  canCompact(component) {
-    return component.compactable && (component.metadata?.strategy === "truncate" || component.metadata?.truncatable === true);
-  }
-  async compact(component, targetTokens) {
-    if (typeof component.content === "string") {
-      return this.truncateString(component, targetTokens);
-    }
-    if (Array.isArray(component.content)) {
-      return this.truncateArray(component, targetTokens);
-    }
-    return component;
-  }
-  estimateSavings(component) {
-    const current = this.estimator.estimateDataTokens(component.content);
-    return Math.floor(current * 0.5);
-  }
-  truncateString(component, targetTokens) {
-    const content = component.content;
-    const currentTokens = this.estimator.estimateTokens(content);
-    if (currentTokens <= targetTokens) {
-      return component;
-    }
-    const targetChars = targetTokens * 4;
-    const truncated = content.substring(0, targetChars) + "\n[truncated...]";
-    return {
-      ...component,
-      content: truncated,
-      metadata: {
-        ...component.metadata,
-        truncated: true,
-        originalLength: content.length,
-        truncatedLength: truncated.length
-      }
-    };
-  }
-  truncateArray(component, targetTokens) {
-    const content = component.content;
-    let tokens = 0;
-    const kept = [];
-    for (let i = content.length - 1; i >= 0; i--) {
-      const item = content[i];
-      const itemTokens = this.estimator.estimateDataTokens(item);
-      if (tokens + itemTokens > targetTokens && kept.length > 0) {
-        break;
-      }
-      kept.unshift(item);
-      tokens += itemTokens;
-    }
-    const droppedLength = content.length - kept.length;
-    if (droppedLength === 0) {
-      return component;
-    }
-    return {
-      ...component,
-      content: kept,
-      metadata: {
-        ...component.metadata,
-        truncated: true,
-        originalLength: content.length,
-        keptLength: kept.length,
-        droppedLength
-      }
-    };
-  }
-};
-
 // src/infrastructure/context/compactors/SummarizeCompactor.ts
 var SummarizeCompactor = class {
   constructor(estimator) {
@@ -17855,73 +18621,6 @@ var SummarizeCompactor = class {
   estimateSavings(component) {
     const current = this.estimator.estimateDataTokens(component.content);
     return Math.floor(current * 0.8);
-  }
-};
-
-// src/infrastructure/context/compactors/MemoryEvictionCompactor.ts
-var MemoryEvictionCompactor = class {
-  constructor(estimator) {
-    this.estimator = estimator;
-  }
-  name = "memory-eviction";
-  priority = 8;
-  canCompact(component) {
-    return component.compactable && (component.metadata?.strategy === "evict" || component.name === "memory_index");
-  }
-  async compact(component, targetTokens) {
-    if (component.metadata?.evict && typeof component.metadata.evict === "function") {
-      const currentTokens = this.estimator.estimateDataTokens(component.content);
-      const tokensToFree = Math.max(0, currentTokens - targetTokens);
-      const avgEntrySize = component.metadata.avgEntrySize || 100;
-      const entriesToEvict = Math.ceil(tokensToFree / avgEntrySize);
-      if (entriesToEvict > 0) {
-        await component.metadata.evict(entriesToEvict);
-        if (component.metadata.getUpdatedContent && typeof component.metadata.getUpdatedContent === "function") {
-          const updatedContent = await component.metadata.getUpdatedContent();
-          return {
-            ...component,
-            content: updatedContent,
-            metadata: {
-              ...component.metadata,
-              evicted: true,
-              evictedCount: entriesToEvict
-            }
-          };
-        }
-      }
-    }
-    return component;
-  }
-  estimateSavings(component) {
-    const avgEntrySize = component.metadata?.avgEntrySize || 100;
-    return avgEntrySize * 2;
-  }
-};
-
-// src/infrastructure/context/estimators/ApproximateEstimator.ts
-var ApproximateTokenEstimator = class {
-  /**
-   * Estimate tokens for text using 4 chars per token heuristic
-   */
-  estimateTokens(text, _model) {
-    if (!text || text.length === 0) {
-      return 0;
-    }
-    return Math.ceil(text.length / 4);
-  }
-  /**
-   * Estimate tokens for structured data
-   */
-  estimateDataTokens(data, _model) {
-    if (data === null || data === void 0) {
-      return 1;
-    }
-    try {
-      const serialized = JSON.stringify(data);
-      return this.estimateTokens(serialized);
-    } catch {
-      return 100;
-    }
   }
 };
 
@@ -18041,203 +18740,6 @@ ${input}`);
    */
   updateConfig(config) {
     this.config = { ...this.config, ...config };
-  }
-};
-
-// src/domain/interfaces/IHistoryManager.ts
-var DEFAULT_HISTORY_MANAGER_CONFIG = {
-  maxMessages: 50,
-  maxTokens: 32e3,
-  compactionStrategy: "sliding-window",
-  preserveRecentCount: 10
-};
-
-// src/infrastructure/storage/InMemoryHistoryStorage.ts
-var InMemoryHistoryStorage = class {
-  messages = [];
-  summaries = [];
-  async addMessage(message) {
-    this.messages.push(message);
-  }
-  async getMessages() {
-    return [...this.messages];
-  }
-  async getRecentMessages(count) {
-    return this.messages.slice(-count);
-  }
-  async removeMessage(id) {
-    const index = this.messages.findIndex((m) => m.id === id);
-    if (index >= 0) {
-      this.messages.splice(index, 1);
-    }
-  }
-  async removeOlderThan(timestamp) {
-    const originalLength = this.messages.length;
-    this.messages = this.messages.filter((m) => m.timestamp >= timestamp);
-    return originalLength - this.messages.length;
-  }
-  async clear() {
-    this.messages = [];
-    this.summaries = [];
-  }
-  async getCount() {
-    return this.messages.length;
-  }
-  async getState() {
-    return {
-      version: 1,
-      messages: [...this.messages],
-      summaries: [...this.summaries]
-    };
-  }
-  async restoreState(state) {
-    this.messages = [...state.messages];
-    this.summaries = state.summaries ? [...state.summaries] : [];
-  }
-};
-
-// src/core/history/ConversationHistoryManager.ts
-var ConversationHistoryManager = class extends EventEmitter.EventEmitter {
-  storage;
-  config;
-  constructor(config = {}) {
-    super();
-    this.storage = config.storage ?? new InMemoryHistoryStorage();
-    this.config = {
-      ...DEFAULT_HISTORY_MANAGER_CONFIG,
-      ...config
-    };
-  }
-  /**
-   * Add a message to history
-   */
-  async addMessage(role, content, metadata) {
-    const message = {
-      id: crypto.randomUUID(),
-      role,
-      content,
-      timestamp: Date.now(),
-      metadata
-    };
-    await this.storage.addMessage(message);
-    this.emit("message:added", { message });
-    const count = await this.storage.getCount();
-    if (count > this.config.maxMessages) {
-      await this.compact();
-    }
-    return message;
-  }
-  /**
-   * Get all messages
-   */
-  async getMessages() {
-    return this.storage.getMessages();
-  }
-  /**
-   * Get recent messages
-   */
-  async getRecentMessages(count) {
-    const limit = count ?? this.config.preserveRecentCount;
-    return this.storage.getRecentMessages(limit);
-  }
-  /**
-   * Format history for LLM context
-   */
-  async formatForContext(options) {
-    const maxTokens = options?.maxTokens ?? this.config.maxTokens;
-    const messages = await this.storage.getMessages();
-    if (messages.length === 0) {
-      return "";
-    }
-    const parts = [];
-    let estimatedTokens = 0;
-    const headerTokens = 50;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (!msg) continue;
-      const roleLabel = msg.role === "user" ? "User" : msg.role === "assistant" ? "Assistant" : "System";
-      const line = `**${roleLabel}**: ${msg.content}`;
-      const lineTokens = Math.ceil(line.length / 4);
-      if (estimatedTokens + lineTokens + headerTokens > maxTokens) {
-        break;
-      }
-      parts.unshift(line);
-      estimatedTokens += lineTokens;
-    }
-    if (parts.length === 0) {
-      return "";
-    }
-    return `## Conversation History
-
-${parts.join("\n\n")}`;
-  }
-  /**
-   * Compact history based on strategy
-   */
-  async compact() {
-    const count = await this.storage.getCount();
-    if (count <= this.config.maxMessages) {
-      return;
-    }
-    const toRemove = count - this.config.maxMessages + this.config.preserveRecentCount;
-    switch (this.config.compactionStrategy) {
-      case "truncate":
-      case "sliding-window": {
-        const messages = await this.storage.getMessages();
-        const cutoffIndex = Math.min(toRemove, messages.length - this.config.preserveRecentCount);
-        const cutoffMsg = cutoffIndex > 0 ? messages[cutoffIndex - 1] : void 0;
-        if (cutoffMsg) {
-          const cutoffTimestamp = cutoffMsg.timestamp + 1;
-          const removed = await this.storage.removeOlderThan(cutoffTimestamp);
-          this.emit("history:compacted", { removedCount: removed, strategy: this.config.compactionStrategy });
-        }
-        break;
-      }
-      case "summarize": {
-        const messages = await this.storage.getMessages();
-        const cutoffIndex = Math.min(toRemove, messages.length - this.config.preserveRecentCount);
-        const cutoffMsg = cutoffIndex > 0 ? messages[cutoffIndex - 1] : void 0;
-        if (cutoffMsg) {
-          const cutoffTimestamp = cutoffMsg.timestamp + 1;
-          const removed = await this.storage.removeOlderThan(cutoffTimestamp);
-          this.emit("history:compacted", { removedCount: removed, strategy: "truncate" });
-        }
-        break;
-      }
-    }
-  }
-  /**
-   * Clear all history
-   */
-  async clear() {
-    await this.storage.clear();
-    this.emit("history:cleared", {});
-  }
-  /**
-   * Get message count
-   */
-  async getMessageCount() {
-    return this.storage.getCount();
-  }
-  /**
-   * Get state for persistence
-   */
-  async getState() {
-    return this.storage.getState();
-  }
-  /**
-   * Restore from saved state
-   */
-  async restoreState(state) {
-    await this.storage.restoreState(state);
-    const count = await this.storage.getCount();
-    this.emit("history:restored", { messageCount: count });
-  }
-  /**
-   * Get configuration
-   */
-  getConfig() {
-    return { ...this.config };
   }
 };
 
@@ -19637,7 +20139,7 @@ var FileStorage = class {
    * Get file path for a token key (hashed for security)
    */
   getFilePath(key) {
-    const hash = crypto__namespace.createHash("sha256").update(key).digest("hex");
+    const hash = crypto2__namespace.createHash("sha256").update(key).digest("hex");
     return path3__namespace.join(this.directory, `${hash}.token`);
   }
   async storeToken(key, token) {
@@ -20187,7 +20689,7 @@ var FileConnectorStorage = class {
    * Hash connector name to prevent enumeration
    */
   hashName(name) {
-    return crypto__namespace.createHash("sha256").update(name).digest("hex").slice(0, 16);
+    return crypto2__namespace.createHash("sha256").update(name).digest("hex").slice(0, 16);
   }
   /**
    * Ensure storage directory exists with proper permissions
@@ -23365,7 +23867,7 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
     this.agent = null;
   }
 };
-var ModeManager = class extends events.EventEmitter {
+var ModeManager = class extends eventemitter3.EventEmitter {
   state;
   transitionHistory = [];
   constructor(initialMode = "interactive") {
@@ -23744,30 +24246,21 @@ var META_TOOL_NAMES = {
 };
 
 // src/capabilities/universalAgent/UniversalAgent.ts
-var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
-  name;
-  connector;
-  model;
+var UniversalAgent = class _UniversalAgent extends BaseAgent {
   // Core components
-  config;
   agent;
   // Interactive agent (with meta-tools)
   executionAgent;
   // Execution agent (without meta-tools) - created on demand
-  _toolManager;
   modeManager;
   planningAgent;
   workingMemory;
   // Pluggable history and context management
   historyManager;
   contextBuilder;
-  // Session management
-  _sessionManager = null;
-  _session = null;
   // Execution state
   currentPlan = null;
   executionHistory = [];
-  isDestroyed = false;
   // ============================================================================
   // Static Factory
   // ============================================================================
@@ -23788,28 +24281,19 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
         id: sessionId
       }
     });
-    await agent.loadSession(sessionId);
+    await agent.ensureSessionLoaded();
     return agent;
   }
   // ============================================================================
   // Constructor
   // ============================================================================
   constructor(config) {
-    super();
-    this.connector = typeof config.connector === "string" ? Connector.get(config.connector) : config.connector;
-    this.name = config.name ?? `universal-agent-${Date.now()}`;
-    this.model = config.model;
-    this.config = config;
-    this._toolManager = config.toolManager ?? new ToolManager();
+    super(config, "UniversalAgent");
     if (config.tools) {
-      for (const tool of config.tools) {
-        this._toolManager.register(tool, { namespace: "user" });
-      }
+      this.registerTools(this._toolManager, config.tools, { namespace: "user" });
     }
     const metaTools = getMetaTools();
-    for (const tool of metaTools) {
-      this._toolManager.register(tool, { namespace: "_meta" });
-    }
+    this.registerTools(this._toolManager, metaTools, { namespace: "_meta" });
     const allTools = this._toolManager.getEnabled();
     this.agent = Agent.create({
       connector: config.connector,
@@ -23838,18 +24322,63 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
     this.historyManager = config.historyManager ?? new ConversationHistoryManager();
     this.contextBuilder = config.contextBuilder ?? new DefaultContextBuilder();
     this.registerDefaultContextSources();
-    if (config.session) {
-      this._sessionManager = new SessionManager({ storage: config.session.storage });
-      if (!config.session.id) {
-        this._session = this._sessionManager.create("universal-agent", {
-          title: this.name
-        });
-        if (config.session.autoSave) {
-          const interval = config.session.autoSaveIntervalMs ?? 3e4;
-          this._sessionManager.enableAutoSave(this._session, interval);
-        }
-      }
+    this.initializeSession(config.session);
+  }
+  // ============================================================================
+  // Abstract Method Implementations
+  // ============================================================================
+  getAgentType() {
+    return "universal-agent";
+  }
+  prepareSessionState() {
+    if (this._session) {
+      this._session.mode = this.modeManager.getMode();
+      this._session.custom["modeState"] = this.modeManager.serialize();
+      this._session.custom["executionHistory"] = this.executionHistory;
     }
+  }
+  async restoreSessionState(session) {
+    if (session.custom["modeState"]) {
+      this.modeManager.restore(session.custom["modeState"]);
+    }
+    if (session.plan?.data) {
+      this.currentPlan = session.plan.data;
+    }
+    if (session.custom["executionHistory"]) {
+      this.executionHistory = session.custom["executionHistory"];
+    }
+    if (session.custom["historyState"]) {
+      await this.historyManager.restoreState(session.custom["historyState"]);
+    }
+    this._logger.debug({ sessionId: session.id }, "UniversalAgent session state restored");
+  }
+  getSerializedPlan() {
+    if (!this.currentPlan) {
+      return void 0;
+    }
+    return {
+      version: 1,
+      data: this.currentPlan
+    };
+  }
+  // Override saveSession to handle async history serialization
+  async saveSession() {
+    await this.ensureSessionLoaded();
+    if (!this._sessionManager || !this._session) {
+      throw new Error(
+        "Session not enabled. Configure session in agent config to use this feature."
+      );
+    }
+    this._session.toolState = this._toolManager.getState();
+    this._session.custom["approvalState"] = this._permissionManager.getState();
+    const plan = this.getSerializedPlan();
+    if (plan) {
+      this._session.plan = plan;
+    }
+    this._session.custom["historyState"] = await this.historyManager.getState();
+    this.prepareSessionState();
+    await this._sessionManager.save(this._session);
+    this._logger.debug({ sessionId: this._session.id }, "UniversalAgent session saved");
   }
   // ============================================================================
   // Main API
@@ -23858,7 +24387,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
    * Chat with the agent - the main entry point
    */
   async chat(input) {
-    if (this.isDestroyed) {
+    if (this._isDestroyed) {
       throw new Error("Agent has been destroyed");
     }
     const intent = await this.analyzeIntent(input);
@@ -23881,7 +24410,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
       response,
       timestamp: /* @__PURE__ */ new Date()
     });
-    if (this.config.session?.autoSave && this._session) {
+    if (this._config.session?.autoSave && this._session) {
       await this.saveSession().catch(() => {
       });
     }
@@ -23891,7 +24420,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
    * Stream chat response
    */
   async *stream(input) {
-    if (this.isDestroyed) {
+    if (this._isDestroyed) {
       throw new Error("Agent has been destroyed");
     }
     const intent = await this.analyzeIntent(input);
@@ -24050,7 +24579,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
     this.modeManager.setPendingPlan(plan);
     this.currentPlan = plan;
     yield { type: "plan:created", plan };
-    if (this.config.planning?.requireApproval !== false) {
+    if (this._config.planning?.requireApproval !== false) {
       yield { type: "plan:awaiting_approval", plan };
       yield { type: "needs:approval", plan };
       const summary = this.formatPlanSummary(plan);
@@ -24149,7 +24678,7 @@ var UniversalAgent = class _UniversalAgent extends events.EventEmitter {
     this.currentPlan = plan;
     this.emit("plan:created", { plan });
     const summary = this.formatPlanSummary(plan);
-    const requireApproval = this.config.planning?.requireApproval !== false;
+    const requireApproval = this._config.planning?.requireApproval !== false;
     return {
       text: summary,
       mode: "planning",
@@ -24445,7 +24974,7 @@ ${response.output_text}`,
     return Math.max(2, andCount + thenCount + 1);
   }
   shouldSwitchToPlanning(intent) {
-    if (this.config.planning?.enabled !== false && this.config.planning?.autoDetect !== false) {
+    if (this._config.planning?.enabled !== false && this._config.planning?.autoDetect !== false) {
       return intent.type === "complex" && (intent.complexity === "high" || intent.complexity === "medium");
     }
     return false;
@@ -24460,13 +24989,13 @@ ${response.output_text}`,
   createExecutionAgent() {
     const userTools = this._toolManager.getEnabled().filter((t) => !isMetaTool(t.definition.function.name));
     return Agent.create({
-      connector: this.config.connector,
-      model: this.config.model,
+      connector: this._config.connector,
+      model: this._config.model,
       tools: userTools,
       instructions: this.buildExecutionInstructions(),
-      temperature: this.config.temperature,
-      maxIterations: this.config.maxIterations ?? 20,
-      permissions: this.config.permissions
+      temperature: this._config.temperature,
+      maxIterations: this._config.maxIterations ?? 20,
+      permissions: this._config.permissions
     });
   }
   /**
@@ -24481,7 +25010,7 @@ Guidelines:
 - Report results clearly and concisely
 - If you encounter errors, explain what went wrong
 
-${this.config.instructions ?? ""}`;
+${this._config.instructions ?? ""}`;
   }
   // ============================================================================
   // Conversation History & Context (Pluggable via IHistoryManager & IContextBuilder)
@@ -24663,55 +25192,6 @@ Currently working on: ${progress.current.name}`;
     };
   }
   // ============================================================================
-  // Session Management
-  // ============================================================================
-  getSessionId() {
-    return this._session?.id ?? null;
-  }
-  hasSession() {
-    return this._session !== null;
-  }
-  async saveSession() {
-    if (!this._sessionManager || !this._session) {
-      throw new Error("Session not enabled");
-    }
-    this._session.toolState = this._toolManager.getState();
-    this._session.mode = this.modeManager.getMode();
-    if (this.currentPlan) {
-      this._session.plan = { version: 1, data: this.currentPlan };
-    }
-    this._session.custom["modeState"] = this.modeManager.serialize();
-    this._session.custom["executionHistory"] = this.executionHistory;
-    this._session.custom["historyState"] = await this.historyManager.getState();
-    await this._sessionManager.save(this._session);
-  }
-  async loadSession(sessionId) {
-    if (!this._sessionManager) return;
-    const session = await this._sessionManager.load(sessionId);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-    this._session = session;
-    if (session.toolState) {
-      this._toolManager.loadState(session.toolState);
-    }
-    if (session.custom["modeState"]) {
-      this.modeManager.restore(session.custom["modeState"]);
-    }
-    if (session.plan?.data) {
-      this.currentPlan = session.plan.data;
-    }
-    if (session.custom["executionHistory"]) {
-      this.executionHistory = session.custom["executionHistory"];
-    }
-    if (session.custom["historyState"]) {
-      await this.historyManager.restoreState(session.custom["historyState"]);
-    }
-  }
-  getSession() {
-    return this._session;
-  }
-  // ============================================================================
   // Public Getters
   // ============================================================================
   getMode() {
@@ -24726,27 +25206,24 @@ Currently working on: ${progress.current.name}`;
     }
     return this.getTaskProgress();
   }
+  /**
+   * Access to tool manager (alias for `tools` getter from BaseAgent)
+   * @deprecated Use `tools` instead for consistency with other agents
+   */
   get toolManager() {
     return this._toolManager;
-  }
-  /**
-   * Permission management. Returns ToolPermissionManager for approval control.
-   * Delegates to internal Agent's permission manager.
-   */
-  get permissions() {
-    return this.agent.permissions;
   }
   // ============================================================================
   // Runtime Configuration
   // ============================================================================
   setAutoApproval(value) {
-    if (this.config.planning) {
-      this.config.planning.requireApproval = !value;
+    if (this._config.planning) {
+      this._config.planning.requireApproval = !value;
     }
   }
   setPlanningEnabled(value) {
-    if (this.config.planning) {
-      this.config.planning.enabled = value;
+    if (this._config.planning) {
+      this._config.planning.enabled = value;
     }
   }
   // ============================================================================
@@ -24777,28 +25254,29 @@ Currently working on: ${progress.current.name}`;
   isPaused() {
     return this._isPaused || this.modeManager.isPaused();
   }
-  onCleanup(callback) {
-    this.agent.onCleanup(callback);
-  }
   // ============================================================================
   // Cleanup
   // ============================================================================
   destroy() {
-    if (this.isDestroyed) return;
-    this.isDestroyed = true;
-    if (this._sessionManager && this._session) {
-      this._sessionManager.stopAutoSave(this._session.id);
-      this._sessionManager.destroy();
+    if (this._isDestroyed) return;
+    this._logger.debug("UniversalAgent destroy started");
+    for (const callback of this._cleanupCallbacks) {
+      try {
+        callback();
+      } catch (error) {
+        this._logger.error({ error: error.message }, "Cleanup callback error");
+      }
     }
+    this._cleanupCallbacks = [];
     this.agent.destroy();
     if (this.executionAgent) {
       this.executionAgent.destroy();
     }
-    this._toolManager.removeAllListeners();
     this.modeManager.removeAllListeners();
-    this.removeAllListeners();
     this.historyManager.clear().catch(() => {
     });
+    this.baseDestroy();
+    this._logger.debug("UniversalAgent destroyed");
   }
 };
 
@@ -24820,7 +25298,7 @@ exports.ConnectorConfigStore = ConnectorConfigStore;
 exports.ConnectorTools = ConnectorTools;
 exports.ConsoleMetrics = ConsoleMetrics;
 exports.ContentType = ContentType;
-exports.ContextManager = ContextManager2;
+exports.ContextManager = ContextManager;
 exports.ConversationHistoryManager = ConversationHistoryManager;
 exports.DEFAULT_ALLOWLIST = DEFAULT_ALLOWLIST;
 exports.DEFAULT_BACKOFF_CONFIG = DEFAULT_BACKOFF_CONFIG;
@@ -24829,9 +25307,8 @@ exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
 exports.DEFAULT_CIRCUIT_BREAKER_CONFIG = DEFAULT_CIRCUIT_BREAKER_CONFIG;
 exports.DEFAULT_CONNECTOR_TIMEOUT = DEFAULT_CONNECTOR_TIMEOUT;
 exports.DEFAULT_CONTEXT_BUILDER_CONFIG = DEFAULT_CONTEXT_BUILDER_CONFIG;
-exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG2;
+exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG;
 exports.DEFAULT_FILESYSTEM_CONFIG = DEFAULT_FILESYSTEM_CONFIG;
-exports.DEFAULT_HISTORY_CONFIG = DEFAULT_HISTORY_CONFIG;
 exports.DEFAULT_HISTORY_MANAGER_CONFIG = DEFAULT_HISTORY_MANAGER_CONFIG;
 exports.DEFAULT_IDEMPOTENCY_CONFIG = DEFAULT_IDEMPOTENCY_CONFIG;
 exports.DEFAULT_MAX_DELAY_MS = DEFAULT_MAX_DELAY_MS;
@@ -24841,16 +25318,15 @@ exports.DEFAULT_PERMISSION_CONFIG = DEFAULT_PERMISSION_CONFIG;
 exports.DEFAULT_RATE_LIMITER_CONFIG = DEFAULT_RATE_LIMITER_CONFIG;
 exports.DEFAULT_RETRYABLE_STATUSES = DEFAULT_RETRYABLE_STATUSES;
 exports.DEFAULT_SHELL_CONFIG = DEFAULT_SHELL_CONFIG;
-exports.DEFAULT_SUMMARIZATION_PROMPT = DEFAULT_SUMMARIZATION_PROMPT;
 exports.DefaultContextBuilder = DefaultContextBuilder;
 exports.DependencyCycleError = DependencyCycleError;
+exports.ErrorHandler = ErrorHandler;
 exports.ExecutionContext = ExecutionContext;
 exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileConnectorStorage = FileConnectorStorage;
 exports.FileSessionStorage = FileSessionStorage;
 exports.FileStorage = FileStorage;
 exports.FrameworkLogger = FrameworkLogger;
-exports.HistoryManager = HistoryManager;
 exports.HookManager = HookManager;
 exports.IMAGE_MODELS = IMAGE_MODELS;
 exports.IMAGE_MODEL_REGISTRY = IMAGE_MODEL_REGISTRY;
@@ -24916,7 +25392,6 @@ exports.ToolExecutionError = ToolExecutionError;
 exports.ToolManager = ToolManager;
 exports.ToolNotFoundError = ToolNotFoundError;
 exports.ToolPermissionManager = ToolPermissionManager;
-exports.ToolRegistry = ToolRegistry;
 exports.ToolTimeoutError = ToolTimeoutError;
 exports.TruncateCompactor = TruncateCompactor;
 exports.UniversalAgent = UniversalAgent;
@@ -25007,6 +25482,7 @@ exports.getVideoModelsByVendor = getVideoModelsByVendor;
 exports.getVideoModelsWithAudio = getVideoModelsWithAudio;
 exports.getVideoModelsWithFeature = getVideoModelsWithFeature;
 exports.glob = glob;
+exports.globalErrorHandler = globalErrorHandler;
 exports.grep = grep;
 exports.hasClipboardImage = hasClipboardImage;
 exports.isBlockedCommand = isBlockedCommand;

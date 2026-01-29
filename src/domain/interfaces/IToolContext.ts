@@ -2,7 +2,7 @@
  * Tool context interface - passed to tools during execution
  */
 
-import type { ContextManager } from '../../capabilities/taskAgent/ContextManager.js';
+import type { ContextManager } from '../../core/context/ContextManager.js';
 import type { IdempotencyCache } from '../../capabilities/taskAgent/IdempotencyCache.js';
 import type { MemoryScope, MemoryPriority } from '../entities/Memory.js';
 

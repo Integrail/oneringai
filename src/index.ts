@@ -47,7 +47,7 @@ export type {
 } from './capabilities/video/index.js';
 export { createVideoProvider } from './core/createVideoProvider.js';
 
-// Tool Management (Dynamic)
+// Tool Management (Unified - handles registration, execution, and circuit breakers)
 export { ToolManager } from './core/index.js';
 export type {
   ToolOptions,
@@ -59,6 +59,7 @@ export type {
   SerializedToolState,
   ToolManagerEvent,
 } from './core/index.js';
+// Note: CircuitBreakerConfig, CircuitState are exported from infrastructure/resilience
 
 // Tool Permissions (NEW)
 export { ToolPermissionManager } from './core/permissions/index.js';
@@ -109,7 +110,6 @@ export {
   TaskAgent,
   WorkingMemory,
   IdempotencyCache,
-  HistoryManager,
   ExternalDependencyHandler,
   PlanExecutor,
   CheckpointManager,
@@ -130,15 +130,13 @@ export type {
   EvictionStrategy,
   IdempotencyCacheConfig,
   CacheStats,
-  HistoryManagerConfig,
   ExternalDependencyEvents,
   PlanExecutorConfig,
   PlanExecutorEvents,
   PlanExecutionResult,
   CheckpointStrategy,
 } from './capabilities/taskAgent/index.js';
-export { DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_HISTORY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_SUMMARIZATION_PROMPT } from './capabilities/taskAgent/index.js';
-export type { SummarizerFunction } from './capabilities/taskAgent/index.js';
+export { DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_CHECKPOINT_STRATEGY } from './capabilities/taskAgent/index.js';
 
 // ============ Context Management (Universal) ============
 export { ContextManager } from './core/context/index.js';
@@ -151,6 +149,7 @@ export type {
   ITokenEstimator,
   IContextCompactor,
   IContextStrategy,
+  TokenContentType,
 } from './core/context/types.js';
 export { DEFAULT_CONTEXT_CONFIG } from './core/context/types.js';
 
@@ -421,7 +420,7 @@ export { StreamState } from './domain/entities/StreamState.js';
 export { StreamHelpers } from './capabilities/agents/StreamHelpers.js';
 
 // ============ Hooks & Events (Enterprise) ============
-export { ToolRegistry, ExecutionContext, HookManager } from './capabilities/agents/index.js';
+export { ExecutionContext, HookManager } from './capabilities/agents/index.js';
 export type {
   AgenticLoopEvents,
   AgenticLoopEventName,
