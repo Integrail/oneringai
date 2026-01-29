@@ -31,6 +31,98 @@ const LOG_LEVEL_VALUES: Record<LogLevel, number> = {
 };
 
 /**
+ * Safe JSON stringify that handles circular references and problematic objects
+ */
+function safeStringify(obj: unknown, indent?: number): string {
+  const seen = new WeakSet();
+
+  const replacer = (_key: string, value: unknown): unknown => {
+    // Handle null/undefined
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    // Handle primitive types
+    if (typeof value !== 'object') {
+      // Handle functions
+      if (typeof value === 'function') {
+        return '[Function]';
+      }
+      // Handle BigInt
+      if (typeof value === 'bigint') {
+        return value.toString();
+      }
+      return value;
+    }
+
+    // Handle special objects that shouldn't be serialized
+    const objValue = value as object;
+    const constructor = objValue.constructor?.name || '';
+
+    // Skip Node.js internal objects that cause circular reference issues
+    if (
+      constructor === 'Timeout' ||
+      constructor === 'TimersList' ||
+      constructor === 'Socket' ||
+      constructor === 'Server' ||
+      constructor === 'IncomingMessage' ||
+      constructor === 'ServerResponse' ||
+      constructor === 'WriteStream' ||
+      constructor === 'ReadStream' ||
+      constructor === 'EventEmitter'
+    ) {
+      return `[${constructor}]`;
+    }
+
+    // Handle circular references
+    if (seen.has(objValue)) {
+      return '[Circular]';
+    }
+
+    // Handle Error objects specially
+    if (objValue instanceof Error) {
+      return {
+        name: objValue.name,
+        message: objValue.message,
+        stack: objValue.stack,
+      };
+    }
+
+    // Handle Date
+    if (objValue instanceof Date) {
+      return objValue.toISOString();
+    }
+
+    // Handle Map
+    if (objValue instanceof Map) {
+      return Object.fromEntries(objValue);
+    }
+
+    // Handle Set
+    if (objValue instanceof Set) {
+      return Array.from(objValue);
+    }
+
+    // Handle Buffer
+    if (Buffer.isBuffer(objValue)) {
+      return `[Buffer(${objValue.length})]`;
+    }
+
+    // Add to seen set for circular reference detection
+    seen.add(objValue);
+
+    return value;
+  };
+
+  try {
+    return JSON.stringify(obj, replacer, indent);
+  } catch {
+    // Fallback if stringify still fails
+    return '[Unserializable]';
+  }
+}
+
+/**
  * Logger configuration
  */
 export interface LoggerConfig {
@@ -230,7 +322,7 @@ export class FrameworkLogger {
     const contextParts: string[] = [];
     for (const [key, value] of Object.entries(entry)) {
       if (key !== 'level' && key !== 'time' && key !== 'msg') {
-        contextParts.push(`${key}=${JSON.stringify(value)}`);
+        contextParts.push(`${key}=${safeStringify(value)}`);
       }
     }
     const context = contextParts.length > 0 ? ` ${contextParts.join(' ')}` : '';
@@ -261,7 +353,7 @@ export class FrameworkLogger {
    * JSON print for production
    */
   private jsonPrint(entry: LogEntry): void {
-    const json = JSON.stringify(entry);
+    const json = safeStringify(entry);
 
     // Write to file if available
     if (this.fileStream) {

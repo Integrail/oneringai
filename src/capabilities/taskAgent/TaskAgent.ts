@@ -32,7 +32,7 @@ import { WorkingMemory } from './WorkingMemory.js';
 // Unified AgentContext (inherited from BaseAgent, import only for type reference if needed)
 import { PlanPlugin } from '../../core/context/plugins/PlanPlugin.js';
 import { MemoryPlugin } from '../../core/context/plugins/MemoryPlugin.js';
-import { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
+// NOTE: IdempotencyCache is accessed via this._agentContext.cache (single source of truth)
 import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { PlanExecutor } from './PlanExecutor.js';
 import { CheckpointManager, DEFAULT_CHECKPOINT_STRATEGY } from './CheckpointManager.js';
@@ -252,16 +252,17 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
   readonly id: string;
   protected state: AgentState;
   protected agentStorage: IAgentStorage;
-  protected memory: WorkingMemory;
+  // NOTE: Memory is accessed via this._agentContext.memory (single source of truth)
+  // The 'memory' getter below provides convenient access
   protected hooks?: TaskAgentHooks;
   protected executionPromise?: Promise<PlanResult>;
 
   // Internal components
   protected agent?: Agent;
   // Note: _agentContext is inherited from BaseAgent (single source of truth)
+  // Cache is accessed via this._agentContext.cache (single source of truth)
   protected _planPlugin?: PlanPlugin;
   protected _memoryPlugin?: MemoryPlugin;
-  protected idempotencyCache?: IdempotencyCache;
   protected externalHandler?: ExternalDependencyHandler;
   protected planExecutor?: PlanExecutor;
   protected checkpointManager?: CheckpointManager;
@@ -287,9 +288,9 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     // Create agent storage
     const agentStorage = config.storage ?? createAgentStorage({});
 
-    // Create working memory
+    // NOTE: WorkingMemory is created by AgentContext (single source of truth)
+    // We pass memory config via the context config below
     const memoryConfig = config.memoryConfig ?? DEFAULT_MEMORY_CONFIG;
-    const memory = new WorkingMemory(agentStorage.memory, memoryConfig);
 
     // Generate agent ID
     const id = `task-agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -307,10 +308,23 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
 
     const state = createAgentState(id, agentStateConfig, emptyPlan);
 
-    const taskAgent = new TaskAgent(id, state, agentStorage, memory, config, config.hooks);
+    // Create TaskAgent - memory config is passed to AgentContext via config.context
+    const taskAgentConfig: TaskAgentConfig = {
+      ...config,
+      // Pass memory config to AgentContext
+      context: {
+        ...(typeof config.context === 'object' && config.context !== null && !(config.context instanceof Object.getPrototypeOf(config.context)?.constructor) ? config.context : {}),
+        memory: {
+          storage: agentStorage.memory,
+          ...memoryConfig,
+        },
+      },
+    };
+
+    const taskAgent = new TaskAgent(id, state, agentStorage, taskAgentConfig, config.hooks);
 
     // Initialize components
-    taskAgent.initializeComponents(config);
+    taskAgent.initializeComponents(taskAgentConfig);
 
     return taskAgent;
   }
@@ -349,7 +363,7 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
       );
     }
 
-    // Recreate config from state
+    // Recreate config from state - memory config is passed to AgentContext
     const config: TaskAgentConfig = {
       connector: state.config.connectorName,
       model: state.config.model,
@@ -359,12 +373,16 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
       storage: options.storage,
       hooks: options.hooks,
       session: options.session,
+      // Pass memory config to AgentContext (single source of truth)
+      context: {
+        memory: {
+          storage: options.storage.memory,
+          ...DEFAULT_MEMORY_CONFIG,
+        },
+      },
     };
 
-    // Create working memory from stored state
-    const memory = new WorkingMemory(options.storage.memory, DEFAULT_MEMORY_CONFIG);
-
-    const taskAgent = new TaskAgent(agentId, state, options.storage, memory, config, options.hooks);
+    const taskAgent = new TaskAgent(agentId, state, options.storage, config, options.hooks);
 
     // Initialize components
     taskAgent.initializeComponents(config);
@@ -378,21 +396,21 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     id: string,
     state: AgentState,
     agentStorage: IAgentStorage,
-    memory: WorkingMemory,
     config: TaskAgentConfig,
     hooks?: TaskAgentHooks
   ) {
     // Call BaseAgent constructor - it handles connector resolution,
-    // tool manager init, permission manager init
+    // tool manager init, permission manager init, and AgentContext creation (including memory)
     super(config, 'TaskAgent');
 
     this.id = id;
     this.state = state;
     this.agentStorage = agentStorage;
-    this.memory = memory;
     this.hooks = hooks;
 
     // Forward memory events to agent (with cleanup tracking)
+    // Memory is accessed via this._agentContext.memory (single source of truth)
+    const memory = this._agentContext.memory;
     const storedHandler = (data: { key: string; description: string }) =>
       this.emit('memory:stored', data);
     const limitWarningHandler = (data: { utilizationPercent: number }) =>
@@ -469,8 +487,8 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
       this._session.plan = plan;
     }
 
-    // Get memory state (async)
-    const memoryIndex = await this.memory.getIndex();
+    // Get memory state (async) - from AgentContext (single source of truth)
+    const memoryIndex = await this._agentContext.memory.getIndex();
     this._session.memory = {
       version: 1,
       entries: memoryIndex.entries.map((e) => ({
@@ -503,20 +521,21 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
       execute: async (args: any, context?: any) => {
         // Enhance context with TaskAgent-specific properties
         // Use inherited _agentContext from BaseAgent
+        // Memory is accessed via this._agentContext.memory (single source of truth)
         const enhancedContext = {
           ...context,
-          memory: this.memory.getAccess(),    // Add memory access for memory tools
+          memory: this._agentContext.memory.getAccess(),    // Add memory access for memory tools
           agentContext: this._agentContext,   // Inherited from BaseAgent
-          idempotencyCache: this.idempotencyCache,
+          idempotencyCache: this._agentContext.cache,
           agentId: this.id,
         };
 
-        if (!this.idempotencyCache) {
+        if (!this._agentContext.cache) {
           return tool.execute(args, enhancedContext);
         }
 
         // Check cache first
-        const cached = await this.idempotencyCache.get(tool, args);
+        const cached = await this._agentContext.cache.get(tool, args);
         if (cached !== undefined) {
           return cached;
         }
@@ -525,7 +544,7 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
         const result = await tool.execute(args, enhancedContext);
 
         // Cache result
-        await this.idempotencyCache.set(tool, args, result);
+        await this._agentContext.cache.set(tool, args, result);
 
         return result;
       }
@@ -547,8 +566,7 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
       this._agentContext.tools.register(tool);
     }
 
-    // Create idempotency cache first (needed for wrapping tools)
-    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
+    // NOTE: IdempotencyCache is accessed via this._agentContext.cache (single source of truth)
 
     // Get enabled tools from inherited AgentContext and wrap with cache
     const enabledTools = this._agentContext.tools.getEnabled();
@@ -577,8 +595,9 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     }
 
     // Create plugins for the inherited AgentContext
+    // NOTE: Memory is accessed via this._agentContext.memory (single source of truth)
     this._planPlugin = new PlanPlugin();
-    this._memoryPlugin = new MemoryPlugin(this.memory);
+    this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
 
     // Register plugins with inherited AgentContext
     this._agentContext.registerPlugin(this._planPlugin);
@@ -594,12 +613,11 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     this.checkpointManager = new CheckpointManager(this.agentStorage, DEFAULT_CHECKPOINT_STRATEGY);
 
     // Create plan executor with inherited AgentContext
+    // NOTE: PlanExecutor gets memory and cache from AgentContext (single source of truth)
     this.planExecutor = new PlanExecutor(
       this.agent,
-      this.memory,
       this._agentContext,
       this._planPlugin,
-      this.idempotencyCache!,
       this.externalHandler,
       this.checkpointManager,
       this.hooks,
@@ -888,10 +906,17 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
   }
 
   /**
-   * Get working memory
+   * Get working memory (from AgentContext - single source of truth)
    */
   getMemory(): WorkingMemory {
-    return this.memory;
+    return this._agentContext.memory;
+  }
+
+  /**
+   * Convenient getter for working memory (alias for _agentContext.memory)
+   */
+  get memory(): WorkingMemory {
+    return this._agentContext.memory;
   }
 
   // ===== Plan Execution =====
@@ -996,7 +1021,7 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     // Cleanup components
     this.externalHandler?.cleanup();
     await this.checkpointManager?.cleanup();
-    this.planExecutor?.cleanup();
+    this.planExecutor?.destroy();
     this.agent?.destroy();
 
     // Run cleanup callbacks

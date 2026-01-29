@@ -2,6 +2,12 @@
  * Tool entities with blocking/non-blocking execution support
  */
 
+// Import the canonical ToolContext from IToolContext.ts (single source of truth)
+import type { ToolContext } from '../interfaces/IToolContext.js';
+
+// Re-export for backward compatibility
+export type { ToolContext };
+
 export interface JSONSchema {
   type: string;
   properties?: Record<string, any>;
@@ -68,15 +74,8 @@ export interface ToolExecutionContext {
   completedResults: Map<string, ToolResult>; // tool_use_id → ToolResult
 }
 
-/**
- * Tool context - passed to tools during execution (optional, for TaskAgent)
- */
-export interface ToolContext {
-  agentId: string;
-  taskId?: string;
-  memory?: any; // WorkingMemoryAccess, but avoiding circular dependency
-  signal?: AbortSignal;
-}
+// ToolContext is imported from IToolContext.ts and re-exported above
+// This eliminates the duplicate definition and ensures type consistency
 
 /**
  * Output handling hints for context management

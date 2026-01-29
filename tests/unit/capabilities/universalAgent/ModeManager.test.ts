@@ -535,4 +535,38 @@ describe('ModeManager', () => {
       expect(end).toBeGreaterThanOrEqual(40);
     });
   });
+
+  describe('destroy', () => {
+    it('should mark as destroyed', () => {
+      expect(modeManager.isDestroyed).toBe(false);
+      modeManager.destroy();
+      expect(modeManager.isDestroyed).toBe(true);
+    });
+
+    it('should be idempotent (safe to call multiple times)', () => {
+      modeManager.destroy();
+      modeManager.destroy();
+      modeManager.destroy();
+      expect(modeManager.isDestroyed).toBe(true);
+    });
+
+    it('should clear transition history', () => {
+      modeManager.transition('planning', 'test');
+      modeManager.transition('executing', 'test');
+      expect(modeManager.getHistory().length).toBeGreaterThan(0);
+
+      modeManager.destroy();
+      expect(modeManager.getHistory()).toEqual([]);
+    });
+
+    it('should remove event listeners', () => {
+      const listener = vi.fn();
+      modeManager.on('mode:changed', listener);
+
+      modeManager.destroy();
+
+      // After destroy, listeners should be removed
+      expect(modeManager.isDestroyed).toBe(true);
+    });
+  });
 });

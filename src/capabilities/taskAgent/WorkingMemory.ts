@@ -13,6 +13,7 @@
 import { EventEmitter } from 'eventemitter3';
 import { IMemoryStorage } from '../../domain/interfaces/IMemoryStorage.js';
 import { WorkingMemoryAccess } from '../../domain/interfaces/IToolContext.js';
+import { IDisposable } from '../../domain/interfaces/IDisposable.js';
 import type {
   MemoryIndex,
   MemoryScope,
@@ -76,11 +77,12 @@ export interface WorkingMemoryEvents {
  * - Task completion detection and stale entry notification
  * - Event emission for monitoring
  */
-export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> {
+export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements IDisposable {
   private storage: IMemoryStorage;
   private config: WorkingMemoryConfig;
   private priorityCalculator: PriorityCalculator;
   private priorityContext: PriorityContext;
+  private _isDestroyed = false;
 
   /**
    * Create a WorkingMemory instance
@@ -898,10 +900,19 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> {
   }
 
   /**
+   * Check if the WorkingMemory instance has been destroyed
+   */
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
+
+  /**
    * Destroy the WorkingMemory instance
    * Removes all event listeners and clears internal state
    */
   destroy(): void {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
     this.removeAllListeners();
     this.priorityContext = {};
   }

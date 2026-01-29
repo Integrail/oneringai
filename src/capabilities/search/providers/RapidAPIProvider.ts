@@ -35,9 +35,20 @@ export class RapidAPIProvider implements ISearchProvider {
         ...options.vendorOptions,
       };
 
+      // Extract host from connector's baseURL for X-RapidAPI-Host header
+      const baseURL = this.connector.baseURL;
+      const host = baseURL ? new URL(baseURL).host : 'real-time-web-search.p.rapidapi.com';
+
+      // Get API key from connector's auth config
+      const apiKey = this.connector.getApiKey?.() || '';
+
       const queryString = buildQueryString(queryParams);
       const response = await this.connector.fetchJSON<any>(`/search?${queryString}`, {
         method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': apiKey,
+          'X-RapidAPI-Host': host,
+        },
       });
 
       // RapidAPI returns data in different formats, handle both

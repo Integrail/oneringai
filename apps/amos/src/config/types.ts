@@ -93,6 +93,8 @@ export interface StoredConnectorConfig {
   baseURL?: string;
   options?: Record<string, unknown>;
   models?: string[]; // Available models for this connector
+  /** Service type for external APIs (search, scrape). E.g., 'serper', 'rapidapi-search', 'zenrows' */
+  serviceType?: string;
   createdAt: number;
   updatedAt: number;
 }

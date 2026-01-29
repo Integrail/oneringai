@@ -1,687 +1,9 @@
 import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ConnectorFetchOptions, d as ITokenStorage, S as StoredToken$1, e as ConnectorConfig, f as ConnectorConfigResult } from './ImageModel-BkWFy986.js';
 export { m as APIKeyConnectorAuth, D as AspectRatio, l as ConnectorAuth, L as DEFAULT_BASE_DELAY_MS, G as DEFAULT_CONNECTOR_TIMEOUT, M as DEFAULT_MAX_DELAY_MS, H as DEFAULT_MAX_RETRIES, K as DEFAULT_RETRYABLE_STATUSES, n as IImageModelDescription, q as IMAGE_MODELS, r as IMAGE_MODEL_REGISTRY, F as ISourceLinks, y as ImageEditOptions, x as ImageGenerateOptions, h as ImageGeneration, j as ImageGenerationCreateOptions, o as ImageModelCapabilities, p as ImageModelPricing, B as ImageResponse, z as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, E as OutputFormat, Q as QualityLevel, k as SimpleGenerateOptions, g as VENDORS, w as calculateImageCost, u as getActiveImageModels, s as getImageModelInfo, t as getImageModelsByVendor, v as getImageModelsWithFeature, i as isVendor } from './ImageModel-BkWFy986.js';
-import { T as ToolFunction, I as IToolExecutor, a as ToolPermissionConfig, b as Tool, S as SerializedApprovalState, A as AgentPermissionsConfig, c as ToolPermissionManager, F as FunctionToolDefinition, H as HookConfig, d as HistoryMode, e as AgenticLoopEvents, f as InputItem, g as AgentResponse, h as StreamEvent, E as ExecutionContext, i as ExecutionMetrics, j as AuditEntry, k as ITextProvider, l as TokenUsage, m as ToolCall, L as LLMResponse, n as StreamEventType, o as TextGenerateOptions, M as ModelCapabilities, p as MessageRole } from './index-CGaZn76e.js';
-export { x as APPROVAL_STATE_VERSION, ar as AfterToolContext, am as AgenticLoopEventName, r as ApprovalCacheEntry, u as ApprovalDecision, au as ApprovalResult, as as ApproveToolContext, aq as BeforeToolContext, _ as BuiltInTool, V as CompactionItem, B as Content, C as ContentType, y as DEFAULT_ALLOWLIST, D as DEFAULT_PERMISSION_CONFIG, z as DefaultAllowlistedTool, ad as ErrorEvent, ao as Hook, al as HookManager, an as HookName, J as InputImageContent, G as InputTextContent, ab as IterationCompleteEvent, a1 as JSONSchema, Q as Message, ap as ModifyingHook, U as OutputItem, O as OutputTextContent, a4 as OutputTextDeltaEvent, a5 as OutputTextDoneEvent, v as PermissionCheckContext, t as PermissionCheckResult, w as PermissionManagerEvent, P as PermissionScope, W as ReasoningItem, ac as ResponseCompleteEvent, a2 as ResponseCreatedEvent, a3 as ResponseInProgressEvent, R as RiskLevel, s as SerializedApprovalEntry, a7 as ToolCallArgumentsDeltaEvent, a8 as ToolCallArgumentsDoneEvent, a6 as ToolCallStartEvent, X as ToolCallState, a0 as ToolExecutionContext, aa as ToolExecutionDoneEvent, a9 as ToolExecutionStartEvent, at as ToolModification, q as ToolPermissionConfig, $ as ToolResult, N as ToolResultContent, K as ToolUseContent, Y as defaultDescribeCall, Z as getToolCallDescription, ak as isErrorEvent, af as isOutputTextDelta, aj as isResponseComplete, ae as isStreamEvent, ah as isToolCallArgumentsDelta, ai as isToolCallArgumentsDone, ag as isToolCallStart } from './index-CGaZn76e.js';
+import { I as IToolExecutor, a as IDisposable, T as ToolContext, b as ToolFunction, c as ToolPermissionConfig, d as Tool, M as MemoryScope, e as MemoryPriority, S as SerializedApprovalState, f as MemoryEntry, g as StaleEntryInfo, W as WorkingMemoryConfig, P as PriorityCalculator, h as PriorityContext, i as MemoryIndex, j as TaskStatusForMemory, k as WorkingMemoryAccess, l as MemoryTier, m as IContextComponent, n as ITokenEstimator, C as ContextBudget, A as AgentPermissionsConfig, o as IdempotencyCacheConfig, p as IdempotencyCache, q as ToolPermissionManager, r as PreparedContext, s as TokenContentType, t as CacheStats, F as FunctionToolDefinition, H as HookConfig, u as HistoryMode, v as AgenticLoopEvents, w as InputItem, x as AgentResponse, y as StreamEvent, E as ExecutionContext, z as ExecutionMetrics, B as AuditEntry, D as ITextProvider, G as IContextStrategy, J as ContextManagerConfig, K as IContextCompactor, L as TokenUsage, N as ToolCall, O as LLMResponse, Q as StreamEventType, R as TextGenerateOptions, U as ModelCapabilities, V as MessageRole } from './index-DyE1_vss.js';
+export { a4 as APPROVAL_STATE_VERSION, b5 as AfterToolContext, b0 as AgenticLoopEventName, _ as ApprovalCacheEntry, a1 as ApprovalDecision, b8 as ApprovalResult, b6 as ApproveToolContext, b4 as BeforeToolContext, aE as BuiltInTool, az as CompactionItem, ar as Content, aq as ContentType, a9 as ContextManager, a6 as DEFAULT_ALLOWLIST, ab as DEFAULT_CONTEXT_CONFIG, a8 as DEFAULT_IDEMPOTENCY_CONFIG, ag as DEFAULT_MEMORY_CONFIG, a5 as DEFAULT_PERMISSION_CONFIG, a7 as DefaultAllowlistedTool, aT as ErrorEvent, b2 as Hook, a$ as HookManager, b1 as HookName, b9 as IAsyncDisposable, aa as IContextProvider, at as InputImageContent, as as InputTextContent, aR as IterationCompleteEvent, aH as JSONSchema, ap as MEMORY_PRIORITY_VALUES, ac as MemoryEntryInput, ad as MemoryIndexEntry, ax as Message, b3 as ModifyingHook, ay as OutputItem, au as OutputTextContent, aK as OutputTextDeltaEvent, aL as OutputTextDoneEvent, a2 as PermissionCheckContext, a0 as PermissionCheckResult, a3 as PermissionManagerEvent, X as PermissionScope, aA as ReasoningItem, aS as ResponseCompleteEvent, aI as ResponseCreatedEvent, aJ as ResponseInProgressEvent, Y as RiskLevel, $ as SerializedApprovalEntry, af as SimpleScope, ae as TaskAwareScope, aN as ToolCallArgumentsDeltaEvent, aO as ToolCallArgumentsDoneEvent, aM as ToolCallStartEvent, aB as ToolCallState, aG as ToolExecutionContext, aQ as ToolExecutionDoneEvent, aP as ToolExecutionStartEvent, b7 as ToolModification, Z as ToolPermissionConfig, aF as ToolResult, aw as ToolResultContent, av as ToolUseContent, ba as assertNotDestroyed, ao as calculateEntrySize, aC as defaultDescribeCall, ai as forPlan, ah as forTasks, aD as getToolCallDescription, a_ as isErrorEvent, aV as isOutputTextDelta, aZ as isResponseComplete, al as isSimpleScope, aU as isStreamEvent, am as isTaskAwareScope, an as isTerminalMemoryStatus, aX as isToolCallArgumentsDelta, aY as isToolCallArgumentsDone, aW as isToolCallStart, aj as scopeEquals, ak as scopeMatches } from './index-DyE1_vss.js';
 import { EventEmitter } from 'eventemitter3';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.js';
-
-/**
- * Core types for context management system
- */
-/**
- * Context component that can be compacted
- */
-interface IContextComponent {
-    /** Unique name for this component */
-    name: string;
-    /** The actual content (string or structured data) */
-    content: string | unknown;
-    /** Priority for compaction (higher = compact first) */
-    priority: number;
-    /** Whether this component can be compacted */
-    compactable: boolean;
-    /** Additional metadata for compaction strategies */
-    metadata?: Record<string, unknown>;
-}
-/**
- * Context budget information
- */
-interface ContextBudget {
-    /** Total available tokens */
-    total: number;
-    /** Reserved tokens for response */
-    reserved: number;
-    /** Currently used tokens */
-    used: number;
-    /** Available tokens remaining */
-    available: number;
-    /** Utilization percentage (used / (total - reserved)) */
-    utilizationPercent: number;
-    /** Budget status */
-    status: 'ok' | 'warning' | 'critical';
-    /** Token breakdown by component */
-    breakdown: Record<string, number>;
-}
-/**
- * Context preparation result
- */
-interface PreparedContext {
-    /** Prepared components */
-    components: IContextComponent[];
-    /** Current budget */
-    budget: ContextBudget;
-    /** Whether compaction occurred */
-    compacted: boolean;
-    /** Compaction log if compacted */
-    compactionLog?: string[];
-}
-/**
- * Context manager configuration
- */
-interface ContextManagerConfig {
-    /** Maximum context tokens for the model */
-    maxContextTokens: number;
-    /** Threshold to trigger compaction (0.0 - 1.0) */
-    compactionThreshold: number;
-    /** Hard limit - must compact before this (0.0 - 1.0) */
-    hardLimit: number;
-    /** Reserve space for response (0.0 - 1.0) */
-    responseReserve: number;
-    /** Token estimator to use */
-    estimator: 'approximate' | 'tiktoken' | ITokenEstimator;
-    /** Enable automatic compaction */
-    autoCompact: boolean;
-    /** Strategy to use */
-    strategy?: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive' | IContextStrategy;
-    /** Strategy-specific options */
-    strategyOptions?: Record<string, unknown>;
-}
-/**
- * Default configuration
- */
-declare const DEFAULT_CONTEXT_CONFIG: ContextManagerConfig;
-/**
- * Abstract interface for providing context components.
- * Each agent type implements this to define what goes into context.
- */
-interface IContextProvider {
-    /**
-     * Get current context components
-     */
-    getComponents(): Promise<IContextComponent[]>;
-    /**
-     * Update components after compaction
-     */
-    applyCompactedComponents(components: IContextComponent[]): Promise<void>;
-    /**
-     * Get max context size for this agent/model
-     */
-    getMaxContextSize(): number;
-}
-/**
- * Content type for more accurate token estimation
- * Named differently from TokenContentType in Content.ts to avoid conflicts
- */
-type TokenContentType = 'code' | 'prose' | 'mixed';
-/**
- * Abstract interface for token estimation
- */
-interface ITokenEstimator {
-    /**
-     * Estimate token count for text
-     *
-     * @param text - The text to estimate
-     * @param contentType - Type of content for more accurate estimation:
-     *   - 'code': Code is typically denser (~3 chars/token)
-     *   - 'prose': Natural language text (~4 chars/token)
-     *   - 'mixed': Mix of code and prose (~3.5 chars/token)
-     */
-    estimateTokens(text: string, contentType?: TokenContentType): number;
-    /**
-     * Estimate tokens for structured data
-     */
-    estimateDataTokens(data: unknown, contentType?: TokenContentType): number;
-}
-/**
- * Hook context for beforeCompaction callback
- */
-interface CompactionHookContext {
-    /** Agent identifier (if available) */
-    agentId?: string;
-    /** Current context budget info */
-    currentBudget: ContextBudget;
-    /** Compaction strategy being used */
-    strategy: string;
-    /** Current context components (read-only summaries) */
-    components: ReadonlyArray<{
-        name: string;
-        priority: number;
-        compactable: boolean;
-    }>;
-    /** Estimated tokens to be freed */
-    estimatedTokensToFree: number;
-}
-/**
- * Hooks for context management events
- */
-interface ContextManagerHooks {
-    /**
-     * Called before compaction occurs.
-     * Use this to save important data before it gets compacted.
-     * This is the last chance to preserve critical information.
-     */
-    beforeCompaction?: (context: CompactionHookContext) => Promise<void>;
-}
-/**
- * Abstract interface for compaction strategies
- */
-interface IContextCompactor {
-    /** Compactor name */
-    readonly name: string;
-    /** Priority order (lower = run first) */
-    readonly priority: number;
-    /**
-     * Check if this compactor can handle the component
-     */
-    canCompact(component: IContextComponent): boolean;
-    /**
-     * Compact the component to target size
-     */
-    compact(component: IContextComponent, targetTokens: number): Promise<IContextComponent>;
-    /**
-     * Estimate savings from compaction
-     */
-    estimateSavings(component: IContextComponent): number;
-}
-/**
- * Context management strategy - defines the overall approach to managing context
- */
-interface IContextStrategy {
-    /** Strategy name */
-    readonly name: string;
-    /**
-     * Decide if compaction is needed based on current budget
-     */
-    shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean;
-    /**
-     * Execute compaction using available compactors
-     */
-    compact(components: IContextComponent[], budget: ContextBudget, compactors: IContextCompactor[], estimator: ITokenEstimator): Promise<{
-        components: IContextComponent[];
-        log: string[];
-        tokensFreed: number;
-    }>;
-    /**
-     * Optional: Prepare components before budget calculation
-     * Use this for strategies that pre-process context (e.g., rolling window)
-     */
-    prepareComponents?(components: IContextComponent[]): Promise<IContextComponent[]>;
-    /**
-     * Optional: Post-process after compaction
-     * Use this for strategies that need cleanup or optimization
-     */
-    postProcess?(components: IContextComponent[], budget: ContextBudget): Promise<IContextComponent[]>;
-    /**
-     * Optional: Get strategy-specific metrics
-     */
-    getMetrics?(): Record<string, unknown>;
-}
-
-/**
- * ContextManager - Universal context management with strategy support
- */
-
-/**
- * Context manager events
- */
-interface ContextManagerEvents {
-    compacting: {
-        reason: string;
-        currentBudget: ContextBudget;
-        strategy: string;
-    };
-    compacted: {
-        log: string[];
-        newBudget: ContextBudget;
-        tokensFreed: number;
-    };
-    budget_warning: {
-        budget: ContextBudget;
-    };
-    budget_critical: {
-        budget: ContextBudget;
-    };
-    strategy_switched: {
-        from: string;
-        to: string;
-        reason: string;
-    };
-}
-/**
- * Universal Context Manager
- *
- * Works with any agent type through the IContextProvider interface.
- * Supports multiple compaction strategies that can be switched at runtime.
- */
-declare class ContextManager extends EventEmitter<ContextManagerEvents> {
-    private config;
-    private provider;
-    private estimator;
-    private compactors;
-    private strategy;
-    private lastBudget?;
-    private hooks;
-    private agentId?;
-    constructor(provider: IContextProvider, config?: Partial<ContextManagerConfig>, compactors?: IContextCompactor[], estimator?: ITokenEstimator, strategy?: IContextStrategy, hooks?: ContextManagerHooks, agentId?: string);
-    /**
-     * Set hooks at runtime
-     */
-    setHooks(hooks: ContextManagerHooks): void;
-    /**
-     * Set agent ID at runtime
-     */
-    setAgentId(agentId: string): void;
-    /**
-     * Prepare context for LLM call
-     * Returns prepared components, automatically compacting if needed
-     */
-    prepare(): Promise<PreparedContext>;
-    /**
-     * Compact using the current strategy
-     */
-    private compactWithStrategy;
-    /**
-     * Calculate budget for components
-     */
-    private calculateBudget;
-    /**
-     * Estimate tokens for a component
-     */
-    private estimateComponent;
-    /**
-     * Switch to a different strategy at runtime
-     */
-    setStrategy(strategy: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive' | IContextStrategy): void;
-    /**
-     * Get current strategy
-     */
-    getStrategy(): IContextStrategy;
-    /**
-     * Get strategy metrics
-     */
-    getStrategyMetrics(): Record<string, unknown>;
-    /**
-     * Get current budget
-     */
-    getCurrentBudget(): ContextBudget | null;
-    /**
-     * Get configuration
-     */
-    getConfig(): ContextManagerConfig;
-    /**
-     * Update configuration
-     */
-    updateConfig(updates: Partial<ContextManagerConfig>): void;
-    /**
-     * Add compactor
-     */
-    addCompactor(compactor: IContextCompactor): void;
-    /**
-     * Get all compactors
-     */
-    getCompactors(): IContextCompactor[];
-    /**
-     * Create estimator from name
-     */
-    private createEstimator;
-    /**
-     * Create strategy from name or config
-     */
-    private createStrategy;
-}
-
-/**
- * IdempotencyCache - caches tool call results for deduplication
- *
- * General-purpose cache for tool results. Used by AgentContext to avoid
- * duplicate tool calls with the same arguments.
- *
- * Features:
- * - Cache based on tool name + args hash
- * - Custom key generation per tool (via tool.idempotency.keyFn)
- * - TTL-based expiration
- * - Max entries eviction (LRU)
- */
-
-/**
- * Cache configuration
- */
-interface IdempotencyCacheConfig {
-    /** Default TTL for cached entries */
-    defaultTtlMs: number;
-    /** Max entries before eviction */
-    maxEntries: number;
-}
-/**
- * Cache statistics
- */
-interface CacheStats {
-    entries: number;
-    hits: number;
-    misses: number;
-    hitRate: number;
-}
-/**
- * Default configuration
- */
-declare const DEFAULT_IDEMPOTENCY_CONFIG: IdempotencyCacheConfig;
-/**
- * IdempotencyCache handles tool call result caching.
- *
- * Features:
- * - Cache based on tool name + args
- * - Custom key generation per tool
- * - TTL-based expiration
- * - Max entries eviction
- */
-declare class IdempotencyCache {
-    private config;
-    private cache;
-    private hits;
-    private misses;
-    private cleanupInterval?;
-    constructor(config?: IdempotencyCacheConfig);
-    /**
-     * Check if a tool's results should be cached.
-     * Prefers 'cacheable' field, falls back to inverted 'safe' for backward compatibility.
-     *
-     * Logic:
-     * - If 'cacheable' is defined, use it directly
-     * - If only 'safe' is defined, cache when safe=false (backward compat)
-     * - If neither defined, don't cache
-     */
-    private shouldCache;
-    /**
-     * Get cached result for tool call
-     */
-    get(tool: ToolFunction, args: Record<string, unknown>): Promise<unknown>;
-    /**
-     * Cache result for tool call
-     */
-    set(tool: ToolFunction, args: Record<string, unknown>, result: unknown): Promise<void>;
-    /**
-     * Check if tool call is cached
-     */
-    has(tool: ToolFunction, args: Record<string, unknown>): Promise<boolean>;
-    /**
-     * Invalidate cached result
-     */
-    invalidate(tool: ToolFunction, args: Record<string, unknown>): Promise<void>;
-    /**
-     * Invalidate all cached results for a tool
-     */
-    invalidateTool(tool: ToolFunction): Promise<void>;
-    /**
-     * Prune expired entries from cache
-     */
-    pruneExpired(): number;
-    /**
-     * Clear all cached results
-     */
-    clear(): Promise<void>;
-    /**
-     * Get cache statistics
-     */
-    getStats(): CacheStats;
-    /**
-     * Generate cache key for tool + args
-     */
-    generateKey(tool: ToolFunction, args: Record<string, unknown>): string;
-    /**
-     * Simple hash function for objects
-     */
-    private hashObject;
-}
-
-/**
- * Memory entities for WorkingMemory
- *
- * This module provides a GENERIC memory system that works across all agent types:
- * - Basic Agent: Simple session/persistent scoping with static priority
- * - TaskAgent: Task-aware scoping with dynamic priority based on task states
- * - UniversalAgent: Mode-aware, switches strategy based on current mode
- *
- * The key abstraction is PriorityCalculator - a pluggable strategy that
- * determines entry priority for eviction decisions.
- */
-/**
- * Simple scope for basic agents - just a lifecycle label
- */
-type SimpleScope = 'session' | 'persistent';
-/**
- * Task-aware scope for TaskAgent/UniversalAgent
- */
-type TaskAwareScope = {
-    type: 'task';
-    taskIds: string[];
-} | {
-    type: 'plan';
-} | {
-    type: 'persistent';
-};
-/**
- * Union type - memory system accepts both
- */
-type MemoryScope = SimpleScope | TaskAwareScope;
-/**
- * Type guard: is this a task-aware scope?
- */
-declare function isTaskAwareScope(scope: MemoryScope): scope is TaskAwareScope;
-/**
- * Type guard: is this a simple scope?
- */
-declare function isSimpleScope(scope: MemoryScope): scope is SimpleScope;
-/**
- * Compare two scopes for equality
- * Handles both simple scopes (string comparison) and task-aware scopes (deep comparison)
- */
-declare function scopeEquals(a: MemoryScope, b: MemoryScope): boolean;
-/**
- * Check if a scope matches a filter scope
- * More flexible than scopeEquals - supports partial matching for task scopes
- */
-declare function scopeMatches(entryScope: MemoryScope, filterScope: MemoryScope): boolean;
-/**
- * Priority determines eviction order (lower priority evicted first)
- *
- * - critical: Never evicted (pinned, or actively in use)
- * - high: Important data, evicted only when necessary
- * - normal: Default priority
- * - low: Candidate for eviction (stale data, completed task data)
- */
-type MemoryPriority = 'critical' | 'high' | 'normal' | 'low';
-/**
- * Priority values for comparison (higher = more important, less likely to evict)
- */
-declare const MEMORY_PRIORITY_VALUES: Record<MemoryPriority, number>;
-/**
- * Memory tier for hierarchical data management
- *
- * The tier system provides a structured approach to managing research/analysis data:
- * - raw: Original data, low priority, first to be evicted
- * - summary: Processed summaries, normal priority
- * - findings: Final conclusions/insights, high priority, kept longest
- *
- * Workflow: raw → summary → findings (data gets more refined, priority increases)
- */
-type MemoryTier = 'raw' | 'summary' | 'findings';
-/**
- * Context passed to priority calculator - varies by agent type
- */
-interface PriorityContext {
-    /** For TaskAgent: map of taskId → current status */
-    taskStates?: Map<string, TaskStatusForMemory>;
-    /** For UniversalAgent: current mode */
-    mode?: 'interactive' | 'planning' | 'executing';
-    /** Custom context for extensions */
-    [key: string]: unknown;
-}
-/**
- * Task status values for priority calculation
- */
-type TaskStatusForMemory = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped' | 'cancelled';
-/**
- * Check if a task status is terminal (task will not progress further)
- */
-declare function isTerminalMemoryStatus(status: TaskStatusForMemory): boolean;
-/**
- * Priority calculator function type.
- * Given an entry and optional context, returns the effective priority.
- */
-type PriorityCalculator = (entry: MemoryEntry, context?: PriorityContext) => MemoryPriority;
-/**
- * Reason why an entry became stale
- */
-type StaleReason = 'task_completed' | 'task_failed' | 'unused' | 'scope_cleared';
-/**
- * Information about a stale entry for LLM notification
- */
-interface StaleEntryInfo {
-    key: string;
-    description: string;
-    reason: StaleReason;
-    previousPriority: MemoryPriority;
-    newPriority: MemoryPriority;
-    taskIds?: string[];
-}
-/**
- * Single memory entry stored in working memory
- */
-interface MemoryEntry {
-    key: string;
-    description: string;
-    value: unknown;
-    sizeBytes: number;
-    scope: MemoryScope;
-    basePriority: MemoryPriority;
-    pinned: boolean;
-    createdAt: number;
-    lastAccessedAt: number;
-    accessCount: number;
-}
-/**
- * Index entry (lightweight, always in context)
- */
-interface MemoryIndexEntry {
-    key: string;
-    description: string;
-    size: string;
-    scope: MemoryScope;
-    effectivePriority: MemoryPriority;
-    pinned: boolean;
-}
-/**
- * Full memory index with metadata
- */
-interface MemoryIndex {
-    entries: MemoryIndexEntry[];
-    totalSizeBytes: number;
-    totalSizeHuman: string;
-    limitBytes: number;
-    limitHuman: string;
-    utilizationPercent: number;
-}
-/**
- * Configuration for working memory
- */
-interface WorkingMemoryConfig {
-    /** Max memory size in bytes. If not set, calculated from model context */
-    maxSizeBytes?: number;
-    /** Max description length */
-    descriptionMaxLength: number;
-    /** Percentage at which to warn agent */
-    softLimitPercent: number;
-    /** Percentage of model context to allocate to memory */
-    contextAllocationPercent: number;
-}
-/**
- * Input for creating a memory entry
- */
-interface MemoryEntryInput {
-    key: string;
-    description: string;
-    value: unknown;
-    /** Scope - defaults to 'session' for basic agents */
-    scope?: MemoryScope;
-    /** Base priority - may be overridden by dynamic calculation */
-    priority?: MemoryPriority;
-    /** If true, entry is never evicted */
-    pinned?: boolean;
-}
-/**
- * Create a task-scoped memory entry input
- */
-declare function forTasks(key: string, description: string, value: unknown, taskIds: string[], options?: {
-    priority?: MemoryPriority;
-    pinned?: boolean;
-}): MemoryEntryInput;
-/**
- * Create a plan-scoped memory entry input
- */
-declare function forPlan(key: string, description: string, value: unknown, options?: {
-    priority?: MemoryPriority;
-    pinned?: boolean;
-}): MemoryEntryInput;
-/**
- * Default configuration values
- */
-declare const DEFAULT_MEMORY_CONFIG: WorkingMemoryConfig;
-/**
- * Calculate the size of a value in bytes (JSON serialization)
- * Uses Buffer.byteLength for accurate UTF-8 byte count
- */
-declare function calculateEntrySize(value: unknown): number;
-
-/**
- * Tool context interface - passed to tools during execution
- */
-
-/**
- * Limited memory access for tools
- *
- * This interface is designed to work with all agent types:
- * - Basic agents: Use simple scopes ('session', 'persistent')
- * - TaskAgent: Use task-aware scopes ({ type: 'task', taskIds: [...] })
- * - UniversalAgent: Switches between simple and task-aware based on mode
- */
-interface WorkingMemoryAccess {
-    get(key: string): Promise<unknown>;
-    /**
-     * Store a value in memory
-     *
-     * @param key - Unique key for the entry
-     * @param description - Short description (max 150 chars)
-     * @param value - Data to store
-     * @param options - Optional scope, priority, and pinning
-     */
-    set(key: string, description: string, value: unknown, options?: {
-        /** Scope determines lifecycle - defaults to 'session' */
-        scope?: MemoryScope;
-        /** Base priority for eviction ordering */
-        priority?: MemoryPriority;
-        /** If true, entry is never evicted */
-        pinned?: boolean;
-    }): Promise<void>;
-    delete(key: string): Promise<void>;
-    has(key: string): Promise<boolean>;
-    /**
-     * List all memory entries
-     * Returns key, description, and computed priority info
-     */
-    list(): Promise<Array<{
-        key: string;
-        description: string;
-        effectivePriority?: MemoryPriority;
-        pinned?: boolean;
-    }>>;
-}
-/**
- * Context passed to tool execute function
- */
-interface ToolContext {
-    /** Agent ID (for logging/tracing) */
-    agentId: string;
-    /** Task ID (if running in TaskAgent) */
-    taskId?: string;
-    /** Working memory access (if running in TaskAgent) */
-    memory?: WorkingMemoryAccess;
-    /** Context manager (if running in TaskAgent) */
-    contextManager?: ContextManager;
-    /** Idempotency cache (if running in TaskAgent) */
-    idempotencyCache?: IdempotencyCache;
-    /** Abort signal for cancellation */
-    signal?: AbortSignal;
-}
 
 /**
  * Generic Circuit Breaker implementation
@@ -894,14 +216,25 @@ interface SerializedToolState {
     permissions?: Record<string, ToolPermissionConfig>;
 }
 type ToolManagerEvent = 'tool:registered' | 'tool:unregistered' | 'tool:enabled' | 'tool:disabled' | 'tool:executed' | 'namespace:enabled' | 'namespace:disabled';
-declare class ToolManager extends EventEmitter implements IToolExecutor {
+declare class ToolManager extends EventEmitter implements IToolExecutor, IDisposable {
     private registry;
     private namespaceIndex;
     private circuitBreakers;
     private toolLogger;
+    private _isDestroyed;
     /** Optional tool context for execution (set by agent before runs) */
     private _toolContext;
     constructor();
+    /**
+     * Returns true if destroy() has been called.
+     */
+    get isDestroyed(): boolean;
+    /**
+     * Releases all resources held by this ToolManager.
+     * Cleans up circuit breaker listeners and removes all event listeners.
+     * Safe to call multiple times (idempotent).
+     */
+    destroy(): void;
     /**
      * Set tool context for execution (called by agent before runs)
      */
@@ -923,7 +256,8 @@ declare class ToolManager extends EventEmitter implements IToolExecutor {
      */
     unregister(name: string): boolean;
     /**
-     * Clear all tools
+     * Clear all tools and their circuit breakers.
+     * Does NOT remove event listeners from this ToolManager (use destroy() for full cleanup).
      */
     clear(): void;
     /**
@@ -1251,12 +585,13 @@ interface SessionManagerConfig {
     /** Auto-migrate sessions with fixable issues (default: true) */
     autoMigrate?: boolean;
 }
-declare class SessionManager extends EventEmitter {
+declare class SessionManager extends EventEmitter implements IDisposable {
     private storage;
     private defaultMetadata;
     private autoSaveTimers;
     private validateOnLoad;
     private autoMigrate;
+    private _isDestroyed;
     private savesInFlight;
     private pendingSaves;
     constructor(config: SessionManagerConfig);
@@ -1312,6 +647,10 @@ declare class SessionManager extends EventEmitter {
      * Generate a unique session ID
      */
     private generateId;
+    /**
+     * Check if the SessionManager instance has been destroyed
+     */
+    get isDestroyed(): boolean;
     /**
      * Cleanup resources
      */
@@ -1548,11 +887,12 @@ interface WorkingMemoryEvents {
  * - Task completion detection and stale entry notification
  * - Event emission for monitoring
  */
-declare class WorkingMemory extends EventEmitter<WorkingMemoryEvents> {
+declare class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements IDisposable {
     private storage;
     private config;
     private priorityCalculator;
     private priorityContext;
+    private _isDestroyed;
     /**
      * Create a WorkingMemory instance
      *
@@ -1830,6 +1170,10 @@ declare class WorkingMemory extends EventEmitter<WorkingMemoryEvents> {
      * Get the configured memory limit
      */
     getLimit(): number;
+    /**
+     * Check if the WorkingMemory instance has been destroyed
+     */
+    get isDestroyed(): boolean;
     /**
      * Destroy the WorkingMemory instance
      * Removes all event listeners and clears internal state
@@ -2730,52 +2074,6 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
      */
     protected runCleanupCallbacks(): Promise<void>;
 }
-
-/**
- * Interface for objects that manage resources and need explicit cleanup.
- *
- * Implementing classes should release all resources (event listeners, timers,
- * connections, etc.) when destroy() is called. After destruction, the instance
- * should not be used.
- */
-interface IDisposable {
-    /**
-     * Releases all resources held by this instance.
-     *
-     * After calling destroy():
-     * - All event listeners should be removed
-     * - All timers/intervals should be cleared
-     * - All internal state should be cleaned up
-     * - The instance should not be reused
-     *
-     * Multiple calls to destroy() should be safe (idempotent).
-     */
-    destroy(): void;
-    /**
-     * Returns true if destroy() has been called.
-     * Methods should check this before performing operations.
-     */
-    readonly isDestroyed: boolean;
-}
-/**
- * Async version of IDisposable for resources requiring async cleanup.
- */
-interface IAsyncDisposable {
-    /**
-     * Asynchronously releases all resources held by this instance.
-     */
-    destroy(): Promise<void>;
-    /**
-     * Returns true if destroy() has been called.
-     */
-    readonly isDestroyed: boolean;
-}
-/**
- * Helper to check if an object is destroyed and throw if so.
- * @param obj - The disposable object to check
- * @param operation - Name of the operation being attempted
- */
-declare function assertNotDestroyed(obj: IDisposable | IAsyncDisposable, operation: string): void;
 
 /**
  * Session configuration for Agent (same as BaseSessionConfig)
@@ -5229,22 +4527,31 @@ interface PlanExecutionResult {
 }
 /**
  * Executes a plan using LLM and tools
+ *
+ * NOTE: Memory and cache are accessed via agentContext (single source of truth)
  */
-declare class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
+declare class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements IDisposable {
     private agent;
-    private memory;
     private agentContext;
     private planPlugin;
-    private idempotencyCache;
     private externalHandler;
     private checkpointManager;
     private hooks;
     private config;
     private abortController;
     private rateLimiter?;
+    private _isDestroyed;
     private currentMetrics;
     private currentState;
-    constructor(agent: Agent, memory: WorkingMemory, agentContext: AgentContext, planPlugin: PlanPlugin, idempotencyCache: IdempotencyCache, externalHandler: ExternalDependencyHandler, checkpointManager: CheckpointManager, hooks: TaskAgentHooks | undefined, config: PlanExecutorConfig);
+    constructor(agent: Agent, agentContext: AgentContext, planPlugin: PlanPlugin, externalHandler: ExternalDependencyHandler, checkpointManager: CheckpointManager, hooks: TaskAgentHooks | undefined, config: PlanExecutorConfig);
+    /**
+     * Get memory from AgentContext (single source of truth)
+     */
+    private get memory();
+    /**
+     * Get idempotency cache from AgentContext (single source of truth)
+     */
+    private get idempotencyCache();
     /**
      * Build a map of task states for memory priority calculation
      */
@@ -5325,9 +4632,18 @@ declare class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
      */
     cancel(): void;
     /**
-     * Cleanup resources
+     * Check if the PlanExecutor instance has been destroyed
+     */
+    get isDestroyed(): boolean;
+    /**
+     * Cleanup resources (alias for destroy, kept for backward compatibility)
      */
     cleanup(): void;
+    /**
+     * Destroy the PlanExecutor instance
+     * Removes all event listeners and clears internal state
+     */
+    destroy(): void;
     /**
      * Get idempotency cache
      */
@@ -5563,13 +4879,11 @@ declare class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     readonly id: string;
     protected state: AgentState;
     protected agentStorage: IAgentStorage;
-    protected memory: WorkingMemory;
     protected hooks?: TaskAgentHooks;
     protected executionPromise?: Promise<PlanResult>;
     protected agent?: Agent;
     protected _planPlugin?: PlanPlugin;
     protected _memoryPlugin?: MemoryPlugin;
-    protected idempotencyCache?: IdempotencyCache;
     protected externalHandler?: ExternalDependencyHandler;
     protected planExecutor?: PlanExecutor;
     protected checkpointManager?: CheckpointManager;
@@ -5590,7 +4904,7 @@ declare class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
             storage: ISessionStorage;
         };
     }): Promise<TaskAgent>;
-    protected constructor(id: string, state: AgentState, agentStorage: IAgentStorage, memory: WorkingMemory, config: TaskAgentConfig, hooks?: TaskAgentHooks);
+    protected constructor(id: string, state: AgentState, agentStorage: IAgentStorage, config: TaskAgentConfig, hooks?: TaskAgentHooks);
     protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
     protected prepareSessionState(): void;
     protected restoreSessionState(session: Session): Promise<void>;
@@ -5657,9 +4971,13 @@ declare class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
      */
     getPlan(): Plan;
     /**
-     * Get working memory
+     * Get working memory (from AgentContext - single source of truth)
      */
     getMemory(): WorkingMemory;
+    /**
+     * Convenient getter for working memory (alias for _agentContext.memory)
+     */
+    get memory(): WorkingMemory;
     /**
      * Execute the plan (internal)
      */
@@ -6793,7 +6111,7 @@ declare class StreamState {
     getStatistics(): {
         responseId: string;
         model: string;
-        status: "completed" | "failed" | "in_progress" | "incomplete";
+        status: "in_progress" | "completed" | "failed" | "incomplete";
         iterations: number;
         totalChunks: number;
         totalTextDeltas: number;
@@ -6843,7 +6161,7 @@ declare class StreamState {
                 reasoning_tokens: number;
             };
         };
-        status: "completed" | "failed" | "in_progress" | "incomplete";
+        status: "in_progress" | "completed" | "failed" | "incomplete";
         startTime: Date;
         endTime: Date | undefined;
     };
@@ -9595,6 +8913,8 @@ declare class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAg
  * - interactive: Direct conversation, immediate tool execution
  * - planning: Creating and refining plans
  * - executing: Running through a plan
+ *
+ * Implements IDisposable for proper lifecycle management.
  */
 
 interface ModeManagerEvents {
@@ -9609,10 +8929,21 @@ interface ModeManagerEvents {
         reason: string;
     };
 }
-declare class ModeManager extends EventEmitter {
+declare class ModeManager extends EventEmitter implements IDisposable {
     private state;
     private transitionHistory;
+    private _isDestroyed;
     constructor(initialMode?: AgentMode);
+    /**
+     * Returns true if destroy() has been called.
+     */
+    get isDestroyed(): boolean;
+    /**
+     * Releases all resources held by this ModeManager.
+     * Removes all event listeners.
+     * Safe to call multiple times (idempotent).
+     */
+    destroy(): void;
     /**
      * Get current mode
      */
@@ -9744,4 +9075,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContext, type AgentContextConfig, type AgentContextEvents, type HistoryMessage$1 as AgentContextHistoryMessage, type AgentContextMetrics, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, type CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, ConnectorTools, ConsoleMetrics, type ContextBudget, ContextManager, type ContextManagerConfig, ConversationHistoryManager, type ConversationHistoryManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONTEXT_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MEMORY_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DependencyCycleError, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, type IAsyncDisposable, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, type IContextCompactor, type IContextComponent, type IContextProvider, type IContextStrategy, type IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, type ITokenEstimator, ITokenStorage, IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, type IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, type MemoryEntry, type MemoryEntryInput, MemoryEvictionCompactor, type MemoryIndex, type MemoryIndexEntry, type MemoryPriority, type MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, ParallelTasksError, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, type PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedAgentContextState, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleScope, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskAwareScope, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, type TaskStatusForMemory, TaskTimeoutError, type ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, type TokenContentType, Tool, ToolCall, type ToolCallRecord, type ToolCondition, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, type WorkingMemoryAccess, type WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isSimpleScope, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, toConnectorOptions, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContext, type AgentContextConfig, type AgentContextEvents, type HistoryMessage$1 as AgentContextHistoryMessage, type AgentContextMetrics, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, ConnectorTools, ConsoleMetrics, ContextBudget, ContextManagerConfig, ConversationHistoryManager, type ConversationHistoryManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DependencyCycleError, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, FileConnectorStorage, type FileConnectorStorageConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, IContextCompactor, IContextComponent, IContextStrategy, IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMemoryStorage, type IPlanStorage, IProvider, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator, ITokenStorage, IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, IdempotencyCacheConfig, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, ParallelTasksError, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse, type SearchResult, type SegmentTimestamp, type SerializedAgentContextState, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleVideoGenerateOptions, SpeechToText, type SpeechToTextConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, TokenContentType, Tool, ToolCall, type ToolCallRecord, type ToolCondition, ToolContext, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolSelectionContext, ToolTimeoutError, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createGlobTool, createGrepTool, createImageProvider, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createStrategy, createTask, createTextMessage, createVideoProvider, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, generateEncryptionKey, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAllServiceIds, getBackgroundOutput, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, toConnectorOptions, index as tools, updateTaskStatus, validatePath, writeFile };

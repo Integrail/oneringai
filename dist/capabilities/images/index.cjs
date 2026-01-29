@@ -1040,6 +1040,57 @@ var LOG_LEVEL_VALUES = {
   error: 50,
   silent: 100
 };
+function safeStringify(obj, indent) {
+  const seen = /* @__PURE__ */ new WeakSet();
+  const replacer = (_key, value) => {
+    if (value === null || value === void 0) {
+      return value;
+    }
+    if (typeof value !== "object") {
+      if (typeof value === "function") {
+        return "[Function]";
+      }
+      if (typeof value === "bigint") {
+        return value.toString();
+      }
+      return value;
+    }
+    const objValue = value;
+    const constructor = objValue.constructor?.name || "";
+    if (constructor === "Timeout" || constructor === "TimersList" || constructor === "Socket" || constructor === "Server" || constructor === "IncomingMessage" || constructor === "ServerResponse" || constructor === "WriteStream" || constructor === "ReadStream" || constructor === "EventEmitter") {
+      return `[${constructor}]`;
+    }
+    if (seen.has(objValue)) {
+      return "[Circular]";
+    }
+    if (objValue instanceof Error) {
+      return {
+        name: objValue.name,
+        message: objValue.message,
+        stack: objValue.stack
+      };
+    }
+    if (objValue instanceof Date) {
+      return objValue.toISOString();
+    }
+    if (objValue instanceof Map) {
+      return Object.fromEntries(objValue);
+    }
+    if (objValue instanceof Set) {
+      return Array.from(objValue);
+    }
+    if (Buffer.isBuffer(objValue)) {
+      return `[Buffer(${objValue.length})]`;
+    }
+    seen.add(objValue);
+    return value;
+  };
+  try {
+    return JSON.stringify(obj, replacer, indent);
+  } catch {
+    return "[Unserializable]";
+  }
+}
 var FrameworkLogger = class _FrameworkLogger {
   config;
   context;
@@ -1179,7 +1230,7 @@ var FrameworkLogger = class _FrameworkLogger {
     const contextParts = [];
     for (const [key, value] of Object.entries(entry)) {
       if (key !== "level" && key !== "time" && key !== "msg") {
-        contextParts.push(`${key}=${JSON.stringify(value)}`);
+        contextParts.push(`${key}=${safeStringify(value)}`);
       }
     }
     const context = contextParts.length > 0 ? ` ${contextParts.join(" ")}` : "";
@@ -1202,7 +1253,7 @@ var FrameworkLogger = class _FrameworkLogger {
    * JSON print for production
    */
   jsonPrint(entry) {
-    const json = JSON.stringify(entry);
+    const json = safeStringify(entry);
     if (this.fileStream) {
       this.fileStream.write(json + "\n");
       return;

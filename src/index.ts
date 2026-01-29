@@ -311,8 +311,8 @@ export { InMemoryStorage, InMemoryPlanStorage, InMemoryAgentStateStorage } from 
 export { InMemorySessionStorage, FileSessionStorage } from './infrastructure/storage/index.js';
 export type { FileSessionStorageConfig } from './infrastructure/storage/index.js';
 
-// Tool Context
-export type { ToolContext as TaskToolContext, WorkingMemoryAccess } from './domain/interfaces/IToolContext.js';
+// Tool Context (ToolContext is the canonical interface for tool execution context)
+export type { ToolContext, ToolContext as TaskToolContext, WorkingMemoryAccess } from './domain/interfaces/IToolContext.js';
 
 // ============ Domain Types ============
 

@@ -1001,8 +1001,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     }
     this._plugins.clear();
 
-    // Clear cache
-    this._cache.clear();
+    // Destroy cache (clears interval and entries)
+    this._cache.destroy();
+
+    // Destroy tool manager (cleans up circuit breaker listeners)
+    this._tools.destroy();
 
     // Clear state
     this._history = [];

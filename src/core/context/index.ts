@@ -54,18 +54,21 @@ export { ContextManager } from './ContextManager.js';
 // ============================================================================
 
 export {
-  // Interface
-  IContextPlugin,
+  // Base class
   BaseContextPlugin,
   // Built-in plugins
   PlanPlugin,
   MemoryPlugin,
   ToolOutputPlugin,
-  // Plugin types
-  type SerializedPlanPluginState,
-  type SerializedMemoryPluginState,
-  type ToolOutput,
-  type SerializedToolOutputState,
-  type ToolOutputPluginConfig,
+} from './plugins/index.js';
+
+// Type exports
+export type {
+  IContextPlugin,
+  SerializedPlanPluginState,
+  SerializedMemoryPluginState,
+  ToolOutput,
+  SerializedToolOutputState,
+  ToolOutputPluginConfig,
 } from './plugins/index.js';
 

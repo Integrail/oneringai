@@ -152,7 +152,28 @@ export class ConnectorManager implements IConnectorManager {
       custom: Vendor.Custom,
     };
 
-    const vendor = vendorMap[config.vendor.toLowerCase()] || Vendor.Custom;
+    // Service types for external APIs (search, scrape, etc.)
+    const serviceTypeValues = [
+      'serper', 'brave-search', 'tavily', 'rapidapi-search', // Search providers
+      'zenrows', // Scrape providers
+    ];
+
+    // Determine vendor and serviceType
+    const vendorLower = config.vendor.toLowerCase();
+    let vendor: string;
+    let serviceType: string | undefined = config.serviceType;
+
+    if (vendorMap[vendorLower]) {
+      // Known LLM vendor
+      vendor = vendorMap[vendorLower];
+    } else if (serviceTypeValues.includes(vendorLower)) {
+      // Vendor is actually a serviceType (backward compatibility)
+      vendor = Vendor.Custom;
+      serviceType = serviceType || vendorLower;
+    } else {
+      // Unknown vendor, treat as custom
+      vendor = Vendor.Custom;
+    }
 
     // Build auth config based on type
     let auth: { type: 'api_key'; apiKey: string } | {
@@ -188,6 +209,7 @@ export class ConnectorManager implements IConnectorManager {
       auth,
       baseURL: config.baseURL,
       options: config.options,
+      serviceType, // Pass serviceType for search/scrape providers
     });
 
     this.registeredConnectors.add(name);

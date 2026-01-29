@@ -9,9 +9,12 @@
  * - Custom key generation per tool (via tool.idempotency.keyFn)
  * - TTL-based expiration
  * - Max entries eviction (LRU)
+ *
+ * Implements IDisposable for proper lifecycle management.
  */
 
 import { ToolFunction } from '../domain/entities/Tool.js';
+import type { IDisposable } from '../domain/interfaces/IDisposable.js';
 
 /**
  * Cache configuration
@@ -50,13 +53,17 @@ export const DEFAULT_IDEMPOTENCY_CONFIG: IdempotencyCacheConfig = {
  * - Custom key generation per tool
  * - TTL-based expiration
  * - Max entries eviction
+ *
+ * Implements IDisposable for proper resource cleanup.
+ * Call destroy() when done to clear the background cleanup interval.
  */
-export class IdempotencyCache {
+export class IdempotencyCache implements IDisposable {
   private config: IdempotencyCacheConfig;
   private cache = new Map<string, { value: unknown; expiresAt: number }>();
   private hits = 0;
   private misses = 0;
   private cleanupInterval?: NodeJS.Timeout;
+  private _isDestroyed = false;
 
   constructor(config: IdempotencyCacheConfig = DEFAULT_IDEMPOTENCY_CONFIG) {
     this.config = config;
@@ -65,6 +72,36 @@ export class IdempotencyCache {
     this.cleanupInterval = setInterval(() => {
       this.pruneExpired();
     }, 300000);
+  }
+
+  /**
+   * Returns true if destroy() has been called.
+   * Operations on a destroyed cache are no-ops.
+   */
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
+
+  /**
+   * Releases all resources held by this cache.
+   * Clears the background cleanup interval and all cached entries.
+   * Safe to call multiple times (idempotent).
+   */
+  destroy(): void {
+    if (this._isDestroyed) {
+      return;
+    }
+
+    this._isDestroyed = true;
+
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = undefined;
+    }
+
+    this.cache.clear();
+    this.hits = 0;
+    this.misses = 0;
   }
 
   /**
@@ -97,6 +134,11 @@ export class IdempotencyCache {
    * Get cached result for tool call
    */
   async get(tool: ToolFunction, args: Record<string, unknown>): Promise<unknown> {
+    // No-op if destroyed
+    if (this._isDestroyed) {
+      return undefined;
+    }
+
     // Don't cache if tool doesn't need caching
     if (!this.shouldCache(tool)) {
       this.misses++;
@@ -126,6 +168,11 @@ export class IdempotencyCache {
    * Cache result for tool call
    */
   async set(tool: ToolFunction, args: Record<string, unknown>, result: unknown): Promise<void> {
+    // No-op if destroyed
+    if (this._isDestroyed) {
+      return;
+    }
+
     // Don't cache if tool doesn't need caching
     if (!this.shouldCache(tool)) {
       return;
@@ -150,6 +197,11 @@ export class IdempotencyCache {
    * Check if tool call is cached
    */
   async has(tool: ToolFunction, args: Record<string, unknown>): Promise<boolean> {
+    // No-op if destroyed
+    if (this._isDestroyed) {
+      return false;
+    }
+
     // Don't check cache if tool doesn't need caching
     if (!this.shouldCache(tool)) {
       return false;
@@ -206,6 +258,11 @@ export class IdempotencyCache {
    * Prune expired entries from cache
    */
   pruneExpired(): number {
+    // No-op if destroyed
+    if (this._isDestroyed) {
+      return 0;
+    }
+
     const now = Date.now();
     const toDelete: string[] = [];
 
@@ -220,16 +277,12 @@ export class IdempotencyCache {
   }
 
   /**
-   * Clear all cached results
+   * Clear all cached results and stop background cleanup.
+   * @deprecated Use destroy() instead for explicit lifecycle management.
+   *             This method is kept for backward compatibility.
    */
   async clear(): Promise<void> {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = undefined;
-    }
-    this.cache.clear();
-    this.hits = 0;
-    this.misses = 0;
+    this.destroy();
   }
 
   /**

@@ -5,20 +5,24 @@
  * - interactive: Direct conversation, immediate tool execution
  * - planning: Creating and refining plans
  * - executing: Running through a plan
+ *
+ * Implements IDisposable for proper lifecycle management.
  */
 
 import { EventEmitter } from 'eventemitter3';
 import type { Plan } from '../../domain/entities/Task.js';
 import type { AgentMode, ModeState, IntentAnalysis } from './types.js';
+import type { IDisposable } from '../../domain/interfaces/IDisposable.js';
 
 export interface ModeManagerEvents {
   'mode:changed': { from: AgentMode; to: AgentMode; reason: string };
   'mode:transition_blocked': { from: AgentMode; to: AgentMode; reason: string };
 }
 
-export class ModeManager extends EventEmitter {
+export class ModeManager extends EventEmitter implements IDisposable {
   private state: ModeState;
   private transitionHistory: Array<{ from: AgentMode; to: AgentMode; at: Date; reason: string }> = [];
+  private _isDestroyed = false;
 
   constructor(initialMode: AgentMode = 'interactive') {
     super();
@@ -27,6 +31,28 @@ export class ModeManager extends EventEmitter {
       enteredAt: new Date(),
       reason: 'initial',
     };
+  }
+
+  /**
+   * Returns true if destroy() has been called.
+   */
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
+
+  /**
+   * Releases all resources held by this ModeManager.
+   * Removes all event listeners.
+   * Safe to call multiple times (idempotent).
+   */
+  destroy(): void {
+    if (this._isDestroyed) {
+      return;
+    }
+
+    this._isDestroyed = true;
+    this.transitionHistory = [];
+    this.removeAllListeners();
   }
 
   /**

@@ -21,6 +21,7 @@ import { CheckpointManager } from './CheckpointManager.js';
 import type { TaskAgentHooks, TaskContext, ErrorContext } from './TaskAgent.js';
 import { extractJSON, extractNumber } from '../../utils/jsonExtractor.js';
 import { TASK_DEFAULTS } from '../../core/constants.js';
+import { IDisposable } from '../../domain/interfaces/IDisposable.js';
 
 /** Default task timeout (from centralized constants) */
 const DEFAULT_TASK_TIMEOUT_MS = TASK_DEFAULTS.TIMEOUT_MS;
@@ -71,19 +72,21 @@ export interface PlanExecutionResult {
 
 /**
  * Executes a plan using LLM and tools
+ *
+ * NOTE: Memory and cache are accessed via agentContext (single source of truth)
  */
-export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
+export class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements IDisposable {
   private agent: Agent;
-  private memory: WorkingMemory;
   private agentContext: AgentContext;
   private planPlugin: PlanPlugin;
-  private idempotencyCache: IdempotencyCache;
+  // NOTE: IdempotencyCache is accessed via agentContext.cache (single source of truth)
   private externalHandler: ExternalDependencyHandler;
   private checkpointManager: CheckpointManager;
   private hooks: TaskAgentHooks | undefined;
   private config: PlanExecutorConfig;
   private abortController: AbortController;
   private rateLimiter?: TokenBucketRateLimiter;
+  private _isDestroyed = false;
 
   // Current execution metrics
   private currentMetrics = {
@@ -98,10 +101,8 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
 
   constructor(
     agent: Agent,
-    memory: WorkingMemory,
     agentContext: AgentContext,
     planPlugin: PlanPlugin,
-    idempotencyCache: IdempotencyCache,
     externalHandler: ExternalDependencyHandler,
     checkpointManager: CheckpointManager,
     hooks: TaskAgentHooks | undefined,
@@ -109,10 +110,8 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
   ) {
     super();
     this.agent = agent;
-    this.memory = memory;
     this.agentContext = agentContext;
     this.planPlugin = planPlugin;
-    this.idempotencyCache = idempotencyCache;
     this.externalHandler = externalHandler;
     this.checkpointManager = checkpointManager;
     this.hooks = hooks;
@@ -128,6 +127,20 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> {
         maxWaitMs: config.rateLimiter.maxWaitMs ?? 60000,
       });
     }
+  }
+
+  /**
+   * Get memory from AgentContext (single source of truth)
+   */
+  private get memory(): WorkingMemory {
+    return this.agentContext.memory;
+  }
+
+  /**
+   * Get idempotency cache from AgentContext (single source of truth)
+   */
+  private get idempotencyCache(): IdempotencyCache {
+    return this.agentContext.cache;
   }
 
   /**
@@ -892,10 +905,28 @@ Be honest and thorough in your evaluation. A score of 100 means all criteria are
   }
 
   /**
-   * Cleanup resources
+   * Check if the PlanExecutor instance has been destroyed
+   */
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
+
+  /**
+   * Cleanup resources (alias for destroy, kept for backward compatibility)
    */
   cleanup(): void {
+    this.destroy();
+  }
+
+  /**
+   * Destroy the PlanExecutor instance
+   * Removes all event listeners and clears internal state
+   */
+  destroy(): void {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
     this.abortController.abort();
+    this.removeAllListeners();
   }
 
   /**

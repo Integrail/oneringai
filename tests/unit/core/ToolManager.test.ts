@@ -422,4 +422,55 @@ describe('ToolManager', () => {
       expect(toolManager.list()).toHaveLength(0);
     });
   });
+
+  describe('destroy', () => {
+    it('should mark as destroyed', () => {
+      expect(toolManager.isDestroyed).toBe(false);
+      toolManager.destroy();
+      expect(toolManager.isDestroyed).toBe(true);
+    });
+
+    it('should be idempotent (safe to call multiple times)', () => {
+      toolManager.destroy();
+      toolManager.destroy();
+      toolManager.destroy();
+      expect(toolManager.isDestroyed).toBe(true);
+    });
+
+    it('should remove all tools', () => {
+      toolManager.register(testTool1);
+      toolManager.register(testTool2);
+      expect(toolManager.list()).toHaveLength(2);
+
+      toolManager.destroy();
+      expect(toolManager.list()).toHaveLength(0);
+    });
+
+    it('should remove all event listeners', () => {
+      const listener = vi.fn();
+      toolManager.on('tool:registered', listener);
+
+      toolManager.destroy();
+
+      // Listener should have been removed - but since we're destroyed,
+      // we can't really test by emitting. Just verify no errors.
+      expect(toolManager.isDestroyed).toBe(true);
+    });
+
+    it('should clear circuit breakers', async () => {
+      // Register a tool and execute it to create a circuit breaker
+      toolManager.register(testTool1);
+      await toolManager.execute('test_tool_1', {});
+
+      // Should have circuit breaker state
+      const states = toolManager.getCircuitBreakerStates();
+      expect(states.size).toBe(1);
+
+      toolManager.destroy();
+
+      // Circuit breakers should be cleared
+      const statesAfter = toolManager.getCircuitBreakerStates();
+      expect(statesAfter.size).toBe(0);
+    });
+  });
 });

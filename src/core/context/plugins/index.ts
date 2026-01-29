@@ -10,7 +10,8 @@
  */
 
 // Plugin interface
-export { IContextPlugin, BaseContextPlugin } from './IContextPlugin.js';
+export type { IContextPlugin } from './IContextPlugin.js';
+export { BaseContextPlugin } from './IContextPlugin.js';
 
 // Built-in plugins
 export { PlanPlugin } from './PlanPlugin.js';

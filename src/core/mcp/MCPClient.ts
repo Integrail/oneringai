@@ -43,11 +43,12 @@ import {
 } from '../../domain/errors/MCPError.js';
 import { applyServerDefaults } from '../../domain/entities/MCPConfig.js';
 import { createMCPToolAdapters } from '../../infrastructure/mcp/adapters/MCPToolAdapter.js';
+import { IDisposable } from '../../domain/interfaces/IDisposable.js';
 
 /**
  * MCP Client class
  */
-export class MCPClient extends EventEmitter implements IMCPClient {
+export class MCPClient extends EventEmitter implements IMCPClient, IDisposable {
   public readonly name: string;
   private readonly config: ReturnType<typeof applyServerDefaults>;
   private client: Client | null = null;
@@ -60,6 +61,7 @@ export class MCPClient extends EventEmitter implements IMCPClient {
   private healthCheckTimer?: NodeJS.Timeout;
   private subscribedResources = new Set<string>();
   private registeredToolNames = new Set<string>();
+  private _isDestroyed = false;
 
   constructor(config: MCPServerConfig, defaults?: MCPConfiguration['defaults']) {
     super();
@@ -482,7 +484,16 @@ export class MCPClient extends EventEmitter implements IMCPClient {
     this.reconnectAttempts = state.connectionAttempts;
   }
 
+  /**
+   * Check if the MCPClient instance has been destroyed
+   */
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
+
   destroy(): void {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
     this.stopHealthCheck();
     this.stopReconnect();
     if (this.client) {

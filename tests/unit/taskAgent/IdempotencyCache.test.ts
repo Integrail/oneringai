@@ -380,6 +380,79 @@ describe('IdempotencyCache', () => {
     });
   });
 
+  describe('destroy', () => {
+    it('should clear interval on destroy', async () => {
+      const testCache = new IdempotencyCache(defaultConfig);
+      const tool = createTool('test', { safe: false });
+      await testCache.set(tool, { arg: 1 }, { result: 1 });
+
+      expect(testCache.isDestroyed).toBe(false);
+
+      testCache.destroy();
+
+      expect(testCache.isDestroyed).toBe(true);
+    });
+
+    it('should be idempotent (safe to call multiple times)', () => {
+      const testCache = new IdempotencyCache(defaultConfig);
+
+      testCache.destroy();
+      testCache.destroy(); // Should not throw
+      testCache.destroy(); // Should not throw
+
+      expect(testCache.isDestroyed).toBe(true);
+    });
+
+    it('should make get return undefined after destroy', async () => {
+      const tool = createTool('test', { safe: false });
+      await cache.set(tool, { arg: 1 }, { result: 'cached' });
+
+      // Verify it's cached
+      expect(await cache.get(tool, { arg: 1 })).toEqual({ result: 'cached' });
+
+      cache.destroy();
+
+      // After destroy, get should return undefined
+      expect(await cache.get(tool, { arg: 1 })).toBeUndefined();
+    });
+
+    it('should make set no-op after destroy', async () => {
+      const tool = createTool('test', { safe: false });
+      cache.destroy();
+
+      await cache.set(tool, { arg: 1 }, { result: 'should not cache' });
+
+      // Stats should show 0 entries (nothing cached after destroy)
+      expect(cache.getStats().entries).toBe(0);
+    });
+
+    it('should make has return false after destroy', async () => {
+      const tool = createTool('test', { safe: false });
+      await cache.set(tool, { arg: 1 }, { result: 'cached' });
+
+      expect(await cache.has(tool, { arg: 1 })).toBe(true);
+
+      cache.destroy();
+
+      expect(await cache.has(tool, { arg: 1 })).toBe(false);
+    });
+
+    it('should make pruneExpired return 0 after destroy', () => {
+      cache.destroy();
+      expect(cache.pruneExpired()).toBe(0);
+    });
+
+    it('clear() should call destroy() (backward compat)', async () => {
+      const tool = createTool('test', { safe: false });
+      await cache.set(tool, { arg: 1 }, { result: 'cached' });
+
+      await cache.clear();
+
+      expect(cache.isDestroyed).toBe(true);
+      expect(await cache.get(tool, { arg: 1 })).toBeUndefined();
+    });
+  });
+
   describe('cacheable field (new API)', () => {
     it('should cache when cacheable: true', async () => {
       const tool = createTool('test', { cacheable: true });

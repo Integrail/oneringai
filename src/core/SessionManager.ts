@@ -14,6 +14,7 @@ import { EventEmitter } from 'eventemitter3';
 import type { SerializedToolState } from './ToolManager.js';
 import type { SerializedApprovalState } from './permissions/types.js';
 import type { MemoryScope, MemoryPriority } from '../domain/entities/Memory.js';
+import { IDisposable } from '../domain/interfaces/IDisposable.js';
 
 // ============================================================================
 // Version Constants
@@ -452,12 +453,13 @@ export function migrateSession(
   return session as Session;
 }
 
-export class SessionManager extends EventEmitter {
+export class SessionManager extends EventEmitter implements IDisposable {
   private storage: ISessionStorage;
   private defaultMetadata: Partial<SessionMetadata>;
   private autoSaveTimers: Map<string, NodeJS.Timeout> = new Map();
   private validateOnLoad: boolean;
   private autoMigrate: boolean;
+  private _isDestroyed = false;
 
   // Track in-flight saves to prevent race conditions
   private savesInFlight: Set<string> = new Set();
@@ -756,9 +758,18 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Check if the SessionManager instance has been destroyed
+   */
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
+
+  /**
    * Cleanup resources
    */
   destroy(): void {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
     this.stopAllAutoSave();
     this.removeAllListeners();
   }

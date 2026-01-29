@@ -1515,7 +1515,7 @@ Always be helpful, clear, and ask for clarification when needed.`;
     if (this.executionAgent) {
       this.executionAgent.destroy();
     }
-    this.modeManager.removeAllListeners();
+    this.modeManager.destroy();
 
     // Note: AgentContext cleanup is handled by baseDestroy() in BaseAgent
 

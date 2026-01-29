@@ -1147,6 +1147,57 @@ var init_BackoffStrategy = __esm({
     };
   }
 });
+function safeStringify(obj, indent) {
+  const seen = /* @__PURE__ */ new WeakSet();
+  const replacer = (_key, value) => {
+    if (value === null || value === void 0) {
+      return value;
+    }
+    if (typeof value !== "object") {
+      if (typeof value === "function") {
+        return "[Function]";
+      }
+      if (typeof value === "bigint") {
+        return value.toString();
+      }
+      return value;
+    }
+    const objValue = value;
+    const constructor = objValue.constructor?.name || "";
+    if (constructor === "Timeout" || constructor === "TimersList" || constructor === "Socket" || constructor === "Server" || constructor === "IncomingMessage" || constructor === "ServerResponse" || constructor === "WriteStream" || constructor === "ReadStream" || constructor === "EventEmitter") {
+      return `[${constructor}]`;
+    }
+    if (seen.has(objValue)) {
+      return "[Circular]";
+    }
+    if (objValue instanceof Error) {
+      return {
+        name: objValue.name,
+        message: objValue.message,
+        stack: objValue.stack
+      };
+    }
+    if (objValue instanceof Date) {
+      return objValue.toISOString();
+    }
+    if (objValue instanceof Map) {
+      return Object.fromEntries(objValue);
+    }
+    if (objValue instanceof Set) {
+      return Array.from(objValue);
+    }
+    if (Buffer.isBuffer(objValue)) {
+      return `[Buffer(${objValue.length})]`;
+    }
+    seen.add(objValue);
+    return value;
+  };
+  try {
+    return JSON.stringify(obj, replacer, indent);
+  } catch {
+    return "[Unserializable]";
+  }
+}
 var LOG_LEVEL_VALUES, FrameworkLogger, logger;
 var init_Logger = __esm({
   "src/infrastructure/observability/Logger.ts"() {
@@ -1297,7 +1348,7 @@ var init_Logger = __esm({
         const contextParts = [];
         for (const [key, value] of Object.entries(entry)) {
           if (key !== "level" && key !== "time" && key !== "msg") {
-            contextParts.push(`${key}=${JSON.stringify(value)}`);
+            contextParts.push(`${key}=${safeStringify(value)}`);
           }
         }
         const context = contextParts.length > 0 ? ` ${contextParts.join(" ")}` : "";
@@ -1320,7 +1371,7 @@ var init_Logger = __esm({
        * JSON print for production
        */
       jsonPrint(entry) {
-        const json = JSON.stringify(entry);
+        const json = safeStringify(entry);
         if (this.fileStream) {
           this.fileStream.write(json + "\n");
           return;
@@ -2276,12 +2327,37 @@ var ToolManager = class extends EventEmitter {
   namespaceIndex = /* @__PURE__ */ new Map();
   circuitBreakers = /* @__PURE__ */ new Map();
   toolLogger;
+  _isDestroyed = false;
   /** Optional tool context for execution (set by agent before runs) */
   _toolContext;
   constructor() {
     super();
     this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
     this.toolLogger = logger.child({ component: "ToolManager" });
+  }
+  /**
+   * Returns true if destroy() has been called.
+   */
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
+   * Releases all resources held by this ToolManager.
+   * Cleans up circuit breaker listeners and removes all event listeners.
+   * Safe to call multiple times (idempotent).
+   */
+  destroy() {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
+    for (const breaker of this.circuitBreakers.values()) {
+      breaker.removeAllListeners();
+    }
+    this.circuitBreakers.clear();
+    this.registry.clear();
+    this.namespaceIndex.clear();
+    this.removeAllListeners();
   }
   /**
    * Set tool context for execution (called by agent before runs)
@@ -2354,17 +2430,25 @@ var ToolManager = class extends EventEmitter {
     if (!registration) return false;
     this.removeFromNamespace(name, registration.namespace);
     this.registry.delete(name);
-    this.circuitBreakers.delete(name);
+    const breaker = this.circuitBreakers.get(name);
+    if (breaker) {
+      breaker.removeAllListeners();
+      this.circuitBreakers.delete(name);
+    }
     this.emit("tool:unregistered", { name });
     return true;
   }
   /**
-   * Clear all tools
+   * Clear all tools and their circuit breakers.
+   * Does NOT remove event listeners from this ToolManager (use destroy() for full cleanup).
    */
   clear() {
     this.registry.clear();
     this.namespaceIndex.clear();
     this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
+    for (const breaker of this.circuitBreakers.values()) {
+      breaker.removeAllListeners();
+    }
     this.circuitBreakers.clear();
   }
   // ==========================================================================
@@ -2812,7 +2896,9 @@ var ToolManager = class extends EventEmitter {
     const registration = this.registry.get(toolName);
     if (!registration) return false;
     registration.circuitBreakerConfig = config;
-    if (this.circuitBreakers.has(toolName)) {
+    const existingBreaker = this.circuitBreakers.get(toolName);
+    if (existingBreaker) {
+      existingBreaker.removeAllListeners();
       this.circuitBreakers.delete(toolName);
     }
     return true;
@@ -3079,6 +3165,7 @@ var SessionManager = class extends EventEmitter {
   autoSaveTimers = /* @__PURE__ */ new Map();
   validateOnLoad;
   autoMigrate;
+  _isDestroyed = false;
   // Track in-flight saves to prevent race conditions
   savesInFlight = /* @__PURE__ */ new Set();
   pendingSaves = /* @__PURE__ */ new Set();
@@ -3321,9 +3408,17 @@ var SessionManager = class extends EventEmitter {
     return `sess_${timestamp}_${random}`;
   }
   /**
+   * Check if the SessionManager instance has been destroyed
+   */
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
    * Cleanup resources
    */
   destroy() {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
     this.stopAllAutoSave();
     this.removeAllListeners();
   }
@@ -3844,11 +3939,37 @@ var IdempotencyCache = class {
   hits = 0;
   misses = 0;
   cleanupInterval;
+  _isDestroyed = false;
   constructor(config = DEFAULT_IDEMPOTENCY_CONFIG) {
     this.config = config;
     this.cleanupInterval = setInterval(() => {
       this.pruneExpired();
     }, 3e5);
+  }
+  /**
+   * Returns true if destroy() has been called.
+   * Operations on a destroyed cache are no-ops.
+   */
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
+   * Releases all resources held by this cache.
+   * Clears the background cleanup interval and all cached entries.
+   * Safe to call multiple times (idempotent).
+   */
+  destroy() {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = void 0;
+    }
+    this.cache.clear();
+    this.hits = 0;
+    this.misses = 0;
   }
   /**
    * Check if a tool's results should be cached.
@@ -3874,6 +3995,9 @@ var IdempotencyCache = class {
    * Get cached result for tool call
    */
   async get(tool, args) {
+    if (this._isDestroyed) {
+      return void 0;
+    }
     if (!this.shouldCache(tool)) {
       this.misses++;
       return void 0;
@@ -3896,6 +4020,9 @@ var IdempotencyCache = class {
    * Cache result for tool call
    */
   async set(tool, args, result) {
+    if (this._isDestroyed) {
+      return;
+    }
     if (!this.shouldCache(tool)) {
       return;
     }
@@ -3914,6 +4041,9 @@ var IdempotencyCache = class {
    * Check if tool call is cached
    */
   async has(tool, args) {
+    if (this._isDestroyed) {
+      return false;
+    }
     if (!this.shouldCache(tool)) {
       return false;
     }
@@ -3957,6 +4087,9 @@ var IdempotencyCache = class {
    * Prune expired entries from cache
    */
   pruneExpired() {
+    if (this._isDestroyed) {
+      return 0;
+    }
     const now = Date.now();
     const toDelete = [];
     for (const [key, entry] of this.cache.entries()) {
@@ -3968,16 +4101,12 @@ var IdempotencyCache = class {
     return toDelete.length;
   }
   /**
-   * Clear all cached results
+   * Clear all cached results and stop background cleanup.
+   * @deprecated Use destroy() instead for explicit lifecycle management.
+   *             This method is kept for backward compatibility.
    */
   async clear() {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = void 0;
-    }
-    this.cache.clear();
-    this.hits = 0;
-    this.misses = 0;
+    this.destroy();
   }
   /**
    * Get cache statistics
@@ -4290,6 +4419,7 @@ var WorkingMemory = class extends EventEmitter {
   config;
   priorityCalculator;
   priorityContext;
+  _isDestroyed = false;
   /**
    * Create a WorkingMemory instance
    *
@@ -4902,10 +5032,18 @@ var WorkingMemory = class extends EventEmitter {
     return this.config.maxSizeBytes ?? 512 * 1024;
   }
   /**
+   * Check if the WorkingMemory instance has been destroyed
+   */
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
    * Destroy the WorkingMemory instance
    * Removes all event listeners and clears internal state
    */
   destroy() {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
     this.removeAllListeners();
     this.priorityContext = {};
   }
@@ -7083,7 +7221,8 @@ var AgentContext = class _AgentContext extends EventEmitter {
       plugin.destroy?.();
     }
     this._plugins.clear();
-    this._cache.clear();
+    this._cache.destroy();
+    this._tools.destroy();
     this._history = [];
     this._toolCalls = [];
     this.removeAllListeners();
@@ -18194,16 +18333,16 @@ function extractNumber(text, patterns = [
 var DEFAULT_TASK_TIMEOUT_MS = TASK_DEFAULTS.TIMEOUT_MS;
 var PlanExecutor = class extends EventEmitter {
   agent;
-  memory;
   agentContext;
   planPlugin;
-  idempotencyCache;
+  // NOTE: IdempotencyCache is accessed via agentContext.cache (single source of truth)
   externalHandler;
   checkpointManager;
   hooks;
   config;
   abortController;
   rateLimiter;
+  _isDestroyed = false;
   // Current execution metrics
   currentMetrics = {
     totalLLMCalls: 0,
@@ -18213,13 +18352,11 @@ var PlanExecutor = class extends EventEmitter {
   };
   // Reference to current agent state (for checkpointing)
   currentState = null;
-  constructor(agent, memory, agentContext, planPlugin, idempotencyCache, externalHandler, checkpointManager, hooks, config) {
+  constructor(agent, agentContext, planPlugin, externalHandler, checkpointManager, hooks, config) {
     super();
     this.agent = agent;
-    this.memory = memory;
     this.agentContext = agentContext;
     this.planPlugin = planPlugin;
-    this.idempotencyCache = idempotencyCache;
     this.externalHandler = externalHandler;
     this.checkpointManager = checkpointManager;
     this.hooks = hooks;
@@ -18234,6 +18371,18 @@ var PlanExecutor = class extends EventEmitter {
         maxWaitMs: config.rateLimiter.maxWaitMs ?? 6e4
       });
     }
+  }
+  /**
+   * Get memory from AgentContext (single source of truth)
+   */
+  get memory() {
+    return this.agentContext.memory;
+  }
+  /**
+   * Get idempotency cache from AgentContext (single source of truth)
+   */
+  get idempotencyCache() {
+    return this.agentContext.cache;
   }
   /**
    * Build a map of task states for memory priority calculation
@@ -18790,10 +18939,26 @@ Be honest and thorough in your evaluation. A score of 100 means all criteria are
     this.abortController.abort();
   }
   /**
-   * Cleanup resources
+   * Check if the PlanExecutor instance has been destroyed
+   */
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
+   * Cleanup resources (alias for destroy, kept for backward compatibility)
    */
   cleanup() {
+    this.destroy();
+  }
+  /**
+   * Destroy the PlanExecutor instance
+   * Removes all event listeners and clears internal state
+   */
+  destroy() {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
     this.abortController.abort();
+    this.removeAllListeners();
   }
   /**
    * Get idempotency cache
@@ -19394,15 +19559,16 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
   id;
   state;
   agentStorage;
-  memory;
+  // NOTE: Memory is accessed via this._agentContext.memory (single source of truth)
+  // The 'memory' getter below provides convenient access
   hooks;
   executionPromise;
   // Internal components
   agent;
   // Note: _agentContext is inherited from BaseAgent (single source of truth)
+  // Cache is accessed via this._agentContext.cache (single source of truth)
   _planPlugin;
   _memoryPlugin;
-  idempotencyCache;
   externalHandler;
   planExecutor;
   checkpointManager;
@@ -19420,7 +19586,6 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     }
     const agentStorage = config.storage ?? createAgentStorage({});
     const memoryConfig = config.memoryConfig ?? DEFAULT_MEMORY_CONFIG;
-    const memory = new WorkingMemory(agentStorage.memory, memoryConfig);
     const id = `task-agent-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const emptyPlan = createPlan({ goal: "", tasks: [] });
     const agentStateConfig = {
@@ -19431,8 +19596,19 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
       toolNames: (config.tools ?? []).map((t) => t.definition.function.name)
     };
     const state = createAgentState(id, agentStateConfig, emptyPlan);
-    const taskAgent = new _TaskAgent(id, state, agentStorage, memory, config, config.hooks);
-    taskAgent.initializeComponents(config);
+    const taskAgentConfig = {
+      ...config,
+      // Pass memory config to AgentContext
+      context: {
+        ...typeof config.context === "object" && config.context !== null && !(config.context instanceof Object.getPrototypeOf(config.context)?.constructor) ? config.context : {},
+        memory: {
+          storage: agentStorage.memory,
+          ...memoryConfig
+        }
+      }
+    };
+    const taskAgent = new _TaskAgent(id, state, agentStorage, taskAgentConfig, config.hooks);
+    taskAgent.initializeComponents(taskAgentConfig);
     return taskAgent;
   }
   /**
@@ -19467,21 +19643,27 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
       maxIterations: state.config.maxIterations,
       storage: options.storage,
       hooks: options.hooks,
-      session: options.session
+      session: options.session,
+      // Pass memory config to AgentContext (single source of truth)
+      context: {
+        memory: {
+          storage: options.storage.memory,
+          ...DEFAULT_MEMORY_CONFIG
+        }
+      }
     };
-    const memory = new WorkingMemory(options.storage.memory, DEFAULT_MEMORY_CONFIG);
-    const taskAgent = new _TaskAgent(agentId, state, options.storage, memory, config, options.hooks);
+    const taskAgent = new _TaskAgent(agentId, state, options.storage, config, options.hooks);
     taskAgent.initializeComponents(config);
     return taskAgent;
   }
   // ===== Constructor =====
-  constructor(id, state, agentStorage, memory, config, hooks) {
+  constructor(id, state, agentStorage, config, hooks) {
     super(config, "TaskAgent");
     this.id = id;
     this.state = state;
     this.agentStorage = agentStorage;
-    this.memory = memory;
     this.hooks = hooks;
+    const memory = this._agentContext.memory;
     const storedHandler = (data) => this.emit("memory:stored", data);
     const limitWarningHandler = (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent });
     memory.on("stored", storedHandler);
@@ -19528,7 +19710,7 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     if (plan) {
       this._session.plan = plan;
     }
-    const memoryIndex = await this.memory.getIndex();
+    const memoryIndex = await this._agentContext.memory.getIndex();
     this._session.memory = {
       version: 1,
       entries: memoryIndex.entries.map((e) => ({
@@ -19557,22 +19739,22 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
       execute: async (args, context) => {
         const enhancedContext = {
           ...context,
-          memory: this.memory.getAccess(),
+          memory: this._agentContext.memory.getAccess(),
           // Add memory access for memory tools
           agentContext: this._agentContext,
           // Inherited from BaseAgent
-          idempotencyCache: this.idempotencyCache,
+          idempotencyCache: this._agentContext.cache,
           agentId: this.id
         };
-        if (!this.idempotencyCache) {
+        if (!this._agentContext.cache) {
           return tool.execute(args, enhancedContext);
         }
-        const cached = await this.idempotencyCache.get(tool, args);
+        const cached = await this._agentContext.cache.get(tool, args);
         if (cached !== void 0) {
           return cached;
         }
         const result = await tool.execute(args, enhancedContext);
-        await this.idempotencyCache.set(tool, args, result);
+        await this._agentContext.cache.set(tool, args, result);
         return result;
       }
     };
@@ -19587,7 +19769,6 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     for (const tool of [...memoryTools, ...contextTools]) {
       this._agentContext.tools.register(tool);
     }
-    this.idempotencyCache = new IdempotencyCache(DEFAULT_IDEMPOTENCY_CONFIG);
     const enabledTools = this._agentContext.tools.getEnabled();
     const cachedTools = enabledTools.map((tool) => this.wrapToolWithCache(tool));
     this.agent = Agent.create({
@@ -19608,7 +19789,7 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
       this._agentContext.systemPrompt = config.instructions;
     }
     this._planPlugin = new PlanPlugin();
-    this._memoryPlugin = new MemoryPlugin(this.memory);
+    this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
     this._agentContext.registerPlugin(this._planPlugin);
     this._agentContext.registerPlugin(this._memoryPlugin);
     this._planPlugin.setPlan(this.state.plan);
@@ -19616,10 +19797,8 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     this.checkpointManager = new CheckpointManager(this.agentStorage, DEFAULT_CHECKPOINT_STRATEGY);
     this.planExecutor = new PlanExecutor(
       this.agent,
-      this.memory,
       this._agentContext,
       this._planPlugin,
-      this.idempotencyCache,
       this.externalHandler,
       this.checkpointManager,
       this.hooks,
@@ -19839,10 +20018,16 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     return this.state.plan;
   }
   /**
-   * Get working memory
+   * Get working memory (from AgentContext - single source of truth)
    */
   getMemory() {
-    return this.memory;
+    return this._agentContext.memory;
+  }
+  /**
+   * Convenient getter for working memory (alias for _agentContext.memory)
+   */
+  get memory() {
+    return this._agentContext.memory;
   }
   // ===== Plan Execution =====
   /**
@@ -19918,7 +20103,7 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     this.eventCleanupFunctions = [];
     this.externalHandler?.cleanup();
     await this.checkpointManager?.cleanup();
-    this.planExecutor?.cleanup();
+    this.planExecutor?.destroy();
     this.agent?.destroy();
     await this.runCleanupCallbacks();
     this.baseDestroy();
@@ -22158,7 +22343,7 @@ init_Connector();
 // src/tools/connector/ConnectorTools.ts
 init_Connector();
 var PROTECTED_HEADERS = ["authorization", "x-api-key", "api-key", "bearer"];
-function safeStringify(obj) {
+function safeStringify2(obj) {
   const seen = /* @__PURE__ */ new WeakSet();
   return JSON.stringify(obj, (_key, value) => {
     if (typeof value === "object" && value !== null) {
@@ -22437,7 +22622,7 @@ var ConnectorTools = class {
         let bodyStr;
         if (args.body) {
           try {
-            bodyStr = safeStringify(args.body);
+            bodyStr = safeStringify2(args.body);
           } catch (e) {
             return {
               success: false,
@@ -22469,7 +22654,7 @@ var ConnectorTools = class {
             success: response.ok,
             status: response.status,
             data: response.ok ? data : void 0,
-            error: response.ok ? void 0 : typeof data === "string" ? data : safeStringify(data)
+            error: response.ok ? void 0 : typeof data === "string" ? data : safeStringify2(data)
           };
         } catch (error) {
           return {
@@ -26385,6 +26570,7 @@ REMEMBER: Keep it conversational, ask one question at a time, and only output th
 var ModeManager = class extends EventEmitter {
   state;
   transitionHistory = [];
+  _isDestroyed = false;
   constructor(initialMode = "interactive") {
     super();
     this.state = {
@@ -26392,6 +26578,25 @@ var ModeManager = class extends EventEmitter {
       enteredAt: /* @__PURE__ */ new Date(),
       reason: "initial"
     };
+  }
+  /**
+   * Returns true if destroy() has been called.
+   */
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
+   * Releases all resources held by this ModeManager.
+   * Removes all event listeners.
+   * Safe to call multiple times (idempotent).
+   */
+  destroy() {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
+    this.transitionHistory = [];
+    this.removeAllListeners();
   }
   /**
    * Get current mode
@@ -27849,7 +28054,7 @@ Currently working on: ${progress.current.name}`;
     if (this.executionAgent) {
       this.executionAgent.destroy();
     }
-    this.modeManager.removeAllListeners();
+    this.modeManager.destroy();
     this.baseDestroy();
     this._logger.debug("UniversalAgent destroyed");
   }

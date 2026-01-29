@@ -8085,20 +8085,49 @@ const oauth = new OAuthManager({
 });
 ```
 
-#### 6. Clean Up Resources
+#### 6. Clean Up Resources (IDisposable Pattern)
+
+The library uses the **IDisposable pattern** for proper resource cleanup. All major classes implement this pattern with:
+- `destroy(): void` - Releases all resources (safe to call multiple times)
+- `isDestroyed: boolean` - Check if already destroyed
 
 ```typescript
-// Basic agents
+// Basic agents - cascades to AgentContext → ToolManager → CircuitBreakers
 const agent = Agent.create({ ... });
 agent.onCleanup(() => {
   console.log('Cleaning up...');
 });
-agent.destroy();
+agent.destroy();  // Cleans up all child resources
 
 // Task agents
 const taskAgent = TaskAgent.create({ ... });
 await taskAgent.destroy();
+
+// Universal agents
+const uniAgent = UniversalAgent.create({ ... });
+uniAgent.destroy();  // Also cleans up ModeManager
+
+// Standalone ToolManager
+const toolManager = new ToolManager();
+toolManager.destroy();  // Cleans up circuit breakers and listeners
+
+// IdempotencyCache (clears cleanup interval timer)
+const cache = new IdempotencyCache({ enabled: true });
+cache.destroy();  // Important: prevents memory leak from interval
+
+// Check before use
+if (!toolManager.isDestroyed) {
+  await toolManager.execute('my_tool', args);
+}
 ```
+
+**Classes implementing IDisposable:**
+- `Agent` / `TaskAgent` / `UniversalAgent`
+- `AgentContext`
+- `ToolManager`
+- `IdempotencyCache`
+- `ModeManager`
+- `WorkingMemory`
 
 ### Performance Tips
 

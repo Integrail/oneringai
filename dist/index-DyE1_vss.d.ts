@@ -1,9 +1,753 @@
 import { EventEmitter } from 'eventemitter3';
-import { I as IProvider } from './IProvider-BP49c93d.cjs';
+import { I as IProvider } from './IProvider-BP49c93d.js';
+
+/**
+ * Core types for context management system
+ */
+/**
+ * Context component that can be compacted
+ */
+interface IContextComponent {
+    /** Unique name for this component */
+    name: string;
+    /** The actual content (string or structured data) */
+    content: string | unknown;
+    /** Priority for compaction (higher = compact first) */
+    priority: number;
+    /** Whether this component can be compacted */
+    compactable: boolean;
+    /** Additional metadata for compaction strategies */
+    metadata?: Record<string, unknown>;
+}
+/**
+ * Context budget information
+ */
+interface ContextBudget {
+    /** Total available tokens */
+    total: number;
+    /** Reserved tokens for response */
+    reserved: number;
+    /** Currently used tokens */
+    used: number;
+    /** Available tokens remaining */
+    available: number;
+    /** Utilization percentage (used / (total - reserved)) */
+    utilizationPercent: number;
+    /** Budget status */
+    status: 'ok' | 'warning' | 'critical';
+    /** Token breakdown by component */
+    breakdown: Record<string, number>;
+}
+/**
+ * Context preparation result
+ */
+interface PreparedContext {
+    /** Prepared components */
+    components: IContextComponent[];
+    /** Current budget */
+    budget: ContextBudget;
+    /** Whether compaction occurred */
+    compacted: boolean;
+    /** Compaction log if compacted */
+    compactionLog?: string[];
+}
+/**
+ * Context manager configuration
+ */
+interface ContextManagerConfig {
+    /** Maximum context tokens for the model */
+    maxContextTokens: number;
+    /** Threshold to trigger compaction (0.0 - 1.0) */
+    compactionThreshold: number;
+    /** Hard limit - must compact before this (0.0 - 1.0) */
+    hardLimit: number;
+    /** Reserve space for response (0.0 - 1.0) */
+    responseReserve: number;
+    /** Token estimator to use */
+    estimator: 'approximate' | 'tiktoken' | ITokenEstimator;
+    /** Enable automatic compaction */
+    autoCompact: boolean;
+    /** Strategy to use */
+    strategy?: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive' | IContextStrategy;
+    /** Strategy-specific options */
+    strategyOptions?: Record<string, unknown>;
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_CONTEXT_CONFIG: ContextManagerConfig;
+/**
+ * Abstract interface for providing context components.
+ * Each agent type implements this to define what goes into context.
+ */
+interface IContextProvider {
+    /**
+     * Get current context components
+     */
+    getComponents(): Promise<IContextComponent[]>;
+    /**
+     * Update components after compaction
+     */
+    applyCompactedComponents(components: IContextComponent[]): Promise<void>;
+    /**
+     * Get max context size for this agent/model
+     */
+    getMaxContextSize(): number;
+}
+/**
+ * Content type for more accurate token estimation
+ * Named differently from TokenContentType in Content.ts to avoid conflicts
+ */
+type TokenContentType = 'code' | 'prose' | 'mixed';
+/**
+ * Abstract interface for token estimation
+ */
+interface ITokenEstimator {
+    /**
+     * Estimate token count for text
+     *
+     * @param text - The text to estimate
+     * @param contentType - Type of content for more accurate estimation:
+     *   - 'code': Code is typically denser (~3 chars/token)
+     *   - 'prose': Natural language text (~4 chars/token)
+     *   - 'mixed': Mix of code and prose (~3.5 chars/token)
+     */
+    estimateTokens(text: string, contentType?: TokenContentType): number;
+    /**
+     * Estimate tokens for structured data
+     */
+    estimateDataTokens(data: unknown, contentType?: TokenContentType): number;
+}
+/**
+ * Hook context for beforeCompaction callback
+ */
+interface CompactionHookContext {
+    /** Agent identifier (if available) */
+    agentId?: string;
+    /** Current context budget info */
+    currentBudget: ContextBudget;
+    /** Compaction strategy being used */
+    strategy: string;
+    /** Current context components (read-only summaries) */
+    components: ReadonlyArray<{
+        name: string;
+        priority: number;
+        compactable: boolean;
+    }>;
+    /** Estimated tokens to be freed */
+    estimatedTokensToFree: number;
+}
+/**
+ * Hooks for context management events
+ */
+interface ContextManagerHooks {
+    /**
+     * Called before compaction occurs.
+     * Use this to save important data before it gets compacted.
+     * This is the last chance to preserve critical information.
+     */
+    beforeCompaction?: (context: CompactionHookContext) => Promise<void>;
+}
+/**
+ * Abstract interface for compaction strategies
+ */
+interface IContextCompactor {
+    /** Compactor name */
+    readonly name: string;
+    /** Priority order (lower = run first) */
+    readonly priority: number;
+    /**
+     * Check if this compactor can handle the component
+     */
+    canCompact(component: IContextComponent): boolean;
+    /**
+     * Compact the component to target size
+     */
+    compact(component: IContextComponent, targetTokens: number): Promise<IContextComponent>;
+    /**
+     * Estimate savings from compaction
+     */
+    estimateSavings(component: IContextComponent): number;
+}
+/**
+ * Context management strategy - defines the overall approach to managing context
+ */
+interface IContextStrategy {
+    /** Strategy name */
+    readonly name: string;
+    /**
+     * Decide if compaction is needed based on current budget
+     */
+    shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean;
+    /**
+     * Execute compaction using available compactors
+     */
+    compact(components: IContextComponent[], budget: ContextBudget, compactors: IContextCompactor[], estimator: ITokenEstimator): Promise<{
+        components: IContextComponent[];
+        log: string[];
+        tokensFreed: number;
+    }>;
+    /**
+     * Optional: Prepare components before budget calculation
+     * Use this for strategies that pre-process context (e.g., rolling window)
+     */
+    prepareComponents?(components: IContextComponent[]): Promise<IContextComponent[]>;
+    /**
+     * Optional: Post-process after compaction
+     * Use this for strategies that need cleanup or optimization
+     */
+    postProcess?(components: IContextComponent[], budget: ContextBudget): Promise<IContextComponent[]>;
+    /**
+     * Optional: Get strategy-specific metrics
+     */
+    getMetrics?(): Record<string, unknown>;
+}
+
+/**
+ * ContextManager - Universal context management with strategy support
+ */
+
+/**
+ * Context manager events
+ */
+interface ContextManagerEvents {
+    compacting: {
+        reason: string;
+        currentBudget: ContextBudget;
+        strategy: string;
+    };
+    compacted: {
+        log: string[];
+        newBudget: ContextBudget;
+        tokensFreed: number;
+    };
+    budget_warning: {
+        budget: ContextBudget;
+    };
+    budget_critical: {
+        budget: ContextBudget;
+    };
+    strategy_switched: {
+        from: string;
+        to: string;
+        reason: string;
+    };
+}
+/**
+ * Universal Context Manager
+ *
+ * Works with any agent type through the IContextProvider interface.
+ * Supports multiple compaction strategies that can be switched at runtime.
+ */
+declare class ContextManager extends EventEmitter<ContextManagerEvents> {
+    private config;
+    private provider;
+    private estimator;
+    private compactors;
+    private strategy;
+    private lastBudget?;
+    private hooks;
+    private agentId?;
+    constructor(provider: IContextProvider, config?: Partial<ContextManagerConfig>, compactors?: IContextCompactor[], estimator?: ITokenEstimator, strategy?: IContextStrategy, hooks?: ContextManagerHooks, agentId?: string);
+    /**
+     * Set hooks at runtime
+     */
+    setHooks(hooks: ContextManagerHooks): void;
+    /**
+     * Set agent ID at runtime
+     */
+    setAgentId(agentId: string): void;
+    /**
+     * Prepare context for LLM call
+     * Returns prepared components, automatically compacting if needed
+     */
+    prepare(): Promise<PreparedContext>;
+    /**
+     * Compact using the current strategy
+     */
+    private compactWithStrategy;
+    /**
+     * Calculate budget for components
+     */
+    private calculateBudget;
+    /**
+     * Estimate tokens for a component
+     */
+    private estimateComponent;
+    /**
+     * Switch to a different strategy at runtime
+     */
+    setStrategy(strategy: 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive' | IContextStrategy): void;
+    /**
+     * Get current strategy
+     */
+    getStrategy(): IContextStrategy;
+    /**
+     * Get strategy metrics
+     */
+    getStrategyMetrics(): Record<string, unknown>;
+    /**
+     * Get current budget
+     */
+    getCurrentBudget(): ContextBudget | null;
+    /**
+     * Get configuration
+     */
+    getConfig(): ContextManagerConfig;
+    /**
+     * Update configuration
+     */
+    updateConfig(updates: Partial<ContextManagerConfig>): void;
+    /**
+     * Add compactor
+     */
+    addCompactor(compactor: IContextCompactor): void;
+    /**
+     * Get all compactors
+     */
+    getCompactors(): IContextCompactor[];
+    /**
+     * Create estimator from name
+     */
+    private createEstimator;
+    /**
+     * Create strategy from name or config
+     */
+    private createStrategy;
+}
+
+/**
+ * Interface for objects that manage resources and need explicit cleanup.
+ *
+ * Implementing classes should release all resources (event listeners, timers,
+ * connections, etc.) when destroy() is called. After destruction, the instance
+ * should not be used.
+ */
+interface IDisposable {
+    /**
+     * Releases all resources held by this instance.
+     *
+     * After calling destroy():
+     * - All event listeners should be removed
+     * - All timers/intervals should be cleared
+     * - All internal state should be cleaned up
+     * - The instance should not be reused
+     *
+     * Multiple calls to destroy() should be safe (idempotent).
+     */
+    destroy(): void;
+    /**
+     * Returns true if destroy() has been called.
+     * Methods should check this before performing operations.
+     */
+    readonly isDestroyed: boolean;
+}
+/**
+ * Async version of IDisposable for resources requiring async cleanup.
+ */
+interface IAsyncDisposable {
+    /**
+     * Asynchronously releases all resources held by this instance.
+     */
+    destroy(): Promise<void>;
+    /**
+     * Returns true if destroy() has been called.
+     */
+    readonly isDestroyed: boolean;
+}
+/**
+ * Helper to check if an object is destroyed and throw if so.
+ * @param obj - The disposable object to check
+ * @param operation - Name of the operation being attempted
+ */
+declare function assertNotDestroyed(obj: IDisposable | IAsyncDisposable, operation: string): void;
+
+/**
+ * IdempotencyCache - caches tool call results for deduplication
+ *
+ * General-purpose cache for tool results. Used by AgentContext to avoid
+ * duplicate tool calls with the same arguments.
+ *
+ * Features:
+ * - Cache based on tool name + args hash
+ * - Custom key generation per tool (via tool.idempotency.keyFn)
+ * - TTL-based expiration
+ * - Max entries eviction (LRU)
+ *
+ * Implements IDisposable for proper lifecycle management.
+ */
+
+/**
+ * Cache configuration
+ */
+interface IdempotencyCacheConfig {
+    /** Default TTL for cached entries */
+    defaultTtlMs: number;
+    /** Max entries before eviction */
+    maxEntries: number;
+}
+/**
+ * Cache statistics
+ */
+interface CacheStats {
+    entries: number;
+    hits: number;
+    misses: number;
+    hitRate: number;
+}
+/**
+ * Default configuration
+ */
+declare const DEFAULT_IDEMPOTENCY_CONFIG: IdempotencyCacheConfig;
+/**
+ * IdempotencyCache handles tool call result caching.
+ *
+ * Features:
+ * - Cache based on tool name + args
+ * - Custom key generation per tool
+ * - TTL-based expiration
+ * - Max entries eviction
+ *
+ * Implements IDisposable for proper resource cleanup.
+ * Call destroy() when done to clear the background cleanup interval.
+ */
+declare class IdempotencyCache implements IDisposable {
+    private config;
+    private cache;
+    private hits;
+    private misses;
+    private cleanupInterval?;
+    private _isDestroyed;
+    constructor(config?: IdempotencyCacheConfig);
+    /**
+     * Returns true if destroy() has been called.
+     * Operations on a destroyed cache are no-ops.
+     */
+    get isDestroyed(): boolean;
+    /**
+     * Releases all resources held by this cache.
+     * Clears the background cleanup interval and all cached entries.
+     * Safe to call multiple times (idempotent).
+     */
+    destroy(): void;
+    /**
+     * Check if a tool's results should be cached.
+     * Prefers 'cacheable' field, falls back to inverted 'safe' for backward compatibility.
+     *
+     * Logic:
+     * - If 'cacheable' is defined, use it directly
+     * - If only 'safe' is defined, cache when safe=false (backward compat)
+     * - If neither defined, don't cache
+     */
+    private shouldCache;
+    /**
+     * Get cached result for tool call
+     */
+    get(tool: ToolFunction, args: Record<string, unknown>): Promise<unknown>;
+    /**
+     * Cache result for tool call
+     */
+    set(tool: ToolFunction, args: Record<string, unknown>, result: unknown): Promise<void>;
+    /**
+     * Check if tool call is cached
+     */
+    has(tool: ToolFunction, args: Record<string, unknown>): Promise<boolean>;
+    /**
+     * Invalidate cached result
+     */
+    invalidate(tool: ToolFunction, args: Record<string, unknown>): Promise<void>;
+    /**
+     * Invalidate all cached results for a tool
+     */
+    invalidateTool(tool: ToolFunction): Promise<void>;
+    /**
+     * Prune expired entries from cache
+     */
+    pruneExpired(): number;
+    /**
+     * Clear all cached results and stop background cleanup.
+     * @deprecated Use destroy() instead for explicit lifecycle management.
+     *             This method is kept for backward compatibility.
+     */
+    clear(): Promise<void>;
+    /**
+     * Get cache statistics
+     */
+    getStats(): CacheStats;
+    /**
+     * Generate cache key for tool + args
+     */
+    generateKey(tool: ToolFunction, args: Record<string, unknown>): string;
+    /**
+     * Simple hash function for objects
+     */
+    private hashObject;
+}
+
+/**
+ * Memory entities for WorkingMemory
+ *
+ * This module provides a GENERIC memory system that works across all agent types:
+ * - Basic Agent: Simple session/persistent scoping with static priority
+ * - TaskAgent: Task-aware scoping with dynamic priority based on task states
+ * - UniversalAgent: Mode-aware, switches strategy based on current mode
+ *
+ * The key abstraction is PriorityCalculator - a pluggable strategy that
+ * determines entry priority for eviction decisions.
+ */
+/**
+ * Simple scope for basic agents - just a lifecycle label
+ */
+type SimpleScope = 'session' | 'persistent';
+/**
+ * Task-aware scope for TaskAgent/UniversalAgent
+ */
+type TaskAwareScope = {
+    type: 'task';
+    taskIds: string[];
+} | {
+    type: 'plan';
+} | {
+    type: 'persistent';
+};
+/**
+ * Union type - memory system accepts both
+ */
+type MemoryScope = SimpleScope | TaskAwareScope;
+/**
+ * Type guard: is this a task-aware scope?
+ */
+declare function isTaskAwareScope(scope: MemoryScope): scope is TaskAwareScope;
+/**
+ * Type guard: is this a simple scope?
+ */
+declare function isSimpleScope(scope: MemoryScope): scope is SimpleScope;
+/**
+ * Compare two scopes for equality
+ * Handles both simple scopes (string comparison) and task-aware scopes (deep comparison)
+ */
+declare function scopeEquals(a: MemoryScope, b: MemoryScope): boolean;
+/**
+ * Check if a scope matches a filter scope
+ * More flexible than scopeEquals - supports partial matching for task scopes
+ */
+declare function scopeMatches(entryScope: MemoryScope, filterScope: MemoryScope): boolean;
+/**
+ * Priority determines eviction order (lower priority evicted first)
+ *
+ * - critical: Never evicted (pinned, or actively in use)
+ * - high: Important data, evicted only when necessary
+ * - normal: Default priority
+ * - low: Candidate for eviction (stale data, completed task data)
+ */
+type MemoryPriority = 'critical' | 'high' | 'normal' | 'low';
+/**
+ * Priority values for comparison (higher = more important, less likely to evict)
+ */
+declare const MEMORY_PRIORITY_VALUES: Record<MemoryPriority, number>;
+/**
+ * Memory tier for hierarchical data management
+ *
+ * The tier system provides a structured approach to managing research/analysis data:
+ * - raw: Original data, low priority, first to be evicted
+ * - summary: Processed summaries, normal priority
+ * - findings: Final conclusions/insights, high priority, kept longest
+ *
+ * Workflow: raw → summary → findings (data gets more refined, priority increases)
+ */
+type MemoryTier = 'raw' | 'summary' | 'findings';
+/**
+ * Context passed to priority calculator - varies by agent type
+ */
+interface PriorityContext {
+    /** For TaskAgent: map of taskId → current status */
+    taskStates?: Map<string, TaskStatusForMemory>;
+    /** For UniversalAgent: current mode */
+    mode?: 'interactive' | 'planning' | 'executing';
+    /** Custom context for extensions */
+    [key: string]: unknown;
+}
+/**
+ * Task status values for priority calculation
+ */
+type TaskStatusForMemory = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped' | 'cancelled';
+/**
+ * Check if a task status is terminal (task will not progress further)
+ */
+declare function isTerminalMemoryStatus(status: TaskStatusForMemory): boolean;
+/**
+ * Priority calculator function type.
+ * Given an entry and optional context, returns the effective priority.
+ */
+type PriorityCalculator = (entry: MemoryEntry, context?: PriorityContext) => MemoryPriority;
+/**
+ * Reason why an entry became stale
+ */
+type StaleReason = 'task_completed' | 'task_failed' | 'unused' | 'scope_cleared';
+/**
+ * Information about a stale entry for LLM notification
+ */
+interface StaleEntryInfo {
+    key: string;
+    description: string;
+    reason: StaleReason;
+    previousPriority: MemoryPriority;
+    newPriority: MemoryPriority;
+    taskIds?: string[];
+}
+/**
+ * Single memory entry stored in working memory
+ */
+interface MemoryEntry {
+    key: string;
+    description: string;
+    value: unknown;
+    sizeBytes: number;
+    scope: MemoryScope;
+    basePriority: MemoryPriority;
+    pinned: boolean;
+    createdAt: number;
+    lastAccessedAt: number;
+    accessCount: number;
+}
+/**
+ * Index entry (lightweight, always in context)
+ */
+interface MemoryIndexEntry {
+    key: string;
+    description: string;
+    size: string;
+    scope: MemoryScope;
+    effectivePriority: MemoryPriority;
+    pinned: boolean;
+}
+/**
+ * Full memory index with metadata
+ */
+interface MemoryIndex {
+    entries: MemoryIndexEntry[];
+    totalSizeBytes: number;
+    totalSizeHuman: string;
+    limitBytes: number;
+    limitHuman: string;
+    utilizationPercent: number;
+}
+/**
+ * Configuration for working memory
+ */
+interface WorkingMemoryConfig {
+    /** Max memory size in bytes. If not set, calculated from model context */
+    maxSizeBytes?: number;
+    /** Max description length */
+    descriptionMaxLength: number;
+    /** Percentage at which to warn agent */
+    softLimitPercent: number;
+    /** Percentage of model context to allocate to memory */
+    contextAllocationPercent: number;
+}
+/**
+ * Input for creating a memory entry
+ */
+interface MemoryEntryInput {
+    key: string;
+    description: string;
+    value: unknown;
+    /** Scope - defaults to 'session' for basic agents */
+    scope?: MemoryScope;
+    /** Base priority - may be overridden by dynamic calculation */
+    priority?: MemoryPriority;
+    /** If true, entry is never evicted */
+    pinned?: boolean;
+}
+/**
+ * Create a task-scoped memory entry input
+ */
+declare function forTasks(key: string, description: string, value: unknown, taskIds: string[], options?: {
+    priority?: MemoryPriority;
+    pinned?: boolean;
+}): MemoryEntryInput;
+/**
+ * Create a plan-scoped memory entry input
+ */
+declare function forPlan(key: string, description: string, value: unknown, options?: {
+    priority?: MemoryPriority;
+    pinned?: boolean;
+}): MemoryEntryInput;
+/**
+ * Default configuration values
+ */
+declare const DEFAULT_MEMORY_CONFIG: WorkingMemoryConfig;
+/**
+ * Calculate the size of a value in bytes (JSON serialization)
+ * Uses Buffer.byteLength for accurate UTF-8 byte count
+ */
+declare function calculateEntrySize(value: unknown): number;
+
+/**
+ * Tool context interface - passed to tools during execution
+ */
+
+/**
+ * Limited memory access for tools
+ *
+ * This interface is designed to work with all agent types:
+ * - Basic agents: Use simple scopes ('session', 'persistent')
+ * - TaskAgent: Use task-aware scopes ({ type: 'task', taskIds: [...] })
+ * - UniversalAgent: Switches between simple and task-aware based on mode
+ */
+interface WorkingMemoryAccess {
+    get(key: string): Promise<unknown>;
+    /**
+     * Store a value in memory
+     *
+     * @param key - Unique key for the entry
+     * @param description - Short description (max 150 chars)
+     * @param value - Data to store
+     * @param options - Optional scope, priority, and pinning
+     */
+    set(key: string, description: string, value: unknown, options?: {
+        /** Scope determines lifecycle - defaults to 'session' */
+        scope?: MemoryScope;
+        /** Base priority for eviction ordering */
+        priority?: MemoryPriority;
+        /** If true, entry is never evicted */
+        pinned?: boolean;
+    }): Promise<void>;
+    delete(key: string): Promise<void>;
+    has(key: string): Promise<boolean>;
+    /**
+     * List all memory entries
+     * Returns key, description, and computed priority info
+     */
+    list(): Promise<Array<{
+        key: string;
+        description: string;
+        effectivePriority?: MemoryPriority;
+        pinned?: boolean;
+    }>>;
+}
+/**
+ * Context passed to tool execute function
+ */
+interface ToolContext {
+    /** Agent ID (for logging/tracing) */
+    agentId: string;
+    /** Task ID (if running in TaskAgent) */
+    taskId?: string;
+    /** Working memory access (if running in TaskAgent) */
+    memory?: WorkingMemoryAccess;
+    /** Context manager (if running in TaskAgent) */
+    contextManager?: ContextManager;
+    /** Idempotency cache (if running in TaskAgent) */
+    idempotencyCache?: IdempotencyCache;
+    /** Abort signal for cancellation */
+    signal?: AbortSignal;
+}
 
 /**
  * Tool entities with blocking/non-blocking execution support
  */
+
 interface JSONSchema {
     type: string;
     properties?: Record<string, any>;
@@ -61,15 +805,6 @@ interface ToolExecutionContext {
     toolCalls: Map<string, ToolCall>;
     pendingNonBlocking: Set<string>;
     completedResults: Map<string, ToolResult>;
-}
-/**
- * Tool context - passed to tools during execution (optional, for TaskAgent)
- */
-interface ToolContext {
-    agentId: string;
-    taskId?: string;
-    memory?: any;
-    signal?: AbortSignal;
 }
 /**
  * Output handling hints for context management
@@ -1638,4 +2373,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type ToolResult as $, type AgentPermissionsConfig as A, type Content as B, ContentType as C, DEFAULT_PERMISSION_CONFIG as D, ExecutionContext as E, type FunctionToolDefinition as F, type InputTextContent as G, type HookConfig as H, type IToolExecutor as I, type InputImageContent as J, type ToolUseContent as K, type LLMResponse as L, type ModelCapabilities as M, type ToolResultContent as N, type OutputTextContent as O, type PermissionScope as P, type Message as Q, type RiskLevel as R, type SerializedApprovalState as S, type ToolFunction as T, type OutputItem as U, type CompactionItem as V, type ReasoningItem as W, ToolCallState as X, defaultDescribeCall as Y, getToolCallDescription as Z, type BuiltInTool as _, type ToolPermissionConfig$1 as a, type ToolExecutionContext as a0, type JSONSchema as a1, type ResponseCreatedEvent as a2, type ResponseInProgressEvent as a3, type OutputTextDeltaEvent as a4, type OutputTextDoneEvent as a5, type ToolCallStartEvent as a6, type ToolCallArgumentsDeltaEvent as a7, type ToolCallArgumentsDoneEvent as a8, type ToolExecutionStartEvent as a9, type ToolCompleteEvent as aA, type LLMRequestEvent as aB, type LLMResponseEvent as aC, type ToolExecutionDoneEvent as aa, type IterationCompleteEvent$1 as ab, type ResponseCompleteEvent as ac, type ErrorEvent as ad, isStreamEvent as ae, isOutputTextDelta as af, isToolCallStart as ag, isToolCallArgumentsDelta as ah, isToolCallArgumentsDone as ai, isResponseComplete as aj, isErrorEvent as ak, HookManager as al, type AgenticLoopEventName as am, type HookName as an, type Hook as ao, type ModifyingHook as ap, type BeforeToolContext as aq, type AfterToolContext as ar, type ApproveToolContext as as, type ToolModification as at, type ApprovalResult as au, AgenticLoop as av, type AgenticLoopConfig as aw, type ExecutionStartEvent as ax, type ExecutionCompleteEvent as ay, type ToolStartEvent as az, type Tool as b, ToolPermissionManager as c, type HistoryMode as d, type AgenticLoopEvents as e, type InputItem as f, type AgentResponse as g, type StreamEvent as h, type ExecutionMetrics as i, type AuditEntry as j, type ITextProvider as k, type TokenUsage as l, type ToolCall as m, StreamEventType as n, type TextGenerateOptions as o, MessageRole as p, type ToolPermissionConfig as q, type ApprovalCacheEntry as r, type SerializedApprovalEntry as s, type PermissionCheckResult as t, type ApprovalDecision as u, type PermissionCheckContext as v, type PermissionManagerEvent as w, APPROVAL_STATE_VERSION as x, DEFAULT_ALLOWLIST as y, type DefaultAllowlistedTool as z };
+export { type SerializedApprovalEntry as $, type AgentPermissionsConfig as A, type AuditEntry as B, type ContextBudget as C, type ITextProvider as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextStrategy as G, type HookConfig as H, type IToolExecutor as I, type ContextManagerConfig as J, type IContextCompactor as K, type TokenUsage as L, type MemoryScope as M, type ToolCall as N, type LLMResponse as O, type PriorityCalculator as P, StreamEventType as Q, type TextGenerateOptions as R, type SerializedApprovalState as S, type ToolContext as T, type ModelCapabilities as U, MessageRole as V, type WorkingMemoryConfig as W, type PermissionScope as X, type RiskLevel as Y, type ToolPermissionConfig as Z, type ApprovalCacheEntry as _, type IDisposable as a, HookManager as a$, type PermissionCheckResult as a0, type ApprovalDecision as a1, type PermissionCheckContext as a2, type PermissionManagerEvent as a3, APPROVAL_STATE_VERSION as a4, DEFAULT_PERMISSION_CONFIG as a5, DEFAULT_ALLOWLIST as a6, type DefaultAllowlistedTool as a7, DEFAULT_IDEMPOTENCY_CONFIG as a8, ContextManager as a9, type ReasoningItem as aA, ToolCallState as aB, defaultDescribeCall as aC, getToolCallDescription as aD, type BuiltInTool as aE, type ToolResult as aF, type ToolExecutionContext as aG, type JSONSchema as aH, type ResponseCreatedEvent as aI, type ResponseInProgressEvent as aJ, type OutputTextDeltaEvent as aK, type OutputTextDoneEvent as aL, type ToolCallStartEvent as aM, type ToolCallArgumentsDeltaEvent as aN, type ToolCallArgumentsDoneEvent as aO, type ToolExecutionStartEvent as aP, type ToolExecutionDoneEvent as aQ, type IterationCompleteEvent$1 as aR, type ResponseCompleteEvent as aS, type ErrorEvent as aT, isStreamEvent as aU, isOutputTextDelta as aV, isToolCallStart as aW, isToolCallArgumentsDelta as aX, isToolCallArgumentsDone as aY, isResponseComplete as aZ, isErrorEvent as a_, type IContextProvider as aa, DEFAULT_CONTEXT_CONFIG as ab, type MemoryEntryInput as ac, type MemoryIndexEntry as ad, type TaskAwareScope as ae, type SimpleScope as af, DEFAULT_MEMORY_CONFIG as ag, forTasks as ah, forPlan as ai, scopeEquals as aj, scopeMatches as ak, isSimpleScope as al, isTaskAwareScope as am, isTerminalMemoryStatus as an, calculateEntrySize as ao, MEMORY_PRIORITY_VALUES as ap, ContentType as aq, type Content as ar, type InputTextContent as as, type InputImageContent as at, type OutputTextContent as au, type ToolUseContent as av, type ToolResultContent as aw, type Message as ax, type OutputItem as ay, type CompactionItem as az, type ToolFunction as b, type AgenticLoopEventName as b0, type HookName as b1, type Hook as b2, type ModifyingHook as b3, type BeforeToolContext as b4, type AfterToolContext as b5, type ApproveToolContext as b6, type ToolModification as b7, type ApprovalResult as b8, type IAsyncDisposable as b9, assertNotDestroyed as ba, AgenticLoop as bb, type AgenticLoopConfig as bc, type ExecutionStartEvent as bd, type ExecutionCompleteEvent as be, type ToolStartEvent as bf, type ToolCompleteEvent as bg, type LLMRequestEvent as bh, type LLMResponseEvent as bi, type ToolPermissionConfig$1 as c, type Tool as d, type MemoryPriority as e, type MemoryEntry as f, type StaleEntryInfo as g, type PriorityContext as h, type MemoryIndex as i, type TaskStatusForMemory as j, type WorkingMemoryAccess as k, type MemoryTier as l, type IContextComponent as m, type ITokenEstimator as n, type IdempotencyCacheConfig as o, IdempotencyCache as p, ToolPermissionManager as q, type PreparedContext as r, type TokenContentType as s, type CacheStats as t, type HistoryMode as u, type AgenticLoopEvents as v, type InputItem as w, type AgentResponse as x, type StreamEvent as y, type ExecutionMetrics as z };

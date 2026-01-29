@@ -9,6 +9,7 @@
  * - Usage statistics
  * - Circuit breaker protection for tool execution
  * - Implements IToolExecutor for use with AgenticLoop
+ * - Implements IDisposable for proper lifecycle management
  *
  * This is the single source of truth for tool management (replaces ToolRegistry).
  */
@@ -16,6 +17,7 @@
 import { EventEmitter } from 'eventemitter3';
 import type { Tool, ToolFunction, ToolPermissionConfig } from '../domain/entities/Tool.js';
 import type { IToolExecutor } from '../domain/interfaces/IToolExecutor.js';
+import type { IDisposable } from '../domain/interfaces/IDisposable.js';
 import type { ToolContext } from '../domain/interfaces/IToolContext.js';
 import { CircuitBreaker } from '../infrastructure/resilience/CircuitBreaker.js';
 import type { CircuitState, CircuitBreakerConfig } from '../infrastructure/resilience/CircuitBreaker.js';
@@ -117,11 +119,12 @@ export type ToolManagerEvent =
 // ToolManager Class
 // ============================================================================
 
-export class ToolManager extends EventEmitter implements IToolExecutor {
+export class ToolManager extends EventEmitter implements IToolExecutor, IDisposable {
   private registry: Map<string, ToolRegistration> = new Map();
   private namespaceIndex: Map<string, Set<string>> = new Map();
   private circuitBreakers: Map<string, CircuitBreaker> = new Map();
   private toolLogger: FrameworkLogger;
+  private _isDestroyed = false;
 
   /** Optional tool context for execution (set by agent before runs) */
   private _toolContext: ToolContext | undefined;
@@ -131,6 +134,39 @@ export class ToolManager extends EventEmitter implements IToolExecutor {
     // Initialize default namespace
     this.namespaceIndex.set('default', new Set());
     this.toolLogger = logger.child({ component: 'ToolManager' });
+  }
+
+  /**
+   * Returns true if destroy() has been called.
+   */
+  get isDestroyed(): boolean {
+    return this._isDestroyed;
+  }
+
+  /**
+   * Releases all resources held by this ToolManager.
+   * Cleans up circuit breaker listeners and removes all event listeners.
+   * Safe to call multiple times (idempotent).
+   */
+  destroy(): void {
+    if (this._isDestroyed) {
+      return;
+    }
+
+    this._isDestroyed = true;
+
+    // Clean up circuit breakers and their event listeners
+    for (const breaker of this.circuitBreakers.values()) {
+      breaker.removeAllListeners();
+    }
+    this.circuitBreakers.clear();
+
+    // Clear registry and namespaces
+    this.registry.clear();
+    this.namespaceIndex.clear();
+
+    // Remove all event listeners from this ToolManager
+    this.removeAllListeners();
   }
 
   /**
@@ -219,20 +255,30 @@ export class ToolManager extends EventEmitter implements IToolExecutor {
     this.removeFromNamespace(name, registration.namespace);
     this.registry.delete(name);
 
-    // Clean up circuit breaker
-    this.circuitBreakers.delete(name);
+    // Clean up circuit breaker and its listeners
+    const breaker = this.circuitBreakers.get(name);
+    if (breaker) {
+      breaker.removeAllListeners();
+      this.circuitBreakers.delete(name);
+    }
 
     this.emit('tool:unregistered', { name });
     return true;
   }
 
   /**
-   * Clear all tools
+   * Clear all tools and their circuit breakers.
+   * Does NOT remove event listeners from this ToolManager (use destroy() for full cleanup).
    */
   clear(): void {
     this.registry.clear();
     this.namespaceIndex.clear();
     this.namespaceIndex.set('default', new Set());
+
+    // Clean up circuit breaker listeners before clearing
+    for (const breaker of this.circuitBreakers.values()) {
+      breaker.removeAllListeners();
+    }
     this.circuitBreakers.clear();
   }
 
@@ -801,10 +847,12 @@ export class ToolManager extends EventEmitter implements IToolExecutor {
 
     registration.circuitBreakerConfig = config;
 
-    // If breaker already exists, recreate it with new config
-    if (this.circuitBreakers.has(toolName)) {
+    // If breaker already exists, clean up listeners and remove it
+    const existingBreaker = this.circuitBreakers.get(toolName);
+    if (existingBreaker) {
+      existingBreaker.removeAllListeners();
       this.circuitBreakers.delete(toolName);
-      // Will be recreated on next execution
+      // Will be recreated on next execution with new config
     }
 
     return true;
