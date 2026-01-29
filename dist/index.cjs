@@ -16924,9 +16924,21 @@ var RapidAPIProvider = class {
         ...options.language && { hl: options.language },
         ...options.vendorOptions
       };
+      const baseURL = this.connector.baseURL;
+      const host = baseURL ? new URL(baseURL).host : "real-time-web-search.p.rapidapi.com";
+      let apiKey = "";
+      try {
+        apiKey = this.connector.getApiKey();
+      } catch {
+        throw new Error("RapidAPI provider requires API key authentication");
+      }
       const queryString = buildQueryString(queryParams);
       const response = await this.connector.fetchJSON(`/search?${queryString}`, {
-        method: "GET"
+        method: "GET",
+        headers: {
+          "X-RapidAPI-Key": apiKey,
+          "X-RapidAPI-Host": host
+        }
       });
       const organicResults = response.data?.organic || response.organic || [];
       if (!Array.isArray(organicResults)) {

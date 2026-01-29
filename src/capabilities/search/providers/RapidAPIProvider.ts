@@ -40,7 +40,12 @@ export class RapidAPIProvider implements ISearchProvider {
       const host = baseURL ? new URL(baseURL).host : 'real-time-web-search.p.rapidapi.com';
 
       // Get API key from connector's auth config
-      const apiKey = this.connector.getApiKey?.() || '';
+      let apiKey = '';
+      try {
+        apiKey = this.connector.getApiKey();
+      } catch {
+        throw new Error('RapidAPI provider requires API key authentication');
+      }
 
       const queryString = buildQueryString(queryParams);
       const response = await this.connector.fetchJSON<any>(`/search?${queryString}`, {
