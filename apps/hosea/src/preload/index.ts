@@ -37,8 +37,23 @@ export interface HoseaAPI {
   model: {
     list: () => Promise<Array<{
       vendor: string;
-      models: Array<{ id: string; name: string }>;
+      models: Array<{ id: string; name: string; description?: string; contextWindow: number }>;
     }>>;
+    details: (modelId: string) => Promise<{
+      name: string;
+      provider: string;
+      description?: string;
+      isActive: boolean;
+      features: {
+        input: { tokens: number };
+        output: { tokens: number };
+        reasoning?: boolean;
+        streaming: boolean;
+        functionCalling?: boolean;
+        vision?: boolean;
+      };
+    } | null>;
+    vendors: () => Promise<string[]>;
   };
 
   // Sessions
@@ -53,12 +68,125 @@ export interface HoseaAPI {
   tool: {
     list: () => Promise<Array<{ name: string; enabled: boolean; description: string }>>;
     toggle: (toolName: string, enabled: boolean) => Promise<{ success: boolean }>;
+    registry: () => Promise<Array<{
+      name: string;
+      displayName: string;
+      category: string;
+      description: string;
+      safeByDefault: boolean;
+      requiresConnector: boolean;
+      connectorServiceTypes?: string[];
+    }>>;
   };
 
   // Config
   config: {
     get: () => Promise<unknown>;
     set: (key: string, value: unknown) => Promise<{ success: boolean }>;
+  };
+
+  // Agent configurations (saved agent presets)
+  agentConfig: {
+    list: () => Promise<Array<{
+      id: string;
+      name: string;
+      connector: string;
+      model: string;
+      agentType: 'basic' | 'task' | 'research' | 'universal';
+      instructions: string;
+      temperature: number;
+      contextStrategy: string;
+      maxContextTokens: number;
+      responseReserve: number;
+      memoryEnabled: boolean;
+      maxMemorySizeBytes: number;
+      memorySoftLimitPercent: number;
+      contextAllocationPercent: number;
+      inContextMemoryEnabled: boolean;
+      maxInContextEntries: number;
+      maxInContextTokens: number;
+      historyEnabled: boolean;
+      maxHistoryMessages: number;
+      preserveRecent: number;
+      cacheEnabled: boolean;
+      cacheTtlMs: number;
+      cacheMaxEntries: number;
+      permissionsEnabled: boolean;
+      tools: string[];
+      createdAt: number;
+      updatedAt: number;
+      lastUsedAt?: number;
+      isActive: boolean;
+    }>>;
+    get: (id: string) => Promise<{
+      id: string;
+      name: string;
+      connector: string;
+      model: string;
+      agentType: 'basic' | 'task' | 'research' | 'universal';
+      instructions: string;
+      temperature: number;
+      contextStrategy: string;
+      maxContextTokens: number;
+      responseReserve: number;
+      memoryEnabled: boolean;
+      maxMemorySizeBytes: number;
+      memorySoftLimitPercent: number;
+      contextAllocationPercent: number;
+      inContextMemoryEnabled: boolean;
+      maxInContextEntries: number;
+      maxInContextTokens: number;
+      historyEnabled: boolean;
+      maxHistoryMessages: number;
+      preserveRecent: number;
+      cacheEnabled: boolean;
+      cacheTtlMs: number;
+      cacheMaxEntries: number;
+      permissionsEnabled: boolean;
+      tools: string[];
+      createdAt: number;
+      updatedAt: number;
+      lastUsedAt?: number;
+      isActive: boolean;
+    } | null>;
+    create: (config: unknown) => Promise<{ success: boolean; id?: string; error?: string }>;
+    update: (id: string, updates: unknown) => Promise<{ success: boolean; error?: string }>;
+    delete: (id: string) => Promise<{ success: boolean; error?: string }>;
+    setActive: (id: string) => Promise<{ success: boolean; error?: string }>;
+    getActive: () => Promise<{
+      id: string;
+      name: string;
+      connector: string;
+      model: string;
+      agentType: 'basic' | 'task' | 'research' | 'universal';
+      isActive: boolean;
+    } | null>;
+    createDefault: (connectorName: string, model: string) => Promise<{ success: boolean; id?: string; error?: string }>;
+  };
+
+  // API Connectors (for tools like web_search, web_scrape)
+  apiConnector: {
+    list: () => Promise<Array<{
+      name: string;
+      serviceType: string;
+      displayName?: string;
+      auth: { type: 'api_key'; apiKey: string; headerName?: string; headerPrefix?: string };
+      baseURL?: string;
+      createdAt: number;
+      updatedAt: number;
+    }>>;
+    listByService: (serviceType: string) => Promise<Array<{
+      name: string;
+      serviceType: string;
+      displayName?: string;
+      auth: { type: 'api_key'; apiKey: string; headerName?: string; headerPrefix?: string };
+      baseURL?: string;
+      createdAt: number;
+      updatedAt: number;
+    }>>;
+    add: (config: unknown) => Promise<{ success: boolean; error?: string }>;
+    update: (name: string, updates: unknown) => Promise<{ success: boolean; error?: string }>;
+    delete: (name: string) => Promise<{ success: boolean; error?: string }>;
   };
 }
 
@@ -93,6 +221,8 @@ const api: HoseaAPI = {
 
   model: {
     list: () => ipcRenderer.invoke('model:list'),
+    details: (modelId) => ipcRenderer.invoke('model:details', modelId),
+    vendors: () => ipcRenderer.invoke('model:vendors'),
   },
 
   session: {
@@ -105,11 +235,31 @@ const api: HoseaAPI = {
   tool: {
     list: () => ipcRenderer.invoke('tool:list'),
     toggle: (toolName, enabled) => ipcRenderer.invoke('tool:toggle', toolName, enabled),
+    registry: () => ipcRenderer.invoke('tool:registry'),
   },
 
   config: {
     get: () => ipcRenderer.invoke('config:get'),
     set: (key, value) => ipcRenderer.invoke('config:set', key, value),
+  },
+
+  agentConfig: {
+    list: () => ipcRenderer.invoke('agent-config:list'),
+    get: (id) => ipcRenderer.invoke('agent-config:get', id),
+    create: (config) => ipcRenderer.invoke('agent-config:create', config),
+    update: (id, updates) => ipcRenderer.invoke('agent-config:update', id, updates),
+    delete: (id) => ipcRenderer.invoke('agent-config:delete', id),
+    setActive: (id) => ipcRenderer.invoke('agent-config:set-active', id),
+    getActive: () => ipcRenderer.invoke('agent-config:get-active'),
+    createDefault: (connectorName, model) => ipcRenderer.invoke('agent-config:create-default', connectorName, model),
+  },
+
+  apiConnector: {
+    list: () => ipcRenderer.invoke('api-connector:list'),
+    listByService: (serviceType) => ipcRenderer.invoke('api-connector:list-by-service', serviceType),
+    add: (config) => ipcRenderer.invoke('api-connector:add', config),
+    update: (name, updates) => ipcRenderer.invoke('api-connector:update', name, updates),
+    delete: (name) => ipcRenderer.invoke('api-connector:delete', name),
   },
 };
 

@@ -4,15 +4,19 @@ node_modules/
 # Build outputs
 dist/
 release/
+out/
 
-# Data (local to user)
-data/connectors/*.json
-data/sessions/
-data/logs/
+# Data directory (contains user data, sessions, and connector configs with API keys)
+data/
 
-# Keep data directories
-!data/connectors/.gitkeep
-!data/sessions/.gitkeep
+# Electron store (contains app config)
+electron-store/
+*.electron-store
+
+# Config files that may contain secrets
+config.json
+config.local.json
+*.secrets.json
 
 # IDE
 .idea/
@@ -27,7 +31,14 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+logs/
 
 # Environment
 .env
 .env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

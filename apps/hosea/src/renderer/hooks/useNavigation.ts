@@ -9,6 +9,7 @@ export type PageId =
   | 'agents'
   | 'agent-editor'
   | 'llm-connectors'
+  | 'api-connectors'
   | 'tool-connectors'
   | 'internals'
   | 'settings';

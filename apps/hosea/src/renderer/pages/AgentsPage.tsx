@@ -2,37 +2,43 @@
  * Agents Page - Manage AI agents
  */
 
-import React from 'react';
-import { Button, Badge, Dropdown } from 'react-bootstrap';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Button, Spinner } from 'react-bootstrap';
 import { Plus, Bot, Settings, Trash2, MessageSquare, MoreVertical } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 import { useNavigation } from '../hooks/useNavigation';
 
-interface Agent {
+interface AgentConfig {
   id: string;
   name: string;
   model: string;
   connector: string;
-  toolsCount: number;
-  lastUsed: number;
+  agentType: string;
+  tools: string[];
+  updatedAt: number;
+  lastUsedAt?: number;
   isActive: boolean;
 }
 
-// Placeholder data
-const mockAgents: Agent[] = [
-  {
-    id: '1',
-    name: 'Default Assistant',
-    model: 'gpt-4o',
-    connector: 'openai',
-    toolsCount: 5,
-    lastUsed: Date.now() - 1000 * 60 * 30,
-    isActive: true,
-  },
-];
-
 export function AgentsPage(): React.ReactElement {
   const { navigate } = useNavigation();
+  const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadAgents = useCallback(async () => {
+    try {
+      const agentsList = await window.hosea.agentConfig.list();
+      setAgents(agentsList);
+    } catch (error) {
+      console.error('Failed to load agents:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAgents();
+  }, [loadAgents]);
 
   const handleCreateAgent = () => {
     navigate('agent-editor', { mode: 'create' });
@@ -42,10 +48,57 @@ export function AgentsPage(): React.ReactElement {
     navigate('agent-editor', { mode: 'edit', id: agentId });
   };
 
-  const handleChatWithAgent = (agentId: string) => {
-    // TODO: Set active agent and navigate to chat
-    navigate('chat');
+  const handleChatWithAgent = async (agentId: string) => {
+    try {
+      const result = await window.hosea.agentConfig.setActive(agentId);
+      if (result.success) {
+        navigate('chat');
+      } else {
+        alert(`Failed to activate agent: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Failed to set active agent:', error);
+    }
   };
+
+  const handleDeleteAgent = async (agentId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Are you sure you want to delete this agent?')) {
+      try {
+        const result = await window.hosea.agentConfig.delete(agentId);
+        if (result.success) {
+          loadAgents();
+        } else {
+          alert(`Failed to delete agent: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('Failed to delete agent:', error);
+      }
+    }
+  };
+
+  const formatTimeAgo = (timestamp?: number): string => {
+    if (!timestamp) return 'Never';
+    const seconds = Math.floor((Date.now() - timestamp) / 1000);
+    if (seconds < 60) return 'Just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
+
+  if (loading) {
+    return (
+      <div className="page">
+        <PageHeader title="Agents" subtitle="Create and manage your AI agents" />
+        <div className="page__content d-flex justify-content-center align-items-center">
+          <Spinner animation="border" variant="primary" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="page">
@@ -60,7 +113,7 @@ export function AgentsPage(): React.ReactElement {
       </PageHeader>
 
       <div className="page__content">
-        {mockAgents.length === 0 ? (
+        {agents.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state__icon">
               <Bot size={32} />
@@ -77,7 +130,7 @@ export function AgentsPage(): React.ReactElement {
           </div>
         ) : (
           <div className="grid grid--auto">
-            {mockAgents.map((agent) => (
+            {agents.map((agent) => (
               <div
                 key={agent.id}
                 className={`card card--hoverable agent-card ${
@@ -98,10 +151,11 @@ export function AgentsPage(): React.ReactElement {
                       className="icon-btn"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleEditAgent(agent.id);
+                        handleDeleteAgent(agent.id, e);
                       }}
+                      title="Delete agent"
                     >
-                      <MoreVertical size={18} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
 
@@ -119,7 +173,10 @@ export function AgentsPage(): React.ReactElement {
                       {agent.isActive ? 'Active' : 'Inactive'}
                     </div>
                     <div className="agent-card__meta-item">
-                      {agent.toolsCount} tools
+                      {agent.tools.length} tools
+                    </div>
+                    <div className="agent-card__meta-item text-muted">
+                      {formatTimeAgo(agent.lastUsedAt)}
                     </div>
                   </div>
                 </div>

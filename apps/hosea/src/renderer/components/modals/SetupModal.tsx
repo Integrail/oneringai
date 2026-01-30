@@ -4,7 +4,7 @@ import { Modal, Button, Form, Alert, Spinner } from 'react-bootstrap';
 interface SetupModalProps {
   show: boolean;
   onHide: () => void;
-  onComplete: (connector: string, model: string) => void;
+  onComplete: () => void;
 }
 
 interface ConnectorConfig {
@@ -15,8 +15,19 @@ interface ConnectorConfig {
 
 interface ModelGroup {
   vendor: string;
-  models: Array<{ id: string; name: string }>;
+  models: Array<{ id: string; name: string; contextWindow: number }>;
 }
+
+// Default models for each vendor
+const DEFAULT_MODELS: Record<string, string> = {
+  openai: 'gpt-4.1',
+  anthropic: 'claude-sonnet-4-20250514',
+  google: 'gemini-2.5-pro',
+  groq: 'llama-3.3-70b-versatile',
+  together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+  mistral: 'mistral-large-latest',
+  deepseek: 'deepseek-chat',
+};
 
 export function SetupModal({
   show,
@@ -67,6 +78,14 @@ export function SetupModal({
 
   const handleConnectorSelect = () => {
     if (selectedConnector) {
+      // Auto-select a default model for convenience
+      const connector = connectors.find((c) => c.name === selectedConnector);
+      if (connector) {
+        const defaultModel = DEFAULT_MODELS[connector.vendor];
+        if (defaultModel) {
+          setSelectedModel(defaultModel);
+        }
+      }
       setStep('model');
     }
   };
@@ -92,6 +111,11 @@ export function SetupModal({
 
       if (result.success) {
         setSelectedConnector(newConnectorName);
+        // Auto-select default model
+        const defaultModel = DEFAULT_MODELS[newConnectorVendor];
+        if (defaultModel) {
+          setSelectedModel(defaultModel);
+        }
         await loadData();
         setStep('model');
       } else {
@@ -104,16 +128,41 @@ export function SetupModal({
     }
   };
 
-  const handleComplete = () => {
-    if (selectedConnector && selectedModel) {
-      onComplete(selectedConnector, selectedModel);
+  // Complete setup: create default agent with selected connector + model
+  const handleComplete = async () => {
+    if (!selectedConnector || !selectedModel) {
+      setError('Please select a connector and model');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Create a default agent with the selected connector and model
+      const result = await window.hosea.agentConfig.createDefault(
+        selectedConnector,
+        selectedModel
+      );
+
+      if (result.success) {
+        onComplete();
+      } else {
+        setError(result.error || 'Failed to create agent');
+      }
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
     }
   };
 
   const getModelsForVendor = () => {
     const connector = connectors.find((c) => c.name === selectedConnector);
     if (!connector) return [];
-    const vendorModels = models.find((m) => m.vendor === connector.vendor);
+    const vendorModels = models.find(
+      (m) => m.vendor.toLowerCase() === connector.vendor.toLowerCase()
+    );
     return vendorModels?.models || [];
   };
 
@@ -230,11 +279,18 @@ export function SetupModal({
               <option value="">Choose...</option>
               {availableModels.map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name}
+                  {m.name} ({(m.contextWindow / 1000).toFixed(0)}K context)
                 </option>
               ))}
             </Form.Select>
           </Form.Group>
+
+          <p className="text-muted small">
+            This will create a default agent with your selected connector and model.
+            You can customize it later from the Agents page.
+          </p>
+
+          {error && <Alert variant="danger">{error}</Alert>}
         </Modal.Body>
         <Modal.Footer>
           <Button variant="outline-secondary" onClick={() => setStep('connector')}>
@@ -243,9 +299,9 @@ export function SetupModal({
           <Button
             variant="primary"
             onClick={handleComplete}
-            disabled={!selectedModel}
+            disabled={!selectedModel || loading}
           >
-            Connect
+            {loading ? <Spinner size="sm" /> : 'Get Started'}
           </Button>
         </Modal.Footer>
       </>

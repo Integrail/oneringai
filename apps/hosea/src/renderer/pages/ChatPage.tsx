@@ -21,11 +21,10 @@ interface AgentStatus {
   mode: string | null;
 }
 
-interface ChatPageProps {
-  onOpenSetup: () => void;
-}
+import { useNavigation } from '../hooks/useNavigation';
 
-export function ChatPage({ onOpenSetup }: ChatPageProps): React.ReactElement {
+export function ChatPage(): React.ReactElement {
+  const { navigate } = useNavigation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [status, setStatus] = useState<AgentStatus>({
@@ -39,17 +38,14 @@ export function ChatPage({ onOpenSetup }: ChatPageProps): React.ReactElement {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Check agent status on mount
+  // Check agent status on mount and when returning to this page
   useEffect(() => {
     const checkStatus = async () => {
       const s = await window.hosea.agent.status();
       setStatus(s);
-      if (!s.initialized) {
-        onOpenSetup();
-      }
     };
     checkStatus();
-  }, [onOpenSetup]);
+  }, []);
 
   // Set up streaming listeners
   useEffect(() => {
@@ -177,11 +173,11 @@ export function ChatPage({ onOpenSetup }: ChatPageProps): React.ReactElement {
             <p className="chat__welcome-subtitle">
               {status.initialized
                 ? `Connected to ${status.model}. Start a conversation!`
-                : 'Set up a connector to get started.'}
+                : 'Configure an LLM provider to get started.'}
             </p>
             {!status.initialized && (
-              <Button variant="primary" className="mt-4" onClick={onOpenSetup}>
-                Connect Now
+              <Button variant="primary" className="mt-4" onClick={() => navigate('llm-connectors')}>
+                Add LLM Provider
               </Button>
             )}
           </div>

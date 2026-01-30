@@ -95,7 +95,10 @@ export { jsonManipulator } from './json/jsonManipulator.js';
 // Web Tools
 // ============================================================================
 
-export { webFetch, webFetchJS, webSearch } from './web/index.js';
+export { webFetch, webFetchJS, webSearch, webScrape } from './web/index.js';
+
+// Re-export search result type
+export type { SearchResult } from './web/searchProviders/serper.js';
 
 // ============================================================================
 // Code Execution Tools
@@ -151,3 +154,19 @@ export const developerTools = [
   listDirectory,
   bash,
 ];
+
+// ============================================================================
+// Tool Registry (Auto-Generated)
+// ============================================================================
+
+export {
+  toolRegistry,
+  getAllBuiltInTools,
+  getToolRegistry,
+  getToolsByCategory,
+  getToolByName,
+  getToolsRequiringConnector,
+  getToolCategories,
+  type ToolCategory,
+  type ToolRegistryEntry,
+} from './registry.generated.js';

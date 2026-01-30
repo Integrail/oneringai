@@ -29,8 +29,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
+    "generate:tools": "tsx scripts/generate-tool-registry.ts",
+    "build": "npm run generate:tools && tsup",
+    "dev": "npm run generate:tools && tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",

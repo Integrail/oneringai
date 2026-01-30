@@ -7,7 +7,18 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
 import { AgentService } from './AgentService.js';
+
+/**
+ * Get the data directory for HOSEA
+ * - macOS/Linux: ~/.everworker/hosea
+ * - Windows: %USERPROFILE%\.everworker\hosea (e.g., C:\Users\name\.everworker\hosea)
+ */
+function getDataDir(): string {
+  const home = homedir();
+  return join(home, '.everworker', 'hosea');
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -57,8 +68,9 @@ async function createWindow(): Promise<void> {
 }
 
 function setupIPC(): void {
-  // Initialize agent service
-  const dataDir = join(__dirname, '../../data');
+  // Initialize agent service with proper data directory
+  const dataDir = getDataDir();
+  console.log('HOSEA data directory:', dataDir);
   agentService = new AgentService(dataDir);
 
   // Agent operations
@@ -102,6 +114,14 @@ function setupIPC(): void {
     return agentService!.listModels();
   });
 
+  ipcMain.handle('model:details', async (_event, modelId: string) => {
+    return agentService!.getModelDetails(modelId);
+  });
+
+  ipcMain.handle('model:vendors', async () => {
+    return agentService!.listVendors();
+  });
+
   // Session operations
   ipcMain.handle('session:save', async () => {
     return agentService!.saveSession();
@@ -126,6 +146,64 @@ function setupIPC(): void {
 
   ipcMain.handle('tool:toggle', async (_event, toolName: string, enabled: boolean) => {
     return agentService!.toggleTool(toolName, enabled);
+  });
+
+  ipcMain.handle('tool:registry', async () => {
+    return agentService!.getAvailableTools();
+  });
+
+  // Agent configuration operations
+  ipcMain.handle('agent-config:list', async () => {
+    return agentService!.listAgents();
+  });
+
+  ipcMain.handle('agent-config:get', async (_event, id: string) => {
+    return agentService!.getAgent(id);
+  });
+
+  ipcMain.handle('agent-config:create', async (_event, config: unknown) => {
+    return agentService!.createAgent(config as any);
+  });
+
+  ipcMain.handle('agent-config:update', async (_event, id: string, updates: unknown) => {
+    return agentService!.updateAgent(id, updates as any);
+  });
+
+  ipcMain.handle('agent-config:delete', async (_event, id: string) => {
+    return agentService!.deleteAgent(id);
+  });
+
+  ipcMain.handle('agent-config:set-active', async (_event, id: string) => {
+    return agentService!.setActiveAgent(id);
+  });
+
+  ipcMain.handle('agent-config:get-active', async () => {
+    return agentService!.getActiveAgent();
+  });
+
+  ipcMain.handle('agent-config:create-default', async (_event, connectorName: string, model: string) => {
+    return agentService!.createDefaultAgent(connectorName, model);
+  });
+
+  // API Connector operations (for tools like web_search, web_scrape)
+  ipcMain.handle('api-connector:list', async () => {
+    return agentService!.listAPIConnectors();
+  });
+
+  ipcMain.handle('api-connector:list-by-service', async (_event, serviceType: string) => {
+    return agentService!.getAPIConnectorsByServiceType(serviceType);
+  });
+
+  ipcMain.handle('api-connector:add', async (_event, config: unknown) => {
+    return agentService!.addAPIConnector(config);
+  });
+
+  ipcMain.handle('api-connector:update', async (_event, name: string, updates: unknown) => {
+    return agentService!.updateAPIConnector(name, updates as any);
+  });
+
+  ipcMain.handle('api-connector:delete', async (_event, name: string) => {
+    return agentService!.deleteAPIConnector(name);
   });
 
   // Config operations

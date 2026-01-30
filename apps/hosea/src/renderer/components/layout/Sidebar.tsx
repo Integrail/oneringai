@@ -12,6 +12,8 @@ import {
   Settings,
   PanelLeftClose,
   PanelLeft,
+  Key,
+  Wrench,
 } from 'lucide-react';
 import { useNavigation, type PageId } from '../../hooks/useNavigation';
 
@@ -39,7 +41,13 @@ const navSections: NavSection[] = [
     label: 'Connectors',
     items: [
       { id: 'llm-connectors', label: 'LLM Providers', icon: <Brain size={20} /> },
-      { id: 'tool-connectors', label: 'External Tools', icon: <Plug size={20} /> },
+      { id: 'api-connectors', label: 'API Services', icon: <Key size={20} /> },
+    ],
+  },
+  {
+    label: 'Tools',
+    items: [
+      { id: 'tool-connectors', label: 'Tool Catalog', icon: <Wrench size={20} /> },
     ],
   },
   {

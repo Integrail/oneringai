@@ -9019,6 +9019,524 @@ function calculateCost(model, inputTokens, outputTokens, options) {
   return inputCost + outputCost;
 }
 
+// src/core/context/plugins/IContextPlugin.ts
+var BaseContextPlugin = class {
+  // Default implementations - override as needed
+  async compact(_targetTokens, _estimator) {
+    return 0;
+  }
+  async onPrepared(_budget) {
+  }
+  destroy() {
+  }
+  getState() {
+    return void 0;
+  }
+  restoreState(_state) {
+  }
+};
+
+// src/core/context/plugins/InContextMemoryPlugin.ts
+var PRIORITY_VALUES = {
+  low: 1,
+  normal: 2,
+  high: 3,
+  critical: 4
+};
+var DEFAULT_CONFIG = {
+  maxEntries: 20,
+  maxTotalTokens: 4e3,
+  defaultPriority: "normal",
+  showTimestamps: false,
+  headerText: "## Live Context"
+};
+var InContextMemoryPlugin = class extends BaseContextPlugin {
+  name = "in_context_memory";
+  priority = 5;
+  // Medium priority for compaction
+  compactable = true;
+  entries = /* @__PURE__ */ new Map();
+  config;
+  destroyed = false;
+  /**
+   * Create an InContextMemoryPlugin
+   *
+   * @param config - Configuration options
+   */
+  constructor(config = {}) {
+    super();
+    this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+  /**
+   * Check if plugin is destroyed
+   */
+  get isDestroyed() {
+    return this.destroyed;
+  }
+  // ============ Entry Management ============
+  /**
+   * Store or update a key-value pair
+   *
+   * @param key - Unique key for this entry
+   * @param description - Human-readable description (shown in context)
+   * @param value - The value to store (any JSON-serializable data)
+   * @param priority - Eviction priority (default from config)
+   */
+  set(key, description, value, priority) {
+    this.assertNotDestroyed();
+    const entry = {
+      key,
+      description,
+      value,
+      updatedAt: Date.now(),
+      priority: priority ?? this.config.defaultPriority
+    };
+    this.entries.set(key, entry);
+    this.enforceMaxEntries();
+  }
+  /**
+   * Get a value by key
+   *
+   * @param key - The key to retrieve
+   * @returns The value, or undefined if not found
+   */
+  get(key) {
+    this.assertNotDestroyed();
+    return this.entries.get(key)?.value;
+  }
+  /**
+   * Check if a key exists
+   *
+   * @param key - The key to check
+   */
+  has(key) {
+    this.assertNotDestroyed();
+    return this.entries.has(key);
+  }
+  /**
+   * Delete an entry by key
+   *
+   * @param key - The key to delete
+   * @returns true if the key existed and was deleted
+   */
+  delete(key) {
+    this.assertNotDestroyed();
+    return this.entries.delete(key);
+  }
+  /**
+   * List all entries with metadata
+   *
+   * @returns Array of entry metadata (without full values)
+   */
+  list() {
+    this.assertNotDestroyed();
+    return Array.from(this.entries.values()).map((e) => ({
+      key: e.key,
+      description: e.description,
+      priority: e.priority,
+      updatedAt: e.updatedAt
+    }));
+  }
+  /**
+   * Clear all entries
+   */
+  clear() {
+    this.assertNotDestroyed();
+    this.entries.clear();
+  }
+  /**
+   * Get the number of entries
+   */
+  get size() {
+    return this.entries.size;
+  }
+  // ============ IContextPlugin Implementation ============
+  /**
+   * Get the context component for this plugin
+   */
+  async getComponent() {
+    this.assertNotDestroyed();
+    if (this.entries.size === 0) {
+      return null;
+    }
+    const content = this.formatContent();
+    return {
+      name: this.name,
+      content,
+      priority: this.priority,
+      compactable: this.compactable,
+      metadata: {
+        entryCount: this.entries.size
+      }
+    };
+  }
+  /**
+   * Compact by evicting low-priority entries
+   *
+   * Eviction order: low → normal → high (critical is never auto-evicted)
+   * Within same priority, oldest entries are evicted first
+   *
+   * @param targetTokens - Target token count to reduce to
+   * @param estimator - Token estimator
+   * @returns Number of tokens freed
+   */
+  async compact(targetTokens, estimator) {
+    this.assertNotDestroyed();
+    const beforeContent = this.formatContent();
+    const beforeTokens = estimator.estimateTokens(beforeContent);
+    if (beforeTokens <= targetTokens) {
+      return 0;
+    }
+    const sortedEntries = this.getSortedEntriesForEviction();
+    for (const entry of sortedEntries) {
+      if (entry.priority === "critical") {
+        break;
+      }
+      this.entries.delete(entry.key);
+      const currentContent = this.formatContent();
+      const currentTokens = estimator.estimateTokens(currentContent);
+      if (currentTokens <= targetTokens) {
+        break;
+      }
+    }
+    const afterContent = this.formatContent();
+    const afterTokens = estimator.estimateTokens(afterContent);
+    return Math.max(0, beforeTokens - afterTokens);
+  }
+  /**
+   * Get serialized state for session persistence
+   */
+  getState() {
+    return {
+      entries: Array.from(this.entries.values()),
+      config: this.config
+    };
+  }
+  /**
+   * Restore state from serialization
+   *
+   * @param state - Previously serialized state
+   */
+  restoreState(state) {
+    this.assertNotDestroyed();
+    if (!state || typeof state !== "object") {
+      return;
+    }
+    const typedState = state;
+    if (typedState.entries && Array.isArray(typedState.entries)) {
+      this.entries.clear();
+      for (const entry of typedState.entries) {
+        if (entry.key && typeof entry.key === "string") {
+          this.entries.set(entry.key, entry);
+        }
+      }
+    }
+    if (typedState.config && typeof typedState.config === "object") {
+      this.config = { ...DEFAULT_CONFIG, ...typedState.config };
+    }
+  }
+  /**
+   * Clean up resources
+   */
+  destroy() {
+    this.entries.clear();
+    this.destroyed = true;
+  }
+  // ============ Private Methods ============
+  /**
+   * Format entries as markdown for context
+   */
+  formatContent() {
+    if (this.entries.size === 0) {
+      return "";
+    }
+    const lines = [
+      this.config.headerText,
+      "Data below is always current. Use directly - no retrieval needed.",
+      ""
+    ];
+    for (const entry of this.entries.values()) {
+      lines.push(`### ${entry.key}`);
+      lines.push(entry.description);
+      const valueStr = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value, null, 2);
+      lines.push("```json");
+      lines.push(valueStr);
+      lines.push("```");
+      if (this.config.showTimestamps) {
+        const date = new Date(entry.updatedAt);
+        lines.push(`_Updated: ${date.toISOString()}_`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+  /**
+   * Get entries sorted by eviction priority (lowest priority first, then oldest)
+   */
+  getSortedEntriesForEviction() {
+    return Array.from(this.entries.values()).sort((a, b) => {
+      const priorityDiff = PRIORITY_VALUES[a.priority] - PRIORITY_VALUES[b.priority];
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      return a.updatedAt - b.updatedAt;
+    });
+  }
+  /**
+   * Enforce max entries limit by evicting lowest-priority entries
+   */
+  enforceMaxEntries() {
+    if (this.entries.size <= this.config.maxEntries) {
+      return;
+    }
+    const sorted = this.getSortedEntriesForEviction();
+    while (this.entries.size > this.config.maxEntries && sorted.length > 0) {
+      const toEvict = sorted.shift();
+      if (toEvict.priority === "critical") {
+        break;
+      }
+      this.entries.delete(toEvict.key);
+    }
+  }
+  /**
+   * Assert that the plugin hasn't been destroyed
+   */
+  assertNotDestroyed() {
+    if (this.destroyed) {
+      throw new Error("InContextMemoryPlugin has been destroyed");
+    }
+  }
+};
+
+// src/core/context/plugins/inContextMemoryTools.ts
+var contextSetDefinition = {
+  type: "function",
+  function: {
+    name: "context_set",
+    description: `Store or update a key-value pair in the live context.
+The value will appear directly in the context and can be read without retrieval calls.
+
+Use for:
+- Current state/status that changes during execution
+- User preferences or settings
+- Counters, flags, or control variables
+- Small accumulated results
+
+Priority levels (for eviction when space is needed):
+- "low": Evicted first. Temporary or easily recreated data.
+- "normal": Default. Standard importance.
+- "high": Keep longer. Important state.
+- "critical": Never auto-evicted. Only removed via context_delete.`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: 'Unique key for this entry (e.g., "current_state", "user_prefs")'
+        },
+        description: {
+          type: "string",
+          description: "Brief description of what this data represents (shown in context)"
+        },
+        value: {
+          description: "The value to store (any JSON-serializable data)"
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "normal", "high", "critical"],
+          description: 'Eviction priority. Default: "normal"'
+        }
+      },
+      required: ["key", "description", "value"]
+    }
+  }
+};
+var contextGetDefinition = {
+  type: "function",
+  function: {
+    name: "context_get",
+    description: `Retrieve a value from the live context by key.
+
+Note: Values are already visible in the context, so this tool is mainly for:
+- Verifying a value exists
+- Getting the value programmatically for processing
+- Debugging`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to retrieve"
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var contextDeleteDefinition = {
+  type: "function",
+  function: {
+    name: "context_delete",
+    description: `Delete an entry from the live context to free space.
+
+Use this to:
+- Remove entries that are no longer needed
+- Free space when approaching limits
+- Clean up after a task completes`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to delete"
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var contextListDefinition = {
+  type: "function",
+  function: {
+    name: "context_list",
+    description: `List all keys stored in the live context with their metadata.
+
+Returns key, description, priority, and last update time for each entry.
+Use to see what's stored and identify entries to clean up.`,
+    parameters: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  }
+};
+function createInContextMemoryTools() {
+  return [
+    // context_set
+    {
+      definition: contextSetDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext(context, "context_set");
+        const key = args.key;
+        const description = args.description;
+        const value = args.value;
+        const priority = args.priority;
+        plugin.set(key, description, value, priority);
+        return {
+          success: true,
+          key,
+          priority: priority ?? "normal",
+          message: `Stored "${key}" in live context`
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        // Auto-approve context operations
+        riskLevel: "low"
+      },
+      describeCall: (args) => args.key
+    },
+    // context_get
+    {
+      definition: contextGetDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext(context, "context_get");
+        const key = args.key;
+        const value = plugin.get(key);
+        if (value === void 0) {
+          return { error: `Key "${key}" not found in live context` };
+        }
+        return { key, value };
+      },
+      idempotency: { cacheable: true, ttlMs: 1e3 },
+      output: { expectedSize: "variable" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: (args) => args.key
+    },
+    // context_delete
+    {
+      definition: contextDeleteDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext(context, "context_delete");
+        const key = args.key;
+        const existed = plugin.delete(key);
+        return {
+          success: true,
+          key,
+          existed,
+          message: existed ? `Deleted "${key}" from live context` : `Key "${key}" did not exist`
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: (args) => args.key
+    },
+    // context_list
+    {
+      definition: contextListDefinition,
+      execute: async (_args, context) => {
+        const plugin = getPluginFromContext(context, "context_list");
+        const entries = plugin.list();
+        return {
+          entries: entries.map((e) => ({
+            key: e.key,
+            description: e.description,
+            priority: e.priority,
+            updatedAt: new Date(e.updatedAt).toISOString()
+          })),
+          count: entries.length
+        };
+      },
+      idempotency: { cacheable: true, ttlMs: 500 },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: () => "all"
+    }
+  ];
+}
+function createInContextMemory(config) {
+  const plugin = new InContextMemoryPlugin(config);
+  const tools = createInContextMemoryTools();
+  return { plugin, tools };
+}
+function setupInContextMemory(agentContext, config) {
+  const { plugin, tools } = createInContextMemory(config);
+  agentContext.registerPlugin(plugin);
+  for (const tool of tools) {
+    agentContext.tools.register(tool);
+  }
+  agentContext.inContextMemory = plugin;
+  return plugin;
+}
+function getPluginFromContext(context, toolName) {
+  if (!context) {
+    throw new ToolExecutionError(
+      toolName,
+      "InContextMemory tools require a tool context"
+    );
+  }
+  const plugin = context.inContextMemory;
+  if (!plugin) {
+    throw new ToolExecutionError(
+      toolName,
+      "InContextMemory plugin not found. Use setupInContextMemory() to initialize."
+    );
+  }
+  return plugin;
+}
+
 // src/core/AgentContext.ts
 var PRIORITY_PROFILES = {
   research: {
@@ -9093,6 +9611,12 @@ Guidelines:
 - Store important information in memory for later reference
 - Monitor your context usage with context_inspect()`
 };
+var DEFAULT_FEATURES = {
+  memory: true,
+  inContextMemory: false,
+  history: true,
+  permissions: true
+};
 var DEFAULT_AGENT_CONTEXT_CONFIG = {
   model: "gpt-4",
   maxContextTokens: 128e3,
@@ -9107,17 +9631,21 @@ var DEFAULT_AGENT_CONTEXT_CONFIG = {
   autoCompact: true
 };
 var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
-  // ===== Composed Managers (reused, not duplicated) =====
+  // ===== Composed Managers (conditionally created based on features) =====
   _tools;
   _memory;
   _cache;
   _permissions;
+  _inContextMemory = null;
+  // ===== Feature Configuration =====
+  _features;
   // ===== Built-in State =====
   _systemPrompt;
   _instructions;
   _history = [];
   _toolCalls = [];
   _currentInput = "";
+  _historyEnabled;
   // ===== Plugins =====
   _plugins = /* @__PURE__ */ new Map();
   // ===== Configuration =====
@@ -9139,6 +9667,10 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   // ============================================================================
   constructor(config = {}) {
     super();
+    this._features = { ...DEFAULT_FEATURES, ...config.features };
+    if (config.cache?.enabled === false) {
+      this._features.memory = false;
+    }
     this._config = {
       ...DEFAULT_AGENT_CONTEXT_CONFIG,
       ...config,
@@ -9146,6 +9678,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     };
     this._systemPrompt = config.systemPrompt ?? "";
     this._instructions = config.instructions ?? "";
+    this._historyEnabled = this._features.history;
     this._maxContextTokens = config.maxContextTokens ?? getModelInfo(config.model ?? "gpt-4")?.features.input.tokens ?? 128e3;
     this._strategy = createStrategy(this._config.strategy, {});
     this._estimator = this.createEstimator();
@@ -9155,19 +9688,37 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         this._tools.register(tool);
       }
     }
-    this._permissions = new ToolPermissionManager(config.permissions);
-    const memoryStorage = config.memory?.storage ?? new InMemoryStorage();
-    const memoryConfig = {
-      ...DEFAULT_MEMORY_CONFIG,
-      ...config.memory
-    };
-    this._memory = new WorkingMemory(memoryStorage, memoryConfig);
-    this._cacheEnabled = config.cache?.enabled !== false;
-    const cacheConfig = {
-      ...DEFAULT_IDEMPOTENCY_CONFIG,
-      ...config.cache
-    };
-    this._cache = new IdempotencyCache(cacheConfig);
+    if (this._features.permissions) {
+      this._permissions = new ToolPermissionManager(config.permissions);
+    } else {
+      this._permissions = null;
+    }
+    if (this._features.memory) {
+      const memoryStorage = config.memory?.storage ?? new InMemoryStorage();
+      const memoryConfig = {
+        ...DEFAULT_MEMORY_CONFIG,
+        ...config.memory
+      };
+      this._memory = new WorkingMemory(memoryStorage, memoryConfig);
+      this._cacheEnabled = true;
+      const cacheConfig = {
+        ...DEFAULT_IDEMPOTENCY_CONFIG,
+        ...config.cache
+      };
+      this._cache = new IdempotencyCache(cacheConfig);
+    } else {
+      this._memory = null;
+      this._cache = null;
+      this._cacheEnabled = false;
+    }
+    if (this._features.inContextMemory) {
+      const { plugin, tools } = createInContextMemory(config.inContextMemory);
+      this._inContextMemory = plugin;
+      this.registerPlugin(plugin);
+      for (const tool of tools) {
+        this._tools.register(tool);
+      }
+    }
     this._explicitTaskType = config.taskType;
     this._autoDetectTaskType = config.autoDetectTaskType !== false;
   }
@@ -9184,16 +9735,65 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   get tools() {
     return this._tools;
   }
-  /** Working memory - store/retrieve agent state */
+  /** Working memory - store/retrieve agent state (null if memory feature disabled) */
   get memory() {
     return this._memory;
   }
-  /** Tool result cache - automatic deduplication */
+  /** Tool result cache - automatic deduplication (null if memory feature disabled) */
   get cache() {
     return this._cache;
   }
-  /** Tool permissions - approval workflow */
+  /** Tool permissions - approval workflow (null if permissions feature disabled) */
   get permissions() {
+    return this._permissions;
+  }
+  /** InContextMemory plugin (null if inContextMemory feature disabled) */
+  get inContextMemory() {
+    return this._inContextMemory;
+  }
+  // ============================================================================
+  // Feature Configuration
+  // ============================================================================
+  /**
+   * Get the resolved feature configuration
+   */
+  get features() {
+    return this._features;
+  }
+  /**
+   * Check if a specific feature is enabled
+   */
+  isFeatureEnabled(feature) {
+    return this._features[feature];
+  }
+  /**
+   * Get memory, throwing if disabled
+   * Use when memory is required for an operation
+   */
+  requireMemory() {
+    if (!this._memory) {
+      throw new Error('WorkingMemory is not available. Enable the "memory" feature in AgentContextConfig.');
+    }
+    return this._memory;
+  }
+  /**
+   * Get cache, throwing if disabled
+   * Use when cache is required for an operation
+   */
+  requireCache() {
+    if (!this._cache) {
+      throw new Error('IdempotencyCache is not available. Enable the "memory" feature in AgentContextConfig.');
+    }
+    return this._cache;
+  }
+  /**
+   * Get permissions, throwing if disabled
+   * Use when permissions is required for an operation
+   */
+  requirePermissions() {
+    if (!this._permissions) {
+      throw new Error('ToolPermissionManager is not available. Enable the "permissions" feature in AgentContextConfig.');
+    }
     return this._permissions;
   }
   // ============================================================================
@@ -9282,8 +9882,12 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   // ============================================================================
   /**
    * Add a message to history
+   * Returns null if history feature is disabled
    */
   addMessage(role, content, metadata) {
+    if (!this._historyEnabled) {
+      return null;
+    }
     const message = {
       id: this.generateId(),
       role,
@@ -9334,7 +9938,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    *
    * This is the recommended way to execute tools - it integrates:
    * - Permission checking
-   * - Result caching (if tool is cacheable)
+   * - Result caching (if tool is cacheable and memory feature enabled)
    * - History recording
    * - Metrics tracking
    */
@@ -9348,7 +9952,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     let error;
     let cached = false;
     try {
-      if (this._cacheEnabled) {
+      if (this._cacheEnabled && this._cache) {
         const cachedResult = await this._cache.get(tool, args);
         if (cachedResult !== void 0) {
           cached = true;
@@ -9360,13 +9964,17 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         const fullContext = {
           agentId: context?.agentId ?? "agent-context",
           taskId: context?.taskId,
-          memory: this._memory.getAccess(),
-          idempotencyCache: this._cache,
+          memory: this._memory?.getAccess(),
+          // May be undefined if memory disabled
+          idempotencyCache: this._cache ?? void 0,
+          // May be undefined if memory disabled
+          inContextMemory: this._inContextMemory ?? void 0,
+          // May be undefined if inContextMemory disabled
           signal: context?.signal
         };
         this._tools.setToolContext(fullContext);
         result = await this._tools.execute(toolName, args);
-        if (this._cacheEnabled) {
+        if (this._cacheEnabled && this._cache) {
           await this._cache.set(tool, args, result);
         }
       }
@@ -9538,16 +10146,32 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * Get comprehensive metrics
    */
   async getMetrics() {
-    const memoryStats = await this._memory.getStats();
+    let memoryStats;
+    if (this._memory) {
+      const stats = await this._memory.getStats();
+      memoryStats = {
+        totalEntries: stats.totalEntries,
+        totalSizeBytes: stats.totalSizeBytes,
+        utilizationPercent: stats.utilizationPercent
+      };
+    } else {
+      memoryStats = {
+        totalEntries: 0,
+        totalSizeBytes: 0,
+        utilizationPercent: 0
+      };
+    }
+    const cacheStats = this._cache?.getStats() ?? {
+      entries: 0,
+      hits: 0,
+      misses: 0,
+      hitRate: 0
+    };
     return {
       historyMessageCount: this._history.length,
       toolCallCount: this._toolCalls.length,
-      cacheStats: this._cache.getStats(),
-      memoryStats: {
-        totalEntries: memoryStats.totalEntries,
-        totalSizeBytes: memoryStats.totalSizeBytes,
-        utilizationPercent: memoryStats.utilizationPercent
-      },
+      cacheStats,
+      memoryStats,
       pluginCount: this._plugins.size,
       utilizationPercent: this._lastBudget?.utilizationPercent ?? 0
     };
@@ -9561,9 +10185,10 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * Serializes ALL state:
    * - History and tool calls
    * - Tool enable/disable state
-   * - Memory state
-   * - Permission state
+   * - Memory state (if enabled)
+   * - Permission state (if enabled)
    * - Plugin state
+   * - Feature configuration
    */
   async getState() {
     const pluginStates = {};
@@ -9573,7 +10198,20 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         pluginStates[name] = state;
       }
     }
-    const memoryStats = await this._memory.getStats();
+    let memoryStats;
+    if (this._memory) {
+      const stats = await this._memory.getStats();
+      memoryStats = {
+        entryCount: stats.totalEntries,
+        sizeBytes: stats.totalSizeBytes
+      };
+    }
+    const permissionState = this._permissions?.getState() ?? {
+      version: 1,
+      approvals: {},
+      blocklist: [],
+      allowlist: []
+    };
     return {
       version: 1,
       core: {
@@ -9583,11 +10221,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         toolCalls: this._toolCalls
       },
       tools: this._tools.getState(),
-      memoryStats: {
-        entryCount: memoryStats.totalEntries,
-        sizeBytes: memoryStats.totalSizeBytes
-      },
-      permissions: this._permissions.getState(),
+      memoryStats,
+      permissions: permissionState,
       plugins: pluginStates,
       config: {
         model: this._config.model,
@@ -9615,7 +10250,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     if (state.tools) {
       this._tools.loadState(state.tools);
     }
-    if (state.permissions) {
+    if (state.permissions && this._permissions) {
       this._permissions.loadState(state.permissions);
     }
     for (const [name, pluginState] of Object.entries(state.plugins)) {
@@ -9636,7 +10271,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       plugin.destroy?.();
     }
     this._plugins.clear();
-    this._cache.destroy();
+    this._cache?.destroy();
     this._tools.destroy();
     this._history = [];
     this._toolCalls = [];
@@ -9648,14 +10283,16 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   /**
    * Build all context components
    * Uses task-type-aware priority profiles for compaction ordering
+   * Conditionally includes components based on enabled features
    */
   async buildComponents() {
     const components = [];
     const taskType = this.getTaskType();
     const priorityProfile = PRIORITY_PROFILES[taskType];
+    const taskTypePrompt = this.buildTaskTypePromptForFeatures(taskType);
     const fullSystemPrompt = this._systemPrompt ? `${this._systemPrompt}
 
-${this.getTaskTypePrompt()}` : this.getTaskTypePrompt();
+${taskTypePrompt}` : taskTypePrompt;
     if (fullSystemPrompt) {
       components.push({
         name: "system_prompt",
@@ -9672,7 +10309,7 @@ ${this.getTaskTypePrompt()}` : this.getTaskTypePrompt();
         compactable: false
       });
     }
-    if (this._history.length > 0) {
+    if (this._features.history && this._history.length > 0) {
       components.push({
         name: "conversation_history",
         content: this.formatHistoryForContext(),
@@ -9684,18 +10321,20 @@ ${this.getTaskTypePrompt()}` : this.getTaskTypePrompt();
         }
       });
     }
-    const memoryIndex = await this._memory.formatIndex();
-    const isEmpty = !memoryIndex || memoryIndex.trim().length === 0 || memoryIndex.includes("Memory is empty.");
-    if (!isEmpty) {
-      components.push({
-        name: "memory_index",
-        content: memoryIndex,
-        priority: priorityProfile.memory_index ?? 8,
-        compactable: true,
-        metadata: {
-          strategy: "evict"
-        }
-      });
+    if (this._features.memory && this._memory) {
+      const memoryIndex = await this._memory.formatIndex();
+      const isEmpty = !memoryIndex || memoryIndex.trim().length === 0 || memoryIndex.includes("Memory is empty.");
+      if (!isEmpty) {
+        components.push({
+          name: "memory_index",
+          content: memoryIndex,
+          priority: priorityProfile.memory_index ?? 8,
+          compactable: true,
+          metadata: {
+            strategy: "evict"
+          }
+        });
+      }
     }
     for (const plugin of this._plugins.values()) {
       try {
@@ -9720,6 +10359,50 @@ ${this.getTaskTypePrompt()}` : this.getTaskTypePrompt();
       });
     }
     return components;
+  }
+  /**
+   * Build task-type prompt adjusted for enabled features
+   */
+  buildTaskTypePromptForFeatures(taskType) {
+    const basePrompt = TASK_TYPE_PROMPTS[taskType];
+    if (!this._features.memory) {
+      if (taskType === "research") {
+        return `## Research Protocol
+
+You are conducting research. Follow this workflow:
+
+### 1. SEARCH PHASE
+- Execute searches to find relevant sources
+
+### 2. READ PHASE
+For each promising result:
+- Read/scrape the content
+- Extract key points (2-3 sentences per source)
+
+### 3. SYNTHESIZE PHASE
+- Cross-reference and consolidate findings
+- Write the final report`;
+      } else if (taskType === "coding") {
+        return `## Coding Protocol
+
+You are implementing code changes. Guidelines:
+- Read relevant files before making changes
+- Implement incrementally
+- Code file contents are large - summarize structure after reading`;
+      } else if (taskType === "analysis") {
+        return `## Analysis Protocol
+
+You are performing analysis. Guidelines:
+- Summarize data immediately after loading (raw data is large)
+- Keep only essential context for current analysis step`;
+      } else {
+        return `## Task Execution
+
+Guidelines:
+- Focus on completing the task efficiently`;
+      }
+    }
+    return basePrompt;
   }
   /**
    * Format history for context
@@ -9824,6 +10507,9 @@ ${this.getTaskTypePrompt()}` : this.getTaskTypePrompt();
    * Compact memory
    */
   async compactMemory() {
+    if (!this._memory) {
+      return 0;
+    }
     const beforeIndex = await this._memory.formatIndex();
     const beforeTokens = this._estimator.estimateTokens(beforeIndex);
     await this._memory.evict(3, "lru");
@@ -9853,489 +10539,6 @@ ${this.getTaskTypePrompt()}` : this.getTaskTypePrompt();
    */
   generateId() {
     return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  }
-};
-
-// src/core/BaseAgent.ts
-var BaseAgent = class extends eventemitter3.EventEmitter {
-  // ===== Core Properties =====
-  name;
-  connector;
-  model;
-  // ===== Protected State =====
-  _config;
-  _agentContext;
-  // SINGLE SOURCE OF TRUTH for tools
-  _permissionManager;
-  _sessionManager = null;
-  _session = null;
-  _pendingSessionLoad = null;
-  _isDestroyed = false;
-  _cleanupCallbacks = [];
-  _logger;
-  _lifecycleHooks;
-  // ===== Constructor =====
-  constructor(config, loggerComponent) {
-    super();
-    this._config = config;
-    this.connector = this.resolveConnector(config.connector);
-    this.name = config.name ?? `${this.getAgentType()}-${Date.now()}`;
-    this.model = config.model;
-    this._logger = exports.logger.child({
-      component: loggerComponent,
-      agentName: this.name,
-      model: this.model,
-      connector: this.connector.name
-    });
-    this._agentContext = this.initializeAgentContext(config);
-    if (config.tools) {
-      for (const tool of config.tools) {
-        this._agentContext.tools.register(tool);
-      }
-    }
-    this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
-    this._lifecycleHooks = config.lifecycleHooks ?? {};
-  }
-  /**
-   * Prepare session state before saving.
-   * Subclasses override to add their specific state (plan, memory, etc.)
-   *
-   * Default implementation does nothing - override in subclasses.
-   */
-  prepareSessionState() {
-  }
-  /**
-   * Restore session state after loading.
-   * Subclasses override to restore their specific state (plan, memory, etc.)
-   * Called after tool state and approval state are restored.
-   *
-   * Default implementation does nothing - override in subclasses.
-   */
-  async restoreSessionState(_session) {
-  }
-  /**
-   * Get plan state for session serialization.
-   * Subclasses with plans override this.
-   */
-  getSerializedPlan() {
-    return void 0;
-  }
-  /**
-   * Get memory state for session serialization.
-   * Subclasses with working memory override this.
-   */
-  getSerializedMemory() {
-    return void 0;
-  }
-  // ===== Protected Initialization Helpers =====
-  /**
-   * Resolve connector from string name or instance
-   */
-  resolveConnector(ref) {
-    if (typeof ref === "string") {
-      return exports.Connector.get(ref);
-    }
-    return ref;
-  }
-  /**
-   * Initialize AgentContext (single source of truth for tools).
-   * If AgentContext is provided, use it directly.
-   * Otherwise, create a new one with the provided configuration.
-   */
-  initializeAgentContext(config) {
-    if (config.context instanceof AgentContext) {
-      return config.context;
-    }
-    const contextConfig = {
-      model: config.model,
-      // Subclasses can add systemPrompt via their config
-      ...typeof config.context === "object" && config.context !== null ? config.context : {}
-    };
-    return AgentContext.create(contextConfig);
-  }
-  /**
-   * Initialize tool manager with provided tools
-   * @deprecated Use _agentContext.tools instead. This method is kept for backward compatibility.
-   */
-  initializeToolManager(existingManager, tools, options) {
-    const manager = existingManager ?? new ToolManager();
-    if (tools) {
-      this.registerTools(manager, tools, options);
-    }
-    return manager;
-  }
-  /**
-   * Register multiple tools with the tool manager
-   * Utility method to avoid code duplication across agent types
-   */
-  registerTools(manager, tools, options) {
-    for (const tool of tools) {
-      manager.register(tool, options);
-    }
-  }
-  /**
-   * Initialize permission manager
-   */
-  initializePermissionManager(config, tools) {
-    const manager = new ToolPermissionManager(config);
-    if (tools) {
-      for (const tool of tools) {
-        if (tool.permission) {
-          manager.setToolConfig(tool.definition.function.name, tool.permission);
-        }
-      }
-    }
-    return manager;
-  }
-  /**
-   * Initialize session management (call from subclass constructor after other setup)
-   */
-  initializeSession(sessionConfig) {
-    if (!sessionConfig) {
-      return;
-    }
-    this._sessionManager = new SessionManager({ storage: sessionConfig.storage });
-    if (sessionConfig.id) {
-      this._pendingSessionLoad = this.loadSessionInternal(sessionConfig.id);
-    } else {
-      this._session = this._sessionManager.create(this.getAgentType(), {
-        title: this.name
-      });
-      if (sessionConfig.autoSave) {
-        const interval = sessionConfig.autoSaveIntervalMs ?? 3e4;
-        this._sessionManager.enableAutoSave(this._session, interval);
-      }
-    }
-  }
-  /**
-   * Ensure any pending session load is complete
-   */
-  async ensureSessionLoaded() {
-    if (this._pendingSessionLoad) {
-      await this._pendingSessionLoad;
-      this._pendingSessionLoad = null;
-    }
-  }
-  /**
-   * Internal method to load session
-   */
-  async loadSessionInternal(sessionId) {
-    if (!this._sessionManager) return;
-    try {
-      const session = await this._sessionManager.load(sessionId);
-      if (session) {
-        this._session = session;
-        if (session.toolState) {
-          this._agentContext.tools.loadState(session.toolState);
-        }
-        const inheritFromSession = this._config.permissions?.inheritFromSession !== false;
-        if (inheritFromSession && session.custom["approvalState"]) {
-          this._permissionManager.loadState(
-            session.custom["approvalState"]
-          );
-        }
-        await this.restoreSessionState(session);
-        this._logger.info({ sessionId }, "Session loaded");
-        if (this._config.session?.autoSave) {
-          const interval = this._config.session.autoSaveIntervalMs ?? 3e4;
-          this._sessionManager.enableAutoSave(this._session, interval);
-        }
-      } else {
-        this._logger.warn({ sessionId }, "Session not found, creating new session");
-        this._session = this._sessionManager.create(this.getAgentType(), {
-          title: this.name
-        });
-      }
-    } catch (error) {
-      this._logger.error(
-        { error: error.message, sessionId },
-        "Failed to load session"
-      );
-      throw error;
-    }
-  }
-  // ===== Public Session API =====
-  /**
-   * Get the current session ID (if session is enabled)
-   */
-  getSessionId() {
-    return this._session?.id ?? null;
-  }
-  /**
-   * Check if this agent has session support enabled
-   */
-  hasSession() {
-    return this._session !== null;
-  }
-  /**
-   * Get the current session (for advanced use)
-   */
-  getSession() {
-    return this._session;
-  }
-  /**
-   * Save the current session to storage
-   * @throws Error if session is not enabled
-   */
-  async saveSession() {
-    await this.ensureSessionLoaded();
-    if (!this._sessionManager || !this._session) {
-      throw new Error(
-        "Session not enabled. Configure session in agent config to use this feature."
-      );
-    }
-    this._session.toolState = this._agentContext.tools.getState();
-    this._session.custom["approvalState"] = this._permissionManager.getState();
-    const plan = this.getSerializedPlan();
-    if (plan) {
-      this._session.plan = plan;
-    }
-    const memory = this.getSerializedMemory();
-    if (memory) {
-      this._session.memory = memory;
-    }
-    this.prepareSessionState();
-    await this._sessionManager.save(this._session);
-    this._logger.debug({ sessionId: this._session.id }, "Session saved");
-  }
-  /**
-   * Update session custom data
-   */
-  updateSessionData(key, value) {
-    if (!this._session) {
-      throw new Error("Session not enabled");
-    }
-    this._session.custom[key] = value;
-  }
-  /**
-   * Get session custom data
-   */
-  getSessionData(key) {
-    return this._session?.custom[key];
-  }
-  // ===== Public Permission API =====
-  /**
-   * Advanced tool management. Returns ToolManager for fine-grained control.
-   * This is delegated to AgentContext.tools (single source of truth).
-   */
-  get tools() {
-    return this._agentContext.tools;
-  }
-  /**
-   * Get the AgentContext (unified context management).
-   * This is the primary way to access tools, memory, cache, permissions, and history.
-   */
-  get context() {
-    return this._agentContext;
-  }
-  /**
-   * Permission management. Returns ToolPermissionManager for approval control.
-   */
-  get permissions() {
-    return this._permissionManager;
-  }
-  // ===== Tool Management =====
-  /**
-   * Add a tool to the agent.
-   * Tools are registered with AgentContext (single source of truth).
-   */
-  addTool(tool) {
-    this._agentContext.tools.register(tool);
-    if (tool.permission) {
-      this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
-    }
-  }
-  /**
-   * Remove a tool from the agent.
-   * Tools are unregistered from AgentContext (single source of truth).
-   */
-  removeTool(toolName) {
-    this._agentContext.tools.unregister(toolName);
-  }
-  /**
-   * List registered tools (returns enabled tool names)
-   */
-  listTools() {
-    return this._agentContext.tools.listEnabled();
-  }
-  /**
-   * Replace all tools with a new array
-   */
-  setTools(tools) {
-    this._agentContext.tools.clear();
-    for (const tool of tools) {
-      this._agentContext.tools.register(tool);
-      if (tool.permission) {
-        this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
-      }
-    }
-  }
-  /**
-   * Get enabled tool definitions (for passing to LLM).
-   * This is a helper that extracts definitions from enabled tools.
-   */
-  getEnabledToolDefinitions() {
-    return this._agentContext.tools.getEnabled().map((t) => t.definition);
-  }
-  // ===== Lifecycle Hooks =====
-  /**
-   * Get the current lifecycle hooks configuration
-   */
-  get lifecycleHooks() {
-    return this._lifecycleHooks;
-  }
-  /**
-   * Set or update lifecycle hooks at runtime
-   */
-  setLifecycleHooks(hooks) {
-    this._lifecycleHooks = { ...this._lifecycleHooks, ...hooks };
-  }
-  /**
-   * Invoke beforeToolExecution hook if defined.
-   * Call this before executing a tool.
-   *
-   * @throws Error if hook throws (prevents tool execution)
-   */
-  async invokeBeforeToolExecution(context) {
-    if (this._lifecycleHooks.beforeToolExecution) {
-      try {
-        await this._lifecycleHooks.beforeToolExecution(context);
-      } catch (error) {
-        this._logger.error(
-          { error: error.message, toolName: context.toolName },
-          "beforeToolExecution hook failed"
-        );
-        throw error;
-      }
-    }
-  }
-  /**
-   * Invoke afterToolExecution hook if defined.
-   * Call this after tool execution completes (success or failure).
-   */
-  async invokeAfterToolExecution(result) {
-    if (this._lifecycleHooks.afterToolExecution) {
-      try {
-        await this._lifecycleHooks.afterToolExecution(result);
-      } catch (error) {
-        this._logger.error(
-          { error: error.message, toolName: result.toolName },
-          "afterToolExecution hook failed"
-        );
-      }
-    }
-  }
-  /**
-   * Invoke beforeContextPrepare hook if defined.
-   * Call this before preparing context for LLM.
-   */
-  async invokeBeforeContextPrepare() {
-    if (this._lifecycleHooks.beforeContextPrepare) {
-      try {
-        await this._lifecycleHooks.beforeContextPrepare(this.name);
-      } catch (error) {
-        this._logger.error(
-          { error: error.message },
-          "beforeContextPrepare hook failed"
-        );
-      }
-    }
-  }
-  /**
-   * Invoke beforeCompaction hook if defined.
-   * Call this before context compaction occurs.
-   * Gives the agent a chance to save important data to memory.
-   */
-  async invokeBeforeCompaction(context) {
-    if (this._lifecycleHooks.beforeCompaction) {
-      try {
-        await this._lifecycleHooks.beforeCompaction(context);
-      } catch (error) {
-        this._logger.error(
-          {
-            error: error.message,
-            strategy: context.strategy,
-            estimatedTokensToFree: context.estimatedTokensToFree
-          },
-          "beforeCompaction hook failed"
-        );
-      }
-    }
-  }
-  /**
-   * Invoke afterCompaction hook if defined.
-   * Call this after context compaction occurs.
-   */
-  async invokeAfterCompaction(log, tokensFreed) {
-    if (this._lifecycleHooks.afterCompaction) {
-      try {
-        await this._lifecycleHooks.afterCompaction(log, tokensFreed);
-      } catch (error) {
-        this._logger.error(
-          { error: error.message, tokensFreed },
-          "afterCompaction hook failed"
-        );
-      }
-    }
-  }
-  /**
-   * Invoke onError hook if defined.
-   * Call this when the agent encounters an error.
-   */
-  async invokeOnError(error, phase) {
-    if (this._lifecycleHooks.onError) {
-      try {
-        await this._lifecycleHooks.onError(error, { phase, agentId: this.name });
-      } catch (hookError) {
-        this._logger.error(
-          { error: hookError.message, originalError: error.message, phase },
-          "onError hook failed"
-        );
-      }
-    }
-  }
-  // ===== Lifecycle =====
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Register a cleanup callback
-   */
-  onCleanup(callback) {
-    this._cleanupCallbacks.push(callback);
-  }
-  /**
-   * Base cleanup for session and listeners.
-   * Subclasses should call super.baseDestroy() in their destroy() method.
-   */
-  baseDestroy() {
-    if (this._isDestroyed) {
-      return;
-    }
-    this._isDestroyed = true;
-    this._logger.debug("Agent destroy started");
-    if (this._sessionManager) {
-      if (this._session) {
-        this._sessionManager.stopAutoSave(this._session.id);
-      }
-      this._sessionManager.destroy();
-    }
-    this._agentContext.destroy();
-    this._permissionManager.removeAllListeners();
-    this.removeAllListeners();
-  }
-  /**
-   * Run cleanup callbacks
-   */
-  async runCleanupCallbacks() {
-    for (const callback of this._cleanupCallbacks) {
-      try {
-        await callback();
-      } catch (error) {
-        this._logger.error({ error: error.message }, "Cleanup callback error");
-      }
-    }
-    this._cleanupCallbacks = [];
   }
 };
 
@@ -13045,6 +13248,613 @@ function extractProviderConfig(connector) {
   };
 }
 
+// src/core/BaseAgent.ts
+var BaseAgent = class extends eventemitter3.EventEmitter {
+  // ===== Core Properties =====
+  name;
+  connector;
+  model;
+  // ===== Protected State =====
+  _config;
+  _agentContext;
+  // SINGLE SOURCE OF TRUTH for tools
+  _permissionManager;
+  _sessionManager = null;
+  _session = null;
+  _pendingSessionLoad = null;
+  _isDestroyed = false;
+  _cleanupCallbacks = [];
+  _logger;
+  _lifecycleHooks;
+  // Lazy-initialized provider for direct calls
+  _directProvider = null;
+  // ===== Constructor =====
+  constructor(config, loggerComponent) {
+    super();
+    this._config = config;
+    this.connector = this.resolveConnector(config.connector);
+    this.name = config.name ?? `${this.getAgentType()}-${Date.now()}`;
+    this.model = config.model;
+    this._logger = exports.logger.child({
+      component: loggerComponent,
+      agentName: this.name,
+      model: this.model,
+      connector: this.connector.name
+    });
+    this._agentContext = this.initializeAgentContext(config);
+    if (config.tools) {
+      for (const tool of config.tools) {
+        this._agentContext.tools.register(tool);
+      }
+    }
+    this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
+    this._lifecycleHooks = config.lifecycleHooks ?? {};
+  }
+  /**
+   * Prepare session state before saving.
+   * Subclasses override to add their specific state (plan, memory, etc.)
+   *
+   * Default implementation does nothing - override in subclasses.
+   */
+  prepareSessionState() {
+  }
+  /**
+   * Restore session state after loading.
+   * Subclasses override to restore their specific state (plan, memory, etc.)
+   * Called after tool state and approval state are restored.
+   *
+   * Default implementation does nothing - override in subclasses.
+   */
+  async restoreSessionState(_session) {
+  }
+  /**
+   * Get plan state for session serialization.
+   * Subclasses with plans override this.
+   */
+  getSerializedPlan() {
+    return void 0;
+  }
+  /**
+   * Get memory state for session serialization.
+   * Subclasses with working memory override this.
+   */
+  getSerializedMemory() {
+    return void 0;
+  }
+  // ===== Protected Initialization Helpers =====
+  /**
+   * Resolve connector from string name or instance
+   */
+  resolveConnector(ref) {
+    if (typeof ref === "string") {
+      return exports.Connector.get(ref);
+    }
+    return ref;
+  }
+  /**
+   * Initialize AgentContext (single source of truth for tools).
+   * If AgentContext is provided, use it directly.
+   * Otherwise, create a new one with the provided configuration.
+   */
+  initializeAgentContext(config) {
+    if (config.context instanceof AgentContext) {
+      return config.context;
+    }
+    const contextConfig = {
+      model: config.model,
+      // Subclasses can add systemPrompt via their config
+      ...typeof config.context === "object" && config.context !== null ? config.context : {}
+    };
+    return AgentContext.create(contextConfig);
+  }
+  /**
+   * Initialize tool manager with provided tools
+   * @deprecated Use _agentContext.tools instead. This method is kept for backward compatibility.
+   */
+  initializeToolManager(existingManager, tools, options) {
+    const manager = existingManager ?? new ToolManager();
+    if (tools) {
+      this.registerTools(manager, tools, options);
+    }
+    return manager;
+  }
+  /**
+   * Register multiple tools with the tool manager
+   * Utility method to avoid code duplication across agent types
+   */
+  registerTools(manager, tools, options) {
+    for (const tool of tools) {
+      manager.register(tool, options);
+    }
+  }
+  /**
+   * Initialize permission manager
+   */
+  initializePermissionManager(config, tools) {
+    const manager = new ToolPermissionManager(config);
+    if (tools) {
+      for (const tool of tools) {
+        if (tool.permission) {
+          manager.setToolConfig(tool.definition.function.name, tool.permission);
+        }
+      }
+    }
+    return manager;
+  }
+  /**
+   * Initialize session management (call from subclass constructor after other setup)
+   */
+  initializeSession(sessionConfig) {
+    if (!sessionConfig) {
+      return;
+    }
+    this._sessionManager = new SessionManager({ storage: sessionConfig.storage });
+    if (sessionConfig.id) {
+      this._pendingSessionLoad = this.loadSessionInternal(sessionConfig.id);
+    } else {
+      this._session = this._sessionManager.create(this.getAgentType(), {
+        title: this.name
+      });
+      if (sessionConfig.autoSave) {
+        const interval = sessionConfig.autoSaveIntervalMs ?? 3e4;
+        this._sessionManager.enableAutoSave(this._session, interval);
+      }
+    }
+  }
+  /**
+   * Ensure any pending session load is complete
+   */
+  async ensureSessionLoaded() {
+    if (this._pendingSessionLoad) {
+      await this._pendingSessionLoad;
+      this._pendingSessionLoad = null;
+    }
+  }
+  /**
+   * Internal method to load session
+   */
+  async loadSessionInternal(sessionId) {
+    if (!this._sessionManager) return;
+    try {
+      const session = await this._sessionManager.load(sessionId);
+      if (session) {
+        this._session = session;
+        if (session.toolState) {
+          this._agentContext.tools.loadState(session.toolState);
+        }
+        const inheritFromSession = this._config.permissions?.inheritFromSession !== false;
+        if (inheritFromSession && session.custom["approvalState"]) {
+          this._permissionManager.loadState(
+            session.custom["approvalState"]
+          );
+        }
+        await this.restoreSessionState(session);
+        this._logger.info({ sessionId }, "Session loaded");
+        if (this._config.session?.autoSave) {
+          const interval = this._config.session.autoSaveIntervalMs ?? 3e4;
+          this._sessionManager.enableAutoSave(this._session, interval);
+        }
+      } else {
+        this._logger.warn({ sessionId }, "Session not found, creating new session");
+        this._session = this._sessionManager.create(this.getAgentType(), {
+          title: this.name
+        });
+      }
+    } catch (error) {
+      this._logger.error(
+        { error: error.message, sessionId },
+        "Failed to load session"
+      );
+      throw error;
+    }
+  }
+  // ===== Public Session API =====
+  /**
+   * Get the current session ID (if session is enabled)
+   */
+  getSessionId() {
+    return this._session?.id ?? null;
+  }
+  /**
+   * Check if this agent has session support enabled
+   */
+  hasSession() {
+    return this._session !== null;
+  }
+  /**
+   * Get the current session (for advanced use)
+   */
+  getSession() {
+    return this._session;
+  }
+  /**
+   * Save the current session to storage
+   * @throws Error if session is not enabled
+   */
+  async saveSession() {
+    await this.ensureSessionLoaded();
+    if (!this._sessionManager || !this._session) {
+      throw new Error(
+        "Session not enabled. Configure session in agent config to use this feature."
+      );
+    }
+    this._session.toolState = this._agentContext.tools.getState();
+    this._session.custom["approvalState"] = this._permissionManager.getState();
+    const plan = this.getSerializedPlan();
+    if (plan) {
+      this._session.plan = plan;
+    }
+    const memory = this.getSerializedMemory();
+    if (memory) {
+      this._session.memory = memory;
+    }
+    this.prepareSessionState();
+    await this._sessionManager.save(this._session);
+    this._logger.debug({ sessionId: this._session.id }, "Session saved");
+  }
+  /**
+   * Update session custom data
+   */
+  updateSessionData(key, value) {
+    if (!this._session) {
+      throw new Error("Session not enabled");
+    }
+    this._session.custom[key] = value;
+  }
+  /**
+   * Get session custom data
+   */
+  getSessionData(key) {
+    return this._session?.custom[key];
+  }
+  // ===== Public Permission API =====
+  /**
+   * Advanced tool management. Returns ToolManager for fine-grained control.
+   * This is delegated to AgentContext.tools (single source of truth).
+   */
+  get tools() {
+    return this._agentContext.tools;
+  }
+  /**
+   * Get the AgentContext (unified context management).
+   * This is the primary way to access tools, memory, cache, permissions, and history.
+   */
+  get context() {
+    return this._agentContext;
+  }
+  /**
+   * Permission management. Returns ToolPermissionManager for approval control.
+   */
+  get permissions() {
+    return this._permissionManager;
+  }
+  // ===== Tool Management =====
+  /**
+   * Add a tool to the agent.
+   * Tools are registered with AgentContext (single source of truth).
+   */
+  addTool(tool) {
+    this._agentContext.tools.register(tool);
+    if (tool.permission) {
+      this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+    }
+  }
+  /**
+   * Remove a tool from the agent.
+   * Tools are unregistered from AgentContext (single source of truth).
+   */
+  removeTool(toolName) {
+    this._agentContext.tools.unregister(toolName);
+  }
+  /**
+   * List registered tools (returns enabled tool names)
+   */
+  listTools() {
+    return this._agentContext.tools.listEnabled();
+  }
+  /**
+   * Replace all tools with a new array
+   */
+  setTools(tools) {
+    this._agentContext.tools.clear();
+    for (const tool of tools) {
+      this._agentContext.tools.register(tool);
+      if (tool.permission) {
+        this._permissionManager.setToolConfig(tool.definition.function.name, tool.permission);
+      }
+    }
+  }
+  /**
+   * Get enabled tool definitions (for passing to LLM).
+   * This is a helper that extracts definitions from enabled tools.
+   */
+  getEnabledToolDefinitions() {
+    return this._agentContext.tools.getEnabled().map((t) => t.definition);
+  }
+  // ===== Direct LLM Access (Bypasses AgentContext) =====
+  /**
+   * Get or create the provider for direct calls.
+   * Lazily initialized to avoid creating provider if not used.
+   */
+  getDirectProvider() {
+    if (!this._directProvider) {
+      this._directProvider = createProvider(this.connector);
+    }
+    return this._directProvider;
+  }
+  /**
+   * Make a direct LLM call bypassing all context management.
+   *
+   * This method:
+   * - Does NOT track messages in history
+   * - Does NOT use AgentContext features (memory, cache, etc.)
+   * - Does NOT prepare context or run compaction
+   * - Does NOT go through the agentic loop (no tool execution)
+   *
+   * Use this for simple, stateless interactions where you want raw LLM access
+   * without the overhead of context management.
+   *
+   * @param input - Text string or array of InputItems (supports multimodal: text + images)
+   * @param options - Optional configuration for the call
+   * @returns Raw LLM response
+   *
+   * @example
+   * ```typescript
+   * // Simple text call
+   * const response = await agent.runDirect('What is 2 + 2?');
+   * console.log(response.output_text);
+   *
+   * // With options
+   * const response = await agent.runDirect('Summarize this', {
+   *   instructions: 'Be concise',
+   *   temperature: 0.5,
+   * });
+   *
+   * // Multimodal (text + image)
+   * const response = await agent.runDirect([
+   *   { type: 'message', role: 'user', content: [
+   *     { type: 'input_text', text: 'What is in this image?' },
+   *     { type: 'input_image', image_url: 'https://...' }
+   *   ]}
+   * ]);
+   *
+   * // With tools (single call, no loop)
+   * const response = await agent.runDirect('Get the weather', {
+   *   includeTools: true,
+   * });
+   * // Note: If the LLM returns a tool call, you must handle it yourself
+   * ```
+   */
+  async runDirect(input, options = {}) {
+    if (this._isDestroyed) {
+      throw new Error("Agent has been destroyed");
+    }
+    const provider = this.getDirectProvider();
+    const generateOptions = {
+      model: this.model,
+      input,
+      instructions: options.instructions,
+      tools: options.includeTools ? this.getEnabledToolDefinitions() : void 0,
+      temperature: options.temperature,
+      max_output_tokens: options.maxOutputTokens,
+      response_format: options.responseFormat,
+      vendorOptions: options.vendorOptions
+    };
+    this._logger.debug({ inputType: typeof input }, "runDirect called");
+    try {
+      const response = await provider.generate(generateOptions);
+      this._logger.debug({ outputLength: response.output_text?.length }, "runDirect completed");
+      return response;
+    } catch (error) {
+      this._logger.error({ error: error.message }, "runDirect failed");
+      throw error;
+    }
+  }
+  /**
+   * Stream a direct LLM call bypassing all context management.
+   *
+   * Same as runDirect but returns a stream of events instead of waiting
+   * for the complete response. Useful for real-time output display.
+   *
+   * @param input - Text string or array of InputItems (supports multimodal)
+   * @param options - Optional configuration for the call
+   * @returns Async iterator of stream events
+   *
+   * @example
+   * ```typescript
+   * for await (const event of agent.streamDirect('Tell me a story')) {
+   *   if (event.type === 'output_text_delta') {
+   *     process.stdout.write(event.delta);
+   *   }
+   * }
+   * ```
+   */
+  async *streamDirect(input, options = {}) {
+    if (this._isDestroyed) {
+      throw new Error("Agent has been destroyed");
+    }
+    const provider = this.getDirectProvider();
+    const generateOptions = {
+      model: this.model,
+      input,
+      instructions: options.instructions,
+      tools: options.includeTools ? this.getEnabledToolDefinitions() : void 0,
+      temperature: options.temperature,
+      max_output_tokens: options.maxOutputTokens,
+      response_format: options.responseFormat,
+      vendorOptions: options.vendorOptions
+    };
+    this._logger.debug({ inputType: typeof input }, "streamDirect called");
+    try {
+      yield* provider.streamGenerate(generateOptions);
+      this._logger.debug("streamDirect completed");
+    } catch (error) {
+      this._logger.error({ error: error.message }, "streamDirect failed");
+      throw error;
+    }
+  }
+  // ===== Lifecycle Hooks =====
+  /**
+   * Get the current lifecycle hooks configuration
+   */
+  get lifecycleHooks() {
+    return this._lifecycleHooks;
+  }
+  /**
+   * Set or update lifecycle hooks at runtime
+   */
+  setLifecycleHooks(hooks) {
+    this._lifecycleHooks = { ...this._lifecycleHooks, ...hooks };
+  }
+  /**
+   * Invoke beforeToolExecution hook if defined.
+   * Call this before executing a tool.
+   *
+   * @throws Error if hook throws (prevents tool execution)
+   */
+  async invokeBeforeToolExecution(context) {
+    if (this._lifecycleHooks.beforeToolExecution) {
+      try {
+        await this._lifecycleHooks.beforeToolExecution(context);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message, toolName: context.toolName },
+          "beforeToolExecution hook failed"
+        );
+        throw error;
+      }
+    }
+  }
+  /**
+   * Invoke afterToolExecution hook if defined.
+   * Call this after tool execution completes (success or failure).
+   */
+  async invokeAfterToolExecution(result) {
+    if (this._lifecycleHooks.afterToolExecution) {
+      try {
+        await this._lifecycleHooks.afterToolExecution(result);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message, toolName: result.toolName },
+          "afterToolExecution hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke beforeContextPrepare hook if defined.
+   * Call this before preparing context for LLM.
+   */
+  async invokeBeforeContextPrepare() {
+    if (this._lifecycleHooks.beforeContextPrepare) {
+      try {
+        await this._lifecycleHooks.beforeContextPrepare(this.name);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message },
+          "beforeContextPrepare hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke beforeCompaction hook if defined.
+   * Call this before context compaction occurs.
+   * Gives the agent a chance to save important data to memory.
+   */
+  async invokeBeforeCompaction(context) {
+    if (this._lifecycleHooks.beforeCompaction) {
+      try {
+        await this._lifecycleHooks.beforeCompaction(context);
+      } catch (error) {
+        this._logger.error(
+          {
+            error: error.message,
+            strategy: context.strategy,
+            estimatedTokensToFree: context.estimatedTokensToFree
+          },
+          "beforeCompaction hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke afterCompaction hook if defined.
+   * Call this after context compaction occurs.
+   */
+  async invokeAfterCompaction(log, tokensFreed) {
+    if (this._lifecycleHooks.afterCompaction) {
+      try {
+        await this._lifecycleHooks.afterCompaction(log, tokensFreed);
+      } catch (error) {
+        this._logger.error(
+          { error: error.message, tokensFreed },
+          "afterCompaction hook failed"
+        );
+      }
+    }
+  }
+  /**
+   * Invoke onError hook if defined.
+   * Call this when the agent encounters an error.
+   */
+  async invokeOnError(error, phase) {
+    if (this._lifecycleHooks.onError) {
+      try {
+        await this._lifecycleHooks.onError(error, { phase, agentId: this.name });
+      } catch (hookError) {
+        this._logger.error(
+          { error: hookError.message, originalError: error.message, phase },
+          "onError hook failed"
+        );
+      }
+    }
+  }
+  // ===== Lifecycle =====
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  /**
+   * Register a cleanup callback
+   */
+  onCleanup(callback) {
+    this._cleanupCallbacks.push(callback);
+  }
+  /**
+   * Base cleanup for session and listeners.
+   * Subclasses should call super.baseDestroy() in their destroy() method.
+   */
+  baseDestroy() {
+    if (this._isDestroyed) {
+      return;
+    }
+    this._isDestroyed = true;
+    this._logger.debug("Agent destroy started");
+    if (this._sessionManager) {
+      if (this._session) {
+        this._sessionManager.stopAutoSave(this._session.id);
+      }
+      this._sessionManager.destroy();
+    }
+    this._agentContext.destroy();
+    this._permissionManager.removeAllListeners();
+    this.removeAllListeners();
+  }
+  /**
+   * Run cleanup callbacks
+   */
+  async runCleanupCallbacks() {
+    for (const callback of this._cleanupCallbacks) {
+      try {
+        await callback();
+      } catch (error) {
+        this._logger.error({ error: error.message }, "Cleanup callback error");
+      }
+    }
+    this._cleanupCallbacks = [];
+  }
+};
+
 // src/domain/entities/Tool.ts
 var ToolCallState = /* @__PURE__ */ ((ToolCallState2) => {
   ToolCallState2["PENDING"] = "pending";
@@ -15348,6 +16158,628 @@ var Agent = class _Agent extends BaseAgent {
     }
   }
 };
+
+// src/capabilities/taskAgent/memoryTools.ts
+var memoryStoreDefinition = {
+  type: "function",
+  function: {
+    name: "memory_store",
+    description: `Store data in working memory for later use. Use this to save important information from tool outputs.
+
+TIER SYSTEM (for research/analysis tasks):
+- "raw": Low priority, evicted first. Use for unprocessed data you'll summarize later.
+- "summary": Normal priority. Use for processed summaries of raw data.
+- "findings": High priority, kept longest. Use for final conclusions and insights.
+
+The tier automatically sets priority and adds a key prefix (e.g., "findings.topic" for tier="findings").`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: 'Namespaced key (e.g., "user.profile", "search.ai_news"). If using tier, prefix is added automatically.'
+        },
+        description: {
+          type: "string",
+          description: "Brief description of what this data contains (max 150 chars)"
+        },
+        value: {
+          description: "The data to store (can be any JSON value)"
+        },
+        tier: {
+          type: "string",
+          enum: ["raw", "summary", "findings"],
+          description: 'Optional: Memory tier. "raw" (low priority, evict first), "summary" (normal), "findings" (high priority, keep longest). Automatically sets key prefix and priority.'
+        },
+        derivedFrom: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: Keys this data was derived from (for tracking data lineage, useful with tiers)"
+        },
+        neededForTasks: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional: Task IDs that need this data. Data will be auto-cleaned when all tasks complete."
+        },
+        scope: {
+          type: "string",
+          enum: ["session", "plan", "persistent"],
+          description: 'Optional: Lifecycle scope. "session" (default), "plan" (kept for entire plan), or "persistent" (never auto-cleaned)'
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "normal", "high", "critical"],
+          description: "Optional: Override eviction priority. Ignored if tier is set (tier determines priority)."
+        },
+        pinned: {
+          type: "boolean",
+          description: "Optional: If true, this data will never be evicted."
+        }
+      },
+      required: ["key", "description", "value"]
+    }
+  }
+};
+var memoryRetrieveDefinition = {
+  type: "function",
+  function: {
+    name: "memory_retrieve",
+    description: "Retrieve full data from working memory by key. Use when you need the complete data, not just the description.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: 'The key to retrieve (include tier prefix if applicable, e.g., "findings.topic")'
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var memoryDeleteDefinition = {
+  type: "function",
+  function: {
+    name: "memory_delete",
+    description: "Delete data from working memory to free up space.",
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to delete"
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var memoryListDefinition = {
+  type: "function",
+  function: {
+    name: "memory_list",
+    description: "List all keys and their descriptions in working memory.",
+    parameters: {
+      type: "object",
+      properties: {
+        tier: {
+          type: "string",
+          enum: ["raw", "summary", "findings"],
+          description: "Optional: Filter to only show entries from a specific tier"
+        }
+      },
+      required: []
+    }
+  }
+};
+var memoryCleanupRawDefinition = {
+  type: "function",
+  function: {
+    name: "memory_cleanup_raw",
+    description: 'Clean up raw tier data after creating summaries/findings. Only deletes entries with "raw." prefix.',
+    parameters: {
+      type: "object",
+      properties: {
+        keys: {
+          type: "array",
+          items: { type: "string" },
+          description: "Keys to delete (only raw tier entries will be deleted)"
+        }
+      },
+      required: ["keys"]
+    }
+  }
+};
+var memoryRetrieveBatchDefinition = {
+  type: "function",
+  function: {
+    name: "memory_retrieve_batch",
+    description: `Retrieve multiple memory entries at once. More efficient than multiple memory_retrieve calls.
+
+Use this for:
+- Getting all findings before synthesis: pattern="findings.*"
+- Getting specific entries by keys: keys=["findings.search1", "findings.search2"]
+- Getting all entries from a tier: tier="findings"
+
+Returns all matching entries with their full values in one call.`,
+    parameters: {
+      type: "object",
+      properties: {
+        pattern: {
+          type: "string",
+          description: 'Glob-like pattern to match keys (e.g., "findings.*", "search.*", "*"). Supports * as wildcard.'
+        },
+        keys: {
+          type: "array",
+          items: { type: "string" },
+          description: "Specific keys to retrieve. Use this when you know exact keys."
+        },
+        tier: {
+          type: "string",
+          enum: ["raw", "summary", "findings"],
+          description: "Retrieve all entries from a specific tier."
+        },
+        includeMetadata: {
+          type: "boolean",
+          description: "If true, include metadata (priority, tier, pinned) with each entry. Default: false."
+        }
+      },
+      required: []
+    }
+  }
+};
+function matchPattern(key, pattern) {
+  const regexPattern = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(key);
+}
+function createMemoryStoreTool() {
+  return {
+    definition: memoryStoreDefinition,
+    execute: async (args, context) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError("memory_store", "Memory tools require TaskAgent context");
+      }
+      try {
+        let key = args.key;
+        const tier = args.tier;
+        const derivedFrom = args.derivedFrom;
+        if (tier) {
+          key = addTierPrefix(key, tier);
+        }
+        let scope;
+        if (args.neededForTasks && Array.isArray(args.neededForTasks) && args.neededForTasks.length > 0) {
+          scope = { type: "task", taskIds: args.neededForTasks };
+        } else if (args.scope === "plan") {
+          scope = { type: "plan" };
+        } else if (args.scope === "persistent") {
+          scope = { type: "persistent" };
+        } else if (tier === "findings") {
+          scope = { type: "plan" };
+        } else {
+          scope = "session";
+        }
+        let priority = args.priority;
+        if (tier) {
+          priority = TIER_PRIORITIES[tier];
+        }
+        await context.memory.set(
+          key,
+          args.description,
+          args.value,
+          {
+            scope,
+            priority,
+            pinned: args.pinned
+          }
+        );
+        return {
+          success: true,
+          key,
+          tier: tier ?? getTierFromKey(key) ?? "none",
+          scope: typeof scope === "string" ? scope : scope.type,
+          priority: priority ?? "normal",
+          derivedFrom: derivedFrom ?? []
+        };
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: "small" },
+    describeCall: (args) => {
+      const tier = args.tier;
+      const key = args.key;
+      return tier ? `${tier}:${key}` : key;
+    }
+  };
+}
+function createMemoryRetrieveTool() {
+  return {
+    definition: memoryRetrieveDefinition,
+    execute: async (args, context) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError("memory_retrieve", "Memory tools require TaskAgent context");
+      }
+      const value = await context.memory.get(args.key);
+      if (value === void 0) {
+        return { error: `Key "${args.key}" not found in memory` };
+      }
+      return value;
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: "variable" },
+    describeCall: (args) => args.key
+  };
+}
+function createMemoryDeleteTool() {
+  return {
+    definition: memoryDeleteDefinition,
+    execute: async (args, context) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError("memory_delete", "Memory tools require TaskAgent context");
+      }
+      await context.memory.delete(args.key);
+      return { success: true, deleted: args.key };
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: "small" },
+    describeCall: (args) => args.key
+  };
+}
+function createMemoryListTool() {
+  return {
+    definition: memoryListDefinition,
+    execute: async (args, context) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError("memory_list", "Memory tools require TaskAgent context");
+      }
+      let entries = await context.memory.list();
+      const tierFilter = args.tier;
+      if (tierFilter) {
+        const prefix = `${tierFilter}.`;
+        entries = entries.filter((e) => e.key.startsWith(prefix));
+      }
+      return {
+        entries: entries.map((e) => ({
+          key: e.key,
+          description: e.description,
+          priority: e.effectivePriority,
+          tier: getTierFromKey(e.key) ?? "none",
+          pinned: e.pinned
+        })),
+        count: entries.length,
+        tierFilter: tierFilter ?? "all"
+      };
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: "small" },
+    describeCall: (args) => {
+      const tier = args.tier;
+      return tier ? `tier:${tier}` : "all";
+    }
+  };
+}
+function createMemoryCleanupRawTool() {
+  return {
+    definition: memoryCleanupRawDefinition,
+    execute: async (args, context) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError("memory_cleanup_raw", "Memory tools require TaskAgent context");
+      }
+      const keys = args.keys;
+      let deletedCount = 0;
+      const skipped = [];
+      for (const key of keys) {
+        const tier = getTierFromKey(key);
+        if (tier === "raw") {
+          const exists = await context.memory.has(key);
+          if (exists) {
+            await context.memory.delete(key);
+            deletedCount++;
+          }
+        } else {
+          skipped.push(key);
+        }
+      }
+      return {
+        success: true,
+        deleted: deletedCount,
+        skipped: skipped.length > 0 ? skipped : void 0,
+        skippedReason: skipped.length > 0 ? "Not raw tier entries" : void 0
+      };
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: "small" },
+    describeCall: (args) => `${args.keys.length} keys`
+  };
+}
+function createMemoryRetrieveBatchTool() {
+  return {
+    definition: memoryRetrieveBatchDefinition,
+    execute: async (args, context) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError("memory_retrieve_batch", "Memory tools require TaskAgent context");
+      }
+      const pattern = args.pattern;
+      const keys = args.keys;
+      const tier = args.tier;
+      const includeMetadata = args.includeMetadata;
+      const allEntries = await context.memory.list();
+      let keysToRetrieve = [];
+      if (keys && keys.length > 0) {
+        keysToRetrieve = keys;
+      } else if (pattern) {
+        keysToRetrieve = allEntries.filter((e) => matchPattern(e.key, pattern)).map((e) => e.key);
+      } else if (tier) {
+        const prefix = `${tier}.`;
+        keysToRetrieve = allEntries.filter((e) => e.key.startsWith(prefix)).map((e) => e.key);
+      } else {
+        keysToRetrieve = allEntries.map((e) => e.key);
+      }
+      const results = {};
+      const metadata = {};
+      const notFound = [];
+      for (const key of keysToRetrieve) {
+        const value = await context.memory.get(key);
+        if (value !== void 0) {
+          results[key] = value;
+          if (includeMetadata) {
+            const entry = allEntries.find((e) => e.key === key);
+            if (entry) {
+              metadata[key] = {
+                tier: getTierFromKey(key) ?? "none",
+                priority: entry.effectivePriority ?? "normal",
+                pinned: entry.pinned ?? false,
+                description: entry.description
+              };
+            }
+          }
+        } else {
+          notFound.push(key);
+        }
+      }
+      return {
+        entries: results,
+        count: Object.keys(results).length,
+        ...includeMetadata ? { metadata } : {},
+        ...notFound.length > 0 ? { notFound } : {},
+        filter: pattern ? `pattern:${pattern}` : tier ? `tier:${tier}` : keys ? `keys:${keys.length}` : "all"
+      };
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: "variable" },
+    describeCall: (args) => {
+      const pattern = args.pattern;
+      const keys = args.keys;
+      const tier = args.tier;
+      if (pattern) return `pattern:${pattern}`;
+      if (tier) return `tier:${tier}`;
+      if (keys) return `${keys.length} keys`;
+      return "all";
+    }
+  };
+}
+function createMemoryTools() {
+  return [
+    createMemoryStoreTool(),
+    createMemoryRetrieveTool(),
+    createMemoryDeleteTool(),
+    createMemoryListTool(),
+    createMemoryCleanupRawTool(),
+    createMemoryRetrieveBatchTool()
+  ];
+}
+
+// src/capabilities/taskAgent/contextTools.ts
+function createContextInspectTool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "context_inspect",
+        description: "Get detailed breakdown of current context budget and utilization. Shows total tokens, used tokens, available tokens, utilization percentage, and status (ok/warning/critical).",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    execute: async (_args, context) => {
+      if (!context?.contextManager) {
+        return {
+          error: "Context manager not available",
+          message: "This tool is only available within TaskAgent execution"
+        };
+      }
+      const budget = context.contextManager.getCurrentBudget();
+      if (!budget) {
+        return {
+          error: "No context budget available",
+          message: "Context has not been prepared yet"
+        };
+      }
+      return {
+        total_tokens: budget.total,
+        reserved_tokens: budget.reserved,
+        used_tokens: budget.used,
+        available_tokens: budget.available,
+        utilization_percent: Math.round(budget.utilizationPercent * 10) / 10,
+        status: budget.status,
+        warning: budget.status === "warning" ? "Context approaching limit - automatic compaction may trigger" : budget.status === "critical" ? "Context at critical level - compaction will trigger" : null
+      };
+    },
+    idempotency: {
+      safe: true
+      // Read-only operation
+    }
+  };
+}
+function createContextBreakdownTool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "context_breakdown",
+        description: "Get detailed token breakdown by component (system prompt, instructions, memory index, conversation history, current input). Useful for understanding what is consuming context space.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    execute: async (_args, context) => {
+      if (!context?.contextManager) {
+        return {
+          error: "Context manager not available",
+          message: "This tool is only available within TaskAgent execution"
+        };
+      }
+      const budget = context.contextManager.getCurrentBudget();
+      if (!budget) {
+        return {
+          error: "No context budget available",
+          message: "Context has not been prepared yet"
+        };
+      }
+      const components = Object.entries(budget.breakdown).map(([name, tokens]) => ({
+        name,
+        tokens,
+        percent: budget.used > 0 ? Math.round(tokens / budget.used * 1e3) / 10 : 0
+      }));
+      return {
+        total_used: budget.used,
+        breakdown: budget.breakdown,
+        components
+      };
+    },
+    idempotency: {
+      safe: true
+      // Read-only operation
+    }
+  };
+}
+function createCacheStatsTool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "cache_stats",
+        description: "Get statistics about the tool call idempotency cache. Shows number of cached entries, cache hits, cache misses, and hit rate. Useful for understanding cache effectiveness.",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    execute: async (_args, context) => {
+      if (!context?.idempotencyCache) {
+        return {
+          error: "Idempotency cache not available",
+          message: "This tool is only available within TaskAgent execution"
+        };
+      }
+      const stats = context.idempotencyCache.getStats();
+      return {
+        entries: stats.entries,
+        hits: stats.hits,
+        misses: stats.misses,
+        hit_rate: Math.round(stats.hitRate * 1e3) / 10,
+        hit_rate_percent: `${Math.round(stats.hitRate * 100)}%`,
+        effectiveness: stats.hitRate > 0.5 ? "high" : stats.hitRate > 0.2 ? "medium" : stats.hitRate > 0 ? "low" : "none"
+      };
+    },
+    idempotency: {
+      safe: true
+      // Read-only operation
+    }
+  };
+}
+function createMemoryStatsTool() {
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: "memory_stats",
+        description: "Get detailed working memory utilization statistics. Shows total size, utilization percentage, number of entries, and breakdown by scope (persistent vs task-scoped).",
+        parameters: {
+          type: "object",
+          properties: {},
+          required: []
+        }
+      }
+    },
+    execute: async (_args, context) => {
+      if (!context?.memory) {
+        return {
+          error: "Working memory not available",
+          message: "This tool is only available within TaskAgent execution"
+        };
+      }
+      const index = await context.memory.list();
+      return {
+        entry_count: index.length,
+        entries_by_scope: {
+          total: index.length
+          // Note: scope information not available through WorkingMemoryAccess interface
+          // Would need to extend the interface or use a different approach
+        },
+        entries: index.map((entry) => ({
+          key: entry.key,
+          description: entry.description
+        }))
+      };
+    },
+    idempotency: {
+      safe: true
+      // Read-only operation
+    }
+  };
+}
+function createContextTools() {
+  return [
+    createContextInspectTool(),
+    createContextBreakdownTool(),
+    createCacheStatsTool(),
+    createMemoryStatsTool()
+  ];
+}
+
+// src/core/AgentContextTools.ts
+function getAgentContextTools(context) {
+  const tools = [];
+  tools.push(createContextInspectTool());
+  tools.push(createContextBreakdownTool());
+  if (context.isFeatureEnabled("memory")) {
+    tools.push(createMemoryStoreTool());
+    tools.push(createMemoryRetrieveTool());
+    tools.push(createMemoryDeleteTool());
+    tools.push(createMemoryListTool());
+    tools.push(createMemoryCleanupRawTool());
+    tools.push(createMemoryRetrieveBatchTool());
+    tools.push(createMemoryStatsTool());
+    tools.push(createCacheStatsTool());
+  }
+  return tools;
+}
+function getBasicIntrospectionTools() {
+  return [createContextInspectTool(), createContextBreakdownTool()];
+}
+function getMemoryTools() {
+  return [
+    createMemoryStoreTool(),
+    createMemoryRetrieveTool(),
+    createMemoryDeleteTool(),
+    createMemoryListTool(),
+    createMemoryCleanupRawTool(),
+    createMemoryRetrieveBatchTool(),
+    createMemoryStatsTool(),
+    createCacheStatsTool()
+  ];
+}
 (class {
   static DEFAULT_PATHS = [
     "./oneringai.config.json",
@@ -20779,23 +22211,6 @@ function updateAgentStatus(state, status) {
   return updated;
 }
 
-// src/core/context/plugins/IContextPlugin.ts
-var BaseContextPlugin = class {
-  // Default implementations - override as needed
-  async compact(_targetTokens, _estimator) {
-    return 0;
-  }
-  async onPrepared(_budget) {
-  }
-  destroy() {
-  }
-  getState() {
-    return void 0;
-  }
-  restoreState(_state) {
-  }
-};
-
 // src/core/context/plugins/PlanPlugin.ts
 var PlanPlugin = class extends BaseContextPlugin {
   name = "plan";
@@ -21559,12 +22974,14 @@ var PlanExecutor = class extends eventemitter3.EventEmitter {
   }
   /**
    * Get memory from AgentContext (single source of truth)
+   * May be null if memory feature is disabled
    */
   get memory() {
     return this.agentContext.memory;
   }
   /**
    * Get idempotency cache from AgentContext (single source of truth)
+   * May be null if memory feature is disabled
    */
   get idempotencyCache() {
     return this.agentContext.cache;
@@ -21586,8 +23003,12 @@ var PlanExecutor = class extends eventemitter3.EventEmitter {
   }
   /**
    * Notify memory about task completion and detect stale entries
+   * No-op if memory feature is disabled
    */
   async notifyMemoryOfTaskCompletion(plan, taskId) {
+    if (!this.memory) {
+      return;
+    }
     const taskStates = this.buildTaskStatesMap(plan);
     const staleEntries = await this.memory.onTaskComplete(taskId, taskStates);
     if (staleEntries.length > 0) {
@@ -21702,9 +23123,8 @@ var PlanExecutor = class extends eventemitter3.EventEmitter {
     if (!task.condition) {
       return true;
     }
-    return evaluateCondition(task.condition, {
-      get: (key) => this.memory.retrieve(key)
-    });
+    const getter = this.memory ? (key) => this.memory.retrieve(key) : (_key) => Promise.resolve(void 0);
+    return evaluateCondition(task.condition, { get: getter });
   }
   /**
    * Get the timeout for a task (per-task override or config default)
@@ -21947,7 +23367,7 @@ var PlanExecutor = class extends eventemitter3.EventEmitter {
         requiresUserApproval: false
       };
     }
-    if (this.hooks?.validateTask) {
+    if (this.hooks?.validateTask && this.memory) {
       const taskResult = { success: true, output };
       const hookResult = await this.hooks.validateTask(task, taskResult, this.memory);
       if (typeof hookResult === "boolean") {
@@ -21971,7 +23391,7 @@ var PlanExecutor = class extends eventemitter3.EventEmitter {
     if (task.validation.requiredMemoryKeys && task.validation.requiredMemoryKeys.length > 0) {
       const missingKeys = [];
       for (const key of task.validation.requiredMemoryKeys) {
-        const value = await this.memory.retrieve(key);
+        const value = this.memory ? await this.memory.retrieve(key) : void 0;
         if (value === void 0) {
           missingKeys.push(key);
         }
@@ -22147,6 +23567,7 @@ Be honest and thorough in your evaluation. A score of 100 means all criteria are
   }
   /**
    * Get idempotency cache
+   * Returns null if memory feature is disabled
    */
   getIdempotencyCache() {
     return this.idempotencyCache;
@@ -22270,583 +23691,6 @@ var CheckpointManager = class {
   }
 };
 
-// src/capabilities/taskAgent/memoryTools.ts
-var memoryStoreDefinition = {
-  type: "function",
-  function: {
-    name: "memory_store",
-    description: `Store data in working memory for later use. Use this to save important information from tool outputs.
-
-TIER SYSTEM (for research/analysis tasks):
-- "raw": Low priority, evicted first. Use for unprocessed data you'll summarize later.
-- "summary": Normal priority. Use for processed summaries of raw data.
-- "findings": High priority, kept longest. Use for final conclusions and insights.
-
-The tier automatically sets priority and adds a key prefix (e.g., "findings.topic" for tier="findings").`,
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: 'Namespaced key (e.g., "user.profile", "search.ai_news"). If using tier, prefix is added automatically.'
-        },
-        description: {
-          type: "string",
-          description: "Brief description of what this data contains (max 150 chars)"
-        },
-        value: {
-          description: "The data to store (can be any JSON value)"
-        },
-        tier: {
-          type: "string",
-          enum: ["raw", "summary", "findings"],
-          description: 'Optional: Memory tier. "raw" (low priority, evict first), "summary" (normal), "findings" (high priority, keep longest). Automatically sets key prefix and priority.'
-        },
-        derivedFrom: {
-          type: "array",
-          items: { type: "string" },
-          description: "Optional: Keys this data was derived from (for tracking data lineage, useful with tiers)"
-        },
-        neededForTasks: {
-          type: "array",
-          items: { type: "string" },
-          description: "Optional: Task IDs that need this data. Data will be auto-cleaned when all tasks complete."
-        },
-        scope: {
-          type: "string",
-          enum: ["session", "plan", "persistent"],
-          description: 'Optional: Lifecycle scope. "session" (default), "plan" (kept for entire plan), or "persistent" (never auto-cleaned)'
-        },
-        priority: {
-          type: "string",
-          enum: ["low", "normal", "high", "critical"],
-          description: "Optional: Override eviction priority. Ignored if tier is set (tier determines priority)."
-        },
-        pinned: {
-          type: "boolean",
-          description: "Optional: If true, this data will never be evicted."
-        }
-      },
-      required: ["key", "description", "value"]
-    }
-  }
-};
-var memoryRetrieveDefinition = {
-  type: "function",
-  function: {
-    name: "memory_retrieve",
-    description: "Retrieve full data from working memory by key. Use when you need the complete data, not just the description.",
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: 'The key to retrieve (include tier prefix if applicable, e.g., "findings.topic")'
-        }
-      },
-      required: ["key"]
-    }
-  }
-};
-var memoryDeleteDefinition = {
-  type: "function",
-  function: {
-    name: "memory_delete",
-    description: "Delete data from working memory to free up space.",
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: "The key to delete"
-        }
-      },
-      required: ["key"]
-    }
-  }
-};
-var memoryListDefinition = {
-  type: "function",
-  function: {
-    name: "memory_list",
-    description: "List all keys and their descriptions in working memory.",
-    parameters: {
-      type: "object",
-      properties: {
-        tier: {
-          type: "string",
-          enum: ["raw", "summary", "findings"],
-          description: "Optional: Filter to only show entries from a specific tier"
-        }
-      },
-      required: []
-    }
-  }
-};
-var memoryCleanupRawDefinition = {
-  type: "function",
-  function: {
-    name: "memory_cleanup_raw",
-    description: 'Clean up raw tier data after creating summaries/findings. Only deletes entries with "raw." prefix.',
-    parameters: {
-      type: "object",
-      properties: {
-        keys: {
-          type: "array",
-          items: { type: "string" },
-          description: "Keys to delete (only raw tier entries will be deleted)"
-        }
-      },
-      required: ["keys"]
-    }
-  }
-};
-var memoryRetrieveBatchDefinition = {
-  type: "function",
-  function: {
-    name: "memory_retrieve_batch",
-    description: `Retrieve multiple memory entries at once. More efficient than multiple memory_retrieve calls.
-
-Use this for:
-- Getting all findings before synthesis: pattern="findings.*"
-- Getting specific entries by keys: keys=["findings.search1", "findings.search2"]
-- Getting all entries from a tier: tier="findings"
-
-Returns all matching entries with their full values in one call.`,
-    parameters: {
-      type: "object",
-      properties: {
-        pattern: {
-          type: "string",
-          description: 'Glob-like pattern to match keys (e.g., "findings.*", "search.*", "*"). Supports * as wildcard.'
-        },
-        keys: {
-          type: "array",
-          items: { type: "string" },
-          description: "Specific keys to retrieve. Use this when you know exact keys."
-        },
-        tier: {
-          type: "string",
-          enum: ["raw", "summary", "findings"],
-          description: "Retrieve all entries from a specific tier."
-        },
-        includeMetadata: {
-          type: "boolean",
-          description: "If true, include metadata (priority, tier, pinned) with each entry. Default: false."
-        }
-      },
-      required: []
-    }
-  }
-};
-function matchPattern(key, pattern) {
-  const regexPattern = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-  const regex = new RegExp(`^${regexPattern}$`);
-  return regex.test(key);
-}
-function createMemoryTools() {
-  return [
-    // memory_store
-    {
-      definition: memoryStoreDefinition,
-      execute: async (args, context) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError("memory_store", "Memory tools require TaskAgent context");
-        }
-        try {
-          let key = args.key;
-          const tier = args.tier;
-          const derivedFrom = args.derivedFrom;
-          if (tier) {
-            key = addTierPrefix(key, tier);
-          }
-          let scope;
-          if (args.neededForTasks && Array.isArray(args.neededForTasks) && args.neededForTasks.length > 0) {
-            scope = { type: "task", taskIds: args.neededForTasks };
-          } else if (args.scope === "plan") {
-            scope = { type: "plan" };
-          } else if (args.scope === "persistent") {
-            scope = { type: "persistent" };
-          } else if (tier === "findings") {
-            scope = { type: "plan" };
-          } else {
-            scope = "session";
-          }
-          let priority = args.priority;
-          if (tier) {
-            priority = TIER_PRIORITIES[tier];
-          }
-          await context.memory.set(
-            key,
-            args.description,
-            args.value,
-            {
-              scope,
-              priority,
-              pinned: args.pinned
-            }
-          );
-          return {
-            success: true,
-            key,
-            tier: tier ?? getTierFromKey(key) ?? "none",
-            scope: typeof scope === "string" ? scope : scope.type,
-            priority: priority ?? "normal",
-            derivedFrom: derivedFrom ?? []
-          };
-        } catch (error) {
-          return { error: error instanceof Error ? error.message : String(error) };
-        }
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "small" },
-      describeCall: (args) => {
-        const tier = args.tier;
-        const key = args.key;
-        return tier ? `${tier}:${key}` : key;
-      }
-    },
-    // memory_retrieve
-    {
-      definition: memoryRetrieveDefinition,
-      execute: async (args, context) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError("memory_retrieve", "Memory tools require TaskAgent context");
-        }
-        const value = await context.memory.get(args.key);
-        if (value === void 0) {
-          return { error: `Key "${args.key}" not found in memory` };
-        }
-        return value;
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "variable" },
-      describeCall: (args) => args.key
-    },
-    // memory_delete
-    {
-      definition: memoryDeleteDefinition,
-      execute: async (args, context) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError("memory_delete", "Memory tools require TaskAgent context");
-        }
-        await context.memory.delete(args.key);
-        return { success: true, deleted: args.key };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "small" },
-      describeCall: (args) => args.key
-    },
-    // memory_list
-    {
-      definition: memoryListDefinition,
-      execute: async (args, context) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError("memory_list", "Memory tools require TaskAgent context");
-        }
-        let entries = await context.memory.list();
-        const tierFilter = args.tier;
-        if (tierFilter) {
-          const prefix = `${tierFilter}.`;
-          entries = entries.filter((e) => e.key.startsWith(prefix));
-        }
-        return {
-          entries: entries.map((e) => ({
-            key: e.key,
-            description: e.description,
-            priority: e.effectivePriority,
-            tier: getTierFromKey(e.key) ?? "none",
-            pinned: e.pinned
-          })),
-          count: entries.length,
-          tierFilter: tierFilter ?? "all"
-        };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "small" },
-      describeCall: (args) => {
-        const tier = args.tier;
-        return tier ? `tier:${tier}` : "all";
-      }
-    },
-    // memory_cleanup_raw
-    {
-      definition: memoryCleanupRawDefinition,
-      execute: async (args, context) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError("memory_cleanup_raw", "Memory tools require TaskAgent context");
-        }
-        const keys = args.keys;
-        let deletedCount = 0;
-        const skipped = [];
-        for (const key of keys) {
-          const tier = getTierFromKey(key);
-          if (tier === "raw") {
-            const exists = await context.memory.has(key);
-            if (exists) {
-              await context.memory.delete(key);
-              deletedCount++;
-            }
-          } else {
-            skipped.push(key);
-          }
-        }
-        return {
-          success: true,
-          deleted: deletedCount,
-          skipped: skipped.length > 0 ? skipped : void 0,
-          skippedReason: skipped.length > 0 ? "Not raw tier entries" : void 0
-        };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "small" },
-      describeCall: (args) => `${args.keys.length} keys`
-    },
-    // memory_retrieve_batch
-    {
-      definition: memoryRetrieveBatchDefinition,
-      execute: async (args, context) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError("memory_retrieve_batch", "Memory tools require TaskAgent context");
-        }
-        const pattern = args.pattern;
-        const keys = args.keys;
-        const tier = args.tier;
-        const includeMetadata = args.includeMetadata;
-        const allEntries = await context.memory.list();
-        let keysToRetrieve = [];
-        if (keys && keys.length > 0) {
-          keysToRetrieve = keys;
-        } else if (pattern) {
-          keysToRetrieve = allEntries.filter((e) => matchPattern(e.key, pattern)).map((e) => e.key);
-        } else if (tier) {
-          const prefix = `${tier}.`;
-          keysToRetrieve = allEntries.filter((e) => e.key.startsWith(prefix)).map((e) => e.key);
-        } else {
-          keysToRetrieve = allEntries.map((e) => e.key);
-        }
-        const results = {};
-        const metadata = {};
-        const notFound = [];
-        for (const key of keysToRetrieve) {
-          const value = await context.memory.get(key);
-          if (value !== void 0) {
-            results[key] = value;
-            if (includeMetadata) {
-              const entry = allEntries.find((e) => e.key === key);
-              if (entry) {
-                metadata[key] = {
-                  tier: getTierFromKey(key) ?? "none",
-                  priority: entry.effectivePriority ?? "normal",
-                  pinned: entry.pinned ?? false,
-                  description: entry.description
-                };
-              }
-            }
-          } else {
-            notFound.push(key);
-          }
-        }
-        return {
-          entries: results,
-          count: Object.keys(results).length,
-          ...includeMetadata ? { metadata } : {},
-          ...notFound.length > 0 ? { notFound } : {},
-          filter: pattern ? `pattern:${pattern}` : tier ? `tier:${tier}` : keys ? `keys:${keys.length}` : "all"
-        };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: "variable" },
-      describeCall: (args) => {
-        const pattern = args.pattern;
-        const keys = args.keys;
-        const tier = args.tier;
-        if (pattern) return `pattern:${pattern}`;
-        if (tier) return `tier:${tier}`;
-        if (keys) return `${keys.length} keys`;
-        return "all";
-      }
-    }
-  ];
-}
-
-// src/capabilities/taskAgent/contextTools.ts
-function createContextTools() {
-  return [
-    createContextInspectTool(),
-    createContextBreakdownTool(),
-    createCacheStatsTool(),
-    createMemoryStatsTool()
-  ];
-}
-function createContextInspectTool() {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "context_inspect",
-        description: "Get detailed breakdown of current context budget and utilization. Shows total tokens, used tokens, available tokens, utilization percentage, and status (ok/warning/critical).",
-        parameters: {
-          type: "object",
-          properties: {},
-          required: []
-        }
-      }
-    },
-    execute: async (_args, context) => {
-      if (!context?.contextManager) {
-        return {
-          error: "Context manager not available",
-          message: "This tool is only available within TaskAgent execution"
-        };
-      }
-      const budget = context.contextManager.getCurrentBudget();
-      if (!budget) {
-        return {
-          error: "No context budget available",
-          message: "Context has not been prepared yet"
-        };
-      }
-      return {
-        total_tokens: budget.total,
-        reserved_tokens: budget.reserved,
-        used_tokens: budget.used,
-        available_tokens: budget.available,
-        utilization_percent: Math.round(budget.utilizationPercent * 10) / 10,
-        status: budget.status,
-        warning: budget.status === "warning" ? "Context approaching limit - automatic compaction may trigger" : budget.status === "critical" ? "Context at critical level - compaction will trigger" : null
-      };
-    },
-    idempotency: {
-      safe: true
-      // Read-only operation
-    }
-  };
-}
-function createContextBreakdownTool() {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "context_breakdown",
-        description: "Get detailed token breakdown by component (system prompt, instructions, memory index, conversation history, current input). Useful for understanding what is consuming context space.",
-        parameters: {
-          type: "object",
-          properties: {},
-          required: []
-        }
-      }
-    },
-    execute: async (_args, context) => {
-      if (!context?.contextManager) {
-        return {
-          error: "Context manager not available",
-          message: "This tool is only available within TaskAgent execution"
-        };
-      }
-      const budget = context.contextManager.getCurrentBudget();
-      if (!budget) {
-        return {
-          error: "No context budget available",
-          message: "Context has not been prepared yet"
-        };
-      }
-      const components = Object.entries(budget.breakdown).map(([name, tokens]) => ({
-        name,
-        tokens,
-        percent: budget.used > 0 ? Math.round(tokens / budget.used * 1e3) / 10 : 0
-      }));
-      return {
-        total_used: budget.used,
-        breakdown: budget.breakdown,
-        components
-      };
-    },
-    idempotency: {
-      safe: true
-      // Read-only operation
-    }
-  };
-}
-function createCacheStatsTool() {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "cache_stats",
-        description: "Get statistics about the tool call idempotency cache. Shows number of cached entries, cache hits, cache misses, and hit rate. Useful for understanding cache effectiveness.",
-        parameters: {
-          type: "object",
-          properties: {},
-          required: []
-        }
-      }
-    },
-    execute: async (_args, context) => {
-      if (!context?.idempotencyCache) {
-        return {
-          error: "Idempotency cache not available",
-          message: "This tool is only available within TaskAgent execution"
-        };
-      }
-      const stats = context.idempotencyCache.getStats();
-      return {
-        entries: stats.entries,
-        hits: stats.hits,
-        misses: stats.misses,
-        hit_rate: Math.round(stats.hitRate * 1e3) / 10,
-        hit_rate_percent: `${Math.round(stats.hitRate * 100)}%`,
-        effectiveness: stats.hitRate > 0.5 ? "high" : stats.hitRate > 0.2 ? "medium" : stats.hitRate > 0 ? "low" : "none"
-      };
-    },
-    idempotency: {
-      safe: true
-      // Read-only operation
-    }
-  };
-}
-function createMemoryStatsTool() {
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: "memory_stats",
-        description: "Get detailed working memory utilization statistics. Shows total size, utilization percentage, number of entries, and breakdown by scope (persistent vs task-scoped).",
-        parameters: {
-          type: "object",
-          properties: {},
-          required: []
-        }
-      }
-    },
-    execute: async (_args, context) => {
-      if (!context?.memory) {
-        return {
-          error: "Working memory not available",
-          message: "This tool is only available within TaskAgent execution"
-        };
-      }
-      const index = await context.memory.list();
-      return {
-        entry_count: index.length,
-        entries_by_scope: {
-          total: index.length
-          // Note: scope information not available through WorkingMemoryAccess interface
-          // Would need to extend the interface or use a different approach
-        },
-        entries: index.map((entry) => ({
-          key: entry.key,
-          description: entry.description
-        }))
-      };
-    },
-    idempotency: {
-      safe: true
-      // Read-only operation
-    }
-  };
-}
-
 // src/capabilities/taskAgent/TaskAgent.ts
 var TaskAgent = class _TaskAgent extends BaseAgent {
   id;
@@ -22957,12 +23801,14 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     this.agentStorage = agentStorage;
     this.hooks = hooks;
     const memory = this._agentContext.memory;
-    const storedHandler = (data) => this.emit("memory:stored", data);
-    const limitWarningHandler = (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent });
-    memory.on("stored", storedHandler);
-    memory.on("limit_warning", limitWarningHandler);
-    this.eventCleanupFunctions.push(() => memory.off("stored", storedHandler));
-    this.eventCleanupFunctions.push(() => memory.off("limit_warning", limitWarningHandler));
+    if (memory) {
+      const storedHandler = (data) => this.emit("memory:stored", data);
+      const limitWarningHandler = (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent });
+      memory.on("stored", storedHandler);
+      memory.on("limit_warning", limitWarningHandler);
+      this.eventCleanupFunctions.push(() => memory.off("stored", storedHandler));
+      this.eventCleanupFunctions.push(() => memory.off("limit_warning", limitWarningHandler));
+    }
     this.initializeSession(config.session);
   }
   // ===== Abstract Method Implementations =====
@@ -23003,20 +23849,22 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     if (plan) {
       this._session.plan = plan;
     }
-    const memoryIndex = await this._agentContext.memory.getIndex();
-    this._session.memory = {
-      version: 1,
-      entries: memoryIndex.entries.map((e) => ({
-        key: e.key,
-        description: e.description,
-        value: null,
-        // Don't serialize full values, they're in agent storage
-        scope: e.scope,
-        sizeBytes: 0,
-        basePriority: e.effectivePriority,
-        pinned: e.pinned
-      }))
-    };
+    if (this._agentContext.memory) {
+      const memoryIndex = await this._agentContext.memory.getIndex();
+      this._session.memory = {
+        version: 1,
+        entries: memoryIndex.entries.map((e) => ({
+          key: e.key,
+          description: e.description,
+          value: null,
+          // Don't serialize full values, they're in agent storage
+          scope: e.scope,
+          sizeBytes: 0,
+          basePriority: e.effectivePriority,
+          pinned: e.pinned
+        }))
+      };
+    }
     this.prepareSessionState();
     await this._sessionManager.save(this._session);
     this._logger.debug({ sessionId: this._session.id }, "TaskAgent session saved");
@@ -23032,11 +23880,12 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
       execute: async (args, context) => {
         const enhancedContext = {
           ...context,
-          memory: this._agentContext.memory.getAccess(),
-          // Add memory access for memory tools
+          memory: this._agentContext.memory?.getAccess(),
+          // Add memory access for memory tools (may be undefined if disabled)
           agentContext: this._agentContext,
           // Inherited from BaseAgent
-          idempotencyCache: this._agentContext.cache,
+          idempotencyCache: this._agentContext.cache ?? void 0,
+          // May be undefined if memory disabled
           agentId: this.id
         };
         if (!this._agentContext.cache) {
@@ -23056,10 +23905,9 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
    * Initialize internal components
    */
   initializeComponents(config) {
-    const memoryTools = createMemoryTools();
-    const contextTools = createContextTools();
-    this._allTools = [...config.tools ?? [], ...memoryTools, ...contextTools];
-    for (const tool of [...memoryTools, ...contextTools]) {
+    const featureTools = getAgentContextTools(this._agentContext);
+    this._allTools = [...config.tools ?? [], ...featureTools];
+    for (const tool of featureTools) {
       this._agentContext.tools.register(tool);
     }
     const enabledTools = this._agentContext.tools.getEnabled();
@@ -23082,9 +23930,11 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
       this._agentContext.systemPrompt = config.instructions;
     }
     this._planPlugin = new PlanPlugin();
-    this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
     this._agentContext.registerPlugin(this._planPlugin);
-    this._agentContext.registerPlugin(this._memoryPlugin);
+    if (this._agentContext.memory) {
+      this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
+      this._agentContext.registerPlugin(this._memoryPlugin);
+    }
     this._planPlugin.setPlan(this.state.plan);
     this.externalHandler = new ExternalDependencyHandler(this._allTools);
     this.checkpointManager = new CheckpointManager(this.agentStorage, DEFAULT_CHECKPOINT_STRATEGY);
@@ -23312,12 +24162,14 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
   }
   /**
    * Get working memory (from AgentContext - single source of truth)
+   * Returns null if memory feature is disabled
    */
   getMemory() {
     return this._agentContext.memory;
   }
   /**
    * Convenient getter for working memory (alias for _agentContext.memory)
+   * Returns null if memory feature is disabled
    */
   get memory() {
     return this._agentContext.memory;
@@ -23753,7 +24605,7 @@ async function generateSimplePlan(goal, context) {
     // Allow agent to modify plan
   });
 }
-var DEFAULT_CONFIG = {
+var DEFAULT_CONFIG2 = {
   sizeThreshold: 10 * 1024,
   // 10KB
   tools: [],
@@ -23776,7 +24628,7 @@ var AutoSpillPlugin = class extends BaseContextPlugin {
   constructor(memory, config = {}) {
     super();
     this.memory = memory;
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.config = { ...DEFAULT_CONFIG2, ...config };
   }
   /**
    * Subscribe to events
@@ -24083,8 +24935,10 @@ var ResearchAgent = class _ResearchAgent extends TaskAgent {
       toolPatterns: [/^research_fetch/, /^web_fetch/, /^web_scrape/],
       ...config.autoSpill
     };
-    this.autoSpillPlugin = new AutoSpillPlugin(this._agentContext.memory, autoSpillConfig);
-    this._agentContext.registerPlugin(this.autoSpillPlugin);
+    if (this._agentContext.memory) {
+      this.autoSpillPlugin = new AutoSpillPlugin(this._agentContext.memory, autoSpillConfig);
+      this._agentContext.registerPlugin(this.autoSpillPlugin);
+    }
     this.setupAutoMemoryManagement();
   }
   /**
@@ -24181,10 +25035,15 @@ var ResearchAgent = class _ResearchAgent extends TaskAgent {
   }
   /**
    * Store a research finding in memory
+   * Requires memory feature to be enabled
    */
   async storeFinding(key, finding) {
+    const memory = this._agentContext.memory;
+    if (!memory) {
+      throw new Error("ResearchAgent.storeFinding requires memory feature to be enabled");
+    }
     const fullKey = addTierPrefix(key, "findings");
-    await this._agentContext.memory.storeFindings(
+    await memory.storeFindings(
       key,
       `${finding.source}: ${finding.summary.slice(0, 100)}...`,
       finding
@@ -24195,9 +25054,14 @@ var ResearchAgent = class _ResearchAgent extends TaskAgent {
   }
   /**
    * Get all stored findings
+   * Returns empty object if memory feature is disabled
    */
   async getFindings() {
-    const entries = await this._agentContext.memory.getByTier("findings");
+    const memory = this._agentContext.memory;
+    if (!memory) {
+      return {};
+    }
+    const entries = await memory.getByTier("findings");
     const findings = {};
     for (const entry of entries) {
       findings[entry.key] = entry.value;
@@ -24269,12 +25133,14 @@ var ResearchAgent = class _ResearchAgent extends TaskAgent {
           const content = await this.fetchFromSource(resultSet.source, result.reference);
           resultsProcessed++;
           if (content.success) {
-            const rawKey = `${resultSet.source}_${result.id}`;
-            await this._agentContext.memory.storeRaw(
-              rawKey,
-              `Raw content from ${resultSet.source}: ${result.title}`,
-              content.content
-            );
+            if (this._agentContext.memory) {
+              const rawKey = `${resultSet.source}_${result.id}`;
+              await this._agentContext.memory.storeRaw(
+                rawKey,
+                `Raw content from ${resultSet.source}: ${result.title}`,
+                content.content
+              );
+            }
           }
           if (this.researchHooks?.onProgress) {
             await this.researchHooks.onProgress({
@@ -25193,507 +26059,6 @@ var ContextManager = class extends eventemitter3.EventEmitter {
     return createStrategy(strategy, this.config.strategyOptions || {});
   }
 };
-
-// src/core/context/plugins/InContextMemoryPlugin.ts
-var PRIORITY_VALUES = {
-  low: 1,
-  normal: 2,
-  high: 3,
-  critical: 4
-};
-var DEFAULT_CONFIG2 = {
-  maxEntries: 20,
-  maxTotalTokens: 4e3,
-  defaultPriority: "normal",
-  showTimestamps: false,
-  headerText: "## Live Context"
-};
-var InContextMemoryPlugin = class extends BaseContextPlugin {
-  name = "in_context_memory";
-  priority = 5;
-  // Medium priority for compaction
-  compactable = true;
-  entries = /* @__PURE__ */ new Map();
-  config;
-  destroyed = false;
-  /**
-   * Create an InContextMemoryPlugin
-   *
-   * @param config - Configuration options
-   */
-  constructor(config = {}) {
-    super();
-    this.config = { ...DEFAULT_CONFIG2, ...config };
-  }
-  /**
-   * Check if plugin is destroyed
-   */
-  get isDestroyed() {
-    return this.destroyed;
-  }
-  // ============ Entry Management ============
-  /**
-   * Store or update a key-value pair
-   *
-   * @param key - Unique key for this entry
-   * @param description - Human-readable description (shown in context)
-   * @param value - The value to store (any JSON-serializable data)
-   * @param priority - Eviction priority (default from config)
-   */
-  set(key, description, value, priority) {
-    this.assertNotDestroyed();
-    const entry = {
-      key,
-      description,
-      value,
-      updatedAt: Date.now(),
-      priority: priority ?? this.config.defaultPriority
-    };
-    this.entries.set(key, entry);
-    this.enforceMaxEntries();
-  }
-  /**
-   * Get a value by key
-   *
-   * @param key - The key to retrieve
-   * @returns The value, or undefined if not found
-   */
-  get(key) {
-    this.assertNotDestroyed();
-    return this.entries.get(key)?.value;
-  }
-  /**
-   * Check if a key exists
-   *
-   * @param key - The key to check
-   */
-  has(key) {
-    this.assertNotDestroyed();
-    return this.entries.has(key);
-  }
-  /**
-   * Delete an entry by key
-   *
-   * @param key - The key to delete
-   * @returns true if the key existed and was deleted
-   */
-  delete(key) {
-    this.assertNotDestroyed();
-    return this.entries.delete(key);
-  }
-  /**
-   * List all entries with metadata
-   *
-   * @returns Array of entry metadata (without full values)
-   */
-  list() {
-    this.assertNotDestroyed();
-    return Array.from(this.entries.values()).map((e) => ({
-      key: e.key,
-      description: e.description,
-      priority: e.priority,
-      updatedAt: e.updatedAt
-    }));
-  }
-  /**
-   * Clear all entries
-   */
-  clear() {
-    this.assertNotDestroyed();
-    this.entries.clear();
-  }
-  /**
-   * Get the number of entries
-   */
-  get size() {
-    return this.entries.size;
-  }
-  // ============ IContextPlugin Implementation ============
-  /**
-   * Get the context component for this plugin
-   */
-  async getComponent() {
-    this.assertNotDestroyed();
-    if (this.entries.size === 0) {
-      return null;
-    }
-    const content = this.formatContent();
-    return {
-      name: this.name,
-      content,
-      priority: this.priority,
-      compactable: this.compactable,
-      metadata: {
-        entryCount: this.entries.size
-      }
-    };
-  }
-  /**
-   * Compact by evicting low-priority entries
-   *
-   * Eviction order: low → normal → high (critical is never auto-evicted)
-   * Within same priority, oldest entries are evicted first
-   *
-   * @param targetTokens - Target token count to reduce to
-   * @param estimator - Token estimator
-   * @returns Number of tokens freed
-   */
-  async compact(targetTokens, estimator) {
-    this.assertNotDestroyed();
-    const beforeContent = this.formatContent();
-    const beforeTokens = estimator.estimateTokens(beforeContent);
-    if (beforeTokens <= targetTokens) {
-      return 0;
-    }
-    const sortedEntries = this.getSortedEntriesForEviction();
-    for (const entry of sortedEntries) {
-      if (entry.priority === "critical") {
-        break;
-      }
-      this.entries.delete(entry.key);
-      const currentContent = this.formatContent();
-      const currentTokens = estimator.estimateTokens(currentContent);
-      if (currentTokens <= targetTokens) {
-        break;
-      }
-    }
-    const afterContent = this.formatContent();
-    const afterTokens = estimator.estimateTokens(afterContent);
-    return Math.max(0, beforeTokens - afterTokens);
-  }
-  /**
-   * Get serialized state for session persistence
-   */
-  getState() {
-    return {
-      entries: Array.from(this.entries.values()),
-      config: this.config
-    };
-  }
-  /**
-   * Restore state from serialization
-   *
-   * @param state - Previously serialized state
-   */
-  restoreState(state) {
-    this.assertNotDestroyed();
-    if (!state || typeof state !== "object") {
-      return;
-    }
-    const typedState = state;
-    if (typedState.entries && Array.isArray(typedState.entries)) {
-      this.entries.clear();
-      for (const entry of typedState.entries) {
-        if (entry.key && typeof entry.key === "string") {
-          this.entries.set(entry.key, entry);
-        }
-      }
-    }
-    if (typedState.config && typeof typedState.config === "object") {
-      this.config = { ...DEFAULT_CONFIG2, ...typedState.config };
-    }
-  }
-  /**
-   * Clean up resources
-   */
-  destroy() {
-    this.entries.clear();
-    this.destroyed = true;
-  }
-  // ============ Private Methods ============
-  /**
-   * Format entries as markdown for context
-   */
-  formatContent() {
-    if (this.entries.size === 0) {
-      return "";
-    }
-    const lines = [
-      this.config.headerText,
-      "Data below is always current. Use directly - no retrieval needed.",
-      ""
-    ];
-    for (const entry of this.entries.values()) {
-      lines.push(`### ${entry.key}`);
-      lines.push(entry.description);
-      const valueStr = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value, null, 2);
-      lines.push("```json");
-      lines.push(valueStr);
-      lines.push("```");
-      if (this.config.showTimestamps) {
-        const date = new Date(entry.updatedAt);
-        lines.push(`_Updated: ${date.toISOString()}_`);
-      }
-      lines.push("");
-    }
-    return lines.join("\n");
-  }
-  /**
-   * Get entries sorted by eviction priority (lowest priority first, then oldest)
-   */
-  getSortedEntriesForEviction() {
-    return Array.from(this.entries.values()).sort((a, b) => {
-      const priorityDiff = PRIORITY_VALUES[a.priority] - PRIORITY_VALUES[b.priority];
-      if (priorityDiff !== 0) {
-        return priorityDiff;
-      }
-      return a.updatedAt - b.updatedAt;
-    });
-  }
-  /**
-   * Enforce max entries limit by evicting lowest-priority entries
-   */
-  enforceMaxEntries() {
-    if (this.entries.size <= this.config.maxEntries) {
-      return;
-    }
-    const sorted = this.getSortedEntriesForEviction();
-    while (this.entries.size > this.config.maxEntries && sorted.length > 0) {
-      const toEvict = sorted.shift();
-      if (toEvict.priority === "critical") {
-        break;
-      }
-      this.entries.delete(toEvict.key);
-    }
-  }
-  /**
-   * Assert that the plugin hasn't been destroyed
-   */
-  assertNotDestroyed() {
-    if (this.destroyed) {
-      throw new Error("InContextMemoryPlugin has been destroyed");
-    }
-  }
-};
-
-// src/core/context/plugins/inContextMemoryTools.ts
-var contextSetDefinition = {
-  type: "function",
-  function: {
-    name: "context_set",
-    description: `Store or update a key-value pair in the live context.
-The value will appear directly in the context and can be read without retrieval calls.
-
-Use for:
-- Current state/status that changes during execution
-- User preferences or settings
-- Counters, flags, or control variables
-- Small accumulated results
-
-Priority levels (for eviction when space is needed):
-- "low": Evicted first. Temporary or easily recreated data.
-- "normal": Default. Standard importance.
-- "high": Keep longer. Important state.
-- "critical": Never auto-evicted. Only removed via context_delete.`,
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: 'Unique key for this entry (e.g., "current_state", "user_prefs")'
-        },
-        description: {
-          type: "string",
-          description: "Brief description of what this data represents (shown in context)"
-        },
-        value: {
-          description: "The value to store (any JSON-serializable data)"
-        },
-        priority: {
-          type: "string",
-          enum: ["low", "normal", "high", "critical"],
-          description: 'Eviction priority. Default: "normal"'
-        }
-      },
-      required: ["key", "description", "value"]
-    }
-  }
-};
-var contextGetDefinition = {
-  type: "function",
-  function: {
-    name: "context_get",
-    description: `Retrieve a value from the live context by key.
-
-Note: Values are already visible in the context, so this tool is mainly for:
-- Verifying a value exists
-- Getting the value programmatically for processing
-- Debugging`,
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: "The key to retrieve"
-        }
-      },
-      required: ["key"]
-    }
-  }
-};
-var contextDeleteDefinition = {
-  type: "function",
-  function: {
-    name: "context_delete",
-    description: `Delete an entry from the live context to free space.
-
-Use this to:
-- Remove entries that are no longer needed
-- Free space when approaching limits
-- Clean up after a task completes`,
-    parameters: {
-      type: "object",
-      properties: {
-        key: {
-          type: "string",
-          description: "The key to delete"
-        }
-      },
-      required: ["key"]
-    }
-  }
-};
-var contextListDefinition = {
-  type: "function",
-  function: {
-    name: "context_list",
-    description: `List all keys stored in the live context with their metadata.
-
-Returns key, description, priority, and last update time for each entry.
-Use to see what's stored and identify entries to clean up.`,
-    parameters: {
-      type: "object",
-      properties: {},
-      required: []
-    }
-  }
-};
-function createInContextMemoryTools() {
-  return [
-    // context_set
-    {
-      definition: contextSetDefinition,
-      execute: async (args, context) => {
-        const plugin = getPluginFromContext(context, "context_set");
-        const key = args.key;
-        const description = args.description;
-        const value = args.value;
-        const priority = args.priority;
-        plugin.set(key, description, value, priority);
-        return {
-          success: true,
-          key,
-          priority: priority ?? "normal",
-          message: `Stored "${key}" in live context`
-        };
-      },
-      idempotency: { cacheable: false },
-      output: { expectedSize: "small" },
-      permission: {
-        scope: "always",
-        // Auto-approve context operations
-        riskLevel: "low"
-      },
-      describeCall: (args) => args.key
-    },
-    // context_get
-    {
-      definition: contextGetDefinition,
-      execute: async (args, context) => {
-        const plugin = getPluginFromContext(context, "context_get");
-        const key = args.key;
-        const value = plugin.get(key);
-        if (value === void 0) {
-          return { error: `Key "${key}" not found in live context` };
-        }
-        return { key, value };
-      },
-      idempotency: { cacheable: true, ttlMs: 1e3 },
-      output: { expectedSize: "variable" },
-      permission: {
-        scope: "always",
-        riskLevel: "low"
-      },
-      describeCall: (args) => args.key
-    },
-    // context_delete
-    {
-      definition: contextDeleteDefinition,
-      execute: async (args, context) => {
-        const plugin = getPluginFromContext(context, "context_delete");
-        const key = args.key;
-        const existed = plugin.delete(key);
-        return {
-          success: true,
-          key,
-          existed,
-          message: existed ? `Deleted "${key}" from live context` : `Key "${key}" did not exist`
-        };
-      },
-      idempotency: { cacheable: false },
-      output: { expectedSize: "small" },
-      permission: {
-        scope: "always",
-        riskLevel: "low"
-      },
-      describeCall: (args) => args.key
-    },
-    // context_list
-    {
-      definition: contextListDefinition,
-      execute: async (_args, context) => {
-        const plugin = getPluginFromContext(context, "context_list");
-        const entries = plugin.list();
-        return {
-          entries: entries.map((e) => ({
-            key: e.key,
-            description: e.description,
-            priority: e.priority,
-            updatedAt: new Date(e.updatedAt).toISOString()
-          })),
-          count: entries.length
-        };
-      },
-      idempotency: { cacheable: true, ttlMs: 500 },
-      output: { expectedSize: "small" },
-      permission: {
-        scope: "always",
-        riskLevel: "low"
-      },
-      describeCall: () => "all"
-    }
-  ];
-}
-function createInContextMemory(config) {
-  const plugin = new InContextMemoryPlugin(config);
-  const tools = createInContextMemoryTools();
-  return { plugin, tools };
-}
-function setupInContextMemory(agentContext, config) {
-  const { plugin, tools } = createInContextMemory(config);
-  agentContext.registerPlugin(plugin);
-  for (const tool of tools) {
-    agentContext.tools.register(tool);
-  }
-  agentContext.inContextMemory = plugin;
-  return plugin;
-}
-function getPluginFromContext(context, toolName) {
-  if (!context) {
-    throw new ToolExecutionError(
-      toolName,
-      "InContextMemory tools require a tool context"
-    );
-  }
-  const plugin = context.inContextMemory;
-  if (!plugin) {
-    throw new ToolExecutionError(
-      toolName,
-      "InContextMemory plugin not found. Use setupInContextMemory() to initialize."
-    );
-  }
-  return plugin;
-}
 
 // src/infrastructure/context/compactors/TruncateCompactor.ts
 var TruncateCompactor = class {
@@ -28644,7 +29009,13 @@ __export(tools_exports, {
   editFile: () => editFile,
   executeJavaScript: () => executeJavaScript,
   expandTilde: () => expandTilde,
+  getAllBuiltInTools: () => getAllBuiltInTools,
   getBackgroundOutput: () => getBackgroundOutput,
+  getToolByName: () => getToolByName,
+  getToolCategories: () => getToolCategories,
+  getToolRegistry: () => getToolRegistry,
+  getToolsByCategory: () => getToolsByCategory,
+  getToolsRequiringConnector: () => getToolsRequiringConnector,
   glob: () => glob2,
   grep: () => grep,
   isBlockedCommand: () => isBlockedCommand,
@@ -28653,9 +29024,11 @@ __export(tools_exports, {
   killBackgroundProcess: () => killBackgroundProcess,
   listDirectory: () => listDirectory,
   readFile: () => readFile5,
+  toolRegistry: () => toolRegistry,
   validatePath: () => validatePath,
   webFetch: () => webFetch,
   webFetchJS: () => webFetchJS,
+  webScrape: () => webScrape,
   webSearch: () => webSearch,
   writeFile: () => writeFile4
 });
@@ -31219,6 +31592,355 @@ function getEnvVarName(provider) {
 
 // src/tools/web/webScrape.ts
 init_Connector();
+var webScrape = {
+  definition: {
+    type: "function",
+    function: {
+      name: "web_scrape",
+      description: `Scrape any URL with automatic fallback - guaranteed to work on most sites.
+
+This tool combines multiple scraping methods to ensure content extraction:
+
+SCRAPING STRATEGIES:
+- auto (default): Tries native -> JS -> API until one succeeds
+- native: Only native HTTP fetch (fast, free, static sites only)
+- js: Only JavaScript rendering (handles SPAs, needs Puppeteer)
+- api: Only external API provider (handles bot protection)
+- api-first: Tries API first, then falls back to native
+
+FALLBACK CHAIN (auto strategy):
+1. Native fetch - Fast (~1s), free, works for blogs/docs/articles
+2. JS rendering - Slower (~5s), handles React/Vue/Angular
+3. External API - Handles bot protection, CAPTCHAs, rate limits
+
+EXTERNAL API PROVIDERS:
+Configure a connector with a scraping service:
+- Jina AI Reader (free tier available)
+- Firecrawl (advanced features)
+- ScrapingBee (proxy rotation)
+- etc.
+
+WHEN TO USE EACH STRATEGY:
+- 'auto': Most cases - let the tool figure it out
+- 'native': When you know the site is static
+- 'js': When you know it's a React/Vue/Angular app
+- 'api': When site has bot protection or rate limits
+- 'api-first': When you want best quality regardless of cost
+
+RETURNS:
+{
+  success: boolean,
+  url: string,
+  finalUrl: string,        // After redirects
+  method: string,          // 'native', 'js', or provider name
+  title: string,
+  content: string,         // Clean text
+  html: string,            // If requested
+  markdown: string,        // If requested and supported
+  metadata: {...},         // Title, description, author, etc.
+  links: [{url, text}],    // If requested
+  qualityScore: number,    // 0-100
+  durationMs: number,
+  attemptedMethods: [],    // Methods tried
+  error: string,           // If failed
+  suggestion: string       // How to fix
+}
+
+EXAMPLES:
+Basic (auto strategy):
+{ "url": "https://example.com/article" }
+
+With API fallback:
+{
+  "url": "https://protected-site.com",
+  "connectorName": "jina-reader",
+  "strategy": "auto"
+}
+
+Force API provider:
+{
+  "url": "https://hard-to-scrape.com",
+  "connectorName": "firecrawl-main",
+  "strategy": "api",
+  "includeMarkdown": true
+}
+
+High quality threshold:
+{
+  "url": "https://example.com",
+  "minQualityScore": 80,
+  "strategy": "auto"
+}`,
+      parameters: {
+        type: "object",
+        properties: {
+          url: {
+            type: "string",
+            description: "URL to scrape. Must start with http:// or https://"
+          },
+          strategy: {
+            type: "string",
+            enum: ["auto", "native", "js", "api", "api-first"],
+            description: 'Scraping strategy. Default: "auto"'
+          },
+          connectorName: {
+            type: "string",
+            description: 'Connector name for external API provider (e.g., "jina-reader", "firecrawl-main")'
+          },
+          minQualityScore: {
+            type: "number",
+            description: "Minimum quality score (0-100) to accept from native methods. Default: 50"
+          },
+          timeout: {
+            type: "number",
+            description: "Timeout in milliseconds. Default: 30000"
+          },
+          includeHtml: {
+            type: "boolean",
+            description: "Include raw HTML in response. Default: false"
+          },
+          includeMarkdown: {
+            type: "boolean",
+            description: "Include markdown conversion (if supported). Default: false"
+          },
+          includeLinks: {
+            type: "boolean",
+            description: "Extract and include links. Default: false"
+          },
+          waitForSelector: {
+            type: "string",
+            description: "CSS selector to wait for (JS/API strategies only)"
+          },
+          vendorOptions: {
+            type: "object",
+            description: "Vendor-specific options for API provider"
+          }
+        },
+        required: ["url"]
+      }
+    },
+    blocking: true,
+    timeout: 6e4
+    // Allow time for all fallbacks
+  },
+  execute: async (args) => {
+    const startTime = Date.now();
+    const strategy = args.strategy || "auto";
+    const minQuality = args.minQualityScore ?? 50;
+    const attemptedMethods = [];
+    try {
+      new URL(args.url);
+    } catch {
+      return {
+        success: false,
+        url: args.url,
+        method: "none",
+        title: "",
+        content: "",
+        durationMs: Date.now() - startTime,
+        attemptedMethods: [],
+        error: "Invalid URL format"
+      };
+    }
+    switch (strategy) {
+      case "native":
+        return await tryNative(args, startTime, attemptedMethods);
+      case "js":
+        return await tryJS(args, startTime, attemptedMethods);
+      case "api":
+        return await tryAPI(args, startTime, attemptedMethods);
+      case "api-first":
+        if (args.connectorName) {
+          const apiResult = await tryAPI(args, startTime, attemptedMethods);
+          if (apiResult.success) return apiResult;
+        }
+        const nativeResult = await tryNative(args, startTime, attemptedMethods);
+        if (nativeResult.success) return nativeResult;
+        return await tryJS(args, startTime, attemptedMethods);
+      case "auto":
+      default:
+        const native = await tryNative(args, startTime, attemptedMethods);
+        if (native.success && (native.qualityScore ?? 0) >= minQuality) {
+          return native;
+        }
+        const js = await tryJS(args, startTime, attemptedMethods);
+        if (js.success && (js.qualityScore ?? 0) >= minQuality) {
+          return js;
+        }
+        if (args.connectorName || hasAvailableScrapeConnector()) {
+          const api = await tryAPI(args, startTime, attemptedMethods);
+          if (api.success) return api;
+        }
+        if (js.success) return js;
+        if (native.success) return native;
+        return {
+          success: false,
+          url: args.url,
+          method: "none",
+          title: "",
+          content: "",
+          durationMs: Date.now() - startTime,
+          attemptedMethods,
+          error: "All scraping methods failed",
+          suggestion: args.connectorName ? "Check connector configuration and API key" : "Configure an external scraping API connector for better results"
+        };
+    }
+  },
+  describeCall: (args) => {
+    const strategy = args.strategy || "auto";
+    if (args.connectorName) {
+      return `${args.url} (${strategy}, ${args.connectorName})`;
+    }
+    return `${args.url} (${strategy})`;
+  }
+};
+async function tryNative(args, startTime, attemptedMethods) {
+  attemptedMethods.push("native");
+  try {
+    const result = await webFetch.execute({
+      url: args.url,
+      timeout: args.timeout || 1e4
+    });
+    return {
+      success: result.success,
+      url: args.url,
+      finalUrl: args.url,
+      method: "native",
+      title: result.title,
+      content: result.content,
+      html: args.includeHtml ? result.html : void 0,
+      qualityScore: result.qualityScore,
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: result.error,
+      suggestion: result.requiresJS ? 'Site requires JavaScript - try strategy "js" or "api"' : result.suggestedAction
+    };
+  } catch (error) {
+    return {
+      success: false,
+      url: args.url,
+      method: "native",
+      title: "",
+      content: "",
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: error.message
+    };
+  }
+}
+async function tryJS(args, startTime, attemptedMethods) {
+  attemptedMethods.push("js");
+  try {
+    const result = await webFetchJS.execute({
+      url: args.url,
+      timeout: args.timeout || 15e3,
+      waitForSelector: args.waitForSelector
+    });
+    return {
+      success: result.success,
+      url: args.url,
+      finalUrl: args.url,
+      method: "js",
+      title: result.title,
+      content: result.content,
+      html: args.includeHtml ? result.html : void 0,
+      qualityScore: result.success ? 80 : 0,
+      // JS rendering typically gives good quality
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: result.error,
+      suggestion: result.suggestion
+    };
+  } catch (error) {
+    return {
+      success: false,
+      url: args.url,
+      method: "js",
+      title: "",
+      content: "",
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: error.message,
+      suggestion: error.message.includes("Puppeteer") ? "Install Puppeteer: npm install puppeteer" : void 0
+    };
+  }
+}
+async function tryAPI(args, startTime, attemptedMethods) {
+  const connectorName = args.connectorName || findAvailableScrapeConnector();
+  if (!connectorName) {
+    return {
+      success: false,
+      url: args.url,
+      method: "api",
+      title: "",
+      content: "",
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: "No scraping API connector configured",
+      suggestion: "Create a connector with a scraping service (e.g., Jina, Firecrawl)"
+    };
+  }
+  attemptedMethods.push(`api:${connectorName}`);
+  try {
+    const provider = ScrapeProvider.create({ connector: connectorName });
+    const options = {
+      timeout: args.timeout,
+      waitForSelector: args.waitForSelector,
+      includeHtml: args.includeHtml,
+      includeMarkdown: args.includeMarkdown,
+      includeLinks: args.includeLinks,
+      vendorOptions: args.vendorOptions
+    };
+    const result = await provider.scrape(args.url, options);
+    return {
+      success: result.success,
+      url: args.url,
+      finalUrl: result.finalUrl,
+      method: result.provider,
+      title: result.result?.title || "",
+      content: result.result?.content || "",
+      html: result.result?.html,
+      markdown: result.result?.markdown,
+      metadata: result.result?.metadata,
+      links: result.result?.links,
+      qualityScore: result.success ? 90 : 0,
+      // API providers typically give high quality
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: result.error,
+      suggestion: result.suggestedFallback
+    };
+  } catch (error) {
+    return {
+      success: false,
+      url: args.url,
+      method: "api",
+      title: "",
+      content: "",
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: error.message
+    };
+  }
+}
+function hasAvailableScrapeConnector() {
+  return findAvailableScrapeConnector() !== void 0;
+}
+function findAvailableScrapeConnector() {
+  const registeredProviders = getRegisteredScrapeProviders();
+  if (registeredProviders.length === 0) return void 0;
+  const allConnectors = exports.Connector.list();
+  for (const connectorName of allConnectors) {
+    try {
+      const connector = exports.Connector.get(connectorName);
+      if (connector?.serviceType && registeredProviders.includes(connector.serviceType)) {
+        return connectorName;
+      }
+    } catch {
+    }
+  }
+  return void 0;
+}
 
 // src/tools/code/executeJavaScript.ts
 init_Connector();
@@ -31408,6 +32130,149 @@ async function executeInVM(code, input, timeout, logs) {
   });
   const result = await resultPromise;
   return result;
+}
+
+// src/tools/registry.generated.ts
+var toolRegistry = [
+  {
+    name: "execute_javascript",
+    exportName: "executeJavaScript",
+    displayName: "Execute Javascript",
+    category: "code",
+    description: 'JavaScript code to execute. MUST set the "output" variable. Wrap in async IIFE for async operations.',
+    tool: executeJavaScript,
+    safeByDefault: false
+  },
+  {
+    name: "edit_file",
+    exportName: "editFile",
+    displayName: "Edit File",
+    category: "filesystem",
+    description: "Perform exact string replacements in files.",
+    tool: editFile,
+    safeByDefault: false
+  },
+  {
+    name: "glob",
+    exportName: "glob",
+    displayName: "Glob",
+    category: "filesystem",
+    description: "Fast file pattern matching tool that finds files by name patterns.",
+    tool: glob2,
+    safeByDefault: true
+  },
+  {
+    name: "grep",
+    exportName: "grep",
+    displayName: "Grep",
+    category: "filesystem",
+    description: "A powerful search tool for finding content within files.",
+    tool: grep,
+    safeByDefault: true
+  },
+  {
+    name: "list_directory",
+    exportName: "listDirectory",
+    displayName: "List Directory",
+    category: "filesystem",
+    description: "List the contents of a directory on the local filesystem.",
+    tool: listDirectory,
+    safeByDefault: true
+  },
+  {
+    name: "read_file",
+    exportName: "readFile",
+    displayName: "Read File",
+    category: "filesystem",
+    description: "Read content from a file on the local filesystem.",
+    tool: readFile5,
+    safeByDefault: true
+  },
+  {
+    name: "write_file",
+    exportName: "writeFile",
+    displayName: "Write File",
+    category: "filesystem",
+    description: "Write content to a file on the local filesystem.",
+    tool: writeFile4,
+    safeByDefault: false
+  },
+  {
+    name: "json_manipulate",
+    exportName: "jsonManipulator",
+    displayName: "Json Manipulate",
+    category: "json",
+    description: "Manipulate JSON objects by deleting, adding, or replacing fields at any depth.",
+    tool: jsonManipulator,
+    safeByDefault: true
+  },
+  {
+    name: "bash",
+    exportName: "bash",
+    displayName: "Bash",
+    category: "shell",
+    description: "Execute shell commands with optional timeout.",
+    tool: bash,
+    safeByDefault: false
+  },
+  {
+    name: "web_fetch",
+    exportName: "webFetch",
+    displayName: "Web Fetch",
+    category: "web",
+    description: "Fetch and extract text content from a web page URL.",
+    tool: webFetch,
+    safeByDefault: true
+  },
+  {
+    name: "web_fetch_js",
+    exportName: "webFetchJS",
+    displayName: "Web Fetch Js",
+    category: "web",
+    description: "Fetch and extract content from JavaScript-rendered websites using a headless browser (Puppeteer).",
+    tool: webFetchJS,
+    safeByDefault: true
+  },
+  {
+    name: "web_scrape",
+    exportName: "webScrape",
+    displayName: "Web Scrape",
+    category: "web",
+    description: "Scrape any URL with automatic fallback - guaranteed to work on most sites.",
+    tool: webScrape,
+    safeByDefault: true,
+    requiresConnector: true,
+    connectorServiceTypes: ["zenrows"]
+  },
+  {
+    name: "web_search",
+    exportName: "webSearch",
+    displayName: "Web Search",
+    category: "web",
+    description: "Search the web and get relevant results with snippets.",
+    tool: webSearch,
+    safeByDefault: true,
+    requiresConnector: true,
+    connectorServiceTypes: ["serper", "brave-search", "tavily", "rapidapi-websearch"]
+  }
+];
+function getAllBuiltInTools() {
+  return toolRegistry.map((entry) => entry.tool);
+}
+function getToolRegistry() {
+  return [...toolRegistry];
+}
+function getToolsByCategory(category) {
+  return toolRegistry.filter((entry) => entry.category === category);
+}
+function getToolByName(name) {
+  return toolRegistry.find((entry) => entry.name === name);
+}
+function getToolsRequiringConnector() {
+  return toolRegistry.filter((entry) => entry.requiresConnector);
+}
+function getToolCategories() {
+  return [...new Set(toolRegistry.map((entry) => entry.category))];
 }
 
 // src/tools/index.ts
@@ -32072,9 +32937,11 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
     }
     this.executionAgent = this.createExecutionAgent();
     this._planPlugin = new PlanPlugin();
-    this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
     this._agentContext.registerPlugin(this._planPlugin);
-    this._agentContext.registerPlugin(this._memoryPlugin);
+    if (this._agentContext.memory) {
+      this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
+      this._agentContext.registerPlugin(this._memoryPlugin);
+    }
     this.initializeSession(config.session);
   }
   // ============================================================================
@@ -32263,12 +33130,14 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
       return modifyResult;
     }
     if (intent.type === "feedback") {
-      await this._agentContext.memory.store(
-        `user_feedback_${Date.now()}`,
-        "User feedback during execution",
-        input,
-        { scope: "persistent" }
-      );
+      if (this._agentContext.memory) {
+        await this._agentContext.memory.store(
+          `user_feedback_${Date.now()}`,
+          "User feedback during execution",
+          input,
+          { scope: "persistent" }
+        );
+      }
       return {
         text: "Noted. I'll keep that in mind as I continue.",
         mode: "executing",
@@ -33113,6 +33982,7 @@ exports.ConversationHistoryManager = ConversationHistoryManager;
 exports.DEFAULT_ALLOWLIST = DEFAULT_ALLOWLIST;
 exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
 exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG;
+exports.DEFAULT_FEATURES = DEFAULT_FEATURES;
 exports.DEFAULT_FILESYSTEM_CONFIG = DEFAULT_FILESYSTEM_CONFIG;
 exports.DEFAULT_HISTORY_MANAGER_CONFIG = DEFAULT_HISTORY_MANAGER_CONFIG;
 exports.DEFAULT_IDEMPOTENCY_CONFIG = DEFAULT_IDEMPOTENCY_CONFIG;
@@ -33279,11 +34149,15 @@ exports.getActiveModels = getActiveModels;
 exports.getActiveSTTModels = getActiveSTTModels;
 exports.getActiveTTSModels = getActiveTTSModels;
 exports.getActiveVideoModels = getActiveVideoModels;
+exports.getAgentContextTools = getAgentContextTools;
+exports.getAllBuiltInTools = getAllBuiltInTools;
 exports.getAllServiceIds = getAllServiceIds;
 exports.getBackgroundOutput = getBackgroundOutput;
+exports.getBasicIntrospectionTools = getBasicIntrospectionTools;
 exports.getImageModelInfo = getImageModelInfo;
 exports.getImageModelsByVendor = getImageModelsByVendor;
 exports.getImageModelsWithFeature = getImageModelsWithFeature;
+exports.getMemoryTools = getMemoryTools;
 exports.getMetaTools = getMetaTools;
 exports.getModelInfo = getModelInfo;
 exports.getModelsByVendor = getModelsByVendor;
@@ -33299,7 +34173,12 @@ exports.getTTSModelInfo = getTTSModelInfo;
 exports.getTTSModelsByVendor = getTTSModelsByVendor;
 exports.getTTSModelsWithFeature = getTTSModelsWithFeature;
 exports.getTaskDependencies = getTaskDependencies;
+exports.getToolByName = getToolByName;
 exports.getToolCallDescription = getToolCallDescription;
+exports.getToolCategories = getToolCategories;
+exports.getToolRegistry = getToolRegistry;
+exports.getToolsByCategory = getToolsByCategory;
+exports.getToolsRequiringConnector = getToolsRequiringConnector;
 exports.getVideoModelInfo = getVideoModelInfo;
 exports.getVideoModelsByVendor = getVideoModelsByVendor;
 exports.getVideoModelsWithAudio = getVideoModelsWithAudio;
@@ -33338,6 +34217,7 @@ exports.scopeMatches = scopeMatches;
 exports.setMetricsCollector = setMetricsCollector;
 exports.setupInContextMemory = setupInContextMemory;
 exports.toConnectorOptions = toConnectorOptions;
+exports.toolRegistry = toolRegistry;
 exports.tools = tools_exports;
 exports.updateTaskStatus = updateTaskStatus;
 exports.validatePath = validatePath;

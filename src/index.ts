@@ -737,6 +737,22 @@ export type {
   BashResult,
 } from './tools/index.js';
 
+// Tool Registry (auto-generated)
+export {
+  toolRegistry,
+  getAllBuiltInTools,
+  getToolRegistry,
+  getToolsByCategory,
+  getToolByName,
+  getToolsRequiringConnector,
+  getToolCategories,
+} from './tools/index.js';
+
+export type {
+  ToolCategory,
+  ToolRegistryEntry,
+} from './tools/index.js';
+
 // ============ Built-in Agents ============
 export { ProviderConfigAgent } from './agents/index.js';
 export type { ConnectorConfigResult } from './agents/index.js';
