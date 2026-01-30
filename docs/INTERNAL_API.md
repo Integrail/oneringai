@@ -1,6 +1,6 @@
 # @oneringai/agents - Internal API Reference
 
-**Generated:** 2026-01-29
+**Generated:** 2026-01-30
 **Mode:** full
 
 This document provides a complete reference for ALL APIs in `@oneringai/agents`, including internal implementations.
@@ -9,25 +9,25 @@ This document provides a complete reference for ALL APIs in `@oneringai/agents`,
 
 ## Table of Contents
 
-- [Core](#core) (21 items)
+- [Core](#core) (26 items)
 - [Text-to-Speech (TTS)](#text-to-speech-tts-) (14 items)
 - [Speech-to-Text (STT)](#speech-to-text-stt-) (15 items)
 - [Image Generation](#image-generation) (38 items)
 - [Video Generation](#video-generation) (22 items)
-- [Task Agents](#task-agents) (136 items)
+- [Task Agents](#task-agents) (151 items)
 - [Universal Agent](#universal-agent) (21 items)
-- [Context Management](#context-management) (52 items)
+- [Context Management](#context-management) (68 items)
 - [Session Management](#session-management) (31 items)
-- [Tools & Function Calling](#tools-function-calling) (90 items)
+- [Tools & Function Calling](#tools-function-calling) (99 items)
 - [Streaming](#streaming) (23 items)
 - [Model Registry](#model-registry) (9 items)
 - [OAuth & External APIs](#oauth-external-apis) (25 items)
-- [Resilience & Observability](#resilience-observability) (39 items)
+- [Resilience & Observability](#resilience-observability) (40 items)
 - [Errors](#errors) (23 items)
 - [Utilities](#utilities) (12 items)
 - [Interfaces](#interfaces) (23 items)
 - [Base Classes](#base-classes) (7 items)
-- [Other](#other) (271 items)
+- [Other](#other) (292 items)
 
 ## Core
 
@@ -115,7 +115,8 @@ protected prepareSessionState(): void
 
 #### `hasContext()`
 
-Check if context management is enabled
+Check if context management is enabled.
+Always returns true since AgentContext is always created by BaseAgent.
 
 ```typescript
 hasContext(): boolean
@@ -126,18 +127,16 @@ hasContext(): boolean
 #### `getContextState()`
 
 Get context state for session persistence.
-Returns null if context is not enabled.
 
 ```typescript
-async getContextState(): Promise&lt;SerializedAgentContextState | null&gt;
+async getContextState(): Promise&lt;SerializedAgentContextState&gt;
 ```
 
-**Returns:** `Promise&lt;SerializedAgentContextState | null&gt;`
+**Returns:** `Promise&lt;SerializedAgentContextState&gt;`
 
 #### `restoreContextState()`
 
 Restore context from saved state.
-No-op if context is not enabled.
 
 ```typescript
 async restoreContextState(state: SerializedAgentContextState): Promise&lt;void&gt;
@@ -455,7 +454,7 @@ destroy(): void
 
 ### AgentContext `class`
 
-📍 [`src/core/AgentContext.ts:335`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:404`](src/core/AgentContext.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -491,6 +490,52 @@ static create(config: AgentContextConfig =
 
 <details>
 <summary><strong>Methods</strong></summary>
+
+#### `isFeatureEnabled()`
+
+Check if a specific feature is enabled
+
+```typescript
+isFeatureEnabled(feature: keyof AgentContextFeatures): boolean
+```
+
+**Parameters:**
+- `feature`: `keyof AgentContextFeatures`
+
+**Returns:** `boolean`
+
+#### `requireMemory()`
+
+Get memory, throwing if disabled
+Use when memory is required for an operation
+
+```typescript
+requireMemory(): WorkingMemory
+```
+
+**Returns:** `WorkingMemory`
+
+#### `requireCache()`
+
+Get cache, throwing if disabled
+Use when cache is required for an operation
+
+```typescript
+requireCache(): IdempotencyCache
+```
+
+**Returns:** `IdempotencyCache`
+
+#### `requirePermissions()`
+
+Get permissions, throwing if disabled
+Use when permissions is required for an operation
+
+```typescript
+requirePermissions(): ToolPermissionManager
+```
+
+**Returns:** `ToolPermissionManager`
 
 #### `setCurrentInput()`
 
@@ -561,14 +606,18 @@ getTaskTypePrompt(): string
 
 #### `addMessage()`
 
-Add a message to history
+Add a message to history with automatic capacity management.
+
+This async version checks if adding the message would exceed context budget
+and triggers compaction BEFORE adding if needed. Use this for large content
+like tool outputs.
 
 ```typescript
-addMessage(
+async addMessage(
     role: 'user' | 'assistant' | 'system' | 'tool',
     content: string,
     metadata?: Record&lt;string, unknown&gt;
-  ): HistoryMessage
+  ): Promise&lt;HistoryMessage | null&gt;
 ```
 
 **Parameters:**
@@ -576,7 +625,54 @@ addMessage(
 - `content`: `string`
 - `metadata`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
 
-**Returns:** `HistoryMessage`
+**Returns:** `Promise&lt;HistoryMessage | null&gt;`
+
+#### `addMessageSync()`
+
+Add a message to history synchronously (without capacity checking).
+
+Use this when you need synchronous behavior or for small messages where
+capacity checking overhead is not worth it. For large content (tool outputs,
+fetched documents), prefer the async `addMessage()` instead.
+
+```typescript
+addMessageSync(
+    role: 'user' | 'assistant' | 'system' | 'tool',
+    content: string,
+    metadata?: Record&lt;string, unknown&gt;
+  ): HistoryMessage | null
+```
+
+**Parameters:**
+- `role`: `"user" | "assistant" | "system" | "tool"`
+- `content`: `string`
+- `metadata`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
+
+**Returns:** `HistoryMessage | null`
+
+#### `addToolResult()`
+
+Add a tool result to context with automatic capacity management.
+
+This is a convenience method for adding tool outputs. It:
+- Stringifies non-string results
+- Checks capacity and triggers compaction if needed
+- Adds as a 'tool' role message
+
+Use this for large tool outputs like web_fetch results, file contents, etc.
+
+```typescript
+async addToolResult(
+    result: unknown,
+    metadata?: Record&lt;string, unknown&gt;
+  ): Promise&lt;HistoryMessage | null&gt;
+```
+
+**Parameters:**
+- `result`: `unknown`
+- `metadata`: `Record&lt;string, unknown&gt; | undefined` *(optional)*
+
+**Returns:** `Promise&lt;HistoryMessage | null&gt;`
 
 #### `getHistory()`
 
@@ -640,7 +736,7 @@ Execute a tool with automatic caching
 
 This is the recommended way to execute tools - it integrates:
 - Permission checking
-- Result caching (if tool is cacheable)
+- Result caching (if tool is cacheable and memory feature enabled)
 - History recording
 - Metrics tracking
 
@@ -840,6 +936,23 @@ getLastBudget(): ContextBudget | null
 
 **Returns:** `ContextBudget | null`
 
+#### `ensureCapacity()`
+
+Ensure there's enough capacity for new content.
+If adding the estimated tokens would exceed budget, triggers compaction first.
+
+This method enables proactive compaction BEFORE content is added, preventing
+context overflow. It uses the configured strategy to determine when to compact.
+
+```typescript
+async ensureCapacity(estimatedTokens: number): Promise&lt;boolean&gt;
+```
+
+**Parameters:**
+- `estimatedTokens`: `number`
+
+**Returns:** `Promise&lt;boolean&gt;`
+
 #### `getMetrics()`
 
 Get comprehensive metrics
@@ -857,9 +970,10 @@ Get state for session persistence
 Serializes ALL state:
 - History and tool calls
 - Tool enable/disable state
-- Memory state
-- Permission state
+- Memory state (if enabled)
+- Permission state (if enabled)
 - Plugin state
+- Feature configuration
 
 ```typescript
 async getState(): Promise&lt;SerializedAgentContextState&gt;
@@ -1279,7 +1393,7 @@ Pass an AgentContext instance or AgentContextConfig to enable. |
 
 ### AgentContextConfig `interface`
 
-📍 [`src/core/AgentContext.ts:185`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:245`](src/core/AgentContext.ts)
 
 AgentContext configuration
 
@@ -1293,6 +1407,8 @@ AgentContext configuration
 | `systemPrompt?` | `systemPrompt?: string;` | System prompt |
 | `instructions?` | `instructions?: string;` | Instructions |
 | `tools?` | `tools?: ToolFunction[];` | Tools to register |
+| `features?` | `features?: AgentContextFeatures;` | Feature configuration - enable/disable AgentContext features independently
+Each feature controls component creation and tool registration |
 | `permissions?` | `permissions?: AgentPermissionsConfig;` | Tool permissions configuration |
 | `memory?` | `memory?: Partial&lt;WorkingMemoryConfig&gt; & {
     /** Custom storage backend (default: InMemoryStorage) */
@@ -1302,6 +1418,7 @@ AgentContext configuration
     /** Enable caching (default: true) */
     enabled?: boolean;
   };` | Cache configuration |
+| `inContextMemory?` | `inContextMemory?: InContextMemoryPluginConfig;` | InContextMemory configuration (only used if features.inContextMemory is true) |
 | `history?` | `history?: {
     /** Max messages before compaction */
     maxMessages?: number;
@@ -1320,7 +1437,7 @@ AgentContext configuration
 
 ### AgentContextEvents `interface`
 
-📍 [`src/core/AgentContext.ts:306`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:375`](src/core/AgentContext.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -1345,9 +1462,39 @@ AgentContext configuration
 
 ---
 
+### AgentContextFeatures `interface`
+
+📍 [`src/core/AgentContext.ts:167`](src/core/AgentContext.ts)
+
+AgentContext feature configuration - controls which features are enabled
+
+Each feature can be enabled/disabled independently. When a feature is disabled:
+- Its components are not created (saves memory)
+- Its tools are not registered (cleaner LLM tool list)
+- Related context preparation is skipped
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `memory?` | `memory?: boolean;` | Enable WorkingMemory + IdempotencyCache
+When enabled: memory storage, tool result caching, memory_* tools, cache_stats tool
+When disabled: no memory/cache, tools not registered |
+| `inContextMemory?` | `inContextMemory?: boolean;` | Enable InContextMemoryPlugin for in-context key-value storage
+When enabled: context_set/get/delete/list tools |
+| `history?` | `history?: boolean;` | Enable conversation history tracking
+When disabled: addMessage() is no-op, history not in context |
+| `permissions?` | `permissions?: boolean;` | Enable ToolPermissionManager for approval workflow
+When disabled: all tools auto-approved |
+
+</details>
+
+---
+
 ### AgentContextMetrics `interface`
 
-📍 [`src/core/AgentContext.ts:289`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:358`](src/core/AgentContext.ts)
 
 Context metrics
 
@@ -1392,7 +1539,7 @@ Fetch options with additional connector-specific settings
 
 ### HistoryMessage `interface`
 
-📍 [`src/core/AgentContext.ts:160`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:220`](src/core/AgentContext.ts)
 
 History message
 
@@ -1413,7 +1560,7 @@ History message
 
 ### SerializedAgentContextState `interface`
 
-📍 [`src/core/AgentContext.ts:262`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:331`](src/core/AgentContext.ts)
 
 Serialized state for session persistence
 
@@ -1448,7 +1595,7 @@ Serialized state for session persistence
 
 ### ToolCallRecord `interface`
 
-📍 [`src/core/AgentContext.ts:171`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:231`](src/core/AgentContext.ts)
 
 Tool call record (stored in history)
 
@@ -1484,7 +1631,7 @@ type AgentSessionConfig = BaseSessionConfig
 
 ### TaskType `type`
 
-📍 [`src/core/AgentContext.ts:68`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:70`](src/core/AgentContext.ts)
 
 Task type determines compaction priorities and system prompt additions
 
@@ -1544,6 +1691,55 @@ function extractProviderConfig(connector: Connector): ProviderConfig
 
 ---
 
+### getAgentContextTools `function`
+
+📍 [`src/core/AgentContextTools.ts:55`](src/core/AgentContextTools.ts)
+
+Get tools based on enabled features in AgentContext
+
+```typescript
+export function getAgentContextTools(context: AgentContext): ToolFunction[]
+```
+
+**Example:**
+
+```typescript
+const ctx = AgentContext.create({
+  model: 'gpt-4',
+  features: { memory: true, inContextMemory: false }
+});
+const tools = getAgentContextTools(ctx);
+for (const tool of tools) {
+  ctx.tools.register(tool);
+}
+```
+
+---
+
+### getBasicIntrospectionTools `function`
+
+📍 [`src/core/AgentContextTools.ts:88`](src/core/AgentContextTools.ts)
+
+Get only the basic introspection tools (always available)
+
+```typescript
+export function getBasicIntrospectionTools(): ToolFunction[]
+```
+
+---
+
+### getMemoryTools `function`
+
+📍 [`src/core/AgentContextTools.ts:95`](src/core/AgentContextTools.ts)
+
+Get only memory-related tools (requires memory feature)
+
+```typescript
+export function getMemoryTools(): ToolFunction[]
+```
+
+---
+
 ### isVendor `function`
 
 📍 [`src/core/Vendor.ts:32`](src/core/Vendor.ts)
@@ -1558,7 +1754,7 @@ export function isVendor(value: string): value is Vendor
 
 ### DEFAULT_AGENT_CONTEXT_CONFIG `const`
 
-📍 [`src/core/AgentContext.ts:243`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:312`](src/core/AgentContext.ts)
 
 Default configuration
 
@@ -1583,9 +1779,34 @@ Default configuration
 
 ---
 
+### DEFAULT_FEATURES `const`
+
+📍 [`src/core/AgentContext.ts:206`](src/core/AgentContext.ts)
+
+Default feature configuration
+
+- memory: true (includes WorkingMemory + IdempotencyCache)
+- inContextMemory: false (opt-in)
+- history: true
+- permissions: true
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `memory` | `true` | - |
+| `inContextMemory` | `false` | - |
+| `history` | `true` | - |
+| `permissions` | `true` | - |
+
+</details>
+
+---
+
 ### PRIORITY_PROFILES `const`
 
-📍 [`src/core/AgentContext.ts:79`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:81`](src/core/AgentContext.ts)
 
 Priority profiles for different task types
 Lower number = keep longer (compact last), Higher number = compact first
@@ -1627,7 +1848,7 @@ General: Default balanced approach
 
 ### TASK_TYPE_PROMPTS `const`
 
-📍 [`src/core/AgentContext.ts:105`](src/core/AgentContext.ts)
+📍 [`src/core/AgentContext.ts:107`](src/core/AgentContext.ts)
 
 Task-type-specific system prompt additions
 
@@ -5409,6 +5630,195 @@ updateTools(tools: ToolFunction[]): void
 
 ---
 
+### InContextMemoryPlugin `class`
+
+📍 [`src/core/context/plugins/InContextMemoryPlugin.ts:96`](src/core/context/plugins/InContextMemoryPlugin.ts)
+
+InContextMemoryPlugin - Stores key-value pairs directly in LLM context
+
+Use this for:
+- Current state/status that changes frequently
+- User preferences during a session
+- Small accumulated results
+- Counters, flags, or control variables
+
+Do NOT use this for:
+- Large data (use WorkingMemory instead)
+- Data that doesn't need instant access
+- Rarely accessed reference data
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+Create an InContextMemoryPlugin
+
+```typescript
+constructor(config: InContextMemoryConfig =
+```
+
+**Parameters:**
+- `config`: `InContextMemoryConfig` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `set()`
+
+Store or update a key-value pair
+
+```typescript
+set(key: string, description: string, value: unknown, priority?: InContextPriority): void
+```
+
+**Parameters:**
+- `key`: `string`
+- `description`: `string`
+- `value`: `unknown`
+- `priority`: `InContextPriority | undefined` *(optional)*
+
+**Returns:** `void`
+
+#### `get()`
+
+Get a value by key
+
+```typescript
+get(key: string): unknown | undefined
+```
+
+**Parameters:**
+- `key`: `string`
+
+**Returns:** `unknown`
+
+#### `has()`
+
+Check if a key exists
+
+```typescript
+has(key: string): boolean
+```
+
+**Parameters:**
+- `key`: `string`
+
+**Returns:** `boolean`
+
+#### `delete()`
+
+Delete an entry by key
+
+```typescript
+delete(key: string): boolean
+```
+
+**Parameters:**
+- `key`: `string`
+
+**Returns:** `boolean`
+
+#### `list()`
+
+List all entries with metadata
+
+```typescript
+list(): Array&lt;
+```
+
+**Returns:** `{ key: string; description: string; priority: InContextPriority; updatedAt: number; }[]`
+
+#### `clear()`
+
+Clear all entries
+
+```typescript
+clear(): void
+```
+
+**Returns:** `void`
+
+#### `getComponent()`
+
+Get the context component for this plugin
+
+```typescript
+async getComponent(): Promise&lt;IContextComponent | null&gt;
+```
+
+**Returns:** `Promise&lt;IContextComponent | null&gt;`
+
+#### `compact()`
+
+Compact by evicting low-priority entries
+
+Eviction order: low → normal → high (critical is never auto-evicted)
+Within same priority, oldest entries are evicted first
+
+```typescript
+override async compact(targetTokens: number, estimator: ITokenEstimator): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `targetTokens`: `number`
+- `estimator`: `ITokenEstimator`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getState()`
+
+Get serialized state for session persistence
+
+```typescript
+override getState(): SerializedInContextMemoryState
+```
+
+**Returns:** `SerializedInContextMemoryState`
+
+#### `restoreState()`
+
+Restore state from serialization
+
+```typescript
+override restoreState(state: unknown): void
+```
+
+**Parameters:**
+- `state`: `unknown`
+
+**Returns:** `void`
+
+#### `destroy()`
+
+Clean up resources
+
+```typescript
+override destroy(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "in_context_memory"` | - |
+| `priority` | `priority: 5` | - |
+| `compactable` | `compactable: true` | - |
+| `entries` | `entries: Map&lt;string, InContextEntry&gt;` | - |
+| `config` | `config: Required&lt;InContextMemoryConfig&gt;` | - |
+| `destroyed` | `destroyed: boolean` | - |
+
+</details>
+
+---
+
 ### InMemoryAgentStateStorage `class`
 
 📍 [`src/infrastructure/storage/InMemoryStorage.ts:140`](src/infrastructure/storage/InMemoryStorage.ts)
@@ -6435,9 +6845,11 @@ getFailedTaskIds(): string[]
 
 ### PlanExecutor `class`
 
-📍 [`src/capabilities/taskAgent/PlanExecutor.ts:75`](src/capabilities/taskAgent/PlanExecutor.ts)
+📍 [`src/capabilities/taskAgent/PlanExecutor.ts:78`](src/capabilities/taskAgent/PlanExecutor.ts)
 
 Executes a plan using LLM and tools
+
+NOTE: Memory and cache are accessed via agentContext (single source of truth)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -6447,10 +6859,8 @@ Executes a plan using LLM and tools
 ```typescript
 constructor(
     agent: Agent,
-    memory: WorkingMemory,
     agentContext: AgentContext,
     planPlugin: PlanPlugin,
-    idempotencyCache: IdempotencyCache,
     externalHandler: ExternalDependencyHandler,
     checkpointManager: CheckpointManager,
     hooks: TaskAgentHooks | undefined,
@@ -6460,10 +6870,8 @@ constructor(
 
 **Parameters:**
 - `agent`: `Agent`
-- `memory`: `WorkingMemory`
 - `agentContext`: `AgentContext`
 - `planPlugin`: `PlanPlugin`
-- `idempotencyCache`: `IdempotencyCache`
 - `externalHandler`: `ExternalDependencyHandler`
 - `checkpointManager`: `CheckpointManager`
 - `hooks`: `TaskAgentHooks | undefined`
@@ -6500,7 +6908,7 @@ cancel(): void
 
 #### `cleanup()`
 
-Cleanup resources
+Cleanup resources (alias for destroy, kept for backward compatibility)
 
 ```typescript
 cleanup(): void
@@ -6508,15 +6916,27 @@ cleanup(): void
 
 **Returns:** `void`
 
+#### `destroy()`
+
+Destroy the PlanExecutor instance
+Removes all event listeners and clears internal state
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
+
 #### `getIdempotencyCache()`
 
 Get idempotency cache
+Returns null if memory feature is disabled
 
 ```typescript
-getIdempotencyCache(): IdempotencyCache
+getIdempotencyCache(): IdempotencyCache | null
 ```
 
-**Returns:** `IdempotencyCache`
+**Returns:** `IdempotencyCache | null`
 
 #### `getRateLimiterMetrics()`
 
@@ -6546,10 +6966,8 @@ resetRateLimiter(): void
 | Property | Type | Description |
 |----------|------|-------------|
 | `agent` | `agent: Agent` | - |
-| `memory` | `memory: WorkingMemory` | - |
 | `agentContext` | `agentContext: AgentContext` | - |
 | `planPlugin` | `planPlugin: PlanPlugin` | - |
-| `idempotencyCache` | `idempotencyCache: IdempotencyCache` | - |
 | `externalHandler` | `externalHandler: ExternalDependencyHandler` | - |
 | `checkpointManager` | `checkpointManager: CheckpointManager` | - |
 | `hooks` | `hooks: TaskAgentHooks | undefined` | - |
@@ -6836,7 +7254,7 @@ override restoreState(state: unknown): void
 
 ### TaskAgent `class`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:252`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:250`](src/capabilities/taskAgent/TaskAgent.ts)
 
 TaskAgent - autonomous task-based agent.
 
@@ -6860,7 +7278,6 @@ protected constructor(
     id: string,
     state: AgentState,
     agentStorage: IAgentStorage,
-    memory: WorkingMemory,
     config: TaskAgentConfig,
     hooks?: TaskAgentHooks
   )
@@ -6870,7 +7287,6 @@ protected constructor(
 - `id`: `string`
 - `state`: `AgentState`
 - `agentStorage`: `IAgentStorage`
-- `memory`: `WorkingMemory`
 - `config`: `TaskAgentConfig`
 - `hooks`: `TaskAgentHooks | undefined` *(optional)*
 
@@ -6966,7 +7382,8 @@ async saveSession(): Promise&lt;void&gt;
 
 #### `hasContext()`
 
-Check if context is available (components initialized)
+Check if context is available (components initialized).
+Always true since AgentContext is created by BaseAgent constructor.
 
 ```typescript
 hasContext(): boolean
@@ -7082,13 +7499,14 @@ getPlan(): Plan
 
 #### `getMemory()`
 
-Get working memory
+Get working memory (from AgentContext - single source of truth)
+Returns null if memory feature is disabled
 
 ```typescript
-getMemory(): WorkingMemory
+getMemory(): WorkingMemory | null
 ```
 
-**Returns:** `WorkingMemory`
+**Returns:** `WorkingMemory | null`
 
 #### `executePlan()`
 
@@ -7120,11 +7538,9 @@ async destroy(): Promise&lt;void&gt;
 | `id` | `id: string` | - |
 | `state` | `state: AgentState` | - |
 | `agentStorage` | `agentStorage: IAgentStorage` | - |
-| `memory` | `memory: WorkingMemory` | - |
 | `hooks?` | `hooks: TaskAgentHooks | undefined` | - |
 | `executionPromise?` | `executionPromise: Promise&lt;PlanResult&gt; | undefined` | - |
 | `agent?` | `agent: Agent | undefined` | - |
-| `idempotencyCache?` | `idempotencyCache: IdempotencyCache | undefined` | - |
 | `externalHandler?` | `externalHandler: ExternalDependencyHandler | undefined` | - |
 | `planExecutor?` | `planExecutor: PlanExecutor | undefined` | - |
 | `checkpointManager?` | `checkpointManager: CheckpointManager | undefined` | - |
@@ -7192,7 +7608,7 @@ constructor(
 
 ### WorkingMemory `class`
 
-📍 [`src/capabilities/taskAgent/WorkingMemory.ts:79`](src/capabilities/taskAgent/WorkingMemory.ts)
+📍 [`src/capabilities/taskAgent/WorkingMemory.ts:80`](src/capabilities/taskAgent/WorkingMemory.ts)
 
 WorkingMemory manages the agent's indexed working memory.
 
@@ -7788,7 +8204,7 @@ destroy(): void
 
 ### AgentHandle `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:145`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:143`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Agent handle returned from start()
 
@@ -7874,7 +8290,7 @@ get(key: string): Promise&lt;unknown&gt;;
 
 ### EntryWithPriority `interface`
 
-📍 [`src/capabilities/taskAgent/WorkingMemory.ts:54`](src/capabilities/taskAgent/WorkingMemory.ts)
+📍 [`src/capabilities/taskAgent/WorkingMemory.ts:55`](src/capabilities/taskAgent/WorkingMemory.ts)
 
 Entry with computed effective priority
 
@@ -7892,7 +8308,7 @@ Entry with computed effective priority
 
 ### ErrorContext `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:121`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:119`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Error context
 
@@ -8112,6 +8528,27 @@ getTotalSize(): Promise&lt;number&gt;;
 ```
 
 **Returns:** `Promise&lt;number&gt;`
+
+</details>
+
+---
+
+### InContextMemoryConfig `interface`
+
+📍 [`src/core/context/plugins/InContextMemoryPlugin.ts:40`](src/core/context/plugins/InContextMemoryPlugin.ts)
+
+Configuration for InContextMemoryPlugin
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxEntries?` | `maxEntries?: number;` | Maximum number of entries (default: 20) |
+| `maxTotalTokens?` | `maxTotalTokens?: number;` | Maximum total tokens for all entries (default: 4000) |
+| `defaultPriority?` | `defaultPriority?: InContextPriority;` | Default priority for new entries (default: 'normal') |
+| `showTimestamps?` | `showTimestamps?: boolean;` | Whether to show timestamps in output (default: false) |
+| `headerText?` | `headerText?: string;` | Header text for the context section (default: '## Live Context') |
 
 </details>
 
@@ -8407,7 +8844,7 @@ Plan concurrency settings
 
 ### PlanExecutionResult `interface`
 
-📍 [`src/capabilities/taskAgent/PlanExecutor.ts:58`](src/capabilities/taskAgent/PlanExecutor.ts)
+📍 [`src/capabilities/taskAgent/PlanExecutor.ts:59`](src/capabilities/taskAgent/PlanExecutor.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8432,7 +8869,7 @@ Plan concurrency settings
 
 ### PlanExecutorConfig `interface`
 
-📍 [`src/capabilities/taskAgent/PlanExecutor.ts:28`](src/capabilities/taskAgent/PlanExecutor.ts)
+📍 [`src/capabilities/taskAgent/PlanExecutor.ts:29`](src/capabilities/taskAgent/PlanExecutor.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8456,7 +8893,7 @@ Plan concurrency settings
 
 ### PlanExecutorEvents `interface`
 
-📍 [`src/capabilities/taskAgent/PlanExecutor.ts:43`](src/capabilities/taskAgent/PlanExecutor.ts)
+📍 [`src/capabilities/taskAgent/PlanExecutor.ts:44`](src/capabilities/taskAgent/PlanExecutor.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8526,7 +8963,7 @@ PlanningAgent configuration
 
 ### PlanResult `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:130`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:128`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Plan result
 
@@ -8551,7 +8988,7 @@ Plan result
 
 ### PlanUpdateOptions `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:168`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:166`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Options for plan update validation
 
@@ -8569,7 +9006,7 @@ Options for plan update validation
 
 ### PlanUpdates `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:159`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:157`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Plan updates specification
 
@@ -8604,9 +9041,48 @@ Context passed to priority calculator - varies by agent type
 
 ---
 
+### ResearchPlan `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:179`](src/capabilities/researchAgent/types.ts)
+
+Research plan for systematic research
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `goal` | `goal: string;` | Research goal/question |
+| `queries` | `queries: ResearchQuery[];` | Queries to execute |
+| `sources?` | `sources?: string[];` | Sources to use (empty = all available) |
+| `maxResultsPerQuery?` | `maxResultsPerQuery?: number;` | Maximum results per query |
+| `maxTotalFindings?` | `maxTotalFindings?: number;` | Maximum total findings |
+
+</details>
+
+---
+
+### SerializedInContextMemoryState `interface`
+
+📍 [`src/core/context/plugins/InContextMemoryPlugin.ts:56`](src/core/context/plugins/InContextMemoryPlugin.ts)
+
+Serialized state for session persistence
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `entries` | `entries: InContextEntry[];` | - |
+| `config` | `config: InContextMemoryConfig;` | - |
+
+</details>
+
+---
+
 ### SerializedMemory `interface`
 
-📍 [`src/core/SessionManager.ts:148`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:149`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8622,7 +9098,7 @@ Context passed to priority calculator - varies by agent type
 
 ### SerializedMemoryEntry `interface`
 
-📍 [`src/core/SessionManager.ts:155`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:156`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8653,7 +9129,7 @@ this plugin just holds a reference.
 
 ### SerializedPlan `interface`
 
-📍 [`src/core/SessionManager.ts:165`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:166`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -8766,7 +9242,7 @@ A single unit of work
 
 ### TaskAgentConfig `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:192`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:190`](src/capabilities/taskAgent/TaskAgent.ts)
 
 TaskAgent configuration - extends BaseAgentConfig
 
@@ -8790,7 +9266,7 @@ TaskAgent configuration - extends BaseAgentConfig
 
 ### TaskAgentEvents `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:221`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:219`](src/capabilities/taskAgent/TaskAgent.ts)
 
 TaskAgent events - extends BaseAgentEvents
 
@@ -8820,7 +9296,7 @@ TaskAgent events - extends BaseAgentEvents
 
 ### TaskAgentHooks `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:52`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:50`](src/capabilities/taskAgent/TaskAgent.ts)
 
 TaskAgent hooks for customization
 
@@ -8860,7 +9336,7 @@ If not provided, the default LLM self-reflection validation is used
 
 ### TaskAgentSessionConfig `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:185`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:183`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Session configuration for TaskAgent - extends BaseSessionConfig
 
@@ -8888,7 +9364,7 @@ Task condition - evaluated before execution
 
 ### TaskContext `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:103`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:101`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Task execution context
 
@@ -8994,7 +9470,7 @@ Input for creating a task
 
 ### TaskResult `interface`
 
-📍 [`src/capabilities/taskAgent/TaskAgent.ts:112`](src/capabilities/taskAgent/TaskAgent.ts)
+📍 [`src/capabilities/taskAgent/TaskAgent.ts:110`](src/capabilities/taskAgent/TaskAgent.ts)
 
 Task result
 
@@ -9146,7 +9622,7 @@ Planning configuration
 
 ### WorkingMemoryAccess `interface`
 
-📍 [`src/domain/interfaces/IToolContext.ts:17`](src/domain/interfaces/IToolContext.ts)
+📍 [`src/domain/interfaces/IToolContext.ts:18`](src/domain/interfaces/IToolContext.ts)
 
 Limited memory access for tools
 
@@ -9263,7 +9739,7 @@ Configuration for working memory
 
 ### WorkingMemoryEvents `interface`
 
-📍 [`src/capabilities/taskAgent/WorkingMemory.ts:59`](src/capabilities/taskAgent/WorkingMemory.ts)
+📍 [`src/capabilities/taskAgent/WorkingMemory.ts:60`](src/capabilities/taskAgent/WorkingMemory.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -9301,7 +9777,7 @@ type ConditionOperator = | 'exists'
 
 ### EvictionStrategy `type`
 
-📍 [`src/capabilities/taskAgent/WorkingMemory.ts:49`](src/capabilities/taskAgent/WorkingMemory.ts)
+📍 [`src/capabilities/taskAgent/WorkingMemory.ts:50`](src/capabilities/taskAgent/WorkingMemory.ts)
 
 Eviction strategy type
 
@@ -9486,7 +9962,7 @@ export function addTierPrefix(key: string, tier: MemoryTier): string
 
 ### calculateEntrySize `function`
 
-📍 [`src/domain/entities/Memory.ts:530`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:531`](src/domain/entities/Memory.ts)
 
 Calculate the size of a value in bytes (JSON serialization)
 Uses Buffer.byteLength for accurate UTF-8 byte count
@@ -9511,45 +9987,49 @@ export function canTaskExecute(task: Task, allTasks: Task[]): boolean
 
 ### createCacheStatsTool `function`
 
-📍 [`src/capabilities/taskAgent/contextTools.ts:137`](src/capabilities/taskAgent/contextTools.ts)
+📍 [`src/capabilities/taskAgent/contextTools.ts:132`](src/capabilities/taskAgent/contextTools.ts)
 
 cache_stats tool - Get idempotency cache statistics
+Requires memory feature (memory feature includes cache)
 
 ```typescript
-function createCacheStatsTool(): ToolFunction
+export function createCacheStatsTool(): ToolFunction
 ```
 
 ---
 
 ### createContextBreakdownTool `function`
 
-📍 [`src/capabilities/taskAgent/contextTools.ts:84`](src/capabilities/taskAgent/contextTools.ts)
+📍 [`src/capabilities/taskAgent/contextTools.ts:78`](src/capabilities/taskAgent/contextTools.ts)
 
 context_breakdown tool - Get detailed token breakdown by component
+Always available (basic introspection)
 
 ```typescript
-function createContextBreakdownTool(): ToolFunction
+export function createContextBreakdownTool(): ToolFunction
 ```
 
 ---
 
 ### createContextInspectTool `function`
 
-📍 [`src/capabilities/taskAgent/contextTools.ts:29`](src/capabilities/taskAgent/contextTools.ts)
+📍 [`src/capabilities/taskAgent/contextTools.ts:22`](src/capabilities/taskAgent/contextTools.ts)
 
 context_inspect tool - Get context budget and utilization
+Always available (basic introspection)
 
 ```typescript
-function createContextInspectTool(): ToolFunction
+export function createContextInspectTool(): ToolFunction
 ```
 
 ---
 
 ### createContextTools `function`
 
-📍 [`src/capabilities/taskAgent/contextTools.ts:17`](src/capabilities/taskAgent/contextTools.ts)
+📍 [`src/capabilities/taskAgent/contextTools.ts:236`](src/capabilities/taskAgent/contextTools.ts)
 
-Create context inspection tools
+Create all context inspection tools (backward compatibility)
+Note: For feature-aware tool registration, use getAgentContextTools() instead
 
 ```typescript
 export function createContextTools(): ToolFunction[]
@@ -9559,7 +10039,7 @@ export function createContextTools(): ToolFunction[]
 
 ### createEmptyMemory `function`
 
-📍 [`src/core/SessionManager.ts:781`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:792`](src/core/SessionManager.ts)
 
 Create an empty serialized memory
 
@@ -9569,9 +10049,67 @@ export function createEmptyMemory(): SerializedMemory
 
 ---
 
+### createInContextMemory `function`
+
+📍 [`src/core/context/plugins/inContextMemoryTools.ts:266`](src/core/context/plugins/inContextMemoryTools.ts)
+
+Create an InContextMemory plugin with its tools
+
+```typescript
+export function createInContextMemory(config?: InContextMemoryConfig):
+```
+
+**Example:**
+
+```typescript
+const { plugin, tools } = createInContextMemory({ maxEntries: 15 });
+ctx.registerPlugin(plugin);
+for (const tool of tools) {
+  ctx.tools.register(tool);
+}
+```
+
+---
+
+### createInContextMemoryTools `function`
+
+📍 [`src/core/context/plugins/inContextMemoryTools.ts:140`](src/core/context/plugins/inContextMemoryTools.ts)
+
+Create all in-context memory tools
+
+```typescript
+export function createInContextMemoryTools(): ToolFunction[]
+```
+
+---
+
+### createMemoryCleanupRawTool `function`
+
+📍 [`src/capabilities/taskAgent/memoryTools.ts:390`](src/capabilities/taskAgent/memoryTools.ts)
+
+Create memory_cleanup_raw tool
+
+```typescript
+export function createMemoryCleanupRawTool(): ToolFunction
+```
+
+---
+
+### createMemoryDeleteTool `function`
+
+📍 [`src/capabilities/taskAgent/memoryTools.ts:329`](src/capabilities/taskAgent/memoryTools.ts)
+
+Create memory_delete tool
+
+```typescript
+export function createMemoryDeleteTool(): ToolFunction
+```
+
+---
+
 ### createMemoryEntry `function`
 
-📍 [`src/domain/entities/Memory.ts:548`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:549`](src/domain/entities/Memory.ts)
 
 Create a memory entry with defaults and validation
 
@@ -9584,23 +10122,72 @@ export function createMemoryEntry(
 
 ---
 
-### createMemoryStatsTool `function`
+### createMemoryListTool `function`
 
-📍 [`src/capabilities/taskAgent/contextTools.ts:186`](src/capabilities/taskAgent/contextTools.ts)
+📍 [`src/capabilities/taskAgent/memoryTools.ts:349`](src/capabilities/taskAgent/memoryTools.ts)
 
-memory_stats tool - Get working memory statistics
+Create memory_list tool
 
 ```typescript
-function createMemoryStatsTool(): ToolFunction
+export function createMemoryListTool(): ToolFunction
+```
+
+---
+
+### createMemoryRetrieveBatchTool `function`
+
+📍 [`src/capabilities/taskAgent/memoryTools.ts:431`](src/capabilities/taskAgent/memoryTools.ts)
+
+Create memory_retrieve_batch tool
+
+```typescript
+export function createMemoryRetrieveBatchTool(): ToolFunction
+```
+
+---
+
+### createMemoryRetrieveTool `function`
+
+📍 [`src/capabilities/taskAgent/memoryTools.ts:306`](src/capabilities/taskAgent/memoryTools.ts)
+
+Create memory_retrieve tool
+
+```typescript
+export function createMemoryRetrieveTool(): ToolFunction
+```
+
+---
+
+### createMemoryStatsTool `function`
+
+📍 [`src/capabilities/taskAgent/contextTools.ts:182`](src/capabilities/taskAgent/contextTools.ts)
+
+memory_stats tool - Get working memory statistics
+Requires memory feature
+
+```typescript
+export function createMemoryStatsTool(): ToolFunction
+```
+
+---
+
+### createMemoryStoreTool `function`
+
+📍 [`src/capabilities/taskAgent/memoryTools.ts:231`](src/capabilities/taskAgent/memoryTools.ts)
+
+Create memory_store tool
+
+```typescript
+export function createMemoryStoreTool(): ToolFunction
 ```
 
 ---
 
 ### createMemoryTools `function`
 
-📍 [`src/capabilities/taskAgent/memoryTools.ts:172`](src/capabilities/taskAgent/memoryTools.ts)
+📍 [`src/capabilities/taskAgent/memoryTools.ts:524`](src/capabilities/taskAgent/memoryTools.ts)
 
-Create all memory tools
+Create all memory tools (convenience function for backward compatibility)
 
 ```typescript
 export function createMemoryTools(): ToolFunction[]
@@ -9677,7 +10264,7 @@ export async function evaluateCondition(
 
 ### formatEntryFlags `function`
 
-📍 [`src/domain/entities/Memory.ts:629`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:630`](src/domain/entities/Memory.ts)
 
 Format entry flags for display
 
@@ -9689,7 +10276,7 @@ function formatEntryFlags(entry: MemoryIndexEntry): string
 
 ### formatMemoryIndex `function`
 
-📍 [`src/domain/entities/Memory.ts:646`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:647`](src/domain/entities/Memory.ts)
 
 Format memory index for context injection
 
@@ -9701,7 +10288,7 @@ export function formatMemoryIndex(index: MemoryIndex): string
 
 ### formatScope `function`
 
-📍 [`src/domain/entities/Memory.ts:615`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:616`](src/domain/entities/Memory.ts)
 
 Format scope for display
 
@@ -9713,7 +10300,7 @@ function formatScope(scope: MemoryScope): string
 
 ### formatSizeHuman `function`
 
-📍 [`src/domain/entities/Memory.ts:593`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:594`](src/domain/entities/Memory.ts)
 
 Format bytes to human-readable string
 
@@ -9867,6 +10454,19 @@ export function isTerminalStatus(status: TaskStatus): boolean
 
 ---
 
+### matchPattern `function`
+
+📍 [`src/capabilities/taskAgent/memoryTools.ts:215`](src/capabilities/taskAgent/memoryTools.ts)
+
+Match a key against a glob-like pattern
+Supports * as wildcard (matches any characters)
+
+```typescript
+function matchPattern(key: string, pattern: string): boolean
+```
+
+---
+
 ### resolveDependencies `function`
 
 📍 [`src/domain/entities/Task.ts:636`](src/domain/entities/Task.ts)
@@ -9906,6 +10506,33 @@ export function scopeMatches(entryScope: MemoryScope, filterScope: MemoryScope):
 
 ---
 
+### setupInContextMemory `function`
+
+📍 [`src/core/context/plugins/inContextMemoryTools.ts:294`](src/core/context/plugins/inContextMemoryTools.ts)
+
+Set up InContextMemory on an AgentContext
+
+Registers both the plugin and its tools on the context.
+
+```typescript
+export function setupInContextMemory(
+  agentContext: AgentContext,
+  config?: InContextMemoryConfig
+): InContextMemoryPlugin
+```
+
+**Example:**
+
+```typescript
+const ctx = AgentContext.create({ model: 'gpt-4' });
+const plugin = setupInContextMemory(ctx, { maxEntries: 10 });
+
+// Plugin is accessible through ctx.inContextMemory
+plugin.set('state', 'Current processing state', { step: 1 });
+```
+
+---
+
 ### stripTierPrefix `function`
 
 📍 [`src/domain/entities/Memory.ts:181`](src/domain/entities/Memory.ts)
@@ -9932,7 +10559,7 @@ export function updateTaskStatus(task: Task, status: TaskStatus): Task
 
 ### validateMemoryKey `function`
 
-📍 [`src/domain/entities/Memory.ts:510`](src/domain/entities/Memory.ts)
+📍 [`src/domain/entities/Memory.ts:511`](src/domain/entities/Memory.ts)
 
 Validate memory key format
 Valid: "simple", "user.profile", "order.items.123"
@@ -9974,6 +10601,7 @@ Default configuration values
 
 | Property | Type | Description |
 |----------|------|-------------|
+| `maxSizeBytes` | `25 * 1024 * 1024` | - |
 | `descriptionMaxLength` | `150` | - |
 | `softLimitPercent` | `80` | - |
 | `contextAllocationPercent` | `20` | - |
@@ -10087,6 +10715,58 @@ Tool definition for memory_list
           type: 'string',
           enum: ['raw', 'summary', 'findings'],
           description: 'Optional: Filter to only show entries from a specific tier',
+        },
+      },
+      required: [],
+    },
+  }` | - |
+
+</details>
+
+---
+
+### memoryRetrieveBatchDefinition `const`
+
+📍 [`src/capabilities/taskAgent/memoryTools.ts:172`](src/capabilities/taskAgent/memoryTools.ts)
+
+Tool definition for memory_retrieve_batch
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `'function'` | - |
+| `function` | `{
+    name: 'memory_retrieve_batch',
+    description: `Retrieve multiple memory entries at once. More efficient than multiple memory_retrieve calls.
+
+Use this for:
+- Getting all findings before synthesis: pattern="findings.*"
+- Getting specific entries by keys: keys=["findings.search1", "findings.search2"]
+- Getting all entries from a tier: tier="findings"
+
+Returns all matching entries with their full values in one call.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        pattern: {
+          type: 'string',
+          description: 'Glob-like pattern to match keys (e.g., "findings.*", "search.*", "*"). Supports * as wildcard.',
+        },
+        keys: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific keys to retrieve. Use this when you know exact keys.',
+        },
+        tier: {
+          type: 'string',
+          enum: ['raw', 'summary', 'findings'],
+          description: 'Retrieve all entries from a specific tier.',
+        },
+        includeMetadata: {
+          type: 'boolean',
+          description: 'If true, include metadata (priority, tier, pinned) with each entry. Default: false.',
         },
       },
       required: [],
@@ -10355,7 +11035,7 @@ Unified agent combining chat, planning, and execution
 
 ### ModeManager `class`
 
-📍 [`src/capabilities/universalAgent/ModeManager.ts:19`](src/capabilities/universalAgent/ModeManager.ts)
+📍 [`src/capabilities/universalAgent/ModeManager.ts:22`](src/capabilities/universalAgent/ModeManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -10373,6 +11053,18 @@ constructor(initialMode: AgentMode = 'interactive')
 
 <details>
 <summary><strong>Methods</strong></summary>
+
+#### `destroy()`
+
+Releases all resources held by this ModeManager.
+Removes all event listeners.
+Safe to call multiple times (idempotent).
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
 
 #### `getMode()`
 
@@ -10801,7 +11493,7 @@ getProgress(): TaskProgress | null
 
 #### `hasContext()`
 
-Check if context is available (always true for UniversalAgent)
+Check if context is available (always true since AgentContext is created by BaseAgent)
 
 ```typescript
 hasContext(): boolean
@@ -10944,7 +11636,7 @@ destroy(): void
 
 ### ModeManagerEvents `interface`
 
-📍 [`src/capabilities/universalAgent/ModeManager.ts:14`](src/capabilities/universalAgent/ModeManager.ts)
+📍 [`src/capabilities/universalAgent/ModeManager.ts:17`](src/capabilities/universalAgent/ModeManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -11486,6 +12178,264 @@ estimateDataTokens(data: unknown, contentType: TokenContentType = 'mixed'): numb
 - `contentType`: `TokenContentType` *(optional)* (default: `'mixed'`)
 
 **Returns:** `number`
+
+</details>
+
+---
+
+### AutoSpillPlugin `class`
+
+📍 [`src/core/context/plugins/AutoSpillPlugin.ts:104`](src/core/context/plugins/AutoSpillPlugin.ts)
+
+AutoSpillPlugin - Monitors tool outputs and auto-stores large ones in memory
+
+Usage:
+```typescript
+const autoSpill = new AutoSpillPlugin(memory, {
+  sizeThreshold: 10 * 1024, // 10KB
+  tools: ['web_fetch', 'web_scrape'],
+});
+agentContext.registerPlugin(autoSpill);
+
+// Call this from afterToolExecution hook
+autoSpill.onToolOutput('web_fetch', largeHtmlContent);
+
+// When agent creates summary, mark the raw data as consumed
+autoSpill.markConsumed('autospill_web_fetch_123', 'summary.search1');
+
+// Cleanup consumed entries
+await autoSpill.cleanupConsumed();
+```
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(memory: WorkingMemory, config: AutoSpillConfig =
+```
+
+**Parameters:**
+- `memory`: `WorkingMemory`
+- `config`: `AutoSpillConfig` *(optional)* (default: `{}`)
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `on()`
+
+Subscribe to events
+
+```typescript
+on&lt;K extends keyof AutoSpillEvents&gt;(
+    event: K,
+    listener: (...args: any[]) =&gt; void
+  ): this
+```
+
+**Parameters:**
+- `event`: `K`
+- `listener`: `(...args: any[]) =&gt; void`
+
+**Returns:** `this`
+
+#### `shouldSpill()`
+
+Check if a tool should be auto-spilled
+
+```typescript
+shouldSpill(toolName: string, outputSize: number): boolean
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `outputSize`: `number`
+
+**Returns:** `boolean`
+
+#### `onToolOutput()`
+
+Called when a tool produces output
+Should be called from afterToolExecution hook
+
+```typescript
+async onToolOutput(toolName: string, output: unknown): Promise&lt;string | undefined&gt;
+```
+
+**Parameters:**
+- `toolName`: `string`
+- `output`: `unknown`
+
+**Returns:** `Promise&lt;string | undefined&gt;`
+
+#### `markConsumed()`
+
+Mark a spilled entry as consumed (summarized)
+Call this when the agent creates a summary from raw data
+
+```typescript
+markConsumed(rawKey: string, summaryKey: string): void
+```
+
+**Parameters:**
+- `rawKey`: `string`
+- `summaryKey`: `string`
+
+**Returns:** `void`
+
+#### `getEntries()`
+
+Get all tracked spilled entries
+
+```typescript
+getEntries(): SpilledEntry[]
+```
+
+**Returns:** `SpilledEntry[]`
+
+#### `getUnconsumed()`
+
+Get unconsumed entries (not yet summarized)
+
+```typescript
+getUnconsumed(): SpilledEntry[]
+```
+
+**Returns:** `SpilledEntry[]`
+
+#### `getConsumed()`
+
+Get consumed entries (ready for cleanup)
+
+```typescript
+getConsumed(): SpilledEntry[]
+```
+
+**Returns:** `SpilledEntry[]`
+
+#### `cleanupConsumed()`
+
+Cleanup consumed entries from memory
+
+```typescript
+async cleanupConsumed(): Promise&lt;string[]&gt;
+```
+
+**Returns:** `Promise&lt;string[]&gt;`
+
+#### `cleanup()`
+
+Cleanup specific entries
+
+```typescript
+async cleanup(keys: string[]): Promise&lt;string[]&gt;
+```
+
+**Parameters:**
+- `keys`: `string[]`
+
+**Returns:** `Promise&lt;string[]&gt;`
+
+#### `cleanupAll()`
+
+Cleanup all tracked entries
+
+```typescript
+async cleanupAll(): Promise&lt;string[]&gt;
+```
+
+**Returns:** `Promise&lt;string[]&gt;`
+
+#### `onIteration()`
+
+Called after each agent iteration
+Handles automatic cleanup if configured
+
+```typescript
+async onIteration(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getSpillInfo()`
+
+Get spill info for a specific key
+
+```typescript
+getSpillInfo(key: string): SpilledEntry | undefined
+```
+
+**Parameters:**
+- `key`: `string`
+
+**Returns:** `SpilledEntry | undefined`
+
+#### `getComponent()`
+
+```typescript
+async getComponent(): Promise&lt;IContextComponent | null&gt;
+```
+
+**Returns:** `Promise&lt;IContextComponent | null&gt;`
+
+#### `compact()`
+
+```typescript
+async compact(_targetTokens: number, _estimator: ITokenEstimator): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `_targetTokens`: `number`
+- `_estimator`: `ITokenEstimator`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `getState()`
+
+```typescript
+override getState(): SerializedAutoSpillState
+```
+
+**Returns:** `SerializedAutoSpillState`
+
+#### `restoreState()`
+
+```typescript
+override restoreState(state: unknown): void
+```
+
+**Parameters:**
+- `state`: `unknown`
+
+**Returns:** `void`
+
+#### `destroy()`
+
+```typescript
+override destroy(): void
+```
+
+**Returns:** `void`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: "auto_spill_tracker"` | - |
+| `priority` | `priority: 9` | - |
+| `compactable` | `compactable: true` | - |
+| `memory` | `memory: WorkingMemory` | - |
+| `config` | `config: Required&lt;AutoSpillConfig&gt;` | - |
+| `entries` | `entries: Map&lt;string, SpilledEntry&gt;` | - |
+| `iterationsSinceCleanup` | `iterationsSinceCleanup: number` | - |
+| `entryCounter` | `entryCounter: number` | - |
+| `events` | `events: EventEmitter&lt;AutoSpillEvents, any&gt;` | - |
 
 </details>
 
@@ -12432,6 +13382,47 @@ Options for AggressiveCompactionStrategy
 
 ---
 
+### AutoSpillConfig `interface`
+
+📍 [`src/core/context/plugins/AutoSpillPlugin.ts:42`](src/core/context/plugins/AutoSpillPlugin.ts)
+
+Auto-spill configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sizeThreshold?` | `sizeThreshold?: number;` | Minimum size (bytes) to trigger auto-spill. Default: 10KB |
+| `tools?` | `tools?: string[];` | Tools to auto-spill. If not provided, uses toolPatterns or spills all large outputs |
+| `toolPatterns?` | `toolPatterns?: RegExp[];` | Regex patterns for tools to auto-spill (e.g., /^web_/ for all web tools) |
+| `maxTrackedEntries?` | `maxTrackedEntries?: number;` | Maximum entries to track (oldest are cleaned up). Default: 100 |
+| `autoCleanupAfterIterations?` | `autoCleanupAfterIterations?: number;` | Auto-cleanup consumed entries after this many iterations. Default: 5 |
+| `keyPrefix?` | `keyPrefix?: string;` | Key prefix for spilled entries. Default: 'autospill' |
+
+</details>
+
+---
+
+### AutoSpillEvents `interface`
+
+📍 [`src/core/context/plugins/AutoSpillPlugin.ts:77`](src/core/context/plugins/AutoSpillPlugin.ts)
+
+Events emitted by AutoSpillPlugin
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `spilled` | `spilled: { key: string; tool: string; sizeBytes: number };` | - |
+| `consumed` | `consumed: { key: string; summaryKey: string };` | - |
+| `cleaned` | `cleaned: { keys: string[]; reason: 'manual' | 'auto' | 'consumed' };` | - |
+
+</details>
+
+---
+
 ### BaseStrategyMetrics `interface`
 
 📍 [`src/core/context/strategies/BaseCompactionStrategy.ts:25`](src/core/context/strategies/BaseCompactionStrategy.ts)
@@ -12952,6 +13943,27 @@ getMetrics?(): Record&lt;string, unknown&gt;;
 
 ---
 
+### InContextEntry `interface`
+
+📍 [`src/core/context/plugins/InContextMemoryPlugin.ts:24`](src/core/context/plugins/InContextMemoryPlugin.ts)
+
+An entry stored in InContextMemory
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `key` | `key: string;` | Unique key for this entry |
+| `description` | `description: string;` | Human-readable description |
+| `value` | `value: unknown;` | The actual value (any JSON-serializable data) |
+| `updatedAt` | `updatedAt: number;` | When this entry was last updated |
+| `priority` | `priority: InContextPriority;` | Eviction priority (low entries are evicted first) |
+
+</details>
+
+---
+
 ### ITokenEstimator `interface`
 
 📍 [`src/core/context/types.ts:141`](src/core/context/types.ts)
@@ -13067,6 +14079,24 @@ Options for ProactiveCompactionStrategy
 
 ---
 
+### SerializedAutoSpillState `interface`
+
+📍 [`src/core/context/plugins/AutoSpillPlugin.ts:69`](src/core/context/plugins/AutoSpillPlugin.ts)
+
+Serialized plugin state
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `entries` | `entries: SpilledEntry[];` | - |
+| `iterationsSinceCleanup` | `iterationsSinceCleanup: number;` | - |
+
+</details>
+
+---
+
 ### SerializedToolOutputState `interface`
 
 📍 [`src/core/context/plugins/ToolOutputPlugin.ts:28`](src/core/context/plugins/ToolOutputPlugin.ts)
@@ -13079,6 +14109,28 @@ Serialized tool output state
 | Property | Type | Description |
 |----------|------|-------------|
 | `outputs` | `outputs: ToolOutput[];` | - |
+
+</details>
+
+---
+
+### SpilledEntry `interface`
+
+📍 [`src/core/context/plugins/AutoSpillPlugin.ts:24`](src/core/context/plugins/AutoSpillPlugin.ts)
+
+Spilled entry metadata
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `key` | `key: string;` | Memory key where the entry is stored |
+| `sourceTool` | `sourceTool: string;` | Tool that produced the output |
+| `sizeBytes` | `sizeBytes: number;` | Original size in bytes |
+| `timestamp` | `timestamp: number;` | When the entry was spilled |
+| `consumed` | `consumed: boolean;` | Whether this entry has been consumed (summarized) |
+| `derivedSummaries` | `derivedSummaries: string[];` | Keys of summaries derived from this entry |
 
 </details>
 
@@ -13142,6 +14194,18 @@ Tool output plugin configuration
 | `includeTimestamps?` | `includeTimestamps?: boolean;` | Whether to include timestamps in context (default: false) |
 
 </details>
+
+---
+
+### InContextPriority `type`
+
+📍 [`src/core/context/plugins/InContextMemoryPlugin.ts:19`](src/core/context/plugins/InContextMemoryPlugin.ts)
+
+Priority levels for in-context memory entries
+
+```typescript
+type InContextPriority = 'low' | 'normal' | 'high' | 'critical'
+```
 
 ---
 
@@ -13278,6 +14342,30 @@ export function findCompactorForComponent(
 
 ---
 
+### formatBytes `function`
+
+📍 [`src/core/context/plugins/AutoSpillPlugin.ts:439`](src/core/context/plugins/AutoSpillPlugin.ts)
+
+Format bytes to human-readable string
+
+```typescript
+function formatBytes(bytes: number): string
+```
+
+---
+
+### getPluginFromContext `function`
+
+📍 [`src/core/context/plugins/inContextMemoryTools.ts:319`](src/core/context/plugins/inContextMemoryTools.ts)
+
+Get the InContextMemoryPlugin from tool context
+
+```typescript
+function getPluginFromContext(context: ToolContext | undefined, toolName: string): InContextMemoryPlugin
+```
+
+---
+
 ### sortCompactableByPriority `function`
 
 📍 [`src/core/context/utils/ContextUtils.ts:35`](src/core/context/utils/ContextUtils.ts)
@@ -13291,6 +14379,204 @@ export function sortCompactableByPriority(
   components: IContextComponent[]
 ): IContextComponent[]
 ```
+
+---
+
+### contextDeleteDefinition `const`
+
+📍 [`src/core/context/plugins/inContextMemoryTools.ts:91`](src/core/context/plugins/inContextMemoryTools.ts)
+
+Tool definition for context_delete
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `'function'` | - |
+| `function` | `{
+    name: 'context_delete',
+    description: `Delete an entry from the live context to free space.
+
+Use this to:
+- Remove entries that are no longer needed
+- Free space when approaching limits
+- Clean up after a task completes`,
+    parameters: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description: 'The key to delete',
+        },
+      },
+      required: ['key'],
+    },
+  }` | - |
+
+</details>
+
+---
+
+### contextGetDefinition `const`
+
+📍 [`src/core/context/plugins/inContextMemoryTools.ts:65`](src/core/context/plugins/inContextMemoryTools.ts)
+
+Tool definition for context_get
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `'function'` | - |
+| `function` | `{
+    name: 'context_get',
+    description: `Retrieve a value from the live context by key.
+
+Note: Values are already visible in the context, so this tool is mainly for:
+- Verifying a value exists
+- Getting the value programmatically for processing
+- Debugging`,
+    parameters: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description: 'The key to retrieve',
+        },
+      },
+      required: ['key'],
+    },
+  }` | - |
+
+</details>
+
+---
+
+### contextListDefinition `const`
+
+📍 [`src/core/context/plugins/inContextMemoryTools.ts:117`](src/core/context/plugins/inContextMemoryTools.ts)
+
+Tool definition for context_list
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `'function'` | - |
+| `function` | `{
+    name: 'context_list',
+    description: `List all keys stored in the live context with their metadata.
+
+Returns key, description, priority, and last update time for each entry.
+Use to see what's stored and identify entries to clean up.`,
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  }` | - |
+
+</details>
+
+---
+
+### contextSetDefinition `const`
+
+📍 [`src/core/context/plugins/inContextMemoryTools.ts:19`](src/core/context/plugins/inContextMemoryTools.ts)
+
+Tool definition for context_set
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `type` | `'function'` | - |
+| `function` | `{
+    name: 'context_set',
+    description: `Store or update a key-value pair in the live context.
+The value will appear directly in the context and can be read without retrieval calls.
+
+Use for:
+- Current state/status that changes during execution
+- User preferences or settings
+- Counters, flags, or control variables
+- Small accumulated results
+
+Priority levels (for eviction when space is needed):
+- "low": Evicted first. Temporary or easily recreated data.
+- "normal": Default. Standard importance.
+- "high": Keep longer. Important state.
+- "critical": Never auto-evicted. Only removed via context_delete.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description: 'Unique key for this entry (e.g., "current_state", "user_prefs")',
+        },
+        description: {
+          type: 'string',
+          description: 'Brief description of what this data represents (shown in context)',
+        },
+        value: {
+          description: 'The value to store (any JSON-serializable data)',
+        },
+        priority: {
+          type: 'string',
+          enum: ['low', 'normal', 'high', 'critical'],
+          description: 'Eviction priority. Default: "normal"',
+        },
+      },
+      required: ['key', 'description', 'value'],
+    },
+  }` | - |
+
+</details>
+
+---
+
+### DEFAULT_CONFIG `const`
+
+📍 [`src/core/context/plugins/AutoSpillPlugin.ts:57`](src/core/context/plugins/AutoSpillPlugin.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sizeThreshold` | `10 * 1024` | - |
+| `tools` | `[]` | - |
+| `toolPatterns` | `[]` | - |
+| `maxTrackedEntries` | `100` | - |
+| `autoCleanupAfterIterations` | `5` | - |
+| `keyPrefix` | `'autospill'` | - |
+
+</details>
+
+---
+
+### DEFAULT_CONFIG `const`
+
+📍 [`src/core/context/plugins/InContextMemoryPlugin.ts:74`](src/core/context/plugins/InContextMemoryPlugin.ts)
+
+Default configuration values
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxEntries` | `20` | - |
+| `maxTotalTokens` | `4000` | - |
+| `defaultPriority` | `'normal'` | - |
+| `showTimestamps` | `false` | - |
+| `headerText` | `'## Live Context'` | - |
+
+</details>
 
 ---
 
@@ -13387,6 +14673,26 @@ Default options for proactive strategy (from centralized constants)
 | `baseReductionFactor` | `PROACTIVE_STRATEGY_DEFAULTS.BASE_REDUCTION_FACTOR` | - |
 | `reductionStep` | `PROACTIVE_STRATEGY_DEFAULTS.REDUCTION_STEP` | - |
 | `maxRounds` | `PROACTIVE_STRATEGY_DEFAULTS.MAX_ROUNDS` | - |
+
+</details>
+
+---
+
+### PRIORITY_VALUES `const`
+
+📍 [`src/core/context/plugins/InContextMemoryPlugin.ts:64`](src/core/context/plugins/InContextMemoryPlugin.ts)
+
+Priority values for sorting (lower = evict first)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `low` | `1` | - |
+| `normal` | `2` | - |
+| `high` | `3` | - |
+| `critical` | `4` | - |
 
 </details>
 
@@ -13915,7 +15221,7 @@ async clearAll(): Promise&lt;void&gt;
 
 ### SessionManager `class`
 
-📍 [`src/core/SessionManager.ts:455`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:456`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -14131,7 +15437,7 @@ destroy(): void
 
 ### SessionValidationError `class`
 
-📍 [`src/core/SessionManager.ts:62`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:63`](src/core/SessionManager.ts)
 
 Error thrown when session validation fails
 
@@ -14157,7 +15463,7 @@ constructor(
 
 ### BaseSessionConfig `interface`
 
-📍 [`src/core/BaseAgent.ts:38`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:45`](src/core/BaseAgent.ts)
 
 Base session configuration (shared by all agent types)
 
@@ -14259,7 +15565,7 @@ Unified agent storage interface
 
 ### ISessionStorage `interface`
 
-📍 [`src/core/SessionManager.ts:204`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:205`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Methods</strong></summary>
@@ -14349,7 +15655,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SerializedHistory `interface`
 
-📍 [`src/core/SessionManager.ts:134`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:135`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14365,7 +15671,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SerializedHistoryEntry `interface`
 
-📍 [`src/core/SessionManager.ts:141`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:142`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14383,7 +15689,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### Session `interface`
 
-📍 [`src/core/SessionManager.ts:76`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:77`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14410,7 +15716,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionFilter `interface`
 
-📍 [`src/core/SessionManager.ts:172`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:173`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14474,7 +15780,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionManagerConfig `interface`
 
-📍 [`src/core/SessionManager.ts:249`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:250`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14492,7 +15798,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionMetadata `interface`
 
-📍 [`src/core/SessionManager.ts:116`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:117`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14509,7 +15815,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionMetrics `interface`
 
-📍 [`src/core/SessionManager.ts:127`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:128`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14527,7 +15833,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionMigration `interface`
 
-📍 [`src/core/SessionManager.ts:48`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:49`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14545,7 +15851,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionSummary `interface`
 
-📍 [`src/core/SessionManager.ts:191`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:192`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14565,7 +15871,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionValidationResult `interface`
 
-📍 [`src/core/SessionManager.ts:35`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:36`](src/core/SessionManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -14584,7 +15890,7 @@ search?(query: string, filter?: SessionFilter): Promise&lt;SessionSummary[]&gt;;
 
 ### SessionManagerEvent `type`
 
-📍 [`src/core/SessionManager.ts:240`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:241`](src/core/SessionManager.ts)
 
 ```typescript
 type SessionManagerEvent = | 'session:created'
@@ -14600,7 +15906,7 @@ type SessionManagerEvent = | 'session:created'
 
 ### addHistoryEntry `function`
 
-📍 [`src/core/SessionManager.ts:788`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:799`](src/core/SessionManager.ts)
 
 Add an entry to serialized history
 
@@ -14629,7 +15935,7 @@ export function createAgentStorage(options:
 
 ### createEmptyHistory `function`
 
-📍 [`src/core/SessionManager.ts:774`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:785`](src/core/SessionManager.ts)
 
 Create an empty serialized history
 
@@ -14641,7 +15947,7 @@ export function createEmptyHistory(): SerializedHistory
 
 ### migrateSession `function`
 
-📍 [`src/core/SessionManager.ts:445`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:446`](src/core/SessionManager.ts)
 
 Apply migrations to a session
 
@@ -14656,7 +15962,7 @@ export function migrateSession(
 
 ### validateSession `function`
 
-📍 [`src/core/SessionManager.ts:266`](src/core/SessionManager.ts)
+📍 [`src/core/SessionManager.ts:267`](src/core/SessionManager.ts)
 
 Validate a session object and return validation results
 
@@ -14967,7 +16273,7 @@ constructor(
 
 ### ToolManager `class`
 
-📍 [`src/core/ToolManager.ts:120`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:122`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -14982,6 +16288,18 @@ constructor()
 
 <details>
 <summary><strong>Methods</strong></summary>
+
+#### `destroy()`
+
+Releases all resources held by this ToolManager.
+Cleans up circuit breaker listeners and removes all event listeners.
+Safe to call multiple times (idempotent).
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
 
 #### `setToolContext()`
 
@@ -15049,7 +16367,8 @@ unregister(name: string): boolean
 
 #### `clear()`
 
-Clear all tools
+Clear all tools and their circuit breakers.
+Does NOT remove event listeners from this ToolManager (use destroy() for full cleanup).
 
 ```typescript
 clear(): void
@@ -16095,7 +17414,7 @@ constructor(
 
 ### BuiltInTool `interface`
 
-📍 [`src/domain/entities/Tool.ts:24`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:30`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16143,7 +17462,7 @@ Default: common binary extensions |
 
 ### FunctionToolDefinition `interface`
 
-📍 [`src/domain/entities/Tool.ts:12`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:18`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16314,9 +17633,7 @@ listTools(): string[];
 
 ### JSONSchema `interface`
 
-📍 [`src/domain/entities/Tool.ts:5`](src/domain/entities/Tool.ts)
-
-Tool entities with blocking/non-blocking execution support
+📍 [`src/domain/entities/Tool.ts:11`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16424,9 +17741,29 @@ Standardized tool format before provider-specific transformation
 
 ---
 
+### ResearchToolContext `interface`
+
+📍 [`src/capabilities/researchAgent/ResearchAgent.ts:521`](src/capabilities/researchAgent/ResearchAgent.ts)
+
+Research tools context - extends ToolContext with research-specific access
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sourcesMap` | `sourcesMap: Map&lt;string, IResearchSource&gt;;` | - |
+| `defaultSearchOptions` | `defaultSearchOptions: SearchOptions;` | - |
+| `defaultFetchOptions` | `defaultFetchOptions: FetchOptions;` | - |
+| `autoSpillPlugin?` | `autoSpillPlugin?: AutoSpillPlugin;` | - |
+
+</details>
+
+---
+
 ### SerializedToolState `interface`
 
-📍 [`src/core/ToolManager.ts:99`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:101`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16479,7 +17816,7 @@ Default: true |
 
 ### ToolCall `interface`
 
-📍 [`src/domain/entities/Tool.ts:39`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:45`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16625,7 +17962,7 @@ Tool call detected and starting
 
 ### ToolCondition `interface`
 
-📍 [`src/core/ToolManager.ts:46`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:48`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16641,27 +17978,7 @@ Tool call detected and starting
 
 ### ToolContext `interface`
 
-📍 [`src/domain/entities/Tool.ts:74`](src/domain/entities/Tool.ts)
-
-Tool context - passed to tools during execution (optional, for TaskAgent)
-
-<details>
-<summary><strong>Properties</strong></summary>
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `agentId` | `agentId: string;` | - |
-| `taskId?` | `taskId?: string;` | - |
-| `memory?` | `memory?: any;` | - |
-| `signal?` | `signal?: AbortSignal;` | - |
-
-</details>
-
----
-
-### ToolContext `interface`
-
-📍 [`src/domain/interfaces/IToolContext.ts:62`](src/domain/interfaces/IToolContext.ts)
+📍 [`src/domain/interfaces/IToolContext.ts:63`](src/domain/interfaces/IToolContext.ts)
 
 Context passed to tool execute function
 
@@ -16675,6 +17992,7 @@ Context passed to tool execute function
 | `memory?` | `memory?: WorkingMemoryAccess;` | Working memory access (if running in TaskAgent) |
 | `contextManager?` | `contextManager?: ContextManager;` | Context manager (if running in TaskAgent) |
 | `idempotencyCache?` | `idempotencyCache?: IdempotencyCache;` | Idempotency cache (if running in TaskAgent) |
+| `inContextMemory?` | `inContextMemory?: InContextMemoryPlugin;` | In-context memory plugin (if set up with setupInContextMemory) |
 | `signal?` | `signal?: AbortSignal;` | Abort signal for cancellation |
 
 </details>
@@ -16720,7 +18038,7 @@ Context passed to tool execute function
 
 ### ToolExecutionContext `interface`
 
-📍 [`src/domain/entities/Tool.ts:64`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:70`](src/domain/entities/Tool.ts)
 
 Tool execution context - tracks all tool calls in a generation
 
@@ -16762,7 +18080,7 @@ Tool execution complete
 
 ### ToolExecutionHookContext `interface`
 
-📍 [`src/core/BaseAgent.ts:52`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:59`](src/core/BaseAgent.ts)
 
 Tool execution context passed to lifecycle hooks
 
@@ -16782,7 +18100,7 @@ Tool execution context passed to lifecycle hooks
 
 ### ToolExecutionResult `interface`
 
-📍 [`src/core/BaseAgent.ts:66`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:73`](src/core/BaseAgent.ts)
 
 Tool execution result passed to afterToolExecution hook
 
@@ -16823,7 +18141,7 @@ Tool execution starting
 
 ### ToolFunction `interface`
 
-📍 [`src/domain/entities/Tool.ts:154`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:153`](src/domain/entities/Tool.ts)
 
 User-provided tool function
 
@@ -16846,7 +18164,7 @@ Used for logging, UI display, and debugging. |
 
 ### ToolIdempotency `interface`
 
-📍 [`src/domain/entities/Tool.ts:92`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:91`](src/domain/entities/Tool.ts)
 
 Idempotency configuration for tool caching
 
@@ -16868,7 +18186,7 @@ Takes precedence over the deprecated 'safe' field. |
 
 ### ToolManagerStats `interface`
 
-📍 [`src/core/ToolManager.ts:89`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:91`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16889,7 +18207,7 @@ Takes precedence over the deprecated 'safe' field. |
 
 ### ToolMetadata `interface`
 
-📍 [`src/core/ToolManager.ts:79`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:81`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16928,7 +18246,7 @@ Takes precedence over the deprecated 'safe' field. |
 
 ### ToolOptions `interface`
 
-📍 [`src/core/ToolManager.ts:33`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:35`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -16947,7 +18265,7 @@ Takes precedence over the deprecated 'safe' field. |
 
 ### ToolOutputHints `interface`
 
-📍 [`src/domain/entities/Tool.ts:84`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:83`](src/domain/entities/Tool.ts)
 
 Output handling hints for context management
 
@@ -16991,7 +18309,7 @@ If set, session approvals expire after this duration. |
 
 ### ToolPermissionConfig `interface`
 
-📍 [`src/domain/entities/Tool.ts:118`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:117`](src/domain/entities/Tool.ts)
 
 Permission configuration for a tool
 
@@ -17019,7 +18337,7 @@ Used by the ToolPermissionManager.
 
 ### ToolRegistration `interface`
 
-📍 [`src/core/ToolManager.ts:66`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:68`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -17041,7 +18359,7 @@ Used by the ToolPermissionManager.
 
 ### ToolRegistrationOptions `interface`
 
-📍 [`src/core/BaseAgent.ts:28`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:35`](src/core/BaseAgent.ts)
 
 Options for tool registration
 
@@ -17057,9 +18375,34 @@ Options for tool registration
 
 ---
 
+### ToolRegistryEntry `interface`
+
+📍 [`src/tools/registry.generated.ts:30`](src/tools/registry.generated.ts)
+
+Metadata for a tool in the registry
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Tool name (matches definition.function.name) |
+| `exportName` | `exportName: string;` | Export variable name |
+| `displayName` | `displayName: string;` | Human-readable display name |
+| `category` | `category: ToolCategory;` | Category for grouping |
+| `description` | `description: string;` | Brief description |
+| `tool` | `tool: ToolFunction;` | The actual tool function |
+| `safeByDefault` | `safeByDefault: boolean;` | Whether this tool is safe without explicit approval |
+| `requiresConnector?` | `requiresConnector?: boolean;` | Whether this tool requires a connector |
+| `connectorServiceTypes?` | `connectorServiceTypes?: string[];` | Supported connector service types (if requiresConnector) |
+
+</details>
+
+---
+
 ### ToolResult `interface`
 
-📍 [`src/domain/entities/Tool.ts:53`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:59`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -17113,7 +18456,7 @@ Options for tool registration
 
 ### ToolSelectionContext `interface`
 
-📍 [`src/core/ToolManager.ts:51`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:53`](src/core/ToolManager.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -17188,7 +18531,7 @@ Options for tool registration
 
 ### ToolCallState `enum`
 
-📍 [`src/domain/entities/Tool.ts:31`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:37`](src/domain/entities/Tool.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -17232,7 +18575,7 @@ type ServiceToolFactory = (connector: Connector, userId?: string) =&gt; ToolFunc
 
 ### Tool `type`
 
-📍 [`src/domain/entities/Tool.ts:29`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:35`](src/domain/entities/Tool.ts)
 
 ```typescript
 type Tool = FunctionToolDefinition | BuiltInTool
@@ -17240,9 +18583,21 @@ type Tool = FunctionToolDefinition | BuiltInTool
 
 ---
 
+### ToolCategory `type`
+
+📍 [`src/tools/registry.generated.ts:27`](src/tools/registry.generated.ts)
+
+Tool category for grouping
+
+```typescript
+type ToolCategory = 'filesystem' | 'shell' | 'web' | 'code' | 'json' | 'connector' | 'other'
+```
+
+---
+
 ### ToolManagerEvent `type`
 
-📍 [`src/core/ToolManager.ts:107`](src/core/ToolManager.ts)
+📍 [`src/core/ToolManager.ts:109`](src/core/ToolManager.ts)
 
 ```typescript
 type ToolManagerEvent = | 'tool:registered'
@@ -17388,6 +18743,19 @@ export function createReadFileTool(config: FilesystemToolConfig =
 
 ---
 
+### createResearchTools `function`
+
+📍 [`src/capabilities/researchAgent/ResearchAgent.ts:532`](src/capabilities/researchAgent/ResearchAgent.ts)
+
+Create research-specific tools for source interaction
+These tools use closure over the sources and config rather than accessing agent from context
+
+```typescript
+function createResearchTools(sources: IResearchSource[]): ToolFunction[]
+```
+
+---
+
 ### createToolUseContent `function`
 
 📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:140`](src/infrastructure/providers/shared/ResponseBuilder.ts)
@@ -17418,7 +18786,7 @@ export function createWriteFileTool(config: FilesystemToolConfig =
 
 ### defaultDescribeCall `function`
 
-📍 [`src/domain/entities/Tool.ts:204`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:203`](src/domain/entities/Tool.ts)
 
 Default implementation for describeCall.
 Shows the first meaningful argument value.
@@ -17497,9 +18865,33 @@ export function generateWebAPITool(): ToolFunction&lt;APIRequestArgs, APIRequest
 
 ---
 
+### getAllBuiltInTools `function`
+
+📍 [`src/tools/registry.generated.ts:177`](src/tools/registry.generated.ts)
+
+Get all built-in tools as ToolFunction array
+
+```typescript
+export function getAllBuiltInTools(): ToolFunction[]
+```
+
+---
+
+### getToolByName `function`
+
+📍 [`src/tools/registry.generated.ts:192`](src/tools/registry.generated.ts)
+
+Get tool by name
+
+```typescript
+export function getToolByName(name: string): ToolRegistryEntry | undefined
+```
+
+---
+
 ### getToolCallDescription `function`
 
-📍 [`src/domain/entities/Tool.ts:256`](src/domain/entities/Tool.ts)
+📍 [`src/domain/entities/Tool.ts:255`](src/domain/entities/Tool.ts)
 
 Get a human-readable description of a tool call.
 Uses the tool's describeCall method if available, otherwise falls back to default.
@@ -17509,6 +18901,54 @@ export function getToolCallDescription&lt;TArgs&gt;(
   tool: ToolFunction&lt;TArgs&gt;,
   args: TArgs
 ): string
+```
+
+---
+
+### getToolCategories `function`
+
+📍 [`src/tools/registry.generated.ts:202`](src/tools/registry.generated.ts)
+
+Get all unique category names
+
+```typescript
+export function getToolCategories(): ToolCategory[]
+```
+
+---
+
+### getToolRegistry `function`
+
+📍 [`src/tools/registry.generated.ts:182`](src/tools/registry.generated.ts)
+
+Get full tool registry with metadata
+
+```typescript
+export function getToolRegistry(): ToolRegistryEntry[]
+```
+
+---
+
+### getToolsByCategory `function`
+
+📍 [`src/tools/registry.generated.ts:187`](src/tools/registry.generated.ts)
+
+Get tools by category
+
+```typescript
+export function getToolsByCategory(category: ToolCategory): ToolRegistryEntry[]
+```
+
+---
+
+### getToolsRequiringConnector `function`
+
+📍 [`src/tools/registry.generated.ts:197`](src/tools/registry.generated.ts)
+
+Get tools that require connector configuration
+
+```typescript
+export function getToolsRequiringConnector(): ToolRegistryEntry[]
 ```
 
 ---
@@ -21191,7 +22631,7 @@ histogram(metric: string, value: number, tags?: MetricTags): void
 
 ### FrameworkLogger `class`
 
-📍 [`src/infrastructure/observability/Logger.ts:66`](src/infrastructure/observability/Logger.ts)
+📍 [`src/infrastructure/observability/Logger.ts:158`](src/infrastructure/observability/Logger.ts)
 
 Framework logger
 
@@ -21769,7 +23209,7 @@ Failure record for window tracking
 
 ### LogEntry `interface`
 
-📍 [`src/infrastructure/observability/Logger.ts:56`](src/infrastructure/observability/Logger.ts)
+📍 [`src/infrastructure/observability/Logger.ts:148`](src/infrastructure/observability/Logger.ts)
 
 Log entry
 
@@ -21847,7 +23287,7 @@ error(message: string, ...args: any[]): void;
 
 ### LoggerConfig `interface`
 
-📍 [`src/infrastructure/observability/Logger.ts:36`](src/infrastructure/observability/Logger.ts)
+📍 [`src/infrastructure/observability/Logger.ts:128`](src/infrastructure/observability/Logger.ts)
 
 Logger configuration
 
@@ -22116,6 +23556,18 @@ export async function retryWithBackoff&lt;T&gt;(
   config: BackoffConfig = DEFAULT_BACKOFF_CONFIG,
   maxAttempts?: number
 ): Promise&lt;T&gt;
+```
+
+---
+
+### safeStringify `function`
+
+📍 [`src/infrastructure/observability/Logger.ts:36`](src/infrastructure/observability/Logger.ts)
+
+Safe JSON stringify that handles circular references and problematic objects
+
+```typescript
+function safeStringify(obj: unknown, indent?: number): string
 ```
 
 ---
@@ -25287,7 +26739,7 @@ getModelCapabilities(model: string): ModelCapabilities
 
 ### BaseAgent `class`
 
-📍 [`src/core/BaseAgent.ts:218`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:259`](src/core/BaseAgent.ts)
 
 Abstract base class for all agent types.
 
@@ -25383,6 +26835,21 @@ protected resolveConnector(ref: string | Connector): Connector
 - `ref`: `string | Connector`
 
 **Returns:** `Connector`
+
+#### `initializeAgentContext()`
+
+Initialize AgentContext (single source of truth for tools).
+If AgentContext is provided, use it directly.
+Otherwise, create a new one with the provided configuration.
+
+```typescript
+protected initializeAgentContext(config: TConfig): AgentContext
+```
+
+**Parameters:**
+- `config`: `TConfig`
+
+**Returns:** `AgentContext`
 
 #### `initializeToolManager()`
 
@@ -25545,7 +27012,8 @@ getSessionData&lt;T = unknown&gt;(key: string): T | undefined
 
 #### `addTool()`
 
-Add a tool to the agent
+Add a tool to the agent.
+Tools are registered with AgentContext (single source of truth).
 
 ```typescript
 addTool(tool: ToolFunction): void
@@ -25558,7 +27026,8 @@ addTool(tool: ToolFunction): void
 
 #### `removeTool()`
 
-Remove a tool from the agent
+Remove a tool from the agent.
+Tools are unregistered from AgentContext (single source of truth).
 
 ```typescript
 removeTool(toolName: string): void
@@ -25602,6 +27071,50 @@ protected getEnabledToolDefinitions(): import('../domain/entities/Tool.js').Func
 ```
 
 **Returns:** `FunctionToolDefinition[]`
+
+#### `runDirect()`
+
+Make a direct LLM call bypassing all context management.
+
+This method:
+- Does NOT track messages in history
+- Does NOT use AgentContext features (memory, cache, etc.)
+- Does NOT prepare context or run compaction
+- Does NOT go through the agentic loop (no tool execution)
+
+Use this for simple, stateless interactions where you want raw LLM access
+without the overhead of context management.
+
+```typescript
+async runDirect(
+    input: string | InputItem[],
+    options: DirectCallOptions =
+```
+
+**Parameters:**
+- `input`: `string | InputItem[]`
+- `options`: `DirectCallOptions` *(optional)* (default: `{}`)
+
+**Returns:** `Promise&lt;LLMResponse&gt;`
+
+#### `streamDirect()`
+
+Stream a direct LLM call bypassing all context management.
+
+Same as runDirect but returns a stream of events instead of waiting
+for the complete response. Useful for real-time output display.
+
+```typescript
+async *streamDirect(
+    input: string | InputItem[],
+    options: DirectCallOptions =
+```
+
+**Parameters:**
+- `input`: `string | InputItem[]`
+- `options`: `DirectCallOptions` *(optional)* (default: `{}`)
+
+**Returns:** `AsyncIterableIterator&lt;StreamEvent&gt;`
 
 #### `setLifecycleHooks()`
 
@@ -26352,6 +27865,89 @@ supportsFeature(feature: ScrapeFeature): boolean
 
 ---
 
+### FileSearchSource `class`
+
+📍 [`src/capabilities/researchAgent/sources/FileSearchSource.ts:44`](src/capabilities/researchAgent/sources/FileSearchSource.ts)
+
+FileSearchSource - Search and read files
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: FileSearchSourceConfig)
+```
+
+**Parameters:**
+- `config`: `FileSearchSourceConfig`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `search()`
+
+```typescript
+async search(query: string, options?: SearchOptions): Promise&lt;SearchResponse&gt;
+```
+
+**Parameters:**
+- `query`: `string`
+- `options`: `SearchOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;SearchResponse&gt;`
+
+#### `fetch()`
+
+```typescript
+async fetch(reference: string, options?: FetchOptions): Promise&lt;FetchedContent&gt;
+```
+
+**Parameters:**
+- `reference`: `string`
+- `options`: `FetchOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;FetchedContent&gt;`
+
+#### `isAvailable()`
+
+```typescript
+async isAvailable(): Promise&lt;boolean&gt;
+```
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `getCapabilities()`
+
+```typescript
+getCapabilities(): SourceCapabilities
+```
+
+**Returns:** `SourceCapabilities`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string` | - |
+| `description` | `description: string` | - |
+| `type` | `type: "file"` | - |
+| `basePath` | `basePath: string` | - |
+| `includePatterns` | `includePatterns: string[]` | - |
+| `excludePatterns` | `excludePatterns: string[]` | - |
+| `maxFileSize` | `maxFileSize: number` | - |
+| `searchMode` | `searchMode: "filename" | "content" | "both"` | - |
+
+</details>
+
+---
+
 ### GenericOpenAIProvider `class`
 
 📍 [`src/infrastructure/providers/generic/GenericOpenAIProvider.ts:20`](src/infrastructure/providers/generic/GenericOpenAIProvider.ts)
@@ -26804,7 +28400,7 @@ getDisabledHooks(): string[]
 
 ### IdempotencyCache `class`
 
-📍 [`src/core/IdempotencyCache.ts:54`](src/core/IdempotencyCache.ts)
+📍 [`src/core/IdempotencyCache.ts:60`](src/core/IdempotencyCache.ts)
 
 IdempotencyCache handles tool call result caching.
 
@@ -26813,6 +28409,9 @@ Features:
 - Custom key generation per tool
 - TTL-based expiration
 - Max entries eviction
+
+Implements IDisposable for proper resource cleanup.
+Call destroy() when done to clear the background cleanup interval.
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -26830,6 +28429,18 @@ constructor(config: IdempotencyCacheConfig = DEFAULT_IDEMPOTENCY_CONFIG)
 
 <details>
 <summary><strong>Methods</strong></summary>
+
+#### `destroy()`
+
+Releases all resources held by this cache.
+Clears the background cleanup interval and all cached entries.
+Safe to call multiple times (idempotent).
+
+```typescript
+destroy(): void
+```
+
+**Returns:** `void`
 
 #### `get()`
 
@@ -26913,7 +28524,7 @@ pruneExpired(): number
 
 #### `clear()`
 
-Clear all cached results
+Clear all cached results and stop background cleanup.
 
 ```typescript
 async clear(): Promise&lt;void&gt;
@@ -26964,7 +28575,7 @@ generateKey(tool: ToolFunction, args: Record&lt;string, unknown&gt;): string
 
 ### MCPClient `class`
 
-📍 [`src/core/mcp/MCPClient.ts:50`](src/core/mcp/MCPClient.ts)
+📍 [`src/core/mcp/MCPClient.ts:51`](src/core/mcp/MCPClient.ts)
 
 MCP Client class
 
@@ -27692,7 +29303,7 @@ reset(): void
 
 ### RapidAPIProvider `class`
 
-📍 [`src/capabilities/search/providers/RapidAPIProvider.ts:15`](src/capabilities/search/providers/RapidAPIProvider.ts)
+📍 [`src/capabilities/search/providers/RapidAPIProvider.ts:18`](src/capabilities/search/providers/RapidAPIProvider.ts)
 
 <details>
 <summary><strong>Constructor</strong></summary>
@@ -27731,6 +29342,210 @@ async search(query: string, options: SearchOptions =
 | Property | Type | Description |
 |----------|------|-------------|
 | `name` | `name: "rapidapi"` | - |
+
+</details>
+
+---
+
+### ResearchAgent `class`
+
+📍 [`src/capabilities/researchAgent/ResearchAgent.ts:78`](src/capabilities/researchAgent/ResearchAgent.ts)
+
+ResearchAgent - extends TaskAgent with research capabilities
+
+<details>
+<summary><strong>Static Methods</strong></summary>
+
+#### `static create()`
+
+Create a new ResearchAgent
+
+```typescript
+static override create(config: ResearchAgentConfig): ResearchAgent
+```
+
+**Parameters:**
+- `config`: `ResearchAgentConfig`
+
+**Returns:** `ResearchAgent`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `getSources()`
+
+Get all registered sources
+
+```typescript
+getSources(): IResearchSource[]
+```
+
+**Returns:** `IResearchSource[]`
+
+#### `getSource()`
+
+Get a specific source by name
+
+```typescript
+getSource(name: string): IResearchSource | undefined
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `IResearchSource | undefined`
+
+#### `addSource()`
+
+Add a source at runtime
+
+```typescript
+addSource(source: IResearchSource): void
+```
+
+**Parameters:**
+- `source`: `IResearchSource`
+
+**Returns:** `void`
+
+#### `removeSource()`
+
+Remove a source
+
+```typescript
+removeSource(name: string): boolean
+```
+
+**Parameters:**
+- `name`: `string`
+
+**Returns:** `boolean`
+
+#### `searchSources()`
+
+Search across all sources (or specified sources)
+
+```typescript
+async searchSources(
+    query: string,
+    options?: SearchOptions &
+```
+
+**Parameters:**
+- `query`: `string`
+- `options`: `(SearchOptions & { sources?: string[] | undefined; }) | undefined` *(optional)*
+
+**Returns:** `Promise&lt;Map&lt;string, SearchResponse&gt;&gt;`
+
+#### `fetchFromSource()`
+
+Fetch content from a specific source
+
+```typescript
+async fetchFromSource(
+    sourceName: string,
+    reference: string,
+    options?: FetchOptions
+  ): Promise&lt;ReturnType&lt;IResearchSource['fetch']&gt;&gt;
+```
+
+**Parameters:**
+- `sourceName`: `string`
+- `reference`: `string`
+- `options`: `FetchOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;Promise&lt;FetchedContent&gt;&gt;`
+
+#### `storeFinding()`
+
+Store a research finding in memory
+Requires memory feature to be enabled
+
+```typescript
+async storeFinding(
+    key: string,
+    finding: ResearchFinding
+  ): Promise&lt;void&gt;
+```
+
+**Parameters:**
+- `key`: `string`
+- `finding`: `ResearchFinding`
+
+**Returns:** `Promise&lt;void&gt;`
+
+#### `getFindings()`
+
+Get all stored findings
+Returns empty object if memory feature is disabled
+
+```typescript
+async getFindings(): Promise&lt;Record&lt;string, ResearchFinding&gt;&gt;
+```
+
+**Returns:** `Promise&lt;Record&lt;string, ResearchFinding&gt;&gt;`
+
+#### `cleanupProcessedRaw()`
+
+Cleanup raw data that has been processed
+Call this after creating summaries/findings from raw content
+
+```typescript
+async cleanupProcessedRaw(rawKeys: string[]): Promise&lt;number&gt;
+```
+
+**Parameters:**
+- `rawKeys`: `string[]`
+
+**Returns:** `Promise&lt;number&gt;`
+
+#### `executeResearchPlan()`
+
+Execute a research plan
+This is a high-level orchestration method that can be used
+for structured research, or the LLM can drive research via tools
+
+```typescript
+async executeResearchPlan(plan: ResearchPlan): Promise&lt;ResearchResult&gt;
+```
+
+**Parameters:**
+- `plan`: `ResearchPlan`
+
+**Returns:** `Promise&lt;ResearchResult&gt;`
+
+#### `getAutoSpillStats()`
+
+Get auto-spill statistics
+
+```typescript
+getAutoSpillStats():
+```
+
+**Returns:** `{ totalSpilled: number; consumed: number; unconsumed: number; totalSizeBytes: number; }`
+
+#### `destroy()`
+
+```typescript
+override async destroy(): Promise&lt;void&gt;
+```
+
+**Returns:** `Promise&lt;void&gt;`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sources` | `sources: Map&lt;string, IResearchSource&gt;` | - |
+| `autoSpillPlugin?` | `autoSpillPlugin: AutoSpillPlugin | undefined` | - |
+| `researchHooks?` | `researchHooks: ResearchAgentHooks | undefined` | - |
+| `defaultSearchOptions` | `defaultSearchOptions: SearchOptions` | - |
+| `defaultFetchOptions` | `defaultFetchOptions: FetchOptions` | - |
 
 </details>
 
@@ -27998,6 +29813,87 @@ getModelCapabilities(model: string): ModelCapabilities
 
 ---
 
+### WebSearchSource `class`
+
+📍 [`src/capabilities/researchAgent/sources/WebSearchSource.ts:39`](src/capabilities/researchAgent/sources/WebSearchSource.ts)
+
+WebSearchSource - Uses SearchProvider for web search
+
+<details>
+<summary><strong>Constructor</strong></summary>
+
+#### `constructor`
+
+```typescript
+constructor(config: WebSearchSourceConfig)
+```
+
+**Parameters:**
+- `config`: `WebSearchSourceConfig`
+
+</details>
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `search()`
+
+```typescript
+async search(query: string, options?: SearchOptions): Promise&lt;SearchResponse&gt;
+```
+
+**Parameters:**
+- `query`: `string`
+- `options`: `SearchOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;SearchResponse&gt;`
+
+#### `fetch()`
+
+```typescript
+async fetch(reference: string, options?: FetchOptions): Promise&lt;FetchedContent&gt;
+```
+
+**Parameters:**
+- `reference`: `string`
+- `options`: `FetchOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;FetchedContent&gt;`
+
+#### `isAvailable()`
+
+```typescript
+async isAvailable(): Promise&lt;boolean&gt;
+```
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `getCapabilities()`
+
+```typescript
+getCapabilities(): SourceCapabilities
+```
+
+**Returns:** `SourceCapabilities`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string` | - |
+| `description` | `description: string` | - |
+| `type` | `type: "web"` | - |
+| `searchProvider` | `searchProvider: ISearchProvider` | - |
+| `defaultCountry?` | `defaultCountry: string | undefined` | - |
+| `defaultLanguage?` | `defaultLanguage: string | undefined` | - |
+
+</details>
+
+---
+
 ### ZenRowsProvider `class`
 
 📍 [`src/capabilities/scrape/providers/ZenRowsProvider.ts:74`](src/capabilities/scrape/providers/ZenRowsProvider.ts)
@@ -28205,7 +30101,7 @@ Map of all event names to their payload types
 
 ### AgentLifecycleHooks `interface`
 
-📍 [`src/core/BaseAgent.ts:110`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:117`](src/core/BaseAgent.ts)
 
 Agent lifecycle hooks for customization.
 These hooks allow external code to observe and modify agent behavior
@@ -28444,7 +30340,7 @@ Result from approval UI/hook
 
 ### BaseAgentConfig `interface`
 
-📍 [`src/core/BaseAgent.ts:174`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:181`](src/core/BaseAgent.ts)
 
 Base configuration shared by all agent types
 
@@ -28461,6 +30357,10 @@ Base configuration shared by all agent types
 | `session?` | `session?: BaseSessionConfig;` | Session configuration |
 | `permissions?` | `permissions?: AgentPermissionsConfig;` | Permission configuration |
 | `lifecycleHooks?` | `lifecycleHooks?: AgentLifecycleHooks;` | Lifecycle hooks for customization |
+| `context?` | `context?: AgentContext | AgentContextConfig;` | Optional AgentContext configuration.
+If provided as AgentContext instance, it will be used directly.
+If provided as config object, a new AgentContext will be created.
+If not provided, a default AgentContext will be created. |
 
 </details>
 
@@ -28468,7 +30368,7 @@ Base configuration shared by all agent types
 
 ### BaseAgentEvents `interface`
 
-📍 [`src/core/BaseAgent.ts:204`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:219`](src/core/BaseAgent.ts)
 
 Base events emitted by all agent types.
 Agent subclasses typically extend their own event interfaces.
@@ -28603,7 +30503,7 @@ Result of a bash command execution
 
 ### BeforeCompactionContext `interface`
 
-📍 [`src/core/BaseAgent.ts:82`](src/core/BaseAgent.ts)
+📍 [`src/core/BaseAgent.ts:89`](src/core/BaseAgent.ts)
 
 Context passed to beforeCompaction hook
 
@@ -28670,7 +30570,7 @@ Context passed to beforeCompaction hook
 
 ### CacheStats `interface`
 
-📍 [`src/core/IdempotencyCache.ts:30`](src/core/IdempotencyCache.ts)
+📍 [`src/core/IdempotencyCache.ts:33`](src/core/IdempotencyCache.ts)
 
 Cache statistics
 
@@ -28827,6 +30727,31 @@ Conversation message in history
 | `role` | `role: 'user' | 'assistant' | 'system';` | - |
 | `content` | `content: string;` | - |
 | `timestamp` | `timestamp: number;` | - |
+
+</details>
+
+---
+
+### DirectCallOptions `interface`
+
+📍 [`src/core/BaseAgent.ts:228`](src/core/BaseAgent.ts)
+
+Options for direct LLM calls (bypassing AgentContext).
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `instructions?` | `instructions?: string;` | System instructions (optional) |
+| `includeTools?` | `includeTools?: boolean;` | Include registered tools in the call. Default: false |
+| `temperature?` | `temperature?: number;` | Temperature for generation |
+| `maxOutputTokens?` | `maxOutputTokens?: number;` | Maximum output tokens |
+| `responseFormat?` | `responseFormat?: {
+    type: 'text' | 'json_object' | 'json_schema';
+    json_schema?: unknown;
+  };` | Response format (text, json_object, json_schema) |
+| `vendorOptions?` | `vendorOptions?: Record&lt;string, unknown&gt;;` | Vendor-specific options |
 
 </details>
 
@@ -29046,6 +30971,71 @@ Usable by any capability that makes HTTP requests via Connector
 |----------|------|-------------|
 | `body?` | `body?: Record&lt;string, any&gt;;` | JSON body (will be stringified automatically) |
 | `queryParams?` | `queryParams?: Record&lt;string, string | number | boolean&gt;;` | Query parameters (will be appended to URL automatically) |
+
+</details>
+
+---
+
+### FetchedContent `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:51`](src/capabilities/researchAgent/types.ts)
+
+Fetched content from a source
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | Whether fetch succeeded |
+| `reference` | `reference: string;` | Reference that was fetched |
+| `content` | `content: unknown;` | The actual content |
+| `contentType?` | `contentType?: string;` | Content type hint (text, html, json, binary, etc.) |
+| `sizeBytes?` | `sizeBytes?: number;` | Size in bytes |
+| `error?` | `error?: string;` | Error message if failed |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | Source-specific metadata |
+
+</details>
+
+---
+
+### FetchOptions `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:83`](src/capabilities/researchAgent/types.ts)
+
+Options for fetch operations
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxSize?` | `maxSize?: number;` | Maximum content size to fetch (bytes) |
+| `timeoutMs?` | `timeoutMs?: number;` | Timeout in milliseconds |
+| `sourceOptions?` | `sourceOptions?: Record&lt;string, unknown&gt;;` | Source-specific options |
+
+</details>
+
+---
+
+### FileSearchSourceConfig `interface`
+
+📍 [`src/capabilities/researchAgent/sources/FileSearchSource.ts:24`](src/capabilities/researchAgent/sources/FileSearchSource.ts)
+
+File search source configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Source name |
+| `description?` | `description?: string;` | Description |
+| `basePath` | `basePath: string;` | Base directory for searches |
+| `includePatterns?` | `includePatterns?: string[];` | File patterns to include (glob) |
+| `excludePatterns?` | `excludePatterns?: string[];` | File patterns to exclude (glob) |
+| `maxFileSize?` | `maxFileSize?: number;` | Maximum file size to read (bytes) |
+| `searchMode?` | `searchMode?: 'filename' | 'content' | 'both';` | Search mode: 'filename' (match filenames), 'content' (grep-like), 'both' |
 
 </details>
 
@@ -29383,7 +31373,7 @@ Base interface for all capability providers
 
 ### IdempotencyCacheConfig `interface`
 
-📍 [`src/core/IdempotencyCache.ts:19`](src/core/IdempotencyCache.ts)
+📍 [`src/core/IdempotencyCache.ts:22`](src/core/IdempotencyCache.ts)
 
 Cache configuration
 
@@ -29426,6 +31416,84 @@ Cache configuration
 |----------|------|-------------|
 | `type` | `type: ContentType.INPUT_TEXT;` | - |
 | `text` | `text: string;` | - |
+
+</details>
+
+---
+
+### IResearchSource `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:101`](src/capabilities/researchAgent/types.ts)
+
+Generic research source interface
+
+Implement this interface to add any data source to ResearchAgent:
+- Web: search queries, fetch URLs
+- Vector DB: similarity search, fetch documents
+- File system: glob patterns, read files
+- API: query endpoints, fetch resources
+
+<details>
+<summary><strong>Methods</strong></summary>
+
+#### `search()`
+
+Search this source for relevant results
+
+```typescript
+search(query: string, options?: SearchOptions): Promise&lt;SearchResponse&gt;;
+```
+
+**Parameters:**
+- `query`: `string`
+- `options`: `SearchOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;SearchResponse&gt;`
+
+#### `fetch()`
+
+Fetch full content for a result
+
+```typescript
+fetch(reference: string, options?: FetchOptions): Promise&lt;FetchedContent&gt;;
+```
+
+**Parameters:**
+- `reference`: `string`
+- `options`: `FetchOptions | undefined` *(optional)*
+
+**Returns:** `Promise&lt;FetchedContent&gt;`
+
+#### `isAvailable()?`
+
+Optional: Check if source is available/configured
+
+```typescript
+isAvailable?(): Promise&lt;boolean&gt;;
+```
+
+**Returns:** `Promise&lt;boolean&gt;`
+
+#### `getCapabilities()?`
+
+Optional: Get source capabilities
+
+```typescript
+getCapabilities?(): SourceCapabilities;
+```
+
+**Returns:** `SourceCapabilities`
+
+</details>
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `readonly name: string;` | Unique name for this source |
+| `description` | `readonly description: string;` | Human-readable description |
+| `type` | `readonly type: 'web' | 'vector' | 'file' | 'api' | 'database' | 'custom';` | Type of source (for categorization) |
 
 </details>
 
@@ -29822,6 +31890,26 @@ Result of a list directory operation
 | `response` | `response: AgentResponse;` | - |
 | `timestamp` | `timestamp: Date;` | - |
 | `duration` | `duration: number;` | - |
+
+</details>
+
+---
+
+### MarkdownResult `interface`
+
+📍 [`src/tools/web/htmlToMarkdown.ts:11`](src/tools/web/htmlToMarkdown.ts)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `markdown` | `markdown: string;` | - |
+| `title` | `title: string;` | - |
+| `byline?` | `byline?: string;` | - |
+| `excerpt?` | `excerpt?: string;` | - |
+| `wasReadabilityUsed` | `wasReadabilityUsed: boolean;` | - |
+| `wasTruncated` | `wasTruncated: boolean;` | - |
 
 </details>
 
@@ -30360,6 +32448,145 @@ Result of a file read operation
 
 ---
 
+### ResearchAgentConfig `interface`
+
+📍 [`src/capabilities/researchAgent/ResearchAgent.ts:52`](src/capabilities/researchAgent/ResearchAgent.ts)
+
+ResearchAgent configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sources` | `sources: IResearchSource[];` | Research sources to use |
+| `defaultSearchOptions?` | `defaultSearchOptions?: SearchOptions;` | Default search options for all sources |
+| `defaultFetchOptions?` | `defaultFetchOptions?: FetchOptions;` | Default fetch options for all sources |
+| `autoSpill?` | `autoSpill?: AutoSpillConfig;` | Auto-spill configuration |
+| `hooks?` | `hooks?: ResearchAgentHooks;` | Research-specific hooks |
+| `autoSummarizeThreshold?` | `autoSummarizeThreshold?: number;` | Auto-summarize fetched content above this size (bytes). Default: 20KB |
+| `includeResearchTools?` | `includeResearchTools?: boolean;` | Include research-specific tools. Default: true |
+
+</details>
+
+---
+
+### ResearchAgentHooks `interface`
+
+📍 [`src/capabilities/researchAgent/ResearchAgent.ts:35`](src/capabilities/researchAgent/ResearchAgent.ts)
+
+Research-specific hooks
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `onSearchComplete?` | `onSearchComplete?: (source: string, query: string, resultCount: number) =&gt; Promise&lt;void&gt;;` | Called when a source search completes |
+| `onContentFetched?` | `onContentFetched?: (source: string, reference: string, sizeBytes: number) =&gt; Promise&lt;void&gt;;` | Called when content is fetched |
+| `onFindingStored?` | `onFindingStored?: (key: string, finding: ResearchFinding) =&gt; Promise&lt;void&gt;;` | Called when a finding is stored |
+| `onProgress?` | `onProgress?: (progress: ResearchProgress) =&gt; Promise&lt;void&gt;;` | Called on research progress updates |
+
+</details>
+
+---
+
+### ResearchFinding `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:159`](src/capabilities/researchAgent/types.ts)
+
+Research finding stored in memory
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `source` | `source: string;` | Source that provided this finding |
+| `query` | `query: string;` | Original query that found this |
+| `summary` | `summary: string;` | Key insight or summary |
+| `details?` | `details?: string;` | Supporting details |
+| `references` | `references: string[];` | References used |
+| `confidence?` | `confidence?: number;` | Confidence level (0-1) |
+| `timestamp` | `timestamp: number;` | When this was found |
+
+</details>
+
+---
+
+### ResearchProgress `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:236`](src/capabilities/researchAgent/types.ts)
+
+Research progress event
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `phase` | `phase: 'searching' | 'processing' | 'synthesizing' | 'complete';` | - |
+| `currentQuery?` | `currentQuery?: string;` | - |
+| `currentSource?` | `currentSource?: string;` | - |
+| `queriesCompleted` | `queriesCompleted: number;` | - |
+| `totalQueries` | `totalQueries: number;` | - |
+| `resultsProcessed` | `resultsProcessed: number;` | - |
+| `totalResults` | `totalResults: number;` | - |
+| `findingsGenerated` | `findingsGenerated: number;` | - |
+
+</details>
+
+---
+
+### ResearchQuery `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:195`](src/capabilities/researchAgent/types.ts)
+
+A query in the research plan
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `query` | `query: string;` | Query string |
+| `sources?` | `sources?: string[];` | Specific sources for this query (empty = all) |
+| `priority?` | `priority?: number;` | Priority (higher = more important) |
+
+</details>
+
+---
+
+### ResearchResult `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:207`](src/capabilities/researchAgent/types.ts)
+
+Research execution result
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | Whether research completed successfully |
+| `goal` | `goal: string;` | Original goal |
+| `queriesExecuted` | `queriesExecuted: number;` | Queries executed |
+| `resultsFound` | `resultsFound: number;` | Results found |
+| `resultsProcessed` | `resultsProcessed: number;` | Results processed |
+| `findingsCount` | `findingsCount: number;` | Findings generated |
+| `synthesis?` | `synthesis?: string;` | Final synthesis (if generated) |
+| `error?` | `error?: string;` | Error if failed |
+| `metrics?` | `metrics?: {
+    totalDurationMs: number;
+    searchDurationMs: number;
+    processDurationMs: number;
+    synthesizeDurationMs: number;
+  };` | Execution metrics |
+
+</details>
+
+---
+
 ### ResponseBuilderOptions `interface`
 
 📍 [`src/infrastructure/providers/shared/ResponseBuilder.ts:31`](src/infrastructure/providers/shared/ResponseBuilder.ts)
@@ -30501,6 +32728,25 @@ Scraped content result
 
 ### SearchOptions `interface`
 
+📍 [`src/capabilities/researchAgent/types.ts:71`](src/capabilities/researchAgent/types.ts)
+
+Options for search operations
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxResults?` | `maxResults?: number;` | Maximum results to return |
+| `minRelevance?` | `minRelevance?: number;` | Minimum relevance score (0-1) |
+| `sourceOptions?` | `sourceOptions?: Record&lt;string, unknown&gt;;` | Source-specific options |
+
+</details>
+
+---
+
+### SearchOptions `interface`
+
 📍 [`src/capabilities/search/SearchProvider.ts:31`](src/capabilities/search/SearchProvider.ts)
 
 Search options
@@ -30532,6 +32778,28 @@ SearchProvider factory configuration
 | Property | Type | Description |
 |----------|------|-------------|
 | `connector` | `connector: string | Connector;` | Connector name or instance |
+
+</details>
+
+---
+
+### SearchResponse `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:33`](src/capabilities/researchAgent/types.ts)
+
+Response from a search operation
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `success` | `success: boolean;` | Whether the search succeeded |
+| `query` | `query: string;` | Original query |
+| `results` | `results: SourceResult[];` | Results found |
+| `totalResults?` | `totalResults?: number;` | Total results available (may be more than returned) |
+| `error?` | `error?: string;` | Error message if failed |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | Source-specific metadata |
 
 </details>
 
@@ -30687,6 +32955,56 @@ Service info lookup (derived from SERVICE_DEFINITIONS)
 
 ---
 
+### SourceCapabilities `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:143`](src/capabilities/researchAgent/types.ts)
+
+Source capabilities for discovery
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `canSearch` | `canSearch: boolean;` | Whether source supports search |
+| `canFetch` | `canFetch: boolean;` | Whether source supports fetch |
+| `hasRelevanceScores` | `hasRelevanceScores: boolean;` | Whether results include relevance scores |
+| `maxResultsPerSearch?` | `maxResultsPerSearch?: number;` | Maximum results per search |
+| `contentTypes?` | `contentTypes?: string[];` | Supported content types |
+
+</details>
+
+---
+
+### SourceResult `interface`
+
+📍 [`src/capabilities/researchAgent/types.ts:15`](src/capabilities/researchAgent/types.ts)
+
+ResearchAgent Types
+
+Generic interfaces for research sources that work with any data provider:
+- Web search (Serper, Brave, Tavily)
+- Vector databases (Pinecone, Weaviate, Qdrant)
+- File systems (local, S3, GCS)
+- APIs (REST, GraphQL)
+- Databases (SQL, MongoDB)
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `id` | `id: string;` | Unique identifier for this result |
+| `title` | `title: string;` | Human-readable title |
+| `snippet` | `snippet: string;` | Brief description or snippet |
+| `reference` | `reference: string;` | Reference for fetching full content (URL, path, ID, etc.) |
+| `relevance?` | `relevance?: number;` | Relevance score (0-1, higher is better) |
+| `metadata?` | `metadata?: Record&lt;string, unknown&gt;;` | Source-specific metadata |
+
+</details>
+
+---
+
 ### StdioTransportConfig `interface`
 
 📍 [`src/domain/entities/MCPConfig.ts:15`](src/domain/entities/MCPConfig.ts)
@@ -30806,7 +33124,7 @@ Used to describe vendor-specific options that fall outside semantic options
 
 ### WebFetchArgs `interface`
 
-📍 [`src/tools/web/webFetch.ts:9`](src/tools/web/webFetch.ts)
+📍 [`src/tools/web/webFetch.ts:10`](src/tools/web/webFetch.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -30852,11 +33170,14 @@ Used to describe vendor-specific options that fall outside semantic options
 | `url` | `url: string;` | - |
 | `title` | `title: string;` | - |
 | `content` | `content: string;` | - |
-| `html` | `html: string;` | - |
 | `screenshot?` | `screenshot?: string;` | - |
 | `loadTime` | `loadTime: number;` | - |
 | `error?` | `error?: string;` | - |
 | `suggestion?` | `suggestion?: string;` | - |
+| `excerpt?` | `excerpt?: string;` | - |
+| `byline?` | `byline?: string;` | - |
+| `wasReadabilityUsed?` | `wasReadabilityUsed?: boolean;` | - |
+| `wasTruncated?` | `wasTruncated?: boolean;` | - |
 
 </details>
 
@@ -30864,7 +33185,7 @@ Used to describe vendor-specific options that fall outside semantic options
 
 ### WebFetchResult `interface`
 
-📍 [`src/tools/web/webFetch.ts:15`](src/tools/web/webFetch.ts)
+📍 [`src/tools/web/webFetch.ts:16`](src/tools/web/webFetch.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -30875,13 +33196,16 @@ Used to describe vendor-specific options that fall outside semantic options
 | `url` | `url: string;` | - |
 | `title` | `title: string;` | - |
 | `content` | `content: string;` | - |
-| `html` | `html: string;` | - |
 | `contentType` | `contentType: 'html' | 'json' | 'text' | 'error';` | - |
 | `qualityScore` | `qualityScore: number;` | - |
 | `requiresJS` | `requiresJS: boolean;` | - |
 | `suggestedAction?` | `suggestedAction?: string;` | - |
 | `issues?` | `issues?: string[];` | - |
 | `error?` | `error?: string;` | - |
+| `excerpt?` | `excerpt?: string;` | - |
+| `byline?` | `byline?: string;` | - |
+| `wasReadabilityUsed?` | `wasReadabilityUsed?: boolean;` | - |
+| `wasTruncated?` | `wasTruncated?: boolean;` | - |
 
 </details>
 
@@ -30889,7 +33213,10 @@ Used to describe vendor-specific options that fall outside semantic options
 
 ### WebScrapeArgs `interface`
 
-📍 [`src/tools/web/webScrape.ts:31`](src/tools/web/webScrape.ts)
+📍 [`src/tools/web/webScrape.ts:42`](src/tools/web/webScrape.ts)
+
+Arguments for web_scrape tool
+CLEAN and SIMPLE - no connector/strategy details exposed
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -30897,24 +33224,11 @@ Used to describe vendor-specific options that fall outside semantic options
 | Property | Type | Description |
 |----------|------|-------------|
 | `url` | `url: string;` | URL to scrape |
-| `strategy?` | `strategy?: 'auto' | 'native' | 'js' | 'api' | 'api-first';` | Scraping strategy:
-- 'auto': Try native -> JS -> API (default)
-- 'native': Only use native fetch
-- 'js': Only use JS rendering
-- 'api': Only use external API provider
-- 'api-first': Try API first, then native |
-| `connectorName?` | `connectorName?: string;` | Connector name for external API provider
-Required if strategy is 'api' or 'api-first'
-Optional for 'auto' (will be used as final fallback) |
-| `minQualityScore?` | `minQualityScore?: number;` | Minimum quality score to accept from native fetch (0-100)
-If native fetch returns lower score, will try next method
-Default: 50 |
 | `timeout?` | `timeout?: number;` | Timeout in milliseconds (default: 30000) |
 | `includeHtml?` | `includeHtml?: boolean;` | Whether to include raw HTML in response |
-| `includeMarkdown?` | `includeMarkdown?: boolean;` | Whether to convert to markdown (if supported by provider) |
+| `includeMarkdown?` | `includeMarkdown?: boolean;` | Whether to convert to markdown (if supported) |
 | `includeLinks?` | `includeLinks?: boolean;` | Whether to extract links |
-| `waitForSelector?` | `waitForSelector?: string;` | CSS selector to wait for (JS/API only) |
-| `vendorOptions?` | `vendorOptions?: Record&lt;string, any&gt;;` | Vendor-specific options for API provider |
+| `waitForSelector?` | `waitForSelector?: string;` | CSS selector to wait for (for JS-heavy sites) |
 
 </details>
 
@@ -30922,7 +33236,7 @@ Default: 50 |
 
 ### WebScrapeResult `interface`
 
-📍 [`src/tools/web/webScrape.ts:78`](src/tools/web/webScrape.ts)
+📍 [`src/tools/web/webScrape.ts:57`](src/tools/web/webScrape.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -30932,18 +33246,17 @@ Default: 50 |
 | `success` | `success: boolean;` | Whether scraping succeeded |
 | `url` | `url: string;` | URL that was scraped |
 | `finalUrl?` | `finalUrl?: string;` | Final URL after redirects |
-| `method` | `method: string;` | Method used: 'native', 'js', or provider name |
+| `method` | `method: string;` | Method used: 'native', 'js', or external provider name |
 | `title` | `title: string;` | Page title |
 | `content` | `content: string;` | Extracted text content |
 | `html?` | `html?: string;` | Raw HTML (if requested) |
 | `markdown?` | `markdown?: string;` | Markdown version (if requested and supported) |
 | `metadata?` | `metadata?: ScrapeResult['metadata'];` | Extracted metadata |
 | `links?` | `links?: ScrapeResult['links'];` | Extracted links (if requested) |
-| `qualityScore?` | `qualityScore?: number;` | Quality score (0-100) for native/js methods |
+| `qualityScore?` | `qualityScore?: number;` | Quality score (0-100) |
 | `durationMs` | `durationMs: number;` | Time taken in milliseconds |
 | `attemptedMethods` | `attemptedMethods: string[];` | Methods attempted before success |
 | `error?` | `error?: string;` | Error message if failed |
-| `suggestion?` | `suggestion?: string;` | Suggestion for improvement |
 
 </details>
 
@@ -30951,18 +33264,18 @@ Default: 50 |
 
 ### WebSearchArgs `interface`
 
-📍 [`src/tools/web/webSearch.ts:19`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:40`](src/tools/web/webSearch.ts)
+
+Arguments for web_search tool
+CLEAN and SIMPLE - no connector details exposed
 
 <details>
 <summary><strong>Properties</strong></summary>
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `query` | `query: string;` | - |
-| `numResults?` | `numResults?: number;` | - |
-| `provider?` | `provider?: 'serper' | 'brave' | 'tavily' | 'rapidapi';` | - |
-| `connectorName?` | `connectorName?: string;` | Connector name to use for search
-Example: 'serper-main', 'brave-backup', 'rapidapi-search' |
+| `query` | `query: string;` | Search query string |
+| `numResults?` | `numResults?: number;` | Number of results to return (default: 10) |
 | `country?` | `country?: string;` | Country/region code (e.g., 'us', 'gb') |
 | `language?` | `language?: string;` | Language code (e.g., 'en', 'fr') |
 
@@ -30972,7 +33285,7 @@ Example: 'serper-main', 'brave-backup', 'rapidapi-search' |
 
 ### WebSearchResult `interface`
 
-📍 [`src/tools/web/webSearch.ts:38`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:51`](src/tools/web/webSearch.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -30985,6 +33298,28 @@ Example: 'serper-main', 'brave-backup', 'rapidapi-search' |
 | `results` | `results: SearchResult[];` | - |
 | `count` | `count: number;` | - |
 | `error?` | `error?: string;` | - |
+
+</details>
+
+---
+
+### WebSearchSourceConfig `interface`
+
+📍 [`src/capabilities/researchAgent/sources/WebSearchSource.ts:21`](src/capabilities/researchAgent/sources/WebSearchSource.ts)
+
+Web search source configuration
+
+<details>
+<summary><strong>Properties</strong></summary>
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `name: string;` | Source name (e.g., 'web-serper', 'web-brave') |
+| `description?` | `description?: string;` | Description |
+| `searchConnector` | `searchConnector: string | Connector;` | Connector name or instance for search |
+| `fetchConnector?` | `fetchConnector?: string | Connector;` | Optional: Connector for fetching (if different from search) |
+| `defaultCountry?` | `defaultCountry?: string;` | Default country code |
+| `defaultLanguage?` | `defaultLanguage?: string;` | Default language |
 
 </details>
 
@@ -31604,6 +33939,21 @@ const modelsWithInpainting = filter.withFeature('inputModes').filter(
 
 ---
 
+### createFileSearchSource `function`
+
+📍 [`src/capabilities/researchAgent/sources/FileSearchSource.ts:302`](src/capabilities/researchAgent/sources/FileSearchSource.ts)
+
+Create a file search source
+
+```typescript
+export function createFileSearchSource(
+  basePath: string,
+  options?: Partial&lt;FileSearchSourceConfig&gt;
+): FileSearchSource
+```
+
+---
+
 ### createRegistryHelpers `function`
 
 📍 [`src/domain/entities/RegistryUtils.ts:21`](src/domain/entities/RegistryUtils.ts)
@@ -31636,6 +33986,21 @@ Create a text content item
 
 ```typescript
 export function createTextContent(text: string): Content
+```
+
+---
+
+### createWebSearchSource `function`
+
+📍 [`src/capabilities/researchAgent/sources/WebSearchSource.ts:191`](src/capabilities/researchAgent/sources/WebSearchSource.ts)
+
+Create a web search source from a connector name
+
+```typescript
+export function createWebSearchSource(
+  connectorName: string,
+  options?: Partial&lt;WebSearchSourceConfig&gt;
+): WebSearchSource
 ```
 
 ---
@@ -31699,12 +34064,13 @@ async function executeInVM(
 
 ### executeWithConnector `function`
 
-📍 [`src/tools/web/webSearch.ts:207`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:142`](src/tools/web/webSearch.ts)
 
-Execute search using Connector (new approach)
+Execute search using a configured Connector
 
 ```typescript
 async function executeWithConnector(
+  connectorName: string,
   args: WebSearchArgs,
   numResults: number
 ): Promise&lt;WebSearchResult&gt;
@@ -31712,14 +34078,15 @@ async function executeWithConnector(
 
 ---
 
-### executeWithProvider `function`
+### executeWithEnvVar `function`
 
-📍 [`src/tools/web/webSearch.ts:243`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:195`](src/tools/web/webSearch.ts)
 
-Execute search using provider + environment variables (backward compatibility)
+Execute search using environment variables (backward compatibility)
+Tries providers in order: Serper -> Brave -> Tavily
 
 ```typescript
-async function executeWithProvider(
+async function executeWithEnvVar(
   args: WebSearchArgs,
   numResults: number
 ): Promise&lt;WebSearchResult&gt;
@@ -31787,26 +34154,31 @@ export function extractTextFromContent(content: Content[]): string
 
 ---
 
-### findAvailableScrapeConnector `function`
+### findConnectorByServiceTypes `function`
 
-📍 [`src/tools/web/webScrape.ts:507`](src/tools/web/webScrape.ts)
+📍 [`src/capabilities/shared/types.ts:162`](src/capabilities/shared/types.ts)
 
-Find an available scrape connector
+Find a connector by supported service types
+Used by tools to auto-detect available external API connectors
+
+This is the GENERIC utility for all external API-dependent tools.
+Tools define which service types they support, this function finds
+the first available connector matching any of those types.
 
 ```typescript
-function findAvailableScrapeConnector(): string | undefined
+export function findConnectorByServiceTypes(serviceTypes: string[]): Connector | null
 ```
 
----
-
-### findAvailableSearchConnector `function`
-
-📍 [`src/tools/web/webSearch.ts:310`](src/tools/web/webSearch.ts)
-
-Find any available search connector
+**Example:**
 
 ```typescript
-function findAvailableSearchConnector(): string | undefined
+// In web_search tool
+const SEARCH_SERVICE_TYPES = ['serper', 'brave-search', 'tavily', 'rapidapi-search'];
+const connector = findConnectorByServiceTypes(SEARCH_SERVICE_TYPES);
+
+// In web_scrape tool
+const SCRAPE_SERVICE_TYPES = ['zenrows', 'jina-reader', 'firecrawl', 'scrapingbee'];
+const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
 ```
 
 ---
@@ -31910,7 +34282,7 @@ export function getBackgroundOutput(bgId: string):
 
 ### getBrowser `function`
 
-📍 [`src/tools/web/webFetchJS.ts:49`](src/tools/web/webFetchJS.ts)
+📍 [`src/tools/web/webFetchJS.ts:53`](src/tools/web/webFetchJS.ts)
 
 Get or create browser instance (reuse for performance)
 
@@ -31932,18 +34304,6 @@ function getCompiledPatterns(): Array&lt;
 
 ---
 
-### getEnvVarName `function`
-
-📍 [`src/tools/web/webSearch.ts:348`](src/tools/web/webSearch.ts)
-
-Get environment variable name for provider (backward compatibility)
-
-```typescript
-function getEnvVarName(provider: string): string
-```
-
----
-
 ### getRegisteredScrapeProviders `function`
 
 📍 [`src/capabilities/scrape/ScrapeProvider.ts:171`](src/capabilities/scrape/ScrapeProvider.ts)
@@ -31952,18 +34312,6 @@ Get registered service types
 
 ```typescript
 export function getRegisteredScrapeProviders(): string[]
-```
-
----
-
-### getSearchAPIKey `function`
-
-📍 [`src/tools/web/webSearch.ts:330`](src/tools/web/webSearch.ts)
-
-Get search API key from environment (backward compatibility)
-
-```typescript
-function getSearchAPIKey(provider: string): string | undefined
 ```
 
 ---
@@ -32018,14 +34366,21 @@ export function getValueAtPath(obj: any, path: string): any
 
 ---
 
-### hasAvailableScrapeConnector `function`
+### htmlToMarkdown `function`
 
-📍 [`src/tools/web/webScrape.ts:500`](src/tools/web/webScrape.ts)
+📍 [`src/tools/web/htmlToMarkdown.ts:31`](src/tools/web/htmlToMarkdown.ts)
 
-Check if any scrape connector is available
+Convert HTML to clean markdown
+
+Uses Readability to extract main article content (strips ads, nav, footer, etc.)
+then converts to markdown with Turndown.
 
 ```typescript
-function hasAvailableScrapeConnector(): boolean
+export function htmlToMarkdown(
+  html: string,
+  url: string,
+  maxLength: number = 50000
+): MarkdownResult
 ```
 
 ---
@@ -32083,6 +34438,32 @@ export function killBackgroundProcess(bgId: string): boolean
 
 ---
 
+### likelyNeedsJavaScript `function`
+
+📍 [`src/tools/web/htmlToMarkdown.ts:124`](src/tools/web/htmlToMarkdown.ts)
+
+Quick check if HTML likely needs JavaScript rendering
+(Useful for fallback decisions)
+
+```typescript
+export function likelyNeedsJavaScript(html: string): boolean
+```
+
+---
+
+### listConnectorsByServiceTypes `function`
+
+📍 [`src/capabilities/shared/types.ts:192`](src/capabilities/shared/types.ts)
+
+List all available connectors for given service types
+Useful for tools that want to show what's available or support fallback chains
+
+```typescript
+export function listConnectorsByServiceTypes(serviceTypes: string[]): string[]
+```
+
+---
+
 ### listDir `function`
 
 📍 [`src/tools/filesystem/listDirectory.ts:63`](src/tools/filesystem/listDirectory.ts)
@@ -32106,7 +34487,7 @@ async function listDir(
 
 ### loadPuppeteer `function`
 
-📍 [`src/tools/web/webFetchJS.ts:35`](src/tools/web/webFetchJS.ts)
+📍 [`src/tools/web/webFetchJS.ts:39`](src/tools/web/webFetchJS.ts)
 
 Load Puppeteer dynamically (only when needed)
 
@@ -32305,10 +34686,11 @@ export function toConnectorOptions(options: ExtendedFetchOptions): ConnectorFetc
 
 ### tryAPI `function`
 
-📍 [`src/tools/web/webScrape.ts:426`](src/tools/web/webScrape.ts)
+📍 [`src/tools/web/webScrape.ts:318`](src/tools/web/webScrape.ts)
 
 ```typescript
 async function tryAPI(
+  connectorName: string,
   args: WebScrapeArgs,
   startTime: number,
   attemptedMethods: string[]
@@ -32319,7 +34701,7 @@ async function tryAPI(
 
 ### tryJS `function`
 
-📍 [`src/tools/web/webScrape.ts:381`](src/tools/web/webScrape.ts)
+📍 [`src/tools/web/webScrape.ts:275`](src/tools/web/webScrape.ts)
 
 ```typescript
 async function tryJS(
@@ -32333,7 +34715,7 @@ async function tryJS(
 
 ### tryNative `function`
 
-📍 [`src/tools/web/webScrape.ts:338`](src/tools/web/webScrape.ts)
+📍 [`src/tools/web/webScrape.ts:233`](src/tools/web/webScrape.ts)
 
 ```typescript
 async function tryNative(
@@ -32415,7 +34797,7 @@ Default configuration
 
 ### DEFAULT_IDEMPOTENCY_CONFIG `const`
 
-📍 [`src/core/IdempotencyCache.ts:40`](src/core/IdempotencyCache.ts)
+📍 [`src/core/IdempotencyCache.ts:43`](src/core/IdempotencyCache.ts)
 
 Default configuration
 
@@ -32772,7 +35154,7 @@ The tool returns a result object with:
 
 ### webFetch `const`
 
-📍 [`src/tools/web/webFetch.ts:29`](src/tools/web/webFetch.ts)
+📍 [`src/tools/web/webFetch.ts:34`](src/tools/web/webFetch.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -32809,13 +35191,15 @@ RETURNS:
   success: boolean,
   url: string,
   title: string,
-  content: string,          // Extracted text (clean, no scripts/styles)
-  html: string,             // Raw HTML
+  content: string,          // Clean markdown (converted from HTML via Readability + Turndown)
   contentType: string,      // 'html' | 'json' | 'text' | 'error'
   qualityScore: number,     // 0-100 (quality of extraction)
   requiresJS: boolean,      // True if site likely needs JavaScript
   suggestedAction: string,  // Suggestion if quality is low
   issues: string[],         // List of detected issues
+  excerpt: string,          // Short summary excerpt (if extracted)
+  byline: string,           // Author info (if extracted)
+  wasTruncated: boolean,    // True if content was truncated
   error: string             // Error message if failed
 }
 
@@ -32865,7 +35249,6 @@ With custom user agent:
           url: args.url,
           title: '',
           content: '',
-          html: '',
           contentType: 'error',
           qualityScore: 0,
           requiresJS: false,
@@ -32897,7 +35280,6 @@ With custom user agent:
           url: args.url,
           title: '',
           content: '',
-          html: '',
           contentType: 'error',
           qualityScore: 0,
           requiresJS: false,
@@ -32916,7 +35298,6 @@ With custom user agent:
           url: args.url,
           title: 'JSON Response',
           content: JSON.stringify(json, null, 2),
-          html: '',
           contentType: 'json',
           qualityScore: 100,
           requiresJS: false,
@@ -32931,7 +35312,6 @@ With custom user agent:
           url: args.url,
           title: 'Text Response',
           content: text,
-          html: text,
           contentType: 'text',
           qualityScore: 100,
           requiresJS: false,
@@ -32941,29 +35321,32 @@ With custom user agent:
       // Get HTML
       const html = await response.text();
 
-      // Parse with cheerio
+      // Parse with cheerio for quality detection
       const $ = load(html);
 
-      // Extract title
-      const title = $('title').text() || $('h1').first().text() || 'Untitled';
+      // Convert HTML to clean markdown
+      const mdResult = htmlToMarkdown(html, args.url);
 
-      // Extract clean text content
-      const content = extractCleanText($);
+      // Use markdown result title or fallback to cheerio extraction
+      const title = mdResult.title || $('title').text() || $('h1').first().text() || 'Untitled';
 
-      // Detect content quality
-      const quality = detectContentQuality(html, content, $);
+      // Detect content quality (using markdown content for text analysis)
+      const quality = detectContentQuality(html, mdResult.markdown, $);
 
       return {
         success: true,
         url: args.url,
         title,
-        content,
-        html,
+        content: mdResult.markdown,
         contentType: 'html',
         qualityScore: quality.score,
         requiresJS: quality.requiresJS,
         suggestedAction: quality.suggestion,
         issues: quality.issues,
+        excerpt: mdResult.excerpt,
+        byline: mdResult.byline,
+        wasReadabilityUsed: mdResult.wasReadabilityUsed,
+        wasTruncated: mdResult.wasTruncated,
       };
     } catch (error: any) {
       // Handle abort errors specially
@@ -32973,7 +35356,6 @@ With custom user agent:
           url: args.url,
           title: '',
           content: '',
-          html: '',
           contentType: 'error',
           qualityScore: 0,
           requiresJS: false,
@@ -32986,7 +35368,6 @@ With custom user agent:
         url: args.url,
         title: '',
         content: '',
-        html: '',
         contentType: 'error',
         qualityScore: 0,
         requiresJS: false,
@@ -33001,7 +35382,7 @@ With custom user agent:
 
 ### webFetchJS `const`
 
-📍 [`src/tools/web/webFetchJS.ts:68`](src/tools/web/webFetchJS.ts)
+📍 [`src/tools/web/webFetchJS.ts:72`](src/tools/web/webFetchJS.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -33050,10 +35431,12 @@ RETURNS:
   success: boolean,
   url: string,
   title: string,
-  content: string,         // Extracted text after JS execution
-  html: string,            // Full HTML after JS execution
+  content: string,         // Clean markdown (converted via Readability + Turndown)
   screenshot: string,      // Base64 PNG screenshot (if requested)
   loadTime: number,        // Time taken in milliseconds
+  excerpt: string,         // Short summary excerpt (if extracted)
+  byline: string,          // Author info (if extracted)
+  wasTruncated: boolean,   // True if content was truncated
   error: string           // Error message if failed
 }
 
@@ -33138,17 +35521,8 @@ With screenshot:
       // Get HTML after JS execution
       const html = await page.content();
 
-      // Extract text content using cheerio
-      const $ = load(html);
-
-      // Remove unwanted elements
-      $('script, style, noscript, iframe, nav, footer, header, aside').remove();
-
-      // Extract text
-      const content = $('body').text().trim();
-
-      // Get title
-      const title = await page.title();
+      // Get title from browser
+      const browserTitle = await page.title();
 
       const loadTime = Date.now() - startTime;
 
@@ -33164,14 +35538,23 @@ With screenshot:
 
       await page.close();
 
+      // Convert HTML to clean markdown
+      const mdResult = htmlToMarkdown(html, args.url);
+
+      // Use browser title or markdown extraction
+      const title = browserTitle || mdResult.title || 'Untitled';
+
       return {
         success: true,
         url: args.url,
         title,
-        content,
-        html,
+        content: mdResult.markdown,
         screenshot,
         loadTime,
+        excerpt: mdResult.excerpt,
+        byline: mdResult.byline,
+        wasReadabilityUsed: mdResult.wasReadabilityUsed,
+        wasTruncated: mdResult.wasTruncated,
       };
     } catch (error: any) {
       if (page) {
@@ -33189,7 +35572,6 @@ With screenshot:
           url: args.url,
           title: '',
           content: '',
-          html: '',
           loadTime: 0,
           error: 'Puppeteer is not installed',
           suggestion:
@@ -33202,7 +35584,6 @@ With screenshot:
         url: args.url,
         title: '',
         content: '',
-        html: '',
         loadTime: 0,
         error: (error as Error).message,
       };
@@ -33215,7 +35596,7 @@ With screenshot:
 
 ### webScrape `const`
 
-📍 [`src/tools/web/webScrape.ts:113`](src/tools/web/webScrape.ts)
+📍 [`src/tools/web/webScrape.ts:90`](src/tools/web/webScrape.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -33228,33 +35609,10 @@ With screenshot:
       name: 'web_scrape',
       description: `Scrape any URL with automatic fallback - guaranteed to work on most sites.
 
-This tool combines multiple scraping methods to ensure content extraction:
-
-SCRAPING STRATEGIES:
-- auto (default): Tries native -&gt; JS -&gt; API until one succeeds
-- native: Only native HTTP fetch (fast, free, static sites only)
-- js: Only JavaScript rendering (handles SPAs, needs Puppeteer)
-- api: Only external API provider (handles bot protection)
-- api-first: Tries API first, then falls back to native
-
-FALLBACK CHAIN (auto strategy):
-1. Native fetch - Fast (~1s), free, works for blogs/docs/articles
-2. JS rendering - Slower (~5s), handles React/Vue/Angular
-3. External API - Handles bot protection, CAPTCHAs, rate limits
-
-EXTERNAL API PROVIDERS:
-Configure a connector with a scraping service:
-- Jina AI Reader (free tier available)
-- Firecrawl (advanced features)
-- ScrapingBee (proxy rotation)
-- etc.
-
-WHEN TO USE EACH STRATEGY:
-- 'auto': Most cases - let the tool figure it out
-- 'native': When you know the site is static
-- 'js': When you know it's a React/Vue/Angular app
-- 'api': When site has bot protection or rate limits
-- 'api-first': When you want best quality regardless of cost
+Automatically tries multiple methods in sequence:
+1. Native fetch - Fast (~1s), works for blogs/docs/articles
+2. JS rendering - Handles React/Vue/Angular SPAs
+3. External API - Handles bot protection, CAPTCHAs (if configured)
 
 RETURNS:
 {
@@ -33265,40 +35623,29 @@ RETURNS:
   title: string,
   content: string,         // Clean text
   html: string,            // If requested
-  markdown: string,        // If requested and supported
+  markdown: string,        // If requested
   metadata: {...},         // Title, description, author, etc.
   links: [{url, text}],    // If requested
   qualityScore: number,    // 0-100
   durationMs: number,
-  attemptedMethods: [],    // Methods tried
-  error: string,           // If failed
-  suggestion: string       // How to fix
+  attemptedMethods: []     // Methods tried
 }
 
 EXAMPLES:
-Basic (auto strategy):
+Basic:
 { "url": "https://example.com/article" }
 
-With API fallback:
-{
-  "url": "https://protected-site.com",
-  "connectorName": "jina-reader",
-  "strategy": "auto"
-}
-
-Force API provider:
-{
-  "url": "https://hard-to-scrape.com",
-  "connectorName": "firecrawl-main",
-  "strategy": "api",
-  "includeMarkdown": true
-}
-
-High quality threshold:
+With options:
 {
   "url": "https://example.com",
-  "minQualityScore": 80,
-  "strategy": "auto"
+  "includeMarkdown": true,
+  "includeLinks": true
+}
+
+For JS-heavy sites:
+{
+  "url": "https://spa-app.com",
+  "waitForSelector": ".main-content"
 }`,
 
       parameters: {
@@ -33308,54 +35655,35 @@ High quality threshold:
             type: 'string',
             description: 'URL to scrape. Must start with http:// or https://',
           },
-          strategy: {
-            type: 'string',
-            enum: ['auto', 'native', 'js', 'api', 'api-first'],
-            description: 'Scraping strategy. Default: "auto"',
-          },
-          connectorName: {
-            type: 'string',
-            description: 'Connector name for external API provider (e.g., "jina-reader", "firecrawl-main")',
-          },
-          minQualityScore: {
-            type: 'number',
-            description: 'Minimum quality score (0-100) to accept from native methods. Default: 50',
-          },
           timeout: {
             type: 'number',
-            description: 'Timeout in milliseconds. Default: 30000',
+            description: 'Timeout in milliseconds (default: 30000)',
           },
           includeHtml: {
             type: 'boolean',
-            description: 'Include raw HTML in response. Default: false',
+            description: 'Include raw HTML in response (default: false)',
           },
           includeMarkdown: {
             type: 'boolean',
-            description: 'Include markdown conversion (if supported). Default: false',
+            description: 'Include markdown conversion (default: false)',
           },
           includeLinks: {
             type: 'boolean',
-            description: 'Extract and include links. Default: false',
+            description: 'Extract and include links (default: false)',
           },
           waitForSelector: {
             type: 'string',
-            description: 'CSS selector to wait for (JS/API strategies only)',
-          },
-          vendorOptions: {
-            type: 'object',
-            description: 'Vendor-specific options for API provider',
+            description: 'CSS selector to wait for before scraping (for JS-heavy sites)',
           },
         },
         required: ['url'],
       },
     },
     blocking: true,
-    timeout: 60000, // Allow time for all fallbacks
+    timeout: 60000,
   }` | - |
 | `execute` | `async (args: WebScrapeArgs): Promise&lt;WebScrapeResult&gt; =&gt; {
     const startTime = Date.now();
-    const strategy = args.strategy || 'auto';
-    const minQuality = args.minQualityScore ?? 50;
     const attemptedMethods: string[] = [];
 
     // Validate URL
@@ -33374,72 +35702,43 @@ High quality threshold:
       };
     }
 
-    // Strategy execution
-    switch (strategy) {
-      case 'native':
-        return await tryNative(args, startTime, attemptedMethods);
+    // Automatic fallback chain: native -&gt; JS -&gt; API
 
-      case 'js':
-        return await tryJS(args, startTime, attemptedMethods);
-
-      case 'api':
-        return await tryAPI(args, startTime, attemptedMethods);
-
-      case 'api-first':
-        // Try API first, then native
-        if (args.connectorName) {
-          const apiResult = await tryAPI(args, startTime, attemptedMethods);
-          if (apiResult.success) return apiResult;
-        }
-        const nativeResult = await tryNative(args, startTime, attemptedMethods);
-        if (nativeResult.success) return nativeResult;
-        return await tryJS(args, startTime, attemptedMethods);
-
-      case 'auto':
-      default:
-        // Try native -&gt; JS -&gt; API
-        const native = await tryNative(args, startTime, attemptedMethods);
-        if (native.success && (native.qualityScore ?? 0) &gt;= minQuality) {
-          return native;
-        }
-
-        const js = await tryJS(args, startTime, attemptedMethods);
-        if (js.success && (js.qualityScore ?? 0) &gt;= minQuality) {
-          return js;
-        }
-
-        // Try API if configured
-        if (args.connectorName || hasAvailableScrapeConnector()) {
-          const api = await tryAPI(args, startTime, attemptedMethods);
-          if (api.success) return api;
-        }
-
-        // Return best result we got
-        if (js.success) return js;
-        if (native.success) return native;
-
-        return {
-          success: false,
-          url: args.url,
-          method: 'none',
-          title: '',
-          content: '',
-          durationMs: Date.now() - startTime,
-          attemptedMethods,
-          error: 'All scraping methods failed',
-          suggestion: args.connectorName
-            ? 'Check connector configuration and API key'
-            : 'Configure an external scraping API connector for better results',
-        };
+    // 1. Try native fetch first
+    const native = await tryNative(args, startTime, attemptedMethods);
+    if (native.success && (native.qualityScore ?? 0) &gt;= DEFAULT_MIN_QUALITY) {
+      return native;
     }
-  }` | - |
-| `describeCall` | `(args: WebScrapeArgs) =&gt; {
-    const strategy = args.strategy || 'auto';
-    if (args.connectorName) {
-      return `${args.url} (${strategy}, ${args.connectorName})`;
+
+    // 2. Try JS rendering
+    const js = await tryJS(args, startTime, attemptedMethods);
+    if (js.success && (js.qualityScore ?? 0) &gt;= DEFAULT_MIN_QUALITY) {
+      return js;
     }
-    return `${args.url} (${strategy})`;
+
+    // 3. Try external API if available
+    const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
+    if (connector) {
+      const api = await tryAPI(connector.name, args, startTime, attemptedMethods);
+      if (api.success) return api;
+    }
+
+    // Return best result we got
+    if (js.success) return js;
+    if (native.success) return native;
+
+    return {
+      success: false,
+      url: args.url,
+      method: 'none',
+      title: '',
+      content: '',
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: 'All scraping methods failed. Site may have bot protection.',
+    };
   }` | - |
+| `describeCall` | `(args: WebScrapeArgs) =&gt; args.url` | - |
 
 </details>
 
@@ -33447,7 +35746,7 @@ High quality threshold:
 
 ### webSearch `const`
 
-📍 [`src/tools/web/webSearch.ts:47`](src/tools/web/webSearch.ts)
+📍 [`src/tools/web/webSearch.ts:62`](src/tools/web/webSearch.ts)
 
 <details>
 <summary><strong>Properties</strong></summary>
@@ -33460,51 +35759,8 @@ High quality threshold:
       name: 'web_search',
       description: `Search the web and get relevant results with snippets.
 
-This tool searches the web using a configured search provider via Connector.
-
-CONNECTOR SETUP (Recommended):
-Create a connector for your search provider:
-
-// Serper (Google search)
-Connector.create({
-  name: 'serper-main',
-  serviceType: 'serper',
-  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
-  baseURL: 'https://google.serper.dev',
-});
-
-// Brave (Independent index)
-Connector.create({
-  name: 'brave-main',
-  serviceType: 'brave-search',
-  auth: { type: 'api_key', apiKey: process.env.BRAVE_API_KEY! },
-  baseURL: 'https://api.search.brave.com/res/v1',
-});
-
-// Tavily (AI-optimized)
-Connector.create({
-  name: 'tavily-main',
-  serviceType: 'tavily',
-  auth: { type: 'api_key', apiKey: process.env.TAVILY_API_KEY! },
-  baseURL: 'https://api.tavily.com',
-});
-
-// RapidAPI (Real-time web search)
-Connector.create({
-  name: 'rapidapi-search',
-  serviceType: 'rapidapi-search',
-  auth: { type: 'api_key', apiKey: process.env.RAPIDAPI_KEY! },
-  baseURL: 'https://real-time-web-search.p.rapidapi.com',
-});
-
-SEARCH PROVIDERS:
-- serper: Google search results via Serper.dev. Fast (1-2s), 2,500 free queries.
-- brave-search: Brave's independent search index. Privacy-focused, no Google.
-- tavily: AI-optimized search with summaries tailored for LLMs.
-- rapidapi-search: Real-time web search via RapidAPI. Wide coverage.
-
 RETURNS:
-An array of up to 10-100 search results (provider-specific), each containing:
+An array of search results, each containing:
 - title: Page title
 - url: Direct URL to the page
 - snippet: Short description/excerpt from the page
@@ -33514,7 +35770,6 @@ USE CASES:
 - Find current information on any topic
 - Research multiple sources
 - Discover relevant websites
-- Get different perspectives on a topic
 - Find URLs to fetch with web_fetch tool
 
 WORKFLOW PATTERN:
@@ -33523,26 +35778,10 @@ WORKFLOW PATTERN:
 3. Process and summarize the information
 
 EXAMPLE:
-Using connector (recommended):
 {
-  query: "latest AI developments 2026",
-  connectorName: "serper-main",
-  numResults: 5,
-  country: "us",
-  language: "en"
-}
-
-Backward compatible (uses environment variables):
-{
-  query: "quantum computing news",
-  provider: "brave",
-  numResults: 10
-}
-
-IMPORTANT:
-- Connector approach provides retry, circuit breaker, and timeout features
-- Supports multiple keys per vendor (e.g., 'serper-main', 'serper-backup')
-- Backward compatible with environment variable approach`,
+  "query": "latest AI developments 2026",
+  "numResults": 5
+}`,
 
       parameters: {
         type: 'object',
@@ -33553,60 +35792,37 @@ IMPORTANT:
           },
           numResults: {
             type: 'number',
-            description:
-              'Number of results to return (default: 10, max: provider-specific). More results = more API cost.',
-          },
-          connectorName: {
-            type: 'string',
-            description:
-              'Connector name to use for search (e.g., "serper-main", "brave-backup"). Recommended approach.',
-          },
-          provider: {
-            type: 'string',
-            enum: ['serper', 'brave', 'tavily', 'rapidapi'],
-            description:
-              'DEPRECATED: Use connectorName instead. Provider for backward compatibility with environment variables.',
+            description: 'Number of results to return (default: 10, max: 100).',
           },
           country: {
             type: 'string',
-            description: 'Country/region code (e.g., "us", "gb")',
+            description: 'Country/region code for localized results (e.g., "us", "gb", "de")',
           },
           language: {
             type: 'string',
-            description: 'Language code (e.g., "en", "fr")',
+            description: 'Language code for results (e.g., "en", "fr", "de")',
           },
         },
         required: ['query'],
       },
     },
     blocking: true,
-    timeout: 10000,
+    timeout: 15000,
   }` | - |
 | `execute` | `async (args: WebSearchArgs): Promise&lt;WebSearchResult&gt; =&gt; {
     const numResults = args.numResults || 10;
 
-    // NEW: Connector-based approach (preferred)
-    if (args.connectorName) {
-      return await executeWithConnector(args, numResults);
+    // 1. Try to find a configured search connector (auto-detect by serviceType)
+    const connector = findConnectorByServiceTypes(SEARCH_SERVICE_TYPES);
+
+    if (connector) {
+      return await executeWithConnector(connector.name, args, numResults);
     }
 
-    // OLD: Backward compatibility with environment variables
-    if (args.provider) {
-      return await executeWithProvider(args, numResults);
-    }
-
-    // Auto-detect: Try to find any search connector
-    const availableConnector = findAvailableSearchConnector();
-    if (availableConnector) {
-      return await executeWithConnector(
-        { ...args, connectorName: availableConnector },
-        numResults
-      );
-    }
-
-    // Fallback to environment variable approach
-    return await executeWithProvider({ ...args, provider: 'serper' }, numResults);
+    // 2. Fallback to environment variables
+    return await executeWithEnvVar(args, numResults);
   }` | - |
+| `describeCall` | `(args: WebSearchArgs) =&gt; `"${args.query}"${args.numResults ? ` (${args.numResults} results)` : ''}`` | - |
 
 </details>
 
