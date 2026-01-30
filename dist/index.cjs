@@ -24068,6 +24068,9 @@ var ResearchAgent = class _ResearchAgent extends TaskAgent {
    * Initialize research-specific components
    */
   initializeResearch(config) {
+    this.sources = /* @__PURE__ */ new Map();
+    this.defaultSearchOptions = { maxResults: 10 };
+    this.defaultFetchOptions = { maxSize: 1024 * 1024 };
     for (const source of config.sources) {
       this.sources.set(source.name, source);
     }
@@ -25190,6 +25193,507 @@ var ContextManager = class extends eventemitter3.EventEmitter {
     return createStrategy(strategy, this.config.strategyOptions || {});
   }
 };
+
+// src/core/context/plugins/InContextMemoryPlugin.ts
+var PRIORITY_VALUES = {
+  low: 1,
+  normal: 2,
+  high: 3,
+  critical: 4
+};
+var DEFAULT_CONFIG2 = {
+  maxEntries: 20,
+  maxTotalTokens: 4e3,
+  defaultPriority: "normal",
+  showTimestamps: false,
+  headerText: "## Live Context"
+};
+var InContextMemoryPlugin = class extends BaseContextPlugin {
+  name = "in_context_memory";
+  priority = 5;
+  // Medium priority for compaction
+  compactable = true;
+  entries = /* @__PURE__ */ new Map();
+  config;
+  destroyed = false;
+  /**
+   * Create an InContextMemoryPlugin
+   *
+   * @param config - Configuration options
+   */
+  constructor(config = {}) {
+    super();
+    this.config = { ...DEFAULT_CONFIG2, ...config };
+  }
+  /**
+   * Check if plugin is destroyed
+   */
+  get isDestroyed() {
+    return this.destroyed;
+  }
+  // ============ Entry Management ============
+  /**
+   * Store or update a key-value pair
+   *
+   * @param key - Unique key for this entry
+   * @param description - Human-readable description (shown in context)
+   * @param value - The value to store (any JSON-serializable data)
+   * @param priority - Eviction priority (default from config)
+   */
+  set(key, description, value, priority) {
+    this.assertNotDestroyed();
+    const entry = {
+      key,
+      description,
+      value,
+      updatedAt: Date.now(),
+      priority: priority ?? this.config.defaultPriority
+    };
+    this.entries.set(key, entry);
+    this.enforceMaxEntries();
+  }
+  /**
+   * Get a value by key
+   *
+   * @param key - The key to retrieve
+   * @returns The value, or undefined if not found
+   */
+  get(key) {
+    this.assertNotDestroyed();
+    return this.entries.get(key)?.value;
+  }
+  /**
+   * Check if a key exists
+   *
+   * @param key - The key to check
+   */
+  has(key) {
+    this.assertNotDestroyed();
+    return this.entries.has(key);
+  }
+  /**
+   * Delete an entry by key
+   *
+   * @param key - The key to delete
+   * @returns true if the key existed and was deleted
+   */
+  delete(key) {
+    this.assertNotDestroyed();
+    return this.entries.delete(key);
+  }
+  /**
+   * List all entries with metadata
+   *
+   * @returns Array of entry metadata (without full values)
+   */
+  list() {
+    this.assertNotDestroyed();
+    return Array.from(this.entries.values()).map((e) => ({
+      key: e.key,
+      description: e.description,
+      priority: e.priority,
+      updatedAt: e.updatedAt
+    }));
+  }
+  /**
+   * Clear all entries
+   */
+  clear() {
+    this.assertNotDestroyed();
+    this.entries.clear();
+  }
+  /**
+   * Get the number of entries
+   */
+  get size() {
+    return this.entries.size;
+  }
+  // ============ IContextPlugin Implementation ============
+  /**
+   * Get the context component for this plugin
+   */
+  async getComponent() {
+    this.assertNotDestroyed();
+    if (this.entries.size === 0) {
+      return null;
+    }
+    const content = this.formatContent();
+    return {
+      name: this.name,
+      content,
+      priority: this.priority,
+      compactable: this.compactable,
+      metadata: {
+        entryCount: this.entries.size
+      }
+    };
+  }
+  /**
+   * Compact by evicting low-priority entries
+   *
+   * Eviction order: low → normal → high (critical is never auto-evicted)
+   * Within same priority, oldest entries are evicted first
+   *
+   * @param targetTokens - Target token count to reduce to
+   * @param estimator - Token estimator
+   * @returns Number of tokens freed
+   */
+  async compact(targetTokens, estimator) {
+    this.assertNotDestroyed();
+    const beforeContent = this.formatContent();
+    const beforeTokens = estimator.estimateTokens(beforeContent);
+    if (beforeTokens <= targetTokens) {
+      return 0;
+    }
+    const sortedEntries = this.getSortedEntriesForEviction();
+    for (const entry of sortedEntries) {
+      if (entry.priority === "critical") {
+        break;
+      }
+      this.entries.delete(entry.key);
+      const currentContent = this.formatContent();
+      const currentTokens = estimator.estimateTokens(currentContent);
+      if (currentTokens <= targetTokens) {
+        break;
+      }
+    }
+    const afterContent = this.formatContent();
+    const afterTokens = estimator.estimateTokens(afterContent);
+    return Math.max(0, beforeTokens - afterTokens);
+  }
+  /**
+   * Get serialized state for session persistence
+   */
+  getState() {
+    return {
+      entries: Array.from(this.entries.values()),
+      config: this.config
+    };
+  }
+  /**
+   * Restore state from serialization
+   *
+   * @param state - Previously serialized state
+   */
+  restoreState(state) {
+    this.assertNotDestroyed();
+    if (!state || typeof state !== "object") {
+      return;
+    }
+    const typedState = state;
+    if (typedState.entries && Array.isArray(typedState.entries)) {
+      this.entries.clear();
+      for (const entry of typedState.entries) {
+        if (entry.key && typeof entry.key === "string") {
+          this.entries.set(entry.key, entry);
+        }
+      }
+    }
+    if (typedState.config && typeof typedState.config === "object") {
+      this.config = { ...DEFAULT_CONFIG2, ...typedState.config };
+    }
+  }
+  /**
+   * Clean up resources
+   */
+  destroy() {
+    this.entries.clear();
+    this.destroyed = true;
+  }
+  // ============ Private Methods ============
+  /**
+   * Format entries as markdown for context
+   */
+  formatContent() {
+    if (this.entries.size === 0) {
+      return "";
+    }
+    const lines = [
+      this.config.headerText,
+      "Data below is always current. Use directly - no retrieval needed.",
+      ""
+    ];
+    for (const entry of this.entries.values()) {
+      lines.push(`### ${entry.key}`);
+      lines.push(entry.description);
+      const valueStr = typeof entry.value === "string" ? entry.value : JSON.stringify(entry.value, null, 2);
+      lines.push("```json");
+      lines.push(valueStr);
+      lines.push("```");
+      if (this.config.showTimestamps) {
+        const date = new Date(entry.updatedAt);
+        lines.push(`_Updated: ${date.toISOString()}_`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+  /**
+   * Get entries sorted by eviction priority (lowest priority first, then oldest)
+   */
+  getSortedEntriesForEviction() {
+    return Array.from(this.entries.values()).sort((a, b) => {
+      const priorityDiff = PRIORITY_VALUES[a.priority] - PRIORITY_VALUES[b.priority];
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
+      return a.updatedAt - b.updatedAt;
+    });
+  }
+  /**
+   * Enforce max entries limit by evicting lowest-priority entries
+   */
+  enforceMaxEntries() {
+    if (this.entries.size <= this.config.maxEntries) {
+      return;
+    }
+    const sorted = this.getSortedEntriesForEviction();
+    while (this.entries.size > this.config.maxEntries && sorted.length > 0) {
+      const toEvict = sorted.shift();
+      if (toEvict.priority === "critical") {
+        break;
+      }
+      this.entries.delete(toEvict.key);
+    }
+  }
+  /**
+   * Assert that the plugin hasn't been destroyed
+   */
+  assertNotDestroyed() {
+    if (this.destroyed) {
+      throw new Error("InContextMemoryPlugin has been destroyed");
+    }
+  }
+};
+
+// src/core/context/plugins/inContextMemoryTools.ts
+var contextSetDefinition = {
+  type: "function",
+  function: {
+    name: "context_set",
+    description: `Store or update a key-value pair in the live context.
+The value will appear directly in the context and can be read without retrieval calls.
+
+Use for:
+- Current state/status that changes during execution
+- User preferences or settings
+- Counters, flags, or control variables
+- Small accumulated results
+
+Priority levels (for eviction when space is needed):
+- "low": Evicted first. Temporary or easily recreated data.
+- "normal": Default. Standard importance.
+- "high": Keep longer. Important state.
+- "critical": Never auto-evicted. Only removed via context_delete.`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: 'Unique key for this entry (e.g., "current_state", "user_prefs")'
+        },
+        description: {
+          type: "string",
+          description: "Brief description of what this data represents (shown in context)"
+        },
+        value: {
+          description: "The value to store (any JSON-serializable data)"
+        },
+        priority: {
+          type: "string",
+          enum: ["low", "normal", "high", "critical"],
+          description: 'Eviction priority. Default: "normal"'
+        }
+      },
+      required: ["key", "description", "value"]
+    }
+  }
+};
+var contextGetDefinition = {
+  type: "function",
+  function: {
+    name: "context_get",
+    description: `Retrieve a value from the live context by key.
+
+Note: Values are already visible in the context, so this tool is mainly for:
+- Verifying a value exists
+- Getting the value programmatically for processing
+- Debugging`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to retrieve"
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var contextDeleteDefinition = {
+  type: "function",
+  function: {
+    name: "context_delete",
+    description: `Delete an entry from the live context to free space.
+
+Use this to:
+- Remove entries that are no longer needed
+- Free space when approaching limits
+- Clean up after a task completes`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: "The key to delete"
+        }
+      },
+      required: ["key"]
+    }
+  }
+};
+var contextListDefinition = {
+  type: "function",
+  function: {
+    name: "context_list",
+    description: `List all keys stored in the live context with their metadata.
+
+Returns key, description, priority, and last update time for each entry.
+Use to see what's stored and identify entries to clean up.`,
+    parameters: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  }
+};
+function createInContextMemoryTools() {
+  return [
+    // context_set
+    {
+      definition: contextSetDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext(context, "context_set");
+        const key = args.key;
+        const description = args.description;
+        const value = args.value;
+        const priority = args.priority;
+        plugin.set(key, description, value, priority);
+        return {
+          success: true,
+          key,
+          priority: priority ?? "normal",
+          message: `Stored "${key}" in live context`
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        // Auto-approve context operations
+        riskLevel: "low"
+      },
+      describeCall: (args) => args.key
+    },
+    // context_get
+    {
+      definition: contextGetDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext(context, "context_get");
+        const key = args.key;
+        const value = plugin.get(key);
+        if (value === void 0) {
+          return { error: `Key "${key}" not found in live context` };
+        }
+        return { key, value };
+      },
+      idempotency: { cacheable: true, ttlMs: 1e3 },
+      output: { expectedSize: "variable" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: (args) => args.key
+    },
+    // context_delete
+    {
+      definition: contextDeleteDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext(context, "context_delete");
+        const key = args.key;
+        const existed = plugin.delete(key);
+        return {
+          success: true,
+          key,
+          existed,
+          message: existed ? `Deleted "${key}" from live context` : `Key "${key}" did not exist`
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: (args) => args.key
+    },
+    // context_list
+    {
+      definition: contextListDefinition,
+      execute: async (_args, context) => {
+        const plugin = getPluginFromContext(context, "context_list");
+        const entries = plugin.list();
+        return {
+          entries: entries.map((e) => ({
+            key: e.key,
+            description: e.description,
+            priority: e.priority,
+            updatedAt: new Date(e.updatedAt).toISOString()
+          })),
+          count: entries.length
+        };
+      },
+      idempotency: { cacheable: true, ttlMs: 500 },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: () => "all"
+    }
+  ];
+}
+function createInContextMemory(config) {
+  const plugin = new InContextMemoryPlugin(config);
+  const tools = createInContextMemoryTools();
+  return { plugin, tools };
+}
+function setupInContextMemory(agentContext, config) {
+  const { plugin, tools } = createInContextMemory(config);
+  agentContext.registerPlugin(plugin);
+  for (const tool of tools) {
+    agentContext.tools.register(tool);
+  }
+  agentContext.inContextMemory = plugin;
+  return plugin;
+}
+function getPluginFromContext(context, toolName) {
+  if (!context) {
+    throw new ToolExecutionError(
+      toolName,
+      "InContextMemory tools require a tool context"
+    );
+  }
+  const plugin = context.inContextMemory;
+  if (!plugin) {
+    throw new ToolExecutionError(
+      toolName,
+      "InContextMemory plugin not found. Use setupInContextMemory() to initialize."
+    );
+  }
+  return plugin;
+}
 
 // src/infrastructure/context/compactors/TruncateCompactor.ts
 var TruncateCompactor = class {
@@ -32629,6 +33133,7 @@ exports.IMAGE_MODELS = IMAGE_MODELS;
 exports.IMAGE_MODEL_REGISTRY = IMAGE_MODEL_REGISTRY;
 exports.IdempotencyCache = IdempotencyCache;
 exports.ImageGeneration = ImageGeneration;
+exports.InContextMemoryPlugin = InContextMemoryPlugin;
 exports.InMemoryAgentStateStorage = InMemoryAgentStateStorage;
 exports.InMemoryHistoryStorage = InMemoryHistoryStorage;
 exports.InMemoryPlanStorage = InMemoryPlanStorage;
@@ -32739,6 +33244,8 @@ exports.createFileSearchSource = createFileSearchSource;
 exports.createGlobTool = createGlobTool;
 exports.createGrepTool = createGrepTool;
 exports.createImageProvider = createImageProvider;
+exports.createInContextMemory = createInContextMemory;
+exports.createInContextMemoryTools = createInContextMemoryTools;
 exports.createListDirectoryTool = createListDirectoryTool;
 exports.createMemoryTools = createMemoryTools;
 exports.createMessageWithImages = createMessageWithImages;
@@ -32829,6 +33336,7 @@ exports.retryWithBackoff = retryWithBackoff;
 exports.scopeEquals = scopeEquals;
 exports.scopeMatches = scopeMatches;
 exports.setMetricsCollector = setMetricsCollector;
+exports.setupInContextMemory = setupInContextMemory;
 exports.toConnectorOptions = toConnectorOptions;
 exports.tools = tools_exports;
 exports.updateTaskStatus = updateTaskStatus;

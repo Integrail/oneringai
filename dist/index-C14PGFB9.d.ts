@@ -684,6 +684,278 @@ declare const DEFAULT_MEMORY_CONFIG: WorkingMemoryConfig;
 declare function calculateEntrySize(value: unknown): number;
 
 /**
+ * IContextPlugin - Interface for context plugins
+ *
+ * Plugins extend AgentContext with custom context components.
+ * Built-in plugins: PlanPlugin, MemoryPlugin, ToolOutputPlugin
+ * Users can create custom plugins for domain-specific context.
+ */
+
+/**
+ * Context plugin interface
+ *
+ * Plugins add custom components to the context (e.g., Plan, Memory, Tool Outputs).
+ * Each plugin is responsible for:
+ * - Providing its context component
+ * - Handling compaction when space is needed
+ * - Serializing/restoring state for sessions
+ */
+interface IContextPlugin {
+    /**
+     * Unique name for this plugin (used as component name)
+     * Should be lowercase with underscores (e.g., 'plan', 'memory_index', 'tool_outputs')
+     */
+    readonly name: string;
+    /**
+     * Compaction priority (higher number = compact first)
+     * - 0: Never compact (system_prompt, instructions, current_input)
+     * - 1-3: Critical (plan, core instructions)
+     * - 4-7: Important (conversation history)
+     * - 8-10: Expendable (memory index, tool outputs)
+     */
+    readonly priority: number;
+    /**
+     * Whether this plugin's content can be compacted
+     * If false, the component will never be reduced
+     */
+    readonly compactable: boolean;
+    /**
+     * Get this plugin's context component
+     * Return null if plugin has no content for this turn
+     *
+     * @returns The component to include in context, or null if none
+     */
+    getComponent(): Promise<IContextComponent | null>;
+    /**
+     * Called when this plugin's content needs compaction
+     * Plugin is responsible for reducing its size to fit within budget
+     *
+     * @param targetTokens - Target token count to reduce to (approximate)
+     * @param estimator - Token estimator to use for calculations
+     * @returns Number of tokens actually freed
+     */
+    compact?(targetTokens: number, estimator: ITokenEstimator): Promise<number>;
+    /**
+     * Called after context is prepared (opportunity for cleanup/logging)
+     * Can be used to track context usage metrics
+     *
+     * @param budget - The final context budget after preparation
+     */
+    onPrepared?(budget: ContextBudget): Promise<void>;
+    /**
+     * Called when the context manager is being destroyed/cleaned up
+     * Use for releasing resources
+     */
+    destroy?(): void;
+    /**
+     * Get state for session serialization
+     * Return undefined if plugin has no state to persist
+     */
+    getState?(): unknown;
+    /**
+     * Restore from serialized state
+     * Called when resuming a session
+     *
+     * @param state - Previously serialized state from getState()
+     */
+    restoreState?(state: unknown): void;
+}
+/**
+ * Base class for context plugins with common functionality
+ * Plugins can extend this or implement IContextPlugin directly
+ */
+declare abstract class BaseContextPlugin implements IContextPlugin {
+    abstract readonly name: string;
+    abstract readonly priority: number;
+    abstract readonly compactable: boolean;
+    abstract getComponent(): Promise<IContextComponent | null>;
+    compact(_targetTokens: number, _estimator: ITokenEstimator): Promise<number>;
+    onPrepared(_budget: ContextBudget): Promise<void>;
+    destroy(): void;
+    getState(): unknown;
+    restoreState(_state: unknown): void;
+}
+
+/**
+ * InContextMemoryPlugin - In-context memory for frequently-accessed state
+ *
+ * Unlike WorkingMemory (which stores data externally with an index in context),
+ * InContextMemory stores key-value pairs DIRECTLY in the LLM context.
+ * This is for small, frequently-updated state that the LLM needs instant access to.
+ *
+ * Key Difference:
+ * - WorkingMemory: External storage + index in context → requires memory_retrieve()
+ * - InContextMemory: Full values in context → instant access, no retrieval needed
+ */
+
+/**
+ * Priority levels for in-context memory entries
+ */
+type InContextPriority = 'low' | 'normal' | 'high' | 'critical';
+/**
+ * An entry stored in InContextMemory
+ */
+interface InContextEntry {
+    /** Unique key for this entry */
+    key: string;
+    /** Human-readable description */
+    description: string;
+    /** The actual value (any JSON-serializable data) */
+    value: unknown;
+    /** When this entry was last updated */
+    updatedAt: number;
+    /** Eviction priority (low entries are evicted first) */
+    priority: InContextPriority;
+}
+/**
+ * Configuration for InContextMemoryPlugin
+ */
+interface InContextMemoryConfig {
+    /** Maximum number of entries (default: 20) */
+    maxEntries?: number;
+    /** Maximum total tokens for all entries (default: 4000) */
+    maxTotalTokens?: number;
+    /** Default priority for new entries (default: 'normal') */
+    defaultPriority?: InContextPriority;
+    /** Whether to show timestamps in output (default: false) */
+    showTimestamps?: boolean;
+    /** Header text for the context section (default: '## Live Context') */
+    headerText?: string;
+}
+/**
+ * Serialized state for session persistence
+ */
+interface SerializedInContextMemoryState {
+    entries: InContextEntry[];
+    config: InContextMemoryConfig;
+}
+/**
+ * InContextMemoryPlugin - Stores key-value pairs directly in LLM context
+ *
+ * Use this for:
+ * - Current state/status that changes frequently
+ * - User preferences during a session
+ * - Small accumulated results
+ * - Counters, flags, or control variables
+ *
+ * Do NOT use this for:
+ * - Large data (use WorkingMemory instead)
+ * - Data that doesn't need instant access
+ * - Rarely accessed reference data
+ */
+declare class InContextMemoryPlugin extends BaseContextPlugin {
+    readonly name = "in_context_memory";
+    readonly priority = 5;
+    readonly compactable = true;
+    private entries;
+    private config;
+    private destroyed;
+    /**
+     * Create an InContextMemoryPlugin
+     *
+     * @param config - Configuration options
+     */
+    constructor(config?: InContextMemoryConfig);
+    /**
+     * Check if plugin is destroyed
+     */
+    get isDestroyed(): boolean;
+    /**
+     * Store or update a key-value pair
+     *
+     * @param key - Unique key for this entry
+     * @param description - Human-readable description (shown in context)
+     * @param value - The value to store (any JSON-serializable data)
+     * @param priority - Eviction priority (default from config)
+     */
+    set(key: string, description: string, value: unknown, priority?: InContextPriority): void;
+    /**
+     * Get a value by key
+     *
+     * @param key - The key to retrieve
+     * @returns The value, or undefined if not found
+     */
+    get(key: string): unknown | undefined;
+    /**
+     * Check if a key exists
+     *
+     * @param key - The key to check
+     */
+    has(key: string): boolean;
+    /**
+     * Delete an entry by key
+     *
+     * @param key - The key to delete
+     * @returns true if the key existed and was deleted
+     */
+    delete(key: string): boolean;
+    /**
+     * List all entries with metadata
+     *
+     * @returns Array of entry metadata (without full values)
+     */
+    list(): Array<{
+        key: string;
+        description: string;
+        priority: InContextPriority;
+        updatedAt: number;
+    }>;
+    /**
+     * Clear all entries
+     */
+    clear(): void;
+    /**
+     * Get the number of entries
+     */
+    get size(): number;
+    /**
+     * Get the context component for this plugin
+     */
+    getComponent(): Promise<IContextComponent | null>;
+    /**
+     * Compact by evicting low-priority entries
+     *
+     * Eviction order: low → normal → high (critical is never auto-evicted)
+     * Within same priority, oldest entries are evicted first
+     *
+     * @param targetTokens - Target token count to reduce to
+     * @param estimator - Token estimator
+     * @returns Number of tokens freed
+     */
+    compact(targetTokens: number, estimator: ITokenEstimator): Promise<number>;
+    /**
+     * Get serialized state for session persistence
+     */
+    getState(): SerializedInContextMemoryState;
+    /**
+     * Restore state from serialization
+     *
+     * @param state - Previously serialized state
+     */
+    restoreState(state: unknown): void;
+    /**
+     * Clean up resources
+     */
+    destroy(): void;
+    /**
+     * Format entries as markdown for context
+     */
+    private formatContent;
+    /**
+     * Get entries sorted by eviction priority (lowest priority first, then oldest)
+     */
+    private getSortedEntriesForEviction;
+    /**
+     * Enforce max entries limit by evicting lowest-priority entries
+     */
+    private enforceMaxEntries;
+    /**
+     * Assert that the plugin hasn't been destroyed
+     */
+    private assertNotDestroyed;
+}
+
+/**
  * Tool context interface - passed to tools during execution
  */
 
@@ -740,6 +1012,8 @@ interface ToolContext {
     contextManager?: ContextManager;
     /** Idempotency cache (if running in TaskAgent) */
     idempotencyCache?: IdempotencyCache;
+    /** In-context memory plugin (if set up with setupInContextMemory) */
+    inContextMemory?: InContextMemoryPlugin;
     /** Abort signal for cancellation */
     signal?: AbortSignal;
 }
@@ -2373,4 +2647,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type SerializedApprovalEntry as $, type AgentPermissionsConfig as A, type AuditEntry as B, type ContextBudget as C, type ITextProvider as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextStrategy as G, type HookConfig as H, type IToolExecutor as I, type ContextManagerConfig as J, type IContextCompactor as K, type TokenUsage as L, type MemoryScope as M, type ToolCall as N, type LLMResponse as O, type PriorityCalculator as P, StreamEventType as Q, type TextGenerateOptions as R, type SerializedApprovalState as S, type ToolContext as T, type ModelCapabilities as U, MessageRole as V, type WorkingMemoryConfig as W, type PermissionScope as X, type RiskLevel as Y, type ToolPermissionConfig as Z, type ApprovalCacheEntry as _, type IDisposable as a, HookManager as a$, type PermissionCheckResult as a0, type ApprovalDecision as a1, type PermissionCheckContext as a2, type PermissionManagerEvent as a3, APPROVAL_STATE_VERSION as a4, DEFAULT_PERMISSION_CONFIG as a5, DEFAULT_ALLOWLIST as a6, type DefaultAllowlistedTool as a7, DEFAULT_IDEMPOTENCY_CONFIG as a8, ContextManager as a9, type ReasoningItem as aA, ToolCallState as aB, defaultDescribeCall as aC, getToolCallDescription as aD, type BuiltInTool as aE, type ToolResult as aF, type ToolExecutionContext as aG, type JSONSchema as aH, type ResponseCreatedEvent as aI, type ResponseInProgressEvent as aJ, type OutputTextDeltaEvent as aK, type OutputTextDoneEvent as aL, type ToolCallStartEvent as aM, type ToolCallArgumentsDeltaEvent as aN, type ToolCallArgumentsDoneEvent as aO, type ToolExecutionStartEvent as aP, type ToolExecutionDoneEvent as aQ, type IterationCompleteEvent$1 as aR, type ResponseCompleteEvent as aS, type ErrorEvent as aT, isStreamEvent as aU, isOutputTextDelta as aV, isToolCallStart as aW, isToolCallArgumentsDelta as aX, isToolCallArgumentsDone as aY, isResponseComplete as aZ, isErrorEvent as a_, type IContextProvider as aa, DEFAULT_CONTEXT_CONFIG as ab, type MemoryEntryInput as ac, type MemoryIndexEntry as ad, type TaskAwareScope as ae, type SimpleScope as af, DEFAULT_MEMORY_CONFIG as ag, forTasks as ah, forPlan as ai, scopeEquals as aj, scopeMatches as ak, isSimpleScope as al, isTaskAwareScope as am, isTerminalMemoryStatus as an, calculateEntrySize as ao, MEMORY_PRIORITY_VALUES as ap, ContentType as aq, type Content as ar, type InputTextContent as as, type InputImageContent as at, type OutputTextContent as au, type ToolUseContent as av, type ToolResultContent as aw, type Message as ax, type OutputItem as ay, type CompactionItem as az, type ToolFunction as b, type AgenticLoopEventName as b0, type HookName as b1, type Hook as b2, type ModifyingHook as b3, type BeforeToolContext as b4, type AfterToolContext as b5, type ApproveToolContext as b6, type ToolModification as b7, type ApprovalResult as b8, type IAsyncDisposable as b9, assertNotDestroyed as ba, AgenticLoop as bb, type AgenticLoopConfig as bc, type ExecutionStartEvent as bd, type ExecutionCompleteEvent as be, type ToolStartEvent as bf, type ToolCompleteEvent as bg, type LLMRequestEvent as bh, type LLMResponseEvent as bi, type ToolPermissionConfig$1 as c, type Tool as d, type MemoryPriority as e, type MemoryEntry as f, type StaleEntryInfo as g, type PriorityContext as h, type MemoryIndex as i, type TaskStatusForMemory as j, type WorkingMemoryAccess as k, type MemoryTier as l, type IContextComponent as m, type ITokenEstimator as n, type IdempotencyCacheConfig as o, IdempotencyCache as p, ToolPermissionManager as q, type PreparedContext as r, type TokenContentType as s, type CacheStats as t, type HistoryMode as u, type AgenticLoopEvents as v, type InputItem as w, type AgentResponse as x, type StreamEvent as y, type ExecutionMetrics as z };
+export { type PermissionScope as $, type AgentPermissionsConfig as A, type ITextProvider as B, type ContextBudget as C, BaseContextPlugin as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextComponent as G, type HookConfig as H, type IToolExecutor as I, type ITokenEstimator as J, type InContextMemoryConfig as K, InContextMemoryPlugin as L, type MemoryScope as M, type IContextStrategy as N, type ContextManagerConfig as O, type PriorityCalculator as P, type IContextCompactor as Q, type TokenUsage as R, type SerializedApprovalState as S, type ToolContext as T, type ToolCall as U, type LLMResponse as V, type WorkingMemoryConfig as W, StreamEventType as X, type TextGenerateOptions as Y, type ModelCapabilities as Z, MessageRole as _, type IDisposable as a, isToolCallArgumentsDelta as a$, type RiskLevel as a0, type ToolPermissionConfig as a1, type ApprovalCacheEntry as a2, type SerializedApprovalEntry as a3, type PermissionCheckResult as a4, type ApprovalDecision as a5, type PermissionCheckContext as a6, type PermissionManagerEvent as a7, APPROVAL_STATE_VERSION as a8, DEFAULT_PERMISSION_CONFIG as a9, type ToolResultContent as aA, type Message as aB, type OutputItem as aC, type CompactionItem as aD, type ReasoningItem as aE, ToolCallState as aF, defaultDescribeCall as aG, getToolCallDescription as aH, type BuiltInTool as aI, type ToolResult as aJ, type ToolExecutionContext as aK, type JSONSchema as aL, type ResponseCreatedEvent as aM, type ResponseInProgressEvent as aN, type OutputTextDeltaEvent as aO, type OutputTextDoneEvent as aP, type ToolCallStartEvent as aQ, type ToolCallArgumentsDeltaEvent as aR, type ToolCallArgumentsDoneEvent as aS, type ToolExecutionStartEvent as aT, type ToolExecutionDoneEvent as aU, type IterationCompleteEvent$1 as aV, type ResponseCompleteEvent as aW, type ErrorEvent as aX, isStreamEvent as aY, isOutputTextDelta as aZ, isToolCallStart as a_, DEFAULT_ALLOWLIST as aa, type DefaultAllowlistedTool as ab, DEFAULT_IDEMPOTENCY_CONFIG as ac, ContextManager as ad, type IContextProvider as ae, DEFAULT_CONTEXT_CONFIG as af, type MemoryEntryInput as ag, type MemoryIndexEntry as ah, type TaskAwareScope as ai, type SimpleScope as aj, DEFAULT_MEMORY_CONFIG as ak, forTasks as al, forPlan as am, scopeEquals as an, scopeMatches as ao, isSimpleScope as ap, isTaskAwareScope as aq, isTerminalMemoryStatus as ar, calculateEntrySize as as, MEMORY_PRIORITY_VALUES as at, ContentType as au, type Content as av, type InputTextContent as aw, type InputImageContent as ax, type OutputTextContent as ay, type ToolUseContent as az, type ToolFunction as b, isToolCallArgumentsDone as b0, isResponseComplete as b1, isErrorEvent as b2, HookManager as b3, type AgenticLoopEventName as b4, type HookName as b5, type Hook as b6, type ModifyingHook as b7, type BeforeToolContext as b8, type AfterToolContext as b9, type ApproveToolContext as ba, type ToolModification as bb, type ApprovalResult as bc, type IAsyncDisposable as bd, assertNotDestroyed as be, type InContextEntry as bf, type InContextPriority as bg, type SerializedInContextMemoryState as bh, AgenticLoop as bi, type AgenticLoopConfig as bj, type ExecutionStartEvent as bk, type ExecutionCompleteEvent as bl, type ToolStartEvent as bm, type ToolCompleteEvent as bn, type LLMRequestEvent as bo, type LLMResponseEvent as bp, type ToolPermissionConfig$1 as c, type Tool as d, type MemoryPriority as e, type MemoryEntry as f, type StaleEntryInfo as g, type PriorityContext as h, type MemoryIndex as i, type TaskStatusForMemory as j, type WorkingMemoryAccess as k, type MemoryTier as l, type IdempotencyCacheConfig as m, IdempotencyCache as n, ToolPermissionManager as o, type IContextPlugin as p, type PreparedContext as q, type TokenContentType as r, type CacheStats as s, type HistoryMode as t, type AgenticLoopEvents as u, type InputItem as v, type AgentResponse as w, type StreamEvent as x, type ExecutionMetrics as y, type AuditEntry as z };

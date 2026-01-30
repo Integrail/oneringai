@@ -89,7 +89,7 @@ src/
 │   ├── context/                # Context management
 │   │   ├── ContextManager.ts, types.ts
 │   │   ├── strategies/         # Proactive, Aggressive, Lazy, RollingWindow, Adaptive
-│   │   └── plugins/            # MemoryPlugin, PlanPlugin, ToolOutputPlugin, AutoSpillPlugin
+│   │   └── plugins/            # MemoryPlugin, PlanPlugin, ToolOutputPlugin, AutoSpillPlugin, InContextMemoryPlugin
 │   ├── history/                # ConversationHistoryManager
 │   ├── permissions/            # ToolPermissionManager
 │   └── mcp/                    # MCPClient, MCPRegistry
@@ -171,7 +171,7 @@ toolManager.setCircuitBreakerConfig('tool', { failureThreshold: 3, resetTimeoutM
 
 ## Tool Permissions
 
-Default allowlist (no approval needed): `read_file`, `glob`, `grep`, `list_directory`, `memory_*`, `context_*`, `cache_stats`, `_start_planning`, `_modify_plan`, `_report_progress`, `_request_approval`
+Default allowlist (no approval needed): `read_file`, `glob`, `grep`, `list_directory`, `memory_*`, `context_set`, `context_get`, `context_delete`, `context_list`, `cache_stats`, `_start_planning`, `_modify_plan`, `_report_progress`, `_request_approval`
 
 Require approval: `write_file`, `edit_file`, `bash`, `web_*`, `execute_javascript`, custom tools
 
@@ -253,6 +253,74 @@ await memory_retrieve_batch({ pattern: 'findings.*' });
 // By tier
 await memory_retrieve_batch({ tier: 'findings', includeMetadata: true });
 ```
+
+## InContextMemory (NEW)
+
+In-context memory for frequently-accessed state stored **directly in context** (not just an index).
+
+**Key Difference from WorkingMemory:**
+- **WorkingMemory**: Stores data externally, provides an **index** in context, requires `memory_retrieve()` for values
+- **InContextMemory**: Stores data **directly in context**, LLM sees full values immediately
+
+### Setup
+
+```typescript
+import { AgentContext, setupInContextMemory, createInContextMemory } from '@oneringai/agents';
+
+// Option 1: Quick setup with helper
+const ctx = AgentContext.create({ model: 'gpt-4' });
+const plugin = setupInContextMemory(ctx, { maxEntries: 15 });
+
+// Option 2: Manual setup
+const { plugin, tools } = createInContextMemory({ maxEntries: 20 });
+ctx.registerPlugin(plugin);
+for (const tool of tools) ctx.tools.register(tool);
+```
+
+### Configuration
+
+```typescript
+interface InContextMemoryConfig {
+  maxEntries?: number;        // Default: 20
+  maxTotalTokens?: number;    // Default: 4000
+  defaultPriority?: 'low' | 'normal' | 'high' | 'critical';
+  showTimestamps?: boolean;   // Default: false
+  headerText?: string;        // Default: '## Live Context'
+}
+```
+
+### Tools
+
+| Tool | Purpose |
+|------|---------|
+| `context_set` | Store/update key-value pair |
+| `context_get` | Read value (for verification) |
+| `context_delete` | Remove entry to free space |
+| `context_list` | List all entries with metadata |
+
+### Priority-Based Eviction
+
+When space is needed, entries are evicted by priority: `low` → `normal` → `high` (oldest first within priority). **Critical** entries are never auto-evicted.
+
+### Direct API Access
+
+```typescript
+plugin.set('state', 'Current state', { step: 1 }, 'high');
+plugin.get('state');        // { step: 1 }
+plugin.has('state');        // true
+plugin.delete('state');     // true
+plugin.list();              // [{ key, description, priority, updatedAt }]
+plugin.clear();             // Remove all
+```
+
+### Use Cases
+
+- Current state/status that changes during execution
+- User preferences for the session
+- Small accumulated results
+- Counters, flags, control variables
+
+**Do NOT use for:** Large data (use WorkingMemory), rarely accessed reference data.
 
 ## MCP Integration
 
@@ -354,4 +422,4 @@ const myTool: ToolFunction = {
 
 ---
 
-**Version**: 0.2.0 | **Last Updated**: 2026-01-29 | **Architecture**: Connector-First (v2)
+**Version**: 0.2.0 | **Last Updated**: 2026-01-30 | **Architecture**: Connector-First (v2)

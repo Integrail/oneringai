@@ -21,6 +21,7 @@
 - 🤖 **Task Agents** - Autonomous agents with working memory, context management, and state persistence
 - 🔬 **Research Agent** - NEW: Generic research agent with pluggable sources (web, vector, file, API)
 - 🎯 **Context Management** - Smart strategies (proactive, aggressive, lazy, rolling-window, adaptive)
+- 📌 **InContextMemory** - NEW: Live key-value storage directly in LLM context for instant access
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
 - 🔌 **MCP Integration** - NEW: Model Context Protocol client for seamless tool discovery from local and remote servers
@@ -542,7 +543,32 @@ const metrics = await agent.context?.getMetrics();
 - **coding** - Preserves code context, truncates verbose outputs
 - **analysis** - Balanced data and reasoning preservation
 
-### 7. Audio Capabilities (NEW)
+### 7. InContextMemory (NEW)
+
+Store key-value pairs **directly in context** for instant LLM access without retrieval calls:
+
+```typescript
+import { AgentContext, setupInContextMemory } from '@oneringai/agents';
+
+const ctx = AgentContext.create({ model: 'gpt-4' });
+const inContextMemory = setupInContextMemory(ctx, { maxEntries: 20 });
+
+// Store data - immediately visible to LLM
+inContextMemory.set('current_state', 'Task processing state', { step: 2, status: 'active' });
+inContextMemory.set('user_prefs', 'User preferences', { verbose: true }, 'high');
+
+// LLM can use context_set/context_get/context_delete/context_list tools
+// Or access directly via plugin API
+const state = inContextMemory.get('current_state');  // { step: 2, status: 'active' }
+```
+
+**Key Difference from WorkingMemory:**
+- **WorkingMemory**: External storage + index → requires `memory_retrieve()` for values
+- **InContextMemory**: Full values in context → instant access, no retrieval needed
+
+**Use cases:** Session state, user preferences, counters, flags, small accumulated results.
+
+### 9. Audio Capabilities (NEW)
 
 Text-to-Speech and Speech-to-Text with multiple providers:
 
@@ -591,7 +617,7 @@ const english = await stt.translate(frenchAudio);
 - **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-tts`)
 - **STT**: OpenAI (`whisper-1`, `gpt-4o-transcribe`), Groq (`whisper-large-v3` - 12x cheaper!)
 
-### 8. Model Registry
+### 10. Model Registry
 
 Complete metadata for 23+ models:
 
@@ -619,7 +645,7 @@ console.log(`Cached: $${cachedCost}`);  // $0.0293 (90% discount)
 - **Anthropic (5)**: Claude 4.5 series, Claude 4.x
 - **Google (7)**: Gemini 3, Gemini 2.5
 
-### 9. Streaming
+### 11. Streaming
 
 Real-time responses:
 
@@ -631,7 +657,7 @@ for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
 }
 ```
 
-### 10. OAuth for External APIs
+### 12. OAuth for External APIs
 
 ```typescript
 import { OAuthManager, FileStorage } from '@oneringai/agents';
@@ -648,7 +674,7 @@ const oauth = new OAuthManager({
 const authUrl = await oauth.startAuthFlow('user123');
 ```
 
-### 11. Developer Tools (NEW)
+### 13. Developer Tools (NEW)
 
 File system and shell tools for building coding assistants:
 
@@ -690,7 +716,7 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
-### 12. External API Integration (NEW)
+### 14. External API Integration (NEW)
 
 Connect your AI agents to 35+ external services with enterprise-grade resilience:
 
@@ -907,7 +933,7 @@ MIT License - See [LICENSE](./LICENSE) file.
 ---
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-29
+**Last Updated:** 2026-01-30
 
 For detailed documentation on all features, see the **[Complete User Guide](./USER_GUIDE.md)**.
 

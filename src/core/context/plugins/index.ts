@@ -34,3 +34,23 @@ export type {
   SerializedAutoSpillState,
   AutoSpillEvents,
 } from './AutoSpillPlugin.js';
+
+// InContextMemory plugin - stores key-value pairs directly in context
+export { InContextMemoryPlugin } from './InContextMemoryPlugin.js';
+export type {
+  InContextEntry,
+  InContextPriority,
+  InContextMemoryConfig,
+  SerializedInContextMemoryState,
+} from './InContextMemoryPlugin.js';
+
+// InContextMemory tools and factory functions
+export {
+  createInContextMemoryTools,
+  createInContextMemory,
+  setupInContextMemory,
+  contextSetDefinition,
+  contextGetDefinition,
+  contextDeleteDefinition,
+  contextListDefinition,
+} from './inContextMemoryTools.js';

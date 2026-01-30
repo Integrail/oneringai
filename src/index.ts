@@ -787,3 +787,17 @@ export {
   MCPToolError,
   MCPResourceError,
 } from './core/mcp/index.js';
+
+// ============ InContextMemory (Live Context Storage) ============
+export {
+  InContextMemoryPlugin,
+  createInContextMemoryTools,
+  createInContextMemory,
+  setupInContextMemory,
+} from './core/context/plugins/index.js';
+export type {
+  InContextEntry,
+  InContextPriority,
+  InContextMemoryConfig,
+  SerializedInContextMemoryState,
+} from './core/context/plugins/index.js';

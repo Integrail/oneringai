@@ -1,7 +1,7 @@
 # @oneringai/agents - Complete User Guide
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-29
+**Last Updated:** 2026-01-30
 
 A comprehensive guide to using all features of the @oneringai/agents library.
 
@@ -31,20 +31,25 @@ A comprehensive guide to using all features of the @oneringai/agents library.
     - Custom Strategies
     - Token Estimation
     - Lifecycle Hooks
-11. [Tools & Function Calling](#tools--function-calling)
-12. [Dynamic Tool Management](#dynamic-tool-management)
-13. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
-14. [Multimodal (Vision)](#multimodal-vision)
-15. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
-16. [Image Generation](#image-generation) **NEW**
-17. [Video Generation](#video-generation) **NEW**
-18. [Web Search](#web-search) **NEW**
-19. [Streaming](#streaming)
-20. [External API Integration](#external-api-integration) **NEW**
-21. [OAuth for External APIs](#oauth-for-external-apis)
-22. [Model Registry](#model-registry)
-23. [Advanced Features](#advanced-features)
-24. [Production Deployment](#production-deployment)
+11. [InContextMemory](#in-context-memory) **NEW**
+    - Setup and Configuration
+    - Priority-Based Eviction
+    - Tools (context_set, context_get, context_delete, context_list)
+    - Use Cases and Best Practices
+12. [Tools & Function Calling](#tools--function-calling)
+13. [Dynamic Tool Management](#dynamic-tool-management)
+14. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
+15. [Multimodal (Vision)](#multimodal-vision)
+16. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
+17. [Image Generation](#image-generation) **NEW**
+18. [Video Generation](#video-generation) **NEW**
+19. [Web Search](#web-search) **NEW**
+20. [Streaming](#streaming)
+21. [External API Integration](#external-api-integration) **NEW**
+22. [OAuth for External APIs](#oauth-for-external-apis)
+23. [Model Registry](#model-registry)
+24. [Advanced Features](#advanced-features)
+25. [Production Deployment](#production-deployment)
 
 ---
 
@@ -4716,6 +4721,333 @@ await memory.set('data.important', 'Important data', importantPart, {
 await memory.set('data.cache', 'Cached data', cachePart, {
   priority: 'low',  // Evicted first
 });
+```
+
+---
+
+## InContextMemory
+
+**InContextMemory** is a new context plugin that stores key-value pairs **directly in the LLM context** (not just an index like WorkingMemory). This is ideal for small, frequently-updated state that the LLM needs instant access to without retrieval calls.
+
+### Key Difference from WorkingMemory
+
+| Feature | WorkingMemory | InContextMemory |
+|---------|---------------|-----------------|
+| **Storage** | External (in-memory or file) | Directly in LLM context |
+| **Context visibility** | Index only (keys + descriptions) | Full values visible |
+| **Access pattern** | Requires `memory_retrieve()` call | Immediate - no retrieval needed |
+| **Best for** | Large data, rarely accessed info | Small state, frequently updated |
+| **Default capacity** | 25MB | 20 entries, 4000 tokens |
+
+### Quick Setup
+
+```typescript
+import { AgentContext, setupInContextMemory } from '@oneringai/agents';
+
+const ctx = AgentContext.create({ model: 'gpt-4' });
+
+// Quick setup - registers plugin and all 4 tools automatically
+const plugin = setupInContextMemory(ctx, { maxEntries: 15 });
+
+// Plugin is now accessible via ctx.inContextMemory
+plugin.set('state', 'Current processing state', { step: 1, status: 'active' });
+```
+
+### Manual Setup
+
+For more control, you can set up the plugin and tools manually:
+
+```typescript
+import { AgentContext, createInContextMemory } from '@oneringai/agents';
+
+const ctx = AgentContext.create({ model: 'gpt-4' });
+
+// Create plugin and tools
+const { plugin, tools } = createInContextMemory({
+  maxEntries: 20,
+  maxTotalTokens: 4000,
+  defaultPriority: 'normal',
+  showTimestamps: false,
+  headerText: '## Live Context',
+});
+
+// Register plugin with context manager
+ctx.registerPlugin(plugin);
+
+// Register tools with tool manager
+for (const tool of tools) {
+  ctx.tools.register(tool);
+}
+```
+
+### Configuration Options
+
+```typescript
+interface InContextMemoryConfig {
+  /** Maximum number of entries (default: 20) */
+  maxEntries?: number;
+
+  /** Maximum total tokens for all entries (default: 4000) */
+  maxTotalTokens?: number;
+
+  /** Default priority for new entries (default: 'normal') */
+  defaultPriority?: 'low' | 'normal' | 'high' | 'critical';
+
+  /** Whether to show timestamps in output (default: false) */
+  showTimestamps?: boolean;
+
+  /** Header text for the context section (default: '## Live Context') */
+  headerText?: string;
+}
+```
+
+### Available Tools
+
+The LLM has access to four tools for managing in-context memory:
+
+#### context_set
+
+Store or update a key-value pair in the live context:
+
+```typescript
+// Tool call from LLM
+{
+  "name": "context_set",
+  "arguments": {
+    "key": "current_state",
+    "description": "Processing state for current task",
+    "value": { "step": 3, "status": "active", "errors": [] },
+    "priority": "high"  // optional: low, normal, high, critical
+  }
+}
+```
+
+#### context_get
+
+Read a value from the live context (for verification, though values are visible):
+
+```typescript
+// Tool call from LLM
+{
+  "name": "context_get",
+  "arguments": {
+    "key": "current_state"
+  }
+}
+// Returns: { "key": "current_state", "value": { "step": 3, "status": "active", "errors": [] } }
+```
+
+#### context_delete
+
+Remove an entry to free space:
+
+```typescript
+// Tool call from LLM
+{
+  "name": "context_delete",
+  "arguments": {
+    "key": "temp_data"
+  }
+}
+// Returns: { "success": true, "existed": true }
+```
+
+#### context_list
+
+List all entries with metadata:
+
+```typescript
+// Tool call from LLM
+{
+  "name": "context_list",
+  "arguments": {}
+}
+// Returns: {
+//   "entries": [
+//     { "key": "current_state", "description": "...", "priority": "high", "updatedAt": "2026-01-30T..." },
+//     { "key": "user_prefs", "description": "...", "priority": "normal", "updatedAt": "2026-01-30T..." }
+//   ],
+//   "count": 2
+// }
+```
+
+### Direct API Access
+
+The plugin provides a programmatic API for direct manipulation:
+
+```typescript
+const plugin = setupInContextMemory(ctx);
+
+// Store entries
+plugin.set('state', 'Current state', { step: 1 });
+plugin.set('prefs', 'User preferences', { verbose: true }, 'high');
+plugin.set('temp', 'Temporary data', 'xyz', 'low');
+
+// Retrieve
+const state = plugin.get('state');        // { step: 1 }
+const missing = plugin.get('nonexistent'); // undefined
+
+// Check existence
+plugin.has('state');  // true
+plugin.has('missing'); // false
+
+// Delete
+plugin.delete('temp');  // true (existed and deleted)
+plugin.delete('missing'); // false (didn't exist)
+
+// List all entries
+const entries = plugin.list();
+// [{ key: 'state', description: '...', priority: 'normal', updatedAt: 1706... }, ...]
+
+// Get entry count
+console.log(plugin.size);  // 2
+
+// Clear all
+plugin.clear();
+```
+
+### Priority-Based Eviction
+
+When space is needed (either due to `maxEntries` or `compact()` being called), entries are evicted in this order:
+
+1. **Priority**: `low` → `normal` → `high` (lowest first)
+2. **Age**: Within the same priority, oldest entries (by `updatedAt`) are evicted first
+3. **Critical**: Entries with `priority: 'critical'` are **never** auto-evicted
+
+```typescript
+// Example: limited to 3 entries
+const plugin = setupInContextMemory(ctx, { maxEntries: 3 });
+
+plugin.set('critical1', 'Critical data', 'value', 'critical');
+plugin.set('high1', 'High priority', 'value', 'high');
+plugin.set('normal1', 'Normal data', 'value', 'normal');
+plugin.set('low1', 'Low priority', 'value', 'low');  // Triggers eviction
+
+// 'normal1' is evicted (lowest priority among non-critical)
+console.log(plugin.has('critical1')); // true
+console.log(plugin.has('high1'));     // true
+console.log(plugin.has('low1'));      // true (just added)
+console.log(plugin.has('normal1'));   // false (evicted)
+```
+
+### Context Output Format
+
+When the LLM context is prepared, InContextMemory adds a formatted section:
+
+```markdown
+## Live Context
+Data below is always current. Use directly - no retrieval needed.
+
+### current_state
+Processing state for current task
+```json
+{"step": 3, "status": "active", "errors": []}
+```
+
+### user_preferences
+User preferences for this session
+```json
+{"theme": "dark", "verbose": true}
+```
+```
+
+The LLM can read this section directly without making any tool calls.
+
+### Session Persistence
+
+InContextMemory supports full state serialization for session persistence:
+
+```typescript
+// Save state
+const state = plugin.getState();
+// state = { entries: [...], config: {...} }
+
+// Later, restore state
+const newPlugin = new InContextMemoryPlugin();
+newPlugin.restoreState(state);
+```
+
+When using with `AgentContext`, the state is automatically included:
+
+```typescript
+// AgentContext automatically serializes plugin state
+const ctxState = await ctx.getState();
+// ctxState.pluginStates['in_context_memory'] contains the InContextMemory state
+
+// Restore entire context (including InContextMemory)
+const newCtx = AgentContext.create({ model: 'gpt-4' });
+setupInContextMemory(newCtx);  // Register plugin first
+await newCtx.restoreState(ctxState);  // Then restore
+```
+
+### Use Cases
+
+**Ideal for:**
+- **Current state/status** that changes during task execution
+- **User preferences** for the session (theme, verbosity, etc.)
+- **Counters and flags** (iteration count, feature flags)
+- **Small accumulated results** (running totals, collected IDs)
+- **Control variables** (abort flags, mode switches)
+
+**Not ideal for (use WorkingMemory instead):**
+- Large data (documents, API responses, search results)
+- Rarely accessed reference data
+- Historical data that doesn't need instant access
+- Data that exceeds 4000 tokens
+
+### Best Practices
+
+#### 1. Use Appropriate Priorities
+
+```typescript
+// Critical: Never evicted - for essential state
+plugin.set('session_id', 'Session identifier', 'sess_123', 'critical');
+
+// High: Kept as long as possible - important state
+plugin.set('user_context', 'User context', { name: 'Alice' }, 'high');
+
+// Normal (default): Standard data
+plugin.set('current_step', 'Current step', 3);
+
+// Low: Can be evicted - temporary/reconstructable data
+plugin.set('last_check', 'Last health check', Date.now(), 'low');
+```
+
+#### 2. Keep Values Small
+
+```typescript
+// GOOD: Small, focused values
+plugin.set('state', 'Task state', { step: 2, status: 'active' });
+
+// BAD: Large objects (use WorkingMemory instead)
+plugin.set('results', 'All results', hugeArrayOfResults);  // Don't do this!
+```
+
+#### 3. Clean Up When Done
+
+```typescript
+// Delete temporary entries when no longer needed
+plugin.delete('temp_calculation');
+plugin.delete('iteration_data');
+
+// Or use low priority for auto-cleanup
+plugin.set('temp', 'Temporary', value, 'low');
+```
+
+#### 4. Combine with WorkingMemory
+
+Use both systems for their strengths:
+
+```typescript
+// Large data goes to WorkingMemory (index-based)
+await ctx.memory.set('search_results', 'Web search results', largeResults);
+
+// Small, frequently-accessed state goes to InContextMemory (full values)
+plugin.set('search_status', 'Search status', { completed: 3, pending: 2 });
+
+// LLM sees:
+// - Memory Index: "search_results: Web search results" (needs memory_retrieve)
+// - Live Context: Full search_status value (instant access)
 ```
 
 ---
