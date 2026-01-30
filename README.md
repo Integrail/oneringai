@@ -500,7 +500,7 @@ const ctx = AgentContext.create({
   tools: [weatherTool, searchTool],
 });
 
-ctx.addMessage('user', 'What is the weather in Paris?');
+await ctx.addMessage('user', 'What is the weather in Paris?');  // async with auto-compaction
 await ctx.executeTool('get_weather', { location: 'Paris' });
 const prepared = await ctx.prepare(); // Ready for LLM call
 
@@ -568,6 +568,21 @@ console.log(agent.context.memory);                     // null (disabled)
 - **lazy** - Minimal compaction at 90%, for short tasks
 - **rolling-window** - Fixed message window, zero overhead
 - **adaptive** - Self-optimizing based on usage patterns
+
+**Auto-Compaction Guard (NEW):** Context overflow is prevented proactively:
+```typescript
+// addMessage() is now async and checks capacity for large content
+await ctx.addMessage('tool', largeWebFetchResult);  // Auto-compacts if needed
+
+// Sync version for small messages (no capacity check)
+ctx.addMessageSync('user', 'Hello');
+
+// Helper for tool results with metadata
+await ctx.addToolResult(output, { tool: 'web_fetch' });
+
+// Manual capacity check
+const canFit = await ctx.ensureCapacity(estimatedTokens);
+```
 
 **Three compactors** for content reduction:
 - **TruncateCompactor** - Simple truncation for tool outputs

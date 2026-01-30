@@ -40,7 +40,10 @@ const response = await agent.run('Hello!');
 **"Swiss Army Knife"** - unified facade composing ToolManager, WorkingMemory, IdempotencyCache, ToolPermissionManager. Always created by BaseAgent.
 
 ```typescript
-ctx.addMessage('user', 'Hello');
+await ctx.addMessage('user', 'Hello');     // Async with auto-compaction for large content
+ctx.addMessageSync('user', 'Hi');          // Sync for small messages (no capacity check)
+await ctx.addToolResult(output, metadata); // Helper for tool outputs
+await ctx.ensureCapacity(tokens);          // Manual capacity check
 const result = await ctx.executeTool('tool_name', args);
 const prepared = await ctx.prepare(); // Assembles context, handles compaction
 ```

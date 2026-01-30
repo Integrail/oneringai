@@ -3383,9 +3383,15 @@ const ctx = AgentContext.create({
   strategy: 'adaptive', // Compaction strategy
 });
 
-// Add messages
-ctx.addMessage('user', 'What is the weather in Paris?');
-ctx.addMessage('assistant', 'Let me check that for you.');
+// Add messages (async with auto-compaction for large content)
+await ctx.addMessage('user', 'What is the weather in Paris?');
+await ctx.addMessage('assistant', 'Let me check that for you.');
+
+// Or use sync version for small messages (no capacity checking)
+ctx.addMessageSync('user', 'Quick question');
+
+// Add tool results with automatic capacity management
+await ctx.addToolResult(largeWebFetchResult, { tool: 'web_fetch' });
 
 // Execute tools (with automatic caching)
 const result = await ctx.executeTool('get_weather', { location: 'Paris' });
@@ -3539,7 +3545,7 @@ console.log(DEFAULT_FEATURES);
 |---------|---------|-------------|---------------|
 | `memory` | `true` | WorkingMemory + IdempotencyCache for persistent data storage and tool result caching | `memory_*` and `cache_stats` tools not registered; `ctx.memory` and `ctx.cache` return `null` |
 | `inContextMemory` | `false` | InContextMemoryPlugin for live key-value storage directly in context | `context_set/get/delete/list` tools not registered; `ctx.inContextMemory` returns `null` |
-| `history` | `true` | Conversation history tracking | `addMessage()` becomes a no-op, history not included in prepared context |
+| `history` | `true` | Conversation history tracking | `addMessage()` and `addMessageSync()` become no-ops, history not included in prepared context |
 | `permissions` | `true` | ToolPermissionManager for approval workflows | All tools auto-approved; `ctx.permissions` returns `null` |
 
 **Usage Examples:**
@@ -3633,6 +3639,118 @@ console.log(toolNames.includes('memory_store')); // false
 - All defaults match previous behavior (memory, history, permissions enabled)
 - Legacy `cache.enabled: false` still works (maps to `features.memory: false`)
 - Code not using `features` config works unchanged
+
+#### Auto-Compaction Guard (NEW)
+
+AgentContext now includes **proactive context management** that prevents context overflow BEFORE it happens. Every time you add large content, the system checks if it would exceed the budget and triggers compaction automatically.
+
+**The Problem:**
+
+Previously, context could grow unbounded until `prepare()` was called:
+- `addMessage()` just pushed content without checking size
+- Large tool outputs (like `web_fetch` results) could cause overflow
+- Users had to manually call `compact()` or rely on `prepare()`
+
+**The Solution: `ensureCapacity()` and async `addMessage()`**
+
+```typescript
+import { AgentContext } from '@oneringai/agents';
+
+const ctx = AgentContext.create({
+  maxContextTokens: 128000,
+  strategy: 'proactive', // 75% threshold
+});
+
+// Method 1: Explicit capacity check
+const estimatedTokens = ctx.estimateTokens(largeToolOutput);
+const hasRoom = await ctx.ensureCapacity(estimatedTokens);
+if (hasRoom) {
+  await ctx.addMessage('tool', largeToolOutput);
+} else {
+  // Handle overflow - truncate, summarize, or skip
+  console.log('Cannot fit content even after compaction');
+}
+
+// Method 2: Automatic (recommended) - addMessage checks capacity for large content
+await ctx.addMessage('tool', largeWebFetchResult); // Auto-compacts if needed
+
+// Method 3: For small messages, use sync version (no overhead)
+ctx.addMessageSync('user', 'Hello'); // No capacity check
+
+// Method 4: Dedicated helper for tool results
+await ctx.addToolResult(toolOutput, { tool: 'web_fetch', url: '...' });
+```
+
+**How It Works:**
+
+1. `addMessage()` is now **async** and checks capacity for messages >1000 tokens
+2. If adding content would exceed the strategy threshold (e.g., 75% for proactive):
+   - `budget:warning` event is emitted
+   - `doCompaction()` is called automatically
+   - History, memory, and plugins are compacted by priority
+3. Content is then added after compaction makes room
+4. If compaction cannot make enough room, `budget:critical` is emitted but content is still added (best effort)
+
+**Event Flow for Large Tool Output:**
+
+```
+addMessage("tool", largeOutput)
+    ↓
+estimateTokens(largeOutput) → 15,000 tokens
+    ↓
+ensureCapacity(15000)
+    ↓
+calculateBudget() → current: 100,000 / 128,000 (78%)
+    ↓
+projectUtilization(+15000) → would be 115,000 / 128,000 (90%) - CRITICAL
+    ↓
+strategy.shouldCompact() → true
+    ↓
+emit('budget:warning')
+    ↓
+doCompaction() → compacts history, memory, plugins
+    ↓
+Re-check budget → now 70,000 / 128,000 (55%) - OK
+    ↓
+Add the message to history
+```
+
+**API Reference:**
+
+| Method | Description | Use Case |
+|--------|-------------|----------|
+| `await addMessage(role, content)` | Async, checks capacity for large messages | Large content (responses, tool outputs) |
+| `addMessageSync(role, content)` | Sync, no capacity check | Small messages (user inputs) |
+| `await addToolResult(result, metadata?)` | Helper for tool outputs | Any tool result |
+| `await ensureCapacity(tokens)` | Manual capacity check | Pre-flight validation |
+
+**Configuration:**
+
+The auto-compaction behavior is controlled by your compaction strategy:
+
+| Strategy | Threshold | When Compaction Triggers |
+|----------|-----------|-------------------------|
+| `proactive` | 75% | Before utilization reaches 75% |
+| `aggressive` | 60% | Before utilization reaches 60% |
+| `lazy` | 90% | Only when nearly full |
+| `rolling-window` | N messages | When message count exceeds window |
+| `adaptive` | Learns | Self-adjusts based on usage |
+
+**Events:**
+
+```typescript
+ctx.on('budget:warning', ({ budget }) => {
+  console.log(`Warning: ${budget.utilizationPercent}% used, compacting...`);
+});
+
+ctx.on('budget:critical', ({ budget }) => {
+  console.log(`Critical: Cannot make room, content added anyway`);
+});
+
+ctx.on('compacted', ({ log, tokensFreed }) => {
+  console.log(`Freed ${tokensFreed} tokens:`, log);
+});
+```
 
 #### Session Persistence
 
@@ -3747,7 +3865,8 @@ const taskAgent = TaskAgent.create({
 });
 
 // Access AgentContext directly
-taskAgent.context.addMessage('user', 'Hello');
+await taskAgent.context.addMessage('user', 'Hello');  // async with auto-compaction
+taskAgent.context.addMessageSync('user', 'Quick');    // sync for small messages
 const history = taskAgent.context.getHistory();
 const prepared = await taskAgent.context.prepare();
 const metrics = await taskAgent.context.getMetrics();
@@ -3764,7 +3883,7 @@ const uniAgent = UniversalAgent.create({
   model: 'gpt-4',
 });
 
-uniAgent.context.addMessage('system', 'New instruction');
+await uniAgent.context.addMessage('system', 'New instruction');
 const uniMetrics = await uniAgent.context.getMetrics();
 const mode = uniAgent.getMode();
 ```
@@ -3772,7 +3891,10 @@ const mode = uniAgent.getMode();
 **AgentContext API (used by TaskAgent and UniversalAgent):**
 ```typescript
 // AgentContext provides unified context management:
-ctx.addMessage(role, content);           // Add message to history
+await ctx.addMessage(role, content);     // Async - adds with auto-compaction for large content
+ctx.addMessageSync(role, content);       // Sync - no capacity check (for small messages)
+await ctx.addToolResult(result, meta);   // Helper for tool outputs
+await ctx.ensureCapacity(tokens);        // Manual capacity check
 ctx.getHistory();                        // Get conversation history
 ctx.prepare();                           // Prepare context for LLM call
 ctx.getMetrics();                        // Get usage metrics
@@ -4033,9 +4155,12 @@ const prepared = await ctx.prepare();
 console.log(`Context: ${prepared.budget.used}/${prepared.budget.total} tokens`);
 console.log(`Utilization: ${(prepared.budget.used / prepared.budget.total * 100).toFixed(1)}%`);
 
-// Add messages to history
-ctx.addMessage('user', 'Hello');
-ctx.addMessage('assistant', 'Hi there!');
+// Add messages to history (async with auto-compaction for large content)
+await ctx.addMessage('user', 'Hello');
+await ctx.addMessage('assistant', 'Hi there!');
+
+// Or use sync for small messages (no capacity check)
+ctx.addMessageSync('user', 'Quick question');
 
 // Get conversation history
 const history = ctx.getHistory();
