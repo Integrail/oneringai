@@ -519,6 +519,42 @@ await agent.run('Check the weather');
 const metrics = await agent.context?.getMetrics();
 ```
 
+#### Feature Configuration (NEW)
+
+Enable/disable AgentContext features independently. Disabled features = no associated tools registered:
+
+```typescript
+// Minimal stateless agent (no memory, no history)
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    features: { memory: false, history: false }
+  }
+});
+
+// Full-featured research agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    features: { memory: true, inContextMemory: true, history: true }
+  }
+});
+
+// Check feature status
+console.log(agent.context.isFeatureEnabled('memory')); // false
+console.log(agent.context.memory);                     // null (disabled)
+```
+
+**Available Features:**
+| Feature | Default | Components | Associated Tools |
+|---------|---------|------------|------------------|
+| `memory` | `true` | WorkingMemory + IdempotencyCache | `memory_*`, `cache_stats` |
+| `inContextMemory` | `false` | InContextMemoryPlugin | `context_set/get/delete/list` |
+| `history` | `true` | Conversation tracking | (affects context preparation) |
+| `permissions` | `true` | ToolPermissionManager | (affects tool execution) |
+
 **AgentContext composes:**
 - **ToolManager** - Tool registration, execution, circuit breakers
 - **WorkingMemory** - Key-value store with eviction
@@ -567,6 +603,52 @@ const state = inContextMemory.get('current_state');  // { step: 2, status: 'acti
 - **InContextMemory**: Full values in context → instant access, no retrieval needed
 
 **Use cases:** Session state, user preferences, counters, flags, small accumulated results.
+
+### 8. Direct LLM Access (NEW)
+
+Bypass all context management for simple, stateless LLM calls:
+
+```typescript
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+
+// Direct call - no history tracking, no memory, no context preparation
+const response = await agent.runDirect('What is 2 + 2?');
+console.log(response.output_text);  // "4"
+
+// With options
+const response = await agent.runDirect('Summarize this', {
+  instructions: 'Be concise',
+  temperature: 0.5,
+  maxOutputTokens: 100,
+});
+
+// Multimodal (text + image)
+const response = await agent.runDirect([
+  { type: 'message', role: 'user', content: [
+    { type: 'input_text', text: 'What is in this image?' },
+    { type: 'input_image', image_url: 'https://example.com/image.png' }
+  ]}
+]);
+
+// Streaming
+for await (const event of agent.streamDirect('Tell me a story')) {
+  if (event.type === 'output_text_delta') {
+    process.stdout.write(event.delta);
+  }
+}
+```
+
+**Comparison:**
+
+| Aspect | `run()` / `chat()` | `runDirect()` |
+|--------|-------------------|---------------|
+| History tracking | ✅ | ❌ |
+| Memory/Cache | ✅ | ❌ |
+| Context preparation | ✅ | ❌ |
+| Agentic loop (tool execution) | ✅ | ❌ |
+| Overhead | Full AgentContext | Minimal |
+
+**Use cases:** Quick one-off queries, embeddings-like simplicity, testing, hybrid workflows.
 
 ### 9. Audio Capabilities (NEW)
 

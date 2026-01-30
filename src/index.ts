@@ -31,15 +31,20 @@ export { Connector, Agent, Vendor, VENDORS, isVendor, createProvider } from './c
 export type { AgentConfig, AgentSessionConfig } from './core/index.js';
 
 // AgentContext - Unified "Swiss Army Knife" for context management
-export { AgentContext } from './core/index.js';
+export { AgentContext, DEFAULT_FEATURES } from './core/index.js';
 export type {
   AgentContextConfig,
+  AgentContextFeatures,
   AgentContextEvents,
   AgentContextMetrics,
   HistoryMessage as AgentContextHistoryMessage,
   ToolCallRecord,
   SerializedAgentContextState,
+  DirectCallOptions,
 } from './core/index.js';
+
+// Feature-aware tool factory
+export { getAgentContextTools, getBasicIntrospectionTools, getMemoryTools } from './core/index.js';
 
 // Audio Capabilities
 export { TextToSpeech, SpeechToText } from './core/index.js';

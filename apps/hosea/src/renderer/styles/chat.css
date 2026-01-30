@@ -1,0 +1,306 @@
+/**
+ * Chat Component Styles
+ */
+
+/* Chat Container */
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: var(--color-gray-50);
+}
+
+.chat__messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-6);
+}
+
+.chat__messages--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Welcome Screen */
+.chat__welcome {
+  text-align: center;
+  max-width: 400px;
+}
+
+.chat__welcome-icon {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+  border-radius: var(--radius-2xl);
+  color: var(--color-white);
+  margin: 0 auto var(--spacing-6);
+}
+
+.chat__welcome-title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-gray-900);
+  margin: 0 0 var(--spacing-2);
+}
+
+.chat__welcome-subtitle {
+  font-size: var(--font-size-base);
+  color: var(--color-gray-500);
+  margin: 0;
+}
+
+/* Message */
+.message {
+  display: flex;
+  margin-bottom: var(--spacing-4);
+}
+
+.message--user {
+  justify-content: flex-end;
+}
+
+.message--assistant {
+  justify-content: flex-start;
+}
+
+.message--system {
+  justify-content: center;
+}
+
+.message__avatar {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-lg);
+  margin-right: var(--spacing-3);
+}
+
+.message--user .message__avatar {
+  order: 1;
+  margin-right: 0;
+  margin-left: var(--spacing-3);
+  background-color: var(--color-primary);
+  color: var(--color-white);
+}
+
+.message--assistant .message__avatar {
+  background-color: var(--color-gray-200);
+  color: var(--color-gray-600);
+}
+
+.message__content {
+  max-width: 70%;
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius-xl);
+}
+
+.message--user .message__content {
+  background-color: var(--color-primary);
+  color: var(--color-white);
+  border-bottom-right-radius: var(--radius-sm);
+}
+
+.message--assistant .message__content {
+  background-color: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-bottom-left-radius: var(--radius-sm);
+}
+
+.message--system .message__content {
+  background-color: var(--color-gray-100);
+  color: var(--color-gray-600);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-2) var(--spacing-4);
+}
+
+.message__text {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+}
+
+.message__text p {
+  margin: 0 0 var(--spacing-2);
+}
+
+.message__text p:last-child {
+  margin-bottom: 0;
+}
+
+.message__text code {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  background-color: rgba(0, 0, 0, 0.1);
+  padding: var(--spacing-1);
+  border-radius: var(--radius-sm);
+}
+
+.message--user .message__text code {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.message__text pre {
+  margin: var(--spacing-2) 0;
+  padding: var(--spacing-3);
+  background-color: var(--color-gray-900);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+
+.message__text pre code {
+  background-color: transparent;
+  padding: 0;
+  color: var(--color-gray-100);
+  font-size: var(--font-size-sm);
+}
+
+.message__time {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-400);
+  margin-top: var(--spacing-1);
+}
+
+.message--user .message__time {
+  color: rgba(255, 255, 255, 0.6);
+  text-align: right;
+}
+
+.message__streaming-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--color-gray-400);
+  font-size: var(--font-size-sm);
+}
+
+/* Tool Call */
+.message__tool-call {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background-color: var(--color-gray-100);
+  border-radius: var(--radius-md);
+  margin: var(--spacing-2) 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-600);
+}
+
+.message__tool-call-icon {
+  color: var(--color-primary);
+}
+
+/* Chat Input */
+.chat__input {
+  padding: var(--spacing-4) var(--spacing-6);
+  background-color: var(--color-white);
+  border-top: 1px solid var(--color-gray-200);
+}
+
+.chat__input-form {
+  display: flex;
+  gap: var(--spacing-3);
+  align-items: flex-end;
+}
+
+.chat__input-field {
+  flex: 1;
+  min-height: 44px;
+  max-height: 200px;
+  padding: var(--spacing-3);
+  font-size: var(--font-size-sm);
+  font-family: inherit;
+  line-height: var(--line-height-normal);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-xl);
+  resize: none;
+  transition: all var(--transition-fast);
+}
+
+.chat__input-field:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+.chat__input-field::placeholder {
+  color: var(--color-gray-400);
+}
+
+.chat__input-field:disabled {
+  background-color: var(--color-gray-100);
+  cursor: not-allowed;
+}
+
+.chat__send-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-primary);
+  color: var(--color-white);
+  border: none;
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.chat__send-btn:hover:not(:disabled) {
+  background-color: var(--color-primary-hover);
+}
+
+.chat__send-btn:disabled {
+  background-color: var(--color-gray-300);
+  cursor: not-allowed;
+}
+
+.chat__stop-btn {
+  background-color: var(--color-danger);
+}
+
+.chat__stop-btn:hover:not(:disabled) {
+  background-color: #dc2626;
+}
+
+/* Typing Indicator */
+.typing-indicator {
+  display: flex;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2);
+}
+
+.typing-indicator__dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--color-gray-400);
+  border-radius: var(--radius-full);
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+
+.typing-indicator__dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.typing-indicator__dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.typing-indicator__dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes typing-bounce {
+  0%, 60%, 100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-6px);
+  }
+}

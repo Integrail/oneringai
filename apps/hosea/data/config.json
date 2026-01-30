@@ -1,0 +1,9 @@
+{
+  "activeConnector": "main-openai",
+  "activeModel": "gpt-4.1",
+  "ui": {
+    "theme": "system",
+    "fontSize": 14,
+    "streamResponses": true
+  }
+}

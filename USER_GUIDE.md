@@ -3488,6 +3488,9 @@ interface AgentContextConfig {
   /** Tool permissions configuration */
   permissions?: AgentPermissionsConfig;
 
+  /** Feature flags for enabling/disabling components */
+  features?: AgentContextFeatures;
+
   /** Memory configuration */
   memory?: {
     storage?: IMemoryStorage;  // Custom backend
@@ -3517,6 +3520,119 @@ interface AgentContextConfig {
   autoCompact?: boolean;
 }
 ```
+
+#### Feature Configuration (NEW)
+
+AgentContext features can be independently enabled or disabled. When a feature is disabled, its associated tools are **not registered**, giving the LLM a cleaner tool set:
+
+```typescript
+import { AgentContext, DEFAULT_FEATURES } from '@oneringai/agents';
+
+// View default feature settings
+console.log(DEFAULT_FEATURES);
+// { memory: true, inContextMemory: false, history: true, permissions: true }
+```
+
+**Available Features:**
+
+| Feature | Default | Description | When Disabled |
+|---------|---------|-------------|---------------|
+| `memory` | `true` | WorkingMemory + IdempotencyCache for persistent data storage and tool result caching | `memory_*` and `cache_stats` tools not registered; `ctx.memory` and `ctx.cache` return `null` |
+| `inContextMemory` | `false` | InContextMemoryPlugin for live key-value storage directly in context | `context_set/get/delete/list` tools not registered; `ctx.inContextMemory` returns `null` |
+| `history` | `true` | Conversation history tracking | `addMessage()` becomes a no-op, history not included in prepared context |
+| `permissions` | `true` | ToolPermissionManager for approval workflows | All tools auto-approved; `ctx.permissions` returns `null` |
+
+**Usage Examples:**
+
+```typescript
+// 1. Minimal stateless agent (no memory, no history tracking)
+const ctx = AgentContext.create({
+  model: 'gpt-4',
+  features: { memory: false, history: false },
+});
+
+console.log(ctx.memory);                      // null
+console.log(ctx.isFeatureEnabled('memory'));  // false
+
+// 2. Full-featured agent with all capabilities
+const ctx = AgentContext.create({
+  model: 'gpt-4',
+  features: {
+    memory: true,
+    inContextMemory: true,  // Opt-in
+    history: true,
+    permissions: true,
+  },
+});
+
+// 3. Via Agent.create() - inline config
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    features: { memory: false },  // Disable just memory
+  },
+});
+
+// 4. Chat agent with history only
+const chatAgent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    features: { memory: false, history: true },
+  },
+});
+```
+
+**Feature-Aware APIs:**
+
+```typescript
+// Check if a feature is enabled
+ctx.isFeatureEnabled('memory');      // boolean
+ctx.isFeatureEnabled('inContextMemory');
+ctx.isFeatureEnabled('history');
+ctx.isFeatureEnabled('permissions');
+
+// Get read-only feature configuration
+ctx.features; // { memory: boolean, inContextMemory: boolean, history: boolean, permissions: boolean }
+
+// Access nullable components
+ctx.memory;         // WorkingMemory | null
+ctx.cache;          // IdempotencyCache | null
+ctx.permissions;    // ToolPermissionManager | null
+ctx.inContextMemory; // InContextMemoryPlugin | null
+
+// Require component (throws if disabled)
+const memory = ctx.requireMemory();         // WorkingMemory (throws if memory disabled)
+const cache = ctx.requireCache();           // IdempotencyCache (throws if memory disabled)
+const perms = ctx.requirePermissions();     // ToolPermissionManager (throws if permissions disabled)
+```
+
+**Tool Registration:**
+
+Use `getAgentContextTools()` to get only tools for enabled features:
+
+```typescript
+import { AgentContext, getAgentContextTools } from '@oneringai/agents';
+
+const ctx = AgentContext.create({
+  model: 'gpt-4',
+  features: { memory: false },
+});
+
+const tools = getAgentContextTools(ctx);
+const toolNames = tools.map(t => t.definition.function.name);
+
+// Always included: context_inspect, context_breakdown
+// NOT included (memory disabled): memory_store, memory_retrieve, memory_delete, etc.
+console.log(toolNames.includes('memory_store')); // false
+```
+
+**Backward Compatibility:**
+
+- All defaults match previous behavior (memory, history, permissions enabled)
+- Legacy `cache.enabled: false` still works (maps to `features.memory: false`)
+- Code not using `features` config works unchanged
 
 #### Session Persistence
 
@@ -5048,6 +5164,180 @@ plugin.set('search_status', 'Search status', { completed: 3, pending: 2 });
 // LLM sees:
 // - Memory Index: "search_results: Web search results" (needs memory_retrieve)
 // - Live Context: Full search_status value (instant access)
+```
+
+---
+
+## Direct LLM Access (NEW)
+
+All agent types (Agent, TaskAgent, UniversalAgent, ResearchAgent) inherit `runDirect()` and `streamDirect()` methods from BaseAgent. These methods bypass all context management for simple, stateless LLM calls.
+
+### When to Use Direct Access
+
+| Use Case | Recommended Method |
+|----------|-------------------|
+| Conversational agent with history | `run()` / `chat()` |
+| Task with memory and tools | `run()` with AgentContext |
+| Quick one-off query | `runDirect()` |
+| Embedding-like simplicity | `runDirect()` |
+| Testing/debugging | `runDirect()` |
+| Hybrid workflows | Mix both |
+
+### Basic Usage
+
+```typescript
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+
+// Direct call - bypasses all context management
+const response = await agent.runDirect('What is 2 + 2?');
+console.log(response.output_text);  // "4"
+
+// History is NOT affected
+console.log(agent.context.getHistory().length);  // 0
+```
+
+### DirectCallOptions
+
+```typescript
+interface DirectCallOptions {
+  /** System instructions */
+  instructions?: string;
+
+  /** Include registered tools (default: false) */
+  includeTools?: boolean;
+
+  /** Temperature for generation */
+  temperature?: number;
+
+  /** Maximum output tokens */
+  maxOutputTokens?: number;
+
+  /** Response format */
+  responseFormat?: {
+    type: 'text' | 'json_object' | 'json_schema';
+    json_schema?: unknown;
+  };
+
+  /** Vendor-specific options */
+  vendorOptions?: Record<string, unknown>;
+}
+```
+
+### Examples
+
+```typescript
+// With options
+const response = await agent.runDirect('Summarize this text', {
+  instructions: 'Be concise. Use bullet points.',
+  temperature: 0.5,
+  maxOutputTokens: 200,
+});
+
+// JSON response
+const response = await agent.runDirect('List 3 fruits', {
+  responseFormat: { type: 'json_object' },
+  instructions: 'Return a JSON array of fruit names',
+});
+
+// Multimodal (text + image)
+const response = await agent.runDirect([
+  {
+    type: 'message',
+    role: 'user',
+    content: [
+      { type: 'input_text', text: 'What is in this image?' },
+      { type: 'input_image', image_url: 'https://example.com/image.png' }
+    ]
+  }
+]);
+
+// With tools (single call - you handle tool calls manually)
+const response = await agent.runDirect('Get the weather in Paris', {
+  includeTools: true,
+});
+// If response contains tool_calls, you must execute them yourself
+if (response.output.some(item => item.type === 'function_call')) {
+  // Handle tool calls manually
+}
+```
+
+### Streaming
+
+```typescript
+// Stream responses for real-time output
+for await (const event of agent.streamDirect('Tell me a story')) {
+  if (event.type === 'output_text_delta') {
+    process.stdout.write(event.delta);
+  }
+}
+
+// With options
+for await (const event of agent.streamDirect('Explain quantum computing', {
+  instructions: 'Use simple terms',
+  temperature: 0.7,
+})) {
+  // Handle events...
+}
+```
+
+### Comparison: run() vs runDirect()
+
+| Aspect | `run()` / `chat()` | `runDirect()` |
+|--------|-------------------|---------------|
+| History tracking | ✅ Automatic | ❌ None |
+| WorkingMemory | ✅ Available | ❌ Not used |
+| IdempotencyCache | ✅ Caches tool results | ❌ Not used |
+| Context preparation | ✅ Full preparation | ❌ None |
+| Agentic loop | ✅ Executes tools automatically | ❌ Single call only |
+| Compaction | ✅ Auto-compacts when needed | ❌ None |
+| Overhead | Full AgentContext | Minimal |
+
+### Hybrid Workflows
+
+You can mix both approaches in the same agent:
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools: [weatherTool, searchTool],
+});
+
+// Use run() for complex interactions with tool use
+await agent.run('Search for the latest news and summarize');
+
+// Use runDirect() for quick follow-ups that don't need context
+const clarification = await agent.runDirect(
+  'What is a good synonym for "excellent"?',
+  { temperature: 0.3 }
+);
+
+// Back to run() for continued conversation
+await agent.run('Now tell me more about the first item');
+```
+
+### Works with All Agent Types
+
+```typescript
+// Agent
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+await agent.runDirect('Quick question');
+
+// TaskAgent
+const taskAgent = TaskAgent.create({ connector: 'openai', model: 'gpt-4' });
+await taskAgent.runDirect('Quick question');
+
+// UniversalAgent
+const universalAgent = UniversalAgent.create({ connector: 'openai', model: 'gpt-4' });
+await universalAgent.runDirect('Quick question');
+
+// ResearchAgent
+const researchAgent = ResearchAgent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  sources: [webSource],
+});
+await researchAgent.runDirect('Quick question');
 ```
 
 ---

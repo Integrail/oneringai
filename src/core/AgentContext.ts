@@ -57,6 +57,8 @@ import { estimateComponentTokens } from './context/utils/ContextUtils.js';
 import type { IContextPlugin } from './context/plugins/IContextPlugin.js';
 import { getModelInfo } from '../domain/entities/Model.js';
 import { PlanPlugin } from './context/plugins/PlanPlugin.js';
+import { createInContextMemory } from './context/plugins/inContextMemoryTools.js';
+import type { InContextMemoryPlugin, InContextMemoryConfig as InContextMemoryPluginConfig } from './context/plugins/InContextMemoryPlugin.js';
 
 // ============================================================================
 // Task Types & Priority Profiles
@@ -151,6 +153,64 @@ Guidelines:
 };
 
 // ============================================================================
+// Feature Configuration
+// ============================================================================
+
+/**
+ * AgentContext feature configuration - controls which features are enabled
+ *
+ * Each feature can be enabled/disabled independently. When a feature is disabled:
+ * - Its components are not created (saves memory)
+ * - Its tools are not registered (cleaner LLM tool list)
+ * - Related context preparation is skipped
+ */
+export interface AgentContextFeatures {
+  /**
+   * Enable WorkingMemory + IdempotencyCache
+   * When enabled: memory storage, tool result caching, memory_* tools, cache_stats tool
+   * When disabled: no memory/cache, tools not registered
+   * @default true
+   */
+  memory?: boolean;
+
+  /**
+   * Enable InContextMemoryPlugin for in-context key-value storage
+   * When enabled: context_set/get/delete/list tools
+   * @default false (opt-in)
+   */
+  inContextMemory?: boolean;
+
+  /**
+   * Enable conversation history tracking
+   * When disabled: addMessage() is no-op, history not in context
+   * @default true
+   */
+  history?: boolean;
+
+  /**
+   * Enable ToolPermissionManager for approval workflow
+   * When disabled: all tools auto-approved
+   * @default true
+   */
+  permissions?: boolean;
+}
+
+/**
+ * Default feature configuration
+ *
+ * - memory: true (includes WorkingMemory + IdempotencyCache)
+ * - inContextMemory: false (opt-in)
+ * - history: true
+ * - permissions: true
+ */
+export const DEFAULT_FEATURES: Required<AgentContextFeatures> = {
+  memory: true,
+  inContextMemory: false,
+  history: true,
+  permissions: true,
+};
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -198,6 +258,12 @@ export interface AgentContextConfig {
   /** Tools to register */
   tools?: ToolFunction[];
 
+  /**
+   * Feature configuration - enable/disable AgentContext features independently
+   * Each feature controls component creation and tool registration
+   */
+  features?: AgentContextFeatures;
+
   /** Tool permissions configuration */
   permissions?: AgentPermissionsConfig;
 
@@ -212,6 +278,9 @@ export interface AgentContextConfig {
     /** Enable caching (default: true) */
     enabled?: boolean;
   };
+
+  /** InContextMemory configuration (only used if features.inContextMemory is true) */
+  inContextMemory?: InContextMemoryPluginConfig;
 
   /** History configuration */
   history?: {
@@ -240,7 +309,7 @@ export interface AgentContextConfig {
 /**
  * Default configuration
  */
-const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType'>> & {
+const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory'>> & {
   history: Required<NonNullable<AgentContextConfig['history']>>;
 } = {
   model: 'gpt-4',
@@ -333,11 +402,15 @@ export interface AgentContextEvents {
 // ============================================================================
 
 export class AgentContext extends EventEmitter<AgentContextEvents> {
-  // ===== Composed Managers (reused, not duplicated) =====
+  // ===== Composed Managers (conditionally created based on features) =====
   private readonly _tools: ToolManager;
-  private readonly _memory: WorkingMemory;
-  private readonly _cache: IdempotencyCache;
-  private readonly _permissions: ToolPermissionManager;
+  private readonly _memory: WorkingMemory | null;
+  private readonly _cache: IdempotencyCache | null;
+  private readonly _permissions: ToolPermissionManager | null;
+  private _inContextMemory: InContextMemoryPlugin | null = null;
+
+  // ===== Feature Configuration =====
+  private readonly _features: Required<AgentContextFeatures>;
 
   // ===== Built-in State =====
   private _systemPrompt: string;
@@ -345,6 +418,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private _history: HistoryMessage[] = [];
   private _toolCalls: ToolCallRecord[] = [];
   private _currentInput: string = '';
+  private _historyEnabled: boolean;
 
   // ===== Plugins =====
   private _plugins: Map<string, IContextPlugin> = new Map();
@@ -373,6 +447,14 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private constructor(config: AgentContextConfig = {}) {
     super();
 
+    // Resolve features - merge user features with defaults
+    this._features = { ...DEFAULT_FEATURES, ...config.features };
+
+    // Handle legacy cache.enabled flag (maps to features.memory)
+    if (config.cache?.enabled === false) {
+      this._features.memory = false;
+    }
+
     // Merge config with defaults
     this._config = {
       ...DEFAULT_AGENT_CONTEXT_CONFIG,
@@ -383,6 +465,9 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     this._systemPrompt = config.systemPrompt ?? '';
     this._instructions = config.instructions ?? '';
 
+    // History feature
+    this._historyEnabled = this._features.history;
+
     // Determine max tokens from model or config
     this._maxContextTokens = config.maxContextTokens
       ?? getModelInfo(config.model ?? 'gpt-4')?.features.input.tokens
@@ -392,9 +477,9 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     this._strategy = createStrategyFactory(this._config.strategy, {});
     this._estimator = this.createEstimator();
 
-    // ===== Compose existing managers (DRY!) =====
+    // ===== Compose existing managers (conditionally based on features) =====
 
-    // ToolManager
+    // ToolManager - always created
     this._tools = new ToolManager();
     if (config.tools) {
       for (const tool of config.tools) {
@@ -402,24 +487,45 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       }
     }
 
-    // ToolPermissionManager
-    this._permissions = new ToolPermissionManager(config.permissions);
+    // ToolPermissionManager - conditional
+    if (this._features.permissions) {
+      this._permissions = new ToolPermissionManager(config.permissions);
+    } else {
+      this._permissions = null;
+    }
 
-    // WorkingMemory (reuse existing class)
-    const memoryStorage = config.memory?.storage ?? new InMemoryStorage();
-    const memoryConfig: WorkingMemoryConfig = {
-      ...DEFAULT_MEMORY_CONFIG,
-      ...config.memory,
-    };
-    this._memory = new WorkingMemory(memoryStorage, memoryConfig);
+    // Memory feature includes WorkingMemory + IdempotencyCache (they work together)
+    if (this._features.memory) {
+      // WorkingMemory
+      const memoryStorage = config.memory?.storage ?? new InMemoryStorage();
+      const memoryConfig: WorkingMemoryConfig = {
+        ...DEFAULT_MEMORY_CONFIG,
+        ...config.memory,
+      };
+      this._memory = new WorkingMemory(memoryStorage, memoryConfig);
 
-    // IdempotencyCache (reuse existing class, now in core)
-    this._cacheEnabled = config.cache?.enabled !== false;
-    const cacheConfig: IdempotencyCacheConfig = {
-      ...DEFAULT_IDEMPOTENCY_CONFIG,
-      ...config.cache,
-    };
-    this._cache = new IdempotencyCache(cacheConfig);
+      // IdempotencyCache
+      this._cacheEnabled = true;
+      const cacheConfig: IdempotencyCacheConfig = {
+        ...DEFAULT_IDEMPOTENCY_CONFIG,
+        ...config.cache,
+      };
+      this._cache = new IdempotencyCache(cacheConfig);
+    } else {
+      this._memory = null;
+      this._cache = null;
+      this._cacheEnabled = false;
+    }
+
+    // InContextMemory - opt-in feature
+    if (this._features.inContextMemory) {
+      const { plugin, tools } = createInContextMemory(config.inContextMemory);
+      this._inContextMemory = plugin;
+      this.registerPlugin(plugin);
+      for (const tool of tools) {
+        this._tools.register(tool);
+      }
+    }
 
     // Task type configuration
     this._explicitTaskType = config.taskType;
@@ -442,18 +548,74 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     return this._tools;
   }
 
-  /** Working memory - store/retrieve agent state */
-  get memory(): WorkingMemory {
+  /** Working memory - store/retrieve agent state (null if memory feature disabled) */
+  get memory(): WorkingMemory | null {
     return this._memory;
   }
 
-  /** Tool result cache - automatic deduplication */
-  get cache(): IdempotencyCache {
+  /** Tool result cache - automatic deduplication (null if memory feature disabled) */
+  get cache(): IdempotencyCache | null {
     return this._cache;
   }
 
-  /** Tool permissions - approval workflow */
-  get permissions(): ToolPermissionManager {
+  /** Tool permissions - approval workflow (null if permissions feature disabled) */
+  get permissions(): ToolPermissionManager | null {
+    return this._permissions;
+  }
+
+  /** InContextMemory plugin (null if inContextMemory feature disabled) */
+  get inContextMemory(): InContextMemoryPlugin | null {
+    return this._inContextMemory;
+  }
+
+  // ============================================================================
+  // Feature Configuration
+  // ============================================================================
+
+  /**
+   * Get the resolved feature configuration
+   */
+  get features(): Readonly<Required<AgentContextFeatures>> {
+    return this._features;
+  }
+
+  /**
+   * Check if a specific feature is enabled
+   */
+  isFeatureEnabled(feature: keyof AgentContextFeatures): boolean {
+    return this._features[feature];
+  }
+
+  /**
+   * Get memory, throwing if disabled
+   * Use when memory is required for an operation
+   */
+  requireMemory(): WorkingMemory {
+    if (!this._memory) {
+      throw new Error('WorkingMemory is not available. Enable the "memory" feature in AgentContextConfig.');
+    }
+    return this._memory;
+  }
+
+  /**
+   * Get cache, throwing if disabled
+   * Use when cache is required for an operation
+   */
+  requireCache(): IdempotencyCache {
+    if (!this._cache) {
+      throw new Error('IdempotencyCache is not available. Enable the "memory" feature in AgentContextConfig.');
+    }
+    return this._cache;
+  }
+
+  /**
+   * Get permissions, throwing if disabled
+   * Use when permissions is required for an operation
+   */
+  requirePermissions(): ToolPermissionManager {
+    if (!this._permissions) {
+      throw new Error('ToolPermissionManager is not available. Enable the "permissions" feature in AgentContextConfig.');
+    }
     return this._permissions;
   }
 
@@ -566,12 +728,18 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
   /**
    * Add a message to history
+   * Returns null if history feature is disabled
    */
   addMessage(
     role: 'user' | 'assistant' | 'system' | 'tool',
     content: string,
     metadata?: Record<string, unknown>
-  ): HistoryMessage {
+  ): HistoryMessage | null {
+    // Return null if history is disabled
+    if (!this._historyEnabled) {
+      return null;
+    }
+
     const message: HistoryMessage = {
       id: this.generateId(),
       role,
@@ -631,7 +799,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    *
    * This is the recommended way to execute tools - it integrates:
    * - Permission checking
-   * - Result caching (if tool is cacheable)
+   * - Result caching (if tool is cacheable and memory feature enabled)
    * - History recording
    * - Metrics tracking
    */
@@ -651,8 +819,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     let cached = false;
 
     try {
-      // Check cache first (if enabled)
-      if (this._cacheEnabled) {
+      // Check cache first (if enabled and cache available)
+      if (this._cacheEnabled && this._cache) {
         const cachedResult = await this._cache.get(tool, args);
         if (cachedResult !== undefined) {
           cached = true;
@@ -667,8 +835,9 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
         const fullContext: ToolContext = {
           agentId: context?.agentId ?? 'agent-context',
           taskId: context?.taskId,
-          memory: this._memory.getAccess(),
-          idempotencyCache: this._cache,
+          memory: this._memory?.getAccess(),  // May be undefined if memory disabled
+          idempotencyCache: this._cache ?? undefined,  // May be undefined if memory disabled
+          inContextMemory: this._inContextMemory ?? undefined,  // May be undefined if inContextMemory disabled
           signal: context?.signal,
         };
         this._tools.setToolContext(fullContext);
@@ -676,8 +845,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
         // Execute via ToolManager (context is already set)
         result = await this._tools.execute(toolName, args);
 
-        // Cache result (if enabled and tool is cacheable)
-        if (this._cacheEnabled) {
+        // Cache result (if enabled, cache available, and tool is cacheable)
+        if (this._cacheEnabled && this._cache) {
           await this._cache.set(tool, args, result);
         }
       }
@@ -880,17 +1049,36 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    * Get comprehensive metrics
    */
   async getMetrics(): Promise<AgentContextMetrics> {
-    const memoryStats = await this._memory.getStats();
+    // Get memory stats if memory feature is enabled
+    let memoryStats: { totalEntries: number; totalSizeBytes: number; utilizationPercent: number };
+    if (this._memory) {
+      const stats = await this._memory.getStats();
+      memoryStats = {
+        totalEntries: stats.totalEntries,
+        totalSizeBytes: stats.totalSizeBytes,
+        utilizationPercent: stats.utilizationPercent,
+      };
+    } else {
+      memoryStats = {
+        totalEntries: 0,
+        totalSizeBytes: 0,
+        utilizationPercent: 0,
+      };
+    }
+
+    // Get cache stats if memory feature is enabled
+    const cacheStats = this._cache?.getStats() ?? {
+      entries: 0,
+      hits: 0,
+      misses: 0,
+      hitRate: 0,
+    };
 
     return {
       historyMessageCount: this._history.length,
       toolCallCount: this._toolCalls.length,
-      cacheStats: this._cache.getStats(),
-      memoryStats: {
-        totalEntries: memoryStats.totalEntries,
-        totalSizeBytes: memoryStats.totalSizeBytes,
-        utilizationPercent: memoryStats.utilizationPercent,
-      },
+      cacheStats,
+      memoryStats,
       pluginCount: this._plugins.size,
       utilizationPercent: this._lastBudget?.utilizationPercent ?? 0,
     };
@@ -906,9 +1094,10 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    * Serializes ALL state:
    * - History and tool calls
    * - Tool enable/disable state
-   * - Memory state
-   * - Permission state
+   * - Memory state (if enabled)
+   * - Permission state (if enabled)
    * - Plugin state
+   * - Feature configuration
    */
   async getState(): Promise<SerializedAgentContextState> {
     const pluginStates: Record<string, unknown> = {};
@@ -919,8 +1108,23 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       }
     }
 
-    // Get memory stats (WorkingMemory doesn't have full state serialization yet)
-    const memoryStats = await this._memory.getStats();
+    // Get memory stats if memory is enabled
+    let memoryStats: { entryCount: number; sizeBytes: number } | undefined;
+    if (this._memory) {
+      const stats = await this._memory.getStats();
+      memoryStats = {
+        entryCount: stats.totalEntries,
+        sizeBytes: stats.totalSizeBytes,
+      };
+    }
+
+    // Get permission state if permissions are enabled
+    const permissionState = this._permissions?.getState() ?? {
+      version: 1,
+      approvals: {},
+      blocklist: [],
+      allowlist: [],
+    };
 
     return {
       version: 1,
@@ -931,11 +1135,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
         toolCalls: this._toolCalls,
       },
       tools: this._tools.getState(),
-      memoryStats: {
-        entryCount: memoryStats.totalEntries,
-        sizeBytes: memoryStats.totalSizeBytes,
-      },
-      permissions: this._permissions.getState(),
+      memoryStats,
+      permissions: permissionState,
       plugins: pluginStates,
       config: {
         model: this._config.model,
@@ -973,8 +1174,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     // Note: Memory state is managed by WorkingMemory + SessionManager separately
     // AgentContext only tracks stats, not full memory content
 
-    // Permission state
-    if (state.permissions) {
+    // Permission state (only if permissions feature is enabled)
+    if (state.permissions && this._permissions) {
       this._permissions.loadState(state.permissions);
     }
 
@@ -1001,8 +1202,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     }
     this._plugins.clear();
 
-    // Destroy cache (clears interval and entries)
-    this._cache.destroy();
+    // Destroy cache if it exists (clears interval and entries)
+    this._cache?.destroy();
 
     // Destroy tool manager (cleans up circuit breaker listeners)
     this._tools.destroy();
@@ -1021,6 +1222,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   /**
    * Build all context components
    * Uses task-type-aware priority profiles for compaction ordering
+   * Conditionally includes components based on enabled features
    */
   private async buildComponents(): Promise<IContextComponent[]> {
     const components: IContextComponent[] = [];
@@ -1029,10 +1231,13 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     const taskType = this.getTaskType();
     const priorityProfile = PRIORITY_PROFILES[taskType];
 
+    // Build task-type-specific system prompt based on enabled features
+    const taskTypePrompt = this.buildTaskTypePromptForFeatures(taskType);
+
     // System prompt + task type prompt (never compact)
     const fullSystemPrompt = this._systemPrompt
-      ? `${this._systemPrompt}\n\n${this.getTaskTypePrompt()}`
-      : this.getTaskTypePrompt();
+      ? `${this._systemPrompt}\n\n${taskTypePrompt}`
+      : taskTypePrompt;
     if (fullSystemPrompt) {
       components.push({
         name: 'system_prompt',
@@ -1052,8 +1257,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       });
     }
 
-    // Conversation history (compactable, priority from profile)
-    if (this._history.length > 0) {
+    // Conversation history (compactable, priority from profile) - only if history enabled
+    if (this._features.history && this._history.length > 0) {
       components.push({
         name: 'conversation_history',
         content: this.formatHistoryForContext(),
@@ -1066,20 +1271,22 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       });
     }
 
-    // Memory index (compactable, priority from profile)
-    const memoryIndex = await this._memory.formatIndex();
-    // Check if memory is truly empty (formatMemoryIndex returns "Memory is empty." when no entries)
-    const isEmpty = !memoryIndex || memoryIndex.trim().length === 0 || memoryIndex.includes('Memory is empty.');
-    if (!isEmpty) {
-      components.push({
-        name: 'memory_index',
-        content: memoryIndex,
-        priority: priorityProfile.memory_index ?? 8,
-        compactable: true,
-        metadata: {
-          strategy: 'evict',
-        },
-      });
+    // Memory index (compactable, priority from profile) - only if memory enabled
+    if (this._features.memory && this._memory) {
+      const memoryIndex = await this._memory.formatIndex();
+      // Check if memory is truly empty (formatMemoryIndex returns "Memory is empty." when no entries)
+      const isEmpty = !memoryIndex || memoryIndex.trim().length === 0 || memoryIndex.includes('Memory is empty.');
+      if (!isEmpty) {
+        components.push({
+          name: 'memory_index',
+          content: memoryIndex,
+          priority: priorityProfile.memory_index ?? 8,
+          compactable: true,
+          metadata: {
+            strategy: 'evict',
+          },
+        });
+      }
     }
 
     // Plugin components with priority override
@@ -1110,6 +1317,55 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     }
 
     return components;
+  }
+
+  /**
+   * Build task-type prompt adjusted for enabled features
+   */
+  private buildTaskTypePromptForFeatures(taskType: TaskType): string {
+    const basePrompt = TASK_TYPE_PROMPTS[taskType];
+
+    // If memory is disabled, modify the prompts to remove memory-related instructions
+    if (!this._features.memory) {
+      // Return simplified prompts without memory references
+      if (taskType === 'research') {
+        return `## Research Protocol
+
+You are conducting research. Follow this workflow:
+
+### 1. SEARCH PHASE
+- Execute searches to find relevant sources
+
+### 2. READ PHASE
+For each promising result:
+- Read/scrape the content
+- Extract key points (2-3 sentences per source)
+
+### 3. SYNTHESIZE PHASE
+- Cross-reference and consolidate findings
+- Write the final report`;
+      } else if (taskType === 'coding') {
+        return `## Coding Protocol
+
+You are implementing code changes. Guidelines:
+- Read relevant files before making changes
+- Implement incrementally
+- Code file contents are large - summarize structure after reading`;
+      } else if (taskType === 'analysis') {
+        return `## Analysis Protocol
+
+You are performing analysis. Guidelines:
+- Summarize data immediately after loading (raw data is large)
+- Keep only essential context for current analysis step`;
+      } else {
+        return `## Task Execution
+
+Guidelines:
+- Focus on completing the task efficiently`;
+      }
+    }
+
+    return basePrompt;
   }
 
   /**
@@ -1246,6 +1502,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    * Compact memory
    */
   private async compactMemory(): Promise<number> {
+    // Return 0 if memory is disabled
+    if (!this._memory) {
+      return 0;
+    }
+
     const beforeIndex = await this._memory.formatIndex();
     const beforeTokens = this._estimator.estimateTokens(beforeIndex);
 

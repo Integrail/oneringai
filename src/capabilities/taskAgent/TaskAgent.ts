@@ -36,8 +36,7 @@ import { MemoryPlugin } from '../../core/context/plugins/MemoryPlugin.js';
 import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { PlanExecutor } from './PlanExecutor.js';
 import { CheckpointManager, DEFAULT_CHECKPOINT_STRATEGY } from './CheckpointManager.js';
-import { createMemoryTools } from './memoryTools.js';
-import { createContextTools } from './contextTools.js';
+import { getAgentContextTools } from '../../core/AgentContextTools.js';
 import { getModelInfo } from '../../domain/entities/Model.js';
 import type { AgentPermissionsConfig } from '../../core/permissions/types.js';
 import { CONTEXT_DEFAULTS } from '../../core/constants.js';
@@ -410,18 +409,21 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
 
     // Forward memory events to agent (with cleanup tracking)
     // Memory is accessed via this._agentContext.memory (single source of truth)
+    // Only set up event handlers if memory feature is enabled
     const memory = this._agentContext.memory;
-    const storedHandler = (data: { key: string; description: string }) =>
-      this.emit('memory:stored', data);
-    const limitWarningHandler = (data: { utilizationPercent: number }) =>
-      this.emit('memory:limit_warning', { utilization: data.utilizationPercent });
+    if (memory) {
+      const storedHandler = (data: { key: string; description: string }) =>
+        this.emit('memory:stored', data);
+      const limitWarningHandler = (data: { utilizationPercent: number }) =>
+        this.emit('memory:limit_warning', { utilization: data.utilizationPercent });
 
-    memory.on('stored', storedHandler);
-    memory.on('limit_warning', limitWarningHandler);
+      memory.on('stored', storedHandler);
+      memory.on('limit_warning', limitWarningHandler);
 
-    // Track cleanup functions
-    this.eventCleanupFunctions.push(() => memory.off('stored', storedHandler));
-    this.eventCleanupFunctions.push(() => memory.off('limit_warning', limitWarningHandler));
+      // Track cleanup functions
+      this.eventCleanupFunctions.push(() => memory.off('stored', storedHandler));
+      this.eventCleanupFunctions.push(() => memory.off('limit_warning', limitWarningHandler));
+    }
 
     // Initialize session (from BaseAgent)
     this.initializeSession(config.session);
@@ -488,19 +490,22 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     }
 
     // Get memory state (async) - from AgentContext (single source of truth)
-    const memoryIndex = await this._agentContext.memory.getIndex();
-    this._session.memory = {
-      version: 1,
-      entries: memoryIndex.entries.map((e) => ({
-        key: e.key,
-        description: e.description,
-        value: null, // Don't serialize full values, they're in agent storage
-        scope: e.scope,
-        sizeBytes: 0,
-        basePriority: e.effectivePriority,
-        pinned: e.pinned,
-      })),
-    };
+    // Only serialize memory if memory feature is enabled
+    if (this._agentContext.memory) {
+      const memoryIndex = await this._agentContext.memory.getIndex();
+      this._session.memory = {
+        version: 1,
+        entries: memoryIndex.entries.map((e) => ({
+          key: e.key,
+          description: e.description,
+          value: null, // Don't serialize full values, they're in agent storage
+          scope: e.scope,
+          sizeBytes: 0,
+          basePriority: e.effectivePriority,
+          pinned: e.pinned,
+        })),
+      };
+    }
 
     // Let subclass add any additional specific state
     this.prepareSessionState();
@@ -524,9 +529,9 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
         // Memory is accessed via this._agentContext.memory (single source of truth)
         const enhancedContext = {
           ...context,
-          memory: this._agentContext.memory.getAccess(),    // Add memory access for memory tools
+          memory: this._agentContext.memory?.getAccess(),    // Add memory access for memory tools (may be undefined if disabled)
           agentContext: this._agentContext,   // Inherited from BaseAgent
-          idempotencyCache: this._agentContext.cache,
+          idempotencyCache: this._agentContext.cache ?? undefined,  // May be undefined if memory disabled
           agentId: this.id,
         };
 
@@ -555,18 +560,20 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
    * Initialize internal components
    */
   private initializeComponents(config: TaskAgentConfig): void {
-    // Combine user tools with memory tools and context tools
-    const memoryTools = createMemoryTools();
-    const contextTools = createContextTools();
-    this._allTools = [...(config.tools ?? []), ...memoryTools, ...contextTools];
+    // Get feature-aware tools based on AgentContext configuration
+    const featureTools = getAgentContextTools(this._agentContext);
 
-    // Register memory and context tools with inherited AgentContext.tools
+    // Combine user tools with feature-aware tools
+    this._allTools = [...(config.tools ?? []), ...featureTools];
+
+    // Register feature-aware tools with inherited AgentContext.tools
     // (user tools are already registered by BaseAgent constructor)
-    for (const tool of [...memoryTools, ...contextTools]) {
+    for (const tool of featureTools) {
       this._agentContext.tools.register(tool);
     }
 
     // NOTE: IdempotencyCache is accessed via this._agentContext.cache (single source of truth)
+    // If memory feature is disabled, cache will be null
 
     // Get enabled tools from inherited AgentContext and wrap with cache
     const enabledTools = this._agentContext.tools.getEnabled();
@@ -597,11 +604,13 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     // Create plugins for the inherited AgentContext
     // NOTE: Memory is accessed via this._agentContext.memory (single source of truth)
     this._planPlugin = new PlanPlugin();
-    this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
-
-    // Register plugins with inherited AgentContext
     this._agentContext.registerPlugin(this._planPlugin);
-    this._agentContext.registerPlugin(this._memoryPlugin);
+
+    // Only create MemoryPlugin if memory feature is enabled
+    if (this._agentContext.memory) {
+      this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
+      this._agentContext.registerPlugin(this._memoryPlugin);
+    }
 
     // Set initial plan in plugin
     this._planPlugin.setPlan(this.state.plan);
@@ -907,15 +916,17 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
 
   /**
    * Get working memory (from AgentContext - single source of truth)
+   * Returns null if memory feature is disabled
    */
-  getMemory(): WorkingMemory {
+  getMemory(): WorkingMemory | null {
     return this._agentContext.memory;
   }
 
   /**
    * Convenient getter for working memory (alias for _agentContext.memory)
+   * Returns null if memory feature is disabled
    */
-  get memory(): WorkingMemory {
+  get memory(): WorkingMemory | null {
     return this._agentContext.memory;
   }
 

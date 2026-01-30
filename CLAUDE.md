@@ -45,6 +45,51 @@ const result = await ctx.executeTool('tool_name', args);
 const prepared = await ctx.prepare(); // Assembles context, handles compaction
 ```
 
+#### AgentContext Feature Configuration (NEW)
+
+Features can be individually enabled/disabled. When disabled, associated tools are not registered:
+
+```typescript
+interface AgentContextFeatures {
+  memory?: boolean;          // WorkingMemory + IdempotencyCache (default: true)
+  inContextMemory?: boolean; // InContextMemoryPlugin (default: false, opt-in)
+  history?: boolean;         // Conversation tracking (default: true)
+  permissions?: boolean;     // ToolPermissionManager (default: true)
+}
+
+export const DEFAULT_FEATURES = { memory: true, inContextMemory: false, history: true, permissions: true };
+```
+
+**Usage:**
+```typescript
+// Minimal stateless agent
+const ctx = AgentContext.create({ features: { memory: false, history: false } });
+
+// Full-featured agent
+const ctx = AgentContext.create({ features: { memory: true, inContextMemory: true } });
+
+// Via Agent.create
+const agent = Agent.create({
+  connector: 'openai', model: 'gpt-4',
+  context: { features: { memory: false } },  // Inline config
+});
+```
+
+**Feature-aware APIs:**
+```typescript
+ctx.isFeatureEnabled('memory');    // Check if feature is on
+ctx.requireMemory();               // Throws if memory disabled
+ctx.requireCache();                // Throws if memory disabled
+ctx.requirePermissions();          // Throws if permissions disabled
+ctx.memory;                        // WorkingMemory | null
+ctx.cache;                         // IdempotencyCache | null
+ctx.permissions;                   // ToolPermissionManager | null
+```
+
+**Tool Registration:**
+- `getAgentContextTools(ctx)` returns only tools for enabled features
+- Disabled features = no associated tools registered = cleaner LLM experience
+
 ### ToolManager (`src/core/ToolManager.ts`)
 Unified tool management + execution. Implements `IToolExecutor`, `IDisposable`. Per-tool circuit breakers.
 
@@ -69,6 +114,26 @@ const Vendor = { OpenAI, Anthropic, Google, GoogleVertex, Groq, Together, Grok, 
 | **ResearchAgent** | Generic research with pluggable sources | `src/capabilities/researchAgent/ResearchAgent.ts` |
 
 All extend **BaseAgent** and share unified tool management (`agent.tools === agent.context.tools`).
+
+### Direct LLM Access (NEW)
+
+All agents inherit `runDirect()` and `streamDirect()` from BaseAgent - bypasses all context management:
+
+```typescript
+// Direct call - no history, no memory, no context preparation
+const response = await agent.runDirect('Quick question');
+const response = await agent.runDirect('Summarize', { instructions: 'Be concise', temperature: 0.5 });
+
+// Streaming
+for await (const event of agent.streamDirect('Tell me a story')) { ... }
+
+// Multimodal
+await agent.runDirect([{ type: 'message', role: 'user', content: [...] }]);
+```
+
+**DirectCallOptions:** `instructions`, `includeTools`, `temperature`, `maxOutputTokens`, `responseFormat`, `vendorOptions`
+
+**Use cases:** Quick one-off queries, testing, hybrid workflows (mix `run()` and `runDirect()`).
 
 ## Directory Structure
 

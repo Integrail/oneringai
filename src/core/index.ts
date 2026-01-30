@@ -32,9 +32,10 @@ export type { AgentConfig, AgentSessionConfig } from './Agent.js';
 // ============================================================================
 // AgentContext - Unified "Swiss Army Knife" for all context management
 // ============================================================================
-export { AgentContext } from './AgentContext.js';
+export { AgentContext, DEFAULT_FEATURES } from './AgentContext.js';
 export type {
   AgentContextConfig,
+  AgentContextFeatures,
   AgentContextEvents,
   AgentContextMetrics,
   HistoryMessage,
@@ -42,15 +43,19 @@ export type {
   SerializedAgentContextState,
 } from './AgentContext.js';
 
+// Feature-aware tool factory
+export { getAgentContextTools, getBasicIntrospectionTools, getMemoryTools } from './AgentContextTools.js';
+
 // IdempotencyCache - Tool result caching (moved from taskAgent to core)
 export { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
 export type { IdempotencyCacheConfig, CacheStats } from './IdempotencyCache.js';
 
-// Lifecycle hooks (from BaseAgent - not exported directly but types are useful)
+// Lifecycle hooks and direct call types (from BaseAgent)
 export type {
   AgentLifecycleHooks,
   ToolExecutionHookContext,
   ToolExecutionResult,
+  DirectCallOptions,
 } from './BaseAgent.js';
 export { Vendor, VENDORS, isVendor } from './Vendor.js';
 export { createProvider, createProviderAsync } from './createProvider.js';

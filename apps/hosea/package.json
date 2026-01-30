@@ -1,0 +1,68 @@
+{
+  "name": "@oneringai/hosea",
+  "version": "0.1.0",
+  "description": "HOSEA - Human-Oriented System for Engaging Agents - Desktop UI for OneRing AI",
+  "type": "module",
+  "main": "dist/main/index.cjs",
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev:renderer\" \"npm run dev:electron\"",
+    "dev:renderer": "vite",
+    "dev:electron": "npm run build:main && electron . --dev",
+    "dev:watch": "concurrently -k \"npm run dev:renderer\" \"npm run watch:main\" \"sleep 2 && npm run dev:electron\"",
+    "watch:main": "tsup --watch",
+    "build": "npm run build:renderer && npm run build:main",
+    "build:main": "tsup",
+    "build:renderer": "vite build",
+    "start": "electron .",
+    "package": "electron-builder",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@oneringai/agents": "file:../..",
+    "electron-store": "^10.0.0",
+    "lucide-react": "^0.563.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "@vitejs/plugin-react": "^4.2.1",
+    "bootstrap": "^5.3.3",
+    "concurrently": "^8.2.2",
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1",
+    "react": "^18.2.0",
+    "react-bootstrap": "^2.10.0",
+    "react-dom": "^18.2.0",
+    "tsup": "^8.0.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12"
+  },
+  "build": {
+    "appId": "ai.onering.hosea",
+    "productName": "HOSEA",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    }
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

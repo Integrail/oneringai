@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+release/
+
+# Data (local to user)
+data/connectors/*.json
+data/sessions/
+data/logs/
+
+# Keep data directories
+!data/connectors/.gitkeep
+!data/sessions/.gitkeep
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local

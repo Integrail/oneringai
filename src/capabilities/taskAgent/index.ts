@@ -41,8 +41,15 @@ export { CheckpointManager } from './CheckpointManager.js';
 export type { CheckpointStrategy } from './CheckpointManager.js';
 export { DEFAULT_CHECKPOINT_STRATEGY } from './CheckpointManager.js';
 
-export { createMemoryTools } from './memoryTools.js';
+// Memory tools (individual creators for feature-aware registration)
 export {
+  createMemoryTools,
+  createMemoryStoreTool,
+  createMemoryRetrieveTool,
+  createMemoryDeleteTool,
+  createMemoryListTool,
+  createMemoryCleanupRawTool,
+  createMemoryRetrieveBatchTool,
   memoryStoreDefinition,
   memoryRetrieveDefinition,
   memoryDeleteDefinition,
@@ -51,7 +58,14 @@ export {
   memoryRetrieveBatchDefinition,
 } from './memoryTools.js';
 
-export { createContextTools } from './contextTools.js';
+// Context inspection tools (individual creators for feature-aware registration)
+export {
+  createContextTools,
+  createContextInspectTool,
+  createContextBreakdownTool,
+  createCacheStatsTool,
+  createMemoryStatsTool,
+} from './contextTools.js';
 
 export { PlanningAgent } from './PlanningAgent.js';
 export type { PlanningAgentConfig, GeneratedPlan } from './PlanningAgent.js';

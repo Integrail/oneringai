@@ -132,7 +132,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
   // Plugins for inherited AgentContext (from BaseAgent)
   // Note: _agentContext is inherited from BaseAgent (single source of truth)
   private _planPlugin: PlanPlugin;
-  private _memoryPlugin: MemoryPlugin;
+  private _memoryPlugin?: MemoryPlugin;
 
   // Execution state
   private currentPlan: Plan | null = null;
@@ -219,11 +219,15 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     // Create execution agent (without meta-tools) for task execution
     this.executionAgent = this.createExecutionAgent();
 
-    // Register PlanPlugin and MemoryPlugin with inherited AgentContext
+    // Register PlanPlugin with inherited AgentContext
     this._planPlugin = new PlanPlugin();
-    this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
     this._agentContext.registerPlugin(this._planPlugin);
-    this._agentContext.registerPlugin(this._memoryPlugin);
+
+    // Only create MemoryPlugin if memory feature is enabled
+    if (this._agentContext.memory) {
+      this._memoryPlugin = new MemoryPlugin(this._agentContext.memory);
+      this._agentContext.registerPlugin(this._memoryPlugin);
+    }
 
     // Initialize session (from BaseAgent)
     this.initializeSession(config.session);
@@ -494,12 +498,15 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
 
     // Handle feedback - note it and continue
     if (intent.type === 'feedback') {
-      await this._agentContext.memory.store(
-        `user_feedback_${Date.now()}`,
-        'User feedback during execution',
-        input,
-        { scope: 'persistent' }
-      );
+      // Only store feedback if memory feature is enabled
+      if (this._agentContext.memory) {
+        await this._agentContext.memory.store(
+          `user_feedback_${Date.now()}`,
+          'User feedback during execution',
+          input,
+          { scope: 'persistent' }
+        );
+      }
       return {
         text: "Noted. I'll keep that in mind as I continue.",
         mode: 'executing',

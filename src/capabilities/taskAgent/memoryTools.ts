@@ -221,274 +221,313 @@ function matchPattern(key: string, pattern: string): boolean {
   return regex.test(key);
 }
 
+// ============================================================================
+// Individual Tool Creators
+// ============================================================================
+
 /**
- * Create all memory tools
+ * Create memory_store tool
  */
-export function createMemoryTools(): ToolFunction[] {
-  return [
-    // memory_store
-    {
-      definition: memoryStoreDefinition,
-      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError('memory_store', 'Memory tools require TaskAgent context');
+export function createMemoryStoreTool(): ToolFunction {
+  return {
+    definition: memoryStoreDefinition,
+    execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError('memory_store', 'Memory tools require TaskAgent context');
+      }
+
+      try {
+        let key = args.key as string;
+        const tier = args.tier as MemoryTier | undefined;
+        const derivedFrom = args.derivedFrom as string[] | undefined;
+
+        // If tier is specified, add prefix and use tier priority
+        if (tier) {
+          key = addTierPrefix(key, tier);
         }
 
-        try {
-          let key = args.key as string;
-          const tier = args.tier as MemoryTier | undefined;
-          const derivedFrom = args.derivedFrom as string[] | undefined;
+        // Build scope from arguments
+        let scope: MemoryScope | undefined;
+        if (args.neededForTasks && Array.isArray(args.neededForTasks) && args.neededForTasks.length > 0) {
+          scope = { type: 'task', taskIds: args.neededForTasks as string[] };
+        } else if (args.scope === 'plan') {
+          scope = { type: 'plan' };
+        } else if (args.scope === 'persistent') {
+          scope = { type: 'persistent' };
+        } else if (tier === 'findings') {
+          // Findings default to plan scope
+          scope = { type: 'plan' };
+        } else {
+          scope = 'session';
+        }
 
-          // If tier is specified, add prefix and use tier priority
-          if (tier) {
-            key = addTierPrefix(key, tier);
+        // Priority: tier priority > explicit priority > default
+        let priority: MemoryPriority | undefined = args.priority as MemoryPriority | undefined;
+        if (tier) {
+          priority = TIER_PRIORITIES[tier];
+        }
+
+        await context.memory.set(
+          key,
+          args.description as string,
+          args.value,
+          {
+            scope,
+            priority,
+            pinned: args.pinned as boolean | undefined,
           }
-
-          // Build scope from arguments
-          let scope: MemoryScope | undefined;
-          if (args.neededForTasks && Array.isArray(args.neededForTasks) && args.neededForTasks.length > 0) {
-            scope = { type: 'task', taskIds: args.neededForTasks as string[] };
-          } else if (args.scope === 'plan') {
-            scope = { type: 'plan' };
-          } else if (args.scope === 'persistent') {
-            scope = { type: 'persistent' };
-          } else if (tier === 'findings') {
-            // Findings default to plan scope
-            scope = { type: 'plan' };
-          } else {
-            scope = 'session';
-          }
-
-          // Priority: tier priority > explicit priority > default
-          let priority: MemoryPriority | undefined = args.priority as MemoryPriority | undefined;
-          if (tier) {
-            priority = TIER_PRIORITIES[tier];
-          }
-
-          await context.memory.set(
-            key,
-            args.description as string,
-            args.value,
-            {
-              scope,
-              priority,
-              pinned: args.pinned as boolean | undefined,
-            }
-          );
-
-          return {
-            success: true,
-            key,
-            tier: tier ?? getTierFromKey(key) ?? 'none',
-            scope: typeof scope === 'string' ? scope : scope.type,
-            priority: priority ?? 'normal',
-            derivedFrom: derivedFrom ?? [],
-          };
-        } catch (error) {
-          return { error: error instanceof Error ? error.message : String(error) };
-        }
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: 'small' },
-      describeCall: (args) => {
-        const tier = args.tier as string | undefined;
-        const key = args.key as string;
-        return tier ? `${tier}:${key}` : key;
-      },
-    },
-
-    // memory_retrieve
-    {
-      definition: memoryRetrieveDefinition,
-      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError('memory_retrieve', 'Memory tools require TaskAgent context');
-        }
-
-        const value = await context.memory.get(args.key as string);
-        if (value === undefined) {
-          return { error: `Key "${args.key}" not found in memory` };
-        }
-        return value;
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: 'variable' },
-      describeCall: (args) => args.key as string,
-    },
-
-    // memory_delete
-    {
-      definition: memoryDeleteDefinition,
-      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError('memory_delete', 'Memory tools require TaskAgent context');
-        }
-
-        await context.memory.delete(args.key as string);
-        return { success: true, deleted: args.key };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: 'small' },
-      describeCall: (args) => args.key as string,
-    },
-
-    // memory_list
-    {
-      definition: memoryListDefinition,
-      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError('memory_list', 'Memory tools require TaskAgent context');
-        }
-
-        let entries = await context.memory.list();
-
-        // Filter by tier if specified
-        const tierFilter = args.tier as MemoryTier | undefined;
-        if (tierFilter) {
-          const prefix = `${tierFilter}.`;
-          entries = entries.filter((e) => e.key.startsWith(prefix));
-        }
-
-        return {
-          entries: entries.map((e) => ({
-            key: e.key,
-            description: e.description,
-            priority: e.effectivePriority,
-            tier: getTierFromKey(e.key) ?? 'none',
-            pinned: e.pinned,
-          })),
-          count: entries.length,
-          tierFilter: tierFilter ?? 'all',
-        };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: 'small' },
-      describeCall: (args) => {
-        const tier = args.tier as string | undefined;
-        return tier ? `tier:${tier}` : 'all';
-      },
-    },
-
-    // memory_cleanup_raw
-    {
-      definition: memoryCleanupRawDefinition,
-      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError('memory_cleanup_raw', 'Memory tools require TaskAgent context');
-        }
-
-        const keys = args.keys as string[];
-        let deletedCount = 0;
-        const skipped: string[] = [];
-
-        for (const key of keys) {
-          const tier = getTierFromKey(key);
-          if (tier === 'raw') {
-            const exists = await context.memory.has(key);
-            if (exists) {
-              await context.memory.delete(key);
-              deletedCount++;
-            }
-          } else {
-            skipped.push(key);
-          }
-        }
+        );
 
         return {
           success: true,
-          deleted: deletedCount,
-          skipped: skipped.length > 0 ? skipped : undefined,
-          skippedReason: skipped.length > 0 ? 'Not raw tier entries' : undefined,
+          key,
+          tier: tier ?? getTierFromKey(key) ?? 'none',
+          scope: typeof scope === 'string' ? scope : scope.type,
+          priority: priority ?? 'normal',
+          derivedFrom: derivedFrom ?? [],
         };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: 'small' },
-      describeCall: (args) => `${(args.keys as string[]).length} keys`,
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
     },
+    idempotency: { safe: true },
+    output: { expectedSize: 'small' },
+    describeCall: (args) => {
+      const tier = args.tier as string | undefined;
+      const key = args.key as string;
+      return tier ? `${tier}:${key}` : key;
+    },
+  };
+}
 
-    // memory_retrieve_batch
-    {
-      definition: memoryRetrieveBatchDefinition,
-      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
-        if (!context || !context.memory) {
-          throw new ToolExecutionError('memory_retrieve_batch', 'Memory tools require TaskAgent context');
-        }
+/**
+ * Create memory_retrieve tool
+ */
+export function createMemoryRetrieveTool(): ToolFunction {
+  return {
+    definition: memoryRetrieveDefinition,
+    execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError('memory_retrieve', 'Memory tools require TaskAgent context');
+      }
 
-        const pattern = args.pattern as string | undefined;
-        const keys = args.keys as string[] | undefined;
-        const tier = args.tier as MemoryTier | undefined;
-        const includeMetadata = args.includeMetadata as boolean | undefined;
+      const value = await context.memory.get(args.key as string);
+      if (value === undefined) {
+        return { error: `Key "${args.key}" not found in memory` };
+      }
+      return value;
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: 'variable' },
+    describeCall: (args) => args.key as string,
+  };
+}
 
-        // Get all entries to match against
-        const allEntries = await context.memory.list();
+/**
+ * Create memory_delete tool
+ */
+export function createMemoryDeleteTool(): ToolFunction {
+  return {
+    definition: memoryDeleteDefinition,
+    execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError('memory_delete', 'Memory tools require TaskAgent context');
+      }
 
-        // Determine which keys to retrieve
-        let keysToRetrieve: string[] = [];
+      await context.memory.delete(args.key as string);
+      return { success: true, deleted: args.key };
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: 'small' },
+    describeCall: (args) => args.key as string,
+  };
+}
 
-        if (keys && keys.length > 0) {
-          // Explicit keys provided
-          keysToRetrieve = keys;
-        } else if (pattern) {
-          // Pattern matching
-          keysToRetrieve = allEntries
-            .filter((e) => matchPattern(e.key, pattern))
-            .map((e) => e.key);
-        } else if (tier) {
-          // Tier filter
-          const prefix = `${tier}.`;
-          keysToRetrieve = allEntries
-            .filter((e) => e.key.startsWith(prefix))
-            .map((e) => e.key);
-        } else {
-          // No filter - return all
-          keysToRetrieve = allEntries.map((e) => e.key);
-        }
+/**
+ * Create memory_list tool
+ */
+export function createMemoryListTool(): ToolFunction {
+  return {
+    definition: memoryListDefinition,
+    execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError('memory_list', 'Memory tools require TaskAgent context');
+      }
 
-        // Retrieve all values
-        const results: Record<string, unknown> = {};
-        const metadata: Record<string, { tier: string; priority: string; pinned: boolean; description: string }> = {};
-        const notFound: string[] = [];
+      let entries = await context.memory.list();
 
-        for (const key of keysToRetrieve) {
-          const value = await context.memory.get(key);
-          if (value !== undefined) {
-            results[key] = value;
+      // Filter by tier if specified
+      const tierFilter = args.tier as MemoryTier | undefined;
+      if (tierFilter) {
+        const prefix = `${tierFilter}.`;
+        entries = entries.filter((e) => e.key.startsWith(prefix));
+      }
 
-            if (includeMetadata) {
-              const entry = allEntries.find((e) => e.key === key);
-              if (entry) {
-                metadata[key] = {
-                  tier: getTierFromKey(key) ?? 'none',
-                  priority: entry.effectivePriority ?? 'normal',
-                  pinned: entry.pinned ?? false,
-                  description: entry.description,
-                };
-              }
-            }
-          } else {
-            notFound.push(key);
+      return {
+        entries: entries.map((e) => ({
+          key: e.key,
+          description: e.description,
+          priority: e.effectivePriority,
+          tier: getTierFromKey(e.key) ?? 'none',
+          pinned: e.pinned,
+        })),
+        count: entries.length,
+        tierFilter: tierFilter ?? 'all',
+      };
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: 'small' },
+    describeCall: (args) => {
+      const tier = args.tier as string | undefined;
+      return tier ? `tier:${tier}` : 'all';
+    },
+  };
+}
+
+/**
+ * Create memory_cleanup_raw tool
+ */
+export function createMemoryCleanupRawTool(): ToolFunction {
+  return {
+    definition: memoryCleanupRawDefinition,
+    execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError('memory_cleanup_raw', 'Memory tools require TaskAgent context');
+      }
+
+      const keys = args.keys as string[];
+      let deletedCount = 0;
+      const skipped: string[] = [];
+
+      for (const key of keys) {
+        const tier = getTierFromKey(key);
+        if (tier === 'raw') {
+          const exists = await context.memory.has(key);
+          if (exists) {
+            await context.memory.delete(key);
+            deletedCount++;
           }
+        } else {
+          skipped.push(key);
         }
+      }
 
-        return {
-          entries: results,
-          count: Object.keys(results).length,
-          ...(includeMetadata ? { metadata } : {}),
-          ...(notFound.length > 0 ? { notFound } : {}),
-          filter: pattern ? `pattern:${pattern}` : tier ? `tier:${tier}` : keys ? `keys:${keys.length}` : 'all',
-        };
-      },
-      idempotency: { safe: true },
-      output: { expectedSize: 'variable' },
-      describeCall: (args) => {
-        const pattern = args.pattern as string | undefined;
-        const keys = args.keys as string[] | undefined;
-        const tier = args.tier as string | undefined;
-        if (pattern) return `pattern:${pattern}`;
-        if (tier) return `tier:${tier}`;
-        if (keys) return `${keys.length} keys`;
-        return 'all';
-      },
+      return {
+        success: true,
+        deleted: deletedCount,
+        skipped: skipped.length > 0 ? skipped : undefined,
+        skippedReason: skipped.length > 0 ? 'Not raw tier entries' : undefined,
+      };
     },
+    idempotency: { safe: true },
+    output: { expectedSize: 'small' },
+    describeCall: (args) => `${(args.keys as string[]).length} keys`,
+  };
+}
+
+/**
+ * Create memory_retrieve_batch tool
+ */
+export function createMemoryRetrieveBatchTool(): ToolFunction {
+  return {
+    definition: memoryRetrieveBatchDefinition,
+    execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+      if (!context || !context.memory) {
+        throw new ToolExecutionError('memory_retrieve_batch', 'Memory tools require TaskAgent context');
+      }
+
+      const pattern = args.pattern as string | undefined;
+      const keys = args.keys as string[] | undefined;
+      const tier = args.tier as MemoryTier | undefined;
+      const includeMetadata = args.includeMetadata as boolean | undefined;
+
+      // Get all entries to match against
+      const allEntries = await context.memory.list();
+
+      // Determine which keys to retrieve
+      let keysToRetrieve: string[] = [];
+
+      if (keys && keys.length > 0) {
+        // Explicit keys provided
+        keysToRetrieve = keys;
+      } else if (pattern) {
+        // Pattern matching
+        keysToRetrieve = allEntries
+          .filter((e) => matchPattern(e.key, pattern))
+          .map((e) => e.key);
+      } else if (tier) {
+        // Tier filter
+        const prefix = `${tier}.`;
+        keysToRetrieve = allEntries
+          .filter((e) => e.key.startsWith(prefix))
+          .map((e) => e.key);
+      } else {
+        // No filter - return all
+        keysToRetrieve = allEntries.map((e) => e.key);
+      }
+
+      // Retrieve all values
+      const results: Record<string, unknown> = {};
+      const metadata: Record<string, { tier: string; priority: string; pinned: boolean; description: string }> = {};
+      const notFound: string[] = [];
+
+      for (const key of keysToRetrieve) {
+        const value = await context.memory.get(key);
+        if (value !== undefined) {
+          results[key] = value;
+
+          if (includeMetadata) {
+            const entry = allEntries.find((e) => e.key === key);
+            if (entry) {
+              metadata[key] = {
+                tier: getTierFromKey(key) ?? 'none',
+                priority: entry.effectivePriority ?? 'normal',
+                pinned: entry.pinned ?? false,
+                description: entry.description,
+              };
+            }
+          }
+        } else {
+          notFound.push(key);
+        }
+      }
+
+      return {
+        entries: results,
+        count: Object.keys(results).length,
+        ...(includeMetadata ? { metadata } : {}),
+        ...(notFound.length > 0 ? { notFound } : {}),
+        filter: pattern ? `pattern:${pattern}` : tier ? `tier:${tier}` : keys ? `keys:${keys.length}` : 'all',
+      };
+    },
+    idempotency: { safe: true },
+    output: { expectedSize: 'variable' },
+    describeCall: (args) => {
+      const pattern = args.pattern as string | undefined;
+      const keys = args.keys as string[] | undefined;
+      const tier = args.tier as string | undefined;
+      if (pattern) return `pattern:${pattern}`;
+      if (tier) return `tier:${tier}`;
+      if (keys) return `${keys.length} keys`;
+      return 'all';
+    },
+  };
+}
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+/**
+ * Create all memory tools (convenience function for backward compatibility)
+ */
+export function createMemoryTools(): ToolFunction[] {
+  return [
+    createMemoryStoreTool(),
+    createMemoryRetrieveTool(),
+    createMemoryDeleteTool(),
+    createMemoryListTool(),
+    createMemoryCleanupRawTool(),
+    createMemoryRetrieveBatchTool(),
   ];
 }

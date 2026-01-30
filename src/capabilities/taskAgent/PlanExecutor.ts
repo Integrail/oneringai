@@ -131,15 +131,17 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements ID
 
   /**
    * Get memory from AgentContext (single source of truth)
+   * May be null if memory feature is disabled
    */
-  private get memory(): WorkingMemory {
+  private get memory(): WorkingMemory | null {
     return this.agentContext.memory;
   }
 
   /**
    * Get idempotency cache from AgentContext (single source of truth)
+   * May be null if memory feature is disabled
    */
-  private get idempotencyCache(): IdempotencyCache {
+  private get idempotencyCache(): IdempotencyCache | null {
     return this.agentContext.cache;
   }
 
@@ -163,8 +165,14 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements ID
 
   /**
    * Notify memory about task completion and detect stale entries
+   * No-op if memory feature is disabled
    */
   private async notifyMemoryOfTaskCompletion(plan: Plan, taskId: string): Promise<void> {
+    // Skip if memory feature is disabled
+    if (!this.memory) {
+      return;
+    }
+
     const taskStates = this.buildTaskStatesMap(plan);
     const staleEntries = await this.memory.onTaskComplete(taskId, taskStates);
 
@@ -323,9 +331,11 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements ID
     if (!task.condition) {
       return true;
     }
-    return evaluateCondition(task.condition, {
-      get: (key: string) => this.memory.retrieve(key),
-    });
+    // If memory is disabled, condition values are always undefined
+    const getter = this.memory
+      ? (key: string) => this.memory!.retrieve(key)
+      : (_key: string) => Promise.resolve(undefined);
+    return evaluateCondition(task.condition, { get: getter });
   }
 
   /**
@@ -674,7 +684,7 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements ID
     }
 
     // First, check if a custom validateTask hook is provided
-    if (this.hooks?.validateTask) {
+    if (this.hooks?.validateTask && this.memory) {
       const taskResult = { success: true, output };
       const hookResult = await this.hooks.validateTask(task, taskResult, this.memory);
 
@@ -703,7 +713,8 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements ID
     if (task.validation.requiredMemoryKeys && task.validation.requiredMemoryKeys.length > 0) {
       const missingKeys: string[] = [];
       for (const key of task.validation.requiredMemoryKeys) {
-        const value = await this.memory.retrieve(key);
+        // If memory is disabled, treat all keys as missing
+        const value = this.memory ? await this.memory.retrieve(key) : undefined;
         if (value === undefined) {
           missingKeys.push(key);
         }
@@ -931,8 +942,9 @@ Be honest and thorough in your evaluation. A score of 100 means all criteria are
 
   /**
    * Get idempotency cache
+   * Returns null if memory feature is disabled
    */
-  getIdempotencyCache(): IdempotencyCache {
+  getIdempotencyCache(): IdempotencyCache | null {
     return this.idempotencyCache;
   }
 

@@ -148,8 +148,11 @@ export class ResearchAgent extends TaskAgent {
       ...config.autoSpill,
     };
 
-    this.autoSpillPlugin = new AutoSpillPlugin(this._agentContext.memory, autoSpillConfig);
-    this._agentContext.registerPlugin(this.autoSpillPlugin);
+    // Only set up auto-spill if memory feature is enabled
+    if (this._agentContext.memory) {
+      this.autoSpillPlugin = new AutoSpillPlugin(this._agentContext.memory, autoSpillConfig);
+      this._agentContext.registerPlugin(this.autoSpillPlugin);
+    }
 
     // Wire up research hooks to auto-memory management
     this.setupAutoMemoryManagement();
@@ -281,14 +284,20 @@ export class ResearchAgent extends TaskAgent {
 
   /**
    * Store a research finding in memory
+   * Requires memory feature to be enabled
    */
   async storeFinding(
     key: string,
     finding: ResearchFinding
   ): Promise<void> {
+    const memory = this._agentContext.memory;
+    if (!memory) {
+      throw new Error('ResearchAgent.storeFinding requires memory feature to be enabled');
+    }
+
     const fullKey = addTierPrefix(key, 'findings');
 
-    await this._agentContext.memory.storeFindings(
+    await memory.storeFindings(
       key,
       `${finding.source}: ${finding.summary.slice(0, 100)}...`,
       finding
@@ -302,9 +311,15 @@ export class ResearchAgent extends TaskAgent {
 
   /**
    * Get all stored findings
+   * Returns empty object if memory feature is disabled
    */
   async getFindings(): Promise<Record<string, ResearchFinding>> {
-    const entries = await this._agentContext.memory.getByTier('findings');
+    const memory = this._agentContext.memory;
+    if (!memory) {
+      return {};
+    }
+
+    const entries = await memory.getByTier('findings');
     const findings: Record<string, ResearchFinding> = {};
 
     for (const entry of entries) {
@@ -396,13 +411,15 @@ export class ResearchAgent extends TaskAgent {
           resultsProcessed++;
 
           if (content.success) {
-            // Store in raw tier
-            const rawKey = `${resultSet.source}_${result.id}`;
-            await this._agentContext.memory.storeRaw(
-              rawKey,
-              `Raw content from ${resultSet.source}: ${result.title}`,
-              content.content
-            );
+            // Store in raw tier if memory is enabled
+            if (this._agentContext.memory) {
+              const rawKey = `${resultSet.source}_${result.id}`;
+              await this._agentContext.memory.storeRaw(
+                rawKey,
+                `Raw content from ${resultSet.source}: ${result.title}`,
+                content.content
+              );
+            }
           }
 
           // Emit progress

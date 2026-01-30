@@ -2,31 +2,24 @@
  * Context inspection tools for TaskAgent
  *
  * These tools allow agents to inspect their own context state:
- * - context_inspect: Get context budget and utilization
- * - context_breakdown: Get detailed token breakdown
- * - cache_stats: Get idempotency cache statistics
- * - memory_stats: Get working memory statistics
+ * - context_inspect: Get context budget and utilization (always available)
+ * - context_breakdown: Get detailed token breakdown (always available)
+ * - cache_stats: Get idempotency cache statistics (requires memory feature)
+ * - memory_stats: Get working memory statistics (requires memory feature)
  */
 
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
 
-/**
- * Create context inspection tools
- */
-export function createContextTools(): ToolFunction[] {
-  return [
-    createContextInspectTool(),
-    createContextBreakdownTool(),
-    createCacheStatsTool(),
-    createMemoryStatsTool(),
-  ];
-}
+// ============================================================================
+// Individual Tool Creators - Exported for feature-aware tool registration
+// ============================================================================
 
 /**
  * context_inspect tool - Get context budget and utilization
+ * Always available (basic introspection)
  */
-function createContextInspectTool(): ToolFunction {
+export function createContextInspectTool(): ToolFunction {
   return {
     definition: {
       type: 'function',
@@ -80,8 +73,9 @@ function createContextInspectTool(): ToolFunction {
 
 /**
  * context_breakdown tool - Get detailed token breakdown by component
+ * Always available (basic introspection)
  */
-function createContextBreakdownTool(): ToolFunction {
+export function createContextBreakdownTool(): ToolFunction {
   return {
     definition: {
       type: 'function',
@@ -133,8 +127,9 @@ function createContextBreakdownTool(): ToolFunction {
 
 /**
  * cache_stats tool - Get idempotency cache statistics
+ * Requires memory feature (memory feature includes cache)
  */
-function createCacheStatsTool(): ToolFunction {
+export function createCacheStatsTool(): ToolFunction {
   return {
     definition: {
       type: 'function',
@@ -182,8 +177,9 @@ function createCacheStatsTool(): ToolFunction {
 
 /**
  * memory_stats tool - Get working memory statistics
+ * Requires memory feature
  */
-function createMemoryStatsTool(): ToolFunction {
+export function createMemoryStatsTool(): ToolFunction {
   return {
     definition: {
       type: 'function',
@@ -227,4 +223,21 @@ function createMemoryStatsTool(): ToolFunction {
       safe: true, // Read-only operation
     },
   };
+}
+
+// ============================================================================
+// Convenience Functions
+// ============================================================================
+
+/**
+ * Create all context inspection tools (backward compatibility)
+ * Note: For feature-aware tool registration, use getAgentContextTools() instead
+ */
+export function createContextTools(): ToolFunction[] {
+  return [
+    createContextInspectTool(),
+    createContextBreakdownTool(),
+    createCacheStatsTool(),
+    createMemoryStatsTool(),
+  ];
 }

@@ -23,6 +23,11 @@ import type { SerializedToolState } from './ToolManager.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
 import { AgentContext } from './AgentContext.js';
 import type { AgentContextConfig } from './AgentContext.js';
+import { createProvider } from './createProvider.js';
+import type { ITextProvider } from '../domain/interfaces/ITextProvider.js';
+import type { LLMResponse } from '../domain/entities/Response.js';
+import type { InputItem } from '../domain/entities/Message.js';
+import type { StreamEvent } from '../domain/entities/StreamEvent.js';
 
 /**
  * Options for tool registration
@@ -218,6 +223,32 @@ export interface BaseAgentEvents {
 }
 
 /**
+ * Options for direct LLM calls (bypassing AgentContext).
+ */
+export interface DirectCallOptions {
+  /** System instructions (optional) */
+  instructions?: string;
+
+  /** Include registered tools in the call. Default: false */
+  includeTools?: boolean;
+
+  /** Temperature for generation */
+  temperature?: number;
+
+  /** Maximum output tokens */
+  maxOutputTokens?: number;
+
+  /** Response format (text, json_object, json_schema) */
+  responseFormat?: {
+    type: 'text' | 'json_object' | 'json_schema';
+    json_schema?: unknown;
+  };
+
+  /** Vendor-specific options */
+  vendorOptions?: Record<string, unknown>;
+}
+
+/**
  * Abstract base class for all agent types.
  *
  * @internal This class is not exported in the public API.
@@ -246,6 +277,9 @@ export abstract class BaseAgent<
   protected _cleanupCallbacks: Array<() => void | Promise<void>> = [];
   protected _logger: FrameworkLogger;
   protected _lifecycleHooks: AgentLifecycleHooks;
+
+  // Lazy-initialized provider for direct calls
+  private _directProvider: ITextProvider | null = null;
 
   // ===== Constructor =====
 
@@ -655,6 +689,146 @@ export abstract class BaseAgent<
    */
   protected getEnabledToolDefinitions(): import('../domain/entities/Tool.js').FunctionToolDefinition[] {
     return this._agentContext.tools.getEnabled().map((t) => t.definition);
+  }
+
+  // ===== Direct LLM Access (Bypasses AgentContext) =====
+
+  /**
+   * Get or create the provider for direct calls.
+   * Lazily initialized to avoid creating provider if not used.
+   */
+  private getDirectProvider(): ITextProvider {
+    if (!this._directProvider) {
+      this._directProvider = createProvider(this.connector);
+    }
+    return this._directProvider;
+  }
+
+  /**
+   * Make a direct LLM call bypassing all context management.
+   *
+   * This method:
+   * - Does NOT track messages in history
+   * - Does NOT use AgentContext features (memory, cache, etc.)
+   * - Does NOT prepare context or run compaction
+   * - Does NOT go through the agentic loop (no tool execution)
+   *
+   * Use this for simple, stateless interactions where you want raw LLM access
+   * without the overhead of context management.
+   *
+   * @param input - Text string or array of InputItems (supports multimodal: text + images)
+   * @param options - Optional configuration for the call
+   * @returns Raw LLM response
+   *
+   * @example
+   * ```typescript
+   * // Simple text call
+   * const response = await agent.runDirect('What is 2 + 2?');
+   * console.log(response.output_text);
+   *
+   * // With options
+   * const response = await agent.runDirect('Summarize this', {
+   *   instructions: 'Be concise',
+   *   temperature: 0.5,
+   * });
+   *
+   * // Multimodal (text + image)
+   * const response = await agent.runDirect([
+   *   { type: 'message', role: 'user', content: [
+   *     { type: 'input_text', text: 'What is in this image?' },
+   *     { type: 'input_image', image_url: 'https://...' }
+   *   ]}
+   * ]);
+   *
+   * // With tools (single call, no loop)
+   * const response = await agent.runDirect('Get the weather', {
+   *   includeTools: true,
+   * });
+   * // Note: If the LLM returns a tool call, you must handle it yourself
+   * ```
+   */
+  async runDirect(
+    input: string | InputItem[],
+    options: DirectCallOptions = {}
+  ): Promise<LLMResponse> {
+    if (this._isDestroyed) {
+      throw new Error('Agent has been destroyed');
+    }
+
+    const provider = this.getDirectProvider();
+
+    const generateOptions = {
+      model: this.model,
+      input,
+      instructions: options.instructions,
+      tools: options.includeTools ? this.getEnabledToolDefinitions() : undefined,
+      temperature: options.temperature,
+      max_output_tokens: options.maxOutputTokens,
+      response_format: options.responseFormat,
+      vendorOptions: options.vendorOptions,
+    };
+
+    this._logger.debug({ inputType: typeof input }, 'runDirect called');
+
+    try {
+      const response = await provider.generate(generateOptions);
+      this._logger.debug({ outputLength: response.output_text?.length }, 'runDirect completed');
+      return response;
+    } catch (error) {
+      this._logger.error({ error: (error as Error).message }, 'runDirect failed');
+      throw error;
+    }
+  }
+
+  /**
+   * Stream a direct LLM call bypassing all context management.
+   *
+   * Same as runDirect but returns a stream of events instead of waiting
+   * for the complete response. Useful for real-time output display.
+   *
+   * @param input - Text string or array of InputItems (supports multimodal)
+   * @param options - Optional configuration for the call
+   * @returns Async iterator of stream events
+   *
+   * @example
+   * ```typescript
+   * for await (const event of agent.streamDirect('Tell me a story')) {
+   *   if (event.type === 'output_text_delta') {
+   *     process.stdout.write(event.delta);
+   *   }
+   * }
+   * ```
+   */
+  async *streamDirect(
+    input: string | InputItem[],
+    options: DirectCallOptions = {}
+  ): AsyncIterableIterator<StreamEvent> {
+    if (this._isDestroyed) {
+      throw new Error('Agent has been destroyed');
+    }
+
+    const provider = this.getDirectProvider();
+
+    const generateOptions = {
+      model: this.model,
+      input,
+      instructions: options.instructions,
+      tools: options.includeTools ? this.getEnabledToolDefinitions() : undefined,
+      temperature: options.temperature,
+      max_output_tokens: options.maxOutputTokens,
+      response_format: options.responseFormat,
+      vendorOptions: options.vendorOptions,
+    };
+
+    this._logger.debug({ inputType: typeof input }, 'streamDirect called');
+
+    try {
+      yield* provider.streamGenerate(generateOptions);
+      this._logger.debug('streamDirect completed');
+    } catch (error) {
+      this._logger.error({ error: (error as Error).message }, 'streamDirect failed');
+      throw error;
+    }
   }
 
   // ===== Lifecycle Hooks =====
