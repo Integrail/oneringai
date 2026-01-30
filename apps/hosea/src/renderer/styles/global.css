@@ -8,6 +8,7 @@
 @import './pages.css';
 @import './components.css';
 @import './chat.css';
+@import './markdown.css';
 @import './internals.css';
 
 /* Base Reset */

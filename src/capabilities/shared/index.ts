@@ -13,4 +13,7 @@ export {
   toConnectorOptions,
   buildEndpointWithQuery,
   resolveConnector,
+  // Service type auto-detection (for external API-dependent tools)
+  findConnectorByServiceTypes,
+  listConnectorsByServiceTypes,
 } from './types.js';

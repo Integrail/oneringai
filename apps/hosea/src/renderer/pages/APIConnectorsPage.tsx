@@ -36,7 +36,7 @@ interface APIConnector {
   updatedAt: number;
 }
 
-// Service type metadata
+// Service type metadata with auth config
 const SERVICE_TYPES: Record<
   string,
   {
@@ -46,6 +46,11 @@ const SERVICE_TYPES: Record<
     defaultBaseURL?: string;
     docsUrl?: string;
     icon: React.ReactNode;
+    // Auth config: how to send the API key
+    authConfig: {
+      headerName: string;
+      headerPrefix: string; // Empty string for no prefix
+    };
   }
 > = {
   serper: {
@@ -55,6 +60,7 @@ const SERVICE_TYPES: Record<
     defaultBaseURL: 'https://google.serper.dev',
     docsUrl: 'https://serper.dev',
     icon: <Search size={20} />,
+    authConfig: { headerName: 'X-API-KEY', headerPrefix: '' },
   },
   'brave-search': {
     name: 'Brave Search',
@@ -63,6 +69,7 @@ const SERVICE_TYPES: Record<
     defaultBaseURL: 'https://api.search.brave.com/res/v1',
     docsUrl: 'https://brave.com/search/api/',
     icon: <Search size={20} />,
+    authConfig: { headerName: 'X-Subscription-Token', headerPrefix: '' },
   },
   tavily: {
     name: 'Tavily',
@@ -71,6 +78,8 @@ const SERVICE_TYPES: Record<
     defaultBaseURL: 'https://api.tavily.com',
     docsUrl: 'https://tavily.com',
     icon: <Search size={20} />,
+    // Tavily uses api_key in the request body, not header
+    authConfig: { headerName: 'Authorization', headerPrefix: 'Bearer' },
   },
   'rapidapi-websearch': {
     name: 'RapidAPI Web Search',
@@ -79,6 +88,7 @@ const SERVICE_TYPES: Record<
     defaultBaseURL: 'https://real-time-web-search.p.rapidapi.com',
     docsUrl: 'https://rapidapi.com',
     icon: <Search size={20} />,
+    authConfig: { headerName: 'X-RapidAPI-Key', headerPrefix: '' },
   },
   zenrows: {
     name: 'ZenRows',
@@ -87,6 +97,8 @@ const SERVICE_TYPES: Record<
     defaultBaseURL: 'https://api.zenrows.com/v1',
     docsUrl: 'https://zenrows.com',
     icon: <Globe size={20} />,
+    // ZenRows uses apikey query param, but we'll use Authorization header for consistency
+    authConfig: { headerName: 'Authorization', headerPrefix: 'Bearer' },
   },
 };
 
@@ -99,7 +111,7 @@ const SERVICE_CATEGORIES = Object.entries(SERVICE_TYPES).reduce(
     acc[value.category].push({ key, ...value });
     return acc;
   },
-  {} as Record<string, Array<{ key: string; name: string; description: string; defaultBaseURL?: string; docsUrl?: string; icon: React.ReactNode }>>
+  {} as Record<string, Array<{ key: string; name: string; description: string; defaultBaseURL?: string; docsUrl?: string; icon: React.ReactNode; authConfig: { headerName: string; headerPrefix: string } }>>
 );
 
 export function APIConnectorsPage(): React.ReactElement {
@@ -151,13 +163,16 @@ export function APIConnectorsPage(): React.ReactElement {
     setFormError(null);
 
     try {
+      const serviceConfig = SERVICE_TYPES[selectedServiceType];
       const result = await window.hosea.apiConnector.add({
         name: formName.trim(),
         serviceType: selectedServiceType,
-        displayName: SERVICE_TYPES[selectedServiceType]?.name,
+        displayName: serviceConfig?.name,
         auth: {
           type: 'api_key',
           apiKey: formApiKey.trim(),
+          headerName: serviceConfig?.authConfig.headerName,
+          headerPrefix: serviceConfig?.authConfig.headerPrefix,
         },
         baseURL: formBaseURL.trim() || undefined,
       });
@@ -198,10 +213,13 @@ export function APIConnectorsPage(): React.ReactElement {
     setFormError(null);
 
     try {
+      const serviceConfig = SERVICE_TYPES[editingConnector.serviceType];
       const result = await window.hosea.apiConnector.update(editingConnector.name, {
         auth: {
           type: 'api_key',
           apiKey: formApiKey.trim(),
+          headerName: serviceConfig?.authConfig.headerName || editingConnector.auth.headerName,
+          headerPrefix: serviceConfig?.authConfig.headerPrefix ?? editingConnector.auth.headerPrefix,
         },
         baseURL: formBaseURL.trim() || undefined,
       });

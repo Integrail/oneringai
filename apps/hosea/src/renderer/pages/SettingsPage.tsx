@@ -4,10 +4,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, Form, Nav, ButtonGroup, Button, Row, Col } from 'react-bootstrap';
-import { Monitor, Palette, Bell, Shield, Info } from 'lucide-react';
+import { Monitor, Palette, Bell, Shield, Info, Code } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 
+type LogLevel = 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent';
+
 interface AppConfig {
+  logLevel: LogLevel;
   ui: {
     theme: 'light' | 'dark' | 'system';
     fontSize: number;
@@ -16,6 +19,7 @@ interface AppConfig {
 }
 
 const defaultConfig: AppConfig = {
+  logLevel: 'info',
   ui: {
     theme: 'system',
     fontSize: 14,
@@ -46,6 +50,7 @@ export function SettingsPage(): React.ReactElement {
   const sections = [
     { id: 'appearance', label: 'Appearance', icon: <Palette size={18} /> },
     { id: 'behavior', label: 'Behavior', icon: <Monitor size={18} /> },
+    { id: 'developer', label: 'Developer', icon: <Code size={18} /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
     { id: 'privacy', label: 'Privacy', icon: <Shield size={18} /> },
     { id: 'about', label: 'About', icon: <Info size={18} /> },
@@ -137,6 +142,38 @@ export function SettingsPage(): React.ReactElement {
                     <Form.Text className="text-muted">
                       Show AI responses as they are generated
                     </Form.Text>
+                  </Card.Body>
+                </Card>
+              </div>
+            )}
+
+            {activeSection === 'developer' && (
+              <div>
+                <h3 className="h5 mb-1">Developer Settings</h3>
+                <p className="text-muted mb-4">Options for debugging and development</p>
+
+                <Card>
+                  <Card.Body>
+                    <Form.Group className="mb-4">
+                      <Form.Label>Log Level</Form.Label>
+                      <Form.Select
+                        value={config.logLevel}
+                        onChange={(e) =>
+                          handleConfigChange('logLevel', e.target.value as LogLevel)
+                        }
+                        style={{ maxWidth: 200 }}
+                      >
+                        <option value="trace">Trace</option>
+                        <option value="debug">Debug</option>
+                        <option value="info">Info</option>
+                        <option value="warn">Warn</option>
+                        <option value="error">Error</option>
+                        <option value="silent">Silent</option>
+                      </Form.Select>
+                      <Form.Text className="text-muted">
+                        Set the verbosity of logs in the terminal. Debug level is recommended during development.
+                      </Form.Text>
+                    </Form.Group>
                   </Card.Body>
                 </Card>
               </div>

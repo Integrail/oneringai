@@ -20,6 +20,9 @@ import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { load } from 'cheerio';
+import TurndownService from 'turndown';
+import { Readability } from '@mozilla/readability';
+import { JSDOM } from 'jsdom';
 import * as vm from 'vm';
 
 var __create = Object.create;
@@ -9855,10 +9858,61 @@ var AgentContext = class _AgentContext extends EventEmitter {
   // History Management (Built-in)
   // ============================================================================
   /**
-   * Add a message to history
-   * Returns null if history feature is disabled
+   * Add a message to history with automatic capacity management.
+   *
+   * This async version checks if adding the message would exceed context budget
+   * and triggers compaction BEFORE adding if needed. Use this for large content
+   * like tool outputs.
+   *
+   * @param role - Message role (user, assistant, system, tool)
+   * @param content - Message content
+   * @param metadata - Optional metadata
+   * @returns The added message, or null if history feature is disabled
+   *
+   * @example
+   * ```typescript
+   * // For large tool outputs, capacity is checked automatically
+   * await ctx.addMessage('tool', largeWebFetchResult);
+   *
+   * // For small messages, same API but less overhead
+   * await ctx.addMessage('user', 'Hello');
+   * ```
    */
-  addMessage(role, content, metadata) {
+  async addMessage(role, content, metadata) {
+    if (!this._historyEnabled) {
+      return null;
+    }
+    const estimatedTokens = this._estimator.estimateTokens(content);
+    if (estimatedTokens > 1e3) {
+      const hasCapacity = await this.ensureCapacity(estimatedTokens);
+      if (!hasCapacity) {
+        this.emit("budget:critical", { budget: this._lastBudget });
+      }
+    }
+    const message = {
+      id: this.generateId(),
+      role,
+      content,
+      timestamp: Date.now(),
+      metadata
+    };
+    this._history.push(message);
+    this.emit("message:added", { message });
+    return message;
+  }
+  /**
+   * Add a message to history synchronously (without capacity checking).
+   *
+   * Use this when you need synchronous behavior or for small messages where
+   * capacity checking overhead is not worth it. For large content (tool outputs,
+   * fetched documents), prefer the async `addMessage()` instead.
+   *
+   * @param role - Message role (user, assistant, system, tool)
+   * @param content - Message content
+   * @param metadata - Optional metadata
+   * @returns The added message, or null if history feature is disabled
+   */
+  addMessageSync(role, content, metadata) {
     if (!this._historyEnabled) {
       return null;
     }
@@ -9872,6 +9926,37 @@ var AgentContext = class _AgentContext extends EventEmitter {
     this._history.push(message);
     this.emit("message:added", { message });
     return message;
+  }
+  /**
+   * Add a tool result to context with automatic capacity management.
+   *
+   * This is a convenience method for adding tool outputs. It:
+   * - Stringifies non-string results
+   * - Checks capacity and triggers compaction if needed
+   * - Adds as a 'tool' role message
+   *
+   * Use this for large tool outputs like web_fetch results, file contents, etc.
+   *
+   * @param result - The tool result (will be stringified for token estimation)
+   * @param metadata - Optional metadata (e.g., tool name, duration)
+   * @returns The added message, or null if history feature is disabled
+   *
+   * @example
+   * ```typescript
+   * // Add large web fetch result
+   * const html = await webFetch('https://example.com');
+   * await ctx.addToolResult(html, { tool: 'web_fetch', url: 'https://example.com' });
+   *
+   * // Add structured data
+   * await ctx.addToolResult({ items: [...], count: 100 }, { tool: 'search' });
+   * ```
+   */
+  async addToolResult(result, metadata) {
+    if (!this._historyEnabled) {
+      return null;
+    }
+    const content = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+    return this.addMessage("tool", content, metadata);
   }
   /**
    * Get all history messages
@@ -10115,6 +10200,58 @@ var AgentContext = class _AgentContext extends EventEmitter {
    */
   getLastBudget() {
     return this._lastBudget;
+  }
+  // ============================================================================
+  // Auto-Compaction Guard
+  // ============================================================================
+  /**
+   * Ensure there's enough capacity for new content.
+   * If adding the estimated tokens would exceed budget, triggers compaction first.
+   *
+   * This method enables proactive compaction BEFORE content is added, preventing
+   * context overflow. It uses the configured strategy to determine when to compact.
+   *
+   * @param estimatedTokens - Estimated tokens of content to be added
+   * @returns true if capacity is available (after potential compaction), false if cannot make room
+   *
+   * @example
+   * ```typescript
+   * const tokens = ctx.estimateTokens(largeToolOutput);
+   * const hasRoom = await ctx.ensureCapacity(tokens);
+   * if (hasRoom) {
+   *   await ctx.addMessage('tool', largeToolOutput);
+   * } else {
+   *   // Handle overflow - truncate or summarize
+   * }
+   * ```
+   */
+  async ensureCapacity(estimatedTokens) {
+    const components = await this.buildComponents();
+    const budget = this.calculateBudget(components);
+    const projectedUsed = budget.used + estimatedTokens;
+    const availableForContent = budget.total - budget.reserved;
+    const projectedUtilization = projectedUsed / availableForContent;
+    const projectedBudget = {
+      ...budget,
+      used: projectedUsed,
+      available: budget.available - estimatedTokens,
+      utilizationPercent: projectedUtilization * 100,
+      status: projectedUtilization >= 0.9 ? "critical" : projectedUtilization >= 0.75 ? "warning" : "ok"
+    };
+    const needsCompaction = this._strategy.shouldCompact(projectedBudget, {
+      ...DEFAULT_CONTEXT_CONFIG,
+      maxContextTokens: this._maxContextTokens,
+      responseReserve: this._config.responseReserve
+    });
+    if (!needsCompaction) {
+      return true;
+    }
+    this.emit("budget:warning", { budget });
+    await this.doCompaction(components, budget);
+    const newComponents = await this.buildComponents();
+    const newBudget = this.calculateBudget(newComponents);
+    this._lastBudget = newBudget;
+    return newBudget.available >= estimatedTokens;
   }
   /**
    * Get comprehensive metrics
@@ -15817,7 +15954,7 @@ var Agent = class _Agent extends BaseAgent {
     });
     const startTime = Date.now();
     const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
-    this._agentContext.addMessage("user", userContent);
+    this._agentContext.addMessageSync("user", userContent);
     this._agentContext.setCurrentInput(userContent);
     try {
       const tools = this.getEnabledToolDefinitions();
@@ -15839,7 +15976,7 @@ var Agent = class _Agent extends BaseAgent {
       const response = await this.agenticLoop.execute(loopConfig);
       const duration = Date.now() - startTime;
       if (response.output_text) {
-        this._agentContext.addMessage("assistant", response.output_text);
+        await this._agentContext.addMessage("assistant", response.output_text);
       }
       this._logger.info({ duration }, "Agent run completed");
       metrics.timing("agent.run.duration", duration, {
@@ -15883,7 +16020,7 @@ var Agent = class _Agent extends BaseAgent {
     });
     const startTime = Date.now();
     const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
-    this._agentContext.addMessage("user", userContent);
+    this._agentContext.addMessageSync("user", userContent);
     this._agentContext.setCurrentInput(userContent);
     let accumulatedResponse = "";
     try {
@@ -15910,7 +16047,7 @@ var Agent = class _Agent extends BaseAgent {
         yield event;
       }
       if (accumulatedResponse) {
-        this._agentContext.addMessage("assistant", accumulatedResponse);
+        await this._agentContext.addMessage("assistant", accumulatedResponse);
       }
       const duration = Date.now() - startTime;
       this._logger.info({ duration }, "Agent stream completed");
@@ -21276,6 +21413,37 @@ function resolveConnector(connectorOrName) {
   }
   return connectorOrName;
 }
+function findConnectorByServiceTypes(serviceTypes) {
+  const { Connector: ConnectorClass } = (init_Connector(), __toCommonJS(Connector_exports));
+  const allConnectors = ConnectorClass.list();
+  for (const serviceType of serviceTypes) {
+    for (const name of allConnectors) {
+      try {
+        const connector = ConnectorClass.get(name);
+        if (connector?.serviceType === serviceType) {
+          return connector;
+        }
+      } catch {
+      }
+    }
+  }
+  return null;
+}
+function listConnectorsByServiceTypes(serviceTypes) {
+  const { Connector: ConnectorClass } = (init_Connector(), __toCommonJS(Connector_exports));
+  const allConnectors = ConnectorClass.list();
+  const matching = [];
+  for (const name of allConnectors) {
+    try {
+      const connector = ConnectorClass.get(name);
+      if (connector?.serviceType && serviceTypes.includes(connector.serviceType)) {
+        matching.push(name);
+      }
+    } catch {
+    }
+  }
+  return matching;
+}
 
 // src/capabilities/search/providers/SerperProvider.ts
 var SerperProvider = class {
@@ -23216,7 +23384,7 @@ var PlanExecutor = class extends EventEmitter {
     this.planPlugin.setPlan(plan);
     this.agentContext.setCurrentInput(taskPrompt);
     await this.agentContext.prepare();
-    this.agentContext.addMessage("user", taskPrompt);
+    this.agentContext.addMessageSync("user", taskPrompt);
     this.emit("llm:call", { iteration: task.attempts });
     let messages = [{ role: "user", content: taskPrompt }];
     if (this.hooks?.beforeLLMCall) {
@@ -23259,7 +23427,7 @@ var PlanExecutor = class extends EventEmitter {
     if (this.currentState) {
       await this.checkpointManager.onLLMCall(this.currentState);
     }
-    this.agentContext.addMessage("assistant", response.output_text || "");
+    await this.agentContext.addMessage("assistant", response.output_text || "");
     const validationResult = await this.validateTaskCompletion(task, response.output_text || "");
     task.metadata = task.metadata || {};
     task.metadata.validationResult = validationResult;
@@ -30778,26 +30946,68 @@ function detectContentQuality(html, text, $) {
     issues
   };
 }
-function extractCleanText($) {
-  $("script, style, noscript, iframe, nav, footer, header, aside").remove();
-  $('[class*="ad-"], [class*="advertisement"], [id*="ad-"]').remove();
-  $('[class*="cookie"], [class*="gdpr"]').remove();
-  const mainSelectors = [
-    "main",
-    "article",
-    '[role="main"]',
-    ".content",
-    "#content",
-    ".post",
-    ".article"
-  ];
-  for (const selector of mainSelectors) {
-    const mainContent = $(selector).text().trim();
-    if (mainContent.length > 200) {
-      return mainContent;
+function htmlToMarkdown(html, url, maxLength = 5e4) {
+  const dom = new JSDOM(html, { url });
+  const document = dom.window.document;
+  let title = document.title || "";
+  let byline;
+  let excerpt;
+  let contentHtml = html;
+  let wasReadabilityUsed = false;
+  try {
+    const clonedDoc = document.cloneNode(true);
+    const reader = new Readability(clonedDoc);
+    const article = reader.parse();
+    if (article && article.content && article.content.length > 100) {
+      contentHtml = article.content;
+      title = article.title || title;
+      byline = article.byline || void 0;
+      excerpt = article.excerpt || void 0;
+      wasReadabilityUsed = true;
     }
+  } catch {
   }
-  return $("body").text().trim();
+  const turndown = new TurndownService({
+    headingStyle: "atx",
+    codeBlockStyle: "fenced",
+    bulletListMarker: "-",
+    emDelimiter: "_"
+  });
+  turndown.remove(["script", "style", "nav", "footer", "aside", "iframe", "noscript"]);
+  turndown.addRule("pre", {
+    filter: ["pre"],
+    replacement: (content, node) => {
+      const element = node;
+      const code = element.querySelector?.("code");
+      const lang = code?.className?.match(/language-(\w+)/)?.[1] || "";
+      const text = code?.textContent || content;
+      return `
+\`\`\`${lang}
+${text}
+\`\`\`
+`;
+    }
+  });
+  let markdown = turndown.turndown(contentHtml);
+  markdown = markdown.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "").replace(/[ \t]+$/gm, "");
+  let wasTruncated = false;
+  if (markdown.length > maxLength) {
+    const truncateAt = markdown.lastIndexOf("\n\n", maxLength);
+    if (truncateAt > maxLength * 0.5) {
+      markdown = markdown.slice(0, truncateAt) + "\n\n...[content truncated]";
+    } else {
+      markdown = markdown.slice(0, maxLength) + "...[truncated]";
+    }
+    wasTruncated = true;
+  }
+  return {
+    markdown,
+    title,
+    byline,
+    excerpt,
+    wasReadabilityUsed,
+    wasTruncated
+  };
 }
 
 // src/tools/web/webFetch.ts
@@ -30832,13 +31042,15 @@ RETURNS:
   success: boolean,
   url: string,
   title: string,
-  content: string,          // Extracted text (clean, no scripts/styles)
-  html: string,             // Raw HTML
+  content: string,          // Clean markdown (converted from HTML via Readability + Turndown)
   contentType: string,      // 'html' | 'json' | 'text' | 'error'
   qualityScore: number,     // 0-100 (quality of extraction)
   requiresJS: boolean,      // True if site likely needs JavaScript
   suggestedAction: string,  // Suggestion if quality is low
   issues: string[],         // List of detected issues
+  excerpt: string,          // Short summary excerpt (if extracted)
+  byline: string,           // Author info (if extracted)
+  wasTruncated: boolean,    // True if content was truncated
   error: string             // Error message if failed
 }
 
@@ -30886,7 +31098,6 @@ With custom user agent:
           url: args.url,
           title: "",
           content: "",
-          html: "",
           contentType: "error",
           qualityScore: 0,
           requiresJS: false,
@@ -30910,7 +31121,6 @@ With custom user agent:
           url: args.url,
           title: "",
           content: "",
-          html: "",
           contentType: "error",
           qualityScore: 0,
           requiresJS: false,
@@ -30925,7 +31135,6 @@ With custom user agent:
           url: args.url,
           title: "JSON Response",
           content: JSON.stringify(json, null, 2),
-          html: "",
           contentType: "json",
           qualityScore: 100,
           requiresJS: false
@@ -30938,7 +31147,6 @@ With custom user agent:
           url: args.url,
           title: "Text Response",
           content: text,
-          html: text,
           contentType: "text",
           qualityScore: 100,
           requiresJS: false
@@ -30946,20 +31154,23 @@ With custom user agent:
       }
       const html = await response.text();
       const $ = load(html);
-      const title = $("title").text() || $("h1").first().text() || "Untitled";
-      const content = extractCleanText($);
-      const quality = detectContentQuality(html, content, $);
+      const mdResult = htmlToMarkdown(html, args.url);
+      const title = mdResult.title || $("title").text() || $("h1").first().text() || "Untitled";
+      const quality = detectContentQuality(html, mdResult.markdown, $);
       return {
         success: true,
         url: args.url,
         title,
-        content,
-        html,
+        content: mdResult.markdown,
         contentType: "html",
         qualityScore: quality.score,
         requiresJS: quality.requiresJS,
         suggestedAction: quality.suggestion,
-        issues: quality.issues
+        issues: quality.issues,
+        excerpt: mdResult.excerpt,
+        byline: mdResult.byline,
+        wasReadabilityUsed: mdResult.wasReadabilityUsed,
+        wasTruncated: mdResult.wasTruncated
       };
     } catch (error) {
       if (error.name === "AbortError") {
@@ -30968,7 +31179,6 @@ With custom user agent:
           url: args.url,
           title: "",
           content: "",
-          html: "",
           contentType: "error",
           qualityScore: 0,
           requiresJS: false,
@@ -30980,7 +31190,6 @@ With custom user agent:
         url: args.url,
         title: "",
         content: "",
-        html: "",
         contentType: "error",
         qualityScore: 0,
         requiresJS: false,
@@ -30989,6 +31198,8 @@ With custom user agent:
     }
   }
 };
+
+// src/tools/web/webFetchJS.ts
 var puppeteerModule = null;
 var browserInstance = null;
 async function loadPuppeteer() {
@@ -31059,10 +31270,12 @@ RETURNS:
   success: boolean,
   url: string,
   title: string,
-  content: string,         // Extracted text after JS execution
-  html: string,            // Full HTML after JS execution
+  content: string,         // Clean markdown (converted via Readability + Turndown)
   screenshot: string,      // Base64 PNG screenshot (if requested)
   loadTime: number,        // Time taken in milliseconds
+  excerpt: string,         // Short summary excerpt (if extracted)
+  byline: string,          // Author info (if extracted)
+  wasTruncated: boolean,   // True if content was truncated
   error: string           // Error message if failed
 }
 
@@ -31132,10 +31345,7 @@ With screenshot:
         });
       }
       const html = await page.content();
-      const $ = load(html);
-      $("script, style, noscript, iframe, nav, footer, header, aside").remove();
-      const content = $("body").text().trim();
-      const title = await page.title();
+      const browserTitle = await page.title();
       const loadTime = Date.now() - startTime;
       let screenshot;
       if (args.takeScreenshot) {
@@ -31147,14 +31357,19 @@ With screenshot:
         screenshot = buffer.toString("base64");
       }
       await page.close();
+      const mdResult = htmlToMarkdown(html, args.url);
+      const title = browserTitle || mdResult.title || "Untitled";
       return {
         success: true,
         url: args.url,
         title,
-        content,
-        html,
+        content: mdResult.markdown,
         screenshot,
-        loadTime
+        loadTime,
+        excerpt: mdResult.excerpt,
+        byline: mdResult.byline,
+        wasReadabilityUsed: mdResult.wasReadabilityUsed,
+        wasTruncated: mdResult.wasTruncated
       };
     } catch (error) {
       if (page) {
@@ -31169,7 +31384,6 @@ With screenshot:
           url: args.url,
           title: "",
           content: "",
-          html: "",
           loadTime: 0,
           error: "Puppeteer is not installed",
           suggestion: "Install Puppeteer with: npm install puppeteer (note: downloads ~50MB Chrome binary)"
@@ -31180,7 +31394,6 @@ With screenshot:
         url: args.url,
         title: "",
         content: "",
-        html: "",
         loadTime: 0,
         error: error.message
       };
@@ -31189,7 +31402,6 @@ With screenshot:
 };
 
 // src/tools/web/webSearch.ts
-init_Connector();
 init_Logger();
 
 // src/tools/web/searchProviders/serper.ts
@@ -31278,6 +31490,7 @@ async function searchWithTavily(query, numResults, apiKey) {
 
 // src/tools/web/webSearch.ts
 var searchLogger = logger.child({ component: "webSearch" });
+var SEARCH_SERVICE_TYPES = ["serper", "brave-search", "tavily", "rapidapi-search"];
 var webSearch = {
   definition: {
     type: "function",
@@ -31285,51 +31498,8 @@ var webSearch = {
       name: "web_search",
       description: `Search the web and get relevant results with snippets.
 
-This tool searches the web using a configured search provider via Connector.
-
-CONNECTOR SETUP (Recommended):
-Create a connector for your search provider:
-
-// Serper (Google search)
-Connector.create({
-  name: 'serper-main',
-  serviceType: 'serper',
-  auth: { type: 'api_key', apiKey: process.env.SERPER_API_KEY! },
-  baseURL: 'https://google.serper.dev',
-});
-
-// Brave (Independent index)
-Connector.create({
-  name: 'brave-main',
-  serviceType: 'brave-search',
-  auth: { type: 'api_key', apiKey: process.env.BRAVE_API_KEY! },
-  baseURL: 'https://api.search.brave.com/res/v1',
-});
-
-// Tavily (AI-optimized)
-Connector.create({
-  name: 'tavily-main',
-  serviceType: 'tavily',
-  auth: { type: 'api_key', apiKey: process.env.TAVILY_API_KEY! },
-  baseURL: 'https://api.tavily.com',
-});
-
-// RapidAPI (Real-time web search)
-Connector.create({
-  name: 'rapidapi-search',
-  serviceType: 'rapidapi-search',
-  auth: { type: 'api_key', apiKey: process.env.RAPIDAPI_KEY! },
-  baseURL: 'https://real-time-web-search.p.rapidapi.com',
-});
-
-SEARCH PROVIDERS:
-- serper: Google search results via Serper.dev. Fast (1-2s), 2,500 free queries.
-- brave-search: Brave's independent search index. Privacy-focused, no Google.
-- tavily: AI-optimized search with summaries tailored for LLMs.
-- rapidapi-search: Real-time web search via RapidAPI. Wide coverage.
-
 RETURNS:
-An array of up to 10-100 search results (provider-specific), each containing:
+An array of search results, each containing:
 - title: Page title
 - url: Direct URL to the page
 - snippet: Short description/excerpt from the page
@@ -31339,7 +31509,6 @@ USE CASES:
 - Find current information on any topic
 - Research multiple sources
 - Discover relevant websites
-- Get different perspectives on a topic
 - Find URLs to fetch with web_fetch tool
 
 WORKFLOW PATTERN:
@@ -31348,26 +31517,10 @@ WORKFLOW PATTERN:
 3. Process and summarize the information
 
 EXAMPLE:
-Using connector (recommended):
 {
-  query: "latest AI developments 2026",
-  connectorName: "serper-main",
-  numResults: 5,
-  country: "us",
-  language: "en"
-}
-
-Backward compatible (uses environment variables):
-{
-  query: "quantum computing news",
-  provider: "brave",
-  numResults: 10
-}
-
-IMPORTANT:
-- Connector approach provides retry, circuit breaker, and timeout features
-- Supports multiple keys per vendor (e.g., 'serper-main', 'serper-backup')
-- Backward compatible with environment variable approach`,
+  "query": "latest AI developments 2026",
+  "numResults": 5
+}`,
       parameters: {
         type: "object",
         properties: {
@@ -31377,61 +31530,37 @@ IMPORTANT:
           },
           numResults: {
             type: "number",
-            description: "Number of results to return (default: 10, max: provider-specific). More results = more API cost."
-          },
-          connectorName: {
-            type: "string",
-            description: 'Connector name to use for search (e.g., "serper-main", "brave-backup"). Recommended approach.'
-          },
-          provider: {
-            type: "string",
-            enum: ["serper", "brave", "tavily", "rapidapi"],
-            description: "DEPRECATED: Use connectorName instead. Provider for backward compatibility with environment variables."
+            description: "Number of results to return (default: 10, max: 100)."
           },
           country: {
             type: "string",
-            description: 'Country/region code (e.g., "us", "gb")'
+            description: 'Country/region code for localized results (e.g., "us", "gb", "de")'
           },
           language: {
             type: "string",
-            description: 'Language code (e.g., "en", "fr")'
+            description: 'Language code for results (e.g., "en", "fr", "de")'
           }
         },
         required: ["query"]
       }
     },
     blocking: true,
-    timeout: 1e4
+    timeout: 15e3
   },
   execute: async (args) => {
     const numResults = args.numResults || 10;
-    if (args.connectorName) {
-      return await executeWithConnector(args, numResults);
+    const connector = findConnectorByServiceTypes(SEARCH_SERVICE_TYPES);
+    if (connector) {
+      return await executeWithConnector(connector.name, args, numResults);
     }
-    if (args.provider) {
-      return await executeWithProvider(args, numResults);
-    }
-    const availableConnector = findAvailableSearchConnector();
-    if (availableConnector) {
-      return await executeWithConnector(
-        { ...args, connectorName: availableConnector },
-        numResults
-      );
-    }
-    return await executeWithProvider({ ...args, provider: "serper" }, numResults);
-  }
+    return await executeWithEnvVar(args, numResults);
+  },
+  describeCall: (args) => `"${args.query}"${args.numResults ? ` (${args.numResults} results)` : ""}`
 };
-async function executeWithConnector(args, numResults) {
-  searchLogger.debug({ connectorName: args.connectorName }, "Starting search with connector");
+async function executeWithConnector(connectorName, args, numResults) {
+  searchLogger.debug({ connectorName }, "Executing search with connector");
   try {
-    const connector = Connector.get(args.connectorName);
-    searchLogger.debug({
-      connectorFound: !!connector,
-      serviceType: connector?.serviceType
-    }, "Connector lookup result");
-    const searchProvider = SearchProvider.create({ connector: args.connectorName });
-    searchLogger.debug({ provider: searchProvider.name }, "SearchProvider created");
-    searchLogger.debug({ query: args.query, numResults }, "Executing search");
+    const searchProvider = SearchProvider.create({ connector: connectorName });
     const response = await searchProvider.search(args.query, {
       numResults,
       country: args.country,
@@ -31439,16 +31568,13 @@ async function executeWithConnector(args, numResults) {
     });
     if (response.success) {
       searchLogger.debug({
-        success: true,
-        count: response.count,
-        firstResultTitle: response.results[0]?.title,
-        firstResultUrl: response.results[0]?.url
+        provider: response.provider,
+        count: response.count
       }, "Search completed successfully");
     } else {
       searchLogger.warn({
-        success: false,
-        error: response.error,
-        provider: response.provider
+        provider: response.provider,
+        error: response.error
       }, "Search failed");
     }
     return {
@@ -31460,112 +31586,55 @@ async function executeWithConnector(args, numResults) {
       error: response.error
     };
   } catch (error) {
-    searchLogger.error({
-      error: error.message,
-      stack: error.stack,
-      connectorName: args.connectorName
-    }, "Search threw exception");
+    searchLogger.error({ error: error.message, connectorName }, "Search threw exception");
     return {
       success: false,
       query: args.query,
-      provider: args.connectorName || "unknown",
+      provider: connectorName,
       results: [],
       count: 0,
       error: error.message || "Unknown error"
     };
   }
 }
-async function executeWithProvider(args, numResults) {
-  const provider = args.provider || "serper";
-  const apiKey = getSearchAPIKey(provider);
-  if (!apiKey) {
-    return {
-      success: false,
-      query: args.query,
-      provider,
-      results: [],
-      count: 0,
-      error: `No API key found for ${provider}. Set ${getEnvVarName(provider)} in your .env file, or use connectorName with a Connector. See .env.example for details.`
-    };
-  }
-  try {
-    let results;
-    switch (provider) {
-      case "serper":
-        results = await searchWithSerper(args.query, numResults, apiKey);
-        break;
-      case "brave":
-        results = await searchWithBrave(args.query, numResults, apiKey);
-        break;
-      case "tavily":
-        results = await searchWithTavily(args.query, numResults, apiKey);
-        break;
-      case "rapidapi":
-        throw new Error(
-          "RapidAPI provider requires Connector. Use connectorName with a rapidapi-search connector."
-        );
-      default:
-        throw new Error(`Unknown search provider: ${provider}`);
-    }
-    return {
-      success: true,
-      query: args.query,
-      provider,
-      results,
-      count: results.length
-    };
-  } catch (error) {
-    return {
-      success: false,
-      query: args.query,
-      provider,
-      results: [],
-      count: 0,
-      error: error.message
-    };
-  }
-}
-function findAvailableSearchConnector() {
-  const allConnectors = Connector.list();
-  for (const connectorName of allConnectors) {
-    const connector = Connector.get(connectorName);
-    if (connector?.serviceType && ["serper", "brave-search", "tavily", "rapidapi-search"].includes(connector.serviceType)) {
-      return connectorName;
+async function executeWithEnvVar(args, numResults) {
+  const providers = [
+    { name: "serper", key: process.env.SERPER_API_KEY, fn: searchWithSerper },
+    { name: "brave", key: process.env.BRAVE_API_KEY, fn: searchWithBrave },
+    { name: "tavily", key: process.env.TAVILY_API_KEY, fn: searchWithTavily }
+  ];
+  for (const provider of providers) {
+    if (provider.key) {
+      searchLogger.debug({ provider: provider.name }, "Using environment variable fallback");
+      try {
+        const results = await provider.fn(args.query, numResults, provider.key);
+        return {
+          success: true,
+          query: args.query,
+          provider: provider.name,
+          results,
+          count: results.length
+        };
+      } catch (error) {
+        searchLogger.warn({ provider: provider.name, error: error.message }, "Provider failed, trying next");
+      }
     }
   }
-  return void 0;
-}
-function getSearchAPIKey(provider) {
-  switch (provider) {
-    case "serper":
-      return process.env.SERPER_API_KEY;
-    case "brave":
-      return process.env.BRAVE_API_KEY;
-    case "tavily":
-      return process.env.TAVILY_API_KEY;
-    case "rapidapi":
-      return process.env.RAPIDAPI_KEY;
-    default:
-      return void 0;
-  }
-}
-function getEnvVarName(provider) {
-  switch (provider) {
-    case "serper":
-      return "SERPER_API_KEY";
-    case "brave":
-      return "BRAVE_API_KEY";
-    case "tavily":
-      return "TAVILY_API_KEY";
-    case "rapidapi":
-      return "RAPIDAPI_KEY";
-    default:
-      return "UNKNOWN_API_KEY";
-  }
+  return {
+    success: false,
+    query: args.query,
+    provider: "none",
+    results: [],
+    count: 0,
+    error: "No search provider configured. Set up a search connector (serper, brave-search, tavily) or set SERPER_API_KEY, BRAVE_API_KEY, or TAVILY_API_KEY environment variable."
+  };
 }
 
 // src/tools/web/webScrape.ts
-init_Connector();
+init_Logger();
+var scrapeLogger = logger.child({ component: "webScrape" });
+var SCRAPE_SERVICE_TYPES = ["zenrows", "jina-reader", "firecrawl", "scrapingbee"];
+var DEFAULT_MIN_QUALITY = 50;
 var webScrape = {
   definition: {
     type: "function",
@@ -31573,33 +31642,10 @@ var webScrape = {
       name: "web_scrape",
       description: `Scrape any URL with automatic fallback - guaranteed to work on most sites.
 
-This tool combines multiple scraping methods to ensure content extraction:
-
-SCRAPING STRATEGIES:
-- auto (default): Tries native -> JS -> API until one succeeds
-- native: Only native HTTP fetch (fast, free, static sites only)
-- js: Only JavaScript rendering (handles SPAs, needs Puppeteer)
-- api: Only external API provider (handles bot protection)
-- api-first: Tries API first, then falls back to native
-
-FALLBACK CHAIN (auto strategy):
-1. Native fetch - Fast (~1s), free, works for blogs/docs/articles
-2. JS rendering - Slower (~5s), handles React/Vue/Angular
-3. External API - Handles bot protection, CAPTCHAs, rate limits
-
-EXTERNAL API PROVIDERS:
-Configure a connector with a scraping service:
-- Jina AI Reader (free tier available)
-- Firecrawl (advanced features)
-- ScrapingBee (proxy rotation)
-- etc.
-
-WHEN TO USE EACH STRATEGY:
-- 'auto': Most cases - let the tool figure it out
-- 'native': When you know the site is static
-- 'js': When you know it's a React/Vue/Angular app
-- 'api': When site has bot protection or rate limits
-- 'api-first': When you want best quality regardless of cost
+Automatically tries multiple methods in sequence:
+1. Native fetch - Fast (~1s), works for blogs/docs/articles
+2. JS rendering - Handles React/Vue/Angular SPAs
+3. External API - Handles bot protection, CAPTCHAs (if configured)
 
 RETURNS:
 {
@@ -31610,40 +31656,29 @@ RETURNS:
   title: string,
   content: string,         // Clean text
   html: string,            // If requested
-  markdown: string,        // If requested and supported
+  markdown: string,        // If requested
   metadata: {...},         // Title, description, author, etc.
   links: [{url, text}],    // If requested
   qualityScore: number,    // 0-100
   durationMs: number,
-  attemptedMethods: [],    // Methods tried
-  error: string,           // If failed
-  suggestion: string       // How to fix
+  attemptedMethods: []     // Methods tried
 }
 
 EXAMPLES:
-Basic (auto strategy):
+Basic:
 { "url": "https://example.com/article" }
 
-With API fallback:
-{
-  "url": "https://protected-site.com",
-  "connectorName": "jina-reader",
-  "strategy": "auto"
-}
-
-Force API provider:
-{
-  "url": "https://hard-to-scrape.com",
-  "connectorName": "firecrawl-main",
-  "strategy": "api",
-  "includeMarkdown": true
-}
-
-High quality threshold:
+With options:
 {
   "url": "https://example.com",
-  "minQualityScore": 80,
-  "strategy": "auto"
+  "includeMarkdown": true,
+  "includeLinks": true
+}
+
+For JS-heavy sites:
+{
+  "url": "https://spa-app.com",
+  "waitForSelector": ".main-content"
 }`,
       parameters: {
         type: "object",
@@ -31652,42 +31687,25 @@ High quality threshold:
             type: "string",
             description: "URL to scrape. Must start with http:// or https://"
           },
-          strategy: {
-            type: "string",
-            enum: ["auto", "native", "js", "api", "api-first"],
-            description: 'Scraping strategy. Default: "auto"'
-          },
-          connectorName: {
-            type: "string",
-            description: 'Connector name for external API provider (e.g., "jina-reader", "firecrawl-main")'
-          },
-          minQualityScore: {
-            type: "number",
-            description: "Minimum quality score (0-100) to accept from native methods. Default: 50"
-          },
           timeout: {
             type: "number",
-            description: "Timeout in milliseconds. Default: 30000"
+            description: "Timeout in milliseconds (default: 30000)"
           },
           includeHtml: {
             type: "boolean",
-            description: "Include raw HTML in response. Default: false"
+            description: "Include raw HTML in response (default: false)"
           },
           includeMarkdown: {
             type: "boolean",
-            description: "Include markdown conversion (if supported). Default: false"
+            description: "Include markdown conversion (default: false)"
           },
           includeLinks: {
             type: "boolean",
-            description: "Extract and include links. Default: false"
+            description: "Extract and include links (default: false)"
           },
           waitForSelector: {
             type: "string",
-            description: "CSS selector to wait for (JS/API strategies only)"
-          },
-          vendorOptions: {
-            type: "object",
-            description: "Vendor-specific options for API provider"
+            description: "CSS selector to wait for before scraping (for JS-heavy sites)"
           }
         },
         required: ["url"]
@@ -31695,12 +31713,9 @@ High quality threshold:
     },
     blocking: true,
     timeout: 6e4
-    // Allow time for all fallbacks
   },
   execute: async (args) => {
     const startTime = Date.now();
-    const strategy = args.strategy || "auto";
-    const minQuality = args.minQualityScore ?? 50;
     const attemptedMethods = [];
     try {
       new URL(args.url);
@@ -31716,60 +31731,37 @@ High quality threshold:
         error: "Invalid URL format"
       };
     }
-    switch (strategy) {
-      case "native":
-        return await tryNative(args, startTime, attemptedMethods);
-      case "js":
-        return await tryJS(args, startTime, attemptedMethods);
-      case "api":
-        return await tryAPI(args, startTime, attemptedMethods);
-      case "api-first":
-        if (args.connectorName) {
-          const apiResult = await tryAPI(args, startTime, attemptedMethods);
-          if (apiResult.success) return apiResult;
-        }
-        const nativeResult = await tryNative(args, startTime, attemptedMethods);
-        if (nativeResult.success) return nativeResult;
-        return await tryJS(args, startTime, attemptedMethods);
-      case "auto":
-      default:
-        const native = await tryNative(args, startTime, attemptedMethods);
-        if (native.success && (native.qualityScore ?? 0) >= minQuality) {
-          return native;
-        }
-        const js = await tryJS(args, startTime, attemptedMethods);
-        if (js.success && (js.qualityScore ?? 0) >= minQuality) {
-          return js;
-        }
-        if (args.connectorName || hasAvailableScrapeConnector()) {
-          const api = await tryAPI(args, startTime, attemptedMethods);
-          if (api.success) return api;
-        }
-        if (js.success) return js;
-        if (native.success) return native;
-        return {
-          success: false,
-          url: args.url,
-          method: "none",
-          title: "",
-          content: "",
-          durationMs: Date.now() - startTime,
-          attemptedMethods,
-          error: "All scraping methods failed",
-          suggestion: args.connectorName ? "Check connector configuration and API key" : "Configure an external scraping API connector for better results"
-        };
+    const native = await tryNative(args, startTime, attemptedMethods);
+    if (native.success && (native.qualityScore ?? 0) >= DEFAULT_MIN_QUALITY) {
+      return native;
     }
+    const js = await tryJS(args, startTime, attemptedMethods);
+    if (js.success && (js.qualityScore ?? 0) >= DEFAULT_MIN_QUALITY) {
+      return js;
+    }
+    const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
+    if (connector) {
+      const api = await tryAPI(connector.name, args, startTime, attemptedMethods);
+      if (api.success) return api;
+    }
+    if (js.success) return js;
+    if (native.success) return native;
+    return {
+      success: false,
+      url: args.url,
+      method: "none",
+      title: "",
+      content: "",
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: "All scraping methods failed. Site may have bot protection."
+    };
   },
-  describeCall: (args) => {
-    const strategy = args.strategy || "auto";
-    if (args.connectorName) {
-      return `${args.url} (${strategy}, ${args.connectorName})`;
-    }
-    return `${args.url} (${strategy})`;
-  }
+  describeCall: (args) => args.url
 };
 async function tryNative(args, startTime, attemptedMethods) {
   attemptedMethods.push("native");
+  scrapeLogger.debug({ url: args.url }, "Trying native fetch");
   try {
     const result = await webFetch.execute({
       url: args.url,
@@ -31782,12 +31774,12 @@ async function tryNative(args, startTime, attemptedMethods) {
       method: "native",
       title: result.title,
       content: result.content,
-      html: args.includeHtml ? result.html : void 0,
+      // Note: raw HTML not available with native method (returns markdown instead)
+      markdown: args.includeMarkdown ? result.content : void 0,
       qualityScore: result.qualityScore,
       durationMs: Date.now() - startTime,
       attemptedMethods,
-      error: result.error,
-      suggestion: result.requiresJS ? 'Site requires JavaScript - try strategy "js" or "api"' : result.suggestedAction
+      error: result.error
     };
   } catch (error) {
     return {
@@ -31804,6 +31796,7 @@ async function tryNative(args, startTime, attemptedMethods) {
 }
 async function tryJS(args, startTime, attemptedMethods) {
   attemptedMethods.push("js");
+  scrapeLogger.debug({ url: args.url }, "Trying JS rendering");
   try {
     const result = await webFetchJS.execute({
       url: args.url,
@@ -31817,13 +31810,12 @@ async function tryJS(args, startTime, attemptedMethods) {
       method: "js",
       title: result.title,
       content: result.content,
-      html: args.includeHtml ? result.html : void 0,
+      // Note: raw HTML not available with JS method (returns markdown instead)
+      markdown: args.includeMarkdown ? result.content : void 0,
       qualityScore: result.success ? 80 : 0,
-      // JS rendering typically gives good quality
       durationMs: Date.now() - startTime,
       attemptedMethods,
-      error: result.error,
-      suggestion: result.suggestion
+      error: result.error
     };
   } catch (error) {
     return {
@@ -31834,27 +31826,13 @@ async function tryJS(args, startTime, attemptedMethods) {
       content: "",
       durationMs: Date.now() - startTime,
       attemptedMethods,
-      error: error.message,
-      suggestion: error.message.includes("Puppeteer") ? "Install Puppeteer: npm install puppeteer" : void 0
+      error: error.message
     };
   }
 }
-async function tryAPI(args, startTime, attemptedMethods) {
-  const connectorName = args.connectorName || findAvailableScrapeConnector();
-  if (!connectorName) {
-    return {
-      success: false,
-      url: args.url,
-      method: "api",
-      title: "",
-      content: "",
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: "No scraping API connector configured",
-      suggestion: "Create a connector with a scraping service (e.g., Jina, Firecrawl)"
-    };
-  }
+async function tryAPI(connectorName, args, startTime, attemptedMethods) {
   attemptedMethods.push(`api:${connectorName}`);
+  scrapeLogger.debug({ url: args.url, connectorName }, "Trying external API");
   try {
     const provider = ScrapeProvider.create({ connector: connectorName });
     const options = {
@@ -31862,8 +31840,7 @@ async function tryAPI(args, startTime, attemptedMethods) {
       waitForSelector: args.waitForSelector,
       includeHtml: args.includeHtml,
       includeMarkdown: args.includeMarkdown,
-      includeLinks: args.includeLinks,
-      vendorOptions: args.vendorOptions
+      includeLinks: args.includeLinks
     };
     const result = await provider.scrape(args.url, options);
     return {
@@ -31878,11 +31855,9 @@ async function tryAPI(args, startTime, attemptedMethods) {
       metadata: result.result?.metadata,
       links: result.result?.links,
       qualityScore: result.success ? 90 : 0,
-      // API providers typically give high quality
       durationMs: Date.now() - startTime,
       attemptedMethods,
-      error: result.error,
-      suggestion: result.suggestedFallback
+      error: result.error
     };
   } catch (error) {
     return {
@@ -31896,24 +31871,6 @@ async function tryAPI(args, startTime, attemptedMethods) {
       error: error.message
     };
   }
-}
-function hasAvailableScrapeConnector() {
-  return findAvailableScrapeConnector() !== void 0;
-}
-function findAvailableScrapeConnector() {
-  const registeredProviders = getRegisteredScrapeProviders();
-  if (registeredProviders.length === 0) return void 0;
-  const allConnectors = Connector.list();
-  for (const connectorName of allConnectors) {
-    try {
-      const connector = Connector.get(connectorName);
-      if (connector?.serviceType && registeredProviders.includes(connector.serviceType)) {
-        return connectorName;
-      }
-    } catch {
-    }
-  }
-  return void 0;
 }
 
 // src/tools/code/executeJavaScript.ts
@@ -33143,16 +33100,40 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
     }
     const contextualInput = await this.buildFullContext(input);
     let fullText = "";
+    let planningToolArgs = null;
+    let currentToolName = "";
     for await (const event of this.agent.stream(contextualInput)) {
       if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
         const delta = event.delta || "";
         fullText += delta;
         yield { type: "text:delta", delta };
       } else if (event.type === "response.tool_execution.start" /* TOOL_EXECUTION_START */) {
-        yield { type: "tool:start", name: event.tool_name || "unknown", args: event.arguments || null };
+        currentToolName = event.tool_name || "unknown";
+        const args = event.arguments || null;
+        yield { type: "tool:start", name: currentToolName, args };
+        if (currentToolName === META_TOOL_NAMES.START_PLANNING && args) {
+          planningToolArgs = typeof args === "string" ? JSON.parse(args) : args;
+        }
       } else if (event.type === "response.tool_execution.done" /* TOOL_EXECUTION_DONE */) {
         yield { type: "tool:complete", name: event.tool_name || "unknown", result: event.result, durationMs: event.execution_time_ms || 0 };
       }
+    }
+    if (planningToolArgs) {
+      this.modeManager.enterPlanning("agent_requested");
+      yield { type: "mode:changed", from: "interactive", to: "planning", reason: "agent_requested" };
+      const plan = await this.createPlanInternal(planningToolArgs.goal);
+      this.modeManager.setPendingPlan(plan);
+      this.currentPlan = plan;
+      yield { type: "plan:created", plan };
+      if (this._config.planning?.requireApproval !== false) {
+        yield { type: "plan:awaiting_approval", plan };
+        yield { type: "needs:approval", plan };
+        const summary = this.formatPlanSummary(plan);
+        await this.addToConversationHistory("assistant", summary);
+        yield { type: "text:delta", delta: "\n\n" + summary };
+        yield { type: "text:done", text: fullText + "\n\n" + summary };
+      }
+      return;
     }
     await this.addToConversationHistory("assistant", fullText);
     yield { type: "text:done", text: fullText };
@@ -33706,7 +33687,7 @@ ${this._config.instructions ?? ""}`;
    * Add a message to conversation history (via AgentContext)
    */
   async addToConversationHistory(role, content) {
-    this._agentContext.addMessage(role, content);
+    await this._agentContext.addMessage(role, content);
   }
   /**
    * Build full context for the agent (via AgentContext.prepare())
@@ -33935,6 +33916,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSearchSource, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WebSearchSource, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSearchSource, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WebSearchSource, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

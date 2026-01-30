@@ -92,6 +92,9 @@ export {
   toConnectorOptions,
   buildEndpointWithQuery,
   resolveConnector,
+  // Service type auto-detection (for external API-dependent tools)
+  findConnectorByServiceTypes,
+  listConnectorsByServiceTypes,
   type BaseProviderConfig,
   type BaseProviderResponse,
   type ICapabilityProvider,

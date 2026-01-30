@@ -3,8 +3,8 @@
  * Optional tool - requires puppeteer to be installed
  */
 
-import { load } from 'cheerio';
 import { ToolFunction } from '../../domain/entities/Tool.js';
+import { htmlToMarkdown } from './htmlToMarkdown.js';
 
 // Lazy-load Puppeteer (optional dependency)
 let puppeteerModule: any = null;
@@ -22,11 +22,15 @@ interface WebFetchJSResult {
   url: string;
   title: string;
   content: string;
-  html: string;
   screenshot?: string;
   loadTime: number;
   error?: string;
   suggestion?: string;
+  // Markdown conversion metadata
+  excerpt?: string;
+  byline?: string;
+  wasReadabilityUsed?: boolean;
+  wasTruncated?: boolean;
 }
 
 /**
@@ -108,10 +112,12 @@ RETURNS:
   success: boolean,
   url: string,
   title: string,
-  content: string,         // Extracted text after JS execution
-  html: string,            // Full HTML after JS execution
+  content: string,         // Clean markdown (converted via Readability + Turndown)
   screenshot: string,      // Base64 PNG screenshot (if requested)
   loadTime: number,        // Time taken in milliseconds
+  excerpt: string,         // Short summary excerpt (if extracted)
+  byline: string,          // Author info (if extracted)
+  wasTruncated: boolean,   // True if content was truncated
   error: string           // Error message if failed
 }
 
@@ -197,17 +203,8 @@ With screenshot:
       // Get HTML after JS execution
       const html = await page.content();
 
-      // Extract text content using cheerio
-      const $ = load(html);
-
-      // Remove unwanted elements
-      $('script, style, noscript, iframe, nav, footer, header, aside').remove();
-
-      // Extract text
-      const content = $('body').text().trim();
-
-      // Get title
-      const title = await page.title();
+      // Get title from browser
+      const browserTitle = await page.title();
 
       const loadTime = Date.now() - startTime;
 
@@ -223,14 +220,23 @@ With screenshot:
 
       await page.close();
 
+      // Convert HTML to clean markdown
+      const mdResult = htmlToMarkdown(html, args.url);
+
+      // Use browser title or markdown extraction
+      const title = browserTitle || mdResult.title || 'Untitled';
+
       return {
         success: true,
         url: args.url,
         title,
-        content,
-        html,
+        content: mdResult.markdown,
         screenshot,
         loadTime,
+        excerpt: mdResult.excerpt,
+        byline: mdResult.byline,
+        wasReadabilityUsed: mdResult.wasReadabilityUsed,
+        wasTruncated: mdResult.wasTruncated,
       };
     } catch (error: any) {
       if (page) {
@@ -248,7 +254,6 @@ With screenshot:
           url: args.url,
           title: '',
           content: '',
-          html: '',
           loadTime: 0,
           error: 'Puppeteer is not installed',
           suggestion:
@@ -261,7 +266,6 @@ With screenshot:
         url: args.url,
         title: '',
         content: '',
-        html: '',
         loadTime: 0,
         error: (error as Error).message,
       };

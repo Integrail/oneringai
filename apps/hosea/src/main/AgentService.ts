@@ -13,14 +13,18 @@ import {
   UniversalAgent,
   getModelsByVendor,
   getModelInfo,
+  getToolByName,
   FileSessionStorage,
   getToolRegistry,
+  logger,
+  defaultDescribeCall,
   type ToolFunction,
   type UniversalAgentConfig,
   type UniversalEvent,
   type ISessionStorage,
   type ToolRegistryEntry,
   type ILLMDescription,
+  type LogLevel,
 } from '@oneringai/agents';
 
 interface StoredConnectorConfig {
@@ -100,6 +104,7 @@ export interface StoredAPIConnectorConfig {
 interface HoseaConfig {
   activeConnector: string | null;
   activeModel: string | null;
+  logLevel: LogLevel;
   ui: {
     theme: 'light' | 'dark' | 'system';
     fontSize: number;
@@ -107,9 +112,106 @@ interface HoseaConfig {
   };
 }
 
+/**
+ * Stream chunk types for IPC communication
+ */
+export type StreamChunk =
+  | { type: 'text'; content: string }
+  | { type: 'tool_start'; tool: string; args: Record<string, unknown>; description: string }
+  | { type: 'tool_end'; tool: string; durationMs?: number }
+  | { type: 'tool_error'; tool: string; error: string }
+  | { type: 'done' }
+  | { type: 'error'; content: string };
+
+/**
+ * HOSEA UI Capabilities System Prompt
+ *
+ * This is automatically prepended to all agent instructions to inform them
+ * about the rich markdown rendering capabilities available in the UI.
+ */
+const HOSEA_UI_CAPABILITIES_PROMPT = `
+## HOSEA UI Rendering Capabilities
+
+You are running inside HOSEA, a desktop chat interface with advanced markdown rendering. Your responses will be displayed with rich formatting. Use these capabilities to provide better, more visual responses:
+
+### Basic Markdown
+- **Bold**, *italic*, ~~strikethrough~~, \`inline code\`
+- Headers (# ## ###), lists, blockquotes, links, images
+- Tables (GitHub Flavored Markdown)
+
+### Code Blocks
+Use fenced code blocks with language identifiers for syntax highlighting:
+\`\`\`python
+def hello():
+    print("Hello!")
+\`\`\`
+
+### Mathematical Formulas (LaTeX/KaTeX)
+- Inline math: $E = mc^2$
+- Block math:
+$$
+\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}
+$$
+
+### Mermaid Diagrams
+Create flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams, and more:
+\`\`\`mermaid
+flowchart TD
+    A[Start] --> B{Decision}
+    B -->|Yes| C[Action 1]
+    B -->|No| D[Action 2]
+    C --> E[End]
+    D --> E
+\`\`\`
+
+### Vega-Lite Charts
+Create interactive data visualizations (bar charts, line charts, scatter plots, etc.):
+\`\`\`vega-lite
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "description": "A simple bar chart",
+  "data": {
+    "values": [
+      {"category": "A", "value": 28},
+      {"category": "B", "value": 55},
+      {"category": "C", "value": 43}
+    ]
+  },
+  "mark": "bar",
+  "encoding": {
+    "x": {"field": "category", "type": "nominal"},
+    "y": {"field": "value", "type": "quantitative"}
+  }
+}
+\`\`\`
+
+### Mindmaps (Markmap)
+Create interactive mindmaps from markdown hierarchies:
+\`\`\`markmap
+# Central Topic
+## Branch 1
+### Sub-item 1.1
+### Sub-item 1.2
+## Branch 2
+### Sub-item 2.1
+## Branch 3
+\`\`\`
+
+### Best Practices
+1. Use diagrams and charts when explaining complex concepts, processes, or data
+2. Use tables for comparing options or presenting structured data
+3. Use code blocks with proper language tags for any code
+4. Use math notation for formulas and equations
+5. Use mindmaps for brainstorming or showing hierarchical relationships
+6. Keep visualizations simple and focused on the key message
+
+---
+`;
+
 const DEFAULT_CONFIG: HoseaConfig = {
   activeConnector: null,
   activeModel: null,
+  logLevel: 'info',
   ui: {
     theme: 'system',
     fontSize: 14,
@@ -119,6 +221,7 @@ const DEFAULT_CONFIG: HoseaConfig = {
 
 export class AgentService {
   private dataDir: string;
+  private isDev: boolean;
   private agent: UniversalAgent | null = null;
   private config: HoseaConfig = DEFAULT_CONFIG;
   private connectors: Map<string, StoredConnectorConfig> = new Map();
@@ -126,13 +229,47 @@ export class AgentService {
   private agents: Map<string, StoredAgentConfig> = new Map();
   private sessionStorage: ISessionStorage | null = null;
 
-  constructor(dataDir: string) {
+  /**
+   * Private constructor - use AgentService.create() instead
+   */
+  private constructor(dataDir: string, isDev: boolean = false) {
     this.dataDir = dataDir;
-    this.ensureDirectories();
-    this.loadConfig();
-    this.loadConnectors();
-    this.loadAPIConnectors();
-    this.loadAgents();
+    this.isDev = isDev;
+  }
+
+  /**
+   * Factory method to create and initialize AgentService
+   * This ensures all async initialization completes before the service is used
+   */
+  static async create(dataDir: string, isDev: boolean = false): Promise<AgentService> {
+    const service = new AgentService(dataDir, isDev);
+    await service.initializeService();
+    return service;
+  }
+
+  /**
+   * Async initialization - loads all config, connectors, and agents
+   */
+  private async initializeService(): Promise<void> {
+    await this.ensureDirectories();
+    await this.loadConfig();
+    await this.loadConnectors();
+    await this.loadAPIConnectors();
+    await this.loadAgents();
+    this.initializeLogLevel();
+  }
+
+  /**
+   * Initialize log level based on config or dev mode
+   */
+  private initializeLogLevel(): void {
+    // In dev mode, default to debug unless explicitly set otherwise
+    const effectiveLevel = this.isDev && this.config.logLevel === 'info'
+      ? 'debug'
+      : this.config.logLevel;
+
+    logger.updateConfig({ level: effectiveLevel });
+    console.log(`Log level set to: ${effectiveLevel}${this.isDev ? ' (dev mode)' : ''}`);
   }
 
   private async ensureDirectories(): Promise<void> {
@@ -252,10 +389,11 @@ export class AgentService {
         directory: join(this.dataDir, 'sessions'),
       });
 
-      // Create agent
+      // Create agent with UI capabilities prompt
       const agentConfig: UniversalAgentConfig = {
         connector: connectorName,
         model,
+        instructions: HOSEA_UI_CAPABILITIES_PROMPT,
         session: {
           storage: this.sessionStorage,
         },
@@ -287,7 +425,7 @@ export class AgentService {
     }
   }
 
-  async *stream(message: string): AsyncGenerator<{ type: string; content?: string; tool?: string }> {
+  async *stream(message: string): AsyncGenerator<StreamChunk> {
     if (!this.agent) {
       yield { type: 'error', content: 'Agent not initialized' };
       return;
@@ -300,9 +438,38 @@ export class AgentService {
         if (e.type === 'text:delta') {
           yield { type: 'text', content: e.delta };
         } else if (e.type === 'tool:start') {
-          yield { type: 'tool_start', tool: e.name };
+          // Get tool description using describeCall or defaultDescribeCall
+          const args = (e.args || {}) as Record<string, unknown>;
+          const tool = this.agent?.tools?.get(e.name);
+          let description = '';
+          if (tool?.describeCall) {
+            try {
+              description = tool.describeCall(args);
+            } catch {
+              description = defaultDescribeCall(args);
+            }
+          } else {
+            description = defaultDescribeCall(args);
+          }
+
+          yield {
+            type: 'tool_start',
+            tool: e.name,
+            args,
+            description,
+          };
         } else if (e.type === 'tool:complete') {
-          yield { type: 'tool_end', tool: e.name };
+          yield {
+            type: 'tool_end',
+            tool: e.name,
+            durationMs: e.durationMs,
+          };
+        } else if (e.type === 'tool:error') {
+          yield {
+            type: 'tool_error',
+            tool: e.name,
+            error: e.error,
+          };
         } else if (e.type === 'text:done') {
           yield { type: 'done' };
         } else if (e.type === 'error') {
@@ -559,8 +726,85 @@ export class AgentService {
       const filePath = join(this.dataDir, 'agents', `${id}.json`);
       await writeFile(filePath, JSON.stringify(agentConfig, null, 2));
 
-      // Initialize the agent with its configuration
-      return this.initialize(agentConfig.connector, agentConfig.model);
+      // Initialize the agent with its full configuration (including tools)
+      return this.initializeWithConfig(agentConfig);
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Initialize agent with full configuration including tools
+   */
+  private async initializeWithConfig(agentConfig: StoredAgentConfig): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Get connector config
+      const connectorConfig = this.connectors.get(agentConfig.connector);
+      if (!connectorConfig) {
+        return { success: false, error: `Connector "${agentConfig.connector}" not found` };
+      }
+
+      // Register with library if not already
+      if (!Connector.has(agentConfig.connector)) {
+        Connector.create({
+          name: agentConfig.connector,
+          vendor: connectorConfig.vendor as Vendor,
+          auth: connectorConfig.auth,
+          baseURL: connectorConfig.baseURL,
+        });
+      }
+
+      // Destroy existing agent
+      this.agent?.destroy();
+
+      // Initialize session storage
+      this.sessionStorage = new FileSessionStorage({
+        directory: join(this.dataDir, 'sessions'),
+      });
+
+      // Resolve tool names to actual ToolFunction objects
+      const tools: ToolFunction[] = [];
+      for (const toolName of agentConfig.tools) {
+        const toolEntry = getToolByName(toolName);
+        if (toolEntry) {
+          tools.push(toolEntry.tool);
+        } else {
+          console.warn(`Tool "${toolName}" not found in registry`);
+        }
+      }
+
+      // Combine UI capabilities prompt with agent instructions
+      const fullInstructions = HOSEA_UI_CAPABILITIES_PROMPT + (agentConfig.instructions || '');
+
+      // Create agent with full configuration
+      const config: UniversalAgentConfig = {
+        connector: agentConfig.connector,
+        model: agentConfig.model,
+        name: agentConfig.name,
+        tools,
+        instructions: fullInstructions,
+        temperature: agentConfig.temperature,
+        session: {
+          storage: this.sessionStorage,
+        },
+        memoryConfig: agentConfig.memoryEnabled
+          ? {
+              maxSizeBytes: agentConfig.maxMemorySizeBytes,
+              descriptionMaxLength: 150, // Default value
+              softLimitPercent: agentConfig.memorySoftLimitPercent,
+              contextAllocationPercent: agentConfig.contextAllocationPercent,
+            }
+          : undefined,
+      };
+
+      this.agent = UniversalAgent.create(config);
+
+      // Update global config
+      this.config.activeConnector = agentConfig.connector;
+      this.config.activeModel = agentConfig.model;
+      await this.saveConfigFile();
+
+      return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
     }
@@ -592,7 +836,7 @@ export class AgentService {
       connector: connectorName,
       model,
       agentType: 'universal' as const,
-      instructions: 'You are a helpful AI assistant.',
+      instructions: 'You are a helpful AI assistant. Use the rich formatting capabilities available to you (charts, diagrams, tables, code highlighting) to provide clear and visually informative responses when appropriate.',
       temperature: 0.7,
       contextStrategy: 'proactive',
       maxContextTokens: 128000,
@@ -682,10 +926,11 @@ export class AgentService {
       // Destroy current agent
       this.agent?.destroy();
 
-      // Resume from session
+      // Resume from session with UI capabilities
       this.agent = await UniversalAgent.resume(sessionId, {
         connector: this.config.activeConnector!,
         model: this.config.activeModel!,
+        instructions: HOSEA_UI_CAPABILITIES_PROMPT,
         session: {
           storage: this.sessionStorage,
         },
@@ -785,6 +1030,29 @@ export class AgentService {
     obj[keys[keys.length - 1]] = value;
     await this.saveConfigFile();
 
+    // Handle special case for logLevel
+    if (key === 'logLevel') {
+      logger.updateConfig({ level: value as LogLevel });
+    }
+
+    return { success: true };
+  }
+
+  /**
+   * Get current log level
+   */
+  getLogLevel(): LogLevel {
+    return logger.getLevel();
+  }
+
+  /**
+   * Set log level (updates both config and runtime)
+   */
+  async setLogLevel(level: LogLevel): Promise<{ success: boolean }> {
+    this.config.logLevel = level;
+    await this.saveConfigFile();
+    logger.updateConfig({ level });
+    console.log(`Log level changed to: ${level}`);
     return { success: true };
   }
 

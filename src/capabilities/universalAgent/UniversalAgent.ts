@@ -550,18 +550,54 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     // Build input with conversation context
     const contextualInput = await this.buildFullContext(input);
 
-    // Stream from agent
+    // Stream from agent - track if _start_planning was called
     let fullText = '';
+    let planningToolArgs: { goal: string; reasoning?: string } | null = null;
+    let currentToolName = '';
+
     for await (const event of this.agent.stream(contextualInput)) {
       if (event.type === StreamEventType.OUTPUT_TEXT_DELTA) {
         const delta = (event as any).delta || '';
         fullText += delta;
         yield { type: 'text:delta', delta };
       } else if (event.type === StreamEventType.TOOL_EXECUTION_START) {
-        yield { type: 'tool:start', name: (event as any).tool_name || 'unknown', args: (event as any).arguments || null };
+        currentToolName = (event as any).tool_name || 'unknown';
+        const args = (event as any).arguments || null;
+        yield { type: 'tool:start', name: currentToolName, args };
+
+        // Capture _start_planning args
+        if (currentToolName === META_TOOL_NAMES.START_PLANNING && args) {
+          planningToolArgs = typeof args === 'string' ? JSON.parse(args) : args;
+        }
       } else if (event.type === StreamEventType.TOOL_EXECUTION_DONE) {
         yield { type: 'tool:complete', name: (event as any).tool_name || 'unknown', result: (event as any).result, durationMs: (event as any).execution_time_ms || 0 };
       }
+    }
+
+    // Check if agent called _start_planning - if so, transition to planning mode
+    if (planningToolArgs) {
+      this.modeManager.enterPlanning('agent_requested');
+      yield { type: 'mode:changed', from: 'interactive', to: 'planning', reason: 'agent_requested' };
+
+      // Create the actual plan
+      const plan = await this.createPlanInternal(planningToolArgs.goal);
+      this.modeManager.setPendingPlan(plan);
+      this.currentPlan = plan;
+
+      yield { type: 'plan:created', plan };
+
+      if (this._config.planning?.requireApproval !== false) {
+        yield { type: 'plan:awaiting_approval', plan };
+        yield { type: 'needs:approval', plan };
+
+        const summary = this.formatPlanSummary(plan);
+        await this.addToConversationHistory('assistant', summary);
+
+        // Yield the plan summary as text so user sees it
+        yield { type: 'text:delta', delta: '\n\n' + summary };
+        yield { type: 'text:done', text: fullText + '\n\n' + summary };
+      }
+      return;
     }
 
     // Add assistant response to conversation history
@@ -1251,7 +1287,8 @@ ${this._config.instructions ?? ''}`;
    * Add a message to conversation history (via AgentContext)
    */
   private async addToConversationHistory(role: 'user' | 'assistant', content: string): Promise<void> {
-    this._agentContext.addMessage(role, content);
+    // Use async addMessage with capacity checking for potentially large content
+    await this._agentContext.addMessage(role, content);
   }
 
   /**

@@ -4,6 +4,17 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 
+/**
+ * Stream chunk types for IPC communication
+ */
+export type StreamChunk =
+  | { type: 'text'; content: string }
+  | { type: 'tool_start'; tool: string; args: Record<string, unknown>; description: string }
+  | { type: 'tool_end'; tool: string; durationMs?: number }
+  | { type: 'tool_error'; tool: string; error: string }
+  | { type: 'done' }
+  | { type: 'error'; content: string };
+
 // Types for the exposed API
 export interface HoseaAPI {
   // Agent
@@ -18,7 +29,7 @@ export interface HoseaAPI {
       model: string | null;
       mode: string | null;
     }>;
-    onStreamChunk: (callback: (chunk: { type: string; content?: string; tool?: string }) => void) => void;
+    onStreamChunk: (callback: (chunk: StreamChunk) => void) => void;
     onStreamEnd: (callback: () => void) => void;
     removeStreamListeners: () => void;
   };
@@ -83,6 +94,12 @@ export interface HoseaAPI {
   config: {
     get: () => Promise<unknown>;
     set: (key: string, value: unknown) => Promise<{ success: boolean }>;
+  };
+
+  // Logging
+  log: {
+    getLevel: () => Promise<'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent'>;
+    setLevel: (level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent') => Promise<{ success: boolean }>;
   };
 
   // Agent configurations (saved agent presets)
@@ -260,6 +277,11 @@ const api: HoseaAPI = {
     add: (config) => ipcRenderer.invoke('api-connector:add', config),
     update: (name, updates) => ipcRenderer.invoke('api-connector:update', name, updates),
     delete: (name) => ipcRenderer.invoke('api-connector:delete', name),
+  },
+
+  log: {
+    getLevel: () => ipcRenderer.invoke('log:get-level'),
+    setLevel: (level) => ipcRenderer.invoke('log:set-level', level),
   },
 };
 

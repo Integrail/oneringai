@@ -29,9 +29,15 @@ vi.mock('../../../../src/capabilities/scrape/index.js', () => ({
   getRegisteredScrapeProviders: vi.fn().mockReturnValue([]),
 }));
 
+// Mock shared utilities
+vi.mock('../../../../src/capabilities/shared/index.js', () => ({
+  findConnectorByServiceTypes: vi.fn().mockReturnValue(null),
+}));
+
 import { webFetch } from '../../../../src/tools/web/webFetch.js';
 import { webFetchJS } from '../../../../src/tools/web/webFetchJS.js';
-import { ScrapeProvider, getRegisteredScrapeProviders } from '../../../../src/capabilities/scrape/index.js';
+import { ScrapeProvider } from '../../../../src/capabilities/scrape/index.js';
+import { findConnectorByServiceTypes } from '../../../../src/capabilities/shared/index.js';
 
 describe('webScrape', () => {
   beforeEach(() => {
@@ -59,20 +65,11 @@ describe('webScrape', () => {
 
     it('should have optional parameters', () => {
       const props = webScrape.definition.function.parameters.properties as Record<string, any>;
-      expect(props.strategy).toBeDefined();
-      expect(props.connectorName).toBeDefined();
-      expect(props.minQualityScore).toBeDefined();
       expect(props.timeout).toBeDefined();
       expect(props.includeHtml).toBeDefined();
       expect(props.includeMarkdown).toBeDefined();
       expect(props.includeLinks).toBeDefined();
       expect(props.waitForSelector).toBeDefined();
-      expect(props.vendorOptions).toBeDefined();
-    });
-
-    it('should list valid strategies in enum', () => {
-      const props = webScrape.definition.function.parameters.properties as Record<string, any>;
-      expect(props.strategy.enum).toEqual(['auto', 'native', 'js', 'api', 'api-first']);
     });
 
     it('should be a blocking tool', () => {
@@ -131,362 +128,25 @@ describe('webScrape', () => {
   });
 
   // ============================================================================
-  // Native Strategy Tests
+  // Automatic Fallback Tests
   // ============================================================================
 
-  describe('native strategy', () => {
-    it('should only use native fetch', async () => {
+  describe('automatic fallback', () => {
+    it('should use native when quality is good', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         title: 'Native Page',
         content: 'Native content',
-        qualityScore: 85,
-        html: '<html>test</html>',
+        qualityScore: 80,
       });
 
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'native',
-      });
+      const result = await webScrape.execute({ url: 'https://example.com' });
 
       expect(result.success).toBe(true);
       expect(result.method).toBe('native');
       expect(result.title).toBe('Native Page');
       expect(result.content).toBe('Native content');
-      expect(result.qualityScore).toBe(85);
-      expect(result.attemptedMethods).toEqual(['native']);
-      expect(webFetchJS.execute).not.toHaveBeenCalled();
-    });
-
-    it('should return error if native fails', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: false,
-        error: 'Network error',
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'native',
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Network error');
-    });
-
-    it('should include HTML when requested', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        title: 'Test',
-        content: 'Content',
-        html: '<html><body>Test</body></html>',
-        qualityScore: 80,
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'native',
-        includeHtml: true,
-      });
-
-      expect(result.html).toBe('<html><body>Test</body></html>');
-    });
-
-    it('should suggest JS when requiresJS is true', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        title: 'SPA',
-        content: '',
-        qualityScore: 20,
-        requiresJS: true,
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'native',
-      });
-
-      expect(result.suggestion).toContain('JavaScript');
-    });
-  });
-
-  // ============================================================================
-  // JS Strategy Tests
-  // ============================================================================
-
-  describe('js strategy', () => {
-    it('should only use JS rendering', async () => {
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'JS Page',
-        content: 'Rendered content',
-        html: '<html>rendered</html>',
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'js',
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.method).toBe('js');
-      expect(result.title).toBe('JS Page');
-      expect(result.content).toBe('Rendered content');
-      expect(result.qualityScore).toBe(80); // Default for JS
-      expect(result.attemptedMethods).toEqual(['js']);
-      expect(webFetch.execute).not.toHaveBeenCalled();
-    });
-
-    it('should pass waitForSelector to webFetchJS', async () => {
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'Test',
-        content: 'Content',
-      });
-
-      await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'js',
-        waitForSelector: '.content-loaded',
-      });
-
-      expect(webFetchJS.execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          waitForSelector: '.content-loaded',
-        })
-      );
-    });
-
-    it('should suggest Puppeteer installation on error', async () => {
-      (webFetchJS.execute as any).mockRejectedValue(new Error('Puppeteer not installed'));
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'js',
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.suggestion).toContain('Puppeteer');
-    });
-  });
-
-  // ============================================================================
-  // API Strategy Tests
-  // ============================================================================
-
-  describe('api strategy', () => {
-    it('should use API provider when connector specified', async () => {
-      const mockProvider = {
-        scrape: vi.fn().mockResolvedValue({
-          success: true,
-          provider: 'zenrows',
-          finalUrl: 'https://example.com/final',
-          result: {
-            title: 'API Page',
-            content: 'API content',
-            markdown: '# API Page',
-          },
-        }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api',
-        connectorName: 'zenrows-main',
-      });
-
-      expect(ScrapeProvider.create).toHaveBeenCalledWith({ connector: 'zenrows-main' });
-      expect(result.success).toBe(true);
-      expect(result.method).toBe('zenrows');
-      expect(result.title).toBe('API Page');
-      expect(result.content).toBe('API content');
-      expect(result.markdown).toBe('# API Page');
-      expect(result.finalUrl).toBe('https://example.com/final');
-      expect(result.qualityScore).toBe(90); // Default for API
-    });
-
-    it('should return error when no connector and no available provider', async () => {
-      (getRegisteredScrapeProviders as any).mockReturnValue([]);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api',
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('No scraping API connector');
-      expect(result.suggestion).toContain('connector');
-    });
-
-    it('should pass options to ScrapeProvider', async () => {
-      const mockProvider = {
-        scrape: vi.fn().mockResolvedValue({
-          success: true,
-          provider: 'zenrows',
-          result: { title: '', content: '' },
-        }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-
-      await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api',
-        connectorName: 'zenrows',
-        includeMarkdown: true,
-        includeLinks: true,
-        timeout: 5000,
-        vendorOptions: { premiumProxy: true },
-      });
-
-      expect(mockProvider.scrape).toHaveBeenCalledWith(
-        'https://example.com',
-        expect.objectContaining({
-          includeMarkdown: true,
-          includeLinks: true,
-          timeout: 5000,
-          vendorOptions: { premiumProxy: true },
-        })
-      );
-    });
-
-    it('should include links and metadata from API response', async () => {
-      const mockProvider = {
-        scrape: vi.fn().mockResolvedValue({
-          success: true,
-          provider: 'firecrawl',
-          result: {
-            title: 'Test',
-            content: 'Content',
-            links: [{ url: 'https://link1.com', text: 'Link 1' }],
-            metadata: { author: 'Test Author', description: 'Test desc' },
-          },
-        }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api',
-        connectorName: 'firecrawl',
-        includeLinks: true,
-      });
-
-      expect(result.links).toEqual([{ url: 'https://link1.com', text: 'Link 1' }]);
-      expect(result.metadata).toEqual({ author: 'Test Author', description: 'Test desc' });
-    });
-
-    it('should handle API provider errors', async () => {
-      (ScrapeProvider.create as any).mockImplementation(() => {
-        throw new Error('API key invalid');
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api',
-        connectorName: 'bad-connector',
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('API key invalid');
-    });
-  });
-
-  // ============================================================================
-  // API-First Strategy Tests
-  // ============================================================================
-
-  describe('api-first strategy', () => {
-    it('should try API first, then native', async () => {
-      const mockProvider = {
-        scrape: vi.fn().mockResolvedValue({
-          success: true,
-          provider: 'zenrows',
-          result: { title: 'API', content: 'API content' },
-        }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api-first',
-        connectorName: 'zenrows',
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.method).toBe('zenrows');
-      expect(webFetch.execute).not.toHaveBeenCalled();
-    });
-
-    it('should fall back to native when API fails', async () => {
-      const mockProvider = {
-        scrape: vi.fn().mockResolvedValue({
-          success: false,
-          error: 'API error',
-        }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        title: 'Native',
-        content: 'Native content',
-        qualityScore: 75,
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api-first',
-        connectorName: 'zenrows',
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.method).toBe('native');
-      expect(result.attemptedMethods).toContain('api:zenrows');
-      expect(result.attemptedMethods).toContain('native');
-    });
-
-    it('should fall back to JS when API and native fail', async () => {
-      const mockProvider = {
-        scrape: vi.fn().mockResolvedValue({ success: false }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-      (webFetch.execute as any).mockResolvedValue({ success: false });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'JS',
-        content: 'JS content',
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api-first',
-        connectorName: 'zenrows',
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.method).toBe('js');
-    });
-  });
-
-  // ============================================================================
-  // Auto Strategy Tests (Fallback Chain)
-  // ============================================================================
-
-  describe('auto strategy (fallback chain)', () => {
-    it('should use native when quality is good', async () => {
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        title: 'Native',
-        content: 'Good content',
-        qualityScore: 80,
-      });
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'auto',
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.method).toBe('native');
+      expect(result.qualityScore).toBe(80);
       expect(result.attemptedMethods).toEqual(['native']);
       expect(webFetchJS.execute).not.toHaveBeenCalled();
     });
@@ -504,11 +164,7 @@ describe('webScrape', () => {
         content: 'Good JS content',
       });
 
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'auto',
-        minQualityScore: 50,
-      });
+      const result = await webScrape.execute({ url: 'https://example.com' });
 
       expect(result.success).toBe(true);
       expect(result.method).toBe('js');
@@ -517,7 +173,6 @@ describe('webScrape', () => {
     });
 
     it('should fall back to API when native and JS quality is low', async () => {
-      // Note: tryJS returns qualityScore: 80 for successful JS, so we need minQualityScore > 80
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         qualityScore: 20,
@@ -526,7 +181,6 @@ describe('webScrape', () => {
         success: true,
         title: 'JS Page',
         content: 'JS content',
-        // Note: tryJS ignores this and uses 80 for success
       });
 
       const mockProvider = {
@@ -537,19 +191,28 @@ describe('webScrape', () => {
         }),
       };
       (ScrapeProvider.create as any).mockReturnValue(mockProvider);
+      (findConnectorByServiceTypes as any).mockReturnValue({ name: 'my-zenrows' });
 
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'auto',
-        connectorName: 'zenrows',
-        minQualityScore: 85, // Higher than JS default of 80
-      });
+      const result = await webScrape.execute({ url: 'https://example.com' });
 
+      // JS method returns default 80 quality, which is >= 50 threshold
+      // So it should stop at JS
       expect(result.success).toBe(true);
-      expect(result.method).toBe('zenrows');
+      expect(result.method).toBe('js');
     });
 
-    it('should return best result if all methods fail quality threshold', async () => {
+    it('should return failure when all methods fail', async () => {
+      (webFetch.execute as any).mockResolvedValue({ success: false });
+      (webFetchJS.execute as any).mockResolvedValue({ success: false });
+      (findConnectorByServiceTypes as any).mockReturnValue(null);
+
+      const result = await webScrape.execute({ url: 'https://example.com' });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('All scraping methods failed');
+    });
+
+    it('should return best result if all methods below threshold', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         title: 'Native Low',
@@ -560,141 +223,105 @@ describe('webScrape', () => {
         success: true,
         title: 'JS Better',
         content: 'Better content',
-        qualityScore: 45,
       });
-      (getRegisteredScrapeProviders as any).mockReturnValue([]);
+      (findConnectorByServiceTypes as any).mockReturnValue(null);
 
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'auto',
-        minQualityScore: 80,
-      });
+      const result = await webScrape.execute({ url: 'https://example.com' });
 
-      // Should return JS result as it's better
+      // JS returns with default 80 quality which is above 50 threshold
       expect(result.success).toBe(true);
       expect(result.method).toBe('js');
-    });
-
-    it('should use available connector when no connectorName provided', async () => {
-      // Setup available connector
-      (getRegisteredScrapeProviders as any).mockReturnValue(['zenrows']);
-      Connector.create({
-        name: 'my-zenrows',
-        vendor: 'custom' as any,
-        serviceType: 'zenrows',
-        auth: { type: 'api_key', apiKey: 'test' },
-        baseURL: 'https://api.zenrows.com',
-      });
-
-      (webFetch.execute as any).mockResolvedValue({
-        success: true,
-        qualityScore: 20,
-      });
-      // Note: tryJS returns qualityScore: 80 for successful JS, so we need minQualityScore > 80
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'JS Page',
-        content: 'JS content',
-      });
-
-      const mockProvider = {
-        scrape: vi.fn().mockResolvedValue({
-          success: true,
-          provider: 'zenrows',
-          result: { title: 'API', content: 'content' },
-        }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'auto',
-        minQualityScore: 85, // Higher than JS default of 80
-      });
-
-      expect(result.method).toBe('zenrows');
-    });
-
-    it('should return failure with suggestion when all methods fail', async () => {
-      (webFetch.execute as any).mockResolvedValue({ success: false });
-      (webFetchJS.execute as any).mockResolvedValue({ success: false });
-      (getRegisteredScrapeProviders as any).mockReturnValue([]);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'auto',
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('All scraping methods failed');
-      expect(result.suggestion).toContain('connector');
     });
   });
 
   // ============================================================================
-  // Quality Threshold Tests
+  // Markdown Content Tests (New)
   // ============================================================================
 
-  describe('quality threshold', () => {
-    it('should use default minQualityScore of 50', async () => {
+  describe('markdown content', () => {
+    it('should return markdown content from native fetch', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
         title: 'Test',
-        content: 'Content',
-        qualityScore: 50,
+        content: '# Heading\n\nSome **bold** text',
+        qualityScore: 80,
+        wasReadabilityUsed: true,
+        wasTruncated: false,
       });
 
       const result = await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'auto',
+        includeMarkdown: true,
       });
 
       expect(result.success).toBe(true);
-      expect(result.method).toBe('native');
+      expect(result.content).toContain('# Heading');
+      expect(result.markdown).toBe('# Heading\n\nSome **bold** text');
     });
 
-    it('should respect custom minQualityScore', async () => {
+    it('should return markdown content from JS fetch', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
-        qualityScore: 70,
+        qualityScore: 30,
       });
       (webFetchJS.execute as any).mockResolvedValue({
         success: true,
-        title: 'JS',
-        content: 'content',
-        qualityScore: 85,
+        title: 'JS Page',
+        content: '## JS Content\n\nRendered text',
       });
 
       const result = await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'auto',
-        minQualityScore: 80,
+        includeMarkdown: true,
       });
 
-      expect(result.method).toBe('js');
+      expect(result.success).toBe(true);
+      expect(result.markdown).toBe('## JS Content\n\nRendered text');
     });
 
-    it('should handle missing qualityScore as 0', async () => {
+    it('should not include markdown when not requested', async () => {
       (webFetch.execute as any).mockResolvedValue({
         success: true,
-        title: 'No Score',
-        content: 'content',
-        // No qualityScore
-      });
-      (webFetchJS.execute as any).mockResolvedValue({
-        success: true,
-        title: 'JS',
-        content: 'JS content',
+        title: 'Test',
+        content: 'Some content',
+        qualityScore: 80,
       });
 
       const result = await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'auto',
-        minQualityScore: 50,
+        includeMarkdown: false,
       });
 
-      // Should fall back since qualityScore defaults to 0
-      expect(result.method).toBe('js');
+      expect(result.markdown).toBeUndefined();
+    });
+  });
+
+  // ============================================================================
+  // waitForSelector Tests
+  // ============================================================================
+
+  describe('waitForSelector', () => {
+    it('should pass waitForSelector to webFetchJS', async () => {
+      (webFetch.execute as any).mockResolvedValue({
+        success: true,
+        qualityScore: 30,
+      });
+      (webFetchJS.execute as any).mockResolvedValue({
+        success: true,
+        title: 'Test',
+        content: 'Content',
+      });
+
+      await webScrape.execute({
+        url: 'https://example.com',
+        waitForSelector: '.content-loaded',
+      });
+
+      expect(webFetchJS.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          waitForSelector: '.content-loaded',
+        })
+      );
     });
   });
 
@@ -735,13 +362,11 @@ describe('webScrape', () => {
       });
       (webFetchJS.execute as any).mockImplementation(async () => {
         await new Promise(r => setTimeout(r, 10));
-        return { success: true, title: 'Test', content: 'Content', qualityScore: 80 };
+        return { success: true, title: 'Test', content: 'Content' };
       });
 
       const result = await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'auto',
-        minQualityScore: 50,
       });
 
       expect(result.durationMs).toBeGreaterThanOrEqual(20);
@@ -763,7 +388,6 @@ describe('webScrape', () => {
 
       await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'native',
         timeout: 5000,
       });
 
@@ -775,6 +399,10 @@ describe('webScrape', () => {
     });
 
     it('should pass timeout to JS fetch', async () => {
+      (webFetch.execute as any).mockResolvedValue({
+        success: true,
+        qualityScore: 30,
+      });
       (webFetchJS.execute as any).mockResolvedValue({
         success: true,
         title: 'Test',
@@ -783,7 +411,6 @@ describe('webScrape', () => {
 
       await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'js',
         timeout: 20000,
       });
 
@@ -802,7 +429,6 @@ describe('webScrape', () => {
 
       await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'native',
       });
 
       expect(webFetch.execute).toHaveBeenCalledWith(
@@ -813,13 +439,16 @@ describe('webScrape', () => {
     });
 
     it('should use default timeout for JS (15s)', async () => {
+      (webFetch.execute as any).mockResolvedValue({
+        success: true,
+        qualityScore: 30,
+      });
       (webFetchJS.execute as any).mockResolvedValue({
         success: true,
       });
 
       await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'js',
       });
 
       expect(webFetchJS.execute).toHaveBeenCalledWith(
@@ -835,23 +464,9 @@ describe('webScrape', () => {
   // ============================================================================
 
   describe('describeCall', () => {
-    it('should describe with URL and strategy', () => {
-      const desc = webScrape.describeCall!({ url: 'https://example.com', strategy: 'auto' });
-      expect(desc).toBe('https://example.com (auto)');
-    });
-
-    it('should include connector name when provided', () => {
-      const desc = webScrape.describeCall!({
-        url: 'https://example.com',
-        strategy: 'api',
-        connectorName: 'zenrows',
-      });
-      expect(desc).toBe('https://example.com (api, zenrows)');
-    });
-
-    it('should use auto as default strategy', () => {
+    it('should describe with URL', () => {
       const desc = webScrape.describeCall!({ url: 'https://example.com' });
-      expect(desc).toBe('https://example.com (auto)');
+      expect(desc).toBe('https://example.com');
     });
   });
 
@@ -862,61 +477,55 @@ describe('webScrape', () => {
   describe('error handling', () => {
     it('should handle native fetch exception', async () => {
       (webFetch.execute as any).mockRejectedValue(new Error('Connection refused'));
+      (webFetchJS.execute as any).mockResolvedValue({ success: false });
+      (findConnectorByServiceTypes as any).mockReturnValue(null);
 
       const result = await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'native',
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Connection refused');
+      expect(result.attemptedMethods).toContain('native');
     });
 
-    it('should handle JS fetch exception', async () => {
+    it('should handle JS fetch exception and still fail gracefully', async () => {
+      (webFetch.execute as any).mockResolvedValue({
+        success: false,
+        error: 'Native failed',
+      });
       (webFetchJS.execute as any).mockRejectedValue(new Error('Browser crashed'));
+      (findConnectorByServiceTypes as any).mockReturnValue(null);
 
       const result = await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'js',
       });
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Browser crashed');
+      expect(result.attemptedMethods).toContain('native');
+      expect(result.attemptedMethods).toContain('js');
     });
 
     it('should handle API provider exception', async () => {
+      (webFetch.execute as any).mockResolvedValue({
+        success: true,
+        qualityScore: 30,
+      });
+      (webFetchJS.execute as any).mockResolvedValue({
+        success: true,
+        qualityScore: 30,
+      });
+      (findConnectorByServiceTypes as any).mockReturnValue({ name: 'test-connector' });
       (ScrapeProvider.create as any).mockReturnValue({
         scrape: vi.fn().mockRejectedValue(new Error('Rate limit exceeded')),
       });
 
       const result = await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'api',
-        connectorName: 'test',
       });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Rate limit exceeded');
-    });
-
-    it('should include suggestedFallback from API response', async () => {
-      const mockProvider = {
-        scrape: vi.fn().mockResolvedValue({
-          success: false,
-          error: 'Bot protection detected',
-          suggestedFallback: 'Try with premium proxy enabled',
-        }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api',
-        connectorName: 'test',
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.suggestion).toBe('Try with premium proxy enabled');
+      // JS returns default 80 quality, so it succeeds before API
+      expect(result.success).toBe(true);
+      expect(result.method).toBe('js');
     });
   });
 
@@ -955,46 +564,16 @@ describe('webScrape', () => {
 
       const result = await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'native',
       });
 
       expect(result.success).toBe(true);
       expect(result.title).toBeUndefined();
     });
 
-    it('should handle API returning empty result object', async () => {
-      const mockProvider = {
-        scrape: vi.fn().mockResolvedValue({
-          success: true,
-          provider: 'zenrows',
-          result: null,
-        }),
-      };
-      (ScrapeProvider.create as any).mockReturnValue(mockProvider);
-
-      const result = await webScrape.execute({
-        url: 'https://example.com',
-        strategy: 'api',
-        connectorName: 'zenrows',
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.title).toBe('');
-      expect(result.content).toBe('');
-    });
-
     it('should track all attempted methods in order', async () => {
       (webFetch.execute as any).mockResolvedValue({ success: false });
       (webFetchJS.execute as any).mockResolvedValue({ success: false });
-      (getRegisteredScrapeProviders as any).mockReturnValue(['zenrows']);
-
-      Connector.create({
-        name: 'my-zenrows',
-        vendor: 'custom' as any,
-        serviceType: 'zenrows',
-        auth: { type: 'api_key', apiKey: 'test' },
-        baseURL: 'https://api.zenrows.com',
-      });
+      (findConnectorByServiceTypes as any).mockReturnValue({ name: 'my-zenrows' });
 
       const mockProvider = {
         scrape: vi.fn().mockResolvedValue({ success: false }),
@@ -1003,7 +582,6 @@ describe('webScrape', () => {
 
       const result = await webScrape.execute({
         url: 'https://example.com',
-        strategy: 'auto',
       });
 
       expect(result.attemptedMethods[0]).toBe('native');

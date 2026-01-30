@@ -493,8 +493,8 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements ID
     // Prepare context using unified AgentContext (handles compaction automatically)
     await this.agentContext.prepare();
 
-    // Add task prompt to history
-    this.agentContext.addMessage('user', taskPrompt);
+    // Add task prompt to history (use sync for task prompts which are typically small)
+    this.agentContext.addMessageSync('user', taskPrompt);
 
     this.emit('llm:call', { iteration: task.attempts });
 
@@ -558,8 +558,8 @@ export class PlanExecutor extends EventEmitter<PlanExecutorEvents> implements ID
       await this.checkpointManager.onLLMCall(this.currentState);
     }
 
-    // Add response to history
-    this.agentContext.addMessage('assistant', response.output_text || '');
+    // Add response to history (use async for potentially large responses)
+    await this.agentContext.addMessage('assistant', response.output_text || '');
 
     // Validate task completion (unless validation is disabled or not configured)
     const validationResult = await this.validateTaskCompletion(task, response.output_text || '');

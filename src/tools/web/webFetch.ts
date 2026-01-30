@@ -4,7 +4,8 @@
 
 import { load } from 'cheerio';
 import { ToolFunction } from '../../domain/entities/Tool.js';
-import { detectContentQuality, extractCleanText } from './contentDetector.js';
+import { detectContentQuality } from './contentDetector.js';
+import { htmlToMarkdown } from './htmlToMarkdown.js';
 
 interface WebFetchArgs {
   url: string;
@@ -17,13 +18,17 @@ interface WebFetchResult {
   url: string;
   title: string;
   content: string;
-  html: string;
   contentType: 'html' | 'json' | 'text' | 'error';
   qualityScore: number;
   requiresJS: boolean;
   suggestedAction?: string;
   issues?: string[];
   error?: string;
+  // Markdown conversion metadata
+  excerpt?: string;
+  byline?: string;
+  wasReadabilityUsed?: boolean;
+  wasTruncated?: boolean;
 }
 
 export const webFetch: ToolFunction<WebFetchArgs, WebFetchResult> = {
@@ -57,13 +62,15 @@ RETURNS:
   success: boolean,
   url: string,
   title: string,
-  content: string,          // Extracted text (clean, no scripts/styles)
-  html: string,             // Raw HTML
+  content: string,          // Clean markdown (converted from HTML via Readability + Turndown)
   contentType: string,      // 'html' | 'json' | 'text' | 'error'
   qualityScore: number,     // 0-100 (quality of extraction)
   requiresJS: boolean,      // True if site likely needs JavaScript
   suggestedAction: string,  // Suggestion if quality is low
   issues: string[],         // List of detected issues
+  excerpt: string,          // Short summary excerpt (if extracted)
+  byline: string,           // Author info (if extracted)
+  wasTruncated: boolean,    // True if content was truncated
   error: string             // Error message if failed
 }
 
@@ -114,7 +121,6 @@ With custom user agent:
           url: args.url,
           title: '',
           content: '',
-          html: '',
           contentType: 'error',
           qualityScore: 0,
           requiresJS: false,
@@ -146,7 +152,6 @@ With custom user agent:
           url: args.url,
           title: '',
           content: '',
-          html: '',
           contentType: 'error',
           qualityScore: 0,
           requiresJS: false,
@@ -165,7 +170,6 @@ With custom user agent:
           url: args.url,
           title: 'JSON Response',
           content: JSON.stringify(json, null, 2),
-          html: '',
           contentType: 'json',
           qualityScore: 100,
           requiresJS: false,
@@ -180,7 +184,6 @@ With custom user agent:
           url: args.url,
           title: 'Text Response',
           content: text,
-          html: text,
           contentType: 'text',
           qualityScore: 100,
           requiresJS: false,
@@ -190,29 +193,32 @@ With custom user agent:
       // Get HTML
       const html = await response.text();
 
-      // Parse with cheerio
+      // Parse with cheerio for quality detection
       const $ = load(html);
 
-      // Extract title
-      const title = $('title').text() || $('h1').first().text() || 'Untitled';
+      // Convert HTML to clean markdown
+      const mdResult = htmlToMarkdown(html, args.url);
 
-      // Extract clean text content
-      const content = extractCleanText($);
+      // Use markdown result title or fallback to cheerio extraction
+      const title = mdResult.title || $('title').text() || $('h1').first().text() || 'Untitled';
 
-      // Detect content quality
-      const quality = detectContentQuality(html, content, $);
+      // Detect content quality (using markdown content for text analysis)
+      const quality = detectContentQuality(html, mdResult.markdown, $);
 
       return {
         success: true,
         url: args.url,
         title,
-        content,
-        html,
+        content: mdResult.markdown,
         contentType: 'html',
         qualityScore: quality.score,
         requiresJS: quality.requiresJS,
         suggestedAction: quality.suggestion,
         issues: quality.issues,
+        excerpt: mdResult.excerpt,
+        byline: mdResult.byline,
+        wasReadabilityUsed: mdResult.wasReadabilityUsed,
+        wasTruncated: mdResult.wasTruncated,
       };
     } catch (error: any) {
       // Handle abort errors specially
@@ -222,7 +228,6 @@ With custom user agent:
           url: args.url,
           title: '',
           content: '',
-          html: '',
           contentType: 'error',
           qualityScore: 0,
           requiresJS: false,
@@ -235,7 +240,6 @@ With custom user agent:
         url: args.url,
         title: '',
         content: '',
-        html: '',
         contentType: 'error',
         qualityScore: 0,
         requiresJS: false,

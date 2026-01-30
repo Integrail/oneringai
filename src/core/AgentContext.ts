@@ -727,10 +727,76 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   // ============================================================================
 
   /**
-   * Add a message to history
-   * Returns null if history feature is disabled
+   * Add a message to history with automatic capacity management.
+   *
+   * This async version checks if adding the message would exceed context budget
+   * and triggers compaction BEFORE adding if needed. Use this for large content
+   * like tool outputs.
+   *
+   * @param role - Message role (user, assistant, system, tool)
+   * @param content - Message content
+   * @param metadata - Optional metadata
+   * @returns The added message, or null if history feature is disabled
+   *
+   * @example
+   * ```typescript
+   * // For large tool outputs, capacity is checked automatically
+   * await ctx.addMessage('tool', largeWebFetchResult);
+   *
+   * // For small messages, same API but less overhead
+   * await ctx.addMessage('user', 'Hello');
+   * ```
    */
-  addMessage(
+  async addMessage(
+    role: 'user' | 'assistant' | 'system' | 'tool',
+    content: string,
+    metadata?: Record<string, unknown>
+  ): Promise<HistoryMessage | null> {
+    // Return null if history is disabled
+    if (!this._historyEnabled) {
+      return null;
+    }
+
+    // Estimate tokens for new content
+    const estimatedTokens = this._estimator.estimateTokens(content);
+
+    // Only check capacity for larger messages (>1000 tokens) to avoid overhead
+    // for small messages like user inputs
+    if (estimatedTokens > 1000) {
+      const hasCapacity = await this.ensureCapacity(estimatedTokens);
+      if (!hasCapacity) {
+        // Emit warning but still add (best effort)
+        this.emit('budget:critical', { budget: this._lastBudget! });
+      }
+    }
+
+    const message: HistoryMessage = {
+      id: this.generateId(),
+      role,
+      content,
+      timestamp: Date.now(),
+      metadata,
+    };
+
+    this._history.push(message);
+    this.emit('message:added', { message });
+
+    return message;
+  }
+
+  /**
+   * Add a message to history synchronously (without capacity checking).
+   *
+   * Use this when you need synchronous behavior or for small messages where
+   * capacity checking overhead is not worth it. For large content (tool outputs,
+   * fetched documents), prefer the async `addMessage()` instead.
+   *
+   * @param role - Message role (user, assistant, system, tool)
+   * @param content - Message content
+   * @param metadata - Optional metadata
+   * @returns The added message, or null if history feature is disabled
+   */
+  addMessageSync(
     role: 'user' | 'assistant' | 'system' | 'tool',
     content: string,
     metadata?: Record<string, unknown>
@@ -752,6 +818,48 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     this.emit('message:added', { message });
 
     return message;
+  }
+
+  /**
+   * Add a tool result to context with automatic capacity management.
+   *
+   * This is a convenience method for adding tool outputs. It:
+   * - Stringifies non-string results
+   * - Checks capacity and triggers compaction if needed
+   * - Adds as a 'tool' role message
+   *
+   * Use this for large tool outputs like web_fetch results, file contents, etc.
+   *
+   * @param result - The tool result (will be stringified for token estimation)
+   * @param metadata - Optional metadata (e.g., tool name, duration)
+   * @returns The added message, or null if history feature is disabled
+   *
+   * @example
+   * ```typescript
+   * // Add large web fetch result
+   * const html = await webFetch('https://example.com');
+   * await ctx.addToolResult(html, { tool: 'web_fetch', url: 'https://example.com' });
+   *
+   * // Add structured data
+   * await ctx.addToolResult({ items: [...], count: 100 }, { tool: 'search' });
+   * ```
+   */
+  async addToolResult(
+    result: unknown,
+    metadata?: Record<string, unknown>
+  ): Promise<HistoryMessage | null> {
+    // Return null if history is disabled
+    if (!this._historyEnabled) {
+      return null;
+    }
+
+    // Convert result to string for history
+    const content = typeof result === 'string'
+      ? result
+      : JSON.stringify(result, null, 2);
+
+    // Use async addMessage which handles capacity checking
+    return this.addMessage('tool', content, metadata);
   }
 
   /**
@@ -1043,6 +1151,74 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    */
   getLastBudget(): ContextBudget | null {
     return this._lastBudget;
+  }
+
+  // ============================================================================
+  // Auto-Compaction Guard
+  // ============================================================================
+
+  /**
+   * Ensure there's enough capacity for new content.
+   * If adding the estimated tokens would exceed budget, triggers compaction first.
+   *
+   * This method enables proactive compaction BEFORE content is added, preventing
+   * context overflow. It uses the configured strategy to determine when to compact.
+   *
+   * @param estimatedTokens - Estimated tokens of content to be added
+   * @returns true if capacity is available (after potential compaction), false if cannot make room
+   *
+   * @example
+   * ```typescript
+   * const tokens = ctx.estimateTokens(largeToolOutput);
+   * const hasRoom = await ctx.ensureCapacity(tokens);
+   * if (hasRoom) {
+   *   await ctx.addMessage('tool', largeToolOutput);
+   * } else {
+   *   // Handle overflow - truncate or summarize
+   * }
+   * ```
+   */
+  async ensureCapacity(estimatedTokens: number): Promise<boolean> {
+    // Quick check: calculate current budget
+    const components = await this.buildComponents();
+    const budget = this.calculateBudget(components);
+
+    // Calculate what utilization would be after adding new content
+    const projectedUsed = budget.used + estimatedTokens;
+    const availableForContent = budget.total - budget.reserved;
+    const projectedUtilization = projectedUsed / availableForContent;
+
+    // Build projected budget for strategy check
+    const projectedBudget: ContextBudget = {
+      ...budget,
+      used: projectedUsed,
+      available: budget.available - estimatedTokens,
+      utilizationPercent: projectedUtilization * 100,
+      status: projectedUtilization >= 0.9 ? 'critical' : projectedUtilization >= 0.75 ? 'warning' : 'ok',
+    };
+
+    // Check against strategy threshold (proactive = 0.75, aggressive = 0.6, etc.)
+    const needsCompaction = this._strategy.shouldCompact(projectedBudget, {
+      ...DEFAULT_CONTEXT_CONFIG,
+      maxContextTokens: this._maxContextTokens,
+      responseReserve: this._config.responseReserve,
+    });
+
+    if (!needsCompaction) {
+      return true; // Plenty of room
+    }
+
+    // Trigger compaction
+    this.emit('budget:warning', { budget });
+    await this.doCompaction(components, budget);
+
+    // Re-check after compaction
+    const newComponents = await this.buildComponents();
+    const newBudget = this.calculateBudget(newComponents);
+    this._lastBudget = newBudget;
+
+    // Return true if we now have room
+    return (newBudget.available >= estimatedTokens);
   }
 
   /**

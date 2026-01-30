@@ -1,78 +1,57 @@
 /**
- * Web Scrape Tool - Guaranteed URL reading with automatic fallback
- *
- * This tool provides a "just works" approach to reading any URL by trying
- * multiple methods in sequence:
- *
- * 1. Native fetch (webFetch) - Fast, free, works for static sites
- * 2. JS rendering (webFetchJS) - Handles SPAs, requires Puppeteer
- * 3. External API provider - Handles bot protection, CAPTCHAs, etc.
+ * Web Scrape Tool - Clean interface for LLM
  *
  * ARCHITECTURE:
- * - Surface API: webScrape tool (this file)
- * - Provider API: ScrapeProvider (handles external API vendors)
- * - Native fallback: Uses existing webFetch/webFetchJS tools
+ * - LLM sees simple interface: { url, timeout, includeHtml, includeMarkdown, includeLinks, waitForSelector }
+ * - Connector configuration is INTERNAL (auto-detected by serviceType)
+ * - Uses shared findConnectorByServiceTypes() utility
+ * - Automatic fallback chain: native fetch -> JS rendering -> external API
  *
- * The tool automatically selects the best method based on:
- * - Quality score from native fetch
- * - Whether JS rendering is required
- * - Whether external API providers are configured
+ * Supports: ZenRows, Jina Reader, Firecrawl, ScrapingBee
  */
 
 import { ToolFunction } from '../../domain/entities/Tool.js';
-import { Connector } from '../../core/Connector.js';
-import { ScrapeProvider, getRegisteredScrapeProviders } from '../../capabilities/scrape/index.js';
+import { ScrapeProvider } from '../../capabilities/scrape/index.js';
+import { findConnectorByServiceTypes } from '../../capabilities/shared/index.js';
 import type { ScrapeOptions, ScrapeResponse, ScrapeResult } from '../../capabilities/scrape/index.js';
 import { webFetch } from './webFetch.js';
 import { webFetchJS } from './webFetchJS.js';
+import { logger } from '../../infrastructure/observability/Logger.js';
 
-// ============ Tool Args & Result ============
+const scrapeLogger = logger.child({ component: 'webScrape' });
 
+// ============ Internal Configuration (NOT exposed to LLM) ============
+
+/**
+ * Service types this tool supports for external API fallback
+ * Used for auto-detecting available connectors
+ */
+const SCRAPE_SERVICE_TYPES = ['zenrows', 'jina-reader', 'firecrawl', 'scrapingbee'];
+
+/**
+ * Default minimum quality score to accept from native methods
+ */
+const DEFAULT_MIN_QUALITY = 50;
+
+// ============ Tool Interface (what LLM sees) ============
+
+/**
+ * Arguments for web_scrape tool
+ * CLEAN and SIMPLE - no connector/strategy details exposed
+ */
 interface WebScrapeArgs {
   /** URL to scrape */
   url: string;
-
-  /**
-   * Scraping strategy:
-   * - 'auto': Try native -> JS -> API (default)
-   * - 'native': Only use native fetch
-   * - 'js': Only use JS rendering
-   * - 'api': Only use external API provider
-   * - 'api-first': Try API first, then native
-   */
-  strategy?: 'auto' | 'native' | 'js' | 'api' | 'api-first';
-
-  /**
-   * Connector name for external API provider
-   * Required if strategy is 'api' or 'api-first'
-   * Optional for 'auto' (will be used as final fallback)
-   */
-  connectorName?: string;
-
-  /**
-   * Minimum quality score to accept from native fetch (0-100)
-   * If native fetch returns lower score, will try next method
-   * Default: 50
-   */
-  minQualityScore?: number;
-
   /** Timeout in milliseconds (default: 30000) */
   timeout?: number;
-
   /** Whether to include raw HTML in response */
   includeHtml?: boolean;
-
-  /** Whether to convert to markdown (if supported by provider) */
+  /** Whether to convert to markdown (if supported) */
   includeMarkdown?: boolean;
-
   /** Whether to extract links */
   includeLinks?: boolean;
-
-  /** CSS selector to wait for (JS/API only) */
+  /** CSS selector to wait for (for JS-heavy sites) */
   waitForSelector?: string;
-
-  /** Vendor-specific options for API provider */
-  vendorOptions?: Record<string, any>;
 }
 
 interface WebScrapeResult {
@@ -82,7 +61,7 @@ interface WebScrapeResult {
   url: string;
   /** Final URL after redirects */
   finalUrl?: string;
-  /** Method used: 'native', 'js', or provider name */
+  /** Method used: 'native', 'js', or external provider name */
   method: string;
   /** Page title */
   title: string;
@@ -96,7 +75,7 @@ interface WebScrapeResult {
   metadata?: ScrapeResult['metadata'];
   /** Extracted links (if requested) */
   links?: ScrapeResult['links'];
-  /** Quality score (0-100) for native/js methods */
+  /** Quality score (0-100) */
   qualityScore?: number;
   /** Time taken in milliseconds */
   durationMs: number;
@@ -104,8 +83,6 @@ interface WebScrapeResult {
   attemptedMethods: string[];
   /** Error message if failed */
   error?: string;
-  /** Suggestion for improvement */
-  suggestion?: string;
 }
 
 // ============ Tool Definition ============
@@ -117,33 +94,10 @@ export const webScrape: ToolFunction<WebScrapeArgs, WebScrapeResult> = {
       name: 'web_scrape',
       description: `Scrape any URL with automatic fallback - guaranteed to work on most sites.
 
-This tool combines multiple scraping methods to ensure content extraction:
-
-SCRAPING STRATEGIES:
-- auto (default): Tries native -> JS -> API until one succeeds
-- native: Only native HTTP fetch (fast, free, static sites only)
-- js: Only JavaScript rendering (handles SPAs, needs Puppeteer)
-- api: Only external API provider (handles bot protection)
-- api-first: Tries API first, then falls back to native
-
-FALLBACK CHAIN (auto strategy):
-1. Native fetch - Fast (~1s), free, works for blogs/docs/articles
-2. JS rendering - Slower (~5s), handles React/Vue/Angular
-3. External API - Handles bot protection, CAPTCHAs, rate limits
-
-EXTERNAL API PROVIDERS:
-Configure a connector with a scraping service:
-- Jina AI Reader (free tier available)
-- Firecrawl (advanced features)
-- ScrapingBee (proxy rotation)
-- etc.
-
-WHEN TO USE EACH STRATEGY:
-- 'auto': Most cases - let the tool figure it out
-- 'native': When you know the site is static
-- 'js': When you know it's a React/Vue/Angular app
-- 'api': When site has bot protection or rate limits
-- 'api-first': When you want best quality regardless of cost
+Automatically tries multiple methods in sequence:
+1. Native fetch - Fast (~1s), works for blogs/docs/articles
+2. JS rendering - Handles React/Vue/Angular SPAs
+3. External API - Handles bot protection, CAPTCHAs (if configured)
 
 RETURNS:
 {
@@ -154,40 +108,29 @@ RETURNS:
   title: string,
   content: string,         // Clean text
   html: string,            // If requested
-  markdown: string,        // If requested and supported
+  markdown: string,        // If requested
   metadata: {...},         // Title, description, author, etc.
   links: [{url, text}],    // If requested
   qualityScore: number,    // 0-100
   durationMs: number,
-  attemptedMethods: [],    // Methods tried
-  error: string,           // If failed
-  suggestion: string       // How to fix
+  attemptedMethods: []     // Methods tried
 }
 
 EXAMPLES:
-Basic (auto strategy):
+Basic:
 { "url": "https://example.com/article" }
 
-With API fallback:
-{
-  "url": "https://protected-site.com",
-  "connectorName": "jina-reader",
-  "strategy": "auto"
-}
-
-Force API provider:
-{
-  "url": "https://hard-to-scrape.com",
-  "connectorName": "firecrawl-main",
-  "strategy": "api",
-  "includeMarkdown": true
-}
-
-High quality threshold:
+With options:
 {
   "url": "https://example.com",
-  "minQualityScore": 80,
-  "strategy": "auto"
+  "includeMarkdown": true,
+  "includeLinks": true
+}
+
+For JS-heavy sites:
+{
+  "url": "https://spa-app.com",
+  "waitForSelector": ".main-content"
 }`,
 
       parameters: {
@@ -197,55 +140,36 @@ High quality threshold:
             type: 'string',
             description: 'URL to scrape. Must start with http:// or https://',
           },
-          strategy: {
-            type: 'string',
-            enum: ['auto', 'native', 'js', 'api', 'api-first'],
-            description: 'Scraping strategy. Default: "auto"',
-          },
-          connectorName: {
-            type: 'string',
-            description: 'Connector name for external API provider (e.g., "jina-reader", "firecrawl-main")',
-          },
-          minQualityScore: {
-            type: 'number',
-            description: 'Minimum quality score (0-100) to accept from native methods. Default: 50',
-          },
           timeout: {
             type: 'number',
-            description: 'Timeout in milliseconds. Default: 30000',
+            description: 'Timeout in milliseconds (default: 30000)',
           },
           includeHtml: {
             type: 'boolean',
-            description: 'Include raw HTML in response. Default: false',
+            description: 'Include raw HTML in response (default: false)',
           },
           includeMarkdown: {
             type: 'boolean',
-            description: 'Include markdown conversion (if supported). Default: false',
+            description: 'Include markdown conversion (default: false)',
           },
           includeLinks: {
             type: 'boolean',
-            description: 'Extract and include links. Default: false',
+            description: 'Extract and include links (default: false)',
           },
           waitForSelector: {
             type: 'string',
-            description: 'CSS selector to wait for (JS/API strategies only)',
-          },
-          vendorOptions: {
-            type: 'object',
-            description: 'Vendor-specific options for API provider',
+            description: 'CSS selector to wait for before scraping (for JS-heavy sites)',
           },
         },
         required: ['url'],
       },
     },
     blocking: true,
-    timeout: 60000, // Allow time for all fallbacks
+    timeout: 60000,
   },
 
   execute: async (args: WebScrapeArgs): Promise<WebScrapeResult> => {
     const startTime = Date.now();
-    const strategy = args.strategy || 'auto';
-    const minQuality = args.minQualityScore ?? 50;
     const attemptedMethods: string[] = [];
 
     // Validate URL
@@ -264,76 +188,47 @@ High quality threshold:
       };
     }
 
-    // Strategy execution
-    switch (strategy) {
-      case 'native':
-        return await tryNative(args, startTime, attemptedMethods);
+    // Automatic fallback chain: native -> JS -> API
 
-      case 'js':
-        return await tryJS(args, startTime, attemptedMethods);
-
-      case 'api':
-        return await tryAPI(args, startTime, attemptedMethods);
-
-      case 'api-first':
-        // Try API first, then native
-        if (args.connectorName) {
-          const apiResult = await tryAPI(args, startTime, attemptedMethods);
-          if (apiResult.success) return apiResult;
-        }
-        const nativeResult = await tryNative(args, startTime, attemptedMethods);
-        if (nativeResult.success) return nativeResult;
-        return await tryJS(args, startTime, attemptedMethods);
-
-      case 'auto':
-      default:
-        // Try native -> JS -> API
-        const native = await tryNative(args, startTime, attemptedMethods);
-        if (native.success && (native.qualityScore ?? 0) >= minQuality) {
-          return native;
-        }
-
-        const js = await tryJS(args, startTime, attemptedMethods);
-        if (js.success && (js.qualityScore ?? 0) >= minQuality) {
-          return js;
-        }
-
-        // Try API if configured
-        if (args.connectorName || hasAvailableScrapeConnector()) {
-          const api = await tryAPI(args, startTime, attemptedMethods);
-          if (api.success) return api;
-        }
-
-        // Return best result we got
-        if (js.success) return js;
-        if (native.success) return native;
-
-        return {
-          success: false,
-          url: args.url,
-          method: 'none',
-          title: '',
-          content: '',
-          durationMs: Date.now() - startTime,
-          attemptedMethods,
-          error: 'All scraping methods failed',
-          suggestion: args.connectorName
-            ? 'Check connector configuration and API key'
-            : 'Configure an external scraping API connector for better results',
-        };
+    // 1. Try native fetch first
+    const native = await tryNative(args, startTime, attemptedMethods);
+    if (native.success && (native.qualityScore ?? 0) >= DEFAULT_MIN_QUALITY) {
+      return native;
     }
+
+    // 2. Try JS rendering
+    const js = await tryJS(args, startTime, attemptedMethods);
+    if (js.success && (js.qualityScore ?? 0) >= DEFAULT_MIN_QUALITY) {
+      return js;
+    }
+
+    // 3. Try external API if available
+    const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
+    if (connector) {
+      const api = await tryAPI(connector.name, args, startTime, attemptedMethods);
+      if (api.success) return api;
+    }
+
+    // Return best result we got
+    if (js.success) return js;
+    if (native.success) return native;
+
+    return {
+      success: false,
+      url: args.url,
+      method: 'none',
+      title: '',
+      content: '',
+      durationMs: Date.now() - startTime,
+      attemptedMethods,
+      error: 'All scraping methods failed. Site may have bot protection.',
+    };
   },
 
-  describeCall: (args: WebScrapeArgs) => {
-    const strategy = args.strategy || 'auto';
-    if (args.connectorName) {
-      return `${args.url} (${strategy}, ${args.connectorName})`;
-    }
-    return `${args.url} (${strategy})`;
-  },
+  describeCall: (args: WebScrapeArgs) => args.url,
 };
 
-// ============ Strategy Implementations ============
+// ============ Internal Execution Functions ============
 
 async function tryNative(
   args: WebScrapeArgs,
@@ -341,6 +236,7 @@ async function tryNative(
   attemptedMethods: string[]
 ): Promise<WebScrapeResult> {
   attemptedMethods.push('native');
+  scrapeLogger.debug({ url: args.url }, 'Trying native fetch');
 
   try {
     const result = await webFetch.execute({
@@ -355,14 +251,12 @@ async function tryNative(
       method: 'native',
       title: result.title,
       content: result.content,
-      html: args.includeHtml ? result.html : undefined,
+      // Note: raw HTML not available with native method (returns markdown instead)
+      markdown: args.includeMarkdown ? result.content : undefined,
       qualityScore: result.qualityScore,
       durationMs: Date.now() - startTime,
       attemptedMethods,
       error: result.error,
-      suggestion: result.requiresJS
-        ? 'Site requires JavaScript - try strategy "js" or "api"'
-        : result.suggestedAction,
     };
   } catch (error: any) {
     return {
@@ -384,6 +278,7 @@ async function tryJS(
   attemptedMethods: string[]
 ): Promise<WebScrapeResult> {
   attemptedMethods.push('js');
+  scrapeLogger.debug({ url: args.url }, 'Trying JS rendering');
 
   try {
     const result = await webFetchJS.execute({
@@ -399,12 +294,12 @@ async function tryJS(
       method: 'js',
       title: result.title,
       content: result.content,
-      html: args.includeHtml ? result.html : undefined,
-      qualityScore: result.success ? 80 : 0, // JS rendering typically gives good quality
+      // Note: raw HTML not available with JS method (returns markdown instead)
+      markdown: args.includeMarkdown ? result.content : undefined,
+      qualityScore: result.success ? 80 : 0,
       durationMs: Date.now() - startTime,
       attemptedMethods,
       error: result.error,
-      suggestion: result.suggestion,
     };
   } catch (error: any) {
     return {
@@ -416,36 +311,18 @@ async function tryJS(
       durationMs: Date.now() - startTime,
       attemptedMethods,
       error: error.message,
-      suggestion: error.message.includes('Puppeteer')
-        ? 'Install Puppeteer: npm install puppeteer'
-        : undefined,
     };
   }
 }
 
 async function tryAPI(
+  connectorName: string,
   args: WebScrapeArgs,
   startTime: number,
   attemptedMethods: string[]
 ): Promise<WebScrapeResult> {
-  // Find connector to use
-  const connectorName = args.connectorName || findAvailableScrapeConnector();
-
-  if (!connectorName) {
-    return {
-      success: false,
-      url: args.url,
-      method: 'api',
-      title: '',
-      content: '',
-      durationMs: Date.now() - startTime,
-      attemptedMethods,
-      error: 'No scraping API connector configured',
-      suggestion: 'Create a connector with a scraping service (e.g., Jina, Firecrawl)',
-    };
-  }
-
   attemptedMethods.push(`api:${connectorName}`);
+  scrapeLogger.debug({ url: args.url, connectorName }, 'Trying external API');
 
   try {
     const provider = ScrapeProvider.create({ connector: connectorName });
@@ -456,7 +333,6 @@ async function tryAPI(
       includeHtml: args.includeHtml,
       includeMarkdown: args.includeMarkdown,
       includeLinks: args.includeLinks,
-      vendorOptions: args.vendorOptions,
     };
 
     const result: ScrapeResponse = await provider.scrape(args.url, options);
@@ -472,11 +348,10 @@ async function tryAPI(
       markdown: result.result?.markdown,
       metadata: result.result?.metadata,
       links: result.result?.links,
-      qualityScore: result.success ? 90 : 0, // API providers typically give high quality
+      qualityScore: result.success ? 90 : 0,
       durationMs: Date.now() - startTime,
       attemptedMethods,
       error: result.error,
-      suggestion: result.suggestedFallback,
     };
   } catch (error: any) {
     return {
@@ -490,36 +365,4 @@ async function tryAPI(
       error: error.message,
     };
   }
-}
-
-// ============ Helpers ============
-
-/**
- * Check if any scrape connector is available
- */
-function hasAvailableScrapeConnector(): boolean {
-  return findAvailableScrapeConnector() !== undefined;
-}
-
-/**
- * Find an available scrape connector
- */
-function findAvailableScrapeConnector(): string | undefined {
-  const registeredProviders = getRegisteredScrapeProviders();
-  if (registeredProviders.length === 0) return undefined;
-
-  const allConnectors = Connector.list();
-
-  for (const connectorName of allConnectors) {
-    try {
-      const connector = Connector.get(connectorName);
-      if (connector?.serviceType && registeredProviders.includes(connector.serviceType)) {
-        return connectorName;
-      }
-    } catch {
-      // Ignore errors
-    }
-  }
-
-  return undefined;
 }

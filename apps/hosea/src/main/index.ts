@@ -67,11 +67,11 @@ async function createWindow(): Promise<void> {
   });
 }
 
-function setupIPC(): void {
+async function setupIPC(): Promise<void> {
   // Initialize agent service with proper data directory
   const dataDir = getDataDir();
   console.log('HOSEA data directory:', dataDir);
-  agentService = new AgentService(dataDir);
+  agentService = await AgentService.create(dataDir, isDev);
 
   // Agent operations
   ipcMain.handle('agent:initialize', async (_event, connectorName: string, model: string) => {
@@ -214,11 +214,20 @@ function setupIPC(): void {
   ipcMain.handle('config:set', async (_event, key: string, value: unknown) => {
     return agentService!.setConfig(key, value);
   });
+
+  // Log level operations
+  ipcMain.handle('log:get-level', async () => {
+    return agentService!.getLogLevel();
+  });
+
+  ipcMain.handle('log:set-level', async (_event, level: string) => {
+    return agentService!.setLogLevel(level as any);
+  });
 }
 
 // App lifecycle
 app.whenReady().then(async () => {
-  setupIPC();
+  await setupIPC();
   await createWindow();
 
   app.on('activate', async () => {

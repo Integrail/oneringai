@@ -134,3 +134,77 @@ export function resolveConnector(connectorOrName: string | Connector): Connector
   }
   return connectorOrName;
 }
+
+// ============ Service Type Auto-Detection ============
+
+/**
+ * Find a connector by supported service types
+ * Used by tools to auto-detect available external API connectors
+ *
+ * This is the GENERIC utility for all external API-dependent tools.
+ * Tools define which service types they support, this function finds
+ * the first available connector matching any of those types.
+ *
+ * @param serviceTypes - Array of supported service types in order of preference
+ * @returns Connector if found, null otherwise
+ *
+ * @example
+ * ```typescript
+ * // In web_search tool
+ * const SEARCH_SERVICE_TYPES = ['serper', 'brave-search', 'tavily', 'rapidapi-search'];
+ * const connector = findConnectorByServiceTypes(SEARCH_SERVICE_TYPES);
+ *
+ * // In web_scrape tool
+ * const SCRAPE_SERVICE_TYPES = ['zenrows', 'jina-reader', 'firecrawl', 'scrapingbee'];
+ * const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
+ * ```
+ */
+export function findConnectorByServiceTypes(serviceTypes: string[]): Connector | null {
+  // Import dynamically to avoid circular deps
+  const { Connector: ConnectorClass } = require('../../core/Connector.js');
+
+  const allConnectors = ConnectorClass.list() as string[];
+
+  // Try each service type in order of preference
+  for (const serviceType of serviceTypes) {
+    for (const name of allConnectors) {
+      try {
+        const connector = ConnectorClass.get(name);
+        if (connector?.serviceType === serviceType) {
+          return connector;
+        }
+      } catch {
+        // Ignore errors, continue searching
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * List all available connectors for given service types
+ * Useful for tools that want to show what's available or support fallback chains
+ *
+ * @param serviceTypes - Array of supported service types
+ * @returns Array of connector names that match any of the service types
+ */
+export function listConnectorsByServiceTypes(serviceTypes: string[]): string[] {
+  const { Connector: ConnectorClass } = require('../../core/Connector.js');
+
+  const allConnectors = ConnectorClass.list() as string[];
+  const matching: string[] = [];
+
+  for (const name of allConnectors) {
+    try {
+      const connector = ConnectorClass.get(name);
+      if (connector?.serviceType && serviceTypes.includes(connector.serviceType)) {
+        matching.push(name);
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  return matching;
+}

@@ -231,39 +231,47 @@ describe('AgentContext', () => {
       ctx = AgentContext.create();
     });
 
-    it('should add user message', () => {
-      const msg = ctx.addMessage('user', 'Hello');
-      expect(msg.role).toBe('user');
-      expect(msg.content).toBe('Hello');
-      expect(msg.id).toBeDefined();
-      expect(msg.timestamp).toBeDefined();
+    it('should add user message (async)', async () => {
+      const msg = await ctx.addMessage('user', 'Hello');
+      expect(msg!.role).toBe('user');
+      expect(msg!.content).toBe('Hello');
+      expect(msg!.id).toBeDefined();
+      expect(msg!.timestamp).toBeDefined();
     });
 
-    it('should add assistant message', () => {
-      const msg = ctx.addMessage('assistant', 'Hi there!');
-      expect(msg.role).toBe('assistant');
-      expect(msg.content).toBe('Hi there!');
+    it('should add user message (sync)', () => {
+      const msg = ctx.addMessageSync('user', 'Hello');
+      expect(msg!.role).toBe('user');
+      expect(msg!.content).toBe('Hello');
+      expect(msg!.id).toBeDefined();
+      expect(msg!.timestamp).toBeDefined();
+    });
+
+    it('should add assistant message', async () => {
+      const msg = await ctx.addMessage('assistant', 'Hi there!');
+      expect(msg!.role).toBe('assistant');
+      expect(msg!.content).toBe('Hi there!');
     });
 
     it('should add system message', () => {
-      const msg = ctx.addMessage('system', 'System notice');
-      expect(msg.role).toBe('system');
+      const msg = ctx.addMessageSync('system', 'System notice');
+      expect(msg!.role).toBe('system');
     });
 
     it('should add tool message', () => {
-      const msg = ctx.addMessage('tool', 'Tool result');
-      expect(msg.role).toBe('tool');
+      const msg = ctx.addMessageSync('tool', 'Tool result');
+      expect(msg!.role).toBe('tool');
     });
 
-    it('should add message with metadata', () => {
-      const msg = ctx.addMessage('user', 'Hello', { source: 'test' });
-      expect(msg.metadata).toEqual({ source: 'test' });
+    it('should add message with metadata', async () => {
+      const msg = await ctx.addMessage('user', 'Hello', { source: 'test' });
+      expect(msg!.metadata).toEqual({ source: 'test' });
     });
 
     it('should get full history', () => {
-      ctx.addMessage('user', 'Hello');
-      ctx.addMessage('assistant', 'Hi');
-      ctx.addMessage('user', 'How are you?');
+      ctx.addMessageSync('user', 'Hello');
+      ctx.addMessageSync('assistant', 'Hi');
+      ctx.addMessageSync('user', 'How are you?');
 
       const history = ctx.getHistory();
       expect(history).toHaveLength(3);
@@ -273,9 +281,9 @@ describe('AgentContext', () => {
     });
 
     it('should return copy of history (not reference)', () => {
-      ctx.addMessage('user', 'Hello');
+      ctx.addMessageSync('user', 'Hello');
       const history1 = ctx.getHistory();
-      ctx.addMessage('user', 'World');
+      ctx.addMessageSync('user', 'World');
       const history2 = ctx.getHistory();
 
       expect(history1).toHaveLength(1);
@@ -283,11 +291,11 @@ describe('AgentContext', () => {
     });
 
     it('should get recent history', () => {
-      ctx.addMessage('user', 'Message 1');
-      ctx.addMessage('user', 'Message 2');
-      ctx.addMessage('user', 'Message 3');
-      ctx.addMessage('user', 'Message 4');
-      ctx.addMessage('user', 'Message 5');
+      ctx.addMessageSync('user', 'Message 1');
+      ctx.addMessageSync('user', 'Message 2');
+      ctx.addMessageSync('user', 'Message 3');
+      ctx.addMessageSync('user', 'Message 4');
+      ctx.addMessageSync('user', 'Message 5');
 
       const recent = ctx.getRecentHistory(3);
       expect(recent).toHaveLength(3);
@@ -299,16 +307,16 @@ describe('AgentContext', () => {
     it('should get message count', () => {
       expect(ctx.getMessageCount()).toBe(0);
 
-      ctx.addMessage('user', 'Hello');
+      ctx.addMessageSync('user', 'Hello');
       expect(ctx.getMessageCount()).toBe(1);
 
-      ctx.addMessage('assistant', 'Hi');
+      ctx.addMessageSync('assistant', 'Hi');
       expect(ctx.getMessageCount()).toBe(2);
     });
 
     it('should clear history', () => {
-      ctx.addMessage('user', 'Hello');
-      ctx.addMessage('assistant', 'Hi');
+      ctx.addMessageSync('user', 'Hello');
+      ctx.addMessageSync('assistant', 'Hi');
 
       ctx.clearHistory('test reason');
 
@@ -316,11 +324,25 @@ describe('AgentContext', () => {
       expect(ctx.getMessageCount()).toBe(0);
     });
 
-    it('should emit message:added event', () => {
+    it('should emit message:added event (async)', async () => {
       const listener = vi.fn();
       ctx.on('message:added', listener);
 
-      ctx.addMessage('user', 'Hello');
+      await ctx.addMessage('user', 'Hello');
+
+      expect(listener).toHaveBeenCalledWith({
+        message: expect.objectContaining({
+          role: 'user',
+          content: 'Hello',
+        }),
+      });
+    });
+
+    it('should emit message:added event (sync)', () => {
+      const listener = vi.fn();
+      ctx.on('message:added', listener);
+
+      ctx.addMessageSync('user', 'Hello');
 
       expect(listener).toHaveBeenCalledWith({
         message: expect.objectContaining({
@@ -334,10 +356,51 @@ describe('AgentContext', () => {
       const listener = vi.fn();
       ctx.on('history:cleared', listener);
 
-      ctx.addMessage('user', 'Hello');
+      ctx.addMessageSync('user', 'Hello');
       ctx.clearHistory('testing');
 
       expect(listener).toHaveBeenCalledWith({ reason: 'testing' });
+    });
+  });
+
+  // ============================================================================
+  // addToolResult Tests
+  // ============================================================================
+
+  describe('addToolResult', () => {
+    beforeEach(() => {
+      ctx = AgentContext.create();
+    });
+
+    it('should add string result as tool message', async () => {
+      await ctx.addToolResult('Tool output text');
+
+      const history = ctx.getHistory();
+      expect(history).toHaveLength(1);
+      expect(history[0].role).toBe('tool');
+      expect(history[0].content).toBe('Tool output text');
+    });
+
+    it('should stringify object result', async () => {
+      await ctx.addToolResult({ status: 'ok', data: [1, 2, 3] });
+
+      const history = ctx.getHistory();
+      expect(history).toHaveLength(1);
+      expect(history[0].role).toBe('tool');
+      expect(JSON.parse(history[0].content)).toEqual({ status: 'ok', data: [1, 2, 3] });
+    });
+
+    it('should add metadata to tool result', async () => {
+      await ctx.addToolResult('result', { tool: 'web_fetch', url: 'https://example.com' });
+
+      const history = ctx.getHistory();
+      expect(history[0].metadata).toEqual({ tool: 'web_fetch', url: 'https://example.com' });
+    });
+
+    it('should return null when history is disabled', async () => {
+      ctx = AgentContext.create({ features: { history: false } });
+      const result = await ctx.addToolResult('test');
+      expect(result).toBeNull();
     });
   });
 
@@ -663,6 +726,148 @@ describe('AgentContext', () => {
   });
 
   // ============================================================================
+  // Auto-Compaction Guard Tests (ensureCapacity)
+  // ============================================================================
+
+  describe('ensureCapacity', () => {
+    it('should return true when plenty of room available', async () => {
+      ctx = AgentContext.create({ maxContextTokens: 10000 });
+
+      // Small request should always succeed
+      const hasCapacity = await ctx.ensureCapacity(100);
+      expect(hasCapacity).toBe(true);
+    });
+
+    it('should trigger compaction when projected utilization exceeds threshold', async () => {
+      ctx = AgentContext.create({
+        maxContextTokens: 1000,
+        history: { maxMessages: 100, preserveRecent: 5 },
+        strategy: 'proactive', // 75% threshold
+      });
+
+      // Fill history to ~60% capacity (each message ~20 tokens)
+      for (let i = 0; i < 20; i++) {
+        ctx.addMessageSync('user', 'A'.repeat(70)); // ~20 tokens each
+      }
+
+      const compactedListener = vi.fn();
+      ctx.on('compacted', compactedListener);
+
+      // Request that would push over 75% threshold
+      const hasCapacity = await ctx.ensureCapacity(200);
+
+      // Should have compacted to make room
+      expect(compactedListener).toHaveBeenCalled();
+      expect(hasCapacity).toBe(true);
+    });
+
+    it('should return false when cannot make enough room', async () => {
+      ctx = AgentContext.create({
+        maxContextTokens: 100,
+        history: { maxMessages: 100, preserveRecent: 50 }, // Can't compact much
+        systemPrompt: 'Very long system prompt that takes most of the context',
+      });
+
+      // Request more tokens than total available
+      const hasCapacity = await ctx.ensureCapacity(5000);
+      expect(hasCapacity).toBe(false);
+    });
+
+    it('should emit budget:warning event before compaction', async () => {
+      ctx = AgentContext.create({
+        maxContextTokens: 1000,
+        history: { maxMessages: 100, preserveRecent: 5 },
+      });
+
+      // Fill context
+      for (let i = 0; i < 25; i++) {
+        ctx.addMessageSync('user', 'A'.repeat(70));
+      }
+
+      const warningListener = vi.fn();
+      ctx.on('budget:warning', warningListener);
+
+      await ctx.ensureCapacity(200);
+
+      expect(warningListener).toHaveBeenCalled();
+    });
+
+    it('should update lastBudget after compaction', async () => {
+      ctx = AgentContext.create({
+        maxContextTokens: 1000,
+        history: { maxMessages: 100, preserveRecent: 5 },
+      });
+
+      // Fill context
+      for (let i = 0; i < 25; i++) {
+        ctx.addMessageSync('user', 'A'.repeat(70));
+      }
+
+      await ctx.ensureCapacity(200);
+
+      const budget = ctx.getLastBudget();
+      expect(budget).not.toBeNull();
+      expect(budget!.status).toBe('ok');
+    });
+  });
+
+  // ============================================================================
+  // Auto-Compaction in addMessage Tests
+  // ============================================================================
+
+  describe('auto-compaction in addMessage', () => {
+    it('should check capacity for large messages (>1000 tokens)', async () => {
+      ctx = AgentContext.create({
+        maxContextTokens: 5000,
+        history: { maxMessages: 100, preserveRecent: 5 },
+      });
+
+      // Fill context to ~60%
+      for (let i = 0; i < 15; i++) {
+        ctx.addMessageSync('user', 'A'.repeat(700));
+      }
+
+      const compactedListener = vi.fn();
+      ctx.on('compacted', compactedListener);
+
+      // Add a large message (~4000 tokens)
+      await ctx.addMessage('tool', 'X'.repeat(14000));
+
+      // Should trigger compaction due to large message
+      expect(compactedListener).toHaveBeenCalled();
+    });
+
+    it('should not check capacity for small messages (<1000 tokens)', async () => {
+      ctx = AgentContext.create({ maxContextTokens: 10000 });
+
+      const warningListener = vi.fn();
+      ctx.on('budget:warning', warningListener);
+
+      // Small message should not trigger capacity check
+      await ctx.addMessage('user', 'Hello, world!');
+
+      expect(warningListener).not.toHaveBeenCalled();
+    });
+
+    it('should emit budget:critical when cannot make room', async () => {
+      ctx = AgentContext.create({
+        maxContextTokens: 500,
+        history: { maxMessages: 100, preserveRecent: 50 }, // Can't compact much
+      });
+
+      const criticalListener = vi.fn();
+      ctx.on('budget:critical', criticalListener);
+
+      // Add very large message that can't fit
+      await ctx.addMessage('tool', 'X'.repeat(10000));
+
+      // Should emit critical warning but still add the message
+      expect(criticalListener).toHaveBeenCalled();
+      expect(ctx.getMessageCount()).toBe(1);
+    });
+  });
+
+  // ============================================================================
   // Context Preparation Tests
   // ============================================================================
 
@@ -676,7 +881,7 @@ describe('AgentContext', () => {
     });
 
     it('should prepare context with components', async () => {
-      ctx.addMessage('user', 'Hello');
+      ctx.addMessageSync('user', 'Hello');
       ctx.setCurrentInput('What is the weather?');
 
       const prepared = await ctx.prepare();
@@ -705,8 +910,8 @@ describe('AgentContext', () => {
     });
 
     it('should include conversation history component', async () => {
-      ctx.addMessage('user', 'Hello');
-      ctx.addMessage('assistant', 'Hi there');
+      ctx.addMessageSync('user', 'Hello');
+      ctx.addMessageSync('assistant', 'Hi there');
 
       const prepared = await ctx.prepare();
 
@@ -729,7 +934,7 @@ describe('AgentContext', () => {
     });
 
     it('should calculate budget correctly', async () => {
-      ctx.addMessage('user', 'Hello');
+      ctx.addMessageSync('user', 'Hello');
 
       const prepared = await ctx.prepare();
 
@@ -781,7 +986,7 @@ describe('AgentContext', () => {
     });
 
     it('should get budget', async () => {
-      ctx.addMessage('user', 'Hello');
+      ctx.addMessageSync('user', 'Hello');
 
       const budget = await ctx.getBudget();
 
@@ -791,7 +996,7 @@ describe('AgentContext', () => {
     });
 
     it('should report ok status when under threshold', async () => {
-      ctx.addMessage('user', 'Short message');
+      ctx.addMessageSync('user', 'Short message');
 
       const budget = await ctx.getBudget();
 
@@ -804,7 +1009,7 @@ describe('AgentContext', () => {
 
       // Fill context to trigger warning (75%)
       for (let i = 0; i < 50; i++) {
-        ctx.addMessage('user', 'A'.repeat(20));
+        ctx.addMessageSync('user', 'A'.repeat(20));
       }
 
       await ctx.prepare();
@@ -815,7 +1020,7 @@ describe('AgentContext', () => {
 
     it('should force compact when called', async () => {
       for (let i = 0; i < 10; i++) {
-        ctx.addMessage('user', `Message ${i}`);
+        ctx.addMessageSync('user', `Message ${i}`);
       }
 
       const result = await ctx.compact();
@@ -828,7 +1033,7 @@ describe('AgentContext', () => {
       ctx.on('compacted', listener);
 
       for (let i = 0; i < 10; i++) {
-        ctx.addMessage('user', `Message ${i}`);
+        ctx.addMessageSync('user', `Message ${i}`);
       }
 
       await ctx.compact();
@@ -898,7 +1103,7 @@ describe('AgentContext', () => {
     });
 
     it('should get utilization', async () => {
-      ctx.addMessage('user', 'Hello');
+      ctx.addMessageSync('user', 'Hello');
       await ctx.prepare();
 
       const utilization = ctx.getUtilization();
@@ -921,9 +1126,9 @@ describe('AgentContext', () => {
     });
 
     it('should get comprehensive metrics', async () => {
-      ctx.addMessage('user', 'Hello');
+      ctx.addMessageSync('user', 'Hello');
       await ctx.executeTool('test_tool_1', {});
-      await ctx.memory.store('test.key', 'Test', { value: 1 });
+      await ctx.memory!.store('test.key', 'Test', { value: 1 });
       await ctx.prepare();
 
       const metrics = await ctx.getMetrics();
@@ -951,8 +1156,8 @@ describe('AgentContext', () => {
     });
 
     it('should get state', async () => {
-      ctx.addMessage('user', 'Hello');
-      ctx.addMessage('assistant', 'Hi');
+      ctx.addMessageSync('user', 'Hello');
+      ctx.addMessageSync('assistant', 'Hi');
       await ctx.executeTool('test_tool_1', {});
 
       const state = await ctx.getState();
@@ -965,8 +1170,8 @@ describe('AgentContext', () => {
     });
 
     it('should restore state', async () => {
-      ctx.addMessage('user', 'Hello');
-      ctx.addMessage('assistant', 'Hi');
+      ctx.addMessageSync('user', 'Hello');
+      ctx.addMessageSync('assistant', 'Hi');
       ctx.systemPrompt = 'Changed prompt';
       await ctx.executeTool('test_tool_1', {});
 
@@ -998,7 +1203,7 @@ describe('AgentContext', () => {
     });
 
     it('should preserve permission state', async () => {
-      ctx.permissions.approveForSession('test_tool_1');
+      ctx.permissions!.approveForSession('test_tool_1');
 
       const state = await ctx.getState();
 
@@ -1102,7 +1307,7 @@ describe('AgentContext', () => {
     it('should clear history and tool calls', () => {
       ctx = AgentContext.create();
 
-      ctx.addMessage('user', 'Hello');
+      ctx.addMessageSync('user', 'Hello');
       ctx.destroy();
 
       expect(ctx.getHistory()).toHaveLength(0);

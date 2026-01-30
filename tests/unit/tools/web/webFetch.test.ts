@@ -1,6 +1,6 @@
 /**
  * Web Fetch Tool Tests
- * Tests for simple HTTP fetch with content quality detection
+ * Tests for simple HTTP fetch with content quality detection and markdown conversion
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -18,10 +18,22 @@ vi.mock('../../../../src/tools/web/contentDetector.js', () => ({
     suggestion: undefined,
     issues: [],
   }),
-  extractCleanText: vi.fn().mockReturnValue('Extracted clean text content'),
 }));
 
-import { detectContentQuality, extractCleanText } from '../../../../src/tools/web/contentDetector.js';
+// Mock htmlToMarkdown
+vi.mock('../../../../src/tools/web/htmlToMarkdown.js', () => ({
+  htmlToMarkdown: vi.fn().mockReturnValue({
+    markdown: '# Test Page\n\nContent here',
+    title: 'Test Page',
+    excerpt: 'Content excerpt',
+    byline: 'Author Name',
+    wasReadabilityUsed: true,
+    wasTruncated: false,
+  }),
+}));
+
+import { detectContentQuality } from '../../../../src/tools/web/contentDetector.js';
+import { htmlToMarkdown } from '../../../../src/tools/web/htmlToMarkdown.js';
 
 describe('webFetch', () => {
   beforeEach(() => {
@@ -108,7 +120,7 @@ describe('webFetch', () => {
   // ============================================================================
 
   describe('HTML response handling', () => {
-    it('should fetch and parse HTML content', async () => {
+    it('should fetch and parse HTML content as markdown', async () => {
       const html = '<html><head><title>Test Page</title></head><body><p>Content</p></body></html>';
       mockFetch.mockResolvedValue({
         ok: true,
@@ -121,23 +133,11 @@ describe('webFetch', () => {
       expect(result.success).toBe(true);
       expect(result.contentType).toBe('html');
       expect(result.title).toBe('Test Page');
-      expect(result.html).toBe(html);
+      // Content is now markdown, not raw HTML
+      expect(result.content).toContain('# Test Page');
     });
 
-    it('should extract title from h1 if no title tag', async () => {
-      const html = '<html><body><h1>Main Heading</h1><p>Content</p></body></html>';
-      mockFetch.mockResolvedValue({
-        ok: true,
-        headers: new Map([['content-type', 'text/html']]),
-        text: vi.fn().mockResolvedValue(html),
-      });
-
-      const result = await webFetch.execute({ url: 'https://example.com' });
-
-      expect(result.title).toBe('Main Heading');
-    });
-
-    it('should use extractCleanText for content', async () => {
+    it('should use htmlToMarkdown for content conversion', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         headers: new Map([['content-type', 'text/html']]),
@@ -146,8 +146,23 @@ describe('webFetch', () => {
 
       const result = await webFetch.execute({ url: 'https://example.com' });
 
-      expect(extractCleanText).toHaveBeenCalled();
-      expect(result.content).toBe('Extracted clean text content');
+      expect(htmlToMarkdown).toHaveBeenCalled();
+      expect(result.content).toBe('# Test Page\n\nContent here');
+    });
+
+    it('should include markdown metadata fields', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        headers: new Map([['content-type', 'text/html']]),
+        text: vi.fn().mockResolvedValue('<html><body>Test</body></html>'),
+      });
+
+      const result = await webFetch.execute({ url: 'https://example.com' });
+
+      expect(result.wasReadabilityUsed).toBe(true);
+      expect(result.wasTruncated).toBe(false);
+      expect(result.excerpt).toBe('Content excerpt');
+      expect(result.byline).toBe('Author Name');
     });
 
     it('should use detectContentQuality', async () => {
@@ -244,7 +259,6 @@ describe('webFetch', () => {
       expect(result.contentType).toBe('text');
       expect(result.title).toBe('Text Response');
       expect(result.content).toBe(text);
-      expect(result.html).toBe(text);
       expect(result.qualityScore).toBe(100);
     });
   });
@@ -423,6 +437,13 @@ describe('webFetch', () => {
 
   describe('edge cases', () => {
     it('should handle empty HTML', async () => {
+      (htmlToMarkdown as any).mockReturnValue({
+        markdown: '',
+        title: '',
+        wasReadabilityUsed: false,
+        wasTruncated: false,
+      });
+
       mockFetch.mockResolvedValue({
         ok: true,
         headers: new Map([['content-type', 'text/html']]),
@@ -458,6 +479,27 @@ describe('webFetch', () => {
       const result = await webFetch.execute({ url: 'https://example.com/page' });
 
       expect(result.url).toBe('https://example.com/page');
+    });
+
+    it('should handle truncated content', async () => {
+      (htmlToMarkdown as any).mockReturnValue({
+        markdown: 'Truncated content...[content truncated]',
+        title: 'Long Article',
+        wasReadabilityUsed: true,
+        wasTruncated: true,
+      });
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        headers: new Map([['content-type', 'text/html']]),
+        text: vi.fn().mockResolvedValue('<html><body>Very long content...</body></html>'),
+      });
+
+      const result = await webFetch.execute({ url: 'https://example.com' });
+
+      expect(result.success).toBe(true);
+      expect(result.wasTruncated).toBe(true);
+      expect(result.content).toContain('[content truncated]');
     });
   });
 });

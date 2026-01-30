@@ -1,0 +1,418 @@
+/**
+ * Markdown Renderer Styles
+ * Rich markdown content styling including code, tables, math, diagrams, charts
+ */
+
+/* Base markdown content */
+.markdown-content {
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-gray-800);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Paragraphs */
+.markdown-paragraph {
+  margin: 0 0 var(--spacing-4);
+}
+
+.markdown-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+/* Headings */
+.markdown-heading {
+  margin: var(--spacing-6) 0 var(--spacing-3);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-900);
+}
+
+.markdown-heading:first-child {
+  margin-top: 0;
+}
+
+.markdown-h1 { font-size: 1.75rem; }
+.markdown-h2 { font-size: 1.5rem; }
+.markdown-h3 { font-size: 1.25rem; }
+.markdown-h4 { font-size: 1.125rem; }
+.markdown-h5 { font-size: 1rem; }
+.markdown-h6 { font-size: 0.875rem; color: var(--color-gray-600); }
+
+/* Inline code */
+.inline-code {
+  font-family: var(--font-family-mono);
+  font-size: 0.875em;
+  padding: 0.15em 0.4em;
+  background-color: var(--color-gray-100);
+  border-radius: var(--radius-sm);
+  color: var(--color-gray-800);
+}
+
+/* Code blocks */
+.code-block {
+  position: relative;
+  margin: var(--spacing-4) 0;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background-color: #282c34;
+}
+
+.code-block__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-2) var(--spacing-3);
+  background-color: #21252b;
+  border-bottom: 1px solid #181a1f;
+}
+
+.code-block__language {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: #abb2bf;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.code-block__copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: #abb2bf;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.code-block__copy:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.code-block__content {
+  margin: 0 !important;
+  padding: var(--spacing-4) !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+}
+
+.code-block__loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-6);
+  color: #abb2bf;
+  font-size: var(--font-size-sm);
+}
+
+.code-block__error {
+  padding: var(--spacing-4);
+  background-color: #1e1e1e;
+}
+
+.code-block__error-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--color-danger);
+  font-weight: var(--font-weight-medium);
+  margin-bottom: var(--spacing-2);
+}
+
+.code-block__error-message {
+  color: #e06c75;
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--spacing-3);
+}
+
+.code-block__error-code {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: #abb2bf;
+  background-color: #282c34;
+  padding: var(--spacing-3);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+
+/* Streaming preview for special blocks */
+.code-block__streaming-preview {
+  padding: var(--spacing-4);
+  background-color: #1e1e1e;
+}
+
+.code-block__streaming-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: #61afef;
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--spacing-3);
+}
+
+.code-block__streaming-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.code-block__streaming-code {
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-xs);
+  color: #abb2bf;
+  background-color: #282c34;
+  padding: var(--spacing-3);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Mermaid diagrams */
+.mermaid-diagram {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: var(--spacing-4);
+  background-color: var(--color-white);
+  border-radius: var(--radius-lg);
+}
+
+.mermaid-diagram--loading {
+  color: var(--color-gray-500);
+}
+
+.mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Vega charts */
+.vega-chart {
+  width: 100%;
+  padding: var(--spacing-4);
+  background-color: var(--color-white);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.vega-chart .vega-embed {
+  width: 100%;
+}
+
+.vega-chart .vega-embed canvas,
+.vega-chart .vega-embed svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Vega action menu positioning */
+.vega-chart .vega-embed summary {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.vega-chart--loading,
+.vega-chart--error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  color: var(--color-gray-500);
+}
+
+.vega-chart__error-text {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+/* Markmap mindmaps */
+.markmap-renderer {
+  position: relative;
+  background-color: var(--color-white);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.markmap-renderer__controls {
+  position: absolute;
+  top: var(--spacing-2);
+  right: var(--spacing-2);
+  display: flex;
+  gap: var(--spacing-1);
+  z-index: 10;
+}
+
+.markmap-renderer__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background-color: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  color: var(--color-gray-600);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.markmap-renderer__btn:hover {
+  background-color: var(--color-gray-50);
+  color: var(--color-gray-900);
+  border-color: var(--color-gray-300);
+}
+
+.markmap-renderer__svg {
+  display: block;
+}
+
+.markmap-renderer__loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--color-gray-500);
+}
+
+.markmap-renderer--error {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.markmap-renderer__error-text {
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+/* Tables */
+.table-responsive {
+  overflow-x: auto;
+  margin: var(--spacing-4) 0;
+  border-radius: var(--radius-lg);
+}
+
+.markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+  background-color: var(--color-white);
+}
+
+.markdown-table th,
+.markdown-table td {
+  padding: var(--spacing-2) var(--spacing-3);
+  text-align: left;
+  border: 1px solid var(--color-gray-200);
+}
+
+.markdown-table th {
+  background-color: var(--color-gray-50);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-700);
+}
+
+.markdown-table tr:hover {
+  background-color: var(--color-gray-50);
+}
+
+/* Blockquotes */
+.markdown-blockquote {
+  margin: var(--spacing-4) 0;
+  padding: var(--spacing-3) var(--spacing-4);
+  border-left: 4px solid var(--color-primary);
+  background-color: var(--color-gray-50);
+  color: var(--color-gray-700);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.markdown-blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Lists */
+.markdown-list {
+  margin: var(--spacing-3) 0;
+  padding-left: var(--spacing-6);
+}
+
+.markdown-list li {
+  margin: var(--spacing-1) 0;
+}
+
+.markdown-list--ordered {
+  list-style-type: decimal;
+}
+
+/* Horizontal rule */
+.markdown-hr {
+  margin: var(--spacing-6) 0;
+  border: none;
+  border-top: 1px solid var(--color-gray-200);
+}
+
+/* Images */
+.markdown-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-lg);
+  margin: var(--spacing-4) 0;
+}
+
+/* Links */
+.markdown-content a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.markdown-content a:hover {
+  text-decoration: underline;
+}
+
+/* Math blocks (KaTeX) */
+.katex-display {
+  margin: var(--spacing-4) 0;
+  padding: var(--spacing-4);
+  background-color: var(--color-gray-50);
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+}
+
+.katex {
+  font-size: 1.1em;
+}
+
+/* Strong and emphasis */
+.markdown-content strong {
+  font-weight: var(--font-weight-semibold);
+}
+
+.markdown-content em {
+  font-style: italic;
+}
+
+/* Strikethrough (GFM) */
+.markdown-content del {
+  text-decoration: line-through;
+  color: var(--color-gray-500);
+}
+
+/* Task lists (GFM) */
+.markdown-content input[type="checkbox"] {
+  margin-right: var(--spacing-2);
+}

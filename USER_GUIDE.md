@@ -7954,22 +7954,12 @@ const response = await agent.run(
 
 **Tool Parameters:**
 - `query` (required) - Search query string
-- `connectorName` - Connector name to use (recommended)
-- `numResults` - Number of results (default: 10)
+- `numResults` - Number of results (default: 10, max: 100)
 - `country` - Country/region code (e.g., 'us', 'gb')
 - `language` - Language code (e.g., 'en', 'fr')
-- `provider` - Legacy parameter ('serper', 'brave', 'tavily') for backward compatibility
 
-**Example with specific connector:**
-
-```typescript
-await webSearch.execute({
-  query: 'quantum computing breakthroughs',
-  connectorName: 'serper-main',
-  numResults: 5,
-  country: 'us',
-});
-```
+**Note:** The tool automatically detects available search connectors by serviceType.
+No need to specify which connector to use - just configure your connector and the tool finds it.
 
 ### Multiple Keys (Failover)
 
@@ -8048,22 +8038,6 @@ console.log(`Avg latency: ${metrics.avgLatencyMs.toFixed(0)}ms`);
 // Circuit breaker state
 const cbState = connector.getCircuitBreakerState();
 console.log(`Circuit breaker: ${cbState}`);  // 'closed' | 'open' | 'half-open'
-```
-
-### Backward Compatibility
-
-Old environment variable approach still works:
-
-```typescript
-// Set environment variable
-process.env.SERPER_API_KEY = 'your-key';
-
-// Use without connector (legacy)
-await webSearch.execute({
-  query: 'search term',
-  provider: 'serper',  // 'serper' | 'brave' | 'tavily'
-  numResults: 10
-});
 ```
 
 ### Best Practices
@@ -8178,36 +8152,28 @@ const agent = Agent.create({
 await agent.run('Scrape https://example.com and summarize');
 ```
 
-### Scraping Strategies
-
-The webScrape tool supports different strategies:
+### Tool Parameters
 
 ```typescript
 await webScrape.execute({
   url: 'https://example.com',
-  strategy: 'auto',           // 'auto' | 'native' | 'js' | 'api' | 'api-first'
-  connectorName: 'zenrows',   // Optional: specify API connector
-  minQualityScore: 50,        // Minimum quality score to accept
-  includeMarkdown: true,      // Convert to markdown
+  timeout: 30000,             // Optional timeout in milliseconds
+  includeHtml: false,         // Include raw HTML
+  includeMarkdown: true,      // Convert to markdown (recommended for LLMs)
   includeLinks: true,         // Extract links
-  waitForSelector: '.main',   // Wait for selector (JS/API only)
+  waitForSelector: '.main',   // Wait for selector (for JS-heavy sites)
 });
 ```
 
-**Strategy Options:**
-- `auto` (default) - Tries native → JS → API until one succeeds
-- `native` - Only native HTTP fetch (fast, free, static sites only)
-- `js` - Only JavaScript rendering (handles SPAs, needs Puppeteer)
-- `api` - Only external API provider (handles bot protection)
-- `api-first` - Tries API first, then falls back to native
+**Note:** The tool automatically detects available scrape connectors by serviceType.
+Scraping strategy is handled internally - the tool will use the best available method.
 
 ### Best Practices
 
-1. **Start with `auto` strategy** - Let the tool figure out the best approach
-2. **Use API for protected sites** - ZenRows handles bot protection
-3. **Set quality thresholds** - Increase `minQualityScore` for better content
-4. **Request markdown** - Cleaner output for LLM processing
-5. **Handle errors** - Check `result.success` and `result.error`
+1. **Configure a connector** - Set up ZenRows or similar for protected sites
+2. **Request markdown** - Cleaner output for LLM processing
+3. **Handle errors** - Check `result.success` and `result.error`
+4. **Use waitForSelector** - For JavaScript-heavy sites that need time to render
 
 ---
 

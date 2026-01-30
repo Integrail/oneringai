@@ -153,23 +153,23 @@ describe('AgentContext Feature Configuration', () => {
   });
 
   describe('History Feature', () => {
-    it('should add messages to history when history is enabled', () => {
+    it('should add messages to history when history is enabled', async () => {
       context = AgentContext.create({
         features: { history: true },
       });
 
-      const message = context.addMessage('user', 'Hello');
+      const message = await context.addMessage('user', 'Hello');
       expect(message).not.toBeNull();
       expect(message?.content).toBe('Hello');
       expect(context.getHistory()).toHaveLength(1);
     });
 
-    it('should return null and not add messages when history is disabled', () => {
+    it('should return null and not add messages when history is disabled', async () => {
       context = AgentContext.create({
         features: { history: false },
       });
 
-      const message = context.addMessage('user', 'Hello');
+      const message = await context.addMessage('user', 'Hello');
       expect(message).toBeNull();
       expect(context.getHistory()).toHaveLength(0);
     });
@@ -308,7 +308,7 @@ describe('AgentContext Feature Configuration', () => {
         features: { history: true },
       });
 
-      context.addMessage('user', 'Hello');
+      context.addMessageSync('user', 'Hello');
       context.setCurrentInput('test');
       const prepared = await context.prepare();
 
@@ -321,7 +321,7 @@ describe('AgentContext Feature Configuration', () => {
         features: { history: false },
       });
 
-      context.addMessage('user', 'Hello'); // This should be a no-op
+      context.addMessageSync('user', 'Hello'); // This should be a no-op
       context.setCurrentInput('test');
       const prepared = await context.prepare();
 
@@ -371,7 +371,7 @@ describe('AgentContext Feature Configuration', () => {
 
       // All should work
       await context.memory!.store('key', 'desc', 'value');
-      context.addMessage('user', 'Hello');
+      context.addMessageSync('user', 'Hello');
       context.inContextMemory!.set('state', 'Current state', { step: 1 });
 
       context.setCurrentInput('test');

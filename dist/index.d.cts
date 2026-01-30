@@ -1517,10 +1517,65 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      */
     private detectTaskTypeFromPlan;
     /**
-     * Add a message to history
-     * Returns null if history feature is disabled
+     * Add a message to history with automatic capacity management.
+     *
+     * This async version checks if adding the message would exceed context budget
+     * and triggers compaction BEFORE adding if needed. Use this for large content
+     * like tool outputs.
+     *
+     * @param role - Message role (user, assistant, system, tool)
+     * @param content - Message content
+     * @param metadata - Optional metadata
+     * @returns The added message, or null if history feature is disabled
+     *
+     * @example
+     * ```typescript
+     * // For large tool outputs, capacity is checked automatically
+     * await ctx.addMessage('tool', largeWebFetchResult);
+     *
+     * // For small messages, same API but less overhead
+     * await ctx.addMessage('user', 'Hello');
+     * ```
      */
-    addMessage(role: 'user' | 'assistant' | 'system' | 'tool', content: string, metadata?: Record<string, unknown>): HistoryMessage$1 | null;
+    addMessage(role: 'user' | 'assistant' | 'system' | 'tool', content: string, metadata?: Record<string, unknown>): Promise<HistoryMessage$1 | null>;
+    /**
+     * Add a message to history synchronously (without capacity checking).
+     *
+     * Use this when you need synchronous behavior or for small messages where
+     * capacity checking overhead is not worth it. For large content (tool outputs,
+     * fetched documents), prefer the async `addMessage()` instead.
+     *
+     * @param role - Message role (user, assistant, system, tool)
+     * @param content - Message content
+     * @param metadata - Optional metadata
+     * @returns The added message, or null if history feature is disabled
+     */
+    addMessageSync(role: 'user' | 'assistant' | 'system' | 'tool', content: string, metadata?: Record<string, unknown>): HistoryMessage$1 | null;
+    /**
+     * Add a tool result to context with automatic capacity management.
+     *
+     * This is a convenience method for adding tool outputs. It:
+     * - Stringifies non-string results
+     * - Checks capacity and triggers compaction if needed
+     * - Adds as a 'tool' role message
+     *
+     * Use this for large tool outputs like web_fetch results, file contents, etc.
+     *
+     * @param result - The tool result (will be stringified for token estimation)
+     * @param metadata - Optional metadata (e.g., tool name, duration)
+     * @returns The added message, or null if history feature is disabled
+     *
+     * @example
+     * ```typescript
+     * // Add large web fetch result
+     * const html = await webFetch('https://example.com');
+     * await ctx.addToolResult(html, { tool: 'web_fetch', url: 'https://example.com' });
+     *
+     * // Add structured data
+     * await ctx.addToolResult({ items: [...], count: 100 }, { tool: 'search' });
+     * ```
+     */
+    addToolResult(result: unknown, metadata?: Record<string, unknown>): Promise<HistoryMessage$1 | null>;
     /**
      * Get all history messages
      */
@@ -1620,6 +1675,28 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Get last calculated budget
      */
     getLastBudget(): ContextBudget | null;
+    /**
+     * Ensure there's enough capacity for new content.
+     * If adding the estimated tokens would exceed budget, triggers compaction first.
+     *
+     * This method enables proactive compaction BEFORE content is added, preventing
+     * context overflow. It uses the configured strategy to determine when to compact.
+     *
+     * @param estimatedTokens - Estimated tokens of content to be added
+     * @returns true if capacity is available (after potential compaction), false if cannot make room
+     *
+     * @example
+     * ```typescript
+     * const tokens = ctx.estimateTokens(largeToolOutput);
+     * const hasRoom = await ctx.ensureCapacity(tokens);
+     * if (hasRoom) {
+     *   await ctx.addMessage('tool', largeToolOutput);
+     * } else {
+     *   // Handle overflow - truncate or summarize
+     * }
+     * ```
+     */
+    ensureCapacity(estimatedTokens: number): Promise<boolean>;
     /**
      * Get comprehensive metrics
      */
@@ -4126,6 +4203,37 @@ declare function buildEndpointWithQuery(endpoint: string, queryParams?: Record<s
  * @throws Error if connector not found
  */
 declare function resolveConnector(connectorOrName: string | Connector): Connector;
+/**
+ * Find a connector by supported service types
+ * Used by tools to auto-detect available external API connectors
+ *
+ * This is the GENERIC utility for all external API-dependent tools.
+ * Tools define which service types they support, this function finds
+ * the first available connector matching any of those types.
+ *
+ * @param serviceTypes - Array of supported service types in order of preference
+ * @returns Connector if found, null otherwise
+ *
+ * @example
+ * ```typescript
+ * // In web_search tool
+ * const SEARCH_SERVICE_TYPES = ['serper', 'brave-search', 'tavily', 'rapidapi-search'];
+ * const connector = findConnectorByServiceTypes(SEARCH_SERVICE_TYPES);
+ *
+ * // In web_scrape tool
+ * const SCRAPE_SERVICE_TYPES = ['zenrows', 'jina-reader', 'firecrawl', 'scrapingbee'];
+ * const connector = findConnectorByServiceTypes(SCRAPE_SERVICE_TYPES);
+ * ```
+ */
+declare function findConnectorByServiceTypes(serviceTypes: string[]): Connector | null;
+/**
+ * List all available connectors for given service types
+ * Useful for tools that want to show what's available or support fallback chains
+ *
+ * @param serviceTypes - Array of supported service types
+ * @returns Array of connector names that match any of the service types
+ */
+declare function listConnectorsByServiceTypes(serviceTypes: string[]): string[];
 
 /**
  * ScrapeProvider - Unified web scraping interface with connector support
@@ -9590,13 +9698,16 @@ interface WebFetchResult {
     url: string;
     title: string;
     content: string;
-    html: string;
     contentType: 'html' | 'json' | 'text' | 'error';
     qualityScore: number;
     requiresJS: boolean;
     suggestedAction?: string;
     issues?: string[];
     error?: string;
+    excerpt?: string;
+    byline?: string;
+    wasReadabilityUsed?: boolean;
+    wasTruncated?: boolean;
 }
 declare const webFetch: ToolFunction<WebFetchArgs, WebFetchResult>;
 
@@ -9616,35 +9727,38 @@ interface WebFetchJSResult {
     url: string;
     title: string;
     content: string;
-    html: string;
     screenshot?: string;
     loadTime: number;
     error?: string;
     suggestion?: string;
+    excerpt?: string;
+    byline?: string;
+    wasReadabilityUsed?: boolean;
+    wasTruncated?: boolean;
 }
 declare const webFetchJS: ToolFunction<WebFetchJSArgs, WebFetchJSResult>;
 
 /**
- * Web Search Tool - Multi-provider web search with Connector support
- * Supports Serper.dev, Brave, Tavily, and RapidAPI
+ * Web Search Tool - Clean interface for LLM
  *
- * NEW: Uses Connector-First architecture for authentication
- * Backward compatible with environment variable approach
+ * ARCHITECTURE:
+ * - LLM sees simple interface: { query, numResults, country, language }
+ * - Connector configuration is INTERNAL (auto-detected by serviceType)
+ * - Uses shared findConnectorByServiceTypes() utility
+ * - Fallback to environment variables if no connector configured
+ *
+ * Supports: Serper.dev, Brave, Tavily, RapidAPI
  */
 
+/**
+ * Arguments for web_search tool
+ * CLEAN and SIMPLE - no connector details exposed
+ */
 interface WebSearchArgs {
+    /** Search query string */
     query: string;
+    /** Number of results to return (default: 10) */
     numResults?: number;
-    /**
-     * @deprecated Use connectorName instead
-     * Provider name for backward compatibility (uses environment variables)
-     */
-    provider?: 'serper' | 'brave' | 'tavily' | 'rapidapi';
-    /**
-     * Connector name to use for search
-     * Example: 'serper-main', 'brave-backup', 'rapidapi-search'
-     */
-    connectorName?: string;
     /** Country/region code (e.g., 'us', 'gb') */
     country?: string;
     /** Language code (e.g., 'en', 'fr') */
@@ -9661,62 +9775,34 @@ interface WebSearchResult {
 declare const webSearch: ToolFunction<WebSearchArgs, WebSearchResult>;
 
 /**
- * Web Scrape Tool - Guaranteed URL reading with automatic fallback
- *
- * This tool provides a "just works" approach to reading any URL by trying
- * multiple methods in sequence:
- *
- * 1. Native fetch (webFetch) - Fast, free, works for static sites
- * 2. JS rendering (webFetchJS) - Handles SPAs, requires Puppeteer
- * 3. External API provider - Handles bot protection, CAPTCHAs, etc.
+ * Web Scrape Tool - Clean interface for LLM
  *
  * ARCHITECTURE:
- * - Surface API: webScrape tool (this file)
- * - Provider API: ScrapeProvider (handles external API vendors)
- * - Native fallback: Uses existing webFetch/webFetchJS tools
+ * - LLM sees simple interface: { url, timeout, includeHtml, includeMarkdown, includeLinks, waitForSelector }
+ * - Connector configuration is INTERNAL (auto-detected by serviceType)
+ * - Uses shared findConnectorByServiceTypes() utility
+ * - Automatic fallback chain: native fetch -> JS rendering -> external API
  *
- * The tool automatically selects the best method based on:
- * - Quality score from native fetch
- * - Whether JS rendering is required
- * - Whether external API providers are configured
+ * Supports: ZenRows, Jina Reader, Firecrawl, ScrapingBee
  */
 
+/**
+ * Arguments for web_scrape tool
+ * CLEAN and SIMPLE - no connector/strategy details exposed
+ */
 interface WebScrapeArgs {
     /** URL to scrape */
     url: string;
-    /**
-     * Scraping strategy:
-     * - 'auto': Try native -> JS -> API (default)
-     * - 'native': Only use native fetch
-     * - 'js': Only use JS rendering
-     * - 'api': Only use external API provider
-     * - 'api-first': Try API first, then native
-     */
-    strategy?: 'auto' | 'native' | 'js' | 'api' | 'api-first';
-    /**
-     * Connector name for external API provider
-     * Required if strategy is 'api' or 'api-first'
-     * Optional for 'auto' (will be used as final fallback)
-     */
-    connectorName?: string;
-    /**
-     * Minimum quality score to accept from native fetch (0-100)
-     * If native fetch returns lower score, will try next method
-     * Default: 50
-     */
-    minQualityScore?: number;
     /** Timeout in milliseconds (default: 30000) */
     timeout?: number;
     /** Whether to include raw HTML in response */
     includeHtml?: boolean;
-    /** Whether to convert to markdown (if supported by provider) */
+    /** Whether to convert to markdown (if supported) */
     includeMarkdown?: boolean;
     /** Whether to extract links */
     includeLinks?: boolean;
-    /** CSS selector to wait for (JS/API only) */
+    /** CSS selector to wait for (for JS-heavy sites) */
     waitForSelector?: string;
-    /** Vendor-specific options for API provider */
-    vendorOptions?: Record<string, any>;
 }
 interface WebScrapeResult {
     /** Whether scraping succeeded */
@@ -9725,7 +9811,7 @@ interface WebScrapeResult {
     url: string;
     /** Final URL after redirects */
     finalUrl?: string;
-    /** Method used: 'native', 'js', or provider name */
+    /** Method used: 'native', 'js', or external provider name */
     method: string;
     /** Page title */
     title: string;
@@ -9739,7 +9825,7 @@ interface WebScrapeResult {
     metadata?: ScrapeResult['metadata'];
     /** Extracted links (if requested) */
     links?: ScrapeResult['links'];
-    /** Quality score (0-100) for native/js methods */
+    /** Quality score (0-100) */
     qualityScore?: number;
     /** Time taken in milliseconds */
     durationMs: number;
@@ -9747,8 +9833,6 @@ interface WebScrapeResult {
     attemptedMethods: string[];
     /** Error message if failed */
     error?: string;
-    /** Suggestion for improvement */
-    suggestion?: string;
 }
 declare const webScrape: ToolFunction<WebScrapeArgs, WebScrapeResult>;
 
@@ -9797,7 +9881,7 @@ declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-01-30T13:54:31.005Z
+ * Generated at: 2026-01-30T17:45:26.774Z
  *
  * To regenerate: npm run generate:tools
  */
@@ -10546,4 +10630,4 @@ declare const META_TOOL_NAMES: {
     readonly REQUEST_APPROVAL: "_request_approval";
 };
 
-export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContext, type AgentContextConfig, type AgentContextEvents, type AgentContextFeatures, type HistoryMessage$1 as AgentContextHistoryMessage, type AgentContextMetrics, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, ConnectorTools, ConsoleMetrics, ContextBudget, ContextManagerConfig, ConversationHistoryManager, type ConversationHistoryManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DependencyCycleError, type DirectCallOptions, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileConnectorStorage, type FileConnectorStorageConfig, FileSearchSource, type FileSearchSourceConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, IContextCompactor, IContextComponent, IContextStrategy, IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMCPClient, type IMemoryStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator, ITokenStorage, IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, IdempotencyCacheConfig, InContextMemoryConfig, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, ParallelTasksError, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, PlanningAgent, type PlanningAgentConfig, PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, ResearchAgent, type ResearchAgentConfig, type ResearchAgentHooks, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult$1 as SearchResult, type SegmentTimestamp, type SerializedAgentContextState, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, TokenContentType, Tool, ToolCall, type ToolCallRecord, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolRegistryEntry, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, WebSearchSource, type WebSearchSourceConfig, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listDirectory, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, setupInContextMemory, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContext, type AgentContextConfig, type AgentContextEvents, type AgentContextFeatures, type HistoryMessage$1 as AgentContextHistoryMessage, type AgentContextMetrics, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CacheStats, CheckpointManager, type CheckpointStrategy, CircuitBreaker, type CircuitBreakerConfig, type CircuitBreakerEvents, type CircuitBreakerMetrics, CircuitOpenError, type CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, ConnectorTools, ConsoleMetrics, ContextBudget, ContextManagerConfig, ConversationHistoryManager, type ConversationHistoryManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DependencyCycleError, type DirectCallOptions, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, type EvictionStrategy, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileConnectorStorage, type FileConnectorStorageConfig, FileSearchSource, type FileSearchSourceConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, IContextCompactor, IContextComponent, IContextStrategy, IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMCPClient, type IMemoryStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator, ITokenStorage, IToolExecutor, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, IdempotencyCacheConfig, InContextMemoryConfig, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryIndex, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, ParallelTasksError, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, PlanningAgent, type PlanningAgentConfig, PreparedContext, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, ResearchAgent, type ResearchAgentConfig, type ResearchAgentHooks, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult$1 as SearchResult, type SegmentTimestamp, type SerializedAgentContextState, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, type SerializedToolState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, TaskStatusForMemory, TaskTimeoutError, ToolContext as TaskToolContext, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, TokenContentType, Tool, ToolCall, type ToolCallRecord, type ToolCategory, type ToolCondition, ToolContext, ToolExecutionError, ToolFunction, ToolManager, type ToolManagerEvent, type ToolManagerStats, type ToolMetadata, ToolNotFoundError, type ToolOptions, ToolPermissionManager, type ToolRegistration, type ToolRegistryEntry, type ToolSelectionContext, ToolTimeoutError, type TransportConfig, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, WebSearchSource, type WebSearchSourceConfig, type WordTimestamp, WorkingMemory, WorkingMemoryAccess, WorkingMemoryConfig, type WorkingMemoryEvents, type WriteFileResult, addHistoryEntry, addJitter, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, setupInContextMemory, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };

@@ -254,11 +254,11 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
 
     const startTime = Date.now();
 
-    // Track user input in context
+    // Track user input in context (use sync for small user messages)
     const userContent = typeof input === 'string'
       ? input
       : input.map(i => JSON.stringify(i)).join('\n');
-    this._agentContext.addMessage('user', userContent);
+    this._agentContext.addMessageSync('user', userContent);
     this._agentContext.setCurrentInput(userContent);
 
     try {
@@ -285,9 +285,9 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
 
       const duration = Date.now() - startTime;
 
-      // Track assistant response in context
+      // Track assistant response in context (use async for potentially large responses)
       if (response.output_text) {
-        this._agentContext.addMessage('assistant', response.output_text);
+        await this._agentContext.addMessage('assistant', response.output_text);
       }
 
       this._logger.info({ duration }, 'Agent run completed');
@@ -347,11 +347,11 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
 
     const startTime = Date.now();
 
-    // Track user input in context
+    // Track user input in context (use sync for small user messages)
     const userContent = typeof input === 'string'
       ? input
       : input.map(i => JSON.stringify(i)).join('\n');
-    this._agentContext.addMessage('user', userContent);
+    this._agentContext.addMessageSync('user', userContent);
     this._agentContext.setCurrentInput(userContent);
 
     // Accumulate streamed response for context tracking
@@ -385,9 +385,9 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
         yield event;
       }
 
-      // Track accumulated response in context
+      // Track accumulated response in context (use async for potentially large responses)
       if (accumulatedResponse) {
-        this._agentContext.addMessage('assistant', accumulatedResponse);
+        await this._agentContext.addMessage('assistant', accumulatedResponse);
       }
 
       const duration = Date.now() - startTime;

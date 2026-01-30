@@ -35,7 +35,8 @@ const createMockAgentContext = (
   mockCache: ReturnType<typeof createMockIdempotencyCache>
 ) => ({
   prepare: vi.fn().mockResolvedValue({ budget: { used: 1000, total: 10000 }, components: [], compacted: false }),
-  addMessage: vi.fn(),
+  addMessage: vi.fn().mockResolvedValue({ id: 'msg-1', role: 'assistant', content: '', timestamp: Date.now() }),
+  addMessageSync: vi.fn().mockReturnValue({ id: 'msg-1', role: 'user', content: '', timestamp: Date.now() }),
   setCurrentInput: vi.fn(),
   getHistory: vi.fn().mockReturnValue([]),
   destroy: vi.fn(),
@@ -958,7 +959,8 @@ describe('PlanExecutor', () => {
 
       await executor.execute(plan, state);
 
-      expect(mockAgentContext.addMessage).toHaveBeenCalledWith(
+      // User prompts use sync method
+      expect(mockAgentContext.addMessageSync).toHaveBeenCalledWith(
         'user',
         expect.any(String)
       );
@@ -971,6 +973,7 @@ describe('PlanExecutor', () => {
 
       await executor.execute(plan, state);
 
+      // Assistant responses use async method with capacity checking
       expect(mockAgentContext.addMessage).toHaveBeenCalledWith(
         'assistant',
         'Task completed successfully'
