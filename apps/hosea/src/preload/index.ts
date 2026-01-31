@@ -122,6 +122,7 @@ export interface HoseaAPI {
       inContextMemoryEnabled: boolean;
       maxInContextEntries: number;
       maxInContextTokens: number;
+      persistentInstructionsEnabled: boolean;
       historyEnabled: boolean;
       maxHistoryMessages: number;
       preserveRecent: number;
@@ -153,6 +154,7 @@ export interface HoseaAPI {
       inContextMemoryEnabled: boolean;
       maxInContextEntries: number;
       maxInContextTokens: number;
+      persistentInstructionsEnabled: boolean;
       historyEnabled: boolean;
       maxHistoryMessages: number;
       preserveRecent: number;

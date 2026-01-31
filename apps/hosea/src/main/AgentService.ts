@@ -64,6 +64,8 @@ export interface StoredAgentConfig {
   inContextMemoryEnabled: boolean;
   maxInContextEntries: number;
   maxInContextTokens: number;
+  // Persistent instructions
+  persistentInstructionsEnabled: boolean;
   // History settings
   historyEnabled: boolean;
   maxHistoryMessages: number;
@@ -776,7 +778,9 @@ export class AgentService {
       // Combine UI capabilities prompt with agent instructions
       const fullInstructions = HOSEA_UI_CAPABILITIES_PROMPT + (agentConfig.instructions || '');
 
-      // Create agent with full configuration
+      // Create agent with full configuration including context features
+      // NOTE: All context settings (features, memory, cache, etc.) are passed through
+      // the `context` property, which is passed to AgentContext.create()
       const config: UniversalAgentConfig = {
         connector: agentConfig.connector,
         model: agentConfig.model,
@@ -787,14 +791,49 @@ export class AgentService {
         session: {
           storage: this.sessionStorage,
         },
-        memoryConfig: agentConfig.memoryEnabled
-          ? {
-              maxSizeBytes: agentConfig.maxMemorySizeBytes,
-              descriptionMaxLength: 150, // Default value
-              softLimitPercent: agentConfig.memorySoftLimitPercent,
-              contextAllocationPercent: agentConfig.contextAllocationPercent,
-            }
-          : undefined,
+        // Context configuration - this is the SINGLE source of truth for all context settings
+        context: {
+          // Feature toggles - controls which components are created and which tools are registered
+          features: {
+            memory: agentConfig.memoryEnabled,
+            inContextMemory: agentConfig.inContextMemoryEnabled,
+            persistentInstructions: agentConfig.persistentInstructionsEnabled ?? false,
+            history: agentConfig.historyEnabled,
+            permissions: agentConfig.permissionsEnabled,
+          },
+          // Context management
+          strategy: agentConfig.contextStrategy as 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive',
+          maxContextTokens: agentConfig.maxContextTokens,
+          // Working memory config (only used if features.memory is true)
+          memory: agentConfig.memoryEnabled
+            ? {
+                maxSizeBytes: agentConfig.maxMemorySizeBytes,
+                descriptionMaxLength: 150, // Default value
+                softLimitPercent: agentConfig.memorySoftLimitPercent,
+                contextAllocationPercent: agentConfig.contextAllocationPercent,
+              }
+            : undefined,
+          // In-context memory config (only used if features.inContextMemory is true)
+          inContextMemory: agentConfig.inContextMemoryEnabled
+            ? {
+                maxEntries: agentConfig.maxInContextEntries,
+                maxTotalTokens: agentConfig.maxInContextTokens,
+              }
+            : undefined,
+          // History config (only used if features.history is true)
+          history: agentConfig.historyEnabled
+            ? {
+                maxMessages: agentConfig.maxHistoryMessages,
+                preserveRecent: agentConfig.preserveRecent,
+              }
+            : undefined,
+          // Cache config
+          cache: {
+            enabled: agentConfig.cacheEnabled,
+            defaultTtlMs: agentConfig.cacheTtlMs,
+            maxEntries: agentConfig.cacheMaxEntries,
+          },
+        },
       };
 
       this.agent = UniversalAgent.create(config);
@@ -848,6 +887,7 @@ export class AgentService {
       inContextMemoryEnabled: false,
       maxInContextEntries: 20,
       maxInContextTokens: 4000,
+      persistentInstructionsEnabled: false,
       historyEnabled: true,
       maxHistoryMessages: 100,
       preserveRecent: 10,

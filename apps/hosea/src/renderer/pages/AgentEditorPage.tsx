@@ -236,6 +236,7 @@ export function AgentEditorPage(): React.ReactElement {
               inContextMemoryEnabled: existingAgent.inContextMemoryEnabled,
               maxInContextEntries: existingAgent.maxInContextEntries,
               maxInContextTokens: existingAgent.maxInContextTokens,
+              persistentInstructionsEnabled: existingAgent.persistentInstructionsEnabled ?? false,
               historyEnabled: existingAgent.historyEnabled,
               maxHistoryMessages: existingAgent.maxHistoryMessages,
               preserveRecent: existingAgent.preserveRecent,
@@ -809,7 +810,7 @@ export function AgentEditorPage(): React.ReactElement {
               </Card.Header>
               <Card.Body>
                 <Row className="g-3">
-                  <Col md={3}>
+                  <Col md={4} lg={2}>
                     <Form.Check
                       type="switch"
                       id="memory-enabled"
@@ -824,7 +825,7 @@ export function AgentEditorPage(): React.ReactElement {
                     </Form.Text>
                   </Col>
 
-                  <Col md={3}>
+                  <Col md={4} lg={2}>
                     <Form.Check
                       type="switch"
                       id="in-context-memory-enabled"
@@ -842,7 +843,25 @@ export function AgentEditorPage(): React.ReactElement {
                     </Form.Text>
                   </Col>
 
-                  <Col md={3}>
+                  <Col md={4} lg={3}>
+                    <Form.Check
+                      type="switch"
+                      id="persistent-instructions-enabled"
+                      label="Persistent Instructions"
+                      checked={formData.persistentInstructionsEnabled}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          persistentInstructionsEnabled: e.target.checked,
+                        })
+                      }
+                    />
+                    <Form.Text className="text-muted d-block">
+                      Disk-persisted custom rules
+                    </Form.Text>
+                  </Col>
+
+                  <Col md={4} lg={3}>
                     <Form.Check
                       type="switch"
                       id="history-enabled"
@@ -857,7 +876,7 @@ export function AgentEditorPage(): React.ReactElement {
                     </Form.Text>
                   </Col>
 
-                  <Col md={3}>
+                  <Col md={4} lg={2}>
                     <Form.Check
                       type="switch"
                       id="permissions-enabled"
