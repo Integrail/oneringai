@@ -249,6 +249,7 @@ export interface HoseaAPI {
         content: string;
         path: string;
         length: number;
+        enabled: boolean;
       } | null;
     }>;
     getContextStats: () => Promise<{
