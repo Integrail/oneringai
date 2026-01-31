@@ -132,6 +132,11 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
         // Convert content
         const content = this.convertContent(item.content);
 
+        // Skip messages with empty content (Anthropic rejects these)
+        if (!content || (Array.isArray(content) && content.length === 0) || content === '') {
+          continue;
+        }
+
         messages.push({
           role: role as 'user' | 'assistant',
           content,
@@ -151,12 +156,17 @@ export class AnthropicConverter extends BaseConverter<Anthropic.MessageCreatePar
     for (const c of content) {
       switch (c.type) {
         case ContentType.INPUT_TEXT:
-        case ContentType.OUTPUT_TEXT:
-          blocks.push({
-            type: 'text',
-            text: (c as { text: string }).text,
-          });
+        case ContentType.OUTPUT_TEXT: {
+          // Anthropic rejects empty text content blocks
+          const textContent = (c as { text: string }).text;
+          if (textContent && textContent.trim()) {
+            blocks.push({
+              type: 'text',
+              text: textContent,
+            });
+          }
           break;
+        }
 
         case ContentType.INPUT_IMAGE_URL: {
           const imgContent = c as { image_url: { url: string } };

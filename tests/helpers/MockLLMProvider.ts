@@ -173,11 +173,11 @@ export function mockMemoryRetrieve(key: string): MockToolCall {
 }
 
 /**
- * Helper to create memory_list tool call
+ * Helper to create memory_query tool call
  */
-export function mockMemoryList(): MockToolCall {
+export function mockMemoryQuery(): MockToolCall {
   return {
-    name: 'memory_list',
+    name: 'memory_query',
     arguments: {},
   };
 }

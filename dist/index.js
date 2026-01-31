@@ -4477,12 +4477,19 @@ var DEFAULT_ALLOWLIST = [
   "memory_store",
   "memory_retrieve",
   "memory_delete",
-  "memory_list",
-  // Context introspection (read-only)
-  "context_inspect",
-  "context_breakdown",
-  "cache_stats",
-  "memory_stats",
+  "memory_query",
+  "memory_cleanup_raw",
+  // Context introspection (unified tool)
+  "context_stats",
+  // In-context memory tools
+  "context_set",
+  "context_delete",
+  "context_list",
+  // Persistent instructions tools
+  "instructions_set",
+  "instructions_append",
+  "instructions_get",
+  "instructions_clear",
   // Meta-tools (internal coordination)
   "_start_planning",
   "_modify_plan",
@@ -12586,26 +12593,24 @@ var OpenAIResponsesConverter = class {
     for (const item of input) {
       if (item.type === "message") {
         const messageContent = [];
+        const isAssistant = item.role === "assistant";
         for (const content of item.content) {
           switch (content.type) {
             case "input_text":
+            case "output_text":
               messageContent.push({
-                type: "input_text",
+                type: isAssistant ? "output_text" : "input_text",
                 text: content.text
               });
               break;
             case "input_image_url":
-              messageContent.push({
-                type: "input_image",
-                image_url: content.image_url.url,
-                ...content.image_url.detail && { detail: content.image_url.detail }
-              });
-              break;
-            case "output_text":
-              messageContent.push({
-                type: "output_text",
-                text: content.text
-              });
+              if (!isAssistant) {
+                messageContent.push({
+                  type: "input_image",
+                  image_url: content.image_url.url,
+                  ...content.image_url.detail && { detail: content.image_url.detail }
+                });
+              }
               break;
             case "tool_use":
               items.push({
@@ -12630,7 +12635,9 @@ var OpenAIResponsesConverter = class {
             type: "message",
             role: item.role,
             content: messageContent,
-            id: item.id,
+            // Only include id if it's a valid OpenAI message ID (starts with msg_)
+            // New messages shouldn't have id; previous outputs keep their original id
+            ...item.id?.startsWith("msg_") ? { id: item.id } : {},
             status: "completed"
           });
         }
@@ -13506,6 +13513,9 @@ var AnthropicConverter = class extends BaseConverter {
       if (item.type === "message") {
         const role = this.mapRole(item.role);
         const content = this.convertContent(item.content);
+        if (!content || Array.isArray(content) && content.length === 0 || content === "") {
+          continue;
+        }
         messages.push({
           role,
           content
@@ -13522,12 +13532,16 @@ var AnthropicConverter = class extends BaseConverter {
     for (const c of content) {
       switch (c.type) {
         case "input_text" /* INPUT_TEXT */:
-        case "output_text" /* OUTPUT_TEXT */:
-          blocks.push({
-            type: "text",
-            text: c.text
-          });
+        case "output_text" /* OUTPUT_TEXT */: {
+          const textContent = c.text;
+          if (textContent && textContent.trim()) {
+            blocks.push({
+              type: "text",
+              text: textContent
+            });
+          }
           break;
+        }
         case "input_image_url" /* INPUT_IMAGE_URL */: {
           const imgContent = c;
           const block = this.convertImageToAnthropicBlock(imgContent.image_url.url);

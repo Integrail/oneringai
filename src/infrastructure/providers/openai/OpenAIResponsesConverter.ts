@@ -44,28 +44,31 @@ export class OpenAIResponsesConverter {
         // Convert message item
         const messageContent: any[] = [];
 
+        // OpenAI Responses API requires specific content types based on role:
+        // - user messages: input_text, input_image, input_audio, input_file
+        // - assistant messages: output_text, refusal
+        const isAssistant = item.role === 'assistant';
+
         for (const content of item.content) {
           switch (content.type) {
             case 'input_text':
+            case 'output_text':
+              // Map text content type based on message role
               messageContent.push({
-                type: 'input_text',
+                type: isAssistant ? 'output_text' : 'input_text',
                 text: content.text,
               });
               break;
 
             case 'input_image_url':
-              messageContent.push({
-                type: 'input_image',
-                image_url: content.image_url.url,
-                ...(content.image_url.detail && { detail: content.image_url.detail }),
-              });
-              break;
-
-            case 'output_text':
-              messageContent.push({
-                type: 'output_text',
-                text: content.text,
-              });
+              // Images are only valid for user messages
+              if (!isAssistant) {
+                messageContent.push({
+                  type: 'input_image',
+                  image_url: content.image_url.url,
+                  ...(content.image_url.detail && { detail: content.image_url.detail }),
+                });
+              }
               break;
 
             case 'tool_use':
@@ -98,7 +101,9 @@ export class OpenAIResponsesConverter {
             type: 'message',
             role: item.role,
             content: messageContent,
-            id: item.id,
+            // Only include id if it's a valid OpenAI message ID (starts with msg_)
+            // New messages shouldn't have id; previous outputs keep their original id
+            ...(item.id?.startsWith('msg_') ? { id: item.id } : {}),
             status: 'completed' as const,
           } as ResponsesAPI.ResponseInputItem.Message);
         }

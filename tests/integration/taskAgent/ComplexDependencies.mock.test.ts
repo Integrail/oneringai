@@ -9,7 +9,7 @@ import { TaskAgent } from '@/capabilities/taskAgent/TaskAgent.js';
 import { createAgentStorage } from '@/infrastructure/storage/InMemoryStorage.js';
 import { Connector } from '@/core/Connector.js';
 import { createMockConnector, resetMockProviders } from '../../helpers/mockConnector.js';
-import { mockMemoryStore, mockMemoryList, mockToolResponse, mockTextResponse } from '../../helpers/MockLLMProvider.js';
+import { mockMemoryStore, mockMemoryQuery, mockToolResponse, mockTextResponse } from '../../helpers/MockLLMProvider.js';
 
 describe('Complex Dependencies - Mock LLM Tests', () => {
   beforeEach(() => {
@@ -40,7 +40,7 @@ describe('Complex Dependencies - Mock LLM Tests', () => {
       mockTextResponse('Right branch complete'),
 
       // Task: merge (after both branches)
-      mockToolResponse(mockMemoryList()),
+      mockToolResponse(mockMemoryQuery()),
       mockTextResponse('All keys confirmed: root, left, right'),
     ]);
 

@@ -477,7 +477,7 @@ describe('PlanExecutor Integration - Real LLM', () => {
           tasks: [
             {
               name: 'task1',
-              description: 'List all memory keys using memory_list tool',
+              description: 'List all memory keys using memory_query tool',
             },
             {
               name: 'task2',

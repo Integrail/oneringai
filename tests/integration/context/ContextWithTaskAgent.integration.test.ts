@@ -63,7 +63,7 @@ describe('Context Management with TaskAgent Integration', () => {
           connector: 'openai-test',
           model: OPENAI_MODEL,
           storage,
-          instructions: 'You are a helpful assistant. Use memory_store and memory_list tools.',
+          instructions: 'You are a helpful assistant. Use memory_store and memory_query tools.',
         });
 
         const handle = await agent.start({
@@ -80,7 +80,7 @@ describe('Context Management with TaskAgent Integration', () => {
             },
             {
               name: 'task3',
-              description: 'List all memory keys using memory_list',
+              description: 'List all memory keys using memory_query',
               dependsOn: ['task2'],
             },
           ],
@@ -132,7 +132,7 @@ describe('Context Management with TaskAgent Integration', () => {
           tasks: [
             {
               name: 'list_memory',
-              description: 'List all memory items using memory_list',
+              description: 'List all memory items using memory_query',
             },
             {
               name: 'add_more',
@@ -342,7 +342,7 @@ describe('Context Management with TaskAgent Integration', () => {
             },
             {
               name: 'step5',
-              description: 'List all memory keys using memory_list and confirm 4 entries exist',
+              description: 'List all memory keys using memory_query and confirm 4 entries exist',
               dependsOn: ['step4'],
             },
           ],
@@ -403,7 +403,7 @@ describe('Context Management with TaskAgent Integration', () => {
         for (let i = 0; i < 10; i++) {
           tasks.push({
             name: `task_${i}`,
-            description: `Task ${i}: List memory using memory_list`,
+            description: `Task ${i}: List memory using memory_query`,
           });
         }
 

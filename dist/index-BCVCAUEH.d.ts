@@ -1456,7 +1456,9 @@ declare const DEFAULT_PERMISSION_CONFIG: Required<Pick<ToolPermissionConfig, 'sc
  * These tools are safe to execute without user approval:
  * - Read-only operations (filesystem reads, searches)
  * - Internal state management (memory tools)
- * - Introspection tools (context/cache stats)
+ * - Introspection tools (context stats)
+ * - In-context memory tools
+ * - Persistent instructions tools
  * - Meta-tools for agent coordination
  *
  * All other tools (write operations, shell commands, external requests)

@@ -675,13 +675,22 @@ describe('ToolPermissionManager', () => {
       expect(allowlist).toContain('memory_store');
       expect(allowlist).toContain('memory_retrieve');
       expect(allowlist).toContain('memory_delete');
-      expect(allowlist).toContain('memory_list');
+      expect(allowlist).toContain('memory_query');
+      expect(allowlist).toContain('memory_cleanup_raw');
 
-      // Check context introspection tools
-      expect(allowlist).toContain('context_inspect');
-      expect(allowlist).toContain('context_breakdown');
-      expect(allowlist).toContain('cache_stats');
-      expect(allowlist).toContain('memory_stats');
+      // Check context introspection tool (unified)
+      expect(allowlist).toContain('context_stats');
+
+      // Check in-context memory tools
+      expect(allowlist).toContain('context_set');
+      expect(allowlist).toContain('context_delete');
+      expect(allowlist).toContain('context_list');
+
+      // Check persistent instructions tools
+      expect(allowlist).toContain('instructions_set');
+      expect(allowlist).toContain('instructions_append');
+      expect(allowlist).toContain('instructions_get');
+      expect(allowlist).toContain('instructions_clear');
 
       // Check meta-tools
       expect(allowlist).toContain('_start_planning');

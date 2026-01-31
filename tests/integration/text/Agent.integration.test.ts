@@ -557,7 +557,9 @@ describeIfAnthropic('Agent Integration - Anthropic (Claude)', () => {
         model: 'claude-3-5-haiku-20241022',
       });
 
-      const response = await agent.run('What is 2 + 2? Answer with just the number.');
+      // Use runDirect to bypass context management and built-in tools
+      // This tests pure LLM text generation without agentic loop
+      const response = await agent.runDirect('What is 2 + 2? Answer with just the number.');
 
       expect(response.status).toBe('completed');
       expect(response.output_text).toBeDefined();
@@ -631,18 +633,16 @@ describeIfAnthropic('Agent Integration - Anthropic (Claude)', () => {
         tools: [weatherTool],
       });
 
-      let toolCallStarted = false;
-      let toolCallDone = false;
+      let weatherToolCallStarted = false;
+      let weatherToolCallDone = false;
       const textDeltas: string[] = [];
 
       for await (const event of agent.stream('What is the weather in Sydney?')) {
-        if (isToolCallStart(event)) {
-          toolCallStarted = true;
-          expect(event.tool_name).toBe('get_weather');
+        if (isToolCallStart(event) && event.tool_name === 'get_weather') {
+          weatherToolCallStarted = true;
         }
-        if (isToolCallArgumentsDone(event)) {
-          toolCallDone = true;
-          expect(event.tool_name).toBe('get_weather');
+        if (isToolCallArgumentsDone(event) && event.tool_name === 'get_weather') {
+          weatherToolCallDone = true;
           const args = JSON.parse(event.arguments);
           expect(args.location.toLowerCase()).toContain('sydney');
         }
@@ -651,8 +651,9 @@ describeIfAnthropic('Agent Integration - Anthropic (Claude)', () => {
         }
       }
 
-      expect(toolCallStarted).toBe(true);
-      expect(toolCallDone).toBe(true);
+      // The get_weather tool should have been called
+      expect(weatherToolCallStarted).toBe(true);
+      expect(weatherToolCallDone).toBe(true);
       expect(textDeltas.length).toBeGreaterThan(0);
     }, 60000);
   });

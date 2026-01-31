@@ -92,7 +92,7 @@ describe('Complex Dependencies Integration', () => {
             },
             {
               name: 'merge',
-              description: 'List all memory keys using memory_list and confirm root, left, right exist',
+              description: 'List all memory keys using memory_query and confirm root, left, right exist',
               dependsOn: ['branch_left', 'branch_right'],
             },
           ],
@@ -418,7 +418,7 @@ describe('Complex Dependencies Integration', () => {
             // Level 3
             {
               name: 'final',
-              description: 'List all memory keys using memory_list and verify all levels',
+              description: 'List all memory keys using memory_query and verify all levels',
               dependsOn: ['level2'],
             },
           ],

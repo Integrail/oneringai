@@ -305,7 +305,9 @@ export const DEFAULT_PERMISSION_CONFIG: Required<Pick<ToolPermissionConfig, 'sco
  * These tools are safe to execute without user approval:
  * - Read-only operations (filesystem reads, searches)
  * - Internal state management (memory tools)
- * - Introspection tools (context/cache stats)
+ * - Introspection tools (context stats)
+ * - In-context memory tools
+ * - Persistent instructions tools
  * - Meta-tools for agent coordination
  *
  * All other tools (write operations, shell commands, external requests)
@@ -322,13 +324,22 @@ export const DEFAULT_ALLOWLIST: readonly string[] = [
   'memory_store',
   'memory_retrieve',
   'memory_delete',
-  'memory_list',
+  'memory_query',
+  'memory_cleanup_raw',
 
-  // Context introspection (read-only)
-  'context_inspect',
-  'context_breakdown',
-  'cache_stats',
-  'memory_stats',
+  // Context introspection (unified tool)
+  'context_stats',
+
+  // In-context memory tools
+  'context_set',
+  'context_delete',
+  'context_list',
+
+  // Persistent instructions tools
+  'instructions_set',
+  'instructions_append',
+  'instructions_get',
+  'instructions_clear',
 
   // Meta-tools (internal coordination)
   '_start_planning',
