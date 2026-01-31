@@ -1,17 +1,22 @@
 /**
  * Context Management Integration Tests with TaskAgent
  *
- * Tests context management under real task execution:
- * - Context compaction during task execution
- * - Memory eviction under pressure
- * - History truncation when over limit
- * - Priority-based compaction (plan > memory > history)
- * - Strategy switching mid-execution
- * - Budget warnings and critical events
- * - TaskAgentContextProvider component assembly
+ * Minimal real-LLM smoke tests:
+ * - Basic task execution completes without errors
+ * - Different strategies can be configured
+ *
+ * NOTE: Detailed context behavior tests are in mock test files:
+ * - ContextBudget.mock.test.ts
+ * - ContextStrategies.mock.test.ts
+ * - ContextCompactors.mock.test.ts
+ * - ContextPlugins.mock.test.ts
+ * - ContextFeatures.mock.test.ts
+ * - MemoryEviction.mock.test.ts
+ * - HistoryManagement.mock.test.ts
+ * - ContextIntegration.mock.test.ts
  *
  * Requires API keys:
- * - OPENAI_API_KEY (recommended)
+ * - OPENAI_API_KEY
  *
  * Run with: npm run test:integration -- tests/integration/context/ContextWithTaskAgent.integration.test.ts
  */
@@ -48,9 +53,9 @@ describe('Context Management with TaskAgent Integration', () => {
     Connector.clear();
   });
 
-  describeIfOpenAI('Context Budget Management', () => {
+  describeIfOpenAI('Basic Task Execution', () => {
     it(
-      'should manage context automatically during execution',
+      'should complete basic task execution with context management',
       async () => {
         Connector.create({
           name: 'openai-test',
@@ -63,99 +68,40 @@ describe('Context Management with TaskAgent Integration', () => {
           connector: 'openai-test',
           model: OPENAI_MODEL,
           storage,
-          instructions: 'You are a helpful assistant. Use memory_store and memory_query tools.',
+          instructions: 'You are a helpful assistant. Use memory_store to save data.',
         });
 
         const handle = await agent.start({
-          goal: 'Execute multiple tasks with context management',
+          goal: 'Execute simple tasks with memory',
           tasks: [
             {
               name: 'task1',
-              description: 'Store "item1" with key "data1" using memory_store',
+              description: 'Store "hello" with key "greeting" using memory_store',
             },
             {
               name: 'task2',
-              description: 'Store "item2" with key "data2" using memory_store',
+              description: 'Store "world" with key "target" using memory_store',
               dependsOn: ['task1'],
             },
-            {
-              name: 'task3',
-              description: 'List all memory keys using memory_query',
-              dependsOn: ['task2'],
-            },
           ],
         });
 
         const result = await handle.wait();
 
         expect(result.status).toBe('completed');
-        expect(result.metrics.completedTasks).toBe(3);
+        expect(result.metrics.completedTasks).toBe(2);
 
-        // Context was managed successfully
+        // Context management worked - agent completed tasks
         const state = agent.getState();
         expect(state.metrics.totalLLMCalls).toBeGreaterThan(0);
       },
       TEST_TIMEOUT
     );
-
-    it(
-      'should emit budget warnings when context usage is high',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          instructions: 'Use memory_store to save large amounts of data.',
-        });
-
-        // Pre-fill memory with data to increase context usage
-        const memory = agent.getMemory();
-        for (let i = 0; i < 20; i++) {
-          await memory.store(`key_${i}`, `Data item ${i}`, {
-            content: 'x'.repeat(500), // 500 bytes each
-          });
-        }
-
-        // Track budget events (if exposed via agent events)
-        let budgetWarningEmitted = false;
-        // Note: We might need to expose context manager events through TaskAgent
-
-        const handle = await agent.start({
-          goal: 'Execute tasks with high memory usage',
-          tasks: [
-            {
-              name: 'list_memory',
-              description: 'List all memory items using memory_query',
-            },
-            {
-              name: 'add_more',
-              description: 'Store another 5 items using memory_store with keys "extra1" through "extra5"',
-            },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        // Should still complete despite high context usage
-        expect(result.status).toBe('completed');
-      },
-      TEST_TIMEOUT
-    );
   });
 
-  // REMOVED: Memory eviction tests moved to mock tests
-  // Real LLM behavior is non-deterministic for memory storage
-
-  describeIfOpenAI('Priority-Based Compaction', () => {
+  describeIfOpenAI('Strategy Configuration', () => {
     it(
-      'should preserve high-priority components (plan, instructions)',
+      'should work with different compaction strategies',
       async () => {
         Connector.create({
           name: 'openai-test',
@@ -163,267 +109,45 @@ describe('Context Management with TaskAgent Integration', () => {
           auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
         });
 
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
+        // Test with aggressive strategy
+        const storage1 = createAgentStorage();
+        const agent1 = TaskAgent.create({
           connector: 'openai-test',
           model: OPENAI_MODEL,
-          storage,
-          instructions: 'CRITICAL INSTRUCTION: Always be polite and professional. This instruction must not be lost.',
+          storage: storage1,
+          contextConfig: {
+            strategy: 'aggressive',
+          },
         });
 
-        // Fill memory and history
-        const memory = agent.getMemory();
-        for (let i = 0; i < 10; i++) {
-          await memory.store(`data_${i}`, `Item ${i}`, {
-            content: 'x'.repeat(200),
-          });
-        }
-
-        const handle = await agent.start({
-          goal: 'Test priority preservation',
-          tasks: [
-            {
-              name: 'task1',
-              description: 'Say hello politely',
-            },
-            {
-              name: 'task2',
-              description: 'Say goodbye politely',
-            },
-          ],
+        const handle1 = await agent1.start({
+          goal: 'Test aggressive strategy',
+          tasks: [{ name: 'test', description: 'Say "hello"' }],
         });
 
-        const result = await handle.wait();
+        const result1 = await handle1.wait();
+        expect(result1.status).toBe('completed');
 
-        // Should complete - plan and instructions are preserved
-        expect(result.status).toBe('completed');
-
-        // Verify plan is still intact
-        const plan = agent.getPlan();
-        expect(plan.goal).toBe('Test priority preservation');
-        expect(plan.tasks).toHaveLength(2);
-      },
-      TEST_TIMEOUT
-    );
-  });
-
-  describeIfOpenAI('History Truncation', () => {
-    it(
-      'should truncate conversation history when it grows too large',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
+        // Test with lazy strategy
+        const storage2 = createAgentStorage();
+        const agent2 = TaskAgent.create({
           connector: 'openai-test',
           model: OPENAI_MODEL,
-          storage,
+          storage: storage2,
+          contextConfig: {
+            strategy: 'lazy',
+          },
         });
 
-        // Create many tasks to build up history
-        const tasks = [];
-        for (let i = 0; i < 10; i++) {
-          tasks.push({
-            name: `task_${i}`,
-            description: `Task ${i}: Say "Step ${i} complete"`,
-          });
-        }
-
-        const handle = await agent.start({
-          goal: 'Build up conversation history',
-          tasks,
+        const handle2 = await agent2.start({
+          goal: 'Test lazy strategy',
+          tasks: [{ name: 'test', description: 'Say "goodbye"' }],
         });
 
-        const result = await handle.wait();
-
-        expect(result.status).toBe('completed');
-
-        // Verify tasks completed
-        const state = agent.getState();
-        expect(state.metrics.totalLLMCalls).toBeGreaterThan(0);
-
-        console.log(`Completed ${result.metrics.completedTasks} tasks with ${state.metrics.totalLLMCalls} LLM calls`);
+        const result2 = await handle2.wait();
+        expect(result2.status).toBe('completed');
       },
-      TEST_TIMEOUT
-    );
-  });
-
-  describeIfOpenAI('Component Assembly', () => {
-    it(
-      'should correctly assemble context components via TaskAgentContextProvider',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          instructions: 'Test instructions',
-        });
-
-        // Add memory
-        const memory = agent.getMemory();
-        await memory.store('test_key', 'Test value', { data: 'test' });
-
-        const handle = await agent.start({
-          goal: 'Test context component assembly',
-          tasks: [
-            {
-              name: 'simple_task',
-              description: 'Retrieve test_key using memory_retrieve and confirm value',
-            },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        expect(result.status).toBe('completed');
-
-        // Components were assembled correctly:
-        // - System prompt
-        // - Instructions
-        // - Plan
-        // - Memory index
-        // - Conversation history
-        // - Current input
-      },
-      TEST_TIMEOUT
-    );
-  });
-
-  describeIfOpenAI('Multiple Tasks with Growing Context', () => {
-    it(
-      'should handle multiple tasks with accumulating context',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-          instructions: 'Use memory_store for each task result.',
-        });
-
-        const handle = await agent.start({
-          goal: 'Execute 5 tasks with cumulative results',
-          tasks: [
-            {
-              name: 'step1',
-              description: 'Store "step1 done" with key "s1" using memory_store',
-            },
-            {
-              name: 'step2',
-              description: 'Store "step2 done" with key "s2" using memory_store',
-              dependsOn: ['step1'],
-            },
-            {
-              name: 'step3',
-              description: 'Store "step3 done" with key "s3" using memory_store',
-              dependsOn: ['step2'],
-            },
-            {
-              name: 'step4',
-              description: 'Store "step4 done" with key "s4" using memory_store',
-              dependsOn: ['step3'],
-            },
-            {
-              name: 'step5',
-              description: 'List all memory keys using memory_query and confirm 4 entries exist',
-              dependsOn: ['step4'],
-            },
-          ],
-        });
-
-        const result = await handle.wait();
-
-        expect(result.status).toBe('completed');
-        expect(result.metrics.completedTasks).toBe(5);
-
-        // Verify all data was stored
-        const memory = agent.getMemory();
-        const s1 = await memory.retrieve('s1');
-        const s2 = await memory.retrieve('s2');
-        const s3 = await memory.retrieve('s3');
-        const s4 = await memory.retrieve('s4');
-
-        expect(s1).toBeDefined();
-        expect(s2).toBeDefined();
-        expect(s3).toBeDefined();
-        expect(s4).toBeDefined();
-
-        console.log('Context management handled 5 tasks successfully');
-      },
-      TEST_TIMEOUT
-    );
-  });
-
-  // REMOVED: Tool output context test moved to mock tests
-  // Real LLM behavior is non-deterministic for tool calls
-
-  describeIfOpenAI('Context Stress Test', () => {
-    it(
-      'should handle 10 tasks with heavy memory usage',
-      async () => {
-        Connector.create({
-          name: 'openai-test',
-          vendor: Vendor.OpenAI,
-          auth: { type: 'api_key', apiKey: OPENAI_API_KEY! },
-        });
-
-        const storage = createAgentStorage();
-        const agent = TaskAgent.create({
-          connector: 'openai-test',
-          model: OPENAI_MODEL,
-          storage,
-        });
-
-        // Pre-fill memory
-        const memory = agent.getMemory();
-        for (let i = 0; i < 20; i++) {
-          await memory.store(`init_${i}`, `Initial ${i}`, {
-            content: `Data ${i}`,
-          });
-        }
-
-        const tasks = [];
-        for (let i = 0; i < 10; i++) {
-          tasks.push({
-            name: `task_${i}`,
-            description: `Task ${i}: List memory using memory_query`,
-          });
-        }
-
-        const handle = await agent.start({
-          goal: 'Stress test context management',
-          tasks,
-        });
-
-        const result = await handle.wait();
-
-        // Should complete despite stress
-        expect(result.status).toBe('completed');
-        expect(result.metrics.completedTasks).toBe(10);
-
-        console.log('Context stress test completed:', {
-          llmCalls: result.metrics.totalLLMCalls,
-          toolCalls: result.metrics.totalToolCalls,
-        });
-      },
-      TEST_TIMEOUT * 2 // Allow extra time for stress test
+      TEST_TIMEOUT * 2
     );
   });
 });

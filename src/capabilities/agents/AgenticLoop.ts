@@ -10,7 +10,7 @@ import { IToolExecutor } from '../../domain/interfaces/IToolExecutor.js';
 import { AgentResponse } from '../../domain/entities/Response.js';
 import { InputItem, MessageRole, OutputItem } from '../../domain/entities/Message.js';
 import { Tool, ToolCall, ToolCallState, ToolResult } from '../../domain/entities/Tool.js';
-import { ContentType, ToolResultContent } from '../../domain/entities/Content.js';
+import { Content, ContentType, ToolResultContent } from '../../domain/entities/Content.js';
 import { ToolTimeoutError } from '../../domain/errors/AIErrors.js';
 import { ExecutionContext, HistoryMode } from './ExecutionContext.js';
 import { HookManager } from './HookManager.js';
@@ -586,21 +586,28 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
         }
 
         // Build next input with tool results (streaming constructs messages from StreamState)
+        // Only include OUTPUT_TEXT if there's actual text content (Anthropic rejects empty text blocks)
+        const assistantText = iterationStreamState.getAllText();
+        const assistantContent: Content[] = [];
+        if (assistantText && assistantText.trim()) {
+          assistantContent.push({
+            type: ContentType.OUTPUT_TEXT,
+            text: assistantText,
+          });
+        }
+        // Add tool use blocks
+        for (const tc of toolCalls) {
+          assistantContent.push({
+            type: ContentType.TOOL_USE as const,
+            id: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+          });
+        }
         const assistantMessage: InputItem = {
           type: 'message',
           role: MessageRole.ASSISTANT,
-          content: [
-            {
-              type: ContentType.OUTPUT_TEXT,
-              text: iterationStreamState.getAllText(),
-            },
-            ...toolCalls.map((tc) => ({
-              type: ContentType.TOOL_USE as const,
-              id: tc.id,
-              name: tc.function.name,
-              arguments: tc.function.arguments,
-            })),
-          ],
+          content: assistantContent,
         };
 
         const toolResultsMessage: InputItem = {

@@ -19,6 +19,8 @@ export interface MockResponse {
   text?: string;
   toolCalls?: MockToolCall[];
   stopReason?: 'end_turn' | 'tool_use' | 'max_tokens';
+  inputTokens?: number;
+  outputTokens?: number;
 }
 
 /**
@@ -106,13 +108,16 @@ export class MockLLMProvider implements ITextProvider {
       }
     }
 
+    const inputTokens = response.inputTokens ?? 100;
+    const outputTokens = response.outputTokens ?? 50;
+
     return {
       output: [outputItem],
       stopReason: response.stopReason || (response.toolCalls ? 'tool_use' : 'end_turn'),
       usage: {
-        input_tokens: 100,
-        output_tokens: 50,
-        total_tokens: 150,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        total_tokens: inputTokens + outputTokens,
       },
     };
   }
@@ -199,5 +204,142 @@ export function mockToolResponse(...toolCalls: MockToolCall[]): MockResponse {
   return {
     toolCalls,
     stopReason: 'tool_use',
+  };
+}
+
+/**
+ * Helper to create context_stats tool call
+ */
+export function mockContextStats(sections?: ('budget' | 'breakdown' | 'memory' | 'cache' | 'all')[]): MockToolCall {
+  return {
+    name: 'context_stats',
+    arguments: sections ? { sections } : {},
+  };
+}
+
+/**
+ * Helper to create context_set tool call
+ */
+export function mockContextSet(
+  key: string,
+  description: string,
+  value: unknown,
+  priority?: 'low' | 'normal' | 'high' | 'critical'
+): MockToolCall {
+  return {
+    name: 'context_set',
+    arguments: priority ? { key, description, value, priority } : { key, description, value },
+  };
+}
+
+/**
+ * Helper to create context_delete tool call
+ */
+export function mockContextDelete(key: string): MockToolCall {
+  return {
+    name: 'context_delete',
+    arguments: { key },
+  };
+}
+
+/**
+ * Helper to create context_list tool call
+ */
+export function mockContextList(): MockToolCall {
+  return {
+    name: 'context_list',
+    arguments: {},
+  };
+}
+
+/**
+ * Helper to create memory_delete tool call
+ */
+export function mockMemoryDelete(key: string): MockToolCall {
+  return {
+    name: 'memory_delete',
+    arguments: { key },
+  };
+}
+
+/**
+ * Helper to create memory_cleanup_raw tool call
+ */
+export function mockMemoryCleanupRaw(): MockToolCall {
+  return {
+    name: 'memory_cleanup_raw',
+    arguments: {},
+  };
+}
+
+/**
+ * Helper to create instructions_set tool call
+ */
+export function mockInstructionsSet(instructions: string): MockToolCall {
+  return {
+    name: 'instructions_set',
+    arguments: { instructions },
+  };
+}
+
+/**
+ * Helper to create instructions_append tool call
+ */
+export function mockInstructionsAppend(content: string): MockToolCall {
+  return {
+    name: 'instructions_append',
+    arguments: { content },
+  };
+}
+
+/**
+ * Helper to create instructions_get tool call
+ */
+export function mockInstructionsGet(): MockToolCall {
+  return {
+    name: 'instructions_get',
+    arguments: {},
+  };
+}
+
+/**
+ * Helper to create instructions_clear tool call
+ */
+export function mockInstructionsClear(): MockToolCall {
+  return {
+    name: 'instructions_clear',
+    arguments: {},
+  };
+}
+
+/**
+ * Helper to create a text response with custom token counts
+ */
+export function mockTextResponseWithTokens(
+  text: string,
+  inputTokens: number,
+  outputTokens: number
+): MockResponse {
+  return {
+    text,
+    stopReason: 'end_turn',
+    inputTokens,
+    outputTokens,
+  };
+}
+
+/**
+ * Helper to create a tool call response with custom token counts
+ */
+export function mockToolResponseWithTokens(
+  inputTokens: number,
+  outputTokens: number,
+  ...toolCalls: MockToolCall[]
+): MockResponse {
+  return {
+    toolCalls,
+    stopReason: 'tool_use',
+    inputTokens,
+    outputTokens,
   };
 }

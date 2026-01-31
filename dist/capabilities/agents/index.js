@@ -1051,21 +1051,26 @@ var AgenticLoop = class extends EventEmitter {
             });
           }
         }
+        const assistantText = iterationStreamState.getAllText();
+        const assistantContent = [];
+        if (assistantText && assistantText.trim()) {
+          assistantContent.push({
+            type: "output_text" /* OUTPUT_TEXT */,
+            text: assistantText
+          });
+        }
+        for (const tc of toolCalls) {
+          assistantContent.push({
+            type: "tool_use" /* TOOL_USE */,
+            id: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments
+          });
+        }
         const assistantMessage = {
           type: "message",
           role: "assistant" /* ASSISTANT */,
-          content: [
-            {
-              type: "output_text" /* OUTPUT_TEXT */,
-              text: iterationStreamState.getAllText()
-            },
-            ...toolCalls.map((tc) => ({
-              type: "tool_use" /* TOOL_USE */,
-              id: tc.id,
-              name: tc.function.name,
-              arguments: tc.function.arguments
-            }))
-          ]
+          content: assistantContent
         };
         const toolResultsMessage = {
           type: "message",
