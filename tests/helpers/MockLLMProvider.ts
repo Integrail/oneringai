@@ -111,8 +111,12 @@ export class MockLLMProvider implements ITextProvider {
     const inputTokens = response.inputTokens ?? 100;
     const outputTokens = response.outputTokens ?? 50;
 
+    // Aggregate text output for SDK convenience
+    const outputText = response.text || '';
+
     return {
       output: [outputItem],
+      output_text: outputText,
       stopReason: response.stopReason || (response.toolCalls ? 'tool_use' : 'end_turn'),
       usage: {
         input_tokens: inputTokens,

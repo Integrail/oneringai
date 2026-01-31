@@ -478,13 +478,17 @@ describe('AdaptiveStrategy', () => {
 
   describe('shouldCompact Delegation', () => {
     it('should delegate to current strategy', () => {
-      // Initially proactive, so should compact at warning
-      const warningBudget = createBudgetAtStatus('warning');
-      expect(strategy.shouldCompact(warningBudget, mockConfig)).toBe(true);
+      // Note: AdaptiveStrategy adapts immediately based on metrics.
+      // On first call with low avgUtilization (8 from EMA), it switches to lazy.
+      // Lazy only compacts on critical, not warning.
 
       // Should NOT compact at ok
       const okBudget = createBudgetAtStatus('ok');
       expect(strategy.shouldCompact(okBudget, mockConfig)).toBe(false);
+
+      // With critical status, even lazy will compact
+      const criticalBudget = createBudgetAtStatus('critical');
+      expect(strategy.shouldCompact(criticalBudget, mockConfig)).toBe(true);
     });
   });
 

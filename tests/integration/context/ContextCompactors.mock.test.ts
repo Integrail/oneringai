@@ -596,9 +596,10 @@ describe('SummarizeCompactor', () => {
 
   describe('Content Stringification', () => {
     it('should stringify array content (messages)', async () => {
+      // Make messages large enough to trigger summarization
       const messages = [
-        { role: 'user', content: 'Hello' },
-        { role: 'assistant', content: 'Hi there!' },
+        { role: 'user', content: 'Hello '.repeat(300) },
+        { role: 'assistant', content: 'Hi there! '.repeat(300) },
       ];
       const component = createMockComponent('history', messages, {
         compactable: true,
@@ -614,8 +615,9 @@ describe('SummarizeCompactor', () => {
     });
 
     it('should handle tool output format', async () => {
+      // Make outputs large enough to trigger summarization
       const outputs = [
-        { tool: 'read_file', output: { content: 'file data' } },
+        { tool: 'read_file', output: { content: 'file data '.repeat(500) } },
       ];
       const component = createMockComponent('tool_outputs', outputs, {
         compactable: true,
@@ -630,7 +632,8 @@ describe('SummarizeCompactor', () => {
     });
 
     it('should JSON stringify complex objects', async () => {
-      const component = createMockComponent('data', { complex: { nested: 'value' } }, {
+      // Make object large enough to trigger summarization
+      const component = createMockComponent('data', { complex: { nested: 'value '.repeat(500) } }, {
         compactable: true,
         metadata: { strategy: 'summarize' },
       });

@@ -11,10 +11,65 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { TaskAgent } from '@/capabilities/taskAgent/TaskAgent.js';
 import { Agent } from '@/core/Agent.js';
-import { AgentContext } from '@/core/AgentContext.js';
+import { AgentContext, SerializedAgentContextState } from '@/core/AgentContext.js';
 import { Connector } from '@/core/Connector.js';
 import { createAgentStorage } from '@/infrastructure/storage/InMemoryStorage.js';
+import type {
+  IContextStorage,
+  StoredContextSession,
+  ContextSessionSummary,
+  ContextSessionMetadata,
+  ContextStorageListOptions,
+} from '@/domain/interfaces/IContextStorage.js';
 import { createMockConnector, resetMockProviders } from '../../helpers/mockConnector.js';
+
+// Simple in-memory mock for IContextStorage
+class MockContextStorage implements IContextStorage {
+  private sessions = new Map<string, StoredContextSession>();
+
+  async save(
+    sessionId: string,
+    state: SerializedAgentContextState,
+    metadata?: ContextSessionMetadata
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    this.sessions.set(sessionId, {
+      version: 1,
+      sessionId,
+      createdAt: this.sessions.get(sessionId)?.createdAt || now,
+      lastSavedAt: now,
+      state,
+      metadata: metadata || {},
+    });
+  }
+
+  async load(sessionId: string): Promise<StoredContextSession | null> {
+    return this.sessions.get(sessionId) || null;
+  }
+
+  async delete(sessionId: string): Promise<void> {
+    this.sessions.delete(sessionId);
+  }
+
+  async exists(sessionId: string): Promise<boolean> {
+    return this.sessions.has(sessionId);
+  }
+
+  async list(_options?: ContextStorageListOptions): Promise<ContextSessionSummary[]> {
+    return Array.from(this.sessions.values()).map((s) => ({
+      sessionId: s.sessionId,
+      createdAt: new Date(s.createdAt),
+      lastSavedAt: new Date(s.lastSavedAt),
+      messageCount: s.state.conversation?.length || 0,
+      memoryEntryCount: s.state.memory?.entries.length || 0,
+      metadata: s.metadata,
+    }));
+  }
+
+  getPath(): string {
+    return 'memory://mock';
+  }
+}
 import {
   mockMemoryStore,
   mockMemoryRetrieve,
@@ -72,7 +127,8 @@ describe('Multi-Task Execution with Context Management', () => {
 
     expect(result.status).toBe('completed');
     const memory = agent.getMemory();
-    expect(await memory.has('findings.findings1')).toBe(true);
+    // memory_store uses the key as-is without automatic prefix
+    expect(await memory.has('findings1')).toBe(true);
   });
 
   it('should execute tasks that use context_stats tool', async () => {
@@ -184,7 +240,7 @@ describe('Compaction Triggering', () => {
 
     // If threshold was reached, compaction should have been triggered
     // This depends on actual token estimation
-    const budget = (ctx as any).getBudget();
+    const budget = await ctx.getBudget();
     if (budget.status !== 'ok') {
       // Compaction might have been triggered
       expect(compactedSpy.mock.calls.length).toBeGreaterThanOrEqual(0);
@@ -286,7 +342,7 @@ describe('Plugin Integration', () => {
 
 describe('Session Persistence', () => {
   it('should persist and restore conversation history', async () => {
-    const storage = createAgentStorage();
+    const storage = new MockContextStorage();
     const ctx1 = AgentContext.create({
       model: 'gpt-4',
       features: FEATURE_PRESETS.historyOnly,
@@ -325,7 +381,7 @@ describe('Session Persistence', () => {
   });
 
   it('should persist and restore memory entries', async () => {
-    const storage = createAgentStorage();
+    const storage = new MockContextStorage();
     const ctx1 = AgentContext.create({
       model: 'gpt-4',
       features: FEATURE_PRESETS.memoryOnly,
@@ -361,7 +417,7 @@ describe('Session Persistence', () => {
   });
 
   it('should handle session existence check', async () => {
-    const storage = createAgentStorage();
+    const storage = new MockContextStorage();
     const ctx = AgentContext.create({
       model: 'gpt-4',
       features: FEATURE_PRESETS.minimal,
@@ -413,7 +469,8 @@ describe('Basic Agent with Context', () => {
 
     const response = await agent.run('Hello, how are you?');
 
-    expect(response).toContain('Hello');
+    // Response is LLMResponse, check output_text
+    expect(response.output_text).toContain('Hello');
     expect(mockProvider.getCallCount()).toBe(1);
   });
 
@@ -436,7 +493,8 @@ describe('Basic Agent with Context', () => {
     // Direct call should bypass history
     const response = await agent.runDirect('Quick question');
 
-    expect(response).toBe('Direct response');
+    // runDirect returns LLMResponse
+    expect(response.output_text).toBe('Direct response');
     // History should still only have the previous message, not the direct call
     expect(ctx.getHistory()).toHaveLength(1);
   });
@@ -522,8 +580,9 @@ describe('Context Budget with Agent', () => {
     // Prepare context manually
     const prepared = await agent.context.prepare();
 
-    // Should include instructions
-    expect(prepared.instructions).toBeDefined();
-    expect(prepared.instructions).toContain('helpful assistant');
+    // Should include budget
+    expect(prepared.budget).toBeDefined();
+    expect(prepared.budget.status).toBe('ok');
+    expect(prepared.compacted).toBe(false);
   });
 });

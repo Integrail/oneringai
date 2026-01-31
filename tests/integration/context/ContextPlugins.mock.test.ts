@@ -429,11 +429,18 @@ describe('PersistentInstructionsPlugin', () => {
   let mockStorage: IPersistentInstructionsStorage;
 
   beforeEach(() => {
+    // Use a variable to track saved content
+    let savedContent: string | null = null;
+
     mockStorage = {
-      save: vi.fn().mockResolvedValue(undefined),
-      load: vi.fn().mockResolvedValue(null),
-      delete: vi.fn().mockResolvedValue(undefined),
-      exists: vi.fn().mockResolvedValue(false),
+      save: vi.fn().mockImplementation(async (content: string) => {
+        savedContent = content;
+      }),
+      load: vi.fn().mockImplementation(async () => savedContent),
+      delete: vi.fn().mockImplementation(async () => {
+        savedContent = null;
+      }),
+      exists: vi.fn().mockImplementation(async () => savedContent !== null),
       getPath: vi.fn().mockReturnValue('/mock/path/custom_instructions.md'),
     };
 

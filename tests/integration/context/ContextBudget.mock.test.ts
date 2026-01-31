@@ -214,7 +214,8 @@ describe('ContextBudget Mock Tests', () => {
 
       expect(result).toBeDefined();
       expect(result.budget).toBeDefined();
-      expect(result.budget.total).toBe(100000);
+      // context_stats returns total_tokens, not total
+      expect(result.budget.total_tokens).toBe(100000);
       expect(result.budget.status).toBe('ok');
     });
 
@@ -232,7 +233,8 @@ describe('ContextBudget Mock Tests', () => {
 
       expect(result).toBeDefined();
       expect(result.memory).toBeDefined();
-      expect(result.memory.totalEntries).toBeDefined();
+      // context_stats returns total_entries, not totalEntries
+      expect(result.memory.total_entries).toBeDefined();
     });
 
     it('should return "feature_disabled" for memory section when memory is disabled', async () => {

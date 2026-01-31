@@ -173,8 +173,9 @@ describe('Tool Auto-Registration', () => {
       const minCtx = createMinimalContext();
       const fullCtx = createFullContext({ agentId: 'test' });
 
-      expect(minCtx.tools.list().some(t => t.name === 'context_stats')).toBe(true);
-      expect(fullCtx.tools.list().some(t => t.name === 'context_stats')).toBe(true);
+      // tools.list() returns string[] directly
+      expect(minCtx.tools.list()).toContain('context_stats');
+      expect(fullCtx.tools.list()).toContain('context_stats');
 
       minCtx.destroy();
       fullCtx.destroy();
@@ -596,11 +597,25 @@ describe('Feature Isolation', () => {
   });
 
   it('should have independent tool lists per feature', () => {
-    const memoryCtx = createContextWithFeatures({ memory: true });
-    const inContextCtx = createContextWithFeatures({ inContextMemory: true });
+    // Explicitly specify all features to avoid default memory=true
+    const memoryCtx = createContextWithFeatures({
+      memory: true,
+      inContextMemory: false,
+      history: false,
+      permissions: false,
+      persistentInstructions: false,
+    });
+    const inContextCtx = createContextWithFeatures({
+      memory: false,  // Explicitly disable memory
+      inContextMemory: true,
+      history: false,
+      permissions: false,
+      persistentInstructions: false,
+    });
 
-    const memoryTools = memoryCtx.tools.list().map(t => t.name);
-    const inContextTools = inContextCtx.tools.list().map(t => t.name);
+    // tools.list() returns string[] directly
+    const memoryTools = memoryCtx.tools.list();
+    const inContextTools = inContextCtx.tools.list();
 
     // Memory tools only in memory context
     expect(memoryTools).toContain('memory_store');
