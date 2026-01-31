@@ -5711,11 +5711,25 @@ var ToolManager = class extends eventemitter3.EventEmitter {
     const startTime = Date.now();
     exports.metrics.increment("tool.executed", 1, { tool: toolName });
     const effectiveContext = this._toolContext ?? this._buildContextFromParent();
+    const cache = this._parentContext?.cache;
+    const cacheEnabled = this._parentContext?.isCacheEnabled() ?? false;
+    if (cache && cacheEnabled) {
+      const cached = await cache.get(registration.tool, args);
+      if (cached !== void 0) {
+        this.toolLogger.debug({ toolName }, "Tool cache hit");
+        exports.metrics.increment("tool.cache_hit", 1, { tool: toolName });
+        this.recordExecution(toolName, 0, true);
+        return cached;
+      }
+    }
     try {
       const result = await breaker.execute(async () => {
         return await registration.tool.execute(args, effectiveContext);
       });
       const duration = Date.now() - startTime;
+      if (cache && cacheEnabled) {
+        await cache.set(registration.tool, args, result);
+      }
       this.recordExecution(toolName, duration, true);
       const resultSummary = this.summarizeResult(result);
       this.toolLogger.debug({
@@ -25011,8 +25025,6 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
   planExecutor;
   checkpointManager;
   _allTools = [];
-  // Event listener cleanup tracking
-  eventCleanupFunctions = [];
   // ===== Static Factory =====
   /**
    * Create a new TaskAgent
@@ -25103,12 +25115,8 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     this.hooks = hooks;
     const memory = this._agentContext.memory;
     if (memory) {
-      const storedHandler = (data) => this.emit("memory:stored", data);
-      const limitWarningHandler = (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent });
-      memory.on("stored", storedHandler);
-      memory.on("limit_warning", limitWarningHandler);
-      this.eventCleanupFunctions.push(() => memory.off("stored", storedHandler));
-      this.eventCleanupFunctions.push(() => memory.off("limit_warning", limitWarningHandler));
+      memory.on("stored", (data) => this.emit("memory:stored", data));
+      memory.on("limit_warning", (data) => this.emit("memory:limit_warning", { utilization: data.utilizationPercent }));
     }
     this.initializeSession(config.session);
   }
@@ -25118,47 +25126,15 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
   }
   // ===== Component Initialization =====
   /**
-   * Wrap a tool with idempotency cache and enhanced context.
-   * Uses inherited _agentContext from BaseAgent.
-   */
-  wrapToolWithCache(tool) {
-    return {
-      ...tool,
-      execute: async (args, context) => {
-        const enhancedContext = {
-          ...context,
-          memory: this._agentContext.memory?.getAccess(),
-          // Add memory access for memory tools (may be undefined if disabled)
-          agentContext: this._agentContext,
-          // Inherited from BaseAgent
-          idempotencyCache: this._agentContext.cache ?? void 0,
-          // May be undefined if memory disabled
-          agentId: this.id
-        };
-        if (!this._agentContext.cache) {
-          return tool.execute(args, enhancedContext);
-        }
-        const cached = await this._agentContext.cache.get(tool, args);
-        if (cached !== void 0) {
-          return cached;
-        }
-        const result = await tool.execute(args, enhancedContext);
-        await this._agentContext.cache.set(tool, args, result);
-        return result;
-      }
-    };
-  }
-  /**
    * Initialize internal components
    */
   initializeComponents(config) {
     this._allTools = [...config.tools ?? []];
     const enabledTools = this._agentContext.tools.getEnabled();
-    const cachedTools = enabledTools.map((tool) => this.wrapToolWithCache(tool));
     this.agent = Agent.create({
       connector: config.connector,
       model: config.model,
-      tools: cachedTools,
+      tools: enabledTools,
       instructions: config.instructions,
       temperature: config.temperature,
       maxIterations: config.maxIterations ?? 10,
@@ -25195,35 +25171,23 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
     this.setupPlanExecutorEvents();
   }
   /**
-   * Setup event forwarding from PlanExecutor
+   * Setup event forwarding from PlanExecutor.
+   * Cleanup is handled in destroy() via removeAllListeners().
    */
   setupPlanExecutorEvents() {
     if (!this.planExecutor) return;
-    const taskStartHandler = (data) => this.emit("task:start", data);
-    const taskCompleteHandler = (data) => {
+    this.planExecutor.on("task:start", (data) => this.emit("task:start", data));
+    this.planExecutor.on("task:complete", (data) => {
       this.emit("task:complete", { task: data.task, result: { success: true, output: data.result } });
       if (this.hooks?.afterTask) {
         this.hooks.afterTask(data.task, { success: true, output: data.result });
       }
-    };
-    const taskFailedHandler = (data) => this.emit("task:failed", data);
-    const taskSkippedHandler = (data) => this.emit("task:failed", { task: data.task, error: new Error(data.reason) });
-    const taskWaitingExternalHandler = (data) => this.emit("task:waiting", { task: data.task, dependency: data.task.externalDependency });
-    const taskValidationFailedHandler = (data) => this.emit("task:validation_failed", data);
-    this.planExecutor.on("task:start", taskStartHandler);
-    this.planExecutor.on("task:complete", taskCompleteHandler);
-    this.planExecutor.on("task:failed", taskFailedHandler);
-    this.planExecutor.on("task:skipped", taskSkippedHandler);
-    this.planExecutor.on("task:waiting_external", taskWaitingExternalHandler);
-    this.planExecutor.on("task:validation_failed", taskValidationFailedHandler);
-    this.planExecutor.on("task:validation_uncertain", taskValidationFailedHandler);
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:start", taskStartHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:complete", taskCompleteHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:failed", taskFailedHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:skipped", taskSkippedHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:waiting_external", taskWaitingExternalHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:validation_failed", taskValidationFailedHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off("task:validation_uncertain", taskValidationFailedHandler));
+    });
+    this.planExecutor.on("task:failed", (data) => this.emit("task:failed", data));
+    this.planExecutor.on("task:skipped", (data) => this.emit("task:failed", { task: data.task, error: new Error(data.reason) }));
+    this.planExecutor.on("task:waiting_external", (data) => this.emit("task:waiting", { task: data.task, dependency: data.task.externalDependency }));
+    this.planExecutor.on("task:validation_failed", (data) => this.emit("task:validation_failed", data));
+    this.planExecutor.on("task:validation_uncertain", (data) => this.emit("task:validation_failed", data));
   }
   // ===== Public API =====
   // ===== Unified Context Access =====
@@ -25487,8 +25451,8 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
       return;
     }
     this._logger.debug("TaskAgent destroy started");
-    this.eventCleanupFunctions.forEach((cleanup) => cleanup());
-    this.eventCleanupFunctions = [];
+    this._agentContext.memory?.removeAllListeners();
+    this.planExecutor?.removeAllListeners();
     this.externalHandler?.cleanup();
     await this.checkpointManager?.cleanup();
     this.planExecutor?.destroy();
@@ -34759,6 +34723,7 @@ Currently working on: ${progress.current.name}`;
       }
     }
     this._cleanupCallbacks = [];
+    this.modeManager.removeAllListeners();
     this.agent.destroy();
     if (this.executionAgent) {
       this.executionAgent.destroy();

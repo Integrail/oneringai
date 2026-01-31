@@ -1514,6 +1514,9 @@ Always be helpful, clear, and ask for clarification when needed.`;
     }
     this._cleanupCallbacks = [];
 
+    // Cleanup composed EventEmitters via removeAllListeners()
+    this.modeManager.removeAllListeners();
+
     // Cleanup components
     this.agent.destroy();
     if (this.executionAgent) {

@@ -261,9 +261,6 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
   protected checkpointManager?: CheckpointManager;
   protected _allTools: ToolFunction[] = [];
 
-  // Event listener cleanup tracking
-  private eventCleanupFunctions: Array<() => void> = [];
-
   // ===== Static Factory =====
 
   /**
@@ -401,22 +398,15 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     this.agentStorage = agentStorage;
     this.hooks = hooks;
 
-    // Forward memory events to agent (with cleanup tracking)
+    // Forward memory events to agent
     // Memory is accessed via this._agentContext.memory (single source of truth)
     // Only set up event handlers if memory feature is enabled
     const memory = this._agentContext.memory;
     if (memory) {
-      const storedHandler = (data: { key: string; description: string }) =>
-        this.emit('memory:stored', data);
-      const limitWarningHandler = (data: { utilizationPercent: number }) =>
-        this.emit('memory:limit_warning', { utilization: data.utilizationPercent });
-
-      memory.on('stored', storedHandler);
-      memory.on('limit_warning', limitWarningHandler);
-
-      // Track cleanup functions
-      this.eventCleanupFunctions.push(() => memory.off('stored', storedHandler));
-      this.eventCleanupFunctions.push(() => memory.off('limit_warning', limitWarningHandler));
+      memory.on('stored', (data: { key: string; description: string }) =>
+        this.emit('memory:stored', data));
+      memory.on('limit_warning', (data: { utilizationPercent: number }) =>
+        this.emit('memory:limit_warning', { utilization: data.utilizationPercent }));
     }
 
     // Initialize session (from BaseAgent)
@@ -432,46 +422,6 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
   // ===== Component Initialization =====
 
   /**
-   * Wrap a tool with idempotency cache and enhanced context.
-   * Uses inherited _agentContext from BaseAgent.
-   */
-  private wrapToolWithCache(tool: ToolFunction): ToolFunction {
-    return {
-      ...tool,
-      execute: async (args: any, context?: any) => {
-        // Enhance context with TaskAgent-specific properties
-        // Use inherited _agentContext from BaseAgent
-        // Memory is accessed via this._agentContext.memory (single source of truth)
-        const enhancedContext = {
-          ...context,
-          memory: this._agentContext.memory?.getAccess(),    // Add memory access for memory tools (may be undefined if disabled)
-          agentContext: this._agentContext,   // Inherited from BaseAgent
-          idempotencyCache: this._agentContext.cache ?? undefined,  // May be undefined if memory disabled
-          agentId: this.id,
-        };
-
-        if (!this._agentContext.cache) {
-          return tool.execute(args, enhancedContext);
-        }
-
-        // Check cache first
-        const cached = await this._agentContext.cache.get(tool, args);
-        if (cached !== undefined) {
-          return cached;
-        }
-
-        // Execute tool with enhanced context
-        const result = await tool.execute(args, enhancedContext);
-
-        // Cache result
-        await this._agentContext.cache.set(tool, args, result);
-
-        return result;
-      }
-    };
-  }
-
-  /**
    * Initialize internal components
    */
   private initializeComponents(config: TaskAgentConfig): void {
@@ -483,15 +433,15 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
     // NOTE: IdempotencyCache is accessed via this._agentContext.cache (single source of truth)
     // If memory feature is disabled, cache will be null
 
-    // Get enabled tools from inherited AgentContext and wrap with cache
+    // Get enabled tools from inherited AgentContext
+    // Caching is now handled automatically by ToolManager.execute()
     const enabledTools = this._agentContext.tools.getEnabled();
-    const cachedTools = enabledTools.map((tool) => this.wrapToolWithCache(tool));
 
     // Create base Agent for LLM calls (shares the inherited AgentContext)
     this.agent = Agent.create({
       connector: config.connector,
       model: config.model,
-      tools: cachedTools,
+      tools: enabledTools,
       instructions: config.instructions,
       temperature: config.temperature,
       maxIterations: config.maxIterations ?? 10,
@@ -543,48 +493,42 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
       }
     );
 
-    // Forward events from plan executor to task agent (with cleanup tracking)
+    // Forward events from plan executor to task agent
     this.setupPlanExecutorEvents();
   }
 
   /**
-   * Setup event forwarding from PlanExecutor
+   * Setup event forwarding from PlanExecutor.
+   * Cleanup is handled in destroy() via removeAllListeners().
    */
   private setupPlanExecutorEvents(): void {
     if (!this.planExecutor) return;
 
-    const taskStartHandler = (data: { task: Task }) => this.emit('task:start', data);
-    const taskCompleteHandler = (data: { task: Task; result: unknown }) => {
+    this.planExecutor.on('task:start', (data: { task: Task }) =>
+      this.emit('task:start', data));
+
+    this.planExecutor.on('task:complete', (data: { task: Task; result: unknown }) => {
       this.emit('task:complete', { task: data.task, result: { success: true, output: data.result } });
       // Call afterTask hook
       if (this.hooks?.afterTask) {
         this.hooks.afterTask(data.task, { success: true, output: data.result });
       }
-    };
-    const taskFailedHandler = (data: { task: Task; error: Error }) => this.emit('task:failed', data);
-    const taskSkippedHandler = (data: { task: Task; reason: string }) =>
-      this.emit('task:failed', { task: data.task, error: new Error(data.reason) });
-    const taskWaitingExternalHandler = (data: { task: Task }) =>
-      this.emit('task:waiting', { task: data.task, dependency: data.task.externalDependency });
-    const taskValidationFailedHandler = (data: { task: Task; validation: TaskValidationResult }) =>
-      this.emit('task:validation_failed', data);
+    });
 
-    this.planExecutor.on('task:start', taskStartHandler);
-    this.planExecutor.on('task:complete', taskCompleteHandler);
-    this.planExecutor.on('task:failed', taskFailedHandler);
-    this.planExecutor.on('task:skipped', taskSkippedHandler);
-    this.planExecutor.on('task:waiting_external', taskWaitingExternalHandler);
-    this.planExecutor.on('task:validation_failed', taskValidationFailedHandler);
-    this.planExecutor.on('task:validation_uncertain', taskValidationFailedHandler);
+    this.planExecutor.on('task:failed', (data: { task: Task; error: Error }) =>
+      this.emit('task:failed', data));
 
-    // Track cleanup functions
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:start', taskStartHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:complete', taskCompleteHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:failed', taskFailedHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:skipped', taskSkippedHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:waiting_external', taskWaitingExternalHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:validation_failed', taskValidationFailedHandler));
-    this.eventCleanupFunctions.push(() => this.planExecutor?.off('task:validation_uncertain', taskValidationFailedHandler));
+    this.planExecutor.on('task:skipped', (data: { task: Task; reason: string }) =>
+      this.emit('task:failed', { task: data.task, error: new Error(data.reason) }));
+
+    this.planExecutor.on('task:waiting_external', (data: { task: Task }) =>
+      this.emit('task:waiting', { task: data.task, dependency: data.task.externalDependency }));
+
+    this.planExecutor.on('task:validation_failed', (data: { task: Task; validation: TaskValidationResult }) =>
+      this.emit('task:validation_failed', data));
+
+    this.planExecutor.on('task:validation_uncertain', (data: { task: Task; validation: TaskValidationResult }) =>
+      this.emit('task:validation_failed', data));
   }
 
   // ===== Public API =====
@@ -933,9 +877,10 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
 
     this._logger.debug('TaskAgent destroy started');
 
-    // Remove all event listeners first
-    this.eventCleanupFunctions.forEach((cleanup) => cleanup());
-    this.eventCleanupFunctions = [];
+    // Cleanup composed EventEmitters via removeAllListeners()
+    // This is simpler than tracking individual listeners
+    this._agentContext.memory?.removeAllListeners();
+    this.planExecutor?.removeAllListeners();
 
     // Cleanup components
     this.externalHandler?.cleanup();

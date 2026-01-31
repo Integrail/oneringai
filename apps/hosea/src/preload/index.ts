@@ -217,6 +217,7 @@ export interface HoseaAPI {
         }>;
       } | null;
       inContextMemory: {
+        enabled: boolean;
         entries: Array<{
           key: string;
           description: string;
@@ -280,6 +281,7 @@ export interface HoseaAPI {
       totalTokens: number;
       rawContext: string;
     }>;
+    getMemoryValue: (key: string) => Promise<unknown>;
   };
 
   // API Connectors (for tools like web_search, web_scrape)
@@ -385,6 +387,7 @@ const api: HoseaAPI = {
     getContextStats: () => ipcRenderer.invoke('internals:get-context-stats'),
     getMemoryEntries: () => ipcRenderer.invoke('internals:get-memory-entries'),
     getPreparedContext: () => ipcRenderer.invoke('internals:get-prepared-context'),
+    getMemoryValue: (key: string) => ipcRenderer.invoke('internals:get-memory-value', key),
   },
 
   log: {

@@ -781,6 +781,20 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
     // This ensures tools always have access to agentContext, memory, cache, etc.
     const effectiveContext = this._toolContext ?? this._buildContextFromParent();
 
+    // Check cache before execution (if available and enabled)
+    const cache = this._parentContext?.cache;
+    const cacheEnabled = this._parentContext?.isCacheEnabled() ?? false;
+    if (cache && cacheEnabled) {
+      const cached = await cache.get(registration.tool, args);
+      if (cached !== undefined) {
+        this.toolLogger.debug({ toolName }, 'Tool cache hit');
+        metrics.increment('tool.cache_hit', 1, { tool: toolName });
+        // Still record execution for stats (instant duration)
+        this.recordExecution(toolName, 0, true);
+        return cached;
+      }
+    }
+
     try {
       // Execute with circuit breaker protection
       const result = await breaker.execute(async () => {
@@ -788,6 +802,11 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
       });
 
       const duration = Date.now() - startTime;
+
+      // Store in cache after successful execution (if available and enabled)
+      if (cache && cacheEnabled) {
+        await cache.set(registration.tool, args, result);
+      }
 
       // Update metadata
       this.recordExecution(toolName, duration, true);

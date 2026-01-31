@@ -63,6 +63,7 @@ interface InContextEntry {
 }
 
 interface InContextMemory {
+  enabled: boolean;
   entries: InContextEntry[];
   maxEntries: number;
   maxTokens: number;
@@ -136,6 +137,8 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
     new Set(['context', 'tools'])
   );
   const [selectedMemoryKey, setSelectedMemoryKey] = useState<string | null>(null);
+  const [memoryValues, setMemoryValues] = useState<Map<string, unknown>>(new Map());
+  const [loadingMemoryKey, setLoadingMemoryKey] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [showContextModal, setShowContextModal] = useState(false);
   const [preparedContext, setPreparedContext] = useState<PreparedContext | null>(null);
@@ -169,6 +172,36 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
       setIsLoadingContext(false);
     }
   }, []);
+
+  // Fetch memory value for a specific key
+  const fetchMemoryValue = useCallback(async (key: string) => {
+    // Don't fetch if already have it
+    if (memoryValues.has(key)) return;
+
+    try {
+      setLoadingMemoryKey(key);
+      const value = await window.hosea.internals.getMemoryValue(key);
+      setMemoryValues((prev) => {
+        const next = new Map(prev);
+        next.set(key, value);
+        return next;
+      });
+    } catch (error) {
+      console.error('Failed to fetch memory value:', error);
+    } finally {
+      setLoadingMemoryKey(null);
+    }
+  }, [memoryValues]);
+
+  // Handle memory entry click - toggle expansion and fetch value
+  const handleMemoryEntryClick = useCallback((key: string) => {
+    if (selectedMemoryKey === key) {
+      setSelectedMemoryKey(null);
+    } else {
+      setSelectedMemoryKey(key);
+      fetchMemoryValue(key);
+    }
+  }, [selectedMemoryKey, fetchMemoryValue]);
 
   // Open context modal
   const handleViewFullContext = useCallback(() => {
@@ -485,7 +518,7 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
                         <div
                           key={entry.key}
                           className={`memory-entry ${selectedMemoryKey === entry.key ? 'memory-entry--expanded' : ''}`}
-                          onClick={() => setSelectedMemoryKey(selectedMemoryKey === entry.key ? null : entry.key)}
+                          onClick={() => handleMemoryEntryClick(entry.key)}
                         >
                           <div className="memory-entry__header">
                             <span className="memory-entry__key">{entry.key}</span>
@@ -502,6 +535,15 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
                           {selectedMemoryKey === entry.key && (
                             <div className="memory-entry__details">
                               <div className="memory-entry__size">{formatBytes(entry.sizeBytes)}</div>
+                              {loadingMemoryKey === entry.key ? (
+                                <div className="memory-entry__loading">
+                                  <Spinner animation="border" size="sm" /> Loading value...
+                                </div>
+                              ) : memoryValues.has(entry.key) ? (
+                                <pre className="memory-entry__value">
+                                  {JSON.stringify(memoryValues.get(entry.key), null, 2)}
+                                </pre>
+                              ) : null}
                             </div>
                           )}
                         </div>
@@ -516,7 +558,7 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
             )}
 
             {/* In-Context Memory Section */}
-            {data.inContextMemory && data.inContextMemory.entries.length > 0 && (
+            {data.inContextMemory && (
               <div className="internals-section">
                 <div
                   className="internals-section__header"
@@ -526,27 +568,39 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
                   <Zap size={14} />
                   <span>In-Context Memory</span>
                   <span className="internals-section__badge">
-                    {data.inContextMemory.entries.length}/{data.inContextMemory.maxEntries}
+                    {data.inContextMemory.enabled === false
+                      ? 'off'
+                      : `${data.inContextMemory.entries.length}/${data.inContextMemory.maxEntries}`}
                   </span>
                 </div>
                 {expandedSections.has('inContextMemory') && (
                   <div className="internals-section__body">
-                    <div className="memory-entries">
-                      {data.inContextMemory.entries.map((entry) => (
-                        <div key={entry.key} className="memory-entry">
-                          <div className="memory-entry__header">
-                            <span className="memory-entry__key">{entry.key}</span>
-                            <Badge bg={entry.priority === 'critical' ? 'danger' : entry.priority === 'high' ? 'warning' : 'secondary'}>
-                              {entry.priority}
-                            </Badge>
+                    {data.inContextMemory.enabled === false ? (
+                      <div className="text-muted small p-2">
+                        In-context memory is disabled. Enable in agent settings to use.
+                      </div>
+                    ) : data.inContextMemory.entries.length === 0 ? (
+                      <div className="text-muted small p-2">
+                        No entries. Use <code>context_set</code> tool to store values.
+                      </div>
+                    ) : (
+                      <div className="memory-entries">
+                        {data.inContextMemory.entries.map((entry) => (
+                          <div key={entry.key} className="memory-entry">
+                            <div className="memory-entry__header">
+                              <span className="memory-entry__key">{entry.key}</span>
+                              <Badge bg={entry.priority === 'critical' ? 'danger' : entry.priority === 'high' ? 'warning' : 'secondary'}>
+                                {entry.priority}
+                              </Badge>
+                            </div>
+                            <div className="memory-entry__desc">{entry.description}</div>
+                            <pre className="memory-entry__value">
+                              {JSON.stringify(entry.value, null, 2)}
+                            </pre>
                           </div>
-                          <div className="memory-entry__desc">{entry.description}</div>
-                          <pre className="memory-entry__value">
-                            {JSON.stringify(entry.value, null, 2)}
-                          </pre>
-                        </div>
-                      ))}
-                    </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

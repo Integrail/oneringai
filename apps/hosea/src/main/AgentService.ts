@@ -1294,6 +1294,7 @@ export class AgentService {
       }>;
     } | null;
     inContextMemory: {
+      enabled: boolean;
       entries: Array<{
         key: string;
         description: string;
@@ -1388,12 +1389,35 @@ export class AgentService {
         };
       }
 
-      // Get in-context memory if available (use direct accessor on ctx)
-      let inContextData = null;
+      // Get in-context memory - always return data so UI can show status
+      // Check if feature is enabled via context
+      const inContextEnabled = ctx.isFeatureEnabled('inContextMemory');
       const inContextPlugin = ctx.inContextMemory;
+
+      let inContextData: {
+        enabled: boolean;
+        entries: Array<{
+          key: string;
+          description: string;
+          priority: string;
+          updatedAt: number;
+          value: unknown;
+        }>;
+        maxEntries: number;
+        maxTokens: number;
+      } = {
+        enabled: inContextEnabled,
+        entries: [],
+        maxEntries: 20,
+        maxTokens: 4000,
+      };
+
       if (inContextPlugin) {
         const entries = inContextPlugin.list();
+        // Try to get config from plugin if available
+        const pluginConfig = (inContextPlugin as unknown as { config?: { maxEntries?: number; maxTotalTokens?: number } }).config;
         inContextData = {
+          enabled: true,
           entries: entries.map((e) => ({
             key: e.key,
             description: e.description,
@@ -1401,8 +1425,8 @@ export class AgentService {
             updatedAt: e.updatedAt,
             value: inContextPlugin.get(e.key),
           })),
-          maxEntries: 20, // Default from InContextMemoryPlugin
-          maxTokens: 4000, // Default from InContextMemoryPlugin
+          maxEntries: pluginConfig?.maxEntries ?? 20,
+          maxTokens: pluginConfig?.maxTotalTokens ?? 4000,
         };
       }
 
@@ -1565,6 +1589,21 @@ export class AgentService {
       return result;
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Get a single memory entry value by key
+   */
+  async getMemoryValue(key: string): Promise<unknown> {
+    if (!this.agent?.context?.memory) {
+      return null;
+    }
+
+    try {
+      return await this.agent.context.memory.retrieve(key);
+    } catch {
+      return null;
     }
   }
 
