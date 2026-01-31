@@ -34485,17 +34485,19 @@ ${response.output_text}`,
   }
   /**
    * Build instructions for the execution agent (task-focused)
+   * Uses user's custom instructions if provided, otherwise falls back to default
    */
   buildExecutionInstructions() {
+    if (this._config.instructions && this._config.instructions.trim()) {
+      return this._config.instructions;
+    }
     return `You are an AI assistant executing specific tasks. Focus on completing the assigned task using the available tools.
 
 Guidelines:
 - Execute the task described in the prompt
 - Use the appropriate tools to accomplish the task
 - Report results clearly and concisely
-- If you encounter errors, explain what went wrong
-
-${this._config.instructions ?? ""}`;
+- If you encounter errors, explain what went wrong`;
   }
   // ============================================================================
   // Conversation History & Context (via AgentContext)
