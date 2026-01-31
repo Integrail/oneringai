@@ -925,8 +925,8 @@ export class AgentService {
         }
       }
 
-      // Combine UI capabilities prompt with agent instructions
-      const fullInstructions = HOSEA_UI_CAPABILITIES_PROMPT + (agentConfig.instructions || '');
+      // Combine user instructions with UI capabilities prompt (user instructions first)
+      const fullInstructions = (agentConfig.instructions || '') + '\n\n' + HOSEA_UI_CAPABILITIES_PROMPT;
 
       // Create agent with full configuration including context features
       // NOTE: All context settings (features, memory, cache, etc.) are passed through
@@ -1633,22 +1633,27 @@ export class AgentService {
     try {
       const ctx = this.agent.context;
 
-      // Prepare context (this assembles all components)
+      // Prepare context (this assembles all components exactly as sent to LLM)
       const prepared = await ctx.prepare();
 
       // Get individual components for detailed view
+      // NOTE: prepared.components already contains everything in the correct order:
+      // system_prompt, instructions, feature_instructions, conversation_history, memory_index, plugins, etc.
       const components: Array<{ name: string; content: string; tokenEstimate: number }> = [];
 
-      // 1. System Prompt
-      if (ctx.systemPrompt) {
-        components.push({
-          name: 'System Prompt',
-          content: ctx.systemPrompt,
-          tokenEstimate: Math.ceil(ctx.systemPrompt.length / 4), // Rough estimate
-        });
-      }
+      // Map component names to more user-friendly display names
+      const displayNames: Record<string, string> = {
+        'system_prompt': 'System Prompt',
+        'instructions': 'Instructions',
+        'feature_instructions': 'Feature Instructions',
+        'conversation_history': 'Conversation History',
+        'memory_index': 'Memory Index',
+        'in_context_memory': 'In-Context Memory',
+        'persistent_instructions': 'Persistent Instructions',
+        'plan': 'Current Plan',
+        'current_input': 'Current Input',
+      };
 
-      // 2. Plugin components (persistent instructions, memory index, etc.)
       for (const component of prepared.components) {
         // Component content can be string or unknown
         const contentStr = typeof component.content === 'string'
@@ -1656,39 +1661,11 @@ export class AgentService {
           : JSON.stringify(component.content, null, 2);
         if (contentStr) {
           components.push({
-            name: component.name || 'Plugin',
+            name: displayNames[component.name] || component.name || 'Component',
             content: contentStr,
             tokenEstimate: Math.ceil(contentStr.length / 4),
           });
         }
-      }
-
-      // 3. Messages (conversation history) - get from context state
-      // Use v2 format (InputItem[]) with fallback to v1 (HistoryMessage[]) for backward compat
-      const state = await ctx.getState();
-      const messages = state.core.conversation || state.core.history || [];
-      if (messages.length > 0) {
-        const messagesContent = messages.map((m: { type?: string; role?: string; content?: unknown }, i: number) => {
-          const role = m.role || 'unknown';
-          // Handle both v2 (InputItem - content is array) and v1 (HistoryMessage - content is string)
-          let content: string;
-          if (m.type === 'message' && Array.isArray(m.content)) {
-            // v2 InputItem format: content is Content[]
-            content = (m.content as Array<{ type?: string; text?: string }>)
-              .map(c => c.text || JSON.stringify(c))
-              .join('');
-          } else {
-            // v1 HistoryMessage format or fallback
-            content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
-          }
-          return `[${i + 1}] ${role.toUpperCase()}:\n${content}`;
-        }).join('\n\n---\n\n');
-
-        components.push({
-          name: `Conversation History (${messages.length} messages)`,
-          content: messagesContent,
-          tokenEstimate: Math.ceil(messagesContent.length / 4),
-        });
       }
 
       // Build raw context representation
