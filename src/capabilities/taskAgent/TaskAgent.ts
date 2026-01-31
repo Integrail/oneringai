@@ -36,7 +36,6 @@ import { MemoryPlugin } from '../../core/context/plugins/MemoryPlugin.js';
 import { ExternalDependencyHandler } from './ExternalDependencyHandler.js';
 import { PlanExecutor } from './PlanExecutor.js';
 import { CheckpointManager, DEFAULT_CHECKPOINT_STRATEGY } from './CheckpointManager.js';
-import { getAgentContextTools } from '../../core/AgentContextTools.js';
 import { getModelInfo } from '../../domain/entities/Model.js';
 import type { AgentPermissionsConfig } from '../../core/permissions/types.js';
 import { CONTEXT_DEFAULTS } from '../../core/constants.js';
@@ -560,17 +559,10 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
    * Initialize internal components
    */
   private initializeComponents(config: TaskAgentConfig): void {
-    // Get feature-aware tools based on AgentContext configuration
-    const featureTools = getAgentContextTools(this._agentContext);
-
-    // Combine user tools with feature-aware tools
-    this._allTools = [...(config.tools ?? []), ...featureTools];
-
-    // Register feature-aware tools with inherited AgentContext.tools
-    // (user tools are already registered by BaseAgent constructor)
-    for (const tool of featureTools) {
-      this._agentContext.tools.register(tool);
-    }
+    // User tools are already registered by BaseAgent constructor
+    // Feature-aware tools (memory, cache, introspection) are auto-registered by AgentContext
+    // This ensures consistent tool availability across ALL agent types
+    this._allTools = [...(config.tools ?? [])];
 
     // NOTE: IdempotencyCache is accessed via this._agentContext.cache (single source of truth)
     // If memory feature is disabled, cache will be null

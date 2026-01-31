@@ -1691,9 +1691,11 @@ function extractProviderConfig(connector: Connector): ProviderConfig
 
 ---
 
-### getAgentContextTools `function`
+### getAgentContextTools `function` ⚠️ DEPRECATED
 
 📍 [`src/core/AgentContextTools.ts:55`](src/core/AgentContextTools.ts)
+
+> **Deprecated:** Tools are now auto-registered by AgentContext constructor. You no longer need to call this function manually. All agent types (Agent, TaskAgent, UniversalAgent) automatically get the correct tools based on enabled features.
 
 Get tools based on enabled features in AgentContext
 
@@ -1701,17 +1703,20 @@ Get tools based on enabled features in AgentContext
 export function getAgentContextTools(context: AgentContext): ToolFunction[]
 ```
 
-**Example:**
+**Migration:**
 
 ```typescript
-const ctx = AgentContext.create({
-  model: 'gpt-4',
-  features: { memory: true, inContextMemory: false }
-});
+// OLD (no longer needed):
+const ctx = AgentContext.create({ model: 'gpt-4' });
 const tools = getAgentContextTools(ctx);
 for (const tool of tools) {
   ctx.tools.register(tool);
 }
+
+// NEW (tools auto-registered):
+const ctx = AgentContext.create({ model: 'gpt-4' });
+// Tools are already registered! Just use them:
+console.log(ctx.tools.has('memory_store')); // true
 ```
 
 ---
@@ -10029,7 +10034,7 @@ export function createContextInspectTool(): ToolFunction
 📍 [`src/capabilities/taskAgent/contextTools.ts:236`](src/capabilities/taskAgent/contextTools.ts)
 
 Create all context inspection tools (backward compatibility)
-Note: For feature-aware tool registration, use getAgentContextTools() instead
+Note: Tools are now auto-registered by AgentContext - manual registration is no longer needed.
 
 ```typescript
 export function createContextTools(): ToolFunction[]

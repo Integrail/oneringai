@@ -113,7 +113,10 @@ describe('BaseAgent', () => {
       });
 
       expect(agent.tools).toBeDefined();
-      expect(agent.tools.list()).toHaveLength(0);
+      // AgentContext auto-registers feature-aware tools (introspection + memory tools)
+      // so even with no user tools, there are auto-registered tools
+      expect(agent.tools.list().length).toBeGreaterThan(0);
+      expect(agent.tools.has('context_inspect')).toBe(true);
       agent.destroy();
     });
 

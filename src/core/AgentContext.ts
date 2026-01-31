@@ -62,6 +62,23 @@ import type { InContextMemoryPlugin, InContextMemoryConfig as InContextMemoryPlu
 import { createPersistentInstructions } from './context/plugins/persistentInstructionsTools.js';
 import type { PersistentInstructionsPlugin, PersistentInstructionsConfig as PersistentInstructionsPluginConfig } from './context/plugins/PersistentInstructionsPlugin.js';
 
+// Memory & Context introspection tool creators
+// These are registered automatically based on enabled features for ALL agent types
+import {
+  createMemoryStoreTool,
+  createMemoryRetrieveTool,
+  createMemoryDeleteTool,
+  createMemoryListTool,
+  createMemoryCleanupRawTool,
+  createMemoryRetrieveBatchTool,
+} from '../capabilities/taskAgent/memoryTools.js';
+import {
+  createContextInspectTool,
+  createContextBreakdownTool,
+  createCacheStatsTool,
+  createMemoryStatsTool,
+} from '../capabilities/taskAgent/contextTools.js';
+
 // ============================================================================
 // Task Types & Priority Profiles
 // ============================================================================
@@ -574,6 +591,10 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       }
     }
 
+    // Register feature-aware tools (memory, cache, introspection)
+    // This ensures ALL agent types have consistent tool availability
+    this._registerFeatureTools();
+
     // Task type configuration
     this._explicitTaskType = config.taskType;
     this._autoDetectTaskType = config.autoDetectTaskType !== false;
@@ -747,6 +768,41 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    */
   getTaskTypePrompt(): string {
     return TASK_TYPE_PROMPTS[this.getTaskType()];
+  }
+
+  /**
+   * Register feature-aware tools based on enabled features.
+   * Called once during construction to ensure ALL agent types have consistent tools.
+   *
+   * This is the SINGLE source of truth for context-related tool registration.
+   * All agent types (Agent, TaskAgent, UniversalAgent) automatically get these tools.
+   *
+   * Tools registered:
+   * - Always: context_inspect, context_breakdown (basic introspection)
+   * - When memory feature enabled: memory_*, cache_stats, memory_stats
+   * - InContextMemory & PersistentInstructions tools are registered separately
+   *   in the constructor when those features are enabled.
+   */
+  private _registerFeatureTools(): void {
+    // Always available: basic introspection tools
+    // These help the agent understand its own context state
+    this._tools.register(createContextInspectTool());
+    this._tools.register(createContextBreakdownTool());
+
+    // Memory feature includes memory tools + cache stats
+    if (this._features.memory) {
+      // Memory manipulation tools
+      this._tools.register(createMemoryStoreTool());
+      this._tools.register(createMemoryRetrieveTool());
+      this._tools.register(createMemoryDeleteTool());
+      this._tools.register(createMemoryListTool());
+      this._tools.register(createMemoryCleanupRawTool());
+      this._tools.register(createMemoryRetrieveBatchTool());
+
+      // Stats tools (require memory/cache to be meaningful)
+      this._tools.register(createMemoryStatsTool());
+      this._tools.register(createCacheStatsTool());
+    }
   }
 
   /**

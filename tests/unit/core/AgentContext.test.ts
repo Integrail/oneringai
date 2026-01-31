@@ -93,7 +93,12 @@ describe('AgentContext', () => {
       ctx = AgentContext.create({ tools: [testTool1, testTool2] });
       expect(ctx.tools.has('test_tool_1')).toBe(true);
       expect(ctx.tools.has('test_tool_2')).toBe(true);
-      expect(ctx.tools.list()).toHaveLength(2);
+      // AgentContext auto-registers feature-aware tools (introspection, memory, cache)
+      // so total count includes user tools + auto-registered tools
+      expect(ctx.tools.list().length).toBeGreaterThanOrEqual(2);
+      // Verify auto-registered introspection tools are present (always available)
+      expect(ctx.tools.has('context_inspect')).toBe(true);
+      expect(ctx.tools.has('context_breakdown')).toBe(true);
     });
 
     it('should create instance with system prompt', () => {

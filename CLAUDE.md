@@ -92,8 +92,14 @@ ctx.persistentInstructions;            // PersistentInstructionsPlugin | null
 ctx.agentId;                           // string (auto-generated or from config)
 ```
 
-**Tool Registration:**
-- `getAgentContextTools(ctx)` returns only tools for enabled features
+**Tool Auto-Registration:**
+- AgentContext automatically registers feature-aware tools during construction
+- All agent types (Agent, TaskAgent, UniversalAgent) get consistent tools automatically
+- Tools registered based on features:
+  - Always: `context_inspect`, `context_breakdown`
+  - memory=true (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`, `memory_cleanup_raw`, `memory_retrieve_batch`, `memory_stats`, `cache_stats`
+  - inContextMemory=true: `context_set`, `context_get`, `context_delete`, `context_list`
+  - persistentInstructions=true: `instructions_set`, `instructions_append`, `instructions_get`, `instructions_clear`
 - Disabled features = no associated tools registered = cleaner LLM experience
 
 ### ToolManager (`src/core/ToolManager.ts`)

@@ -1,17 +1,19 @@
 /**
  * AgentContextTools - Feature-aware tool factory for AgentContext
  *
- * Provides tools based on enabled features. When a feature is disabled,
- * its associated tools are not included (cleaner LLM tool list).
+ * @deprecated Since v0.3.0 - Tools are now auto-registered by AgentContext constructor.
+ * All agent types (Agent, TaskAgent, UniversalAgent) automatically get feature-aware
+ * tools based on enabled features. Manual registration is no longer needed.
  *
- * Features and their tools:
+ * This file is kept for backwards compatibility only. If you were calling
+ * getAgentContextTools() manually, you can safely remove that code.
+ *
+ * Features and their tools (now auto-registered in AgentContext):
+ * - Always: context_inspect, context_breakdown
  * - memory: memory_store, memory_retrieve, memory_delete, memory_list,
  *           memory_cleanup_raw, memory_retrieve_batch, memory_stats, cache_stats
  * - inContextMemory: context_set, context_get, context_delete, context_list
- *   (handled in AgentContext constructor)
- *
- * Always available (basic introspection):
- * - context_inspect, context_breakdown
+ * - persistentInstructions: instructions_set, instructions_append, instructions_get, instructions_clear
  */
 
 import type { ToolFunction } from '../domain/entities/Tool.js';
@@ -37,20 +39,12 @@ import {
 /**
  * Get tools based on enabled features in AgentContext
  *
+ * @deprecated Tools are now auto-registered by AgentContext constructor.
+ * You no longer need to call this function manually. All agent types
+ * automatically get the correct tools based on enabled features.
+ *
  * @param context - The AgentContext to get tools for
  * @returns Array of tools based on enabled features
- *
- * @example
- * ```typescript
- * const ctx = AgentContext.create({
- *   model: 'gpt-4',
- *   features: { memory: true, inContextMemory: false }
- * });
- * const tools = getAgentContextTools(ctx);
- * for (const tool of tools) {
- *   ctx.tools.register(tool);
- * }
- * ```
  */
 export function getAgentContextTools(context: AgentContext): ToolFunction[] {
   const tools: ToolFunction[] = [];

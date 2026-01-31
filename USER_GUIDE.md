@@ -3619,25 +3619,32 @@ const cache = ctx.requireCache();           // IdempotencyCache (throws if memor
 const perms = ctx.requirePermissions();     // ToolPermissionManager (throws if permissions disabled)
 ```
 
-**Tool Registration:**
+**Tool Auto-Registration:**
 
-Use `getAgentContextTools()` to get only tools for enabled features:
+AgentContext automatically registers feature-aware tools during construction. All agent types (Agent, TaskAgent, UniversalAgent) get consistent tools based on enabled features:
 
 ```typescript
-import { AgentContext, getAgentContextTools } from '@oneringai/agents';
+import { AgentContext } from '@oneringai/agents';
 
-const ctx = AgentContext.create({
+// With memory enabled (default)
+const ctx = AgentContext.create({ model: 'gpt-4' });
+console.log(ctx.tools.has('memory_store'));     // true
+console.log(ctx.tools.has('context_inspect'));  // true (always available)
+
+// With memory disabled - no memory tools registered
+const ctx2 = AgentContext.create({
   model: 'gpt-4',
   features: { memory: false },
 });
-
-const tools = getAgentContextTools(ctx);
-const toolNames = tools.map(t => t.definition.function.name);
-
-// Always included: context_inspect, context_breakdown
-// NOT included (memory disabled): memory_store, memory_retrieve, memory_delete, etc.
-console.log(toolNames.includes('memory_store')); // false
+console.log(ctx2.tools.has('memory_store'));    // false
+console.log(ctx2.tools.has('context_inspect')); // true (always available)
 ```
+
+**Tools registered by feature:**
+- **Always**: `context_inspect`, `context_breakdown`
+- **memory=true** (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`, `memory_cleanup_raw`, `memory_retrieve_batch`, `memory_stats`, `cache_stats`
+- **inContextMemory=true**: `context_set`, `context_get`, `context_delete`, `context_list`
+- **persistentInstructions=true**: `instructions_set`, `instructions_append`, `instructions_get`, `instructions_clear`
 
 **Backward Compatibility:**
 

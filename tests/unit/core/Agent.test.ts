@@ -635,24 +635,34 @@ describe('Agent', () => {
       });
 
       it('should handle empty array (clear all tools)', () => {
+        // AgentContext auto-registers feature-aware tools
+        const initialCount = agent.listTools().length;
+        expect(initialCount).toBeGreaterThan(0); // Auto-registered tools exist
+
         agent.addTool(tool1);
         agent.addTool(tool2);
-        expect(agent.listTools().length).toBe(2);
+        expect(agent.listTools().length).toBe(initialCount + 2);
 
+        // setTools([]) clears ALL tools including auto-registered ones
         agent.setTools([]);
 
         expect(agent.listTools().length).toBe(0);
       });
 
       it('should replace with multiple tools', () => {
-        agent.addTool(tool1);
-        expect(agent.listTools()).toEqual(['tool_one']);
+        // AgentContext auto-registers feature-aware tools
+        expect(agent.listTools().length).toBeGreaterThan(0);
 
+        agent.addTool(tool1);
+        expect(agent.listTools()).toContain('tool_one');
+
+        // setTools replaces ALL tools (clears everything, then adds specified tools)
         agent.setTools([tool2, tool3]);
 
         expect(agent.listTools()).toContain('tool_two');
         expect(agent.listTools()).toContain('tool_three');
         expect(agent.listTools()).not.toContain('tool_one');
+        // Only the 2 specified tools remain (auto-registered tools were cleared)
         expect(agent.listTools().length).toBe(2);
       });
 
