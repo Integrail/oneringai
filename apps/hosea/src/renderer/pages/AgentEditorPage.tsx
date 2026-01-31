@@ -131,6 +131,8 @@ interface AgentFormData {
   inContextMemoryEnabled: boolean;
   maxInContextEntries: number;
   maxInContextTokens: number;
+  // Persistent instructions
+  persistentInstructionsEnabled: boolean;
   // History settings
   historyEnabled: boolean;
   maxHistoryMessages: number;
@@ -165,6 +167,8 @@ const defaultFormData: AgentFormData = {
   inContextMemoryEnabled: false,
   maxInContextEntries: 20,
   maxInContextTokens: 4000,
+  // Persistent instructions
+  persistentInstructionsEnabled: false,
   // History settings
   historyEnabled: true,
   maxHistoryMessages: 100,

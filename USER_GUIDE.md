@@ -1226,7 +1226,7 @@ TaskAgents are **autonomous agents** that execute complex, multi-step plans with
          │                  │                  │
          ▼                  ▼                  ▼
 ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
-│  PlanExecutor   │ │ WorkingMemory   │ │ ContextManager  │
+│  PlanExecutor   │ │ WorkingMemory   │ │  AgentContext   │
 │  - Task queue   │ │ - Scoped store  │ │ - Token mgmt    │
 │  - Dependencies │ │ - Eviction      │ │ - Compaction    │
 │  - Priorities   │ │ - Persistence   │ │ - Strategies    │
@@ -3989,27 +3989,27 @@ const agent = TaskAgent.create({
 
 ### Architecture Overview
 
-The context management system consists of several layers:
+The context management system is built around **AgentContext** - the unified facade that manages all context-related operations:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                  ContextManager                      │
+│                   AgentContext                       │
 │  - Orchestrates preparation and compaction          │
 │  - Manages strategy selection and switching         │
-│  - Emits events for monitoring                      │
+│  - Unified facade for tools, memory, history        │
 └─────────────────┬───────────────────────────────────┘
                   │
     ┌─────────────┼─────────────┐
     │             │             │
     ▼             ▼             ▼
 ┌─────────┐ ┌──────────┐ ┌───────────────┐
-│ Strategy│ │Compactors│ │Context Provider│
-│ (when)  │ │ (how)    │ │ (what)         │
+│ Strategy│ │Compactors│ │ Components    │
+│ (when)  │ │ (how)    │ │ (what)        │
 └─────────┘ └──────────┘ └───────────────┘
 
 Strategy: Decides WHEN to compact (proactive, aggressive, lazy, etc.)
 Compactors: Decides HOW to compact (truncate, summarize, evict)
-Provider: Provides WHAT content goes into context
+Components: System prompt, instructions, memory, history, input
 ```
 
 ### Task Types and Priority Profiles
@@ -4236,19 +4236,25 @@ For **tool outputs** (search/scrape results):
 
 ```typescript
 // Example: Research task with summarization
-const contextManager = new ContextManager(
-  provider,
-  {
-    maxContextTokens: 128000,
+// AgentContext is the unified context manager - configure via Agent.create()
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
     strategy: 'proactive',
+    maxContextTokens: 128000,
+    // Compactors are auto-configured based on strategy
+    // For custom compactors, provide them explicitly:
+    compactors: [
+      new SummarizeCompactor(estimator, { textProvider, fallbackToTruncate: true }),
+      new TruncateCompactor(estimator),
+      new MemoryEvictionCompactor(estimator),
+    ],
   },
-  [
-    new SummarizeCompactor(estimator, { textProvider, fallbackToTruncate: true }),
-    new TruncateCompactor(estimator),  // Fallback for non-summarizable content
-    new MemoryEvictionCompactor(estimator),
-  ],
-  estimator
-);
+});
+
+// Access context management via agent.context (AgentContext instance)
+const budget = agent.context.getLastBudget();
 ```
 
 #### MemoryEvictionCompactor
@@ -4277,34 +4283,36 @@ const memoryComponent = {
 
 ### Pre-Compaction Hooks
 
-The `beforeCompaction` hook allows agents to save important data before compaction occurs. This is critical for research tasks where tool outputs may contain valuable information.
+The `beforeCompaction` lifecycle hook allows agents to save important data before compaction occurs. This is critical for research tasks where tool outputs may contain valuable information.
 
 ```typescript
-import { ContextManager, ContextManagerHooks, BeforeCompactionContext } from '@oneringai/agents';
+import { Agent, BeforeCompactionContext } from '@oneringai/agents';
 
-// Define hooks
-const hooks: ContextManagerHooks = {
-  beforeCompaction: async (context: BeforeCompactionContext) => {
-    console.log(`Agent ${context.agentId}: Compaction starting`);
-    console.log(`Current usage: ${context.currentBudget.used}/${context.currentBudget.total}`);
-    console.log(`Need to free: ${context.estimatedTokensToFree} tokens`);
-    console.log(`Strategy: ${context.strategy}`);
-    console.log(`Components to compact: ${context.components.length}`);
+// Define lifecycle hooks when creating the agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  lifecycleHooks: {
+    beforeCompaction: async (context: BeforeCompactionContext) => {
+      console.log(`Agent ${context.agentId}: Compaction starting`);
+      console.log(`Current usage: ${context.currentBudget.used}/${context.currentBudget.total}`);
+      console.log(`Need to free: ${context.estimatedTokensToFree} tokens`);
+      console.log(`Strategy: ${context.strategy}`);
+      console.log(`Components to compact: ${context.components.length}`);
 
-    // Example: Save important tool outputs before they're compacted
-    for (const component of context.components) {
-      if (component.name === 'tool_outputs' && component.compactable) {
-        // Extract key findings and save to memory
-        await saveKeyFindings(component.content);
+      // Example: Save important tool outputs before they're compacted
+      for (const component of context.components) {
+        if (component.name === 'tool_outputs' && component.compactable) {
+          // Extract key findings and save to memory
+          await saveKeyFindings(component.content);
+        }
       }
-    }
+    },
   },
-};
+});
 
-// Apply hooks to context manager
-const contextManager = new ContextManager(provider, config, compactors, estimator);
-contextManager.setHooks(hooks);
-contextManager.setAgentId('my-agent-123');
+// AgentContext handles all context management internally
+// No separate ContextManager needed
 ```
 
 #### BeforeCompactionContext
@@ -4415,11 +4423,15 @@ console.log(PROACTIVE_STRATEGY_DEFAULTS);
 //   MAX_ROUNDS: 3,
 // }
 
-// Using proactive strategy
-const contextManager = new ContextManager(provider, {
-  strategy: 'proactive',
-  compactionThreshold: 0.75,  // Compact at 75% (default)
-}, compactors, estimator);
+// Using proactive strategy via Agent.create()
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    strategy: 'proactive',
+    compactionThreshold: 0.75,  // Compact at 75% (default)
+  },
+});
 
 // Proactive is predictable: you know compaction happens at 75%
 // Good balance between context preservation and headroom
@@ -4427,7 +4439,7 @@ const contextManager = new ContextManager(provider, {
 
 **Metrics tracked:**
 ```typescript
-const metrics = contextManager.getStrategyMetrics();
+const metrics = agent.context.getStrategyMetrics();
 // {
 //   compactionCount: 5,
 //   totalTokensFreed: 45000,
@@ -4460,13 +4472,17 @@ console.log(AGGRESSIVE_STRATEGY_DEFAULTS);
 //   MAX_ROUNDS: 4,
 // }
 
-const contextManager = new ContextManager(provider, {
-  strategy: 'aggressive',
-  strategyOptions: {
-    threshold: 0.55,  // Even earlier (optional override)
-    target: 0.40,     // Even lower target (optional override)
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    strategy: 'aggressive',
+    strategyOptions: {
+      threshold: 0.55,  // Even earlier (optional override)
+      target: 0.40,     // Even lower target (optional override)
+    },
   },
-}, compactors, estimator);
+});
 
 // Best for:
 // - 24/7 support bots with long conversations
@@ -4504,9 +4520,13 @@ console.log(LAZY_STRATEGY_DEFAULTS);
 //   MAX_ROUNDS: 2,
 // }
 
-const contextManager = new ContextManager(provider, {
-  strategy: 'lazy',
-}, compactors, estimator);
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4-turbo',
+  context: {
+    strategy: 'lazy',
+  },
+});
 
 // Best for:
 // - Code analysis requiring full file context
@@ -4542,13 +4562,17 @@ console.log(ROLLING_WINDOW_DEFAULTS);
 //   MAX_TOKENS_PER_COMPONENT: 10000,
 // }
 
-const contextManager = new ContextManager(provider, {
-  strategy: 'rolling-window',
-  strategyOptions: {
-    maxMessages: 30,  // Keep last 30 messages
-    maxTokensPerComponent: 15000,  // Cap per component
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    strategy: 'rolling-window',
+    strategyOptions: {
+      maxMessages: 30,  // Keep last 30 messages
+      maxTokensPerComponent: 15000,  // Cap per component
+    },
   },
-}, compactors, estimator);
+});
 
 // Best for:
 // - Customer service chatbots
@@ -4614,21 +4638,22 @@ console.log(ADAPTIVE_STRATEGY_DEFAULTS);
 //   MIN_SAMPLES: 10,            // Min samples before switching
 // }
 
-const contextManager = new ContextManager(provider, {
-  strategy: 'adaptive',
-  strategyOptions: {
-    learningWindow: 100,   // Learn from more history
-    switchThreshold: 3,    // Switch sooner
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    strategy: 'adaptive',
+    strategyOptions: {
+      learningWindow: 100,   // Learn from more history
+      switchThreshold: 3,    // Switch sooner
+    },
   },
-}, compactors, estimator);
-
-// Monitor automatic switching
-contextManager.on('strategy_switched', ({ from, to, reason }) => {
-  console.log(`Adaptive: ${from} → ${to}`);
-  console.log(`Reason: ${reason}`);
-  // Example: "Adaptive: proactive → aggressive"
-  // Reason: "High compaction frequency (8/min > 5/min threshold)"
 });
+
+// Monitor automatic switching via metrics
+const metrics = agent.context.getStrategyMetrics();
+console.log(`Current strategy: ${metrics.currentStrategy}`);
+console.log(`Compaction count: ${metrics.compactionCount}`);
 ```
 
 **Adaptive decision logic:**
@@ -4665,15 +4690,16 @@ import {
   IContextCompactor,
   ITokenEstimator,
   ContextBudget,
-  ContextManagerConfig,
+  ContextConfig,
   BaseCompactionStrategy,  // Use this for easier implementation
+  Agent,
 } from '@oneringai/agents';
 
 // Option 1: Implement from scratch
 class TimeBasedStrategy implements IContextStrategy {
   readonly name = 'time-based';
 
-  shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean {
+  shouldCompact(budget: ContextBudget, config: ContextConfig): boolean {
     const hour = new Date().getHours();
     const isBusinessHours = hour >= 9 && hour <= 17;
 
@@ -4706,7 +4732,7 @@ class TimeBasedStrategy implements IContextStrategy {
 class PriorityAwareStrategy extends BaseCompactionStrategy {
   readonly name = 'priority-aware';
 
-  shouldCompact(budget: ContextBudget, config: ContextManagerConfig): boolean {
+  shouldCompact(budget: ContextBudget, config: ContextConfig): boolean {
     // Check if high-priority content is at risk
     const highPriorityRatio = this.calculateHighPriorityRatio(budget);
     return budget.utilizationPercent > 70 && highPriorityRatio < 0.5;
@@ -4731,39 +4757,43 @@ class PriorityAwareStrategy extends BaseCompactionStrategy {
   }
 }
 
-// Use your custom strategy
-const contextManager = new ContextManager(
-  provider,
-  { strategy: 'custom' }, // Will be ignored, strategy instance used
-  compactors,
-  estimator,
-  new PriorityAwareStrategy()  // Pass as 5th argument
-);
+// Use your custom strategy via Agent.create()
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    customStrategy: new PriorityAwareStrategy(),
+  },
+});
 ```
 
 ### Runtime Strategy Switching
 
-Switch strategies dynamically based on task requirements:
+Switch strategies dynamically based on task requirements via AgentContext:
 
 ```typescript
-const contextManager = new ContextManager(provider, {
-  strategy: 'proactive',
-}, compactors, estimator);
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    strategy: 'proactive',
+  },
+});
 
 // Phase 1: Quick exploration (use lazy)
-contextManager.setStrategy('lazy');
+agent.context.setStrategy('lazy');
 await agent.run('Explore the codebase structure');
 
 // Phase 2: Deep analysis (use proactive)
-contextManager.setStrategy('proactive');
+agent.context.setStrategy('proactive');
 await agent.run('Analyze all error handling patterns');
 
 // Phase 3: Long-running task (use aggressive)
-contextManager.setStrategy('aggressive');
+agent.context.setStrategy('aggressive');
 await agent.run('Refactor all 50 API endpoints');
 
 // Phase 4: Production deployment (use adaptive)
-contextManager.setStrategy('adaptive');
+agent.context.setStrategy('adaptive');
 // Let it self-optimize for production traffic
 ```
 
@@ -4796,20 +4826,26 @@ const dataTokens = estimator.estimateDataTokens({ users: [...], config: {...} })
 ### Context Budget Monitoring
 
 ```typescript
-// Get current budget snapshot
-const budget = contextManager.getCurrentBudget();
+// Get current budget snapshot from AgentContext
+const budget = agent.context.getLastBudget();
 if (budget) {
   console.log(`Total tokens: ${budget.total}`);
   console.log(`Used tokens: ${budget.used}`);
   console.log(`Available: ${budget.available}`);
   console.log(`Utilization: ${budget.utilizationPercent.toFixed(1)}%`);
   console.log(`Status: ${budget.status}`); // 'ok' | 'warning' | 'critical'
-  console.log(`Reserved for response: ${budget.reservedForResponse}`);
+  console.log(`Reserved for response: ${budget.reserved}`);
 }
 
-// Comprehensive event monitoring
-contextManager.on('budget_warning', ({ budget, threshold }) => {
-  console.log(`Warning: Context at ${budget.utilizationPercent}% (threshold: ${threshold}%)`);
+// Budget monitoring via lifecycle hooks
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  lifecycleHooks: {
+    beforeCompaction: async (ctx) => {
+      console.log(`Warning: Context at ${ctx.currentBudget.utilizationPercent}%`);
+    },
+  },
 });
 
 contextManager.on('budget_critical', ({ budget }) => {

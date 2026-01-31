@@ -164,10 +164,10 @@ src/
 │   ├── TextToSpeech.ts, SpeechToText.ts
 │   ├── createProvider.ts, createAudioProvider.ts, createImageProvider.ts, createVideoProvider.ts
 │   ├── context/                # Context management
-│   │   ├── ContextManager.ts, types.ts
+│   │   ├── types.ts            # Context types (IContextStrategy, ContextBudget, etc.)
 │   │   ├── strategies/         # Proactive, Aggressive, Lazy, RollingWindow, Adaptive
 │   │   └── plugins/            # MemoryPlugin, PlanPlugin, ToolOutputPlugin, AutoSpillPlugin, InContextMemoryPlugin
-│   ├── history/                # ConversationHistoryManager
+│   ├── history/                # History interfaces (IHistoryManager)
 │   ├── permissions/            # ToolPermissionManager
 │   └── mcp/                    # MCPClient, MCPRegistry
 ├── domain/
@@ -499,4 +499,4 @@ const myTool: ToolFunction = {
 
 ---
 
-**Version**: 0.2.0 | **Last Updated**: 2026-01-30 | **Architecture**: Connector-First (v2)
+**Version**: 0.2.0 | **Last Updated**: 2026-01-31 | **Architecture**: Connector-First (v2)
