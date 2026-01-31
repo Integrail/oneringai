@@ -226,13 +226,12 @@ export type {
 } from './capabilities/researchAgent/index.js';
 
 // ============ Context Management (Universal) ============
-export { ContextManager } from './core/context/index.js';
+// Note: ContextManager class deleted - AgentContext is THE ONLY context manager
 export type {
   IContextComponent,
   ContextBudget,
   PreparedContext,
   ContextManagerConfig,
-  IContextProvider,
   ITokenEstimator,
   IContextCompactor,
   IContextStrategy,
@@ -260,7 +259,7 @@ export {
 } from './infrastructure/context/index.js';
 
 // ============ Conversation History Management ============
-export { ConversationHistoryManager } from './core/history/index.js';
+// Note: ConversationHistoryManager class deleted - AgentContext manages history directly
 export type {
   IHistoryManager,
   IHistoryStorage,
@@ -268,7 +267,6 @@ export type {
   IHistoryManagerConfig,
   HistoryManagerEvents,
   SerializedHistoryState,
-  ConversationHistoryManagerConfig,
 } from './core/history/index.js';
 export { DEFAULT_HISTORY_MANAGER_CONFIG } from './core/history/index.js';
 export { InMemoryHistoryStorage } from './infrastructure/storage/InMemoryHistoryStorage.js';

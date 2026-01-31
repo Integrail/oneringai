@@ -31,12 +31,12 @@ describe('Context Tools', () => {
   describe('context_inspect', () => {
     const [contextInspect] = createContextTools();
 
-    it('should return error when context manager not available', async () => {
+    it('should return error when agentContext not available', async () => {
       const result = await contextInspect.execute({}, undefined);
 
       expect(result).toEqual({
-        error: 'Context manager not available',
-        message: 'This tool is only available within TaskAgent execution',
+        error: 'AgentContext not available',
+        message: 'Tool context missing agentContext',
       });
     });
 
@@ -44,30 +44,32 @@ describe('Context Tools', () => {
       const result = await contextInspect.execute({}, {} as ToolContext);
 
       expect(result).toEqual({
-        error: 'Context manager not available',
-        message: 'This tool is only available within TaskAgent execution',
+        error: 'AgentContext not available',
+        message: 'Tool context missing agentContext',
       });
     });
 
-    it('should return error when no budget available', async () => {
+    it('should return message when no budget available', async () => {
       const mockContext: ToolContext = {
-        contextManager: {
-          getCurrentBudget: vi.fn().mockReturnValue(null),
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue(null),
         } as any,
       };
 
       const result = await contextInspect.execute({}, mockContext);
 
       expect(result).toEqual({
-        error: 'No context budget available',
-        message: 'Context has not been prepared yet',
+        status: 'no_budget_data',
+        message: 'No context budget calculated yet. Run prepare() first.',
       });
     });
 
     it('should return context budget with ok status', async () => {
       const mockContext: ToolContext = {
-        contextManager: {
-          getCurrentBudget: vi.fn().mockReturnValue({
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
             total: 128000,
             reserved: 10000,
             used: 50000,
@@ -94,8 +96,9 @@ describe('Context Tools', () => {
 
     it('should return warning message with warning status', async () => {
       const mockContext: ToolContext = {
-        contextManager: {
-          getCurrentBudget: vi.fn().mockReturnValue({
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
             total: 128000,
             reserved: 10000,
             used: 100000,
@@ -116,8 +119,9 @@ describe('Context Tools', () => {
 
     it('should return critical warning with critical status', async () => {
       const mockContext: ToolContext = {
-        contextManager: {
-          getCurrentBudget: vi.fn().mockReturnValue({
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
             total: 128000,
             reserved: 10000,
             used: 115000,
@@ -137,8 +141,9 @@ describe('Context Tools', () => {
 
     it('should round utilization percent to 1 decimal place', async () => {
       const mockContext: ToolContext = {
-        contextManager: {
-          getCurrentBudget: vi.fn().mockReturnValue({
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
             total: 100000,
             reserved: 5000,
             used: 45678,
@@ -159,34 +164,36 @@ describe('Context Tools', () => {
   describe('context_breakdown', () => {
     const [, contextBreakdown] = createContextTools();
 
-    it('should return error when context manager not available', async () => {
+    it('should return error when agentContext not available', async () => {
       const result = await contextBreakdown.execute({}, undefined);
 
       expect(result).toEqual({
-        error: 'Context manager not available',
-        message: 'This tool is only available within TaskAgent execution',
+        error: 'AgentContext not available',
+        message: 'Tool context missing agentContext',
       });
     });
 
-    it('should return error when no budget available', async () => {
+    it('should return message when no budget available', async () => {
       const mockContext: ToolContext = {
-        contextManager: {
-          getCurrentBudget: vi.fn().mockReturnValue(null),
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue(null),
         } as any,
       };
 
       const result = await contextBreakdown.execute({}, mockContext);
 
       expect(result).toEqual({
-        error: 'No context budget available',
-        message: 'Context has not been prepared yet',
+        status: 'no_budget_data',
+        message: 'No context budget calculated yet. Run prepare() first.',
       });
     });
 
     it('should return detailed breakdown with percentages', async () => {
       const mockContext: ToolContext = {
-        contextManager: {
-          getCurrentBudget: vi.fn().mockReturnValue({
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
             total: 128000,
             used: 50000,
             breakdown: {
@@ -225,8 +232,9 @@ describe('Context Tools', () => {
 
     it('should handle zero values in breakdown', async () => {
       const mockContext: ToolContext = {
-        contextManager: {
-          getCurrentBudget: vi.fn().mockReturnValue({
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
             total: 128000,
             used: 10000,
             breakdown: {
@@ -249,8 +257,9 @@ describe('Context Tools', () => {
 
     it('should calculate percentages correctly with rounding', async () => {
       const mockContext: ToolContext = {
-        contextManager: {
-          getCurrentBudget: vi.fn().mockReturnValue({
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
             total: 100000,
             used: 30000,
             breakdown: {
@@ -285,6 +294,7 @@ describe('Context Tools', () => {
 
     it('should return cache statistics with high effectiveness', async () => {
       const mockContext: ToolContext = {
+        agentId: 'test',
         idempotencyCache: {
           getStats: vi.fn().mockReturnValue({
             entries: 50,
@@ -309,6 +319,7 @@ describe('Context Tools', () => {
 
     it('should classify medium effectiveness (20-50% hit rate)', async () => {
       const mockContext: ToolContext = {
+        agentId: 'test',
         idempotencyCache: {
           getStats: vi.fn().mockReturnValue({
             entries: 100,
@@ -327,6 +338,7 @@ describe('Context Tools', () => {
 
     it('should classify low effectiveness (0-20% hit rate)', async () => {
       const mockContext: ToolContext = {
+        agentId: 'test',
         idempotencyCache: {
           getStats: vi.fn().mockReturnValue({
             entries: 100,
@@ -345,6 +357,7 @@ describe('Context Tools', () => {
 
     it('should classify none effectiveness (0% hit rate)', async () => {
       const mockContext: ToolContext = {
+        agentId: 'test',
         idempotencyCache: {
           getStats: vi.fn().mockReturnValue({
             entries: 50,
@@ -363,6 +376,7 @@ describe('Context Tools', () => {
 
     it('should handle perfect hit rate (100%)', async () => {
       const mockContext: ToolContext = {
+        agentId: 'test',
         idempotencyCache: {
           getStats: vi.fn().mockReturnValue({
             entries: 25,
@@ -382,6 +396,7 @@ describe('Context Tools', () => {
 
     it('should round hit rate to 1 decimal place', async () => {
       const mockContext: ToolContext = {
+        agentId: 'test',
         idempotencyCache: {
           getStats: vi.fn().mockReturnValue({
             entries: 77,
@@ -413,6 +428,7 @@ describe('Context Tools', () => {
 
     it('should return memory statistics with entries', async () => {
       const mockContext: ToolContext = {
+        agentId: 'test',
         memory: {
           list: vi.fn().mockResolvedValue([
             { key: 'user_id', description: 'Current user ID' },
@@ -435,6 +451,7 @@ describe('Context Tools', () => {
 
     it('should handle empty memory', async () => {
       const mockContext: ToolContext = {
+        agentId: 'test',
         memory: {
           list: vi.fn().mockResolvedValue([]),
         } as any,
@@ -448,6 +465,7 @@ describe('Context Tools', () => {
 
     it('should handle memory entries without descriptions', async () => {
       const mockContext: ToolContext = {
+        agentId: 'test',
         memory: {
           list: vi.fn().mockResolvedValue([
             { key: 'simple_key' },
@@ -471,6 +489,7 @@ describe('Context Tools', () => {
       }));
 
       const mockContext: ToolContext = {
+        agentId: 'test',
         memory: {
           list: vi.fn().mockResolvedValue(largeIndex),
         } as any,

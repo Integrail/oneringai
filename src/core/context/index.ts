@@ -36,20 +36,6 @@
 export * from './types.js';
 
 // ============================================================================
-// Advanced API - Strategy-based Context Management
-// ============================================================================
-
-/**
- * ContextManager - Strategy-based context preparation for LLM calls.
- *
- * Used internally by TaskAgent for advanced context management with
- * multiple compaction strategies (proactive, aggressive, lazy, etc.).
- *
- * For most users, use `AgentContext` from the main package instead.
- */
-export { ContextManager } from './ContextManager.js';
-
-// ============================================================================
 // Plugins - Extend context with custom components
 // ============================================================================
 

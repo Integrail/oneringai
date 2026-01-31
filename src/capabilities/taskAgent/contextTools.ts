@@ -34,19 +34,20 @@ export function createContextInspectTool(): ToolFunction {
       },
     },
     execute: async (_args: unknown, context?: ToolContext) => {
-      if (!context?.contextManager) {
+      const agentCtx = context?.agentContext;
+      if (!agentCtx) {
         return {
-          error: 'Context manager not available',
-          message: 'This tool is only available within TaskAgent execution',
+          error: 'AgentContext not available',
+          message: 'Tool context missing agentContext',
         };
       }
 
-      const budget = context.contextManager.getCurrentBudget();
+      const budget = agentCtx.getLastBudget();
 
       if (!budget) {
         return {
-          error: 'No context budget available',
-          message: 'Context has not been prepared yet',
+          status: 'no_budget_data',
+          message: 'No context budget calculated yet. Run prepare() first.',
         };
       }
 
@@ -90,19 +91,20 @@ export function createContextBreakdownTool(): ToolFunction {
       },
     },
     execute: async (_args: unknown, context?: ToolContext) => {
-      if (!context?.contextManager) {
+      const agentCtx = context?.agentContext;
+      if (!agentCtx) {
         return {
-          error: 'Context manager not available',
-          message: 'This tool is only available within TaskAgent execution',
+          error: 'AgentContext not available',
+          message: 'Tool context missing agentContext',
         };
       }
 
-      const budget = context.contextManager.getCurrentBudget();
+      const budget = agentCtx.getLastBudget();
 
       if (!budget) {
         return {
-          error: 'No context budget available',
-          message: 'Context has not been prepared yet',
+          status: 'no_budget_data',
+          message: 'No context budget calculated yet. Run prepare() first.',
         };
       }
 

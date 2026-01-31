@@ -1057,6 +1057,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
           agentId: context?.agentId ?? this._agentId,
           taskId: context?.taskId,
           memory: this._memory?.getAccess(),  // May be undefined if memory disabled
+          agentContext: this,  // THE source of truth for context management
           idempotencyCache: this._cache ?? undefined,  // May be undefined if memory disabled
           inContextMemory: this._inContextMemory ?? undefined,  // May be undefined if inContextMemory disabled
           persistentInstructions: this._persistentInstructions ?? undefined,  // May be undefined if persistentInstructions disabled

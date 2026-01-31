@@ -2,10 +2,7 @@
  * History management module exports
  */
 
-export { ConversationHistoryManager } from './ConversationHistoryManager.js';
-export type { ConversationHistoryManagerConfig } from './ConversationHistoryManager.js';
-
-// Re-export interfaces
+// Re-export interfaces (ConversationHistoryManager deleted - AgentContext is the single history manager)
 export type {
   IHistoryManager,
   IHistoryStorage,

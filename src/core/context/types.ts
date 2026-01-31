@@ -108,26 +108,8 @@ export const DEFAULT_CONTEXT_CONFIG: ContextManagerConfig = {
   strategyOptions: {},
 };
 
-/**
- * Abstract interface for providing context components.
- * Each agent type implements this to define what goes into context.
- */
-export interface IContextProvider {
-  /**
-   * Get current context components
-   */
-  getComponents(): Promise<IContextComponent[]>;
-
-  /**
-   * Update components after compaction
-   */
-  applyCompactedComponents(components: IContextComponent[]): Promise<void>;
-
-  /**
-   * Get max context size for this agent/model
-   */
-  getMaxContextSize(): number;
-}
+// Note: IContextProvider interface deleted - was designed for ContextManager class
+// AgentContext is now THE ONLY context manager and provides components directly
 
 /**
  * Content type for more accurate token estimation

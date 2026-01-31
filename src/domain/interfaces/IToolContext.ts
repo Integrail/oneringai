@@ -2,11 +2,12 @@
  * Tool context interface - passed to tools during execution
  */
 
-import type { ContextManager } from '../../core/context/ContextManager.js';
 import type { IdempotencyCache } from '../../capabilities/taskAgent/IdempotencyCache.js';
 import type { MemoryScope, MemoryPriority } from '../entities/Memory.js';
 import type { InContextMemoryPlugin } from '../../core/context/plugins/InContextMemoryPlugin.js';
 import type { PersistentInstructionsPlugin } from '../../core/context/plugins/PersistentInstructionsPlugin.js';
+// Type-only import to avoid circular dependency
+import type { AgentContext } from '../../core/AgentContext.js';
 
 /**
  * Limited memory access for tools
@@ -68,16 +69,19 @@ export interface ToolContext {
   /** Task ID (if running in TaskAgent) */
   taskId?: string;
 
-  /** Working memory access (if running in TaskAgent) */
+  /** Working memory access (if agent has memory feature enabled) */
   memory?: WorkingMemoryAccess;
 
-  /** Context manager (if running in TaskAgent) */
-  contextManager?: ContextManager;
+  /**
+   * AgentContext - THE source of truth for all context management
+   * Use this to access budget info, prepare context, manage history, etc.
+   */
+  agentContext?: AgentContext;
 
-  /** Idempotency cache (if running in TaskAgent) */
+  /** Idempotency cache (if agent has memory feature enabled) */
   idempotencyCache?: IdempotencyCache;
 
-  /** In-context memory plugin (if set up with setupInContextMemory) */
+  /** In-context memory plugin (if features.inContextMemory is enabled) */
   inContextMemory?: InContextMemoryPlugin;
 
   /** Persistent instructions plugin (if features.persistentInstructions is enabled) */

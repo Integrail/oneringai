@@ -1247,6 +1247,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
   /**
    * Create a separate agent for task execution that doesn't have meta-tools.
    * This prevents the agent from calling _start_planning during task execution.
+   * Shares AgentContext with parent UniversalAgent for history/memory continuity.
    */
   private createExecutionAgent(): Agent {
     // Get user tools only (exclude meta-tools) from inherited _agentContext
@@ -1260,7 +1261,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       temperature: this._config.temperature,
       maxIterations: this._config.maxIterations ?? 20,
       permissions: this._config.permissions,
-      // Note: Execution agent uses its own context, not shared
+      context: this._agentContext,  // Share context with execution agent for history/memory continuity
     });
   }
 

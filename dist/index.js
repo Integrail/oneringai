@@ -10547,17 +10547,18 @@ function createContextInspectTool() {
       }
     },
     execute: async (_args, context) => {
-      if (!context?.contextManager) {
+      const agentCtx = context?.agentContext;
+      if (!agentCtx) {
         return {
-          error: "Context manager not available",
-          message: "This tool is only available within TaskAgent execution"
+          error: "AgentContext not available",
+          message: "Tool context missing agentContext"
         };
       }
-      const budget = context.contextManager.getCurrentBudget();
+      const budget = agentCtx.getLastBudget();
       if (!budget) {
         return {
-          error: "No context budget available",
-          message: "Context has not been prepared yet"
+          status: "no_budget_data",
+          message: "No context budget calculated yet. Run prepare() first."
         };
       }
       return {
@@ -10591,17 +10592,18 @@ function createContextBreakdownTool() {
       }
     },
     execute: async (_args, context) => {
-      if (!context?.contextManager) {
+      const agentCtx = context?.agentContext;
+      if (!agentCtx) {
         return {
-          error: "Context manager not available",
-          message: "This tool is only available within TaskAgent execution"
+          error: "AgentContext not available",
+          message: "Tool context missing agentContext"
         };
       }
-      const budget = context.contextManager.getCurrentBudget();
+      const budget = agentCtx.getLastBudget();
       if (!budget) {
         return {
-          error: "No context budget available",
-          message: "Context has not been prepared yet"
+          status: "no_budget_data",
+          message: "No context budget calculated yet. Run prepare() first."
         };
       }
       const components = Object.entries(budget.breakdown).map(([name, tokens]) => ({
@@ -11270,6 +11272,8 @@ var AgentContext = class _AgentContext extends EventEmitter {
           taskId: context?.taskId,
           memory: this._memory?.getAccess(),
           // May be undefined if memory disabled
+          agentContext: this,
+          // THE source of truth for context management
           idempotencyCache: this._cache ?? void 0,
           // May be undefined if memory disabled
           inContextMemory: this._inContextMemory ?? void 0,
@@ -26610,251 +26614,6 @@ function createFileSearchSource(basePath, options) {
     ...options
   });
 }
-var ContextManager = class extends EventEmitter {
-  config;
-  provider;
-  estimator;
-  compactors;
-  strategy;
-  lastBudget;
-  hooks;
-  agentId;
-  constructor(provider, config = {}, compactors = [], estimator, strategy, hooks, agentId) {
-    super();
-    this.provider = provider;
-    this.config = { ...DEFAULT_CONTEXT_CONFIG, ...config };
-    this.compactors = compactors.sort((a, b) => a.priority - b.priority);
-    if (estimator) {
-      this.estimator = estimator;
-    } else if (typeof this.config.estimator === "string") {
-      this.estimator = this.createEstimator(this.config.estimator);
-    } else {
-      this.estimator = this.config.estimator;
-    }
-    if (strategy) {
-      this.strategy = strategy;
-    } else {
-      this.strategy = this.createStrategy(this.config.strategy || "proactive");
-    }
-    this.hooks = hooks ?? {};
-    this.agentId = agentId;
-  }
-  /**
-   * Set hooks at runtime
-   */
-  setHooks(hooks) {
-    this.hooks = { ...this.hooks, ...hooks };
-  }
-  /**
-   * Set agent ID at runtime
-   */
-  setAgentId(agentId) {
-    this.agentId = agentId;
-  }
-  /**
-   * Prepare context for LLM call
-   * Returns prepared components, automatically compacting if needed
-   */
-  async prepare() {
-    let components = await this.provider.getComponents();
-    if (this.strategy.prepareComponents) {
-      components = await this.strategy.prepareComponents(components);
-    }
-    let budget = this.calculateBudget(components);
-    this.lastBudget = budget;
-    if (budget.status === "warning") {
-      this.emit("budget_warning", { budget });
-    } else if (budget.status === "critical") {
-      this.emit("budget_critical", { budget });
-    }
-    const needsCompaction = this.config.autoCompact && this.strategy.shouldCompact(budget, this.config);
-    if (needsCompaction) {
-      return await this.compactWithStrategy(components, budget);
-    }
-    return {
-      components,
-      budget,
-      compacted: false
-    };
-  }
-  /**
-   * Compact using the current strategy
-   */
-  async compactWithStrategy(components, budget) {
-    const targetUtilization = this.config.compactionThreshold * 0.9;
-    const targetTokens = Math.floor(
-      (budget.total - budget.reserved) * targetUtilization
-    );
-    const estimatedTokensToFree = Math.max(0, budget.used - targetTokens);
-    if (this.hooks.beforeCompaction) {
-      try {
-        await this.hooks.beforeCompaction({
-          agentId: this.agentId,
-          currentBudget: budget,
-          strategy: this.strategy.name,
-          components: components.map((c) => ({
-            name: c.name,
-            priority: c.priority,
-            compactable: c.compactable
-          })),
-          estimatedTokensToFree
-        });
-      } catch (error) {
-        console.warn(
-          "beforeCompaction hook failed:",
-          error instanceof Error ? error.message : String(error)
-        );
-      }
-    }
-    this.emit("compacting", {
-      reason: `Context at ${budget.utilizationPercent.toFixed(1)}%`,
-      currentBudget: budget,
-      strategy: this.strategy.name
-    });
-    const result = await this.strategy.compact(components, budget, this.compactors, this.estimator);
-    let finalComponents = result.components;
-    if (this.strategy.postProcess) {
-      finalComponents = await this.strategy.postProcess(result.components, budget);
-    }
-    const newBudget = this.calculateBudget(finalComponents);
-    if (newBudget.status === "critical") {
-      throw new Error(
-        `Cannot fit context within limits after compaction (strategy: ${this.strategy.name}). Used: ${newBudget.used}, Limit: ${budget.total - budget.reserved}`
-      );
-    }
-    this.emit("compacted", {
-      log: result.log,
-      newBudget,
-      tokensFreed: result.tokensFreed
-    });
-    await this.provider.applyCompactedComponents(finalComponents);
-    return {
-      components: finalComponents,
-      budget: newBudget,
-      compacted: true,
-      compactionLog: result.log
-    };
-  }
-  /**
-   * Calculate budget for components
-   */
-  calculateBudget(components) {
-    const breakdown = {};
-    let used = 0;
-    for (const component of components) {
-      const tokens = this.estimateComponent(component);
-      breakdown[component.name] = tokens;
-      used += tokens;
-    }
-    const total = this.provider.getMaxContextSize();
-    const reserved = Math.floor(total * this.config.responseReserve);
-    const available = total - reserved - used;
-    const utilizationRatio = (used + reserved) / total;
-    const utilizationPercent = used / (total - reserved) * 100;
-    let status;
-    if (utilizationRatio >= this.config.hardLimit) {
-      status = "critical";
-    } else if (utilizationRatio >= this.config.compactionThreshold) {
-      status = "warning";
-    } else {
-      status = "ok";
-    }
-    return {
-      total,
-      reserved,
-      used,
-      available,
-      utilizationPercent,
-      status,
-      breakdown
-    };
-  }
-  /**
-   * Estimate tokens for a component
-   */
-  estimateComponent(component) {
-    return estimateComponentTokens(component, this.estimator);
-  }
-  /**
-   * Switch to a different strategy at runtime
-   */
-  setStrategy(strategy) {
-    const oldStrategy = this.strategy.name;
-    this.strategy = typeof strategy === "string" ? this.createStrategy(strategy) : strategy;
-    this.emit("strategy_switched", {
-      from: oldStrategy,
-      to: this.strategy.name,
-      reason: "manual"
-    });
-  }
-  /**
-   * Get current strategy
-   */
-  getStrategy() {
-    return this.strategy;
-  }
-  /**
-   * Get strategy metrics
-   */
-  getStrategyMetrics() {
-    return this.strategy.getMetrics?.() ?? {};
-  }
-  /**
-   * Get current budget
-   */
-  getCurrentBudget() {
-    return this.lastBudget ?? null;
-  }
-  /**
-   * Get configuration
-   */
-  getConfig() {
-    return { ...this.config };
-  }
-  /**
-   * Update configuration
-   */
-  updateConfig(updates) {
-    this.config = { ...this.config, ...updates };
-  }
-  /**
-   * Add compactor
-   */
-  addCompactor(compactor) {
-    this.compactors.push(compactor);
-    this.compactors.sort((a, b) => a.priority - b.priority);
-  }
-  /**
-   * Get all compactors
-   */
-  getCompactors() {
-    return [...this.compactors];
-  }
-  /**
-   * Create estimator from name
-   */
-  createEstimator(_name) {
-    return {
-      estimateTokens: (text) => {
-        if (!text || text.length === 0) return 0;
-        return Math.ceil(text.length / 4);
-      },
-      estimateDataTokens: (data) => {
-        const serialized = JSON.stringify(data);
-        return Math.ceil(serialized.length / 4);
-      }
-    };
-  }
-  /**
-   * Create strategy from name or config
-   */
-  createStrategy(strategy) {
-    if (typeof strategy !== "string") {
-      return strategy;
-    }
-    return createStrategy(strategy, this.config.strategyOptions || {});
-  }
-};
 
 // src/infrastructure/context/compactors/TruncateCompactor.ts
 var TruncateCompactor = class {
@@ -27272,151 +27031,6 @@ var InMemoryHistoryStorage = class {
   async restoreState(state) {
     this.messages = [...state.messages];
     this.summaries = state.summaries ? [...state.summaries] : [];
-  }
-};
-
-// src/core/history/ConversationHistoryManager.ts
-var ConversationHistoryManager = class extends EventEmitter {
-  storage;
-  config;
-  constructor(config = {}) {
-    super();
-    this.storage = config.storage ?? new InMemoryHistoryStorage();
-    this.config = {
-      ...DEFAULT_HISTORY_MANAGER_CONFIG,
-      ...config
-    };
-  }
-  /**
-   * Add a message to history
-   */
-  async addMessage(role, content, metadata) {
-    const message = {
-      id: randomUUID(),
-      role,
-      content,
-      timestamp: Date.now(),
-      metadata
-    };
-    await this.storage.addMessage(message);
-    this.emit("message:added", { message });
-    const count = await this.storage.getCount();
-    if (count > this.config.maxMessages) {
-      await this.compact();
-    }
-    return message;
-  }
-  /**
-   * Get all messages
-   */
-  async getMessages() {
-    return this.storage.getMessages();
-  }
-  /**
-   * Get recent messages
-   */
-  async getRecentMessages(count) {
-    const limit = count ?? this.config.preserveRecentCount;
-    return this.storage.getRecentMessages(limit);
-  }
-  /**
-   * Format history for LLM context
-   */
-  async formatForContext(options) {
-    const maxTokens = options?.maxTokens ?? this.config.maxTokens;
-    const messages = await this.storage.getMessages();
-    if (messages.length === 0) {
-      return "";
-    }
-    const parts = [];
-    let estimatedTokens = 0;
-    const headerTokens = 50;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (!msg) continue;
-      const roleLabel = msg.role === "user" ? "User" : msg.role === "assistant" ? "Assistant" : "System";
-      const line = `**${roleLabel}**: ${msg.content}`;
-      const lineTokens = Math.ceil(line.length / 4);
-      if (estimatedTokens + lineTokens + headerTokens > maxTokens) {
-        break;
-      }
-      parts.unshift(line);
-      estimatedTokens += lineTokens;
-    }
-    if (parts.length === 0) {
-      return "";
-    }
-    return `## Conversation History
-
-${parts.join("\n\n")}`;
-  }
-  /**
-   * Compact history based on strategy
-   */
-  async compact() {
-    const count = await this.storage.getCount();
-    if (count <= this.config.maxMessages) {
-      return;
-    }
-    const toRemove = count - this.config.maxMessages + this.config.preserveRecentCount;
-    switch (this.config.compactionStrategy) {
-      case "truncate":
-      case "sliding-window": {
-        const messages = await this.storage.getMessages();
-        const cutoffIndex = Math.min(toRemove, messages.length - this.config.preserveRecentCount);
-        const cutoffMsg = cutoffIndex > 0 ? messages[cutoffIndex - 1] : void 0;
-        if (cutoffMsg) {
-          const cutoffTimestamp = cutoffMsg.timestamp + 1;
-          const removed = await this.storage.removeOlderThan(cutoffTimestamp);
-          this.emit("history:compacted", { removedCount: removed, strategy: this.config.compactionStrategy });
-        }
-        break;
-      }
-      case "summarize": {
-        const messages = await this.storage.getMessages();
-        const cutoffIndex = Math.min(toRemove, messages.length - this.config.preserveRecentCount);
-        const cutoffMsg = cutoffIndex > 0 ? messages[cutoffIndex - 1] : void 0;
-        if (cutoffMsg) {
-          const cutoffTimestamp = cutoffMsg.timestamp + 1;
-          const removed = await this.storage.removeOlderThan(cutoffTimestamp);
-          this.emit("history:compacted", { removedCount: removed, strategy: "truncate" });
-        }
-        break;
-      }
-    }
-  }
-  /**
-   * Clear all history
-   */
-  async clear() {
-    await this.storage.clear();
-    this.emit("history:cleared", {});
-  }
-  /**
-   * Get message count
-   */
-  async getMessageCount() {
-    return this.storage.getCount();
-  }
-  /**
-   * Get state for persistence
-   */
-  async getState() {
-    return this.storage.getState();
-  }
-  /**
-   * Restore from saved state
-   */
-  async restoreState(state) {
-    await this.storage.restoreState(state);
-    const count = await this.storage.getCount();
-    this.emit("history:restored", { messageCount: count });
-  }
-  /**
-   * Get configuration
-   */
-  getConfig() {
-    return { ...this.config };
   }
 };
 
@@ -34315,6 +33929,7 @@ ${response.output_text}`,
   /**
    * Create a separate agent for task execution that doesn't have meta-tools.
    * This prevents the agent from calling _start_planning during task execution.
+   * Shares AgentContext with parent UniversalAgent for history/memory continuity.
    */
   createExecutionAgent() {
     const userTools = this._agentContext.tools.getEnabled().filter((t) => !isMetaTool(t.definition.function.name));
@@ -34325,8 +33940,9 @@ ${response.output_text}`,
       instructions: this.buildExecutionInstructions(),
       temperature: this._config.temperature,
       maxIterations: this._config.maxIterations ?? 20,
-      permissions: this._config.permissions
-      // Note: Execution agent uses its own context, not shared
+      permissions: this._config.permissions,
+      context: this._agentContext
+      // Share context with execution agent for history/memory continuity
     });
   }
   /**
@@ -34579,6 +34195,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FilePersistentInstructionsStorage, FileSearchSource, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPlugin, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WebSearchSource, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FilePersistentInstructionsStorage, FileSearchSource, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPlugin, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WebSearchSource, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map
