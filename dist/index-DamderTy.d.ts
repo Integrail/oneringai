@@ -1,5 +1,5 @@
 import { EventEmitter } from 'eventemitter3';
-import { I as IProvider } from './IProvider-BP49c93d.cjs';
+import { I as IProvider } from './IProvider-BP49c93d.js';
 
 /**
  * Interface for objects that manage resources and need explicit cleanup.
@@ -1706,6 +1706,27 @@ interface IMemoryStorage {
  */
 
 /**
+ * Serialized memory state for persistence
+ */
+interface SerializedMemory {
+    /** Memory format version */
+    version: number;
+    /** Serialized memory entries */
+    entries: SerializedMemoryEntry[];
+}
+/**
+ * Serialized memory entry
+ */
+interface SerializedMemoryEntry {
+    key: string;
+    description: string;
+    value: unknown;
+    scope: MemoryScope;
+    sizeBytes: number;
+    basePriority?: MemoryPriority;
+    pinned?: boolean;
+}
+/**
  * Eviction strategy type
  */
 type EvictionStrategy = 'lru' | 'size';
@@ -2035,6 +2056,157 @@ declare class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements
      * Removes all event listeners and clears internal state
      */
     destroy(): void;
+    /**
+     * Serialize all memory entries for persistence
+     *
+     * Returns a serializable representation of all memory entries
+     * that can be saved to storage and restored later.
+     *
+     * @returns Serialized memory state
+     */
+    serialize(): Promise<SerializedMemory>;
+    /**
+     * Restore memory entries from serialized state
+     *
+     * Clears existing memory and repopulates from the serialized state.
+     * Timestamps are reset to current time.
+     *
+     * @param state - Previously serialized memory state
+     */
+    restore(state: SerializedMemory): Promise<void>;
+}
+
+/**
+ * IContextStorage - Storage interface for AgentContext persistence
+ *
+ * Provides persistence operations for AgentContext sessions.
+ * Implementations can use filesystem, database, cloud storage, etc.
+ *
+ * This follows Clean Architecture - the interface is in domain layer,
+ * implementations are in infrastructure layer.
+ */
+
+/**
+ * Session summary for listing (lightweight, no full state)
+ */
+interface ContextSessionSummary {
+    /** Session identifier */
+    sessionId: string;
+    /** When the session was created */
+    createdAt: Date;
+    /** When the session was last saved */
+    lastSavedAt: Date;
+    /** Number of messages in history */
+    messageCount: number;
+    /** Number of memory entries */
+    memoryEntryCount: number;
+    /** Optional metadata */
+    metadata?: ContextSessionMetadata;
+}
+/**
+ * Session metadata (stored with session)
+ */
+interface ContextSessionMetadata {
+    /** Human-readable title */
+    title?: string;
+    /** Auto-generated or user-provided description */
+    description?: string;
+    /** Tags for filtering */
+    tags?: string[];
+    /** Custom key-value data */
+    [key: string]: unknown;
+}
+/**
+ * Full session state wrapper (includes metadata)
+ */
+interface StoredContextSession {
+    /** Format version for migration support */
+    version: number;
+    /** Session identifier */
+    sessionId: string;
+    /** When the session was created */
+    createdAt: string;
+    /** When the session was last saved */
+    lastSavedAt: string;
+    /** The serialized AgentContext state */
+    state: SerializedAgentContextState;
+    /** Session metadata */
+    metadata: ContextSessionMetadata;
+}
+/**
+ * Current format version for stored sessions
+ */
+declare const CONTEXT_SESSION_FORMAT_VERSION = 1;
+/**
+ * Storage interface for AgentContext persistence
+ *
+ * Implementations:
+ * - FileContextStorage: File-based storage at ~/.oneringai/agents/<agentId>/sessions/
+ * - (Future) RedisContextStorage, PostgresContextStorage, S3ContextStorage, etc.
+ */
+interface IContextStorage {
+    /**
+     * Save context state to a session
+     *
+     * @param sessionId - Unique session identifier
+     * @param state - Serialized AgentContext state
+     * @param metadata - Optional session metadata
+     */
+    save(sessionId: string, state: SerializedAgentContextState, metadata?: ContextSessionMetadata): Promise<void>;
+    /**
+     * Load context state from a session
+     *
+     * @param sessionId - Session identifier to load
+     * @returns The stored session, or null if not found
+     */
+    load(sessionId: string): Promise<StoredContextSession | null>;
+    /**
+     * Delete a session
+     *
+     * @param sessionId - Session identifier to delete
+     */
+    delete(sessionId: string): Promise<void>;
+    /**
+     * Check if a session exists
+     *
+     * @param sessionId - Session identifier to check
+     */
+    exists(sessionId: string): Promise<boolean>;
+    /**
+     * List all sessions (summaries only, not full state)
+     *
+     * @param options - Optional filtering and pagination
+     * @returns Array of session summaries, sorted by lastSavedAt descending
+     */
+    list(options?: ContextStorageListOptions): Promise<ContextSessionSummary[]>;
+    /**
+     * Update session metadata without loading full state
+     *
+     * @param sessionId - Session identifier
+     * @param metadata - Metadata to merge (existing keys preserved unless overwritten)
+     */
+    updateMetadata?(sessionId: string, metadata: Partial<ContextSessionMetadata>): Promise<void>;
+    /**
+     * Get the storage path/location (for display/debugging)
+     */
+    getPath(): string;
+}
+/**
+ * Options for listing sessions
+ */
+interface ContextStorageListOptions {
+    /** Filter by tags (any match) */
+    tags?: string[];
+    /** Filter by creation date range */
+    createdAfter?: Date;
+    createdBefore?: Date;
+    /** Filter by last saved date range */
+    savedAfter?: Date;
+    savedBefore?: Date;
+    /** Maximum number of results */
+    limit?: number;
+    /** Offset for pagination */
+    offset?: number;
 }
 
 /**
@@ -2209,6 +2381,20 @@ interface AgentContextConfig {
     taskType?: TaskType;
     /** Auto-detect task type from plan (default: true) */
     autoDetectTaskType?: boolean;
+    /**
+     * Storage backend for session persistence.
+     * If provided, enables save()/load() methods.
+     */
+    storage?: IContextStorage;
+    /**
+     * Session ID to load on creation.
+     * If provided with storage, the session will be automatically loaded.
+     */
+    sessionId?: string;
+    /**
+     * Session metadata (used when saving new sessions).
+     */
+    sessionMetadata?: ContextSessionMetadata;
 }
 /**
  * Serialized state for session persistence
@@ -2222,10 +2408,8 @@ interface SerializedAgentContextState {
         toolCalls: ToolCallRecord[];
     };
     tools: SerializedToolState;
-    memoryStats?: {
-        entryCount: number;
-        sizeBytes: number;
-    };
+    /** Full WorkingMemory state (if memory feature enabled) */
+    memory?: SerializedMemory;
     permissions: SerializedApprovalState;
     plugins: Record<string, unknown>;
     config: {
@@ -2320,6 +2504,9 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     private _explicitTaskType?;
     private _autoDetectedTaskType?;
     private _autoDetectTaskType;
+    private _storage;
+    private _sessionId;
+    private _sessionMetadata;
     private constructor();
     /**
      * Create a new AgentContext
@@ -2339,6 +2526,10 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     get persistentInstructions(): PersistentInstructionsPlugin | null;
     /** Agent ID (auto-generated or from config) */
     get agentId(): string;
+    /** Current session ID (null if no session loaded/saved) */
+    get sessionId(): string | null;
+    /** Storage backend for session persistence (null if not configured) */
+    get storage(): IContextStorage | null;
     /**
      * Get the resolved feature configuration
      */
@@ -2599,7 +2790,7 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Serializes ALL state:
      * - History and tool calls
      * - Tool enable/disable state
-     * - Memory state (if enabled)
+     * - Memory entries (if enabled)
      * - Permission state (if enabled)
      * - Plugin state
      * - Feature configuration
@@ -2611,6 +2802,56 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Restores ALL state from a previous session.
      */
     restoreState(state: SerializedAgentContextState): Promise<void>;
+    /**
+     * Save the current context state to storage.
+     *
+     * @param sessionId - Session ID to save as. If not provided, uses the current sessionId.
+     * @param metadata - Optional metadata to merge with existing session metadata.
+     * @throws Error if no storage is configured or no sessionId is available.
+     *
+     * @example
+     * ```typescript
+     * // Save to a new session
+     * await ctx.save('my-session-001', { title: 'Research on AI' });
+     *
+     * // Save to current session (must have been loaded or saved before)
+     * await ctx.save();
+     * ```
+     */
+    save(sessionId?: string, metadata?: ContextSessionMetadata): Promise<void>;
+    /**
+     * Load a session from storage and restore its state.
+     *
+     * @param sessionId - Session ID to load.
+     * @returns true if the session was found and loaded, false if not found.
+     * @throws Error if no storage is configured.
+     *
+     * @example
+     * ```typescript
+     * const loaded = await ctx.load('my-session-001');
+     * if (loaded) {
+     *   console.log('Session restored!');
+     * } else {
+     *   console.log('Session not found, starting fresh.');
+     * }
+     * ```
+     */
+    load(sessionId: string): Promise<boolean>;
+    /**
+     * Check if a session exists in storage.
+     *
+     * @param sessionId - Session ID to check.
+     * @returns true if the session exists.
+     * @throws Error if no storage is configured.
+     */
+    sessionExists(sessionId: string): Promise<boolean>;
+    /**
+     * Delete a session from storage.
+     *
+     * @param sessionId - Session ID to delete. If not provided, deletes the current session.
+     * @throws Error if no storage is configured or no sessionId is available.
+     */
+    deleteSession(sessionId?: string): Promise<void>;
     /**
      * Destroy the context and release resources
      */
@@ -4161,4 +4402,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { PersistentInstructionsPlugin as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type CircuitState as C, type ContextManagerConfig as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextCompactor as G, type HookConfig as H, type IDisposable as I, type TokenContentType as J, type IPersistentInstructionsStorage as K, type LLMResponse as L, type MemoryScope as M, type TokenUsage as N, type ToolCall as O, StreamEventType as P, CircuitBreaker as Q, type TextGenerateOptions as R, type SerializedToolState as S, type ToolFunction as T, type ModelCapabilities as U, type ToolPermissionConfig$1 as V, WorkingMemory as W, MessageRole as X, type InContextMemoryConfig as Y, InContextMemoryPlugin as Z, type PersistentInstructionsConfig as _, type MemoryPriority as a, getToolCallDescription as a$, DEFAULT_FEATURES as a0, type AgentContextEvents as a1, type AgentContextMetrics as a2, type HistoryMessage as a3, type ToolCallRecord as a4, type ToolOptions as a5, type ToolCondition as a6, type ToolSelectionContext as a7, type ToolRegistration as a8, type ToolMetadata as a9, type SimpleScope as aA, type TaskStatusForMemory as aB, DEFAULT_MEMORY_CONFIG as aC, forTasks as aD, forPlan as aE, scopeEquals as aF, scopeMatches as aG, isSimpleScope as aH, isTaskAwareScope as aI, isTerminalMemoryStatus as aJ, calculateEntrySize as aK, MEMORY_PRIORITY_VALUES as aL, type ToolContext as aM, type WorkingMemoryAccess as aN, ContentType as aO, type Content as aP, type InputTextContent as aQ, type InputImageContent as aR, type OutputTextContent as aS, type ToolUseContent as aT, type ToolResultContent as aU, type Message as aV, type OutputItem as aW, type CompactionItem as aX, type ReasoningItem as aY, ToolCallState as aZ, defaultDescribeCall as a_, type ToolManagerStats as aa, type ToolManagerEvent as ab, type PermissionScope as ac, type RiskLevel as ad, type ToolPermissionConfig as ae, type ApprovalCacheEntry as af, type SerializedApprovalEntry as ag, type PermissionCheckResult as ah, type ApprovalDecision as ai, type PermissionCheckContext as aj, type PermissionManagerEvent as ak, APPROVAL_STATE_VERSION as al, DEFAULT_PERMISSION_CONFIG as am, DEFAULT_ALLOWLIST as an, type DefaultAllowlistedTool as ao, type WorkingMemoryEvents as ap, type EvictionStrategy as aq, type IdempotencyCacheConfig as ar, type CacheStats as as, DEFAULT_IDEMPOTENCY_CONFIG as at, type PreparedContext as au, DEFAULT_CONTEXT_CONFIG as av, type MemoryEntryInput as aw, type MemoryIndex as ax, type MemoryIndexEntry as ay, type TaskAwareScope as az, type SerializedApprovalState as b, type Tool as b0, type BuiltInTool as b1, type ToolResult as b2, type ToolExecutionContext as b3, type JSONSchema as b4, type ResponseCreatedEvent as b5, type ResponseInProgressEvent as b6, type OutputTextDeltaEvent as b7, type OutputTextDoneEvent as b8, type ToolCallStartEvent as b9, assertNotDestroyed as bA, CircuitOpenError as bB, type CircuitBreakerConfig as bC, type CircuitBreakerEvents as bD, DEFAULT_CIRCUIT_BREAKER_CONFIG as bE, type InContextEntry as bF, type InContextPriority as bG, type SerializedInContextMemoryState as bH, type SerializedPersistentInstructionsState as bI, AgenticLoop as bJ, type AgenticLoopConfig as bK, type ExecutionStartEvent as bL, type ExecutionCompleteEvent as bM, type ToolStartEvent as bN, type ToolCompleteEvent as bO, type LLMRequestEvent as bP, type LLMResponseEvent as bQ, type ToolCallArgumentsDeltaEvent as ba, type ToolCallArgumentsDoneEvent as bb, type ToolExecutionStartEvent as bc, type ToolExecutionDoneEvent as bd, type IterationCompleteEvent$1 as be, type ResponseCompleteEvent as bf, type ErrorEvent as bg, isStreamEvent as bh, isOutputTextDelta as bi, isToolCallStart as bj, isToolCallArgumentsDelta as bk, isToolCallArgumentsDone as bl, isResponseComplete as bm, isErrorEvent as bn, HookManager as bo, type AgenticLoopEventName as bp, type HookName as bq, type Hook as br, type ModifyingHook as bs, type BeforeToolContext as bt, type AfterToolContext as bu, type ApproveToolContext as bv, type ToolModification as bw, type ApprovalResult as bx, type IToolExecutor as by, type IAsyncDisposable as bz, ToolManager as c, AgentContext as d, type AgentContextConfig as e, ToolPermissionManager as f, type InputItem as g, type StreamEvent as h, type HistoryMode as i, type AgenticLoopEvents as j, type SerializedAgentContextState as k, type AgentResponse as l, type ExecutionMetrics as m, type AuditEntry as n, type CircuitBreakerMetrics as o, type AgentContextFeatures as p, type IContextComponent as q, type ITextProvider as r, type IMemoryStorage as s, type MemoryEntry as t, type ITokenEstimator as u, type StaleEntryInfo as v, IdempotencyCache as w, type WorkingMemoryConfig as x, type IContextStrategy as y, type ContextBudget as z };
+export { InContextMemoryPlugin as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type IContextCompactor as D, ExecutionContext as E, type FunctionToolDefinition as F, type TokenContentType as G, type HookConfig as H, type IContextStorage as I, type IPersistentInstructionsStorage as J, type StoredContextSession as K, type LLMResponse as L, type MemoryEntry as M, type ContextStorageListOptions as N, type ContextSessionSummary as O, type TokenUsage as P, type ToolCall as Q, StreamEventType as R, type StreamEvent as S, type ToolFunction as T, CircuitBreaker as U, type TextGenerateOptions as V, WorkingMemory as W, type ModelCapabilities as X, type ToolPermissionConfig$1 as Y, MessageRole as Z, type InContextMemoryConfig as _, ToolManager as a, type Message as a$, type PersistentInstructionsConfig as a0, PersistentInstructionsPlugin as a1, DEFAULT_FEATURES as a2, type AgentContextEvents as a3, type AgentContextMetrics as a4, type HistoryMessage as a5, type ToolCallRecord as a6, type ToolOptions as a7, type ToolCondition as a8, type ToolSelectionContext as a9, DEFAULT_CONTEXT_CONFIG as aA, type MemoryEntryInput as aB, type MemoryIndex as aC, type MemoryIndexEntry as aD, type MemoryPriority as aE, type TaskAwareScope as aF, type SimpleScope as aG, type TaskStatusForMemory as aH, DEFAULT_MEMORY_CONFIG as aI, forTasks as aJ, forPlan as aK, scopeEquals as aL, scopeMatches as aM, isSimpleScope as aN, isTaskAwareScope as aO, isTerminalMemoryStatus as aP, calculateEntrySize as aQ, MEMORY_PRIORITY_VALUES as aR, type ToolContext as aS, type WorkingMemoryAccess as aT, ContentType as aU, type Content as aV, type InputTextContent as aW, type InputImageContent as aX, type OutputTextContent as aY, type ToolUseContent as aZ, type ToolResultContent as a_, type ToolRegistration as aa, type ToolMetadata as ab, type ToolManagerStats as ac, type SerializedToolState as ad, type ToolManagerEvent as ae, type PermissionScope as af, type RiskLevel as ag, type ToolPermissionConfig as ah, type ApprovalCacheEntry as ai, type SerializedApprovalState as aj, type SerializedApprovalEntry as ak, type PermissionCheckResult as al, type ApprovalDecision as am, type PermissionCheckContext as an, type PermissionManagerEvent as ao, APPROVAL_STATE_VERSION as ap, DEFAULT_PERMISSION_CONFIG as aq, DEFAULT_ALLOWLIST as ar, type DefaultAllowlistedTool as as, CONTEXT_SESSION_FORMAT_VERSION as at, type WorkingMemoryEvents as au, type EvictionStrategy as av, type IdempotencyCacheConfig as aw, type CacheStats as ax, DEFAULT_IDEMPOTENCY_CONFIG as ay, type PreparedContext as az, AgentContext as b, type OutputItem as b0, type CompactionItem as b1, type ReasoningItem as b2, ToolCallState as b3, defaultDescribeCall as b4, getToolCallDescription as b5, type Tool as b6, type BuiltInTool as b7, type ToolResult as b8, type ToolExecutionContext as b9, type AfterToolContext as bA, type ApproveToolContext as bB, type ToolModification as bC, type ApprovalResult as bD, type IToolExecutor as bE, type IAsyncDisposable as bF, assertNotDestroyed as bG, CircuitOpenError as bH, type CircuitBreakerConfig as bI, type CircuitBreakerEvents as bJ, DEFAULT_CIRCUIT_BREAKER_CONFIG as bK, type InContextEntry as bL, type InContextPriority as bM, type SerializedInContextMemoryState as bN, type SerializedPersistentInstructionsState as bO, AgenticLoop as bP, type AgenticLoopConfig as bQ, type ExecutionStartEvent as bR, type ExecutionCompleteEvent as bS, type ToolStartEvent as bT, type ToolCompleteEvent as bU, type LLMRequestEvent as bV, type LLMResponseEvent as bW, type JSONSchema as ba, type ResponseCreatedEvent as bb, type ResponseInProgressEvent as bc, type OutputTextDeltaEvent as bd, type OutputTextDoneEvent as be, type ToolCallStartEvent as bf, type ToolCallArgumentsDeltaEvent as bg, type ToolCallArgumentsDoneEvent as bh, type ToolExecutionStartEvent as bi, type ToolExecutionDoneEvent as bj, type IterationCompleteEvent$1 as bk, type ResponseCompleteEvent as bl, type ErrorEvent as bm, isStreamEvent as bn, isOutputTextDelta as bo, isToolCallStart as bp, isToolCallArgumentsDelta as bq, isToolCallArgumentsDone as br, isResponseComplete as bs, isErrorEvent as bt, HookManager as bu, type AgenticLoopEventName as bv, type HookName as bw, type Hook as bx, type ModifyingHook as by, type BeforeToolContext as bz, type AgentContextConfig as c, ToolPermissionManager as d, type InputItem as e, type AgentContextFeatures as f, type HistoryMode as g, type AgenticLoopEvents as h, type IDisposable as i, type SerializedAgentContextState as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type CircuitState as n, type CircuitBreakerMetrics as o, type IContextComponent as p, type ITextProvider as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type IContextStrategy as x, type ContextBudget as y, type ContextManagerConfig as z };

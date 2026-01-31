@@ -373,33 +373,48 @@ agent.removeTool('old_tool');  // Still works!
 
 ### 3. Session Persistence (NEW)
 
-Save and resume conversations for any agent type:
+Save and resume full context state including conversation history and memory:
 
 ```typescript
-import { Agent, FileSessionStorage } from '@oneringai/agents';
+import { AgentContext, createFileContextStorage } from '@oneringai/agents';
 
-// Create agent with session support
-const agent = Agent.create({
-  connector: 'openai',
+// Create storage for the agent
+const storage = createFileContextStorage('my-assistant');
+
+// Create context with storage
+const ctx = AgentContext.create({
   model: 'gpt-4',
-  session: {
-    storage: new FileSessionStorage({ directory: './sessions' }),
-    autoSave: true,
-    autoSaveIntervalMs: 30000,  // Auto-save every 30s
-  },
+  features: { memory: true, history: true },
+  storage,
 });
 
-await agent.run('Remember: my favorite color is blue');
-const sessionId = agent.getSessionId();
+// Build up state
+ctx.addMessageSync('user', 'Remember: my favorite color is blue');
+ctx.addMessageSync('assistant', 'I\'ll remember that your favorite color is blue.');
+await ctx.memory!.store('user_color', 'User favorite color', 'blue');
 
-// Later... resume from session
-const resumed = await Agent.resume(sessionId, {
-  storage: new FileSessionStorage({ directory: './sessions' }),
-});
+// Save session with metadata
+await ctx.save('session-001', { title: 'User Preferences' });
 
-await resumed.run('What is my favorite color?');
-// Output: "Your favorite color is blue."
+// Later... load session
+const ctx2 = AgentContext.create({ model: 'gpt-4', storage });
+const loaded = await ctx2.load('session-001');
+
+if (loaded) {
+  // Full state restored: history, memory entries, tool state, etc.
+  const color = await ctx2.memory!.retrieve('user_color');
+  console.log(color); // 'blue'
+}
 ```
+
+**What's Persisted:**
+- Complete conversation history
+- All WorkingMemory entries (full values, not just index)
+- Tool enable/disable state
+- Permission approvals
+- Plugin states (InContextMemory, etc.)
+
+**Storage Location:** `~/.oneringai/agents/<agentId>/sessions/<sessionId>.json`
 
 ### 4. Task Agents
 

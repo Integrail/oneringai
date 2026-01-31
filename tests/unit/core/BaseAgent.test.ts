@@ -7,8 +7,54 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { BaseAgent, BaseAgentConfig, BaseAgentEvents } from '@/core/BaseAgent.js';
 import { Connector, Vendor } from '@/core/index.js';
-import { InMemorySessionStorage } from '@/infrastructure/storage/InMemorySessionStorage.js';
-import { ToolFunction } from '@/domain/entities/Tool.js';
+import type { ToolFunction } from '@/domain/entities/Tool.js';
+import type { IContextStorage, StoredContextSession, ContextSessionSummary, ContextSessionMetadata } from '@/domain/interfaces/IContextStorage.js';
+import type { SerializedAgentContextState } from '@/core/AgentContext.js';
+
+/**
+ * Create a mock IContextStorage for testing
+ */
+function createMockStorage(): IContextStorage & { sessions: Map<string, StoredContextSession> } {
+  const sessions = new Map<string, StoredContextSession>();
+
+  return {
+    sessions,
+    async save(sessionId: string, state: SerializedAgentContextState, metadata?: ContextSessionMetadata): Promise<void> {
+      const now = new Date().toISOString();
+      const existing = sessions.get(sessionId);
+      sessions.set(sessionId, {
+        version: 1,
+        sessionId,
+        createdAt: existing?.createdAt ?? now,
+        lastSavedAt: now,
+        state,
+        metadata: metadata ?? {},
+      });
+    },
+    async load(sessionId: string): Promise<StoredContextSession | null> {
+      return sessions.get(sessionId) ?? null;
+    },
+    async delete(sessionId: string): Promise<void> {
+      sessions.delete(sessionId);
+    },
+    async exists(sessionId: string): Promise<boolean> {
+      return sessions.has(sessionId);
+    },
+    async list(): Promise<ContextSessionSummary[]> {
+      return Array.from(sessions.values()).map(s => ({
+        sessionId: s.sessionId,
+        createdAt: new Date(s.createdAt),
+        lastSavedAt: new Date(s.lastSavedAt),
+        messageCount: s.state.core?.history?.length ?? 0,
+        memoryEntryCount: s.state.memory?.entries?.length ?? 0,
+        metadata: s.metadata,
+      }));
+    },
+    getPath(): string {
+      return '/mock/storage';
+    },
+  };
+}
 
 /**
  * Concrete implementation for testing
@@ -25,13 +71,6 @@ class TestAgent extends BaseAgent<BaseAgentConfig, BaseAgentEvents> {
 
   protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent' {
     return 'agent';
-  }
-
-  protected prepareSessionState(): void {
-    // Test implementation - add custom state
-    if (this._session) {
-      this._session.custom['testState'] = { prepared: true };
-    }
   }
 
   // Expose protected method for testing
@@ -156,7 +195,7 @@ describe('BaseAgent', () => {
 
   describe('Session Management', () => {
     it('should create session when configured', async () => {
-      const storage = new InMemorySessionStorage();
+      const storage = createMockStorage();
       const agent = new TestAgent({
         connector: 'test-connector',
         model: 'gpt-4',
@@ -166,7 +205,6 @@ describe('BaseAgent', () => {
       await agent.ensureLoaded();
 
       expect(agent.hasSession()).toBe(true);
-      expect(agent.getSessionId()).toBeTruthy();
       agent.destroy();
     });
 
@@ -181,8 +219,8 @@ describe('BaseAgent', () => {
       agent.destroy();
     });
 
-    it('should save session', async () => {
-      const storage = new InMemorySessionStorage();
+    it('should save session with explicit session ID', async () => {
+      const storage = createMockStorage();
       const agent = new TestAgent({
         connector: 'test-connector',
         model: 'gpt-4',
@@ -190,42 +228,29 @@ describe('BaseAgent', () => {
       });
 
       await agent.ensureLoaded();
-      await agent.saveSession();
+      await agent.saveSession('test-session-001');
 
       const sessionId = agent.getSessionId()!;
+      expect(sessionId).toBe('test-session-001');
       const saved = await storage.load(sessionId);
       expect(saved).toBeDefined();
-      expect(saved!.custom['testState']).toEqual({ prepared: true });
+      expect(saved!.state).toBeDefined();
+      expect(saved!.state.core).toBeDefined();
       agent.destroy();
     });
 
-    it('should throw when saving without session', async () => {
+    it('should throw when saving without session storage', async () => {
       const agent = new TestAgent({
         connector: 'test-connector',
         model: 'gpt-4',
       });
 
-      await expect(agent.saveSession()).rejects.toThrow('Session not enabled');
-      agent.destroy();
-    });
-
-    it('should update and get session data', async () => {
-      const storage = new InMemorySessionStorage();
-      const agent = new TestAgent({
-        connector: 'test-connector',
-        model: 'gpt-4',
-        session: { storage },
-      });
-
-      await agent.ensureLoaded();
-      agent.updateSessionData('myKey', { value: 42 });
-
-      expect(agent.getSessionData<{ value: number }>('myKey')).toEqual({ value: 42 });
+      await expect(agent.saveSession()).rejects.toThrow();
       agent.destroy();
     });
 
     it('should resume existing session', async () => {
-      const storage = new InMemorySessionStorage();
+      const storage = createMockStorage();
 
       // Create and save first agent
       const agent1 = new TestAgent({
@@ -234,9 +259,13 @@ describe('BaseAgent', () => {
         session: { storage },
       });
       await agent1.ensureLoaded();
-      const sessionId = agent1.getSessionId()!;
-      agent1.updateSessionData('persistedKey', 'persistedValue');
-      await agent1.saveSession();
+      const sessionId = 'test-session-resume';
+
+      // Add a message to history so we can verify it persists
+      await agent1.context.addMessage('user', 'Hello from agent1');
+      await agent1.saveSession(sessionId);
+      const history1 = agent1.context.getHistory();
+      expect(history1.length).toBe(1);
       agent1.destroy();
 
       // Resume with second agent
@@ -248,7 +277,10 @@ describe('BaseAgent', () => {
       await agent2.ensureLoaded();
 
       expect(agent2.getSessionId()).toBe(sessionId);
-      expect(agent2.getSessionData('persistedKey')).toBe('persistedValue');
+      // History should be restored
+      const history2 = agent2.context.getHistory();
+      expect(history2.length).toBe(1);
+      expect(history2[0].content).toBe('Hello from agent1');
       agent2.destroy();
     });
   });

@@ -16,11 +16,16 @@ import { HookConfig } from '../capabilities/agents/types/HookTypes.js';
 import { AgenticLoopEvents } from '../capabilities/agents/types/EventTypes.js';
 import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
 import { ITextProvider } from '../domain/interfaces/ITextProvider.js';
-import { ISessionStorage } from './SessionManager.js';
+import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
 import { AgentContext } from './AgentContext.js';
 import type { AgentContextConfig, SerializedAgentContextState } from './AgentContext.js';
 import { isOutputTextDelta } from '../domain/entities/StreamEvent.js';
+import type {
+  IAgentDefinitionStorage,
+  StoredAgentDefinition,
+  AgentDefinitionMetadata,
+} from '../domain/interfaces/IAgentDefinitionStorage.js';
 
 /**
  * Session configuration for Agent (same as BaseSessionConfig)
@@ -120,7 +125,7 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
    */
   static async resume(
     sessionId: string,
-    config: Omit<AgentConfig, 'session'> & { session: { storage: ISessionStorage } }
+    config: Omit<AgentConfig, 'session'> & { session: { storage: IContextStorage } }
   ): Promise<Agent> {
     const agent = new Agent({
       ...config,
@@ -134,6 +139,63 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
     await agent.ensureSessionLoaded();
 
     return agent;
+  }
+
+  /**
+   * Create an agent from a stored definition
+   *
+   * Loads agent configuration from storage and creates a new Agent instance.
+   * The connector must be registered at runtime before calling this method.
+   *
+   * @param agentId - Agent identifier to load
+   * @param storage - Storage backend to load from
+   * @param overrides - Optional config overrides
+   * @returns Agent instance, or null if not found
+   *
+   * @example
+   * ```typescript
+   * // First, register the connector
+   * Connector.create({
+   *   name: 'openai',
+   *   vendor: Vendor.OpenAI,
+   *   auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY }
+   * });
+   *
+   * // Then load the agent from storage
+   * const storage = new FileAgentDefinitionStorage();
+   * const agent = await Agent.fromStorage('my-assistant', storage);
+   *
+   * if (agent) {
+   *   const response = await agent.run('Hello!');
+   * }
+   * ```
+   */
+  static async fromStorage(
+    agentId: string,
+    storage: IAgentDefinitionStorage,
+    overrides?: Partial<AgentConfig>
+  ): Promise<Agent | null> {
+    const definition = await storage.load(agentId);
+    if (!definition) {
+      return null;
+    }
+
+    // Build config from definition
+    const config: AgentConfig = {
+      connector: definition.connector.name,
+      model: definition.connector.model,
+      instructions: definition.systemPrompt,
+      context: {
+        agentId: definition.agentId,
+        systemPrompt: definition.systemPrompt,
+        instructions: definition.instructions,
+        features: definition.features,
+      },
+      ...definition.typeConfig,
+      ...overrides,
+    };
+
+    return new Agent(config);
   }
 
   // ===== Constructor =====
@@ -184,21 +246,6 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
 
   protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent' {
     return 'agent';
-  }
-
-  protected prepareSessionState(): void {
-    // Save context state to session (AgentContext is always available via BaseAgent)
-    if (this._session) {
-      // Store context state in session's metadata (uses [key: string]: unknown)
-      this._agentContext.getState().then(contextState => {
-        if (this._session) {
-          this._session.metadata = {
-            ...this._session.metadata,
-            agentContext: contextState,
-          };
-        }
-      });
-    }
   }
 
   // ===== Context Access =====
@@ -498,6 +545,68 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
    */
   setTemperature(temperature: number): void {
     this._config.temperature = temperature;
+  }
+
+  // ===== Definition Persistence =====
+
+  /**
+   * Save the agent's configuration to storage for later instantiation.
+   *
+   * This saves the agent's configuration (model, system prompt, features, etc.)
+   * to persistent storage. The agent can later be recreated using Agent.fromStorage().
+   *
+   * @param storage - Storage backend to save to
+   * @param metadata - Optional metadata to attach
+   *
+   * @example
+   * ```typescript
+   * const agent = Agent.create({
+   *   connector: 'openai',
+   *   model: 'gpt-4',
+   *   instructions: 'You are a helpful assistant',
+   *   context: { agentId: 'my-assistant' }
+   * });
+   *
+   * // Save definition for later use
+   * const storage = new FileAgentDefinitionStorage();
+   * await agent.saveDefinition(storage, {
+   *   description: 'My helpful assistant',
+   *   tags: ['personal', 'general']
+   * });
+   *
+   * // Later, recreate the agent
+   * const restoredAgent = await Agent.fromStorage('my-assistant', storage);
+   * ```
+   */
+  async saveDefinition(
+    storage: IAgentDefinitionStorage,
+    metadata?: AgentDefinitionMetadata
+  ): Promise<void> {
+    const now = new Date().toISOString();
+
+    const definition: StoredAgentDefinition = {
+      version: 1,
+      agentId: this._agentContext.agentId,
+      name: metadata?.description ? this._agentContext.agentId : this._agentContext.agentId,
+      agentType: 'agent',
+      createdAt: now,
+      updatedAt: now,
+      connector: {
+        name: this.connector.name,
+        model: this.model,
+      },
+      systemPrompt: this._agentContext.systemPrompt,
+      instructions: this._config.instructions,
+      features: this._agentContext.features,
+      metadata,
+      typeConfig: {
+        temperature: this._config.temperature,
+        maxIterations: this._config.maxIterations,
+        vendorOptions: this._config.vendorOptions,
+      },
+    };
+
+    await storage.save(definition);
   }
 
   // ===== Control Methods =====

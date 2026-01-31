@@ -735,6 +735,214 @@ const resumed = await TaskAgent.resume(sessionId, {
 // Continues from where it left off
 ```
 
+### AgentContext Session Persistence (NEW)
+
+A new, simpler approach to session persistence that stores **full context state** including all memory entries:
+
+```typescript
+import { AgentContext, createFileContextStorage } from '@oneringai/agents';
+
+// Create storage for the agent
+const storage = createFileContextStorage('my-assistant');
+// Sessions stored at: ~/.oneringai/agents/my-assistant/sessions/
+
+// Create context with storage
+const ctx = AgentContext.create({
+  model: 'gpt-4',
+  features: { memory: true, history: true, inContextMemory: true },
+  storage,
+});
+
+// Build up state
+ctx.addMessageSync('user', 'My name is Alice and I prefer dark mode.');
+ctx.addMessageSync('assistant', 'Nice to meet you, Alice! I\'ll remember your preference.');
+await ctx.memory!.store('user_name', 'User name', 'Alice');
+await ctx.memory!.store('user_pref', 'User preferences', { theme: 'dark' });
+ctx.inContextMemory!.set('session_state', 'Current state', { step: 'greeting' });
+
+// Save session with metadata
+await ctx.save('session-001', {
+  title: 'Alice Support Chat',
+  tags: ['support', 'vip'],
+  description: 'User prefers dark mode'
+});
+
+console.log(ctx.sessionId);  // 'session-001'
+```
+
+#### Loading Sessions
+
+```typescript
+// Create new context and load
+const ctx2 = AgentContext.create({
+  model: 'gpt-4',
+  features: { memory: true, history: true, inContextMemory: true },
+  storage,
+});
+
+const loaded = await ctx2.load('session-001');
+
+if (loaded) {
+  // Everything is restored:
+  const history = ctx2.getHistory();
+  console.log(history[0].content);  // 'My name is Alice and I prefer dark mode.'
+
+  const name = await ctx2.memory!.retrieve('user_name');
+  console.log(name);  // 'Alice'
+
+  const prefs = await ctx2.memory!.retrieve('user_pref');
+  console.log(prefs);  // { theme: 'dark' }
+}
+```
+
+#### What Gets Persisted
+
+| Component | Persisted? | Notes |
+|-----------|------------|-------|
+| Conversation history | ✅ | All messages with timestamps |
+| WorkingMemory entries | ✅ | **Full values**, not just index |
+| Tool enable/disable state | ✅ | Per-tool settings |
+| Permission approvals | ✅ | Session approvals |
+| InContextMemory entries | ✅ | Via plugin state |
+| System prompt | ✅ | |
+| Instructions | ✅ | |
+
+#### Session Management APIs
+
+```typescript
+// Check if session exists
+const exists = await ctx.sessionExists('session-001');
+
+// Delete session
+await ctx.deleteSession('session-001');
+
+// Delete current session
+await ctx.deleteSession();  // Uses ctx.sessionId
+
+// List all sessions for this agent
+const sessions = await storage.list();
+for (const s of sessions) {
+  console.log(`${s.sessionId}: ${s.metadata?.title} (${s.messageCount} messages)`);
+}
+
+// List with filtering
+const recentSessions = await storage.list({
+  savedAfter: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),  // Last week
+  tags: ['support'],
+  limit: 10,
+});
+```
+
+#### Storage Backends
+
+**FileContextStorage** (default):
+```typescript
+import { FileContextStorage, createFileContextStorage } from '@oneringai/agents';
+
+// Simple: use helper
+const storage = createFileContextStorage('my-agent');
+
+// Advanced: custom config
+const storage = new FileContextStorage({
+  agentId: 'my-agent',
+  baseDirectory: '/custom/path/agents',  // Override default ~/.oneringai/agents
+  prettyPrint: true,  // Human-readable JSON
+});
+```
+
+**Custom Storage** (implement `IContextStorage`):
+```typescript
+import type { IContextStorage, StoredContextSession } from '@oneringai/agents';
+
+class RedisContextStorage implements IContextStorage {
+  async save(sessionId: string, state: SerializedAgentContextState, metadata?) { /* ... */ }
+  async load(sessionId: string): Promise<StoredContextSession | null> { /* ... */ }
+  async delete(sessionId: string) { /* ... */ }
+  async exists(sessionId: string) { /* ... */ }
+  async list(options?) { /* ... */ }
+  getPath() { return 'redis://...'; }
+}
+```
+
+### Agent Definition Persistence (NEW)
+
+Store agent **configuration** separately from sessions for easy instantiation:
+
+```typescript
+import { Agent, createFileAgentDefinitionStorage } from '@oneringai/agents';
+
+const defStorage = createFileAgentDefinitionStorage();
+// Stores at: ~/.oneringai/agents/<agentId>/definition.json
+
+// Create and configure agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  instructions: 'You are a helpful support assistant.',
+  context: {
+    agentId: 'support-bot',
+    features: { memory: true, persistentInstructions: true }
+  }
+});
+
+// Save definition with metadata
+await agent.saveDefinition(defStorage, {
+  description: 'Customer support chatbot',
+  tags: ['support', 'production'],
+  author: 'Team A'
+});
+```
+
+#### Loading Agents from Definitions
+
+```typescript
+// Later: recreate agent from stored definition
+const restored = await Agent.fromStorage('support-bot', defStorage);
+
+if (restored) {
+  // Agent has same model, instructions, features as when saved
+  const response = await restored.run('Hello!');
+}
+
+// With config overrides
+const devAgent = await Agent.fromStorage('support-bot', defStorage, {
+  model: 'gpt-3.5-turbo',  // Override model for development
+});
+```
+
+#### Listing Agent Definitions
+
+```typescript
+const definitions = await defStorage.list();
+
+for (const def of definitions) {
+  console.log(`${def.agentId}: ${def.name}`);
+  console.log(`  Type: ${def.agentType}, Model: ${def.model}`);
+  console.log(`  Created: ${def.createdAt}`);
+}
+
+// Filter by type
+const taskAgents = await defStorage.list({ agentType: 'task-agent' });
+```
+
+#### Storage Structure
+
+```
+~/.oneringai/agents/
+├── support-bot/
+│   ├── definition.json          # Agent configuration
+│   ├── custom_instructions.md   # Persistent instructions (if enabled)
+│   └── sessions/
+│       ├── _index.json          # Session index for fast listing
+│       ├── session-001.json     # Full session state
+│       └── session-002.json
+├── research-bot/
+│   ├── definition.json
+│   └── sessions/
+│       └── ...
+└── _agents_index.json           # Agent definitions index
+```
+
 ---
 
 ## Universal Agent

@@ -118,24 +118,6 @@ export type {
 // Note: CircuitBreakerConfig, CircuitState are re-exported from ToolManager but
 // canonically exported from infrastructure/resilience/index.js
 
-// Session management
-export { SessionManager, createEmptyHistory, createEmptyMemory, addHistoryEntry } from './SessionManager.js';
-export type {
-  Session,
-  SessionMetadata,
-  SessionMetrics,
-  SessionFilter,
-  SessionSummary,
-  ISessionStorage,
-  SerializedHistory,
-  SerializedHistoryEntry,
-  SerializedMemory,
-  SerializedMemoryEntry,
-  SerializedPlan,
-  SessionManagerConfig,
-  SessionManagerEvent,
-} from './SessionManager.js';
-
 // Tool permission management
 export { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
 export type {

@@ -258,5 +258,6 @@ async function executeInVM(
   // Wait for completion
   const result = await resultPromise;
 
-  return result;
+  // If result is undefined but output was set, use the output variable
+  return result !== undefined ? result : sandbox.output;
 }

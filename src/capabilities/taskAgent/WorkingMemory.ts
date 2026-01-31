@@ -45,6 +45,29 @@ import {
 import type { MemoryTier, HierarchyMetadata } from '../../domain/entities/Memory.js';
 
 /**
+ * Serialized memory state for persistence
+ */
+export interface SerializedMemory {
+  /** Memory format version */
+  version: number;
+  /** Serialized memory entries */
+  entries: SerializedMemoryEntry[];
+}
+
+/**
+ * Serialized memory entry
+ */
+export interface SerializedMemoryEntry {
+  key: string;
+  description: string;
+  value: unknown;
+  scope: MemoryScope;
+  sizeBytes: number;
+  basePriority?: MemoryPriority;
+  pinned?: boolean;
+}
+
+/**
  * Eviction strategy type
  */
 export type EvictionStrategy = 'lru' | 'size';
@@ -915,6 +938,76 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements 
     this._isDestroyed = true;
     this.removeAllListeners();
     this.priorityContext = {};
+  }
+
+  // ============================================================================
+  // Serialization (for session persistence)
+  // ============================================================================
+
+  /**
+   * Serialize all memory entries for persistence
+   *
+   * Returns a serializable representation of all memory entries
+   * that can be saved to storage and restored later.
+   *
+   * @returns Serialized memory state
+   */
+  async serialize(): Promise<SerializedMemory> {
+    const entries = await this.storage.getAll();
+
+    const serializedEntries: SerializedMemoryEntry[] = entries.map((entry) => ({
+      key: entry.key,
+      description: entry.description,
+      value: entry.value,
+      scope: entry.scope,
+      sizeBytes: entry.sizeBytes,
+      basePriority: entry.basePriority,
+      pinned: entry.pinned,
+      // Note: createdAt, lastAccessedAt, accessCount are not persisted
+      // They will be reset on restore (entries start fresh)
+    }));
+
+    return {
+      version: 1,
+      entries: serializedEntries,
+    };
+  }
+
+  /**
+   * Restore memory entries from serialized state
+   *
+   * Clears existing memory and repopulates from the serialized state.
+   * Timestamps are reset to current time.
+   *
+   * @param state - Previously serialized memory state
+   */
+  async restore(state: SerializedMemory): Promise<void> {
+    // Validate version
+    if (state.version !== 1) {
+      throw new Error(`Unsupported memory serialization version: ${state.version}`);
+    }
+
+    // Clear existing entries
+    await this.storage.clear();
+
+    // Restore each entry
+    const now = Date.now();
+    for (const entry of state.entries) {
+      const fullEntry: MemoryEntry = {
+        key: entry.key,
+        description: entry.description,
+        value: entry.value,
+        scope: entry.scope,
+        sizeBytes: entry.sizeBytes,
+        basePriority: entry.basePriority ?? 'normal',
+        pinned: entry.pinned ?? false,
+        createdAt: now,
+        lastAccessedAt: now,
+        accessCount: 0,
+      };
+
+      await this.storage.set(entry.key, fullEntry);
+    }
   }
 }
 

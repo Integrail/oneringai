@@ -787,10 +787,11 @@ describe('TaskAgent', () => {
     it('should save session when configured', async () => {
       const sessionStorage = {
         save: vi.fn().mockResolvedValue(undefined),
-        load: vi.fn().mockResolvedValue(undefined),
+        load: vi.fn().mockResolvedValue(null),
         list: vi.fn().mockResolvedValue([]),
         delete: vi.fn().mockResolvedValue(undefined),
-        getIndex: vi.fn().mockResolvedValue({ sessions: [] }),
+        exists: vi.fn().mockResolvedValue(false),
+        getPath: vi.fn().mockReturnValue('/mock/storage'),
       };
 
       const agent = TaskAgent.create({
@@ -803,7 +804,8 @@ describe('TaskAgent', () => {
         tasks: [{ name: 'Task', description: 'Test' }],
       });
 
-      await agent.saveSession();
+      // Provide an explicit sessionId
+      await agent.saveSession('test-task-session');
 
       expect(sessionStorage.save).toHaveBeenCalled();
     });

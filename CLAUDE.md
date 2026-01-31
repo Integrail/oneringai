@@ -462,6 +462,98 @@ client.registerTools(agent.tools);
 
 Supports: stdio (local), HTTP/HTTPS (remote) transports.
 
+## Session Persistence (NEW)
+
+AgentContext now supports full session persistence with `save()` and `load()` methods. This stores and restores:
+- Complete conversation history
+- All WorkingMemory entries (not just index)
+- Tool enable/disable state
+- Permission approvals
+- Plugin states (InContextMemory, etc.)
+
+### Setup
+
+```typescript
+import { AgentContext, createFileContextStorage } from '@oneringai/agents';
+
+// Create storage for the agent
+const storage = createFileContextStorage('my-agent');
+// Stores sessions at: ~/.oneringai/agents/my-agent/sessions/<sessionId>.json
+
+// Create context with storage
+const ctx = AgentContext.create({
+  model: 'gpt-4',
+  features: { memory: true, history: true },
+  storage,
+});
+
+// Add state
+ctx.addMessageSync('user', 'Hello');
+await ctx.memory!.store('preference', 'User preference', { theme: 'dark' });
+
+// Save session
+await ctx.save('session-001', { title: 'My Session', tags: ['test'] });
+
+// Later: Create new context and load
+const ctx2 = AgentContext.create({ model: 'gpt-4', storage });
+await ctx2.load('session-001');
+// ctx2 now has full history and memory entries restored
+```
+
+### Key APIs
+
+```typescript
+// AgentContext persistence methods
+ctx.sessionId;                              // Current session ID (null if none)
+ctx.storage;                                // Storage backend (null if not configured)
+await ctx.save(sessionId?, metadata?);      // Save state to storage
+await ctx.load(sessionId): boolean;         // Load state from storage
+await ctx.sessionExists(sessionId);         // Check if session exists
+await ctx.deleteSession(sessionId?);        // Delete session
+
+// Storage interface (IContextStorage)
+storage.save(sessionId, state, metadata?);  // Save session
+storage.load(sessionId);                    // Load session
+storage.delete(sessionId);                  // Delete session
+storage.exists(sessionId);                  // Check existence
+storage.list(options?);                     // List sessions
+storage.updateMetadata(sessionId, metadata);// Update metadata only
+```
+
+### Agent Definition Persistence
+
+For storing agent configurations (model, system prompt, features) separately from sessions:
+
+```typescript
+import { Agent, createFileAgentDefinitionStorage } from '@oneringai/agents';
+
+const defStorage = createFileAgentDefinitionStorage();
+// Stores at: ~/.oneringai/agents/<agentId>/definition.json
+
+// Save agent definition
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: { agentId: 'my-assistant' }
+});
+await agent.saveDefinition(defStorage, { description: 'My helpful assistant' });
+
+// Later: Recreate agent from definition
+const restored = await Agent.fromStorage('my-assistant', defStorage);
+```
+
+### Storage Paths
+
+```
+~/.oneringai/agents/<agentId>/
+├── definition.json              # Agent configuration (from saveDefinition)
+├── custom_instructions.md       # Persistent instructions (PersistentInstructionsPlugin)
+└── sessions/
+    ├── _index.json              # Session index for fast listing
+    ├── session-001.json         # Session state
+    └── session-002.json
+```
+
 ## Important Conventions
 
 ### Import Extensions
@@ -503,6 +595,8 @@ npm run test:integration  # Integration tests (requires API keys)
 | IToolExecutor | Tool execution | `src/domain/interfaces/IToolExecutor.ts` |
 | IDisposable | Resource cleanup | `src/domain/interfaces/IDisposable.ts` |
 | IHistoryManager | History management | `src/domain/interfaces/IHistoryManager.ts` |
+| IContextStorage | Context session persistence | `src/domain/interfaces/IContextStorage.ts` |
+| IAgentDefinitionStorage | Agent config persistence | `src/domain/interfaces/IAgentDefinitionStorage.ts` |
 
 ## Services Registry (`src/domain/entities/Services.ts`)
 

@@ -11,11 +11,14 @@ export {
 
 export type { IAgentStorage } from './InMemoryStorage.js';
 
-// Session storage implementations
-export { InMemorySessionStorage } from './InMemorySessionStorage.js';
-export { FileSessionStorage } from './FileSessionStorage.js';
-export type { FileSessionStorageConfig } from './FileSessionStorage.js';
-
 // Persistent instructions storage
 export { FilePersistentInstructionsStorage } from './FilePersistentInstructionsStorage.js';
 export type { FilePersistentInstructionsStorageConfig } from './FilePersistentInstructionsStorage.js';
+
+// Context storage (for AgentContext session persistence)
+export { FileContextStorage, createFileContextStorage } from './FileContextStorage.js';
+export type { FileContextStorageConfig } from './FileContextStorage.js';
+
+// Agent definition storage (for agent configuration persistence)
+export { FileAgentDefinitionStorage, createFileAgentDefinitionStorage } from './FileAgentDefinitionStorage.js';
+export type { FileAgentDefinitionStorageConfig } from './FileAgentDefinitionStorage.js';

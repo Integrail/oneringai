@@ -4,7 +4,7 @@
 
 import type { Connector } from '../../core/Connector.js';
 import type { ToolManager } from '../../core/ToolManager.js';
-import type { ISessionStorage } from '../../core/SessionManager.js';
+import type { IContextStorage } from '../../domain/interfaces/IContextStorage.js';
 import type { ToolFunction } from '../../domain/entities/Tool.js';
 import type { Plan, Task } from '../../domain/entities/Task.js';
 import type { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
@@ -21,7 +21,7 @@ export type AgentMode = 'interactive' | 'planning' | 'executing';
 
 export interface UniversalAgentSessionConfig {
   /** Storage backend for sessions */
-  storage: ISessionStorage;
+  storage: IContextStorage;
   /** Resume existing session by ID */
   id?: string;
   /** Auto-save session after each interaction */

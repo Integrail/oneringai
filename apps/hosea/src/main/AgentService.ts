@@ -14,14 +14,17 @@ import {
   getModelsByVendor,
   getModelInfo,
   getToolByName,
-  FileSessionStorage,
+  FileContextStorage,
+  FileAgentDefinitionStorage,
   getToolRegistry,
   logger,
   defaultDescribeCall,
   type ToolFunction,
   type UniversalAgentConfig,
   type UniversalEvent,
-  type ISessionStorage,
+  type IContextStorage,
+  type IAgentDefinitionStorage,
+  type StoredAgentDefinition,
   type ToolRegistryEntry,
   type ILLMDescription,
   type LogLevel,
@@ -229,7 +232,109 @@ export class AgentService {
   private connectors: Map<string, StoredConnectorConfig> = new Map();
   private apiConnectors: Map<string, StoredAPIConnectorConfig> = new Map();
   private agents: Map<string, StoredAgentConfig> = new Map();
-  private sessionStorage: ISessionStorage | null = null;
+  private sessionStorage: IContextStorage | null = null;
+  private agentDefinitionStorage: IAgentDefinitionStorage;
+
+  // ============ Conversion Helpers ============
+
+  /**
+   * Convert Hosea's StoredAgentConfig to library's StoredAgentDefinition
+   */
+  private toStoredDefinition(config: StoredAgentConfig): StoredAgentDefinition {
+    return {
+      version: 1,
+      agentId: config.id,
+      name: config.name,
+      agentType: config.agentType === 'basic' ? 'agent' : `${config.agentType}-agent`,
+      createdAt: new Date(config.createdAt).toISOString(),
+      updatedAt: new Date(config.updatedAt).toISOString(),
+      connector: {
+        name: config.connector,
+        model: config.model,
+      },
+      instructions: config.instructions,
+      features: {
+        memory: config.memoryEnabled,
+        inContextMemory: config.inContextMemoryEnabled,
+        persistentInstructions: config.persistentInstructionsEnabled,
+        history: config.historyEnabled,
+        permissions: config.permissionsEnabled,
+      },
+      // Store all Hosea-specific settings in typeConfig
+      typeConfig: {
+        temperature: config.temperature,
+        contextStrategy: config.contextStrategy,
+        maxContextTokens: config.maxContextTokens,
+        responseReserve: config.responseReserve,
+        maxMemorySizeBytes: config.maxMemorySizeBytes,
+        memorySoftLimitPercent: config.memorySoftLimitPercent,
+        contextAllocationPercent: config.contextAllocationPercent,
+        maxInContextEntries: config.maxInContextEntries,
+        maxInContextTokens: config.maxInContextTokens,
+        maxHistoryMessages: config.maxHistoryMessages,
+        preserveRecent: config.preserveRecent,
+        cacheTtlMs: config.cacheTtlMs,
+        cacheMaxEntries: config.cacheMaxEntries,
+        cacheEnabled: config.cacheEnabled,
+        tools: config.tools,
+        lastUsedAt: config.lastUsedAt,
+        isActive: config.isActive,
+      },
+    };
+  }
+
+  /**
+   * Convert library's StoredAgentDefinition to Hosea's StoredAgentConfig
+   */
+  private fromStoredDefinition(definition: StoredAgentDefinition): StoredAgentConfig {
+    const typeConfig = definition.typeConfig ?? {};
+    const features = definition.features ?? {};
+
+    // Map agent type back to Hosea's format
+    let agentType: StoredAgentConfig['agentType'] = 'universal';
+    if (definition.agentType === 'agent') {
+      agentType = 'basic';
+    } else if (definition.agentType === 'task-agent') {
+      agentType = 'task';
+    } else if (definition.agentType === 'research-agent') {
+      agentType = 'research';
+    } else if (definition.agentType === 'universal-agent') {
+      agentType = 'universal';
+    }
+
+    return {
+      id: definition.agentId,
+      name: definition.name,
+      connector: definition.connector.name,
+      model: definition.connector.model,
+      agentType,
+      instructions: definition.instructions ?? '',
+      temperature: (typeConfig.temperature as number) ?? 0.7,
+      contextStrategy: (typeConfig.contextStrategy as string) ?? 'proactive',
+      maxContextTokens: (typeConfig.maxContextTokens as number) ?? 128000,
+      responseReserve: (typeConfig.responseReserve as number) ?? 4096,
+      memoryEnabled: features.memory ?? true,
+      maxMemorySizeBytes: (typeConfig.maxMemorySizeBytes as number) ?? 25 * 1024 * 1024,
+      memorySoftLimitPercent: (typeConfig.memorySoftLimitPercent as number) ?? 80,
+      contextAllocationPercent: (typeConfig.contextAllocationPercent as number) ?? 10,
+      inContextMemoryEnabled: features.inContextMemory ?? false,
+      maxInContextEntries: (typeConfig.maxInContextEntries as number) ?? 20,
+      maxInContextTokens: (typeConfig.maxInContextTokens as number) ?? 4000,
+      persistentInstructionsEnabled: features.persistentInstructions ?? false,
+      historyEnabled: features.history ?? true,
+      maxHistoryMessages: (typeConfig.maxHistoryMessages as number) ?? 100,
+      preserveRecent: (typeConfig.preserveRecent as number) ?? 10,
+      cacheEnabled: (typeConfig.cacheEnabled as boolean) ?? true,
+      cacheTtlMs: (typeConfig.cacheTtlMs as number) ?? 300000,
+      cacheMaxEntries: (typeConfig.cacheMaxEntries as number) ?? 1000,
+      permissionsEnabled: features.permissions ?? true,
+      tools: (typeConfig.tools as string[]) ?? [],
+      createdAt: new Date(definition.createdAt).getTime(),
+      updatedAt: new Date(definition.updatedAt).getTime(),
+      lastUsedAt: typeConfig.lastUsedAt as number | undefined,
+      isActive: (typeConfig.isActive as boolean) ?? false,
+    };
+  }
 
   /**
    * Private constructor - use AgentService.create() instead
@@ -237,6 +342,12 @@ export class AgentService {
   private constructor(dataDir: string, isDev: boolean = false) {
     this.dataDir = dataDir;
     this.isDev = isDev;
+
+    // Initialize agent definition storage using library's FileAgentDefinitionStorage
+    // This stores agents at ~/.everworker/hosea/ (using dataDir's parent as base)
+    this.agentDefinitionStorage = new FileAgentDefinitionStorage({
+      baseDirectory: this.dataDir,
+    });
   }
 
   /**
@@ -348,20 +459,57 @@ export class AgentService {
   }
 
   private async loadAgents(): Promise<void> {
-    const agentsDir = join(this.dataDir, 'agents');
-    if (!existsSync(agentsDir)) return;
-
     try {
-      const files = await readdir(agentsDir);
-      for (const file of files) {
-        if (file.endsWith('.json')) {
-          const content = await readFile(join(agentsDir, file), 'utf-8');
-          const config = JSON.parse(content) as StoredAgentConfig;
+      // First, check for legacy agents in old format and migrate them
+      await this.migrateLegacyAgents();
+
+      // Load agents from the library's storage
+      const summaries = await this.agentDefinitionStorage.list();
+      for (const summary of summaries) {
+        const definition = await this.agentDefinitionStorage.load(summary.agentId);
+        if (definition) {
+          const config = this.fromStoredDefinition(definition);
           this.agents.set(config.id, config);
         }
       }
     } catch {
       // Ignore errors
+    }
+  }
+
+  /**
+   * Migrate legacy agents from old format (direct JSON files) to new storage
+   */
+  private async migrateLegacyAgents(): Promise<void> {
+    const legacyAgentsDir = join(this.dataDir, 'agents');
+    if (!existsSync(legacyAgentsDir)) return;
+
+    try {
+      const files = await readdir(legacyAgentsDir);
+      for (const file of files) {
+        // Skip non-JSON files and index files
+        if (!file.endsWith('.json') || file.startsWith('_')) continue;
+
+        const filePath = join(legacyAgentsDir, file);
+        const content = await readFile(filePath, 'utf-8');
+        const legacyConfig = JSON.parse(content) as StoredAgentConfig;
+
+        // Check if this agent already exists in new storage
+        const exists = await this.agentDefinitionStorage.exists(legacyConfig.id);
+        if (!exists) {
+          // Migrate to new storage
+          const definition = this.toStoredDefinition(legacyConfig);
+          await this.agentDefinitionStorage.save(definition);
+          console.log(`Migrated legacy agent: ${legacyConfig.name} (${legacyConfig.id})`);
+        }
+
+        // Delete the legacy file after successful migration
+        const { unlink } = await import('node:fs/promises');
+        await unlink(filePath);
+        console.log(`Deleted legacy agent file: ${file}`);
+      }
+    } catch (error) {
+      console.warn('Error migrating legacy agents:', error);
     }
   }
 
@@ -386,9 +534,11 @@ export class AgentService {
       // Destroy existing agent
       this.agent?.destroy();
 
-      // Initialize session storage
-      this.sessionStorage = new FileSessionStorage({
-        directory: join(this.dataDir, 'sessions'),
+      // Initialize session storage using new FileContextStorage
+      // This stores sessions at ~/.everworker/hosea/sessions/
+      this.sessionStorage = new FileContextStorage({
+        agentId: 'hosea',
+        baseDirectory: join(this.dataDir, '..'),
       });
 
       // Create agent with UI capabilities prompt
@@ -650,9 +800,9 @@ export class AgentService {
 
       this.agents.set(id, agentConfig);
 
-      // Save to file
-      const filePath = join(this.dataDir, 'agents', `${id}.json`);
-      await writeFile(filePath, JSON.stringify(agentConfig, null, 2));
+      // Save using library's agent definition storage
+      const definition = this.toStoredDefinition(agentConfig);
+      await this.agentDefinitionStorage.save(definition);
 
       return { success: true, id };
     } catch (error) {
@@ -675,9 +825,9 @@ export class AgentService {
       };
       this.agents.set(id, updated);
 
-      // Save to file
-      const filePath = join(this.dataDir, 'agents', `${id}.json`);
-      await writeFile(filePath, JSON.stringify(updated, null, 2));
+      // Save using library's agent definition storage
+      const definition = this.toStoredDefinition(updated);
+      await this.agentDefinitionStorage.save(definition);
 
       return { success: true };
     } catch (error) {
@@ -693,12 +843,8 @@ export class AgentService {
 
       this.agents.delete(id);
 
-      // Delete file
-      const filePath = join(this.dataDir, 'agents', `${id}.json`);
-      if (existsSync(filePath)) {
-        const { unlink } = await import('node:fs/promises');
-        await unlink(filePath);
-      }
+      // Delete from library's agent definition storage
+      await this.agentDefinitionStorage.delete(id);
 
       return { success: true };
     } catch (error) {
@@ -717,16 +863,18 @@ export class AgentService {
       for (const [agentId, config] of this.agents) {
         if (config.isActive && agentId !== id) {
           config.isActive = false;
-          const filePath = join(this.dataDir, 'agents', `${agentId}.json`);
-          await writeFile(filePath, JSON.stringify(config, null, 2));
+          // Save using library's agent definition storage
+          const definition = this.toStoredDefinition(config);
+          await this.agentDefinitionStorage.save(definition);
         }
       }
 
       // Activate the selected agent
       agentConfig.isActive = true;
       agentConfig.lastUsedAt = Date.now();
-      const filePath = join(this.dataDir, 'agents', `${id}.json`);
-      await writeFile(filePath, JSON.stringify(agentConfig, null, 2));
+      // Save using library's agent definition storage
+      const definition = this.toStoredDefinition(agentConfig);
+      await this.agentDefinitionStorage.save(definition);
 
       // Initialize the agent with its full configuration (including tools)
       return this.initializeWithConfig(agentConfig);
@@ -759,9 +907,11 @@ export class AgentService {
       // Destroy existing agent
       this.agent?.destroy();
 
-      // Initialize session storage
-      this.sessionStorage = new FileSessionStorage({
-        directory: join(this.dataDir, 'sessions'),
+      // Initialize session storage using new FileContextStorage
+      // This stores sessions at ~/.everworker/hosea/sessions/
+      this.sessionStorage = new FileContextStorage({
+        agentId: 'hosea',
+        baseDirectory: join(this.dataDir, '..'),
       });
 
       // Resolve tool names to actual ToolFunction objects
@@ -793,6 +943,8 @@ export class AgentService {
         },
         // Context configuration - this is the SINGLE source of truth for all context settings
         context: {
+          // Agent ID - CRITICAL for persistent instructions to work across restarts
+          agentId: agentConfig.id,
           // Feature toggles - controls which components are created and which tools are registered
           features: {
             memory: agentConfig.memoryEnabled,
@@ -989,7 +1141,7 @@ export class AgentService {
 
     try {
       const sessions = await this.sessionStorage.list();
-      return sessions.map((s) => ({ id: s.id, createdAt: s.createdAt.getTime() }));
+      return sessions.map((s) => ({ id: s.sessionId, createdAt: s.createdAt.getTime() }));
     } catch {
       return [];
     }
@@ -1174,6 +1326,7 @@ export class AgentService {
       content: string;
       path: string;
       length: number;
+      enabled: boolean;
     } | null;
   }> {
     if (!this.agent) {
@@ -1291,17 +1444,31 @@ export class AgentService {
       // Get system prompt from context
       const systemPrompt = ctx.systemPrompt || null;
 
-      // Get persistent instructions if available
-      let persistentInstructionsData = null;
+      // Get persistent instructions - always return data for the UI to show status
+      const agentId = activeAgent?.id || 'default';
+      let persistentInstructionsData: {
+        content: string;
+        path: string;
+        length: number;
+        enabled: boolean;
+      };
       if (ctx.persistentInstructions) {
         const component = await ctx.persistentInstructions.getComponent();
-        const agentId = activeAgent?.id || 'default';
         // Component content can be string or unknown, ensure we get a string
         const contentStr = typeof component?.content === 'string' ? component.content : '';
         persistentInstructionsData = {
           content: contentStr,
           path: join(this.dataDir, 'agents', `${agentId}-instructions.md`),
           length: contentStr.length,
+          enabled: true,
+        };
+      } else {
+        // Feature is disabled - still return data so UI can show "disabled" status
+        persistentInstructionsData = {
+          content: '',
+          path: join(this.dataDir, 'agents', `${agentId}-instructions.md`),
+          length: 0,
+          enabled: false,
         };
       }
 

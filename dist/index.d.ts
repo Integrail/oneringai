@@ -1,243 +1,9 @@
 import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ConnectorFetchOptions, d as ITokenStorage, S as StoredToken$1, e as ConnectorConfig, f as ConnectorConfigResult } from './ImageModel-BkWFy986.js';
 export { m as APIKeyConnectorAuth, D as AspectRatio, l as ConnectorAuth, L as DEFAULT_BASE_DELAY_MS, G as DEFAULT_CONNECTOR_TIMEOUT, M as DEFAULT_MAX_DELAY_MS, H as DEFAULT_MAX_RETRIES, K as DEFAULT_RETRYABLE_STATUSES, n as IImageModelDescription, q as IMAGE_MODELS, r as IMAGE_MODEL_REGISTRY, F as ISourceLinks, y as ImageEditOptions, x as ImageGenerateOptions, h as ImageGeneration, j as ImageGenerationCreateOptions, o as ImageModelCapabilities, p as ImageModelPricing, B as ImageResponse, z as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, E as OutputFormat, Q as QualityLevel, k as SimpleGenerateOptions, g as VENDORS, w as calculateImageCost, u as getActiveImageModels, s as getImageModelInfo, t as getImageModelsByVendor, v as getImageModelsWithFeature, i as isVendor } from './ImageModel-BkWFy986.js';
-import { S as SerializedToolState, M as MemoryScope, a as MemoryPriority, b as SerializedApprovalState, I as IDisposable, T as ToolFunction, c as ToolManager, A as AgentPermissionsConfig, d as AgentContext, e as AgentContextConfig, f as ToolPermissionManager, F as FunctionToolDefinition, g as InputItem, L as LLMResponse, h as StreamEvent, H as HookConfig, i as HistoryMode, j as AgenticLoopEvents, k as SerializedAgentContextState, l as AgentResponse, E as ExecutionContext, m as ExecutionMetrics, n as AuditEntry, C as CircuitState, o as CircuitBreakerMetrics, p as AgentContextFeatures, q as IContextComponent, r as ITextProvider, s as IMemoryStorage, t as MemoryEntry, B as BaseContextPlugin, W as WorkingMemory, u as ITokenEstimator, v as StaleEntryInfo, w as IdempotencyCache, x as WorkingMemoryConfig, y as IContextStrategy, z as ContextBudget, D as ContextManagerConfig, G as IContextCompactor, J as TokenContentType, K as IPersistentInstructionsStorage, N as TokenUsage, O as ToolCall, P as StreamEventType, Q as CircuitBreaker, R as TextGenerateOptions, U as ModelCapabilities, V as ToolPermissionConfig, X as MessageRole, Y as InContextMemoryConfig, Z as InContextMemoryPlugin, _ as PersistentInstructionsConfig, $ as PersistentInstructionsPlugin } from './index-lMt3JLFx.js';
-export { al as APPROVAL_STATE_VERSION, bu as AfterToolContext, a1 as AgentContextEvents, a3 as AgentContextHistoryMessage, a2 as AgentContextMetrics, bp as AgenticLoopEventName, af as ApprovalCacheEntry, ai as ApprovalDecision, bx as ApprovalResult, bv as ApproveToolContext, bt as BeforeToolContext, b1 as BuiltInTool, as as CacheStats, bC as CircuitBreakerConfig, bD as CircuitBreakerEvents, bB as CircuitOpenError, aX as CompactionItem, aP as Content, aO as ContentType, an as DEFAULT_ALLOWLIST, bE as DEFAULT_CIRCUIT_BREAKER_CONFIG, av as DEFAULT_CONTEXT_CONFIG, a0 as DEFAULT_FEATURES, at as DEFAULT_IDEMPOTENCY_CONFIG, aC as DEFAULT_MEMORY_CONFIG, am as DEFAULT_PERMISSION_CONFIG, ao as DefaultAllowlistedTool, bg as ErrorEvent, aq as EvictionStrategy, br as Hook, bo as HookManager, bq as HookName, bz as IAsyncDisposable, by as IToolExecutor, ar as IdempotencyCacheConfig, bF as InContextEntry, bG as InContextPriority, aR as InputImageContent, aQ as InputTextContent, be as IterationCompleteEvent, b4 as JSONSchema, aL as MEMORY_PRIORITY_VALUES, aw as MemoryEntryInput, ax as MemoryIndex, ay as MemoryIndexEntry, aV as Message, bs as ModifyingHook, aW as OutputItem, aS as OutputTextContent, b7 as OutputTextDeltaEvent, b8 as OutputTextDoneEvent, aj as PermissionCheckContext, ah as PermissionCheckResult, ak as PermissionManagerEvent, ac as PermissionScope, au as PreparedContext, aY as ReasoningItem, bf as ResponseCompleteEvent, b5 as ResponseCreatedEvent, b6 as ResponseInProgressEvent, ad as RiskLevel, ag as SerializedApprovalEntry, bH as SerializedInContextMemoryState, bI as SerializedPersistentInstructionsState, aA as SimpleScope, az as TaskAwareScope, aB as TaskStatusForMemory, aM as TaskToolContext, b0 as Tool, ba as ToolCallArgumentsDeltaEvent, bb as ToolCallArgumentsDoneEvent, a4 as ToolCallRecord, b9 as ToolCallStartEvent, aZ as ToolCallState, a6 as ToolCondition, aM as ToolContext, b3 as ToolExecutionContext, bd as ToolExecutionDoneEvent, bc as ToolExecutionStartEvent, ab as ToolManagerEvent, aa as ToolManagerStats, a9 as ToolMetadata, bw as ToolModification, a5 as ToolOptions, ae as ToolPermissionConfig, a8 as ToolRegistration, b2 as ToolResult, aU as ToolResultContent, a7 as ToolSelectionContext, aT as ToolUseContent, aN as WorkingMemoryAccess, ap as WorkingMemoryEvents, bA as assertNotDestroyed, aK as calculateEntrySize, a_ as defaultDescribeCall, aE as forPlan, aD as forTasks, a$ as getToolCallDescription, bn as isErrorEvent, bi as isOutputTextDelta, bm as isResponseComplete, aH as isSimpleScope, bh as isStreamEvent, aI as isTaskAwareScope, aJ as isTerminalMemoryStatus, bk as isToolCallArgumentsDelta, bl as isToolCallArgumentsDone, bj as isToolCallStart, aF as scopeEquals, aG as scopeMatches } from './index-lMt3JLFx.js';
+import { T as ToolFunction, a as ToolManager, I as IContextStorage, A as AgentPermissionsConfig, b as AgentContext, c as AgentContextConfig, d as ToolPermissionManager, C as ContextSessionMetadata, F as FunctionToolDefinition, e as InputItem, L as LLMResponse, S as StreamEvent, f as AgentContextFeatures, H as HookConfig, g as HistoryMode, h as AgenticLoopEvents, i as IDisposable, j as SerializedAgentContextState, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as CircuitState, o as CircuitBreakerMetrics, p as IContextComponent, q as ITextProvider, r as IMemoryStorage, M as MemoryEntry, s as MemoryScope, B as BaseContextPlugin, W as WorkingMemory, t as ITokenEstimator, u as StaleEntryInfo, v as IdempotencyCache, w as WorkingMemoryConfig, x as IContextStrategy, y as ContextBudget, z as ContextManagerConfig, D as IContextCompactor, G as TokenContentType, J as IPersistentInstructionsStorage, K as StoredContextSession, N as ContextStorageListOptions, O as ContextSessionSummary, P as TokenUsage, Q as ToolCall, R as StreamEventType, U as CircuitBreaker, V as TextGenerateOptions, X as ModelCapabilities, Y as ToolPermissionConfig, Z as MessageRole, _ as InContextMemoryConfig, $ as InContextMemoryPlugin, a0 as PersistentInstructionsConfig, a1 as PersistentInstructionsPlugin } from './index-DamderTy.js';
+export { ap as APPROVAL_STATE_VERSION, bA as AfterToolContext, a3 as AgentContextEvents, a5 as AgentContextHistoryMessage, a4 as AgentContextMetrics, bv as AgenticLoopEventName, ai as ApprovalCacheEntry, am as ApprovalDecision, bD as ApprovalResult, bB as ApproveToolContext, bz as BeforeToolContext, b7 as BuiltInTool, at as CONTEXT_SESSION_FORMAT_VERSION, ax as CacheStats, bI as CircuitBreakerConfig, bJ as CircuitBreakerEvents, bH as CircuitOpenError, b1 as CompactionItem, aV as Content, aU as ContentType, ar as DEFAULT_ALLOWLIST, bK as DEFAULT_CIRCUIT_BREAKER_CONFIG, aA as DEFAULT_CONTEXT_CONFIG, a2 as DEFAULT_FEATURES, ay as DEFAULT_IDEMPOTENCY_CONFIG, aI as DEFAULT_MEMORY_CONFIG, aq as DEFAULT_PERMISSION_CONFIG, as as DefaultAllowlistedTool, bm as ErrorEvent, av as EvictionStrategy, bx as Hook, bu as HookManager, bw as HookName, bF as IAsyncDisposable, bE as IToolExecutor, aw as IdempotencyCacheConfig, bL as InContextEntry, bM as InContextPriority, aX as InputImageContent, aW as InputTextContent, bk as IterationCompleteEvent, ba as JSONSchema, aR as MEMORY_PRIORITY_VALUES, aB as MemoryEntryInput, aC as MemoryIndex, aD as MemoryIndexEntry, aE as MemoryPriority, a$ as Message, by as ModifyingHook, b0 as OutputItem, aY as OutputTextContent, bd as OutputTextDeltaEvent, be as OutputTextDoneEvent, an as PermissionCheckContext, al as PermissionCheckResult, ao as PermissionManagerEvent, af as PermissionScope, az as PreparedContext, b2 as ReasoningItem, bl as ResponseCompleteEvent, bb as ResponseCreatedEvent, bc as ResponseInProgressEvent, ag as RiskLevel, ak as SerializedApprovalEntry, aj as SerializedApprovalState, bN as SerializedInContextMemoryState, bO as SerializedPersistentInstructionsState, ad as SerializedToolState, aG as SimpleScope, aF as TaskAwareScope, aH as TaskStatusForMemory, aS as TaskToolContext, b6 as Tool, bg as ToolCallArgumentsDeltaEvent, bh as ToolCallArgumentsDoneEvent, a6 as ToolCallRecord, bf as ToolCallStartEvent, b3 as ToolCallState, a8 as ToolCondition, aS as ToolContext, b9 as ToolExecutionContext, bj as ToolExecutionDoneEvent, bi as ToolExecutionStartEvent, ae as ToolManagerEvent, ac as ToolManagerStats, ab as ToolMetadata, bC as ToolModification, a7 as ToolOptions, ah as ToolPermissionConfig, aa as ToolRegistration, b8 as ToolResult, a_ as ToolResultContent, a9 as ToolSelectionContext, aZ as ToolUseContent, aT as WorkingMemoryAccess, au as WorkingMemoryEvents, bG as assertNotDestroyed, aQ as calculateEntrySize, b4 as defaultDescribeCall, aK as forPlan, aJ as forTasks, b5 as getToolCallDescription, bt as isErrorEvent, bo as isOutputTextDelta, bs as isResponseComplete, aN as isSimpleScope, bn as isStreamEvent, aO as isTaskAwareScope, aP as isTerminalMemoryStatus, bq as isToolCallArgumentsDelta, br as isToolCallArgumentsDone, bp as isToolCallStart, aL as scopeEquals, aM as scopeMatches } from './index-DamderTy.js';
 import { EventEmitter } from 'eventemitter3';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.js';
-
-/**
- * SessionManager - Unified session persistence for all agent types
- *
- * Provides session management capabilities:
- * - Create, save, load, delete sessions
- * - Auto-save functionality
- * - Session metadata and filtering
- * - Pluggable storage backends
- *
- * Works with Agent, TaskAgent, and UniversalAgent
- */
-
-interface Session {
-    /** Unique session identifier */
-    id: string;
-    /** Type of agent that owns this session */
-    agentType: 'agent' | 'task-agent' | 'universal-agent' | string;
-    /** When the session was created */
-    createdAt: Date;
-    /** Last activity timestamp */
-    lastActiveAt: Date;
-    /** Serialized conversation history */
-    history: SerializedHistory;
-    /** Tool enabled/disabled state */
-    toolState: SerializedToolState;
-    /** Working memory contents (TaskAgent, UniversalAgent) */
-    memory?: SerializedMemory;
-    /** Current plan (TaskAgent, UniversalAgent) */
-    plan?: SerializedPlan;
-    /** Current mode (UniversalAgent) */
-    mode?: string;
-    /** Execution metrics */
-    metrics?: SessionMetrics;
-    /** Tool permission approval state (all agent types) */
-    approvalState?: SerializedApprovalState;
-    /** Agent-specific custom data */
-    custom: Record<string, unknown>;
-    metadata: SessionMetadata;
-}
-interface SessionMetadata {
-    /** Optional user identifier */
-    userId?: string;
-    /** Human-readable title */
-    title?: string;
-    /** Tags for filtering */
-    tags?: string[];
-    /** Custom metadata */
-    [key: string]: unknown;
-}
-interface SessionMetrics {
-    totalMessages: number;
-    totalToolCalls: number;
-    totalTokens: number;
-    totalDurationMs: number;
-}
-interface SerializedHistory {
-    /** History format version */
-    version: number;
-    /** Serialized history entries */
-    entries: SerializedHistoryEntry[];
-}
-interface SerializedHistoryEntry {
-    type: 'user' | 'assistant' | 'tool_result' | 'system' | 'task_event' | 'plan_event';
-    content: unknown;
-    timestamp: string;
-    metadata?: Record<string, unknown>;
-}
-interface SerializedMemory {
-    /** Memory format version */
-    version: number;
-    /** Serialized memory entries */
-    entries: SerializedMemoryEntry[];
-}
-interface SerializedMemoryEntry {
-    key: string;
-    description: string;
-    value: unknown;
-    scope: MemoryScope;
-    sizeBytes: number;
-    basePriority?: MemoryPriority;
-    pinned?: boolean;
-}
-interface SerializedPlan {
-    /** Plan format version */
-    version: number;
-    /** Plan data */
-    data: unknown;
-}
-interface SessionFilter {
-    /** Filter by agent type */
-    agentType?: string;
-    /** Filter by user ID */
-    userId?: string;
-    /** Filter by tags (any match) */
-    tags?: string[];
-    /** Filter by creation date range */
-    createdAfter?: Date;
-    createdBefore?: Date;
-    /** Filter by last active date range */
-    activeAfter?: Date;
-    activeBefore?: Date;
-    /** Limit results */
-    limit?: number;
-    /** Offset for pagination */
-    offset?: number;
-}
-interface SessionSummary {
-    id: string;
-    agentType: string;
-    createdAt: Date;
-    lastActiveAt: Date;
-    metadata: SessionMetadata;
-    messageCount: number;
-}
-interface ISessionStorage {
-    /**
-     * Save a session (create or update)
-     */
-    save(session: Session): Promise<void>;
-    /**
-     * Load a session by ID
-     */
-    load(sessionId: string): Promise<Session | null>;
-    /**
-     * Delete a session by ID
-     */
-    delete(sessionId: string): Promise<void>;
-    /**
-     * Check if a session exists
-     */
-    exists(sessionId: string): Promise<boolean>;
-    /**
-     * List sessions with optional filtering
-     */
-    list(filter?: SessionFilter): Promise<SessionSummary[]>;
-    /**
-     * Search sessions by query string (searches title, tags, metadata)
-     */
-    search?(query: string, filter?: SessionFilter): Promise<SessionSummary[]>;
-}
-type SessionManagerEvent = 'session:created' | 'session:saved' | 'session:loaded' | 'session:deleted' | 'session:error' | 'session:warning' | 'session:migrated';
-interface SessionManagerConfig {
-    storage: ISessionStorage;
-    /** Default metadata for new sessions */
-    defaultMetadata?: Partial<SessionMetadata>;
-    /** Validate sessions on load (default: true) */
-    validateOnLoad?: boolean;
-    /** Auto-migrate sessions with fixable issues (default: true) */
-    autoMigrate?: boolean;
-}
-declare class SessionManager extends EventEmitter implements IDisposable {
-    private storage;
-    private defaultMetadata;
-    private autoSaveTimers;
-    private validateOnLoad;
-    private autoMigrate;
-    private _isDestroyed;
-    private savesInFlight;
-    private pendingSaves;
-    constructor(config: SessionManagerConfig);
-    /**
-     * Create a new session
-     */
-    create(agentType: string, metadata?: SessionMetadata): Session;
-    /**
-     * Save a session to storage
-     */
-    save(session: Session): Promise<void>;
-    /**
-     * Load a session from storage
-     */
-    load(sessionId: string): Promise<Session | null>;
-    /**
-     * Delete a session from storage
-     */
-    delete(sessionId: string): Promise<void>;
-    /**
-     * Check if a session exists
-     */
-    exists(sessionId: string): Promise<boolean>;
-    /**
-     * List sessions with optional filtering
-     */
-    list(filter?: SessionFilter): Promise<SessionSummary[]>;
-    /**
-     * Search sessions by query string
-     */
-    search(query: string, filter?: SessionFilter): Promise<SessionSummary[]>;
-    /**
-     * Fork a session (create a copy with new ID)
-     */
-    fork(sessionId: string, newMetadata?: Partial<SessionMetadata>): Promise<Session>;
-    /**
-     * Update session metadata
-     */
-    updateMetadata(sessionId: string, metadata: Partial<SessionMetadata>): Promise<void>;
-    /**
-     * Enable auto-save for a session
-     */
-    enableAutoSave(session: Session, intervalMs: number, onSave?: (session: Session) => void): void;
-    /**
-     * Disable auto-save for a session
-     */
-    stopAutoSave(sessionId: string): void;
-    /**
-     * Stop all auto-save timers
-     */
-    stopAllAutoSave(): void;
-    /**
-     * Generate a unique session ID
-     */
-    private generateId;
-    /**
-     * Check if the SessionManager instance has been destroyed
-     */
-    get isDestroyed(): boolean;
-    /**
-     * Cleanup resources
-     */
-    destroy(): void;
-}
-/**
- * Create an empty serialized history
- */
-declare function createEmptyHistory(): SerializedHistory;
-/**
- * Create an empty serialized memory
- */
-declare function createEmptyMemory(): SerializedMemory;
-/**
- * Add an entry to serialized history
- */
-declare function addHistoryEntry(history: SerializedHistory, type: SerializedHistoryEntry['type'], content: unknown, metadata?: Record<string, unknown>): void;
 
 /**
  * Structured logging infrastructure
@@ -358,20 +124,11 @@ declare class FrameworkLogger {
 declare const logger: FrameworkLogger;
 
 /**
- * Options for tool registration
- */
-interface ToolRegistrationOptions {
-    /** Namespace for the tool (e.g., 'user', '_meta', 'mcp:fs') */
-    namespace?: string;
-    /** Whether the tool is enabled by default */
-    enabled?: boolean;
-}
-/**
- * Base session configuration (shared by all agent types)
+ * Session configuration using AgentContext persistence
  */
 interface BaseSessionConfig {
-    /** Storage backend for sessions */
-    storage: ISessionStorage;
+    /** Storage backend for context sessions */
+    storage: IContextStorage;
     /** Resume existing session by ID */
     id?: string;
     /** Auto-save session after each interaction */
@@ -509,7 +266,7 @@ interface BaseAgentConfig {
     tools?: ToolFunction[];
     /** Provide a pre-configured ToolManager (advanced) */
     toolManager?: ToolManager;
-    /** Session configuration */
+    /** Session configuration (uses AgentContext persistence) */
     session?: BaseSessionConfig;
     /** Permission configuration */
     permissions?: AgentPermissionsConfig;
@@ -571,70 +328,36 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
     protected _config: TConfig;
     protected _agentContext: AgentContext;
     protected _permissionManager: ToolPermissionManager;
-    protected _sessionManager: SessionManager | null;
-    protected _session: Session | null;
-    protected _pendingSessionLoad: Promise<void> | null;
     protected _isDestroyed: boolean;
     protected _cleanupCallbacks: Array<() => void | Promise<void>>;
     protected _logger: FrameworkLogger;
     protected _lifecycleHooks: AgentLifecycleHooks;
+    protected _sessionConfig: BaseSessionConfig | null;
+    protected _autoSaveInterval: ReturnType<typeof setInterval> | null;
+    protected _pendingSessionLoad: Promise<boolean> | null;
     private _directProvider;
     constructor(config: TConfig, loggerComponent: string);
     /**
-     * Get the agent type identifier for session serialization
+     * Get the agent type identifier
      */
     protected abstract getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
-    /**
-     * Prepare session state before saving.
-     * Subclasses override to add their specific state (plan, memory, etc.)
-     *
-     * Default implementation does nothing - override in subclasses.
-     */
-    protected prepareSessionState(): void;
-    /**
-     * Restore session state after loading.
-     * Subclasses override to restore their specific state (plan, memory, etc.)
-     * Called after tool state and approval state are restored.
-     *
-     * Default implementation does nothing - override in subclasses.
-     */
-    protected restoreSessionState(_session: Session): Promise<void>;
-    /**
-     * Get plan state for session serialization.
-     * Subclasses with plans override this.
-     */
-    protected getSerializedPlan(): SerializedPlan | undefined;
-    /**
-     * Get memory state for session serialization.
-     * Subclasses with working memory override this.
-     */
-    protected getSerializedMemory(): SerializedMemory | undefined;
     /**
      * Resolve connector from string name or instance
      */
     protected resolveConnector(ref: string | Connector): Connector;
     /**
-     * Initialize AgentContext (single source of truth for tools).
+     * Initialize AgentContext (single source of truth for tools and sessions).
      * If AgentContext is provided, use it directly.
      * Otherwise, create a new one with the provided configuration.
      */
     protected initializeAgentContext(config: TConfig): AgentContext;
-    /**
-     * Initialize tool manager with provided tools
-     * @deprecated Use _agentContext.tools instead. This method is kept for backward compatibility.
-     */
-    protected initializeToolManager(existingManager?: ToolManager, tools?: ToolFunction[], options?: ToolRegistrationOptions): ToolManager;
-    /**
-     * Register multiple tools with the tool manager
-     * Utility method to avoid code duplication across agent types
-     */
-    protected registerTools(manager: ToolManager, tools: ToolFunction[], options?: ToolRegistrationOptions): void;
     /**
      * Initialize permission manager
      */
     protected initializePermissionManager(config?: AgentPermissionsConfig, tools?: ToolFunction[]): ToolPermissionManager;
     /**
      * Initialize session management (call from subclass constructor after other setup)
+     * Now uses AgentContext.save()/load() for persistence.
      */
     protected initializeSession(sessionConfig?: BaseSessionConfig): void;
     /**
@@ -642,11 +365,8 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
      */
     protected ensureSessionLoaded(): Promise<void>;
     /**
-     * Internal method to load session
-     */
-    protected loadSessionInternal(sessionId: string): Promise<void>;
-    /**
      * Get the current session ID (if session is enabled)
+     * Delegates to AgentContext.
      */
     getSessionId(): string | null;
     /**
@@ -654,22 +374,33 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
      */
     hasSession(): boolean;
     /**
-     * Get the current session (for advanced use)
+     * Save the current session to storage.
+     * Delegates to AgentContext.save().
+     *
+     * @param sessionId - Optional session ID (uses current or generates new)
+     * @param metadata - Optional session metadata
+     * @throws Error if storage is not configured
      */
-    getSession(): Session | null;
+    saveSession(sessionId?: string, metadata?: ContextSessionMetadata): Promise<void>;
     /**
-     * Save the current session to storage
-     * @throws Error if session is not enabled
+     * Load a session from storage.
+     * Delegates to AgentContext.load().
+     *
+     * @param sessionId - Session ID to load
+     * @returns true if session was found and loaded, false if not found
+     * @throws Error if storage is not configured
      */
-    saveSession(): Promise<void>;
+    loadSession(sessionId: string): Promise<boolean>;
     /**
-     * Update session custom data
+     * Check if a session exists in storage.
+     * Delegates to AgentContext.sessionExists().
      */
-    updateSessionData(key: string, value: unknown): void;
+    sessionExists(sessionId: string): Promise<boolean>;
     /**
-     * Get session custom data
+     * Delete a session from storage.
+     * Delegates to AgentContext.deleteSession().
      */
-    getSessionData<T = unknown>(key: string): T | undefined;
+    deleteSession(sessionId?: string): Promise<void>;
     /**
      * Advanced tool management. Returns ToolManager for fine-grained control.
      * This is delegated to AgentContext.tools (single source of truth).
@@ -834,6 +565,156 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
 }
 
 /**
+ * IAgentDefinitionStorage - Storage interface for Agent configuration persistence
+ *
+ * Provides persistence operations for agent definitions (configuration, model, system prompt, etc.).
+ * This allows agents to be instantiated from stored configurations.
+ *
+ * This follows Clean Architecture - the interface is in domain layer,
+ * implementations are in infrastructure layer.
+ */
+
+/**
+ * Agent type identifier
+ */
+type StoredAgentType = 'agent' | 'task-agent' | 'universal-agent' | 'research-agent' | string;
+/**
+ * Stored agent definition - everything needed to recreate an agent
+ */
+interface StoredAgentDefinition {
+    /** Format version for migration support */
+    version: number;
+    /** Unique agent identifier */
+    agentId: string;
+    /** Human-readable agent name */
+    name: string;
+    /** Agent type */
+    agentType: StoredAgentType;
+    /** When the definition was created */
+    createdAt: string;
+    /** When the definition was last updated */
+    updatedAt: string;
+    /** Connector configuration */
+    connector: {
+        /** Connector name (must be registered at runtime) */
+        name: string;
+        /** Model to use */
+        model: string;
+    };
+    /** System prompt */
+    systemPrompt?: string;
+    /** Instructions */
+    instructions?: string;
+    /** Feature configuration */
+    features?: AgentContextFeatures;
+    /** Agent metadata */
+    metadata?: AgentDefinitionMetadata;
+    /** Agent-type-specific configuration */
+    typeConfig?: Record<string, unknown>;
+}
+/**
+ * Agent definition metadata
+ */
+interface AgentDefinitionMetadata {
+    /** Description of what this agent does */
+    description?: string;
+    /** Tags for categorization */
+    tags?: string[];
+    /** Author/creator */
+    author?: string;
+    /** Custom key-value data */
+    [key: string]: unknown;
+}
+/**
+ * Agent definition summary for listing
+ */
+interface AgentDefinitionSummary {
+    /** Agent identifier */
+    agentId: string;
+    /** Agent name */
+    name: string;
+    /** Agent type */
+    agentType: StoredAgentType;
+    /** Model being used */
+    model: string;
+    /** When created */
+    createdAt: Date;
+    /** When last updated */
+    updatedAt: Date;
+    /** Optional metadata */
+    metadata?: AgentDefinitionMetadata;
+}
+/**
+ * Current format version for stored agent definitions
+ */
+declare const AGENT_DEFINITION_FORMAT_VERSION = 1;
+/**
+ * Storage interface for agent definitions
+ *
+ * Implementations:
+ * - FileAgentDefinitionStorage: File-based storage at ~/.oneringai/agents/<agentId>/
+ * - (Future) DatabaseAgentDefinitionStorage, etc.
+ */
+interface IAgentDefinitionStorage {
+    /**
+     * Save an agent definition
+     *
+     * @param definition - The agent definition to save
+     */
+    save(definition: StoredAgentDefinition): Promise<void>;
+    /**
+     * Load an agent definition
+     *
+     * @param agentId - Agent identifier to load
+     * @returns The stored definition, or null if not found
+     */
+    load(agentId: string): Promise<StoredAgentDefinition | null>;
+    /**
+     * Delete an agent definition
+     *
+     * @param agentId - Agent identifier to delete
+     */
+    delete(agentId: string): Promise<void>;
+    /**
+     * Check if an agent definition exists
+     *
+     * @param agentId - Agent identifier to check
+     */
+    exists(agentId: string): Promise<boolean>;
+    /**
+     * List all agent definitions (summaries only)
+     *
+     * @param options - Optional filtering
+     * @returns Array of agent summaries, sorted by updatedAt descending
+     */
+    list(options?: AgentDefinitionListOptions): Promise<AgentDefinitionSummary[]>;
+    /**
+     * Update agent definition metadata without loading full definition
+     *
+     * @param agentId - Agent identifier
+     * @param metadata - Metadata to merge
+     */
+    updateMetadata?(agentId: string, metadata: Partial<AgentDefinitionMetadata>): Promise<void>;
+    /**
+     * Get the storage path/location (for display/debugging)
+     */
+    getPath(): string;
+}
+/**
+ * Options for listing agent definitions
+ */
+interface AgentDefinitionListOptions {
+    /** Filter by agent type */
+    agentType?: StoredAgentType;
+    /** Filter by tags (any match) */
+    tags?: string[];
+    /** Maximum number of results */
+    limit?: number;
+    /** Offset for pagination */
+    offset?: number;
+}
+
+/**
  * Session configuration for Agent (same as BaseSessionConfig)
  */
 type AgentSessionConfig = BaseSessionConfig;
@@ -916,12 +797,41 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgenticLoopEvents> implemen
      */
     static resume(sessionId: string, config: Omit<AgentConfig$1, 'session'> & {
         session: {
-            storage: ISessionStorage;
+            storage: IContextStorage;
         };
     }): Promise<Agent>;
+    /**
+     * Create an agent from a stored definition
+     *
+     * Loads agent configuration from storage and creates a new Agent instance.
+     * The connector must be registered at runtime before calling this method.
+     *
+     * @param agentId - Agent identifier to load
+     * @param storage - Storage backend to load from
+     * @param overrides - Optional config overrides
+     * @returns Agent instance, or null if not found
+     *
+     * @example
+     * ```typescript
+     * // First, register the connector
+     * Connector.create({
+     *   name: 'openai',
+     *   vendor: Vendor.OpenAI,
+     *   auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY }
+     * });
+     *
+     * // Then load the agent from storage
+     * const storage = new FileAgentDefinitionStorage();
+     * const agent = await Agent.fromStorage('my-assistant', storage);
+     *
+     * if (agent) {
+     *   const response = await agent.run('Hello!');
+     * }
+     * ```
+     */
+    static fromStorage(agentId: string, storage: IAgentDefinitionStorage, overrides?: Partial<AgentConfig$1>): Promise<Agent | null>;
     private constructor();
     protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
-    protected prepareSessionState(): void;
     /**
      * Check if context management is enabled.
      * Always returns true since AgentContext is always created by BaseAgent.
@@ -983,6 +893,36 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgenticLoopEvents> implemen
      * Change the temperature
      */
     setTemperature(temperature: number): void;
+    /**
+     * Save the agent's configuration to storage for later instantiation.
+     *
+     * This saves the agent's configuration (model, system prompt, features, etc.)
+     * to persistent storage. The agent can later be recreated using Agent.fromStorage().
+     *
+     * @param storage - Storage backend to save to
+     * @param metadata - Optional metadata to attach
+     *
+     * @example
+     * ```typescript
+     * const agent = Agent.create({
+     *   connector: 'openai',
+     *   model: 'gpt-4',
+     *   instructions: 'You are a helpful assistant',
+     *   context: { agentId: 'my-assistant' }
+     * });
+     *
+     * // Save definition for later use
+     * const storage = new FileAgentDefinitionStorage();
+     * await agent.saveDefinition(storage, {
+     *   description: 'My helpful assistant',
+     *   tags: ['personal', 'general']
+     * });
+     *
+     * // Later, recreate the agent
+     * const restoredAgent = await Agent.fromStorage('my-assistant', storage);
+     * ```
+     */
+    saveDefinition(storage: IAgentDefinitionStorage, metadata?: AgentDefinitionMetadata): Promise<void>;
     pause(reason?: string): void;
     resume(): void;
     cancel(reason?: string): void;
@@ -4308,16 +4248,11 @@ declare class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
         tools?: ToolFunction[];
         hooks?: TaskAgentHooks;
         session?: {
-            storage: ISessionStorage;
+            storage: IContextStorage;
         };
     }): Promise<TaskAgent>;
     protected constructor(id: string, state: AgentState, agentStorage: IAgentStorage, config: TaskAgentConfig, hooks?: TaskAgentHooks);
     protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
-    protected prepareSessionState(): void;
-    protected restoreSessionState(session: Session): Promise<void>;
-    protected getSerializedPlan(): SerializedPlan | undefined;
-    protected getSerializedMemory(): SerializedMemory | undefined;
-    saveSession(): Promise<void>;
     /**
      * Wrap a tool with idempotency cache and enhanced context.
      * Uses inherited _agentContext from BaseAgent.
@@ -5613,87 +5548,6 @@ declare class InMemoryHistoryStorage implements IHistoryStorage {
 }
 
 /**
- * InMemorySessionStorage - In-memory session storage implementation
- *
- * Stores sessions in memory. Data is lost when process exits.
- * Useful for testing, development, and short-lived applications.
- */
-
-declare class InMemorySessionStorage implements ISessionStorage {
-    private sessions;
-    save(session: Session): Promise<void>;
-    load(sessionId: string): Promise<Session | null>;
-    delete(sessionId: string): Promise<void>;
-    exists(sessionId: string): Promise<boolean>;
-    list(filter?: SessionFilter): Promise<SessionSummary[]>;
-    search(query: string, filter?: SessionFilter): Promise<SessionSummary[]>;
-    /**
-     * Clear all sessions (useful for testing)
-     */
-    clear(): void;
-    /**
-     * Get count of sessions
-     */
-    get size(): number;
-    private applyFilter;
-    private toSummary;
-}
-
-/**
- * FileSessionStorage - File-based session storage implementation
- *
- * Stores sessions as JSON files in a directory.
- * Each session is stored in its own file: {sessionId}.json
- *
- * Features:
- * - Persistent storage across process restarts
- * - Human-readable JSON format
- * - Optional compression for large sessions
- * - Index file for fast listing
- */
-
-interface FileSessionStorageConfig {
-    /** Directory to store session files */
-    directory: string;
-    /** Pretty-print JSON (default: false for production) */
-    prettyPrint?: boolean;
-    /** File extension (default: .json) */
-    extension?: string;
-}
-declare class FileSessionStorage implements ISessionStorage {
-    private directory;
-    private prettyPrint;
-    private extension;
-    private indexPath;
-    private index;
-    constructor(config: FileSessionStorageConfig);
-    save(session: Session): Promise<void>;
-    load(sessionId: string): Promise<Session | null>;
-    delete(sessionId: string): Promise<void>;
-    exists(sessionId: string): Promise<boolean>;
-    list(filter?: SessionFilter): Promise<SessionSummary[]>;
-    search(query: string, filter?: SessionFilter): Promise<SessionSummary[]>;
-    /**
-     * Rebuild the index by scanning all session files
-     * Useful for recovery or migration
-     */
-    rebuildIndex(): Promise<void>;
-    /**
-     * Get the storage directory path
-     */
-    getDirectory(): string;
-    private getFilePath;
-    private ensureDirectory;
-    private loadIndex;
-    private saveIndex;
-    private updateIndex;
-    private removeFromIndex;
-    private sessionToIndexEntry;
-    private indexEntryToSummary;
-    private applyFilter;
-}
-
-/**
  * FilePersistentInstructionsStorage - File-based storage for persistent instructions
  *
  * Stores custom agent instructions as markdown files on disk.
@@ -5756,6 +5610,190 @@ declare class FilePersistentInstructionsStorage implements IPersistentInstructio
      */
     private ensureDirectory;
 }
+
+/**
+ * FileContextStorage - File-based storage for AgentContext session persistence
+ *
+ * Stores context sessions as JSON files on disk.
+ * Path: ~/.oneringai/agents/<agentId>/sessions/<sessionId>.json
+ * Windows: %APPDATA%/oneringai/agents/<agentId>/sessions/<sessionId>.json
+ *
+ * Features:
+ * - Cross-platform path handling
+ * - Safe session ID sanitization
+ * - Atomic file operations (write to temp, then rename)
+ * - Automatic directory creation
+ * - Index file for fast listing
+ */
+
+/**
+ * Configuration for FileContextStorage
+ */
+interface FileContextStorageConfig {
+    /** Agent ID (used to create unique storage path) */
+    agentId: string;
+    /** Override the base directory (default: ~/.oneringai/agents) */
+    baseDirectory?: string;
+    /** Pretty-print JSON (default: true for debugging, false in production) */
+    prettyPrint?: boolean;
+}
+/**
+ * File-based storage for AgentContext session persistence
+ */
+declare class FileContextStorage implements IContextStorage {
+    private readonly agentId;
+    private readonly sessionsDirectory;
+    private readonly indexPath;
+    private readonly prettyPrint;
+    private index;
+    constructor(config: FileContextStorageConfig);
+    /**
+     * Save context state to a session file
+     */
+    save(sessionId: string, state: SerializedAgentContextState, metadata?: ContextSessionMetadata): Promise<void>;
+    /**
+     * Load context state from a session file
+     */
+    load(sessionId: string): Promise<StoredContextSession | null>;
+    /**
+     * Delete a session
+     */
+    delete(sessionId: string): Promise<void>;
+    /**
+     * Check if a session exists
+     */
+    exists(sessionId: string): Promise<boolean>;
+    /**
+     * List all sessions (summaries only)
+     */
+    list(options?: ContextStorageListOptions): Promise<ContextSessionSummary[]>;
+    /**
+     * Update session metadata without loading full state
+     */
+    updateMetadata(sessionId: string, metadata: Partial<ContextSessionMetadata>): Promise<void>;
+    /**
+     * Get the storage path (for display/debugging)
+     */
+    getPath(): string;
+    /**
+     * Get the agent ID
+     */
+    getAgentId(): string;
+    /**
+     * Rebuild the index by scanning all session files
+     * Useful for recovery or migration
+     */
+    rebuildIndex(): Promise<void>;
+    private getFilePath;
+    private ensureDirectory;
+    private loadRaw;
+    private loadIndex;
+    private saveIndex;
+    private updateIndex;
+    private removeFromIndex;
+    private storedToIndexEntry;
+}
+/**
+ * Create a FileContextStorage for the given agent
+ *
+ * @param agentId - Agent ID
+ * @param options - Optional configuration
+ * @returns FileContextStorage instance
+ *
+ * @example
+ * ```typescript
+ * const storage = createFileContextStorage('my-agent');
+ * const ctx = AgentContext.create({
+ *   model: 'gpt-4',
+ *   storage,
+ * });
+ *
+ * // Save session
+ * await ctx.save('session-001', { title: 'My Session' });
+ *
+ * // Load session
+ * await ctx.load('session-001');
+ * ```
+ */
+declare function createFileContextStorage(agentId: string, options?: Omit<FileContextStorageConfig, 'agentId'>): FileContextStorage;
+
+/**
+ * FileAgentDefinitionStorage - File-based storage for agent definitions
+ *
+ * Stores agent definitions as JSON files on disk.
+ * Path: ~/.oneringai/agents/<agentId>/definition.json
+ * Windows: %APPDATA%/oneringai/agents/<agentId>/definition.json
+ *
+ * Features:
+ * - Cross-platform path handling
+ * - Safe agent ID sanitization
+ * - Atomic file operations
+ * - Automatic directory creation
+ * - Index file for fast listing
+ */
+
+/**
+ * Configuration for FileAgentDefinitionStorage
+ */
+interface FileAgentDefinitionStorageConfig {
+    /** Override the base directory (default: ~/.oneringai/agents) */
+    baseDirectory?: string;
+    /** Pretty-print JSON (default: true) */
+    prettyPrint?: boolean;
+}
+/**
+ * File-based storage for agent definitions
+ */
+declare class FileAgentDefinitionStorage implements IAgentDefinitionStorage {
+    private readonly baseDirectory;
+    private readonly indexPath;
+    private readonly prettyPrint;
+    private index;
+    constructor(config?: FileAgentDefinitionStorageConfig);
+    /**
+     * Save an agent definition
+     */
+    save(definition: StoredAgentDefinition): Promise<void>;
+    /**
+     * Load an agent definition
+     */
+    load(agentId: string): Promise<StoredAgentDefinition | null>;
+    /**
+     * Delete an agent definition
+     */
+    delete(agentId: string): Promise<void>;
+    /**
+     * Check if an agent definition exists
+     */
+    exists(agentId: string): Promise<boolean>;
+    /**
+     * List all agent definitions
+     */
+    list(options?: AgentDefinitionListOptions): Promise<AgentDefinitionSummary[]>;
+    /**
+     * Update metadata without loading full definition
+     */
+    updateMetadata(agentId: string, metadata: Partial<AgentDefinitionMetadata>): Promise<void>;
+    /**
+     * Get storage path
+     */
+    getPath(): string;
+    /**
+     * Rebuild the index by scanning all agent directories
+     */
+    rebuildIndex(): Promise<void>;
+    private ensureDirectory;
+    private loadRaw;
+    private loadIndex;
+    private saveIndex;
+    private updateIndex;
+    private removeFromIndex;
+    private definitionToIndexEntry;
+}
+/**
+ * Create a FileAgentDefinitionStorage with default configuration
+ */
+declare function createFileAgentDefinitionStorage(config?: FileAgentDefinitionStorageConfig): FileAgentDefinitionStorage;
 
 /**
  * Complete description of an LLM model including capabilities, pricing, and features
@@ -8480,7 +8518,7 @@ declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-01-31T15:34:33.370Z
+ * Generated at: 2026-01-31T16:40:11.783Z
  *
  * To regenerate: npm run generate:tools
  */
@@ -8654,7 +8692,7 @@ declare class ProviderConfigAgent {
 type AgentMode = 'interactive' | 'planning' | 'executing';
 interface UniversalAgentSessionConfig$1 {
     /** Storage backend for sessions */
-    storage: ISessionStorage;
+    storage: IContextStorage;
     /** Resume existing session by ID */
     id?: string;
     /** Auto-save session after each interaction */
@@ -8958,15 +8996,11 @@ declare class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAg
      */
     static resume(sessionId: string, config: Omit<UniversalAgentConfig, 'session'> & {
         session: {
-            storage: ISessionStorage;
+            storage: IContextStorage;
         };
     }): Promise<UniversalAgent>;
     private constructor();
     protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
-    protected prepareSessionState(): void;
-    protected restoreSessionState(session: Session): Promise<void>;
-    protected getSerializedPlan(): SerializedPlan | undefined;
-    saveSession(): Promise<void>;
     /**
      * Chat with the agent - the main entry point
      */
@@ -9345,4 +9379,4 @@ declare function createPersistentInstructions(config: PersistentInstructionsConf
  */
 declare function setupPersistentInstructions(agentContext: AgentContext, config: PersistentInstructionsConfig): PersistentInstructionsPlugin;
 
-export { AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContext, AgentContextConfig, AgentContextFeatures, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, ConnectorTools, ConsoleMetrics, ContextBudget, ContextManagerConfig, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DependencyCycleError, type DirectCallOptions, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileConnectorStorage, type FileConnectorStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileSearchSource, type FileSearchSourceConfig, FileSessionStorage, type FileSessionStorageConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentStateStorage, type IAgentStorage, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, IContextCompactor, IContextComponent, IContextStrategy, IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMCPClient, IMemoryStorage, INTROSPECTION_INSTRUCTIONS, IN_CONTEXT_MEMORY_INSTRUCTIONS, IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISessionStorage, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, InContextMemoryConfig, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryPriority, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, PERSISTENT_INSTRUCTIONS_INSTRUCTIONS, ParallelTasksError, PersistentInstructionsConfig, PersistentInstructionsPlugin, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, PlanningAgent, type PlanningAgentConfig, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, ResearchAgent, type ResearchAgentConfig, type ResearchAgentHooks, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult$1 as SearchResult, type SegmentTimestamp, SerializedAgentContextState, SerializedApprovalState, type SerializedHistory, type SerializedHistoryEntry, type SerializedHistoryState, type SerializedMemory, type SerializedMemoryEntry, type SerializedPlan, SerializedToolState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type Session, type SessionFilter, SessionManager, type SessionManagerConfig, type SessionManagerEvent, type SessionMetadata, type SessionMetrics, type SessionSummary, type ShellToolConfig, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredConnectorConfig, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, TaskTimeoutError, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, TokenContentType, ToolCall, type ToolCategory, ToolExecutionError, ToolFunction, ToolManager, ToolNotFoundError, ToolPermissionManager, type ToolRegistryEntry, ToolTimeoutError, type TransportConfig, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, WORKING_MEMORY_INSTRUCTIONS, WebSearchSource, type WebSearchSourceConfig, type WordTimestamp, WorkingMemory, WorkingMemoryConfig, type WriteFileResult, addHistoryEntry, addJitter, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildFeatureInstructions, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllInstructions, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, AdaptiveStrategy, Agent, type AgentConfig$1 as AgentConfig, AgentContext, AgentContextConfig, AgentContextFeatures, type AgentDefinitionListOptions, type AgentDefinitionMetadata, type AgentDefinitionSummary, type AgentHandle, type AgentMetrics, type AgentMode, AgentPermissionsConfig, AgentResponse, type AgentSessionConfig, type AgentState, type AgentStatus, AgenticLoopEvents, AggressiveCompactionStrategy, ApproximateTokenEstimator, AudioFormat, AuditEntry, type BackoffConfig, type BackoffStrategyType, BaseMediaProvider, BaseProvider, type BaseProviderConfig$1 as BaseProviderConfig, type BaseProviderResponse, BaseTextProvider, type BashResult, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, type CheckpointStrategy, CircuitBreaker, CircuitBreakerMetrics, CircuitState, type ClipboardImageResult, Connector, ConnectorConfig, ConnectorConfigResult, ConnectorConfigStore, ConnectorFetchOptions, ConnectorTools, ConsoleMetrics, ContextBudget, ContextManagerConfig, ContextSessionMetadata, ContextSessionSummary, ContextStorageListOptions, type ConversationMessage, DEFAULT_BACKOFF_CONFIG, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_SHELL_CONFIG, DependencyCycleError, type DirectCallOptions, type EditFileResult, type ErrorContext$1 as ErrorContext, ErrorHandler, type ErrorHandlerConfig, type ErrorHandlerEvents, ExecutionContext, ExecutionMetrics, type ExecutionResult, type ExtendedFetchOptions, type ExternalDependency, type ExternalDependencyEvents, ExternalDependencyHandler, type FetchedContent, FileAgentDefinitionStorage, type FileAgentDefinitionStorageConfig, FileConnectorStorage, type FileConnectorStorageConfig, FileContextStorage, type FileContextStorageConfig, FilePersistentInstructionsStorage, type FilePersistentInstructionsStorageConfig, FileSearchSource, type FileSearchSourceConfig, FileStorage, type FileStorageConfig, type FilesystemToolConfig, FrameworkLogger, FunctionToolDefinition, type GeneratedPlan, type GenericAPICallArgs, type GenericAPICallResult, type GenericAPIToolOptions, type GlobResult, type GrepMatch, type GrepResult, type HTTPTransportConfig, type HistoryManagerEvents, type HistoryMessage, HistoryMode, HookConfig, type IAgentDefinitionStorage, type IAgentStateStorage, type IAgentStorage, IBaseModelDescription, type ICapabilityProvider, type IConnectorConfigStorage, IContextCompactor, IContextComponent, IContextStorage, IContextStrategy, IDisposable, type IHistoryManager, type IHistoryManagerConfig, type IHistoryStorage, IImageProvider, type ILLMDescription, type IMCPClient, IMemoryStorage, INTROSPECTION_INSTRUCTIONS, IN_CONTEXT_MEMORY_INSTRUCTIONS, IPersistentInstructionsStorage, type IPlanStorage, IProvider, type IResearchSource, type ISTTModelDescription, type IScrapeProvider, type ISearchProvider, type ISpeechToTextProvider, type ITTSModelDescription, ITextProvider, type ITextToSpeechProvider, ITokenEstimator, ITokenStorage, type IVideoModelDescription, type IVideoProvider, type IVoiceInfo, IdempotencyCache, InContextMemoryConfig, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InputItem, type IntentAnalysis, InvalidConfigError, InvalidToolArgumentsError, type JSONExtractionResult, LLMResponse, LLM_MODELS, LazyCompactionStrategy, type LogEntry, type LogLevel, type LoggerConfig, MCPClient, type MCPClientConnectionState, type MCPClientState, type MCPConfiguration, MCPConnectionError, MCPError, type MCPPrompt, type MCPPromptResult, MCPProtocolError, MCPRegistry, type MCPResource, type MCPResourceContent, MCPResourceError, type MCPServerCapabilities, type MCPServerConfig, MCPTimeoutError, type MCPTool, MCPToolError, type MCPToolResult, type MCPTransportType, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEntry, MemoryEvictionCompactor, MemoryScope, MemoryStorage, MessageBuilder, MessageRole, type MetricTags, type MetricsCollector, type MetricsCollectorType, ModeManager, type ModeManagerEvents, type ModeState, ModelCapabilities, ModelNotSupportedError, NoOpMetrics, type OAuthConfig, type OAuthFlow, OAuthManager, PERSISTENT_INSTRUCTIONS_INSTRUCTIONS, ParallelTasksError, PersistentInstructionsConfig, PersistentInstructionsPlugin, type Plan, type PlanChange, type PlanConcurrency, type PlanExecutionResult, PlanExecutor, type PlanExecutorConfig, type PlanExecutorEvents, type PlanInput, type PlanResult, type PlanStatus, type PlanUpdateOptions, type PlanUpdates, PlanningAgent, type PlanningAgentConfig, ProactiveCompactionStrategy, ProviderAuthError, ProviderCapabilities, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, type RateLimiterConfig, type RateLimiterMetrics, type ReadFileResult, ResearchAgent, type ResearchAgentConfig, type ResearchAgentHooks, type FetchOptions as ResearchFetchOptions, type ResearchFinding, type ResearchPlan, type ResearchProgress, type ResearchQuery, type ResearchResult, type SearchOptions as ResearchSearchOptions, type SearchResponse as ResearchSearchResponse, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, type STTModelCapabilities, type STTOptions, type STTOutputFormat$1 as STTOutputFormat, type STTResponse, STT_MODELS, STT_MODEL_REGISTRY, type ScrapeFeature, type ScrapeOptions, ScrapeProvider, type ScrapeProviderConfig, type ScrapeProviderFallbackConfig, type ScrapeResponse, type ScrapeResult, type SearchOptions$1 as SearchOptions, SearchProvider, type SearchProviderConfig, type SearchResponse$1 as SearchResponse, type SearchResult$1 as SearchResult, type SegmentTimestamp, SerializedAgentContextState, type SerializedHistoryState, SerperProvider, type ServiceCategory, type ServiceDefinition, type ServiceInfo, type ServiceToolFactory, type ServiceType, Services, type ShellToolConfig, type SimpleVideoGenerateOptions, type SourceCapabilities, type SourceResult, SpeechToText, type SpeechToTextConfig, type StdioTransportConfig, type StoredAgentDefinition, type StoredAgentType, type StoredConnectorConfig, StoredContextSession, type StoredToken, StreamEvent, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, type TTSModelCapabilities, type TTSOptions, type TTSResponse, TTS_MODELS, TTS_MODEL_REGISTRY, type Task, TaskAgent, type TaskAgentConfig, type ErrorContext as TaskAgentErrorContext, type TaskAgentHooks, type TaskAgentSessionConfig, type AgentConfig as TaskAgentStateConfig, type TaskCondition, type TaskContext, type TaskExecution, type TaskFailure, type TaskInput, type TaskProgress, type TaskResult, type TaskStatus, TaskTimeoutError, type TaskValidation, TaskValidationError, type TaskValidationResult, TavilyProvider, TextGenerateOptions, TextToSpeech, type TextToSpeechConfig, TokenBucketRateLimiter, TokenContentType, ToolCall, type ToolCategory, ToolExecutionError, ToolFunction, ToolManager, ToolNotFoundError, ToolPermissionManager, type ToolRegistryEntry, ToolTimeoutError, type TransportConfig, TruncateCompactor, UniversalAgent, type UniversalAgentConfig$1 as UniversalAgentConfig, type UniversalAgentEvents, type UniversalAgentPlanningConfig$1 as UniversalAgentPlanningConfig, type UniversalAgentSessionConfig$1 as UniversalAgentSessionConfig, type UniversalEvent, type UniversalResponse, type ToolCallResult as UniversalToolCallResult, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VendorOptionSchema, type VideoExtendOptions, type VideoGenerateOptions, VideoGeneration, type VideoGenerationCreateOptions, type VideoJob, type VideoModelCapabilities, type VideoModelPricing, type VideoResponse, type VideoStatus, WORKING_MEMORY_INSTRUCTIONS, WebSearchSource, type WebSearchSourceConfig, type WordTimestamp, WorkingMemory, WorkingMemoryConfig, type WriteFileResult, addJitter, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildFeatureInstructions, buildQueryString, calculateBackoff, calculateCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllInstructions, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isExcludedExtension, isKnownService, isMetaTool, isTaskBlocked, isTerminalStatus, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, index as tools, updateTaskStatus, validatePath, writeFile };

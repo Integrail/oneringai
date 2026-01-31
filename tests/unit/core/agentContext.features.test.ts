@@ -447,7 +447,8 @@ describe('AgentContext Feature Configuration', () => {
 
       const state = await context.getState();
 
-      expect(state.memoryStats).toBeUndefined();
+      // Memory should be undefined when feature is disabled
+      expect(state.memory).toBeUndefined();
       // Permissions state should have default empty values
       expect(state.permissions.approvals).toEqual({});
     });
@@ -461,8 +462,50 @@ describe('AgentContext Feature Configuration', () => {
 
       const state = await context.getState();
 
-      expect(state.memoryStats).toBeDefined();
-      expect(state.memoryStats?.entryCount).toBe(1);
+      // Memory should contain full serialized entries
+      expect(state.memory).toBeDefined();
+      expect(state.memory?.version).toBe(1);
+      expect(state.memory?.entries).toHaveLength(1);
+      expect(state.memory?.entries[0].key).toBe('key');
+      expect(state.memory?.entries[0].description).toBe('desc');
+      expect(state.memory?.entries[0].value).toBe('value');
+    });
+
+    it('should restore state correctly including memory entries', async () => {
+      // Create context and store some data
+      context = AgentContext.create({
+        features: { memory: true, history: true },
+      });
+
+      await context.memory!.store('user_pref', 'User preferences', { theme: 'dark' });
+      await context.memory!.store('session_data', 'Session data', { count: 42 });
+      context.addMessageSync('user', 'Hello');
+      context.addMessageSync('assistant', 'Hi there!');
+
+      // Serialize state
+      const state = await context.getState();
+
+      // Create new context and restore
+      const context2 = AgentContext.create({
+        features: { memory: true, history: true },
+      });
+
+      await context2.restoreState(state);
+
+      // Verify memory was restored
+      const restoredPref = await context2.memory!.retrieve('user_pref');
+      expect(restoredPref).toEqual({ theme: 'dark' });
+
+      const restoredSession = await context2.memory!.retrieve('session_data');
+      expect(restoredSession).toEqual({ count: 42 });
+
+      // Verify history was restored
+      const history = context2.getHistory();
+      expect(history).toHaveLength(2);
+      expect(history[0].content).toBe('Hello');
+      expect(history[1].content).toBe('Hi there!');
+
+      context2.destroy();
     });
   });
 });

@@ -90,6 +90,7 @@ interface PersistentInstructions {
   content: string;
   path: string;
   length: number;
+  enabled: boolean;
 }
 
 interface PreparedContext {
@@ -382,7 +383,7 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
             )}
 
             {/* Persistent Instructions Section */}
-            {data.persistentInstructions && data.persistentInstructions.content && (
+            {data.persistentInstructions && (
               <div className="internals-section">
                 <div
                   className="internals-section__header"
@@ -392,17 +393,31 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
                   <BookOpen size={14} />
                   <span>Persistent Instructions</span>
                   <span className="internals-section__badge">
-                    {data.persistentInstructions.length} chars
+                    {data.persistentInstructions.enabled
+                      ? (data.persistentInstructions.length > 0 ? `${data.persistentInstructions.length} chars` : 'empty')
+                      : 'off'}
                   </span>
                 </div>
                 {expandedSections.has('persistentInstructions') && (
                   <div className="internals-section__body">
-                    <div className="text-muted small mb-2">
-                      <code>{data.persistentInstructions.path}</code>
-                    </div>
-                    <pre className="internals-code-block">
-                      {data.persistentInstructions.content || '(empty)'}
-                    </pre>
+                    {!data.persistentInstructions.enabled ? (
+                      <div className="text-muted small p-2">
+                        Feature disabled. Enable in agent settings to use persistent instructions.
+                      </div>
+                    ) : data.persistentInstructions.content ? (
+                      <>
+                        <div className="text-muted small mb-2">
+                          <code>{data.persistentInstructions.path}</code>
+                        </div>
+                        <pre className="internals-code-block">
+                          {data.persistentInstructions.content}
+                        </pre>
+                      </>
+                    ) : (
+                      <div className="text-muted small p-2">
+                        No instructions set yet. Use <code>instructions_set</code> or <code>instructions_append</code> tools to add instructions.
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

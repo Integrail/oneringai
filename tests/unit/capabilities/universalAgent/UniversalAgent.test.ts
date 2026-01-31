@@ -6,10 +6,56 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { UniversalAgent } from '../../../../src/capabilities/universalAgent/UniversalAgent.js';
 import { Connector } from '../../../../src/core/Connector.js';
 import { Vendor } from '../../../../src/core/Vendor.js';
-import { InMemorySessionStorage } from '../../../../src/infrastructure/storage/InMemorySessionStorage.js';
+import type { IContextStorage, StoredContextSession, ContextSessionSummary, ContextSessionMetadata } from '../../../../src/domain/interfaces/IContextStorage.js';
+import type { SerializedAgentContextState } from '../../../../src/core/AgentContext.js';
 import type { ToolFunction } from '../../../../src/domain/entities/Tool.js';
 import type { LLMResponse } from '../../../../src/domain/entities/Response.js';
 import type { UniversalResponse } from '../../../../src/capabilities/universalAgent/types.js';
+
+/**
+ * Create a mock IContextStorage for testing
+ */
+function createMockStorage(): IContextStorage & { sessions: Map<string, StoredContextSession> } {
+  const sessions = new Map<string, StoredContextSession>();
+
+  return {
+    sessions,
+    async save(sessionId: string, state: SerializedAgentContextState, metadata?: ContextSessionMetadata): Promise<void> {
+      const now = new Date().toISOString();
+      const existing = sessions.get(sessionId);
+      sessions.set(sessionId, {
+        version: 1,
+        sessionId,
+        createdAt: existing?.createdAt ?? now,
+        lastSavedAt: now,
+        state,
+        metadata: metadata ?? {},
+      });
+    },
+    async load(sessionId: string): Promise<StoredContextSession | null> {
+      return sessions.get(sessionId) ?? null;
+    },
+    async delete(sessionId: string): Promise<void> {
+      sessions.delete(sessionId);
+    },
+    async exists(sessionId: string): Promise<boolean> {
+      return sessions.has(sessionId);
+    },
+    async list(): Promise<ContextSessionSummary[]> {
+      return Array.from(sessions.values()).map(s => ({
+        sessionId: s.sessionId,
+        createdAt: new Date(s.createdAt),
+        lastSavedAt: new Date(s.lastSavedAt),
+        messageCount: s.state.core?.history?.length ?? 0,
+        memoryEntryCount: s.state.memory?.entries?.length ?? 0,
+        metadata: s.metadata,
+      }));
+    },
+    getPath(): string {
+      return '/mock/storage';
+    },
+  };
+}
 
 // Helper to create mock agent.run response
 function createMockResponse(text: string, toolCalls?: any[]): LLMResponse {
@@ -142,13 +188,12 @@ describe('UniversalAgent', () => {
         connector: 'test',
         model: 'gpt-4',
         session: {
-          storage: new InMemorySessionStorage(),
+          storage: createMockStorage(),
           autoSave: true,
         },
       });
 
       expect(agent.hasSession()).toBe(true);
-      expect(agent.getSessionId()).toBeDefined();
     });
 
     it('should throw error if planning model differs from execution model', () => {
@@ -652,10 +697,10 @@ describe('UniversalAgent', () => {
   });
 
   describe('session persistence', () => {
-    let storage: InMemorySessionStorage;
+    let storage: IContextStorage & { sessions: Map<string, StoredContextSession> };
 
     beforeEach(() => {
-      storage = new InMemorySessionStorage();
+      storage = createMockStorage();
 
       agent = UniversalAgent.create({
         connector: 'test',
@@ -669,10 +714,11 @@ describe('UniversalAgent', () => {
     });
 
     it('should save session manually', async () => {
-      await agent.saveSession();
+      // Need to provide a sessionId when saving
+      await agent.saveSession('test-session-001');
 
       const sessionId = agent.getSessionId();
-      expect(sessionId).toBeDefined();
+      expect(sessionId).toBe('test-session-001');
 
       const session = await storage.load(sessionId!);
       expect(session).toBeDefined();
@@ -682,9 +728,10 @@ describe('UniversalAgent', () => {
       setupAgentMock(agent, () => createMockResponse('Hello response'));
 
       await agent.chat('Hello');
-      await agent.saveSession();
+      const sessionId = 'test-resume-session';
+      await agent.saveSession(sessionId);
 
-      const sessionId = agent.getSessionId()!;
+      expect(agent.getSessionId()).toBe(sessionId);
 
       // Create new agent from session
       const resumed = await UniversalAgent.resume(sessionId, {
@@ -699,9 +746,9 @@ describe('UniversalAgent', () => {
 
     it('should preserve mode in session', async () => {
       (agent as any).modeManager.enterPlanning('test');
-      await agent.saveSession();
+      const sessionId = 'test-mode-session';
+      await agent.saveSession(sessionId);
 
-      const sessionId = agent.getSessionId()!;
       const resumed = await UniversalAgent.resume(sessionId, {
         connector: 'test',
         model: 'gpt-4',
@@ -730,9 +777,9 @@ describe('UniversalAgent', () => {
       await agent.chat('complex task with multiple steps');
       const plan = agent.getPlan();
 
-      await agent.saveSession();
+      const sessionId = 'test-plan-session';
+      await agent.saveSession(sessionId);
 
-      const sessionId = agent.getSessionId()!;
       const resumed = await UniversalAgent.resume(sessionId, {
         connector: 'test',
         model: 'gpt-4',

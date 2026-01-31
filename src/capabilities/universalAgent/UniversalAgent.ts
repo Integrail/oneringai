@@ -18,7 +18,6 @@
 
 import { BaseAgent, BaseAgentConfig, BaseSessionConfig } from '../../core/BaseAgent.js';
 import { Agent } from '../../core/Agent.js';
-import { Session, ISessionStorage, SerializedPlan } from '../../core/SessionManager.js';
 import { Plan, Task, createPlan, createTask, TaskInput } from '../../domain/entities/Task.js';
 import { StreamEventType } from '../../domain/entities/StreamEvent.js';
 import type { WorkingMemoryConfig } from '../../domain/entities/Memory.js';
@@ -154,7 +153,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
    */
   static async resume(
     sessionId: string,
-    config: Omit<UniversalAgentConfig, 'session'> & { session: { storage: ISessionStorage } }
+    config: Omit<UniversalAgentConfig, 'session'> & { session: { storage: import('../../domain/interfaces/IContextStorage.js').IContextStorage } }
   ): Promise<UniversalAgent> {
     const agent = new UniversalAgent({
       ...config,
@@ -166,6 +165,13 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
 
     // Wait for session to load
     await agent.ensureSessionLoaded();
+
+    // Restore currentPlan from modeManager after session loads
+    // (modeManager state is restored via plugin during session load)
+    const pendingPlan = agent.modeManager.getPendingPlan();
+    if (pendingPlan) {
+      agent.currentPlan = pendingPlan;
+    }
 
     return agent;
   }
@@ -206,6 +212,19 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       this.emit('mode:changed', data);
     });
 
+    // Register ModeManager plugin for session persistence
+    const modeManager = this.modeManager;
+    this._agentContext.registerPlugin({
+      name: 'universalAgent.modeManager',
+      prepare: async () => '',
+      getState: () => modeManager.serialize(),
+      restoreState: (state) => {
+        if (state && typeof state === 'object') {
+          modeManager.restore(state as ReturnType<ModeManager['serialize']>);
+        }
+      },
+    });
+
     // Initialize planning agent if planning is enabled
     const planningEnabled = config.planning?.enabled !== false;
     if (planningEnabled) {
@@ -239,81 +258,6 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
 
   protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent' {
     return 'universal-agent';
-  }
-
-  protected prepareSessionState(): void {
-    // Store mode state and execution history
-    if (this._session) {
-      this._session.mode = this.modeManager.getMode();
-      this._session.custom['modeState'] = this.modeManager.serialize();
-      this._session.custom['executionHistory'] = this.executionHistory;
-    }
-  }
-
-  protected async restoreSessionState(session: Session): Promise<void> {
-    // Restore mode state
-    if (session.custom['modeState']) {
-      this.modeManager.restore(session.custom['modeState'] as ReturnType<ModeManager['serialize']>);
-    }
-
-    // Restore plan
-    if (session.plan?.data) {
-      this.currentPlan = session.plan.data as Plan;
-      this._planPlugin.setPlan(this.currentPlan);
-    }
-
-    // Restore execution history
-    if (session.custom['executionHistory']) {
-      this.executionHistory = session.custom['executionHistory'] as typeof this.executionHistory;
-    }
-
-    // Restore inherited AgentContext state (includes history)
-    if (session.custom['agentContextState']) {
-      await this._agentContext.restoreState(session.custom['agentContextState'] as any);
-    }
-
-    this._logger.debug({ sessionId: session.id }, 'UniversalAgent session state restored');
-  }
-
-  protected getSerializedPlan(): SerializedPlan | undefined {
-    if (!this.currentPlan) {
-      return undefined;
-    }
-    return {
-      version: 1,
-      data: this.currentPlan,
-    };
-  }
-
-  // Override saveSession to handle async AgentContext serialization
-  async saveSession(): Promise<void> {
-    // Ensure any pending session load is complete
-    await this.ensureSessionLoaded();
-
-    if (!this._sessionManager || !this._session) {
-      throw new Error(
-        'Session not enabled. Configure session in agent config to use this feature.'
-      );
-    }
-
-    // Update common session state (use inherited _agentContext.tools)
-    this._session.toolState = this._agentContext.tools.getState();
-    this._session.custom['approvalState'] = this._permissionManager.getState();
-
-    // Get plan state
-    const plan = this.getSerializedPlan();
-    if (plan) {
-      this._session.plan = plan;
-    }
-
-    // Store AgentContext state (includes history, memory, etc.)
-    this._session.custom['agentContextState'] = await this._agentContext.getState();
-
-    // Let prepareSessionState add mode state and execution history
-    this.prepareSessionState();
-
-    await this._sessionManager.save(this._session);
-    this._logger.debug({ sessionId: this._session.id }, 'UniversalAgent session saved');
   }
 
   // ============================================================================
@@ -356,7 +300,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     });
 
     // Auto-save session if enabled
-    if (this._config.session?.autoSave && this._session) {
+    if (this._config.session?.autoSave && this.hasSession()) {
       await this.saveSession().catch(() => {
         // Ignore auto-save errors
       });

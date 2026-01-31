@@ -5,7 +5,7 @@
  * - Connector resolution
  * - Tool manager initialization
  * - Permission manager initialization
- * - Session management
+ * - Session management (via AgentContext)
  * - Lifecycle/cleanup
  *
  * This is an INTERNAL class - not exported in the public API.
@@ -15,11 +15,9 @@
 import { EventEmitter } from 'eventemitter3';
 import { Connector } from './Connector.js';
 import { ToolManager } from './ToolManager.js';
-import { SessionManager, Session, ISessionStorage, SerializedPlan, SerializedMemory } from './SessionManager.js';
 import { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
-import type { AgentPermissionsConfig, SerializedApprovalState } from './permissions/types.js';
+import type { AgentPermissionsConfig } from './permissions/types.js';
 import type { ToolFunction } from '../domain/entities/Tool.js';
-import type { SerializedToolState } from './ToolManager.js';
 import { logger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
 import { AgentContext } from './AgentContext.js';
 import type { AgentContextConfig } from './AgentContext.js';
@@ -28,6 +26,7 @@ import type { ITextProvider } from '../domain/interfaces/ITextProvider.js';
 import type { LLMResponse } from '../domain/entities/Response.js';
 import type { InputItem } from '../domain/entities/Message.js';
 import type { StreamEvent } from '../domain/entities/StreamEvent.js';
+import type { IContextStorage, ContextSessionMetadata } from '../domain/interfaces/IContextStorage.js';
 
 /**
  * Options for tool registration
@@ -40,11 +39,11 @@ export interface ToolRegistrationOptions {
 }
 
 /**
- * Base session configuration (shared by all agent types)
+ * Session configuration using AgentContext persistence
  */
 export interface BaseSessionConfig {
-  /** Storage backend for sessions */
-  storage: ISessionStorage;
+  /** Storage backend for context sessions */
+  storage: IContextStorage;
   /** Resume existing session by ID */
   id?: string;
   /** Auto-save session after each interaction */
@@ -194,7 +193,7 @@ export interface BaseAgentConfig {
   /** Provide a pre-configured ToolManager (advanced) */
   toolManager?: ToolManager;
 
-  /** Session configuration */
+  /** Session configuration (uses AgentContext persistence) */
   session?: BaseSessionConfig;
 
   /** Permission configuration */
@@ -268,15 +267,17 @@ export abstract class BaseAgent<
 
   // ===== Protected State =====
   protected _config: TConfig;
-  protected _agentContext: AgentContext;  // SINGLE SOURCE OF TRUTH for tools
+  protected _agentContext: AgentContext;  // SINGLE SOURCE OF TRUTH for tools and sessions
   protected _permissionManager: ToolPermissionManager;
-  protected _sessionManager: SessionManager | null = null;
-  protected _session: Session | null = null;
-  protected _pendingSessionLoad: Promise<void> | null = null;
   protected _isDestroyed = false;
   protected _cleanupCallbacks: Array<() => void | Promise<void>> = [];
   protected _logger: FrameworkLogger;
   protected _lifecycleHooks: AgentLifecycleHooks;
+
+  // Session state
+  protected _sessionConfig: BaseSessionConfig | null = null;
+  protected _autoSaveInterval: ReturnType<typeof setInterval> | null = null;
+  protected _pendingSessionLoad: Promise<boolean> | null = null;
 
   // Lazy-initialized provider for direct calls
   private _directProvider: ITextProvider | null = null;
@@ -302,7 +303,7 @@ export abstract class BaseAgent<
       connector: this.connector.name,
     });
 
-    // Initialize AgentContext FIRST (single source of truth for tools)
+    // Initialize AgentContext FIRST (single source of truth for tools and sessions)
     this._agentContext = this.initializeAgentContext(config);
 
     // Register tools with AgentContext if provided
@@ -322,48 +323,9 @@ export abstract class BaseAgent<
   // ===== Abstract Methods =====
 
   /**
-   * Get the agent type identifier for session serialization
+   * Get the agent type identifier
    */
   protected abstract getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
-
-  /**
-   * Prepare session state before saving.
-   * Subclasses override to add their specific state (plan, memory, etc.)
-   *
-   * Default implementation does nothing - override in subclasses.
-   */
-  protected prepareSessionState(): void {
-    // Default: no additional state to prepare
-    // Subclasses override to add plan, memory, mode, etc.
-  }
-
-  /**
-   * Restore session state after loading.
-   * Subclasses override to restore their specific state (plan, memory, etc.)
-   * Called after tool state and approval state are restored.
-   *
-   * Default implementation does nothing - override in subclasses.
-   */
-  protected async restoreSessionState(_session: Session): Promise<void> {
-    // Default: no additional state to restore
-    // Subclasses override to restore plan, memory, mode, etc.
-  }
-
-  /**
-   * Get plan state for session serialization.
-   * Subclasses with plans override this.
-   */
-  protected getSerializedPlan(): SerializedPlan | undefined {
-    return undefined;
-  }
-
-  /**
-   * Get memory state for session serialization.
-   * Subclasses with working memory override this.
-   */
-  protected getSerializedMemory(): SerializedMemory | undefined {
-    return undefined;
-  }
 
   // ===== Protected Initialization Helpers =====
 
@@ -378,7 +340,7 @@ export abstract class BaseAgent<
   }
 
   /**
-   * Initialize AgentContext (single source of truth for tools).
+   * Initialize AgentContext (single source of truth for tools and sessions).
    * If AgentContext is provided, use it directly.
    * Otherwise, create a new one with the provided configuration.
    */
@@ -393,43 +355,14 @@ export abstract class BaseAgent<
     // to allow subclasses to wrap or modify tools before registration
     const contextConfig: AgentContextConfig = {
       model: config.model,
+      agentId: config.name,
+      // Include storage if session config is provided
+      storage: config.session?.storage,
       // Subclasses can add systemPrompt via their config
       ...(typeof config.context === 'object' && config.context !== null ? config.context : {}),
     };
 
     return AgentContext.create(contextConfig);
-  }
-
-  /**
-   * Initialize tool manager with provided tools
-   * @deprecated Use _agentContext.tools instead. This method is kept for backward compatibility.
-   */
-  protected initializeToolManager(
-    existingManager?: ToolManager,
-    tools?: ToolFunction[],
-    options?: ToolRegistrationOptions
-  ): ToolManager {
-    const manager = existingManager ?? new ToolManager();
-
-    if (tools) {
-      this.registerTools(manager, tools, options);
-    }
-
-    return manager;
-  }
-
-  /**
-   * Register multiple tools with the tool manager
-   * Utility method to avoid code duplication across agent types
-   */
-  protected registerTools(
-    manager: ToolManager,
-    tools: ToolFunction[],
-    options?: ToolRegistrationOptions
-  ): void {
-    for (const tool of tools) {
-      manager.register(tool, options);
-    }
   }
 
   /**
@@ -455,28 +388,33 @@ export abstract class BaseAgent<
 
   /**
    * Initialize session management (call from subclass constructor after other setup)
+   * Now uses AgentContext.save()/load() for persistence.
    */
   protected initializeSession(sessionConfig?: BaseSessionConfig): void {
     if (!sessionConfig) {
       return;
     }
 
-    this._sessionManager = new SessionManager({ storage: sessionConfig.storage });
+    this._sessionConfig = sessionConfig;
 
     if (sessionConfig.id) {
       // Resume existing session (async)
-      this._pendingSessionLoad = this.loadSessionInternal(sessionConfig.id);
-    } else {
-      // Create new session
-      this._session = this._sessionManager.create(this.getAgentType(), {
-        title: this.name,
-      });
+      this._pendingSessionLoad = this.loadSession(sessionConfig.id);
+    }
 
-      // Setup auto-save if configured
-      if (sessionConfig.autoSave) {
-        const interval = sessionConfig.autoSaveIntervalMs ?? 30000;
-        this._sessionManager.enableAutoSave(this._session, interval);
-      }
+    // Setup auto-save if configured
+    if (sessionConfig.autoSave) {
+      const interval = sessionConfig.autoSaveIntervalMs ?? 30000;
+      this._autoSaveInterval = setInterval(async () => {
+        try {
+          if (this._agentContext.sessionId) {
+            await this._agentContext.save();
+            this._logger.debug({ sessionId: this._agentContext.sessionId }, 'Auto-saved session');
+          }
+        } catch (error) {
+          this._logger.error({ error: (error as Error).message }, 'Auto-save failed');
+        }
+      }, interval);
     }
   }
 
@@ -490,129 +428,74 @@ export abstract class BaseAgent<
     }
   }
 
-  /**
-   * Internal method to load session
-   */
-  protected async loadSessionInternal(sessionId: string): Promise<void> {
-    if (!this._sessionManager) return;
-
-    try {
-      const session = await this._sessionManager.load(sessionId);
-      if (session) {
-        this._session = session;
-
-        // Restore tool state
-        if (session.toolState) {
-          this._agentContext.tools.loadState(session.toolState as SerializedToolState);
-        }
-
-        // Restore approval state (if permission inheritance is enabled)
-        const inheritFromSession = this._config.permissions?.inheritFromSession !== false;
-        if (inheritFromSession && session.custom['approvalState']) {
-          this._permissionManager.loadState(
-            session.custom['approvalState'] as SerializedApprovalState
-          );
-        }
-
-        // Let subclass restore its specific state (plan, memory, mode, etc.)
-        await this.restoreSessionState(session);
-
-        this._logger.info({ sessionId }, 'Session loaded');
-
-        // Setup auto-save if configured
-        if (this._config.session?.autoSave) {
-          const interval = this._config.session.autoSaveIntervalMs ?? 30000;
-          this._sessionManager.enableAutoSave(this._session, interval);
-        }
-      } else {
-        this._logger.warn({ sessionId }, 'Session not found, creating new session');
-        this._session = this._sessionManager.create(this.getAgentType(), {
-          title: this.name,
-        });
-      }
-    } catch (error) {
-      this._logger.error(
-        { error: (error as Error).message, sessionId },
-        'Failed to load session'
-      );
-      throw error;
-    }
-  }
-
   // ===== Public Session API =====
 
   /**
    * Get the current session ID (if session is enabled)
+   * Delegates to AgentContext.
    */
   getSessionId(): string | null {
-    return this._session?.id ?? null;
+    return this._agentContext.sessionId;
   }
 
   /**
    * Check if this agent has session support enabled
    */
   hasSession(): boolean {
-    return this._session !== null;
+    return this._agentContext.storage !== null;
   }
 
   /**
-   * Get the current session (for advanced use)
+   * Save the current session to storage.
+   * Delegates to AgentContext.save().
+   *
+   * @param sessionId - Optional session ID (uses current or generates new)
+   * @param metadata - Optional session metadata
+   * @throws Error if storage is not configured
    */
-  getSession(): Session | null {
-    return this._session;
-  }
-
-  /**
-   * Save the current session to storage
-   * @throws Error if session is not enabled
-   */
-  async saveSession(): Promise<void> {
-    // Ensure any pending session load is complete
+  async saveSession(sessionId?: string, metadata?: ContextSessionMetadata): Promise<void> {
     await this.ensureSessionLoaded();
-
-    if (!this._sessionManager || !this._session) {
-      throw new Error(
-        'Session not enabled. Configure session in agent config to use this feature.'
-      );
-    }
-
-    // Update common session state
-    this._session.toolState = this._agentContext.tools.getState();
-    this._session.custom['approvalState'] = this._permissionManager.getState();
-
-    // Get plan and memory state from subclass hooks
-    const plan = this.getSerializedPlan();
-    if (plan) {
-      this._session.plan = plan;
-    }
-
-    const memory = this.getSerializedMemory();
-    if (memory) {
-      this._session.memory = memory;
-    }
-
-    // Let subclass add any additional specific state
-    this.prepareSessionState();
-
-    await this._sessionManager.save(this._session);
-    this._logger.debug({ sessionId: this._session.id }, 'Session saved');
+    await this._agentContext.save(sessionId, metadata);
+    this._logger.debug({ sessionId: this._agentContext.sessionId }, 'Session saved');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this.emit as any)('session:saved', { sessionId: this._agentContext.sessionId });
   }
 
   /**
-   * Update session custom data
+   * Load a session from storage.
+   * Delegates to AgentContext.load().
+   *
+   * @param sessionId - Session ID to load
+   * @returns true if session was found and loaded, false if not found
+   * @throws Error if storage is not configured
    */
-  updateSessionData(key: string, value: unknown): void {
-    if (!this._session) {
-      throw new Error('Session not enabled');
+  async loadSession(sessionId: string): Promise<boolean> {
+    const loaded = await this._agentContext.load(sessionId);
+    if (loaded) {
+      this._logger.info({ sessionId }, 'Session loaded');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (this.emit as any)('session:loaded', { sessionId });
+    } else {
+      this._logger.warn({ sessionId }, 'Session not found');
     }
-    this._session.custom[key] = value;
+    return loaded;
   }
 
   /**
-   * Get session custom data
+   * Check if a session exists in storage.
+   * Delegates to AgentContext.sessionExists().
    */
-  getSessionData<T = unknown>(key: string): T | undefined {
-    return this._session?.custom[key] as T | undefined;
+  async sessionExists(sessionId: string): Promise<boolean> {
+    return this._agentContext.sessionExists(sessionId);
+  }
+
+  /**
+   * Delete a session from storage.
+   * Delegates to AgentContext.deleteSession().
+   */
+  async deleteSession(sessionId?: string): Promise<void> {
+    await this._agentContext.deleteSession(sessionId);
+    this._logger.debug({ sessionId }, 'Session deleted');
   }
 
   // ===== Public Permission API =====
@@ -987,12 +870,10 @@ export abstract class BaseAgent<
 
     this._logger.debug('Agent destroy started');
 
-    // Cleanup session manager
-    if (this._sessionManager) {
-      if (this._session) {
-        this._sessionManager.stopAutoSave(this._session.id);
-      }
-      this._sessionManager.destroy();
+    // Stop auto-save interval
+    if (this._autoSaveInterval) {
+      clearInterval(this._autoSaveInterval);
+      this._autoSaveInterval = null;
     }
 
     // Cleanup AgentContext (handles tools, memory, cache, plugins)

@@ -15,12 +15,7 @@
 import { BaseAgent, BaseAgentConfig, BaseSessionConfig } from '../../core/BaseAgent.js';
 import { Connector } from '../../core/Connector.js';
 import { Agent } from '../../core/Agent.js';
-import {
-  Session,
-  ISessionStorage,
-  SerializedPlan,
-  SerializedMemory,
-} from '../../core/SessionManager.js';
+import type { IContextStorage } from '../../domain/interfaces/IContextStorage.js';
 import { ToolFunction } from '../../domain/entities/Tool.js';
 import { Plan, PlanInput, Task, TaskInput, TaskValidationResult, createPlan, createTask, detectDependencyCycle } from '../../domain/entities/Task.js';
 import { DependencyCycleError } from '../../domain/errors/AIErrors.js';
@@ -332,7 +327,7 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
    */
   static async resume(
     agentId: string,
-    options: { storage: IAgentStorage; tools?: ToolFunction[]; hooks?: TaskAgentHooks; session?: { storage: ISessionStorage } }
+    options: { storage: IAgentStorage; tools?: ToolFunction[]; hooks?: TaskAgentHooks; session?: { storage: IContextStorage } }
   ): Promise<TaskAgent> {
     const state = await options.storage.agent.load(agentId);
     if (!state) {
@@ -432,85 +427,6 @@ export class TaskAgent extends BaseAgent<TaskAgentConfig, TaskAgentEvents> {
 
   protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent' {
     return 'task-agent';
-  }
-
-  protected prepareSessionState(): void {
-    // TaskAgent-specific session state is handled by getSerializedPlan() and getSerializedMemory()
-    // Store any additional custom state here if needed
-  }
-
-  protected async restoreSessionState(session: Session): Promise<void> {
-    // Restore plan from session
-    if (session.plan?.data) {
-      this.state.plan = session.plan.data as Plan;
-    }
-
-    // Memory entries are stored in agent storage, not in session
-    // The session just tracks metadata - actual restoration happens through agentStorage.memory
-    this._logger.debug({ sessionId: session.id }, 'TaskAgent session state restored');
-  }
-
-  protected getSerializedPlan(): SerializedPlan | undefined {
-    if (!this.state.plan) {
-      return undefined;
-    }
-    return {
-      version: 1,
-      data: this.state.plan,
-    };
-  }
-
-  protected getSerializedMemory(): SerializedMemory | undefined {
-    // Note: This is called synchronously from saveSession, but we need async for memory index
-    // BaseAgent's saveSession will handle this, but we return undefined here
-    // and override saveSession to handle memory properly
-    return undefined;
-  }
-
-  // Override saveSession to handle async memory serialization
-  async saveSession(): Promise<void> {
-    // Ensure any pending session load is complete
-    await this.ensureSessionLoaded();
-
-    if (!this._sessionManager || !this._session) {
-      throw new Error(
-        'Session not enabled. Configure session in agent config to use this feature.'
-      );
-    }
-
-    // Update common session state (use inherited _agentContext.tools)
-    this._session.toolState = this._agentContext.tools.getState();
-    this._session.custom['approvalState'] = this._permissionManager.getState();
-
-    // Get plan state
-    const plan = this.getSerializedPlan();
-    if (plan) {
-      this._session.plan = plan;
-    }
-
-    // Get memory state (async) - from AgentContext (single source of truth)
-    // Only serialize memory if memory feature is enabled
-    if (this._agentContext.memory) {
-      const memoryIndex = await this._agentContext.memory.getIndex();
-      this._session.memory = {
-        version: 1,
-        entries: memoryIndex.entries.map((e) => ({
-          key: e.key,
-          description: e.description,
-          value: null, // Don't serialize full values, they're in agent storage
-          scope: e.scope,
-          sizeBytes: 0,
-          basePriority: e.effectivePriority,
-          pinned: e.pinned,
-        })),
-      };
-    }
-
-    // Let subclass add any additional specific state
-    this.prepareSessionState();
-
-    await this._sessionManager.save(this._session);
-    this._logger.debug({ sessionId: this._session.id }, 'TaskAgent session saved');
   }
 
   // ===== Component Initialization =====

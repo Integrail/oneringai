@@ -36,6 +36,8 @@ import type { ToolContext } from '../domain/interfaces/IToolContext.js';
 import type { SerializedToolState } from './ToolManager.js';
 import { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
 import type { AgentPermissionsConfig, SerializedApprovalState } from './permissions/types.js';
+import type { SerializedMemory } from '../capabilities/taskAgent/WorkingMemory.js';
+import type { IContextStorage, ContextSessionMetadata } from '../domain/interfaces/IContextStorage.js';
 import { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
 import type { IdempotencyCacheConfig, CacheStats } from './IdempotencyCache.js';
 import { WorkingMemory } from '../capabilities/taskAgent/WorkingMemory.js';
@@ -344,12 +346,31 @@ export interface AgentContextConfig {
 
   /** Auto-detect task type from plan (default: true) */
   autoDetectTaskType?: boolean;
+
+  // ===== Session Persistence =====
+
+  /**
+   * Storage backend for session persistence.
+   * If provided, enables save()/load() methods.
+   */
+  storage?: IContextStorage;
+
+  /**
+   * Session ID to load on creation.
+   * If provided with storage, the session will be automatically loaded.
+   */
+  sessionId?: string;
+
+  /**
+   * Session metadata (used when saving new sessions).
+   */
+  sessionMetadata?: ContextSessionMetadata;
 }
 
 /**
  * Default configuration
  */
-const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'agentId'>> & {
+const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'agentId' | 'storage' | 'sessionId' | 'sessionMetadata'>> & {
   history: Required<NonNullable<AgentContextConfig['history']>>;
 } = {
   model: 'gpt-4',
@@ -377,12 +398,8 @@ export interface SerializedAgentContextState {
     toolCalls: ToolCallRecord[];
   };
   tools: SerializedToolState;
-  // Note: WorkingMemory state is serialized by the memory manager itself
-  // when using SessionManager. Here we just track basic stats.
-  memoryStats?: {
-    entryCount: number;
-    sizeBytes: number;
-  };
+  /** Full WorkingMemory state (if memory feature enabled) */
+  memory?: SerializedMemory;
   permissions: SerializedApprovalState;
   plugins: Record<string, unknown>;
   config: {
@@ -481,6 +498,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private _explicitTaskType?: TaskType;
   private _autoDetectedTaskType?: TaskType;
   private _autoDetectTaskType: boolean = true;
+
+  // ===== Session Persistence =====
+  private _storage: IContextStorage | null = null;
+  private _sessionId: string | null = null;
+  private _sessionMetadata: ContextSessionMetadata = {};
 
   // ============================================================================
   // Constructor & Factory
@@ -601,6 +623,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     // Task type configuration
     this._explicitTaskType = config.taskType;
     this._autoDetectTaskType = config.autoDetectTaskType !== false;
+
+    // Session persistence configuration
+    this._storage = config.storage ?? null;
+    this._sessionMetadata = config.sessionMetadata ?? {};
+    this._sessionId = config.sessionId ?? null;
   }
 
   /**
@@ -647,6 +674,16 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   /** Agent ID (auto-generated or from config) */
   get agentId(): string {
     return this._agentId;
+  }
+
+  /** Current session ID (null if no session loaded/saved) */
+  get sessionId(): string | null {
+    return this._sessionId;
+  }
+
+  /** Storage backend for session persistence (null if not configured) */
+  get storage(): IContextStorage | null {
+    return this._storage;
   }
 
   // ============================================================================
@@ -1383,7 +1420,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    * Serializes ALL state:
    * - History and tool calls
    * - Tool enable/disable state
-   * - Memory state (if enabled)
+   * - Memory entries (if enabled)
    * - Permission state (if enabled)
    * - Plugin state
    * - Feature configuration
@@ -1397,14 +1434,10 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       }
     }
 
-    // Get memory stats if memory is enabled
-    let memoryStats: { entryCount: number; sizeBytes: number } | undefined;
+    // Serialize full memory state if memory is enabled
+    let memory: SerializedMemory | undefined;
     if (this._memory) {
-      const stats = await this._memory.getStats();
-      memoryStats = {
-        entryCount: stats.totalEntries,
-        sizeBytes: stats.totalSizeBytes,
-      };
+      memory = await this._memory.serialize();
     }
 
     // Get permission state if permissions are enabled
@@ -1424,7 +1457,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
         toolCalls: this._toolCalls,
       },
       tools: this._tools.getState(),
-      memoryStats,
+      memory,
       permissions: permissionState,
       plugins: pluginStates,
       config: {
@@ -1460,8 +1493,10 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       this._tools.loadState(state.tools);
     }
 
-    // Note: Memory state is managed by WorkingMemory + SessionManager separately
-    // AgentContext only tracks stats, not full memory content
+    // Restore memory entries (if memory feature enabled and state contains memory)
+    if (state.memory && this._memory) {
+      await this._memory.restore(state.memory);
+    }
 
     // Permission state (only if permissions feature is enabled)
     if (state.permissions && this._permissions) {
@@ -1474,6 +1509,129 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       if (plugin?.restoreState) {
         plugin.restoreState(pluginState);
       }
+    }
+  }
+
+  /**
+   * Save the current context state to storage.
+   *
+   * @param sessionId - Session ID to save as. If not provided, uses the current sessionId.
+   * @param metadata - Optional metadata to merge with existing session metadata.
+   * @throws Error if no storage is configured or no sessionId is available.
+   *
+   * @example
+   * ```typescript
+   * // Save to a new session
+   * await ctx.save('my-session-001', { title: 'Research on AI' });
+   *
+   * // Save to current session (must have been loaded or saved before)
+   * await ctx.save();
+   * ```
+   */
+  async save(
+    sessionId?: string,
+    metadata?: ContextSessionMetadata
+  ): Promise<void> {
+    if (!this._storage) {
+      throw new Error('No storage configured. Provide storage in AgentContextConfig to enable session persistence.');
+    }
+
+    const targetSessionId = sessionId ?? this._sessionId;
+    if (!targetSessionId) {
+      throw new Error('No sessionId provided and no current session. Provide a sessionId or load a session first.');
+    }
+
+    // Get current state
+    const state = await this.getState();
+
+    // Merge metadata
+    const finalMetadata: ContextSessionMetadata = {
+      ...this._sessionMetadata,
+      ...metadata,
+    };
+
+    // Save to storage
+    await this._storage.save(targetSessionId, state, finalMetadata);
+
+    // Update internal state
+    this._sessionId = targetSessionId;
+    this._sessionMetadata = finalMetadata;
+  }
+
+  /**
+   * Load a session from storage and restore its state.
+   *
+   * @param sessionId - Session ID to load.
+   * @returns true if the session was found and loaded, false if not found.
+   * @throws Error if no storage is configured.
+   *
+   * @example
+   * ```typescript
+   * const loaded = await ctx.load('my-session-001');
+   * if (loaded) {
+   *   console.log('Session restored!');
+   * } else {
+   *   console.log('Session not found, starting fresh.');
+   * }
+   * ```
+   */
+  async load(sessionId: string): Promise<boolean> {
+    if (!this._storage) {
+      throw new Error('No storage configured. Provide storage in AgentContextConfig to enable session persistence.');
+    }
+
+    // Load from storage
+    const stored = await this._storage.load(sessionId);
+    if (!stored) {
+      return false;
+    }
+
+    // Restore state
+    await this.restoreState(stored.state);
+
+    // Update internal state
+    this._sessionId = sessionId;
+    this._sessionMetadata = stored.metadata;
+
+    return true;
+  }
+
+  /**
+   * Check if a session exists in storage.
+   *
+   * @param sessionId - Session ID to check.
+   * @returns true if the session exists.
+   * @throws Error if no storage is configured.
+   */
+  async sessionExists(sessionId: string): Promise<boolean> {
+    if (!this._storage) {
+      throw new Error('No storage configured. Provide storage in AgentContextConfig to enable session persistence.');
+    }
+    return this._storage.exists(sessionId);
+  }
+
+  /**
+   * Delete a session from storage.
+   *
+   * @param sessionId - Session ID to delete. If not provided, deletes the current session.
+   * @throws Error if no storage is configured or no sessionId is available.
+   */
+  async deleteSession(sessionId?: string): Promise<void> {
+    if (!this._storage) {
+      throw new Error('No storage configured. Provide storage in AgentContextConfig to enable session persistence.');
+    }
+
+    const targetSessionId = sessionId ?? this._sessionId;
+    if (!targetSessionId) {
+      throw new Error('No sessionId provided and no current session.');
+    }
+
+    await this._storage.delete(targetSessionId);
+
+    // Clear current session if we deleted it
+    if (targetSessionId === this._sessionId) {
+      this._sessionId = null;
+      this._sessionMetadata = {};
     }
   }
 

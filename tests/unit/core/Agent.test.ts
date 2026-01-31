@@ -764,6 +764,36 @@ describe('Agent', () => {
   });
 
   describe('Session Loading Race Condition', () => {
+    /**
+     * Create a mock stored session with the proper IContextStorage format
+     */
+    function createMockStoredSession(sessionId: string) {
+      return {
+        version: 1,
+        sessionId,
+        createdAt: new Date().toISOString(),
+        lastSavedAt: new Date().toISOString(),
+        state: {
+          version: 1,
+          core: {
+            systemPrompt: '',
+            instructions: '',
+            history: [],
+            toolCalls: [],
+          },
+          tools: { enabled: {}, namespaces: {}, priorities: {} },
+          permissions: { approvals: {} },
+          plugins: {},
+          config: {
+            model: 'gpt-4',
+            maxContextTokens: 128000,
+            strategy: 'proactive',
+          },
+        },
+        metadata: { name: 'Test' },
+      };
+    }
+
     it('should wait for session load before run()', async () => {
       // Create a mock storage that simulates slow loading
       let resolveLoad: () => void;
@@ -775,21 +805,12 @@ describe('Agent', () => {
         save: vi.fn().mockResolvedValue(undefined),
         load: vi.fn().mockImplementation(async () => {
           await loadPromise;
-          return {
-            id: 'test-session',
-            agentType: 'agent',
-            createdAt: Date.now(),
-            lastAccessedAt: Date.now(),
-            metadata: { name: 'Test' },
-            history: { messages: [], summaries: [] },
-            toolState: { enabled: {}, namespaces: {}, priorities: {}, permissions: {} },
-            custom: {},
-            metrics: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
-          };
+          return createMockStoredSession('test-session');
         }),
         delete: vi.fn().mockResolvedValue(undefined),
         exists: vi.fn().mockResolvedValue(true),
         list: vi.fn().mockResolvedValue([]),
+        getPath: vi.fn().mockReturnValue('/mock/storage'),
       };
 
       // Mock response
@@ -833,21 +854,12 @@ describe('Agent', () => {
         save: vi.fn().mockResolvedValue(undefined),
         load: vi.fn().mockImplementation(async () => {
           await loadPromise;
-          return {
-            id: 'test-session',
-            agentType: 'agent',
-            createdAt: Date.now(),
-            lastAccessedAt: Date.now(),
-            metadata: { name: 'Test' },
-            history: { messages: [], summaries: [] },
-            toolState: { enabled: {}, namespaces: {}, priorities: {}, permissions: {} },
-            custom: {},
-            metrics: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
-          };
+          return createMockStoredSession('test-session');
         }),
         delete: vi.fn().mockResolvedValue(undefined),
         exists: vi.fn().mockResolvedValue(true),
         list: vi.fn().mockResolvedValue([]),
+        getPath: vi.fn().mockReturnValue('/mock/storage'),
       };
 
       // Mock streaming response
@@ -894,21 +906,12 @@ describe('Agent', () => {
         save: vi.fn().mockResolvedValue(undefined),
         load: vi.fn().mockImplementation(async () => {
           await loadPromise;
-          return {
-            id: 'test-session',
-            agentType: 'agent',
-            createdAt: Date.now(),
-            lastAccessedAt: Date.now(),
-            metadata: { name: 'Test' },
-            history: { messages: [], summaries: [] },
-            toolState: { enabled: {}, namespaces: {}, priorities: {}, permissions: {} },
-            custom: {},
-            metrics: { totalTokens: 0, totalCalls: 0, totalCost: 0 },
-          };
+          return createMockStoredSession('test-session');
         }),
         delete: vi.fn().mockResolvedValue(undefined),
         exists: vi.fn().mockResolvedValue(true),
         list: vi.fn().mockResolvedValue([]),
+        getPath: vi.fn().mockReturnValue('/mock/storage'),
       };
 
       const agent = Agent.create({

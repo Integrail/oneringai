@@ -1,7 +1,7 @@
 import * as crypto2 from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs14 from 'fs';
+import * as fs15 from 'fs';
 import { promises, existsSync } from 'fs';
 import { EventEmitter } from 'eventemitter3';
 import * as path2 from 'path';
@@ -15,7 +15,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ListToolsResultSchema, CallToolResultSchema, ListResourcesResultSchema, ReadResourceResultSchema, ListPromptsResultSchema, GetPromptResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import * as fs13 from 'fs/promises';
+import * as fs14 from 'fs/promises';
 import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
@@ -598,7 +598,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs14.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs15.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1249,10 +1249,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2.dirname(filePath);
-          if (!fs14.existsSync(dir)) {
-            fs14.mkdirSync(dir, { recursive: true });
+          if (!fs15.existsSync(dir)) {
+            fs15.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs14.createWriteStream(filePath, {
+          this.fileStream = fs15.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -2124,7 +2124,7 @@ var require_old = __commonJS({
   "node_modules/fs.realpath/old.js"(exports$1) {
     var pathModule = __require("path");
     var isWindows = process.platform === "win32";
-    var fs15 = __require("fs");
+    var fs16 = __require("fs");
     var DEBUG = process.env.NODE_DEBUG && /fs/.test(process.env.NODE_DEBUG);
     function rethrow() {
       var callback;
@@ -2189,7 +2189,7 @@ var require_old = __commonJS({
         base = m[0];
         previous = "";
         if (isWindows && !knownHard[base]) {
-          fs15.lstatSync(base);
+          fs16.lstatSync(base);
           knownHard[base] = true;
         }
       }
@@ -2207,7 +2207,7 @@ var require_old = __commonJS({
         if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
           resolvedLink = cache[base];
         } else {
-          var stat6 = fs15.lstatSync(base);
+          var stat6 = fs16.lstatSync(base);
           if (!stat6.isSymbolicLink()) {
             knownHard[base] = true;
             if (cache) cache[base] = base;
@@ -2221,8 +2221,8 @@ var require_old = __commonJS({
             }
           }
           if (linkTarget === null) {
-            fs15.statSync(base);
-            linkTarget = fs15.readlinkSync(base);
+            fs16.statSync(base);
+            linkTarget = fs16.readlinkSync(base);
           }
           resolvedLink = pathModule.resolve(previous, linkTarget);
           if (cache) cache[base] = resolvedLink;
@@ -2256,7 +2256,7 @@ var require_old = __commonJS({
         base = m[0];
         previous = "";
         if (isWindows && !knownHard[base]) {
-          fs15.lstat(base, function(err) {
+          fs16.lstat(base, function(err) {
             if (err) return cb(err);
             knownHard[base] = true;
             LOOP();
@@ -2282,7 +2282,7 @@ var require_old = __commonJS({
         if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
           return gotResolvedLink(cache[base]);
         }
-        return fs15.lstat(base, gotStat);
+        return fs16.lstat(base, gotStat);
       }
       function gotStat(err, stat6) {
         if (err) return cb(err);
@@ -2297,9 +2297,9 @@ var require_old = __commonJS({
             return gotTarget(null, seenLinks[id], base);
           }
         }
-        fs15.stat(base, function(err2) {
+        fs16.stat(base, function(err2) {
           if (err2) return cb(err2);
-          fs15.readlink(base, function(err3, target) {
+          fs16.readlink(base, function(err3, target) {
             if (!isWindows) seenLinks[id] = target;
             gotTarget(err3, target);
           });
@@ -2328,9 +2328,9 @@ var require_fs = __commonJS({
     realpath.realpathSync = realpathSync;
     realpath.monkeypatch = monkeypatch;
     realpath.unmonkeypatch = unmonkeypatch;
-    var fs15 = __require("fs");
-    var origRealpath = fs15.realpath;
-    var origRealpathSync = fs15.realpathSync;
+    var fs16 = __require("fs");
+    var origRealpath = fs16.realpath;
+    var origRealpathSync = fs16.realpathSync;
     var version = process.version;
     var ok = /^v[0-5]\./.test(version);
     var old = require_old();
@@ -2368,12 +2368,12 @@ var require_fs = __commonJS({
       }
     }
     function monkeypatch() {
-      fs15.realpath = realpath;
-      fs15.realpathSync = realpathSync;
+      fs16.realpath = realpath;
+      fs16.realpathSync = realpathSync;
     }
     function unmonkeypatch() {
-      fs15.realpath = origRealpath;
-      fs15.realpathSync = origRealpathSync;
+      fs16.realpath = origRealpath;
+      fs16.realpathSync = origRealpathSync;
     }
   }
 });
@@ -3248,7 +3248,7 @@ var require_common = __commonJS({
     function ownProp(obj, field) {
       return Object.prototype.hasOwnProperty.call(obj, field);
     }
-    var fs15 = __require("fs");
+    var fs16 = __require("fs");
     var path6 = __require("path");
     var minimatch = require_minimatch();
     var isAbsolute2 = require_path_is_absolute();
@@ -3303,7 +3303,7 @@ var require_common = __commonJS({
       self.stat = !!options.stat;
       self.noprocess = !!options.noprocess;
       self.absolute = !!options.absolute;
-      self.fs = options.fs || fs15;
+      self.fs = options.fs || fs16;
       self.maxLength = options.maxLength || Infinity;
       self.cache = options.cache || /* @__PURE__ */ Object.create(null);
       self.statCache = options.statCache || /* @__PURE__ */ Object.create(null);
@@ -4461,6 +4461,495 @@ init_Connector();
 // src/core/BaseAgent.ts
 init_Connector();
 
+// src/core/permissions/types.ts
+var APPROVAL_STATE_VERSION = 1;
+var DEFAULT_PERMISSION_CONFIG = {
+  scope: "once",
+  riskLevel: "low"
+};
+var DEFAULT_ALLOWLIST = [
+  // Filesystem read-only tools
+  "read_file",
+  "glob",
+  "grep",
+  "list_directory",
+  // Memory management (internal state - safe)
+  "memory_store",
+  "memory_retrieve",
+  "memory_delete",
+  "memory_list",
+  // Context introspection (read-only)
+  "context_inspect",
+  "context_breakdown",
+  "cache_stats",
+  "memory_stats",
+  // Meta-tools (internal coordination)
+  "_start_planning",
+  "_modify_plan",
+  "_report_progress",
+  "_request_approval"
+  // CRITICAL: Must be allowlisted to avoid circular dependency!
+];
+
+// src/core/permissions/ToolPermissionManager.ts
+var ToolPermissionManager = class extends EventEmitter {
+  // Approval cache (session-level)
+  approvalCache = /* @__PURE__ */ new Map();
+  // Allow/block lists
+  allowlist = /* @__PURE__ */ new Set();
+  blocklist = /* @__PURE__ */ new Set();
+  // Per-tool configurations
+  toolConfigs = /* @__PURE__ */ new Map();
+  // Defaults
+  defaultScope;
+  defaultRiskLevel;
+  // Optional approval callback
+  onApprovalRequired;
+  constructor(config) {
+    super();
+    this.defaultScope = config?.defaultScope ?? DEFAULT_PERMISSION_CONFIG.scope;
+    this.defaultRiskLevel = config?.defaultRiskLevel ?? DEFAULT_PERMISSION_CONFIG.riskLevel;
+    for (const toolName of DEFAULT_ALLOWLIST) {
+      this.allowlist.add(toolName);
+    }
+    if (config?.allowlist) {
+      for (const toolName of config.allowlist) {
+        this.allowlist.add(toolName);
+      }
+    }
+    if (config?.blocklist) {
+      for (const toolName of config.blocklist) {
+        this.blocklist.add(toolName);
+      }
+    }
+    if (config?.tools) {
+      for (const [toolName, toolConfig] of Object.entries(config.tools)) {
+        this.toolConfigs.set(toolName, toolConfig);
+      }
+    }
+    this.onApprovalRequired = config?.onApprovalRequired;
+  }
+  // ==========================================================================
+  // Core Permission Checking
+  // ==========================================================================
+  /**
+   * Check if a tool needs approval before execution
+   *
+   * @param toolName - Name of the tool
+   * @param _args - Optional arguments (for args-specific approval, reserved for future use)
+   * @returns PermissionCheckResult with allowed/needsApproval/blocked status
+   */
+  checkPermission(toolName, _args) {
+    const config = this.getEffectiveConfig(toolName);
+    if (this.blocklist.has(toolName)) {
+      return {
+        allowed: false,
+        needsApproval: false,
+        blocked: true,
+        reason: "Tool is blocklisted",
+        config
+      };
+    }
+    if (this.allowlist.has(toolName)) {
+      return {
+        allowed: true,
+        needsApproval: false,
+        blocked: false,
+        reason: "Tool is allowlisted",
+        config
+      };
+    }
+    const scope = config.scope ?? this.defaultScope;
+    switch (scope) {
+      case "always":
+        return {
+          allowed: true,
+          needsApproval: false,
+          blocked: false,
+          reason: 'Tool scope is "always"',
+          config
+        };
+      case "never":
+        return {
+          allowed: false,
+          needsApproval: false,
+          blocked: true,
+          reason: 'Tool scope is "never"',
+          config
+        };
+      case "session":
+        if (this.isApprovedForSession(toolName)) {
+          return {
+            allowed: true,
+            needsApproval: false,
+            blocked: false,
+            reason: "Tool approved for session",
+            config
+          };
+        }
+        return {
+          allowed: false,
+          needsApproval: true,
+          blocked: false,
+          reason: "Session approval required",
+          config
+        };
+      case "once":
+      default:
+        return {
+          allowed: false,
+          needsApproval: true,
+          blocked: false,
+          reason: "Per-call approval required",
+          config
+        };
+    }
+  }
+  /**
+   * Check if a tool call needs approval (uses ToolCall object)
+   */
+  needsApproval(toolCall) {
+    const result = this.checkPermission(toolCall.function.name);
+    return result.needsApproval;
+  }
+  /**
+   * Check if a tool is blocked
+   */
+  isBlocked(toolName) {
+    return this.checkPermission(toolName).blocked;
+  }
+  /**
+   * Check if a tool is approved (either allowlisted or session-approved)
+   */
+  isApproved(toolName) {
+    return this.checkPermission(toolName).allowed;
+  }
+  // ==========================================================================
+  // Approval Management
+  // ==========================================================================
+  /**
+   * Approve a tool (record approval)
+   *
+   * @param toolName - Name of the tool
+   * @param decision - Approval decision with scope
+   */
+  approve(toolName, decision) {
+    const scope = decision?.scope ?? "session";
+    const config = this.getEffectiveConfig(toolName);
+    let expiresAt;
+    if (scope === "session" && config.sessionTTLMs) {
+      expiresAt = new Date(Date.now() + config.sessionTTLMs);
+    }
+    const entry = {
+      toolName,
+      scope,
+      approvedAt: /* @__PURE__ */ new Date(),
+      approvedBy: decision?.approvedBy,
+      expiresAt
+    };
+    this.approvalCache.set(toolName, entry);
+    this.emit("tool:approved", {
+      toolName,
+      scope,
+      approvedBy: decision?.approvedBy
+    });
+  }
+  /**
+   * Approve a tool for the entire session
+   */
+  approveForSession(toolName, approvedBy) {
+    this.approve(toolName, { scope: "session", approvedBy });
+  }
+  /**
+   * Revoke a tool's approval
+   */
+  revoke(toolName) {
+    if (this.approvalCache.has(toolName)) {
+      this.approvalCache.delete(toolName);
+      this.emit("tool:revoked", { toolName });
+    }
+  }
+  /**
+   * Deny a tool execution (for audit trail)
+   */
+  deny(toolName, reason) {
+    this.emit("tool:denied", { toolName, reason });
+  }
+  /**
+   * Check if a tool has been approved for the current session
+   */
+  isApprovedForSession(toolName) {
+    const entry = this.approvalCache.get(toolName);
+    if (!entry) return false;
+    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+      this.approvalCache.delete(toolName);
+      return false;
+    }
+    return entry.scope === "session" || entry.scope === "always";
+  }
+  // ==========================================================================
+  // Allowlist / Blocklist Management
+  // ==========================================================================
+  /**
+   * Add a tool to the allowlist (always allowed)
+   */
+  allowlistAdd(toolName) {
+    this.blocklist.delete(toolName);
+    this.allowlist.add(toolName);
+    this.emit("allowlist:added", { toolName });
+  }
+  /**
+   * Remove a tool from the allowlist
+   */
+  allowlistRemove(toolName) {
+    if (this.allowlist.delete(toolName)) {
+      this.emit("allowlist:removed", { toolName });
+    }
+  }
+  /**
+   * Check if a tool is in the allowlist
+   */
+  isAllowlisted(toolName) {
+    return this.allowlist.has(toolName);
+  }
+  /**
+   * Get all allowlisted tools
+   */
+  getAllowlist() {
+    return Array.from(this.allowlist);
+  }
+  /**
+   * Add a tool to the blocklist (always blocked)
+   */
+  blocklistAdd(toolName) {
+    this.allowlist.delete(toolName);
+    this.blocklist.add(toolName);
+    this.emit("blocklist:added", { toolName });
+  }
+  /**
+   * Remove a tool from the blocklist
+   */
+  blocklistRemove(toolName) {
+    if (this.blocklist.delete(toolName)) {
+      this.emit("blocklist:removed", { toolName });
+    }
+  }
+  /**
+   * Check if a tool is in the blocklist
+   */
+  isBlocklisted(toolName) {
+    return this.blocklist.has(toolName);
+  }
+  /**
+   * Get all blocklisted tools
+   */
+  getBlocklist() {
+    return Array.from(this.blocklist);
+  }
+  // ==========================================================================
+  // Tool Configuration
+  // ==========================================================================
+  /**
+   * Set permission config for a specific tool
+   */
+  setToolConfig(toolName, config) {
+    this.toolConfigs.set(toolName, config);
+  }
+  /**
+   * Get permission config for a specific tool
+   */
+  getToolConfig(toolName) {
+    return this.toolConfigs.get(toolName);
+  }
+  /**
+   * Get effective config (tool-specific or defaults)
+   */
+  getEffectiveConfig(toolName) {
+    const toolConfig = this.toolConfigs.get(toolName);
+    return {
+      scope: toolConfig?.scope ?? this.defaultScope,
+      riskLevel: toolConfig?.riskLevel ?? this.defaultRiskLevel,
+      approvalMessage: toolConfig?.approvalMessage,
+      sensitiveArgs: toolConfig?.sensitiveArgs,
+      sessionTTLMs: toolConfig?.sessionTTLMs
+    };
+  }
+  // ==========================================================================
+  // Approval Request Handler
+  // ==========================================================================
+  /**
+   * Request approval for a tool call
+   *
+   * If an onApprovalRequired callback is set, it will be called.
+   * Otherwise, this auto-approves for backward compatibility.
+   *
+   * NOTE: If you want to require explicit approval, you MUST either:
+   * 1. Set onApprovalRequired callback in AgentPermissionsConfig
+   * 2. Register an 'approve:tool' hook in the AgenticLoop
+   * 3. Add tools to the blocklist if they should never run
+   *
+   * This auto-approval behavior preserves backward compatibility with
+   * existing code that doesn't use the permission system.
+   */
+  async requestApproval(context) {
+    if (this.onApprovalRequired) {
+      const decision = await this.onApprovalRequired(context);
+      if (decision.approved) {
+        this.approve(context.toolCall.function.name, decision);
+      } else {
+        this.deny(context.toolCall.function.name, decision.reason ?? "User denied");
+      }
+      return decision;
+    }
+    return {
+      approved: true,
+      reason: "Auto-approved (no approval handler configured)"
+    };
+  }
+  // ==========================================================================
+  // Query Methods
+  // ==========================================================================
+  /**
+   * Get all tools that have session approvals
+   */
+  getApprovedTools() {
+    const approved = [];
+    for (const [toolName, entry] of this.approvalCache) {
+      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+        continue;
+      }
+      approved.push(toolName);
+    }
+    return approved;
+  }
+  /**
+   * Get the approval entry for a tool
+   */
+  getApprovalEntry(toolName) {
+    const entry = this.approvalCache.get(toolName);
+    if (!entry) return void 0;
+    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+      this.approvalCache.delete(toolName);
+      return void 0;
+    }
+    return entry;
+  }
+  // ==========================================================================
+  // Session Management
+  // ==========================================================================
+  /**
+   * Clear all session approvals
+   */
+  clearSession() {
+    this.approvalCache.clear();
+    this.emit("session:cleared", {});
+  }
+  // ==========================================================================
+  // Persistence (for Session integration)
+  // ==========================================================================
+  /**
+   * Serialize approval state for persistence
+   */
+  getState() {
+    const approvals = {};
+    for (const [toolName, entry] of this.approvalCache) {
+      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
+        continue;
+      }
+      approvals[toolName] = {
+        toolName: entry.toolName,
+        scope: entry.scope,
+        approvedAt: entry.approvedAt.toISOString(),
+        approvedBy: entry.approvedBy,
+        expiresAt: entry.expiresAt?.toISOString(),
+        argsHash: entry.argsHash
+      };
+    }
+    return {
+      version: APPROVAL_STATE_VERSION,
+      approvals,
+      blocklist: Array.from(this.blocklist),
+      allowlist: Array.from(this.allowlist)
+    };
+  }
+  /**
+   * Load approval state from persistence
+   */
+  loadState(state) {
+    this.approvalCache.clear();
+    if (state.version !== APPROVAL_STATE_VERSION) {
+      console.warn(`ToolPermissionManager: Unknown state version ${state.version}, ignoring`);
+      return;
+    }
+    for (const [toolName, entry] of Object.entries(state.approvals)) {
+      const approvedAt = new Date(entry.approvedAt);
+      const expiresAt = entry.expiresAt ? new Date(entry.expiresAt) : void 0;
+      if (expiresAt && expiresAt < /* @__PURE__ */ new Date()) {
+        continue;
+      }
+      this.approvalCache.set(toolName, {
+        toolName: entry.toolName,
+        scope: entry.scope,
+        approvedAt,
+        approvedBy: entry.approvedBy,
+        expiresAt,
+        argsHash: entry.argsHash
+      });
+    }
+    for (const toolName of state.blocklist) {
+      this.blocklist.add(toolName);
+    }
+    for (const toolName of state.allowlist) {
+      this.blocklist.delete(toolName);
+      this.allowlist.add(toolName);
+    }
+  }
+  // ==========================================================================
+  // Utility Methods
+  // ==========================================================================
+  /**
+   * Get defaults
+   */
+  getDefaults() {
+    return {
+      scope: this.defaultScope,
+      riskLevel: this.defaultRiskLevel
+    };
+  }
+  /**
+   * Set defaults
+   */
+  setDefaults(defaults) {
+    if (defaults.scope) this.defaultScope = defaults.scope;
+    if (defaults.riskLevel) this.defaultRiskLevel = defaults.riskLevel;
+  }
+  /**
+   * Get summary statistics
+   */
+  getStats() {
+    return {
+      approvedCount: this.getApprovedTools().length,
+      allowlistedCount: this.allowlist.size,
+      blocklistedCount: this.blocklist.size,
+      configuredCount: this.toolConfigs.size
+    };
+  }
+  /**
+   * Reset to initial state
+   */
+  reset() {
+    this.approvalCache.clear();
+    this.allowlist.clear();
+    this.blocklist.clear();
+    this.toolConfigs.clear();
+    this.defaultScope = DEFAULT_PERMISSION_CONFIG.scope;
+    this.defaultRiskLevel = DEFAULT_PERMISSION_CONFIG.riskLevel;
+  }
+};
+
+// src/core/BaseAgent.ts
+init_Logger();
+
 // src/core/ToolManager.ts
 init_CircuitBreaker();
 
@@ -5423,943 +5912,6 @@ var ToolManager = class extends EventEmitter {
     return nameTokens + descTokens + paramTokens + 20;
   }
 };
-var HISTORY_FORMAT_VERSION = 1;
-var MEMORY_FORMAT_VERSION = 1;
-var PLAN_FORMAT_VERSION = 1;
-var SessionValidationError = class extends Error {
-  constructor(sessionId, errors) {
-    super(`Session validation failed for ${sessionId}: ${errors.join(", ")}`);
-    this.sessionId = sessionId;
-    this.errors = errors;
-    this.name = "SessionValidationError";
-  }
-};
-function validateSession(session) {
-  const errors = [];
-  const warnings = [];
-  const migrations = [];
-  if (!session || typeof session !== "object") {
-    return {
-      valid: false,
-      errors: ["Session is not an object"],
-      warnings: [],
-      canMigrate: false,
-      migrations: []
-    };
-  }
-  const s = session;
-  if (!s.id || typeof s.id !== "string") {
-    errors.push("Missing or invalid session id");
-  }
-  if (!s.agentType || typeof s.agentType !== "string") {
-    errors.push("Missing or invalid agentType");
-  }
-  if (!s.createdAt) {
-    warnings.push("Missing createdAt, will use current time");
-    migrations.push({
-      field: "createdAt",
-      type: "add_default",
-      description: "Add default createdAt timestamp",
-      apply: (sess) => {
-        sess.createdAt = /* @__PURE__ */ new Date();
-      }
-    });
-  }
-  if (!s.lastActiveAt) {
-    warnings.push("Missing lastActiveAt, will use current time");
-    migrations.push({
-      field: "lastActiveAt",
-      type: "add_default",
-      description: "Add default lastActiveAt timestamp",
-      apply: (sess) => {
-        sess.lastActiveAt = /* @__PURE__ */ new Date();
-      }
-    });
-  }
-  if (!s.history) {
-    warnings.push("Missing history, will create empty history");
-    migrations.push({
-      field: "history",
-      type: "add_default",
-      description: "Add empty history",
-      apply: (sess) => {
-        sess.history = { version: HISTORY_FORMAT_VERSION, entries: [] };
-      }
-    });
-  } else if (typeof s.history === "object") {
-    const historyVersion = s.history.version;
-    if (historyVersion === void 0) {
-      warnings.push("History missing version, assuming version 1");
-      migrations.push({
-        field: "history.version",
-        type: "add_default",
-        description: "Add history version",
-        apply: (sess) => {
-          if (sess.history) {
-            sess.history.version = 1;
-          }
-        }
-      });
-    } else if (historyVersion > HISTORY_FORMAT_VERSION) {
-      errors.push(
-        `History version ${historyVersion} is newer than supported version ${HISTORY_FORMAT_VERSION}`
-      );
-    }
-  }
-  if (!s.toolState) {
-    warnings.push("Missing toolState, will create empty toolState");
-    migrations.push({
-      field: "toolState",
-      type: "add_default",
-      description: "Add empty toolState",
-      apply: (sess) => {
-        sess.toolState = { enabled: {}, namespaces: {}, priorities: {}, permissions: {} };
-      }
-    });
-  }
-  if (!s.custom || typeof s.custom !== "object") {
-    warnings.push("Missing custom object, will create empty object");
-    migrations.push({
-      field: "custom",
-      type: "add_default",
-      description: "Add empty custom object",
-      apply: (sess) => {
-        sess.custom = {};
-      }
-    });
-  }
-  if (!s.metadata || typeof s.metadata !== "object") {
-    warnings.push("Missing metadata, will create empty metadata");
-    migrations.push({
-      field: "metadata",
-      type: "add_default",
-      description: "Add empty metadata",
-      apply: (sess) => {
-        sess.metadata = {};
-      }
-    });
-  }
-  if (s.memory && typeof s.memory === "object") {
-    const memoryVersion = s.memory.version;
-    if (memoryVersion === void 0) {
-      warnings.push("Memory missing version, assuming version 1");
-      migrations.push({
-        field: "memory.version",
-        type: "add_default",
-        description: "Add memory version",
-        apply: (sess) => {
-          if (sess.memory) {
-            sess.memory.version = 1;
-          }
-        }
-      });
-    } else if (memoryVersion > MEMORY_FORMAT_VERSION) {
-      errors.push(
-        `Memory version ${memoryVersion} is newer than supported version ${MEMORY_FORMAT_VERSION}`
-      );
-    }
-  }
-  if (s.plan && typeof s.plan === "object") {
-    const planVersion = s.plan.version;
-    if (planVersion === void 0) {
-      warnings.push("Plan missing version, assuming version 1");
-      migrations.push({
-        field: "plan.version",
-        type: "add_default",
-        description: "Add plan version",
-        apply: (sess) => {
-          if (sess.plan) {
-            sess.plan.version = 1;
-          }
-        }
-      });
-    } else if (planVersion > PLAN_FORMAT_VERSION) {
-      errors.push(
-        `Plan version ${planVersion} is newer than supported version ${PLAN_FORMAT_VERSION}`
-      );
-    }
-  }
-  return {
-    valid: errors.length === 0,
-    errors,
-    warnings,
-    canMigrate: errors.length === 0 && migrations.length > 0,
-    migrations
-  };
-}
-function migrateSession(session, migrations) {
-  for (const migration of migrations) {
-    migration.apply(session);
-  }
-  return session;
-}
-var SessionManager = class extends EventEmitter {
-  storage;
-  defaultMetadata;
-  autoSaveTimers = /* @__PURE__ */ new Map();
-  validateOnLoad;
-  autoMigrate;
-  _isDestroyed = false;
-  // Track in-flight saves to prevent race conditions
-  savesInFlight = /* @__PURE__ */ new Set();
-  pendingSaves = /* @__PURE__ */ new Set();
-  constructor(config) {
-    super();
-    this.storage = config.storage;
-    this.defaultMetadata = config.defaultMetadata ?? {};
-    this.validateOnLoad = config.validateOnLoad ?? true;
-    this.autoMigrate = config.autoMigrate ?? true;
-  }
-  // ==========================================================================
-  // Lifecycle
-  // ==========================================================================
-  /**
-   * Create a new session
-   */
-  create(agentType, metadata) {
-    const now = /* @__PURE__ */ new Date();
-    const session = {
-      id: this.generateId(),
-      agentType,
-      createdAt: now,
-      lastActiveAt: now,
-      history: { version: 1, entries: [] },
-      toolState: { enabled: {}, namespaces: {}, priorities: {} },
-      custom: {},
-      metadata: {
-        ...this.defaultMetadata,
-        ...metadata
-      }
-    };
-    this.emit("session:created", { sessionId: session.id, agentType });
-    return session;
-  }
-  /**
-   * Save a session to storage
-   */
-  async save(session) {
-    try {
-      session.lastActiveAt = /* @__PURE__ */ new Date();
-      await this.storage.save(session);
-      this.emit("session:saved", { sessionId: session.id });
-    } catch (error) {
-      this.emit("session:error", { sessionId: session.id, error, operation: "save" });
-      throw error;
-    }
-  }
-  /**
-   * Load a session from storage
-   */
-  async load(sessionId) {
-    try {
-      let session = await this.storage.load(sessionId);
-      if (!session) {
-        return null;
-      }
-      if (this.validateOnLoad) {
-        const validation = validateSession(session);
-        if (validation.warnings.length > 0) {
-          this.emit("session:warning", {
-            sessionId,
-            warnings: validation.warnings
-          });
-        }
-        if (!validation.valid) {
-          throw new SessionValidationError(sessionId, validation.errors);
-        }
-        if (validation.canMigrate && this.autoMigrate) {
-          session = migrateSession(session, validation.migrations);
-          this.emit("session:migrated", {
-            sessionId,
-            migrations: validation.migrations.map((m) => m.description)
-          });
-        }
-      }
-      session.createdAt = new Date(session.createdAt);
-      session.lastActiveAt = new Date(session.lastActiveAt);
-      this.emit("session:loaded", { sessionId });
-      return session;
-    } catch (error) {
-      this.emit("session:error", { sessionId, error, operation: "load" });
-      throw error;
-    }
-  }
-  /**
-   * Delete a session from storage
-   */
-  async delete(sessionId) {
-    try {
-      this.stopAutoSave(sessionId);
-      await this.storage.delete(sessionId);
-      this.emit("session:deleted", { sessionId });
-    } catch (error) {
-      this.emit("session:error", { sessionId, error, operation: "delete" });
-      throw error;
-    }
-  }
-  /**
-   * Check if a session exists
-   */
-  async exists(sessionId) {
-    return this.storage.exists(sessionId);
-  }
-  // ==========================================================================
-  // Query
-  // ==========================================================================
-  /**
-   * List sessions with optional filtering
-   */
-  async list(filter) {
-    return this.storage.list(filter);
-  }
-  /**
-   * Search sessions by query string
-   */
-  async search(query, filter) {
-    if (this.storage.search) {
-      return this.storage.search(query, filter);
-    }
-    const all = await this.storage.list(filter);
-    const lowerQuery = query.toLowerCase();
-    return all.filter(
-      (s) => s.metadata.title?.toLowerCase().includes(lowerQuery) || s.metadata.tags?.some((t) => t.toLowerCase().includes(lowerQuery))
-    );
-  }
-  // ==========================================================================
-  // Advanced Operations
-  // ==========================================================================
-  /**
-   * Fork a session (create a copy with new ID)
-   */
-  async fork(sessionId, newMetadata) {
-    const original = await this.load(sessionId);
-    if (!original) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-    const forked = {
-      ...original,
-      id: this.generateId(),
-      createdAt: /* @__PURE__ */ new Date(),
-      lastActiveAt: /* @__PURE__ */ new Date(),
-      metadata: {
-        ...original.metadata,
-        ...newMetadata,
-        forkedFrom: sessionId
-      },
-      // Deep clone mutable fields
-      history: JSON.parse(JSON.stringify(original.history)),
-      toolState: JSON.parse(JSON.stringify(original.toolState)),
-      custom: JSON.parse(JSON.stringify(original.custom))
-    };
-    if (original.memory) {
-      forked.memory = JSON.parse(JSON.stringify(original.memory));
-    }
-    if (original.plan) {
-      forked.plan = JSON.parse(JSON.stringify(original.plan));
-    }
-    await this.save(forked);
-    return forked;
-  }
-  /**
-   * Update session metadata
-   */
-  async updateMetadata(sessionId, metadata) {
-    const session = await this.load(sessionId);
-    if (!session) {
-      throw new Error(`Session not found: ${sessionId}`);
-    }
-    session.metadata = { ...session.metadata, ...metadata };
-    await this.save(session);
-  }
-  // ==========================================================================
-  // Auto-Save
-  // ==========================================================================
-  /**
-   * Enable auto-save for a session
-   */
-  enableAutoSave(session, intervalMs, onSave) {
-    this.stopAutoSave(session.id);
-    const timer = setInterval(async () => {
-      const sessionId = session.id;
-      if (this.savesInFlight.has(sessionId)) {
-        this.pendingSaves.add(sessionId);
-        return;
-      }
-      this.savesInFlight.add(sessionId);
-      try {
-        await this.save(session);
-        onSave?.(session);
-      } catch (error) {
-        this.emit("session:error", {
-          sessionId,
-          error,
-          operation: "auto-save"
-        });
-      } finally {
-        this.savesInFlight.delete(sessionId);
-        if (this.pendingSaves.has(sessionId)) {
-          this.pendingSaves.delete(sessionId);
-          this.save(session).catch((error) => {
-            this.emit("session:error", {
-              sessionId,
-              error,
-              operation: "auto-save-retry"
-            });
-          });
-        }
-      }
-    }, intervalMs);
-    this.autoSaveTimers.set(session.id, timer);
-  }
-  /**
-   * Disable auto-save for a session
-   */
-  stopAutoSave(sessionId) {
-    const timer = this.autoSaveTimers.get(sessionId);
-    if (timer) {
-      clearInterval(timer);
-      this.autoSaveTimers.delete(sessionId);
-    }
-  }
-  /**
-   * Stop all auto-save timers
-   */
-  stopAllAutoSave() {
-    for (const timer of this.autoSaveTimers.values()) {
-      clearInterval(timer);
-    }
-    this.autoSaveTimers.clear();
-  }
-  // ==========================================================================
-  // Utilities
-  // ==========================================================================
-  /**
-   * Generate a unique session ID
-   */
-  generateId() {
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substring(2, 10);
-    return `sess_${timestamp}_${random}`;
-  }
-  /**
-   * Check if the SessionManager instance has been destroyed
-   */
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  /**
-   * Cleanup resources
-   */
-  destroy() {
-    if (this._isDestroyed) return;
-    this._isDestroyed = true;
-    this.stopAllAutoSave();
-    this.removeAllListeners();
-  }
-};
-function createEmptyHistory() {
-  return { version: 1, entries: [] };
-}
-function createEmptyMemory() {
-  return { version: 1, entries: [] };
-}
-function addHistoryEntry(history, type, content, metadata) {
-  history.entries.push({
-    type,
-    content,
-    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-    metadata
-  });
-}
-
-// src/core/permissions/types.ts
-var APPROVAL_STATE_VERSION = 1;
-var DEFAULT_PERMISSION_CONFIG = {
-  scope: "once",
-  riskLevel: "low"
-};
-var DEFAULT_ALLOWLIST = [
-  // Filesystem read-only tools
-  "read_file",
-  "glob",
-  "grep",
-  "list_directory",
-  // Memory management (internal state - safe)
-  "memory_store",
-  "memory_retrieve",
-  "memory_delete",
-  "memory_list",
-  // Context introspection (read-only)
-  "context_inspect",
-  "context_breakdown",
-  "cache_stats",
-  "memory_stats",
-  // Meta-tools (internal coordination)
-  "_start_planning",
-  "_modify_plan",
-  "_report_progress",
-  "_request_approval"
-  // CRITICAL: Must be allowlisted to avoid circular dependency!
-];
-
-// src/core/permissions/ToolPermissionManager.ts
-var ToolPermissionManager = class extends EventEmitter {
-  // Approval cache (session-level)
-  approvalCache = /* @__PURE__ */ new Map();
-  // Allow/block lists
-  allowlist = /* @__PURE__ */ new Set();
-  blocklist = /* @__PURE__ */ new Set();
-  // Per-tool configurations
-  toolConfigs = /* @__PURE__ */ new Map();
-  // Defaults
-  defaultScope;
-  defaultRiskLevel;
-  // Optional approval callback
-  onApprovalRequired;
-  constructor(config) {
-    super();
-    this.defaultScope = config?.defaultScope ?? DEFAULT_PERMISSION_CONFIG.scope;
-    this.defaultRiskLevel = config?.defaultRiskLevel ?? DEFAULT_PERMISSION_CONFIG.riskLevel;
-    for (const toolName of DEFAULT_ALLOWLIST) {
-      this.allowlist.add(toolName);
-    }
-    if (config?.allowlist) {
-      for (const toolName of config.allowlist) {
-        this.allowlist.add(toolName);
-      }
-    }
-    if (config?.blocklist) {
-      for (const toolName of config.blocklist) {
-        this.blocklist.add(toolName);
-      }
-    }
-    if (config?.tools) {
-      for (const [toolName, toolConfig] of Object.entries(config.tools)) {
-        this.toolConfigs.set(toolName, toolConfig);
-      }
-    }
-    this.onApprovalRequired = config?.onApprovalRequired;
-  }
-  // ==========================================================================
-  // Core Permission Checking
-  // ==========================================================================
-  /**
-   * Check if a tool needs approval before execution
-   *
-   * @param toolName - Name of the tool
-   * @param _args - Optional arguments (for args-specific approval, reserved for future use)
-   * @returns PermissionCheckResult with allowed/needsApproval/blocked status
-   */
-  checkPermission(toolName, _args) {
-    const config = this.getEffectiveConfig(toolName);
-    if (this.blocklist.has(toolName)) {
-      return {
-        allowed: false,
-        needsApproval: false,
-        blocked: true,
-        reason: "Tool is blocklisted",
-        config
-      };
-    }
-    if (this.allowlist.has(toolName)) {
-      return {
-        allowed: true,
-        needsApproval: false,
-        blocked: false,
-        reason: "Tool is allowlisted",
-        config
-      };
-    }
-    const scope = config.scope ?? this.defaultScope;
-    switch (scope) {
-      case "always":
-        return {
-          allowed: true,
-          needsApproval: false,
-          blocked: false,
-          reason: 'Tool scope is "always"',
-          config
-        };
-      case "never":
-        return {
-          allowed: false,
-          needsApproval: false,
-          blocked: true,
-          reason: 'Tool scope is "never"',
-          config
-        };
-      case "session":
-        if (this.isApprovedForSession(toolName)) {
-          return {
-            allowed: true,
-            needsApproval: false,
-            blocked: false,
-            reason: "Tool approved for session",
-            config
-          };
-        }
-        return {
-          allowed: false,
-          needsApproval: true,
-          blocked: false,
-          reason: "Session approval required",
-          config
-        };
-      case "once":
-      default:
-        return {
-          allowed: false,
-          needsApproval: true,
-          blocked: false,
-          reason: "Per-call approval required",
-          config
-        };
-    }
-  }
-  /**
-   * Check if a tool call needs approval (uses ToolCall object)
-   */
-  needsApproval(toolCall) {
-    const result = this.checkPermission(toolCall.function.name);
-    return result.needsApproval;
-  }
-  /**
-   * Check if a tool is blocked
-   */
-  isBlocked(toolName) {
-    return this.checkPermission(toolName).blocked;
-  }
-  /**
-   * Check if a tool is approved (either allowlisted or session-approved)
-   */
-  isApproved(toolName) {
-    return this.checkPermission(toolName).allowed;
-  }
-  // ==========================================================================
-  // Approval Management
-  // ==========================================================================
-  /**
-   * Approve a tool (record approval)
-   *
-   * @param toolName - Name of the tool
-   * @param decision - Approval decision with scope
-   */
-  approve(toolName, decision) {
-    const scope = decision?.scope ?? "session";
-    const config = this.getEffectiveConfig(toolName);
-    let expiresAt;
-    if (scope === "session" && config.sessionTTLMs) {
-      expiresAt = new Date(Date.now() + config.sessionTTLMs);
-    }
-    const entry = {
-      toolName,
-      scope,
-      approvedAt: /* @__PURE__ */ new Date(),
-      approvedBy: decision?.approvedBy,
-      expiresAt
-    };
-    this.approvalCache.set(toolName, entry);
-    this.emit("tool:approved", {
-      toolName,
-      scope,
-      approvedBy: decision?.approvedBy
-    });
-  }
-  /**
-   * Approve a tool for the entire session
-   */
-  approveForSession(toolName, approvedBy) {
-    this.approve(toolName, { scope: "session", approvedBy });
-  }
-  /**
-   * Revoke a tool's approval
-   */
-  revoke(toolName) {
-    if (this.approvalCache.has(toolName)) {
-      this.approvalCache.delete(toolName);
-      this.emit("tool:revoked", { toolName });
-    }
-  }
-  /**
-   * Deny a tool execution (for audit trail)
-   */
-  deny(toolName, reason) {
-    this.emit("tool:denied", { toolName, reason });
-  }
-  /**
-   * Check if a tool has been approved for the current session
-   */
-  isApprovedForSession(toolName) {
-    const entry = this.approvalCache.get(toolName);
-    if (!entry) return false;
-    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
-      this.approvalCache.delete(toolName);
-      return false;
-    }
-    return entry.scope === "session" || entry.scope === "always";
-  }
-  // ==========================================================================
-  // Allowlist / Blocklist Management
-  // ==========================================================================
-  /**
-   * Add a tool to the allowlist (always allowed)
-   */
-  allowlistAdd(toolName) {
-    this.blocklist.delete(toolName);
-    this.allowlist.add(toolName);
-    this.emit("allowlist:added", { toolName });
-  }
-  /**
-   * Remove a tool from the allowlist
-   */
-  allowlistRemove(toolName) {
-    if (this.allowlist.delete(toolName)) {
-      this.emit("allowlist:removed", { toolName });
-    }
-  }
-  /**
-   * Check if a tool is in the allowlist
-   */
-  isAllowlisted(toolName) {
-    return this.allowlist.has(toolName);
-  }
-  /**
-   * Get all allowlisted tools
-   */
-  getAllowlist() {
-    return Array.from(this.allowlist);
-  }
-  /**
-   * Add a tool to the blocklist (always blocked)
-   */
-  blocklistAdd(toolName) {
-    this.allowlist.delete(toolName);
-    this.blocklist.add(toolName);
-    this.emit("blocklist:added", { toolName });
-  }
-  /**
-   * Remove a tool from the blocklist
-   */
-  blocklistRemove(toolName) {
-    if (this.blocklist.delete(toolName)) {
-      this.emit("blocklist:removed", { toolName });
-    }
-  }
-  /**
-   * Check if a tool is in the blocklist
-   */
-  isBlocklisted(toolName) {
-    return this.blocklist.has(toolName);
-  }
-  /**
-   * Get all blocklisted tools
-   */
-  getBlocklist() {
-    return Array.from(this.blocklist);
-  }
-  // ==========================================================================
-  // Tool Configuration
-  // ==========================================================================
-  /**
-   * Set permission config for a specific tool
-   */
-  setToolConfig(toolName, config) {
-    this.toolConfigs.set(toolName, config);
-  }
-  /**
-   * Get permission config for a specific tool
-   */
-  getToolConfig(toolName) {
-    return this.toolConfigs.get(toolName);
-  }
-  /**
-   * Get effective config (tool-specific or defaults)
-   */
-  getEffectiveConfig(toolName) {
-    const toolConfig = this.toolConfigs.get(toolName);
-    return {
-      scope: toolConfig?.scope ?? this.defaultScope,
-      riskLevel: toolConfig?.riskLevel ?? this.defaultRiskLevel,
-      approvalMessage: toolConfig?.approvalMessage,
-      sensitiveArgs: toolConfig?.sensitiveArgs,
-      sessionTTLMs: toolConfig?.sessionTTLMs
-    };
-  }
-  // ==========================================================================
-  // Approval Request Handler
-  // ==========================================================================
-  /**
-   * Request approval for a tool call
-   *
-   * If an onApprovalRequired callback is set, it will be called.
-   * Otherwise, this auto-approves for backward compatibility.
-   *
-   * NOTE: If you want to require explicit approval, you MUST either:
-   * 1. Set onApprovalRequired callback in AgentPermissionsConfig
-   * 2. Register an 'approve:tool' hook in the AgenticLoop
-   * 3. Add tools to the blocklist if they should never run
-   *
-   * This auto-approval behavior preserves backward compatibility with
-   * existing code that doesn't use the permission system.
-   */
-  async requestApproval(context) {
-    if (this.onApprovalRequired) {
-      const decision = await this.onApprovalRequired(context);
-      if (decision.approved) {
-        this.approve(context.toolCall.function.name, decision);
-      } else {
-        this.deny(context.toolCall.function.name, decision.reason ?? "User denied");
-      }
-      return decision;
-    }
-    return {
-      approved: true,
-      reason: "Auto-approved (no approval handler configured)"
-    };
-  }
-  // ==========================================================================
-  // Query Methods
-  // ==========================================================================
-  /**
-   * Get all tools that have session approvals
-   */
-  getApprovedTools() {
-    const approved = [];
-    for (const [toolName, entry] of this.approvalCache) {
-      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
-        continue;
-      }
-      approved.push(toolName);
-    }
-    return approved;
-  }
-  /**
-   * Get the approval entry for a tool
-   */
-  getApprovalEntry(toolName) {
-    const entry = this.approvalCache.get(toolName);
-    if (!entry) return void 0;
-    if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
-      this.approvalCache.delete(toolName);
-      return void 0;
-    }
-    return entry;
-  }
-  // ==========================================================================
-  // Session Management
-  // ==========================================================================
-  /**
-   * Clear all session approvals
-   */
-  clearSession() {
-    this.approvalCache.clear();
-    this.emit("session:cleared", {});
-  }
-  // ==========================================================================
-  // Persistence (for Session integration)
-  // ==========================================================================
-  /**
-   * Serialize approval state for persistence
-   */
-  getState() {
-    const approvals = {};
-    for (const [toolName, entry] of this.approvalCache) {
-      if (entry.expiresAt && entry.expiresAt < /* @__PURE__ */ new Date()) {
-        continue;
-      }
-      approvals[toolName] = {
-        toolName: entry.toolName,
-        scope: entry.scope,
-        approvedAt: entry.approvedAt.toISOString(),
-        approvedBy: entry.approvedBy,
-        expiresAt: entry.expiresAt?.toISOString(),
-        argsHash: entry.argsHash
-      };
-    }
-    return {
-      version: APPROVAL_STATE_VERSION,
-      approvals,
-      blocklist: Array.from(this.blocklist),
-      allowlist: Array.from(this.allowlist)
-    };
-  }
-  /**
-   * Load approval state from persistence
-   */
-  loadState(state) {
-    this.approvalCache.clear();
-    if (state.version !== APPROVAL_STATE_VERSION) {
-      console.warn(`ToolPermissionManager: Unknown state version ${state.version}, ignoring`);
-      return;
-    }
-    for (const [toolName, entry] of Object.entries(state.approvals)) {
-      const approvedAt = new Date(entry.approvedAt);
-      const expiresAt = entry.expiresAt ? new Date(entry.expiresAt) : void 0;
-      if (expiresAt && expiresAt < /* @__PURE__ */ new Date()) {
-        continue;
-      }
-      this.approvalCache.set(toolName, {
-        toolName: entry.toolName,
-        scope: entry.scope,
-        approvedAt,
-        approvedBy: entry.approvedBy,
-        expiresAt,
-        argsHash: entry.argsHash
-      });
-    }
-    for (const toolName of state.blocklist) {
-      this.blocklist.add(toolName);
-    }
-    for (const toolName of state.allowlist) {
-      this.blocklist.delete(toolName);
-      this.allowlist.add(toolName);
-    }
-  }
-  // ==========================================================================
-  // Utility Methods
-  // ==========================================================================
-  /**
-   * Get defaults
-   */
-  getDefaults() {
-    return {
-      scope: this.defaultScope,
-      riskLevel: this.defaultRiskLevel
-    };
-  }
-  /**
-   * Set defaults
-   */
-  setDefaults(defaults) {
-    if (defaults.scope) this.defaultScope = defaults.scope;
-    if (defaults.riskLevel) this.defaultRiskLevel = defaults.riskLevel;
-  }
-  /**
-   * Get summary statistics
-   */
-  getStats() {
-    return {
-      approvedCount: this.getApprovedTools().length,
-      allowlistedCount: this.allowlist.size,
-      blocklistedCount: this.blocklist.size,
-      configuredCount: this.toolConfigs.size
-    };
-  }
-  /**
-   * Reset to initial state
-   */
-  reset() {
-    this.approvalCache.clear();
-    this.allowlist.clear();
-    this.blocklist.clear();
-    this.toolConfigs.clear();
-    this.defaultScope = DEFAULT_PERMISSION_CONFIG.scope;
-    this.defaultRiskLevel = DEFAULT_PERMISSION_CONFIG.riskLevel;
-  }
-};
-
-// src/core/BaseAgent.ts
-init_Logger();
 
 // src/core/IdempotencyCache.ts
 var DEFAULT_IDEMPOTENCY_CONFIG = {
@@ -7482,6 +7034,65 @@ var WorkingMemory = class extends EventEmitter {
     this._isDestroyed = true;
     this.removeAllListeners();
     this.priorityContext = {};
+  }
+  // ============================================================================
+  // Serialization (for session persistence)
+  // ============================================================================
+  /**
+   * Serialize all memory entries for persistence
+   *
+   * Returns a serializable representation of all memory entries
+   * that can be saved to storage and restored later.
+   *
+   * @returns Serialized memory state
+   */
+  async serialize() {
+    const entries = await this.storage.getAll();
+    const serializedEntries = entries.map((entry) => ({
+      key: entry.key,
+      description: entry.description,
+      value: entry.value,
+      scope: entry.scope,
+      sizeBytes: entry.sizeBytes,
+      basePriority: entry.basePriority,
+      pinned: entry.pinned
+      // Note: createdAt, lastAccessedAt, accessCount are not persisted
+      // They will be reset on restore (entries start fresh)
+    }));
+    return {
+      version: 1,
+      entries: serializedEntries
+    };
+  }
+  /**
+   * Restore memory entries from serialized state
+   *
+   * Clears existing memory and repopulates from the serialized state.
+   * Timestamps are reset to current time.
+   *
+   * @param state - Previously serialized memory state
+   */
+  async restore(state) {
+    if (state.version !== 1) {
+      throw new Error(`Unsupported memory serialization version: ${state.version}`);
+    }
+    await this.storage.clear();
+    const now = Date.now();
+    for (const entry of state.entries) {
+      const fullEntry = {
+        key: entry.key,
+        description: entry.description,
+        value: entry.value,
+        scope: entry.scope,
+        sizeBytes: entry.sizeBytes,
+        basePriority: entry.basePriority ?? "normal",
+        pinned: entry.pinned ?? false,
+        createdAt: now,
+        lastAccessedAt: now,
+        accessCount: 0
+      };
+      await this.storage.set(entry.key, fullEntry);
+    }
   }
 };
 
@@ -10914,6 +10525,10 @@ var AgentContext = class _AgentContext extends EventEmitter {
   _explicitTaskType;
   _autoDetectedTaskType;
   _autoDetectTaskType = true;
+  // ===== Session Persistence =====
+  _storage = null;
+  _sessionId = null;
+  _sessionMetadata = {};
   // ============================================================================
   // Constructor & Factory
   // ============================================================================
@@ -10987,6 +10602,9 @@ var AgentContext = class _AgentContext extends EventEmitter {
     this._registerFeatureTools();
     this._explicitTaskType = config.taskType;
     this._autoDetectTaskType = config.autoDetectTaskType !== false;
+    this._storage = config.storage ?? null;
+    this._sessionMetadata = config.sessionMetadata ?? {};
+    this._sessionId = config.sessionId ?? null;
   }
   /**
    * Create a new AgentContext
@@ -11024,6 +10642,14 @@ var AgentContext = class _AgentContext extends EventEmitter {
   /** Agent ID (auto-generated or from config) */
   get agentId() {
     return this._agentId;
+  }
+  /** Current session ID (null if no session loaded/saved) */
+  get sessionId() {
+    return this._sessionId;
+  }
+  /** Storage backend for session persistence (null if not configured) */
+  get storage() {
+    return this._storage;
   }
   // ============================================================================
   // Feature Configuration
@@ -11620,7 +11246,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
    * Serializes ALL state:
    * - History and tool calls
    * - Tool enable/disable state
-   * - Memory state (if enabled)
+   * - Memory entries (if enabled)
    * - Permission state (if enabled)
    * - Plugin state
    * - Feature configuration
@@ -11633,13 +11259,9 @@ var AgentContext = class _AgentContext extends EventEmitter {
         pluginStates[name] = state;
       }
     }
-    let memoryStats;
+    let memory;
     if (this._memory) {
-      const stats = await this._memory.getStats();
-      memoryStats = {
-        entryCount: stats.totalEntries,
-        sizeBytes: stats.totalSizeBytes
-      };
+      memory = await this._memory.serialize();
     }
     const permissionState = this._permissions?.getState() ?? {
       version: 1,
@@ -11656,7 +11278,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
         toolCalls: this._toolCalls
       },
       tools: this._tools.getState(),
-      memoryStats,
+      memory,
       permissions: permissionState,
       plugins: pluginStates,
       config: {
@@ -11685,6 +11307,9 @@ var AgentContext = class _AgentContext extends EventEmitter {
     if (state.tools) {
       this._tools.loadState(state.tools);
     }
+    if (state.memory && this._memory) {
+      await this._memory.restore(state.memory);
+    }
     if (state.permissions && this._permissions) {
       this._permissions.loadState(state.permissions);
     }
@@ -11693,6 +11318,102 @@ var AgentContext = class _AgentContext extends EventEmitter {
       if (plugin?.restoreState) {
         plugin.restoreState(pluginState);
       }
+    }
+  }
+  /**
+   * Save the current context state to storage.
+   *
+   * @param sessionId - Session ID to save as. If not provided, uses the current sessionId.
+   * @param metadata - Optional metadata to merge with existing session metadata.
+   * @throws Error if no storage is configured or no sessionId is available.
+   *
+   * @example
+   * ```typescript
+   * // Save to a new session
+   * await ctx.save('my-session-001', { title: 'Research on AI' });
+   *
+   * // Save to current session (must have been loaded or saved before)
+   * await ctx.save();
+   * ```
+   */
+  async save(sessionId, metadata) {
+    if (!this._storage) {
+      throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
+    }
+    const targetSessionId = sessionId ?? this._sessionId;
+    if (!targetSessionId) {
+      throw new Error("No sessionId provided and no current session. Provide a sessionId or load a session first.");
+    }
+    const state = await this.getState();
+    const finalMetadata = {
+      ...this._sessionMetadata,
+      ...metadata
+    };
+    await this._storage.save(targetSessionId, state, finalMetadata);
+    this._sessionId = targetSessionId;
+    this._sessionMetadata = finalMetadata;
+  }
+  /**
+   * Load a session from storage and restore its state.
+   *
+   * @param sessionId - Session ID to load.
+   * @returns true if the session was found and loaded, false if not found.
+   * @throws Error if no storage is configured.
+   *
+   * @example
+   * ```typescript
+   * const loaded = await ctx.load('my-session-001');
+   * if (loaded) {
+   *   console.log('Session restored!');
+   * } else {
+   *   console.log('Session not found, starting fresh.');
+   * }
+   * ```
+   */
+  async load(sessionId) {
+    if (!this._storage) {
+      throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
+    }
+    const stored = await this._storage.load(sessionId);
+    if (!stored) {
+      return false;
+    }
+    await this.restoreState(stored.state);
+    this._sessionId = sessionId;
+    this._sessionMetadata = stored.metadata;
+    return true;
+  }
+  /**
+   * Check if a session exists in storage.
+   *
+   * @param sessionId - Session ID to check.
+   * @returns true if the session exists.
+   * @throws Error if no storage is configured.
+   */
+  async sessionExists(sessionId) {
+    if (!this._storage) {
+      throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
+    }
+    return this._storage.exists(sessionId);
+  }
+  /**
+   * Delete a session from storage.
+   *
+   * @param sessionId - Session ID to delete. If not provided, deletes the current session.
+   * @throws Error if no storage is configured or no sessionId is available.
+   */
+  async deleteSession(sessionId) {
+    if (!this._storage) {
+      throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
+    }
+    const targetSessionId = sessionId ?? this._sessionId;
+    if (!targetSessionId) {
+      throw new Error("No sessionId provided and no current session.");
+    }
+    await this._storage.delete(targetSessionId);
+    if (targetSessionId === this._sessionId) {
+      this._sessionId = null;
+      this._sessionMetadata = {};
     }
   }
   // ============================================================================
@@ -14696,15 +14417,16 @@ var BaseAgent = class extends EventEmitter {
   // ===== Protected State =====
   _config;
   _agentContext;
-  // SINGLE SOURCE OF TRUTH for tools
+  // SINGLE SOURCE OF TRUTH for tools and sessions
   _permissionManager;
-  _sessionManager = null;
-  _session = null;
-  _pendingSessionLoad = null;
   _isDestroyed = false;
   _cleanupCallbacks = [];
   _logger;
   _lifecycleHooks;
+  // Session state
+  _sessionConfig = null;
+  _autoSaveInterval = null;
+  _pendingSessionLoad = null;
   // Lazy-initialized provider for direct calls
   _directProvider = null;
   // ===== Constructor =====
@@ -14729,37 +14451,6 @@ var BaseAgent = class extends EventEmitter {
     this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
     this._lifecycleHooks = config.lifecycleHooks ?? {};
   }
-  /**
-   * Prepare session state before saving.
-   * Subclasses override to add their specific state (plan, memory, etc.)
-   *
-   * Default implementation does nothing - override in subclasses.
-   */
-  prepareSessionState() {
-  }
-  /**
-   * Restore session state after loading.
-   * Subclasses override to restore their specific state (plan, memory, etc.)
-   * Called after tool state and approval state are restored.
-   *
-   * Default implementation does nothing - override in subclasses.
-   */
-  async restoreSessionState(_session) {
-  }
-  /**
-   * Get plan state for session serialization.
-   * Subclasses with plans override this.
-   */
-  getSerializedPlan() {
-    return void 0;
-  }
-  /**
-   * Get memory state for session serialization.
-   * Subclasses with working memory override this.
-   */
-  getSerializedMemory() {
-    return void 0;
-  }
   // ===== Protected Initialization Helpers =====
   /**
    * Resolve connector from string name or instance
@@ -14771,7 +14462,7 @@ var BaseAgent = class extends EventEmitter {
     return ref;
   }
   /**
-   * Initialize AgentContext (single source of truth for tools).
+   * Initialize AgentContext (single source of truth for tools and sessions).
    * If AgentContext is provided, use it directly.
    * Otherwise, create a new one with the provided configuration.
    */
@@ -14781,30 +14472,13 @@ var BaseAgent = class extends EventEmitter {
     }
     const contextConfig = {
       model: config.model,
+      agentId: config.name,
+      // Include storage if session config is provided
+      storage: config.session?.storage,
       // Subclasses can add systemPrompt via their config
       ...typeof config.context === "object" && config.context !== null ? config.context : {}
     };
     return AgentContext.create(contextConfig);
-  }
-  /**
-   * Initialize tool manager with provided tools
-   * @deprecated Use _agentContext.tools instead. This method is kept for backward compatibility.
-   */
-  initializeToolManager(existingManager, tools, options) {
-    const manager = existingManager ?? new ToolManager();
-    if (tools) {
-      this.registerTools(manager, tools, options);
-    }
-    return manager;
-  }
-  /**
-   * Register multiple tools with the tool manager
-   * Utility method to avoid code duplication across agent types
-   */
-  registerTools(manager, tools, options) {
-    for (const tool of tools) {
-      manager.register(tool, options);
-    }
   }
   /**
    * Initialize permission manager
@@ -14822,22 +14496,28 @@ var BaseAgent = class extends EventEmitter {
   }
   /**
    * Initialize session management (call from subclass constructor after other setup)
+   * Now uses AgentContext.save()/load() for persistence.
    */
   initializeSession(sessionConfig) {
     if (!sessionConfig) {
       return;
     }
-    this._sessionManager = new SessionManager({ storage: sessionConfig.storage });
+    this._sessionConfig = sessionConfig;
     if (sessionConfig.id) {
-      this._pendingSessionLoad = this.loadSessionInternal(sessionConfig.id);
-    } else {
-      this._session = this._sessionManager.create(this.getAgentType(), {
-        title: this.name
-      });
-      if (sessionConfig.autoSave) {
-        const interval = sessionConfig.autoSaveIntervalMs ?? 3e4;
-        this._sessionManager.enableAutoSave(this._session, interval);
-      }
+      this._pendingSessionLoad = this.loadSession(sessionConfig.id);
+    }
+    if (sessionConfig.autoSave) {
+      const interval = sessionConfig.autoSaveIntervalMs ?? 3e4;
+      this._autoSaveInterval = setInterval(async () => {
+        try {
+          if (this._agentContext.sessionId) {
+            await this._agentContext.save();
+            this._logger.debug({ sessionId: this._agentContext.sessionId }, "Auto-saved session");
+          }
+        } catch (error) {
+          this._logger.error({ error: error.message }, "Auto-save failed");
+        }
+      }, interval);
     }
   }
   /**
@@ -14849,102 +14529,66 @@ var BaseAgent = class extends EventEmitter {
       this._pendingSessionLoad = null;
     }
   }
-  /**
-   * Internal method to load session
-   */
-  async loadSessionInternal(sessionId) {
-    if (!this._sessionManager) return;
-    try {
-      const session = await this._sessionManager.load(sessionId);
-      if (session) {
-        this._session = session;
-        if (session.toolState) {
-          this._agentContext.tools.loadState(session.toolState);
-        }
-        const inheritFromSession = this._config.permissions?.inheritFromSession !== false;
-        if (inheritFromSession && session.custom["approvalState"]) {
-          this._permissionManager.loadState(
-            session.custom["approvalState"]
-          );
-        }
-        await this.restoreSessionState(session);
-        this._logger.info({ sessionId }, "Session loaded");
-        if (this._config.session?.autoSave) {
-          const interval = this._config.session.autoSaveIntervalMs ?? 3e4;
-          this._sessionManager.enableAutoSave(this._session, interval);
-        }
-      } else {
-        this._logger.warn({ sessionId }, "Session not found, creating new session");
-        this._session = this._sessionManager.create(this.getAgentType(), {
-          title: this.name
-        });
-      }
-    } catch (error) {
-      this._logger.error(
-        { error: error.message, sessionId },
-        "Failed to load session"
-      );
-      throw error;
-    }
-  }
   // ===== Public Session API =====
   /**
    * Get the current session ID (if session is enabled)
+   * Delegates to AgentContext.
    */
   getSessionId() {
-    return this._session?.id ?? null;
+    return this._agentContext.sessionId;
   }
   /**
    * Check if this agent has session support enabled
    */
   hasSession() {
-    return this._session !== null;
+    return this._agentContext.storage !== null;
   }
   /**
-   * Get the current session (for advanced use)
+   * Save the current session to storage.
+   * Delegates to AgentContext.save().
+   *
+   * @param sessionId - Optional session ID (uses current or generates new)
+   * @param metadata - Optional session metadata
+   * @throws Error if storage is not configured
    */
-  getSession() {
-    return this._session;
-  }
-  /**
-   * Save the current session to storage
-   * @throws Error if session is not enabled
-   */
-  async saveSession() {
+  async saveSession(sessionId, metadata) {
     await this.ensureSessionLoaded();
-    if (!this._sessionManager || !this._session) {
-      throw new Error(
-        "Session not enabled. Configure session in agent config to use this feature."
-      );
-    }
-    this._session.toolState = this._agentContext.tools.getState();
-    this._session.custom["approvalState"] = this._permissionManager.getState();
-    const plan = this.getSerializedPlan();
-    if (plan) {
-      this._session.plan = plan;
-    }
-    const memory = this.getSerializedMemory();
-    if (memory) {
-      this._session.memory = memory;
-    }
-    this.prepareSessionState();
-    await this._sessionManager.save(this._session);
-    this._logger.debug({ sessionId: this._session.id }, "Session saved");
+    await this._agentContext.save(sessionId, metadata);
+    this._logger.debug({ sessionId: this._agentContext.sessionId }, "Session saved");
+    this.emit("session:saved", { sessionId: this._agentContext.sessionId });
   }
   /**
-   * Update session custom data
+   * Load a session from storage.
+   * Delegates to AgentContext.load().
+   *
+   * @param sessionId - Session ID to load
+   * @returns true if session was found and loaded, false if not found
+   * @throws Error if storage is not configured
    */
-  updateSessionData(key, value) {
-    if (!this._session) {
-      throw new Error("Session not enabled");
+  async loadSession(sessionId) {
+    const loaded = await this._agentContext.load(sessionId);
+    if (loaded) {
+      this._logger.info({ sessionId }, "Session loaded");
+      this.emit("session:loaded", { sessionId });
+    } else {
+      this._logger.warn({ sessionId }, "Session not found");
     }
-    this._session.custom[key] = value;
+    return loaded;
   }
   /**
-   * Get session custom data
+   * Check if a session exists in storage.
+   * Delegates to AgentContext.sessionExists().
    */
-  getSessionData(key) {
-    return this._session?.custom[key];
+  async sessionExists(sessionId) {
+    return this._agentContext.sessionExists(sessionId);
+  }
+  /**
+   * Delete a session from storage.
+   * Delegates to AgentContext.deleteSession().
+   */
+  async deleteSession(sessionId) {
+    await this._agentContext.deleteSession(sessionId);
+    this._logger.debug({ sessionId }, "Session deleted");
   }
   // ===== Public Permission API =====
   /**
@@ -15269,11 +14913,9 @@ var BaseAgent = class extends EventEmitter {
     }
     this._isDestroyed = true;
     this._logger.debug("Agent destroy started");
-    if (this._sessionManager) {
-      if (this._session) {
-        this._sessionManager.stopAutoSave(this._session.id);
-      }
-      this._sessionManager.destroy();
+    if (this._autoSaveInterval) {
+      clearInterval(this._autoSaveInterval);
+      this._autoSaveInterval = null;
     }
     this._agentContext.destroy();
     this._permissionManager.removeAllListeners();
@@ -17199,6 +16841,55 @@ var Agent = class _Agent extends BaseAgent {
     await agent.ensureSessionLoaded();
     return agent;
   }
+  /**
+   * Create an agent from a stored definition
+   *
+   * Loads agent configuration from storage and creates a new Agent instance.
+   * The connector must be registered at runtime before calling this method.
+   *
+   * @param agentId - Agent identifier to load
+   * @param storage - Storage backend to load from
+   * @param overrides - Optional config overrides
+   * @returns Agent instance, or null if not found
+   *
+   * @example
+   * ```typescript
+   * // First, register the connector
+   * Connector.create({
+   *   name: 'openai',
+   *   vendor: Vendor.OpenAI,
+   *   auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY }
+   * });
+   *
+   * // Then load the agent from storage
+   * const storage = new FileAgentDefinitionStorage();
+   * const agent = await Agent.fromStorage('my-assistant', storage);
+   *
+   * if (agent) {
+   *   const response = await agent.run('Hello!');
+   * }
+   * ```
+   */
+  static async fromStorage(agentId, storage, overrides) {
+    const definition = await storage.load(agentId);
+    if (!definition) {
+      return null;
+    }
+    const config = {
+      connector: definition.connector.name,
+      model: definition.connector.model,
+      instructions: definition.systemPrompt,
+      context: {
+        agentId: definition.agentId,
+        systemPrompt: definition.systemPrompt,
+        instructions: definition.instructions,
+        features: definition.features
+      },
+      ...definition.typeConfig,
+      ...overrides
+    };
+    return new _Agent(config);
+  }
   // ===== Constructor =====
   constructor(config) {
     super(config, "Agent");
@@ -17230,18 +16921,6 @@ var Agent = class _Agent extends BaseAgent {
   // ===== Abstract Method Implementations =====
   getAgentType() {
     return "agent";
-  }
-  prepareSessionState() {
-    if (this._session) {
-      this._agentContext.getState().then((contextState) => {
-        if (this._session) {
-          this._session.metadata = {
-            ...this._session.metadata,
-            agentContext: contextState
-          };
-        }
-      });
-    }
   }
   // ===== Context Access =====
   // Note: `context` getter is inherited from BaseAgent (returns _agentContext)
@@ -17467,6 +17146,61 @@ var Agent = class _Agent extends BaseAgent {
   setTemperature(temperature) {
     this._config.temperature = temperature;
   }
+  // ===== Definition Persistence =====
+  /**
+   * Save the agent's configuration to storage for later instantiation.
+   *
+   * This saves the agent's configuration (model, system prompt, features, etc.)
+   * to persistent storage. The agent can later be recreated using Agent.fromStorage().
+   *
+   * @param storage - Storage backend to save to
+   * @param metadata - Optional metadata to attach
+   *
+   * @example
+   * ```typescript
+   * const agent = Agent.create({
+   *   connector: 'openai',
+   *   model: 'gpt-4',
+   *   instructions: 'You are a helpful assistant',
+   *   context: { agentId: 'my-assistant' }
+   * });
+   *
+   * // Save definition for later use
+   * const storage = new FileAgentDefinitionStorage();
+   * await agent.saveDefinition(storage, {
+   *   description: 'My helpful assistant',
+   *   tags: ['personal', 'general']
+   * });
+   *
+   * // Later, recreate the agent
+   * const restoredAgent = await Agent.fromStorage('my-assistant', storage);
+   * ```
+   */
+  async saveDefinition(storage, metadata) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const definition = {
+      version: 1,
+      agentId: this._agentContext.agentId,
+      name: metadata?.description ? this._agentContext.agentId : this._agentContext.agentId,
+      agentType: "agent",
+      createdAt: now,
+      updatedAt: now,
+      connector: {
+        name: this.connector.name,
+        model: this.model
+      },
+      systemPrompt: this._agentContext.systemPrompt,
+      instructions: this._config.instructions,
+      features: this._agentContext.features,
+      metadata,
+      typeConfig: {
+        temperature: this._config.temperature,
+        maxIterations: this._config.maxIterations,
+        vendorOptions: this._config.vendorOptions
+      }
+    };
+    await storage.save(definition);
+  }
   // ===== Control Methods =====
   pause(reason) {
     this.agenticLoop.pause(reason);
@@ -17658,8 +17392,8 @@ function getMemoryTools() {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs15 = __require("fs");
-      const content = fs15.readFileSync(configPath, "utf-8");
+      const fs16 = __require("fs");
+      const content = fs16.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -17688,10 +17422,10 @@ function getMemoryTools() {
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs15 = __require("fs");
+    const fs16 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs15.accessSync(resolve(path6));
+        fs16.accessSync(resolve(path6));
         return resolve(path6);
       } catch {
       }
@@ -18992,7 +18726,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
       const blob = new Blob([audio]);
       return new File([blob], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs14.createReadStream(audio);
+      return fs15.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -19545,7 +19279,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs13.writeFile(filePath, response.audio);
+    await fs14.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -19893,7 +19627,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs13.readFile(filePath);
+    const audio = await fs14.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -20219,7 +19953,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([image], "image.png", { type: "image/png" });
     }
-    return fs14.createReadStream(image);
+    return fs15.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -20366,8 +20100,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs15 = await import('fs');
-      const buffer = fs15.readFileSync(image);
+      const fs16 = await import('fs');
+      const buffer = fs16.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -21315,8 +21049,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([image], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs15 = await import('fs');
-      const data = fs15.readFileSync(image);
+      const fs16 = await import('fs');
+      const data = fs16.readFileSync(image);
       return new File([data], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -21613,8 +21347,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs15 = await import('fs/promises');
-    const data = await fs15.readFile(image);
+    const fs16 = await import('fs/promises');
+    const data = await fs16.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -22803,6 +22537,12 @@ var ZenRowsProvider = class {
   }
 };
 registerScrapeProvider("zenrows", ZenRowsProvider);
+
+// src/domain/interfaces/IContextStorage.ts
+var CONTEXT_SESSION_FORMAT_VERSION = 1;
+
+// src/domain/interfaces/IAgentDefinitionStorage.ts
+var AGENT_DEFINITION_FORMAT_VERSION = 1;
 
 // src/capabilities/taskAgent/TaskAgent.ts
 init_Connector();
@@ -24689,60 +24429,6 @@ var TaskAgent = class _TaskAgent extends BaseAgent {
   getAgentType() {
     return "task-agent";
   }
-  prepareSessionState() {
-  }
-  async restoreSessionState(session) {
-    if (session.plan?.data) {
-      this.state.plan = session.plan.data;
-    }
-    this._logger.debug({ sessionId: session.id }, "TaskAgent session state restored");
-  }
-  getSerializedPlan() {
-    if (!this.state.plan) {
-      return void 0;
-    }
-    return {
-      version: 1,
-      data: this.state.plan
-    };
-  }
-  getSerializedMemory() {
-    return void 0;
-  }
-  // Override saveSession to handle async memory serialization
-  async saveSession() {
-    await this.ensureSessionLoaded();
-    if (!this._sessionManager || !this._session) {
-      throw new Error(
-        "Session not enabled. Configure session in agent config to use this feature."
-      );
-    }
-    this._session.toolState = this._agentContext.tools.getState();
-    this._session.custom["approvalState"] = this._permissionManager.getState();
-    const plan = this.getSerializedPlan();
-    if (plan) {
-      this._session.plan = plan;
-    }
-    if (this._agentContext.memory) {
-      const memoryIndex = await this._agentContext.memory.getIndex();
-      this._session.memory = {
-        version: 1,
-        entries: memoryIndex.entries.map((e) => ({
-          key: e.key,
-          description: e.description,
-          value: null,
-          // Don't serialize full values, they're in agent storage
-          scope: e.scope,
-          sizeBytes: 0,
-          basePriority: e.effectivePriority,
-          pinned: e.pinned
-        }))
-      };
-    }
-    this.prepareSessionState();
-    await this._sessionManager.save(this._session);
-    this._logger.debug({ sessionId: this._session.id }, "TaskAgent session saved");
-  }
   // ===== Component Initialization =====
   /**
    * Wrap a tool with idempotency cache and enhanced context.
@@ -26521,9 +26207,9 @@ var FileSearchSource = class {
         }
         if (this.searchMode === "content" || this.searchMode === "both") {
           try {
-            const stat6 = await fs13.stat(filePath);
+            const stat6 = await fs14.stat(filePath);
             if (stat6.size > this.maxFileSize) continue;
-            const content = await fs13.readFile(filePath, "utf-8");
+            const content = await fs14.readFile(filePath, "utf-8");
             const match = this.findContentMatch(content, query);
             if (match) {
               results.push({
@@ -26570,7 +26256,7 @@ var FileSearchSource = class {
           error: "Path is outside allowed base directory"
         };
       }
-      const stat6 = await fs13.stat(absolutePath);
+      const stat6 = await fs14.stat(absolutePath);
       const maxSize = options?.maxSize ?? this.maxFileSize;
       if (stat6.size > maxSize) {
         return {
@@ -26581,7 +26267,7 @@ var FileSearchSource = class {
           sizeBytes: stat6.size
         };
       }
-      const content = await fs13.readFile(absolutePath, "utf-8");
+      const content = await fs14.readFile(absolutePath, "utf-8");
       const ext = path2.extname(absolutePath).toLowerCase();
       return {
         success: true,
@@ -26606,7 +26292,7 @@ var FileSearchSource = class {
   }
   async isAvailable() {
     try {
-      await fs13.access(this.basePath);
+      await fs14.access(this.basePath);
       return true;
     } catch {
       return false;
@@ -27103,169 +26789,97 @@ var InMemoryHistoryStorage = class {
     this.summaries = state.summaries ? [...state.summaries] : [];
   }
 };
-
-// src/infrastructure/storage/InMemorySessionStorage.ts
-var InMemorySessionStorage = class {
-  sessions = /* @__PURE__ */ new Map();
-  async save(session) {
-    this.sessions.set(session.id, JSON.parse(JSON.stringify(session)));
-  }
-  async load(sessionId) {
-    const session = this.sessions.get(sessionId);
-    if (!session) return null;
-    return JSON.parse(JSON.stringify(session));
-  }
-  async delete(sessionId) {
-    this.sessions.delete(sessionId);
-  }
-  async exists(sessionId) {
-    return this.sessions.has(sessionId);
-  }
-  async list(filter) {
-    let sessions = Array.from(this.sessions.values());
-    if (filter) {
-      sessions = this.applyFilter(sessions, filter);
+function getDefaultBaseDirectory2() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return join(appData, "oneringai", "agents");
     }
-    sessions.sort(
-      (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
-    );
-    if (filter?.offset) {
-      sessions = sessions.slice(filter.offset);
-    }
-    if (filter?.limit) {
-      sessions = sessions.slice(0, filter.limit);
-    }
-    return sessions.map(this.toSummary);
   }
-  async search(query, filter) {
-    const lowerQuery = query.toLowerCase();
-    let sessions = Array.from(this.sessions.values());
-    sessions = sessions.filter((s) => {
-      const titleMatch = s.metadata.title?.toLowerCase().includes(lowerQuery);
-      const tagMatch = s.metadata.tags?.some(
-        (t) => t.toLowerCase().includes(lowerQuery)
-      );
-      const idMatch = s.id.toLowerCase().includes(lowerQuery);
-      return titleMatch || tagMatch || idMatch;
-    });
-    if (filter) {
-      sessions = this.applyFilter(sessions, filter);
-    }
-    sessions.sort((a, b) => {
-      const aTitle = a.metadata.title?.toLowerCase().includes(lowerQuery) ? 1 : 0;
-      const bTitle = b.metadata.title?.toLowerCase().includes(lowerQuery) ? 1 : 0;
-      if (aTitle !== bTitle) return bTitle - aTitle;
-      return new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime();
-    });
-    if (filter?.offset) {
-      sessions = sessions.slice(filter.offset);
-    }
-    if (filter?.limit) {
-      sessions = sessions.slice(0, filter.limit);
-    }
-    return sessions.map(this.toSummary);
-  }
-  /**
-   * Clear all sessions (useful for testing)
-   */
-  clear() {
-    this.sessions.clear();
-  }
-  /**
-   * Get count of sessions
-   */
-  get size() {
-    return this.sessions.size;
-  }
-  // ==========================================================================
-  // Private Helpers
-  // ==========================================================================
-  applyFilter(sessions, filter) {
-    return sessions.filter((s) => {
-      if (filter.agentType && s.agentType !== filter.agentType) {
-        return false;
-      }
-      if (filter.userId && s.metadata.userId !== filter.userId) {
-        return false;
-      }
-      if (filter.tags && filter.tags.length > 0) {
-        const sessionTags = s.metadata.tags ?? [];
-        const hasMatchingTag = filter.tags.some((t) => sessionTags.includes(t));
-        if (!hasMatchingTag) return false;
-      }
-      if (filter.createdAfter && new Date(s.createdAt) < filter.createdAfter) {
-        return false;
-      }
-      if (filter.createdBefore && new Date(s.createdAt) > filter.createdBefore) {
-        return false;
-      }
-      if (filter.activeAfter && new Date(s.lastActiveAt) < filter.activeAfter) {
-        return false;
-      }
-      if (filter.activeBefore && new Date(s.lastActiveAt) > filter.activeBefore) {
-        return false;
-      }
-      return true;
-    });
-  }
-  toSummary(session) {
-    return {
-      id: session.id,
-      agentType: session.agentType,
-      createdAt: new Date(session.createdAt),
-      lastActiveAt: new Date(session.lastActiveAt),
-      metadata: session.metadata,
-      messageCount: session.history.entries.length
-    };
-  }
-};
-var FileSessionStorage = class {
-  directory;
-  prettyPrint;
-  extension;
+  return join(homedir(), ".oneringai", "agents");
+}
+function sanitizeId(id) {
+  return id.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FORMAT_VERSION = CONTEXT_SESSION_FORMAT_VERSION;
+var FileContextStorage = class {
+  agentId;
+  sessionsDirectory;
   indexPath;
+  prettyPrint;
   index = null;
   constructor(config) {
-    this.directory = config.directory;
-    this.prettyPrint = config.prettyPrint ?? false;
-    this.extension = config.extension ?? ".json";
-    this.indexPath = join(this.directory, "_index.json");
+    this.agentId = config.agentId;
+    const sanitizedAgentId = sanitizeId(config.agentId);
+    const baseDir = config.baseDirectory ?? getDefaultBaseDirectory2();
+    this.prettyPrint = config.prettyPrint ?? true;
+    this.sessionsDirectory = join(baseDir, sanitizedAgentId, "sessions");
+    this.indexPath = join(this.sessionsDirectory, "_index.json");
   }
-  async save(session) {
+  /**
+   * Save context state to a session file
+   */
+  async save(sessionId, state, metadata) {
     await this.ensureDirectory();
-    const filePath = this.getFilePath(session.id);
-    const data = this.prettyPrint ? JSON.stringify(session, null, 2) : JSON.stringify(session);
-    await promises.writeFile(filePath, data, "utf-8");
-    await this.updateIndex(session);
-  }
-  async load(sessionId) {
-    const filePath = this.getFilePath(sessionId);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const sanitizedSessionId = sanitizeId(sessionId);
+    const filePath = this.getFilePath(sanitizedSessionId);
+    let createdAt = now;
+    const existing = await this.loadRaw(sanitizedSessionId);
+    if (existing) {
+      createdAt = existing.createdAt;
+    }
+    const storedSession = {
+      version: FORMAT_VERSION,
+      sessionId,
+      createdAt,
+      lastSavedAt: now,
+      state,
+      metadata: metadata ?? {}
+    };
+    const data = this.prettyPrint ? JSON.stringify(storedSession, null, 2) : JSON.stringify(storedSession);
+    const tempPath = `${filePath}.tmp`;
     try {
-      const data = await promises.readFile(filePath, "utf-8");
-      return JSON.parse(data);
+      await promises.writeFile(tempPath, data, "utf-8");
+      await promises.rename(tempPath, filePath);
     } catch (error) {
-      if (error.code === "ENOENT") {
-        return null;
-      }
-      if (error instanceof SyntaxError) {
-        return null;
+      try {
+        await promises.unlink(tempPath);
+      } catch {
       }
       throw error;
     }
+    await this.updateIndex(storedSession);
   }
+  /**
+   * Load context state from a session file
+   */
+  async load(sessionId) {
+    const sanitizedSessionId = sanitizeId(sessionId);
+    return this.loadRaw(sanitizedSessionId);
+  }
+  /**
+   * Delete a session
+   */
   async delete(sessionId) {
-    const filePath = this.getFilePath(sessionId);
+    const sanitizedSessionId = sanitizeId(sessionId);
+    const filePath = this.getFilePath(sanitizedSessionId);
     try {
       await promises.unlink(filePath);
     } catch (error) {
-      if (error.code !== "ENOENT") {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
       }
     }
     await this.removeFromIndex(sessionId);
   }
+  /**
+   * Check if a session exists
+   */
   async exists(sessionId) {
-    const filePath = this.getFilePath(sessionId);
+    const sanitizedSessionId = sanitizeId(sessionId);
+    const filePath = this.getFilePath(sanitizedSessionId);
     try {
       await promises.access(filePath);
       return true;
@@ -27273,50 +26887,79 @@ var FileSessionStorage = class {
       return false;
     }
   }
-  async list(filter) {
+  /**
+   * List all sessions (summaries only)
+   */
+  async list(options) {
     const index = await this.loadIndex();
-    let entries = index.sessions;
-    if (filter) {
-      entries = this.applyFilter(entries, filter);
+    let entries = [...index.sessions];
+    if (options?.tags && options.tags.length > 0) {
+      entries = entries.filter((e) => {
+        const entryTags = e.metadata.tags ?? [];
+        return options.tags.some((t) => entryTags.includes(t));
+      });
+    }
+    if (options?.createdAfter) {
+      const after = options.createdAfter.getTime();
+      entries = entries.filter((e) => new Date(e.createdAt).getTime() >= after);
+    }
+    if (options?.createdBefore) {
+      const before = options.createdBefore.getTime();
+      entries = entries.filter((e) => new Date(e.createdAt).getTime() <= before);
+    }
+    if (options?.savedAfter) {
+      const after = options.savedAfter.getTime();
+      entries = entries.filter((e) => new Date(e.lastSavedAt).getTime() >= after);
+    }
+    if (options?.savedBefore) {
+      const before = options.savedBefore.getTime();
+      entries = entries.filter((e) => new Date(e.lastSavedAt).getTime() <= before);
     }
     entries.sort(
-      (a, b) => new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime()
+      (a, b) => new Date(b.lastSavedAt).getTime() - new Date(a.lastSavedAt).getTime()
     );
-    if (filter?.offset) {
-      entries = entries.slice(filter.offset);
+    if (options?.offset) {
+      entries = entries.slice(options.offset);
     }
-    if (filter?.limit) {
-      entries = entries.slice(0, filter.limit);
+    if (options?.limit) {
+      entries = entries.slice(0, options.limit);
     }
-    return entries.map(this.indexEntryToSummary);
+    return entries.map((e) => ({
+      sessionId: e.sessionId,
+      createdAt: new Date(e.createdAt),
+      lastSavedAt: new Date(e.lastSavedAt),
+      messageCount: e.messageCount,
+      memoryEntryCount: e.memoryEntryCount,
+      metadata: e.metadata
+    }));
   }
-  async search(query, filter) {
-    const index = await this.loadIndex();
-    const lowerQuery = query.toLowerCase();
-    let entries = index.sessions.filter((e) => {
-      const titleMatch = e.metadata.title?.toLowerCase().includes(lowerQuery);
-      const tagMatch = e.metadata.tags?.some(
-        (t) => t.toLowerCase().includes(lowerQuery)
-      );
-      const idMatch = e.id.toLowerCase().includes(lowerQuery);
-      return titleMatch || tagMatch || idMatch;
-    });
-    if (filter) {
-      entries = this.applyFilter(entries, filter);
+  /**
+   * Update session metadata without loading full state
+   */
+  async updateMetadata(sessionId, metadata) {
+    const stored = await this.load(sessionId);
+    if (!stored) {
+      throw new Error(`Session '${sessionId}' not found`);
     }
-    entries.sort((a, b) => {
-      const aTitle = a.metadata.title?.toLowerCase().includes(lowerQuery) ? 1 : 0;
-      const bTitle = b.metadata.title?.toLowerCase().includes(lowerQuery) ? 1 : 0;
-      if (aTitle !== bTitle) return bTitle - aTitle;
-      return new Date(b.lastActiveAt).getTime() - new Date(a.lastActiveAt).getTime();
-    });
-    if (filter?.offset) {
-      entries = entries.slice(filter.offset);
-    }
-    if (filter?.limit) {
-      entries = entries.slice(0, filter.limit);
-    }
-    return entries.map(this.indexEntryToSummary);
+    stored.metadata = { ...stored.metadata, ...metadata };
+    stored.lastSavedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const sanitizedSessionId = sanitizeId(sessionId);
+    const filePath = this.getFilePath(sanitizedSessionId);
+    const data = this.prettyPrint ? JSON.stringify(stored, null, 2) : JSON.stringify(stored);
+    await promises.writeFile(filePath, data, "utf-8");
+    await this.updateIndex(stored);
+  }
+  /**
+   * Get the storage path (for display/debugging)
+   */
+  getPath() {
+    return this.sessionsDirectory;
+  }
+  /**
+   * Get the agent ID
+   */
+  getAgentId() {
+    return this.agentId;
   }
   /**
    * Rebuild the index by scanning all session files
@@ -27324,47 +26967,55 @@ var FileSessionStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory();
-    const files = await promises.readdir(this.directory);
-    const sessionFiles = files.filter(
-      (f) => f.endsWith(this.extension) && !f.startsWith("_")
-    );
+    const files = await promises.readdir(this.sessionsDirectory);
+    const sessionFiles = files.filter((f) => f.endsWith(".json") && !f.startsWith("_"));
     const entries = [];
     for (const file of sessionFiles) {
       try {
-        const filePath = join(this.directory, file);
+        const filePath = join(this.sessionsDirectory, file);
         const data = await promises.readFile(filePath, "utf-8");
-        const session = JSON.parse(data);
-        entries.push(this.sessionToIndexEntry(session));
+        const stored = JSON.parse(data);
+        entries.push(this.storedToIndexEntry(stored));
       } catch {
       }
     }
     this.index = {
       version: 1,
+      agentId: this.agentId,
       sessions: entries,
       lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
     };
     await this.saveIndex();
   }
-  /**
-   * Get the storage directory path
-   */
-  getDirectory() {
-    return this.directory;
-  }
   // ==========================================================================
   // Private Helpers
   // ==========================================================================
-  getFilePath(sessionId) {
-    const safeId = sessionId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    return join(this.directory, `${safeId}${this.extension}`);
+  getFilePath(sanitizedSessionId) {
+    return join(this.sessionsDirectory, `${sanitizedSessionId}.json`);
   }
   async ensureDirectory() {
     try {
-      await promises.mkdir(this.directory, { recursive: true });
+      await promises.mkdir(this.sessionsDirectory, { recursive: true });
     } catch (error) {
-      if (error.code !== "EEXIST") {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
       }
+    }
+  }
+  async loadRaw(sanitizedSessionId) {
+    const filePath = this.getFilePath(sanitizedSessionId);
+    try {
+      const data = await promises.readFile(filePath, "utf-8");
+      return JSON.parse(data);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      if (error instanceof SyntaxError) {
+        console.warn(`Corrupted session file: ${filePath}`);
+        return null;
+      }
+      throw error;
     }
   }
   async loadIndex() {
@@ -27376,9 +27027,10 @@ var FileSessionStorage = class {
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
-      if (error.code === "ENOENT") {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         this.index = {
           version: 1,
+          agentId: this.agentId,
           sessions: [],
           lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
         };
@@ -27389,14 +27041,15 @@ var FileSessionStorage = class {
   }
   async saveIndex() {
     if (!this.index) return;
+    await this.ensureDirectory();
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
     await promises.writeFile(this.indexPath, data, "utf-8");
   }
-  async updateIndex(session) {
+  async updateIndex(stored) {
     const index = await this.loadIndex();
-    const entry = this.sessionToIndexEntry(session);
-    const existingIdx = index.sessions.findIndex((e) => e.id === session.id);
+    const entry = this.storedToIndexEntry(stored);
+    const existingIdx = index.sessions.findIndex((e) => e.sessionId === stored.sessionId);
     if (existingIdx >= 0) {
       index.sessions[existingIdx] = entry;
     } else {
@@ -27405,84 +27058,273 @@ var FileSessionStorage = class {
     await this.saveIndex();
   }
   async removeFromIndex(sessionId) {
-    await this.ensureDirectory();
     const index = await this.loadIndex();
-    index.sessions = index.sessions.filter((e) => e.id !== sessionId);
+    index.sessions = index.sessions.filter((e) => e.sessionId !== sessionId);
     await this.saveIndex();
   }
-  sessionToIndexEntry(session) {
-    let createdAtStr;
-    if (typeof session.createdAt === "string") {
-      createdAtStr = session.createdAt;
-    } else if (typeof session.createdAt === "number") {
-      createdAtStr = new Date(session.createdAt).toISOString();
-    } else if (session.createdAt instanceof Date) {
-      createdAtStr = session.createdAt.toISOString();
-    } else {
-      createdAtStr = (/* @__PURE__ */ new Date()).toISOString();
-    }
-    let lastActiveAtStr;
-    if (typeof session.lastActiveAt === "string") {
-      lastActiveAtStr = session.lastActiveAt;
-    } else if (typeof session.lastActiveAt === "number") {
-      lastActiveAtStr = new Date(session.lastActiveAt).toISOString();
-    } else if (session.lastActiveAt instanceof Date) {
-      lastActiveAtStr = session.lastActiveAt.toISOString();
-    } else {
-      lastActiveAtStr = (/* @__PURE__ */ new Date()).toISOString();
-    }
+  storedToIndexEntry(stored) {
     return {
-      id: session.id,
-      agentType: session.agentType,
-      createdAt: createdAtStr,
-      lastActiveAt: lastActiveAtStr,
-      metadata: {
-        title: session.metadata.title,
-        userId: session.metadata.userId,
-        tags: session.metadata.tags
-      },
-      messageCount: session.history.entries.length
+      sessionId: stored.sessionId,
+      createdAt: stored.createdAt,
+      lastSavedAt: stored.lastSavedAt,
+      messageCount: stored.state.core?.history?.length ?? 0,
+      memoryEntryCount: stored.state.memory?.entries?.length ?? 0,
+      metadata: stored.metadata
     };
-  }
-  indexEntryToSummary(entry) {
-    return {
-      id: entry.id,
-      agentType: entry.agentType,
-      createdAt: new Date(entry.createdAt),
-      lastActiveAt: new Date(entry.lastActiveAt),
-      metadata: entry.metadata,
-      messageCount: entry.messageCount
-    };
-  }
-  applyFilter(entries, filter) {
-    return entries.filter((e) => {
-      if (filter.agentType && e.agentType !== filter.agentType) {
-        return false;
-      }
-      if (filter.userId && e.metadata.userId !== filter.userId) {
-        return false;
-      }
-      if (filter.tags && filter.tags.length > 0) {
-        const entryTags = e.metadata.tags ?? [];
-        const hasMatchingTag = filter.tags.some((t) => entryTags.includes(t));
-        if (!hasMatchingTag) return false;
-      }
-      if (filter.createdAfter && new Date(e.createdAt) < filter.createdAfter) {
-        return false;
-      }
-      if (filter.createdBefore && new Date(e.createdAt) > filter.createdBefore) {
-        return false;
-      }
-      if (filter.activeAfter && new Date(e.lastActiveAt) < filter.activeAfter) {
-        return false;
-      }
-      if (filter.activeBefore && new Date(e.lastActiveAt) > filter.activeBefore) {
-        return false;
-      }
-      return true;
-    });
   }
 };
+function createFileContextStorage(agentId, options) {
+  return new FileContextStorage({ agentId, ...options });
+}
+function getDefaultBaseDirectory3() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return join(appData, "oneringai", "agents");
+    }
+  }
+  return join(homedir(), ".oneringai", "agents");
+}
+function sanitizeAgentId2(agentId) {
+  return agentId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FileAgentDefinitionStorage = class {
+  baseDirectory;
+  indexPath;
+  prettyPrint;
+  index = null;
+  constructor(config = {}) {
+    this.baseDirectory = config.baseDirectory ?? getDefaultBaseDirectory3();
+    this.prettyPrint = config.prettyPrint ?? true;
+    this.indexPath = join(this.baseDirectory, "_agents_index.json");
+  }
+  /**
+   * Save an agent definition
+   */
+  async save(definition) {
+    const sanitizedId = sanitizeAgentId2(definition.agentId);
+    const agentDir = join(this.baseDirectory, sanitizedId);
+    const filePath = join(agentDir, "definition.json");
+    await this.ensureDirectory(agentDir);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    if (!definition.createdAt) {
+      const existing = await this.loadRaw(sanitizedId);
+      definition.createdAt = existing?.createdAt ?? now;
+    }
+    definition.updatedAt = now;
+    definition.version = AGENT_DEFINITION_FORMAT_VERSION;
+    const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
+    const tempPath = `${filePath}.tmp`;
+    try {
+      await promises.writeFile(tempPath, data, "utf-8");
+      await promises.rename(tempPath, filePath);
+    } catch (error) {
+      try {
+        await promises.unlink(tempPath);
+      } catch {
+      }
+      throw error;
+    }
+    await this.updateIndex(definition);
+  }
+  /**
+   * Load an agent definition
+   */
+  async load(agentId) {
+    const sanitizedId = sanitizeAgentId2(agentId);
+    return this.loadRaw(sanitizedId);
+  }
+  /**
+   * Delete an agent definition
+   */
+  async delete(agentId) {
+    const sanitizedId = sanitizeAgentId2(agentId);
+    const agentDir = join(this.baseDirectory, sanitizedId);
+    const filePath = join(agentDir, "definition.json");
+    try {
+      await promises.unlink(filePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+    await this.removeFromIndex(agentId);
+  }
+  /**
+   * Check if an agent definition exists
+   */
+  async exists(agentId) {
+    const sanitizedId = sanitizeAgentId2(agentId);
+    const filePath = join(this.baseDirectory, sanitizedId, "definition.json");
+    try {
+      await promises.access(filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * List all agent definitions
+   */
+  async list(options) {
+    const index = await this.loadIndex();
+    let entries = [...index.agents];
+    if (options?.agentType) {
+      entries = entries.filter((e) => e.agentType === options.agentType);
+    }
+    if (options?.tags && options.tags.length > 0) {
+      entries = entries.filter((e) => {
+        const entryTags = e.metadata?.tags ?? [];
+        return options.tags.some((t) => entryTags.includes(t));
+      });
+    }
+    entries.sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    if (options?.offset) {
+      entries = entries.slice(options.offset);
+    }
+    if (options?.limit) {
+      entries = entries.slice(0, options.limit);
+    }
+    return entries.map((e) => ({
+      agentId: e.agentId,
+      name: e.name,
+      agentType: e.agentType,
+      model: e.model,
+      createdAt: new Date(e.createdAt),
+      updatedAt: new Date(e.updatedAt),
+      metadata: e.metadata
+    }));
+  }
+  /**
+   * Update metadata without loading full definition
+   */
+  async updateMetadata(agentId, metadata) {
+    const definition = await this.load(agentId);
+    if (!definition) {
+      throw new Error(`Agent '${agentId}' not found`);
+    }
+    definition.metadata = { ...definition.metadata, ...metadata };
+    await this.save(definition);
+  }
+  /**
+   * Get storage path
+   */
+  getPath() {
+    return this.baseDirectory;
+  }
+  /**
+   * Rebuild the index by scanning all agent directories
+   */
+  async rebuildIndex() {
+    await this.ensureDirectory(this.baseDirectory);
+    const entries = await promises.readdir(this.baseDirectory, { withFileTypes: true });
+    const agentDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith("_"));
+    const indexEntries = [];
+    for (const dir of agentDirs) {
+      try {
+        const filePath = join(this.baseDirectory, dir.name, "definition.json");
+        const data = await promises.readFile(filePath, "utf-8");
+        const definition = JSON.parse(data);
+        indexEntries.push(this.definitionToIndexEntry(definition));
+      } catch {
+      }
+    }
+    this.index = {
+      version: 1,
+      agents: indexEntries,
+      lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    await this.saveIndex();
+  }
+  // ==========================================================================
+  // Private Helpers
+  // ==========================================================================
+  async ensureDirectory(dir) {
+    try {
+      await promises.mkdir(dir, { recursive: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+  async loadRaw(sanitizedId) {
+    const filePath = join(this.baseDirectory, sanitizedId, "definition.json");
+    try {
+      const data = await promises.readFile(filePath, "utf-8");
+      return JSON.parse(data);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      if (error instanceof SyntaxError) {
+        console.warn(`Corrupted agent definition: ${filePath}`);
+        return null;
+      }
+      throw error;
+    }
+  }
+  async loadIndex() {
+    if (this.index) {
+      return this.index;
+    }
+    try {
+      const data = await promises.readFile(this.indexPath, "utf-8");
+      this.index = JSON.parse(data);
+      return this.index;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        this.index = {
+          version: 1,
+          agents: [],
+          lastUpdated: (/* @__PURE__ */ new Date()).toISOString()
+        };
+        return this.index;
+      }
+      throw error;
+    }
+  }
+  async saveIndex() {
+    if (!this.index) return;
+    await this.ensureDirectory(this.baseDirectory);
+    this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
+    const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
+    await promises.writeFile(this.indexPath, data, "utf-8");
+  }
+  async updateIndex(definition) {
+    const index = await this.loadIndex();
+    const entry = this.definitionToIndexEntry(definition);
+    const existingIdx = index.agents.findIndex((e) => e.agentId === definition.agentId);
+    if (existingIdx >= 0) {
+      index.agents[existingIdx] = entry;
+    } else {
+      index.agents.push(entry);
+    }
+    await this.saveIndex();
+  }
+  async removeFromIndex(agentId) {
+    const index = await this.loadIndex();
+    index.agents = index.agents.filter((e) => e.agentId !== agentId);
+    await this.saveIndex();
+  }
+  definitionToIndexEntry(definition) {
+    return {
+      agentId: definition.agentId,
+      name: definition.name,
+      agentType: definition.agentType,
+      model: definition.connector.model,
+      createdAt: definition.createdAt,
+      updatedAt: definition.updatedAt,
+      metadata: definition.metadata
+    };
+  }
+};
+function createFileAgentDefinitionStorage(config) {
+  return new FileAgentDefinitionStorage(config);
+}
 
 // src/capabilities/agents/StreamHelpers.ts
 var StreamHelpers = class {
@@ -28546,8 +28388,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs13.mkdir(this.directory, { recursive: true });
-      await fs13.chmod(this.directory, 448);
+      await fs14.mkdir(this.directory, { recursive: true });
+      await fs14.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -28563,13 +28405,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs13.writeFile(filePath, encrypted, "utf8");
-    await fs13.chmod(filePath, 384);
+    await fs14.writeFile(filePath, encrypted, "utf8");
+    await fs14.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs13.readFile(filePath, "utf8");
+      const encrypted = await fs14.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -28578,7 +28420,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs13.unlink(filePath);
+        await fs14.unlink(filePath);
       } catch {
       }
       return null;
@@ -28587,7 +28429,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs13.unlink(filePath);
+      await fs14.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -28597,7 +28439,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs13.access(filePath);
+      await fs14.access(filePath);
       return true;
     } catch {
       return false;
@@ -28608,7 +28450,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs13.readdir(this.directory);
+      const files = await fs14.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -28619,10 +28461,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs13.readdir(this.directory);
+      const files = await fs14.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs13.unlink(path2.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs14.unlink(path2.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -29027,14 +28869,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs13.writeFile(filePath, json, "utf8");
-    await fs13.chmod(filePath, 384);
+    await fs14.writeFile(filePath, json, "utf8");
+    await fs14.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs13.readFile(filePath, "utf8");
+      const json = await fs14.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -29047,7 +28889,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs13.unlink(filePath);
+      await fs14.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -29061,7 +28903,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs13.access(filePath);
+      await fs14.access(filePath);
       return true;
     } catch {
       return false;
@@ -29087,13 +28929,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs13.readdir(this.directory);
+      const files = await fs14.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs13.unlink(path2.join(this.directory, f)).catch(() => {
+          (f) => fs14.unlink(path2.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -29120,8 +28962,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs13.mkdir(this.directory, { recursive: true });
-      await fs13.chmod(this.directory, 448);
+      await fs14.mkdir(this.directory, { recursive: true });
+      await fs14.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -29132,7 +28974,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs13.readFile(this.indexPath, "utf8");
+      const json = await fs14.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -29150,8 +28992,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs13.writeFile(this.indexPath, json, "utf8");
-    await fs13.chmod(this.indexPath, 384);
+    await fs14.writeFile(this.indexPath, json, "utf8");
+    await fs14.chmod(this.indexPath, 384);
   }
 };
 
@@ -29295,8 +29137,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs14.existsSync(filePath)) {
-      fs14.unlinkSync(filePath);
+    if (fs15.existsSync(filePath)) {
+      fs15.unlinkSync(filePath);
     }
   } catch {
   }
@@ -29347,7 +29189,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs14.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs15.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -29364,14 +29206,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs14.existsSync(tempFile) && fs14.statSync(tempFile).size > 0) {
+      if (fs15.existsSync(tempFile) && fs15.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs14.existsSync(tempFile) && fs14.statSync(tempFile).size > 0) {
+      if (fs15.existsSync(tempFile) && fs15.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -29398,7 +29240,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs14.existsSync(tempFile) && fs14.statSync(tempFile).size > 0) {
+    if (fs15.existsSync(tempFile) && fs15.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -29411,7 +29253,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs14.readFileSync(filePath);
+    const imageBuffer = fs15.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -32407,7 +32249,7 @@ async function executeInVM(code, input, timeout, logs) {
     displayErrors: true
   });
   const result = await resultPromise;
-  return result;
+  return result !== void 0 ? result : sandbox.output;
 }
 
 // src/tools/registry.generated.ts
@@ -33228,57 +33070,6 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
   getAgentType() {
     return "universal-agent";
   }
-  prepareSessionState() {
-    if (this._session) {
-      this._session.mode = this.modeManager.getMode();
-      this._session.custom["modeState"] = this.modeManager.serialize();
-      this._session.custom["executionHistory"] = this.executionHistory;
-    }
-  }
-  async restoreSessionState(session) {
-    if (session.custom["modeState"]) {
-      this.modeManager.restore(session.custom["modeState"]);
-    }
-    if (session.plan?.data) {
-      this.currentPlan = session.plan.data;
-      this._planPlugin.setPlan(this.currentPlan);
-    }
-    if (session.custom["executionHistory"]) {
-      this.executionHistory = session.custom["executionHistory"];
-    }
-    if (session.custom["agentContextState"]) {
-      await this._agentContext.restoreState(session.custom["agentContextState"]);
-    }
-    this._logger.debug({ sessionId: session.id }, "UniversalAgent session state restored");
-  }
-  getSerializedPlan() {
-    if (!this.currentPlan) {
-      return void 0;
-    }
-    return {
-      version: 1,
-      data: this.currentPlan
-    };
-  }
-  // Override saveSession to handle async AgentContext serialization
-  async saveSession() {
-    await this.ensureSessionLoaded();
-    if (!this._sessionManager || !this._session) {
-      throw new Error(
-        "Session not enabled. Configure session in agent config to use this feature."
-      );
-    }
-    this._session.toolState = this._agentContext.tools.getState();
-    this._session.custom["approvalState"] = this._permissionManager.getState();
-    const plan = this.getSerializedPlan();
-    if (plan) {
-      this._session.plan = plan;
-    }
-    this._session.custom["agentContextState"] = await this._agentContext.getState();
-    this.prepareSessionState();
-    await this._sessionManager.save(this._session);
-    this._logger.debug({ sessionId: this._session.id }, "UniversalAgent session saved");
-  }
   // ============================================================================
   // Main API
   // ============================================================================
@@ -33309,7 +33100,7 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
       response,
       timestamp: /* @__PURE__ */ new Date()
     });
-    if (this._config.session?.autoSave && this._session) {
+    if (this._config.session?.autoSave && this.hasSession()) {
       await this.saveSession().catch(() => {
       });
     }
@@ -34265,6 +34056,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FilePersistentInstructionsStorage, FileSearchSource, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, INTROSPECTION_INSTRUCTIONS, IN_CONTEXT_MEMORY_INSTRUCTIONS, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PERSISTENT_INSTRUCTIONS_INSTRUCTIONS, ParallelTasksError, PersistentInstructionsPlugin, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WORKING_MEMORY_INSTRUCTIONS, WebSearchSource, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildFeatureInstructions, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllInstructions, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FilePersistentInstructionsStorage, FileSearchSource, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, INTROSPECTION_INSTRUCTIONS, IN_CONTEXT_MEMORY_INSTRUCTIONS, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PERSISTENT_INSTRUCTIONS_INSTRUCTIONS, ParallelTasksError, PersistentInstructionsPlugin, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WORKING_MEMORY_INSTRUCTIONS, WebSearchSource, WorkingMemory, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildFeatureInstructions, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllInstructions, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

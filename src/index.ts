@@ -143,23 +143,26 @@ export type {
 export { APPROVAL_STATE_VERSION, DEFAULT_PERMISSION_CONFIG, DEFAULT_ALLOWLIST } from './core/permissions/index.js';
 export type { DefaultAllowlistedTool } from './core/permissions/index.js';
 
-// Session Management (Persistence)
-export { SessionManager, createEmptyHistory, createEmptyMemory, addHistoryEntry } from './core/index.js';
+// Context Storage (Session Persistence via AgentContext)
 export type {
-  Session,
-  SessionMetadata,
-  SessionMetrics,
-  SessionFilter,
-  SessionSummary,
-  ISessionStorage,
-  SerializedHistory,
-  SerializedHistoryEntry,
-  SerializedMemory,
-  SerializedMemoryEntry,
-  SerializedPlan,
-  SessionManagerConfig,
-  SessionManagerEvent,
-} from './core/index.js';
+  IContextStorage,
+  StoredContextSession,
+  ContextSessionSummary,
+  ContextSessionMetadata,
+  ContextStorageListOptions,
+} from './domain/interfaces/IContextStorage.js';
+export { CONTEXT_SESSION_FORMAT_VERSION } from './domain/interfaces/IContextStorage.js';
+
+// Agent Definition Storage (Agent Configuration Persistence)
+export type {
+  IAgentDefinitionStorage,
+  StoredAgentDefinition,
+  StoredAgentType,
+  AgentDefinitionMetadata,
+  AgentDefinitionSummary,
+  AgentDefinitionListOptions,
+} from './domain/interfaces/IAgentDefinitionStorage.js';
+export { AGENT_DEFINITION_FORMAT_VERSION } from './domain/interfaces/IAgentDefinitionStorage.js';
 
 // ============ Error Handling ============
 export { ErrorHandler, globalErrorHandler } from './core/index.js';
@@ -356,9 +359,13 @@ export { createAgentStorage } from './infrastructure/storage/index.js';
 export type { IAgentStorage } from './infrastructure/storage/InMemoryStorage.js';
 export { InMemoryStorage, InMemoryPlanStorage, InMemoryAgentStateStorage } from './infrastructure/storage/index.js';
 
-// Session Storage Implementations
-export { InMemorySessionStorage, FileSessionStorage } from './infrastructure/storage/index.js';
-export type { FileSessionStorageConfig } from './infrastructure/storage/index.js';
+// Context Storage Implementations (for AgentContext session persistence)
+export { FileContextStorage, createFileContextStorage } from './infrastructure/storage/index.js';
+export type { FileContextStorageConfig } from './infrastructure/storage/index.js';
+
+// Agent Definition Storage Implementations (for agent configuration persistence)
+export { FileAgentDefinitionStorage, createFileAgentDefinitionStorage } from './infrastructure/storage/index.js';
+export type { FileAgentDefinitionStorageConfig } from './infrastructure/storage/index.js';
 
 // Tool Context (ToolContext is the canonical interface for tool execution context)
 export type { ToolContext, ToolContext as TaskToolContext, WorkingMemoryAccess } from './domain/interfaces/IToolContext.js';
@@ -850,3 +857,4 @@ export type {
 export { FilePersistentInstructionsStorage } from './infrastructure/storage/index.js';
 export type { FilePersistentInstructionsStorageConfig } from './infrastructure/storage/index.js';
 export type { IPersistentInstructionsStorage } from './domain/interfaces/IPersistentInstructionsStorage.js';
+
