@@ -7252,6 +7252,25 @@ function createAgentStorage(options = {}) {
   };
 }
 
+// src/domain/entities/Message.ts
+var MessageRole = /* @__PURE__ */ ((MessageRole2) => {
+  MessageRole2["USER"] = "user";
+  MessageRole2["ASSISTANT"] = "assistant";
+  MessageRole2["DEVELOPER"] = "developer";
+  return MessageRole2;
+})(MessageRole || {});
+
+// src/domain/entities/Content.ts
+var ContentType = /* @__PURE__ */ ((ContentType2) => {
+  ContentType2["INPUT_TEXT"] = "input_text";
+  ContentType2["INPUT_IMAGE_URL"] = "input_image_url";
+  ContentType2["INPUT_FILE"] = "input_file";
+  ContentType2["OUTPUT_TEXT"] = "output_text";
+  ContentType2["TOOL_USE"] = "tool_use";
+  ContentType2["TOOL_RESULT"] = "tool_result";
+  return ContentType2;
+})(ContentType || {});
+
 // src/core/context/types.ts
 var DEFAULT_CONTEXT_CONFIG = {
   maxContextTokens: 128e3,
@@ -10532,10 +10551,16 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   // ===== Built-in State =====
   _systemPrompt;
   _instructions;
-  _history = [];
   _toolCalls = [];
   _currentInput = "";
   _historyEnabled;
+  // ===== Conversation State (NEW - THE source of truth) =====
+  /** Conversation stored as InputItem[] - THE source of truth */
+  _conversation = [];
+  /** Metadata for each message (keyed by message ID) */
+  _messageMetadata = /* @__PURE__ */ new Map();
+  /** Messages at or after this index cannot be compacted (current iteration protection) */
+  _protectedFromIndex = 0;
   // ===== Plugins =====
   _plugins = /* @__PURE__ */ new Map();
   // ===== Configuration =====
@@ -10749,6 +10774,189 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     return this._currentInput;
   }
   // ============================================================================
+  // Conversation Management (NEW - Primary API)
+  // ============================================================================
+  /**
+   * Add user message to conversation.
+   *
+   * @param content - String or Content[] for the message
+   * @returns Message ID
+   */
+  addUserMessage(content) {
+    const id = this.generateId();
+    const contentArray = typeof content === "string" ? [{ type: "input_text" /* INPUT_TEXT */, text: content }] : content;
+    const message = {
+      type: "message",
+      id,
+      role: "user" /* USER */,
+      content: contentArray
+    };
+    this._conversation.push(message);
+    this._messageMetadata.set(id, {
+      timestamp: Date.now(),
+      tokenCount: this.estimateMessageTokens(message)
+    });
+    const textContent = this.extractTextFromContent(contentArray);
+    if (textContent) {
+      this.setCurrentInput(textContent);
+    }
+    this.emit("message:added", { message: this.convertToHistoryMessage(message) });
+    return id;
+  }
+  /**
+   * Add raw InputItem[] to conversation (for complex inputs with images, files, etc.)
+   *
+   * @param items - InputItem[] to add
+   */
+  addInputItems(items) {
+    for (const item of items) {
+      if (item.type === "message") {
+        const id = item.id || this.generateId();
+        const messageWithId = { ...item, id };
+        this._conversation.push(messageWithId);
+        this._messageMetadata.set(id, {
+          timestamp: Date.now(),
+          tokenCount: this.estimateMessageTokens(messageWithId)
+        });
+        this.emit("message:added", { message: this.convertToHistoryMessage(messageWithId) });
+      }
+    }
+  }
+  /**
+   * Add assistant response to conversation (including tool calls).
+   *
+   * @param output - OutputItem[] from LLM response
+   * @returns Array of message IDs added
+   */
+  addAssistantResponse(output) {
+    const ids = [];
+    for (const item of output) {
+      if (item.type === "message" && item.role === "assistant" /* ASSISTANT */) {
+        const id = item.id || this.generateId();
+        const messageWithId = { ...item, id };
+        this._conversation.push(messageWithId);
+        this._messageMetadata.set(id, {
+          timestamp: Date.now(),
+          tokenCount: this.estimateMessageTokens(messageWithId)
+        });
+        ids.push(id);
+        this.emit("message:added", { message: this.convertToHistoryMessage(messageWithId) });
+      }
+    }
+    return ids;
+  }
+  /**
+   * Add tool results to conversation.
+   *
+   * @param results - ToolResult[] from tool execution
+   * @returns Message ID of the tool results message
+   */
+  addToolResults(results) {
+    const id = this.generateId();
+    const message = {
+      type: "message",
+      id,
+      role: "user" /* USER */,
+      // Tool results go as user message per API spec
+      content: results.map((r) => ({
+        type: "tool_result" /* TOOL_RESULT */,
+        tool_use_id: r.tool_use_id,
+        content: typeof r.content === "string" ? r.content : JSON.stringify(r.content),
+        error: r.error
+      }))
+    };
+    this._conversation.push(message);
+    this._messageMetadata.set(id, {
+      timestamp: Date.now(),
+      tokenCount: this.estimateMessageTokens(message)
+    });
+    for (const r of results) {
+      this._toolCalls.push({
+        id: r.tool_use_id,
+        name: r.tool_name || "unknown",
+        args: {},
+        result: r.content,
+        error: r.error,
+        timestamp: Date.now()
+      });
+    }
+    this.emit("message:added", { message: this.convertToHistoryMessage(message) });
+    return id;
+  }
+  /**
+   * Mark current position as protected from compaction.
+   * Messages at or after this index cannot be compacted.
+   * Called at the start of each iteration by AgenticLoop.
+   */
+  protectFromCompaction() {
+    this._protectedFromIndex = this._conversation.length;
+  }
+  /**
+   * Get conversation (read-only).
+   */
+  getConversation() {
+    return this._conversation;
+  }
+  /**
+   * Get conversation length.
+   */
+  getConversationLength() {
+    return this._conversation.length;
+  }
+  /**
+   * Clear conversation.
+   */
+  clearConversation(reason) {
+    this._conversation = [];
+    this._messageMetadata.clear();
+    this._protectedFromIndex = 0;
+    this.emit("history:cleared", { reason });
+  }
+  /**
+   * Prepare conversation for LLM call.
+   *
+   * THE method that handles everything:
+   * 1. Marks current position as protected
+   * 2. Calculates token usage
+   * 3. Compacts if needed (respecting protection & tool pairs)
+   * 4. Builds final InputItem[] for LLM
+   *
+   * Called by AgenticLoop before EVERY LLM call.
+   */
+  async prepareConversation(options) {
+    this.protectFromCompaction();
+    const conversationTokens = this.estimateConversationTokens();
+    const systemTokens = await this.estimateSystemTokens();
+    const totalUsed = conversationTokens + systemTokens;
+    let budget = this.calculateBudgetFromTokens(totalUsed);
+    this._lastBudget = budget;
+    if (budget.status === "warning") {
+      this.emit("budget:warning", { budget });
+    } else if (budget.status === "critical") {
+      this.emit("budget:critical", { budget });
+    }
+    const needsCompaction = this._config.autoCompact && this._strategy.shouldCompact(budget, {
+      ...DEFAULT_CONTEXT_CONFIG,
+      maxContextTokens: this._maxContextTokens,
+      responseReserve: this._config.responseReserve
+    });
+    let compactionLog = [];
+    if (needsCompaction) {
+      compactionLog = await this.compactConversation(budget);
+      const newTokens = this.estimateConversationTokens() + systemTokens;
+      budget = this.calculateBudgetFromTokens(newTokens);
+      this._lastBudget = budget;
+    }
+    const input = await this.buildLLMInput(options?.instructionOverride);
+    this.emit("context:prepared", { budget, compacted: needsCompaction });
+    return {
+      input,
+      budget,
+      compacted: needsCompaction,
+      compactionLog
+    };
+  }
+  // ============================================================================
   // Task Type Management
   // ============================================================================
   /**
@@ -10842,6 +11050,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * @param metadata - Optional metadata
    * @returns The added message, or null if history feature is disabled
    *
+   * @deprecated Use addUserMessage() or addAssistantResponse() instead
+   *
    * @example
    * ```typescript
    * // For large tool outputs, capacity is checked automatically
@@ -10862,16 +11072,30 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         this.emit("budget:critical", { budget: this._lastBudget });
       }
     }
+    const msgRole = role === "user" ? "user" /* USER */ : role === "assistant" ? "assistant" /* ASSISTANT */ : role === "system" ? "developer" /* DEVELOPER */ : "user" /* USER */;
+    const id = this.generateId();
     const message = {
-      id: this.generateId(),
+      type: "message",
+      id,
+      role: msgRole,
+      content: [{ type: "input_text" /* INPUT_TEXT */, text: content }]
+    };
+    this._conversation.push(message);
+    this._messageMetadata.set(id, {
+      timestamp: Date.now(),
+      tokenCount: estimatedTokens,
+      legacyRole: role
+      // Preserve original role for backward compat
+    });
+    const historyMessage = {
+      id,
       role,
       content,
       timestamp: Date.now(),
       metadata
     };
-    this._history.push(message);
-    this.emit("message:added", { message });
-    return message;
+    this.emit("message:added", { message: historyMessage });
+    return historyMessage;
   }
   /**
    * Add a message to history synchronously (without capacity checking).
@@ -10884,21 +11108,37 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * @param content - Message content
    * @param metadata - Optional metadata
    * @returns The added message, or null if history feature is disabled
+   *
+   * @deprecated Use addUserMessage() or addAssistantResponse() instead
    */
   addMessageSync(role, content, metadata) {
     if (!this._historyEnabled) {
       return null;
     }
+    const msgRole = role === "user" ? "user" /* USER */ : role === "assistant" ? "assistant" /* ASSISTANT */ : role === "system" ? "developer" /* DEVELOPER */ : "user" /* USER */;
+    const id = this.generateId();
     const message = {
-      id: this.generateId(),
+      type: "message",
+      id,
+      role: msgRole,
+      content: [{ type: "input_text" /* INPUT_TEXT */, text: content }]
+    };
+    this._conversation.push(message);
+    this._messageMetadata.set(id, {
+      timestamp: Date.now(),
+      tokenCount: this._estimator.estimateTokens(content),
+      legacyRole: role
+      // Preserve original role for backward compat
+    });
+    const historyMessage = {
+      id,
       role,
       content,
       timestamp: Date.now(),
       metadata
     };
-    this._history.push(message);
-    this.emit("message:added", { message });
-    return message;
+    this.emit("message:added", { message: historyMessage });
+    return historyMessage;
   }
   /**
    * Add a tool result to context with automatic capacity management.
@@ -10913,6 +11153,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * @param result - The tool result (will be stringified for token estimation)
    * @param metadata - Optional metadata (e.g., tool name, duration)
    * @returns The added message, or null if history feature is disabled
+   *
+   * @deprecated Use addToolResults() with ToolResult[] instead
    *
    * @example
    * ```typescript
@@ -10932,29 +11174,33 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     return this.addMessage("tool", content, metadata);
   }
   /**
-   * Get all history messages
+   * Get all history messages (computed from conversation)
+   * @deprecated Use getConversation() instead
    */
   getHistory() {
-    return [...this._history];
+    return this._conversation.map((item) => this.convertToHistoryMessage(item));
   }
   /**
-   * Get recent N messages
+   * Get recent N messages (computed from conversation)
+   * @deprecated Use getConversation() instead
    */
   getRecentHistory(count) {
-    return this._history.slice(-count);
+    const recentItems = this._conversation.slice(-count);
+    return recentItems.map((item) => this.convertToHistoryMessage(item));
   }
   /**
    * Get message count
+   * @deprecated Use getConversationLength() instead
    */
   getMessageCount() {
-    return this._history.length;
+    return this._conversation.length;
   }
   /**
    * Clear history
+   * @deprecated Use clearConversation() instead
    */
   clearHistory(reason) {
-    this._history = [];
-    this.emit("history:cleared", { reason });
+    this.clearConversation(reason);
   }
   /**
    * Get all tool call records
@@ -11256,7 +11502,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       hitRate: 0
     };
     return {
-      historyMessageCount: this._history.length,
+      historyMessageCount: this._conversation.length,
       toolCallCount: this._toolCalls.length,
       cacheStats,
       memoryStats,
@@ -11296,12 +11542,21 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       blocklist: [],
       allowlist: []
     };
+    const metadataObj = {};
+    for (const [key, value] of this._messageMetadata) {
+      metadataObj[key] = value;
+    }
     return {
-      version: 1,
+      version: 2,
+      // v2 format with conversation
       core: {
         systemPrompt: this._systemPrompt,
         instructions: this._instructions,
-        history: this._history,
+        // v2: Store conversation as InputItem[]
+        conversation: this._conversation,
+        messageMetadata: metadataObj,
+        // v1 backward compat: Also include history for older consumers
+        history: this._conversation.map((item) => this.convertToHistoryMessage(item)),
         toolCalls: this._toolCalls
       },
       tools: this._tools.getState(),
@@ -11319,12 +11574,42 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * Restore from saved state
    *
    * Restores ALL state from a previous session.
+   * Handles both v1 (HistoryMessage[]) and v2 (InputItem[]) formats.
    */
   async restoreState(state) {
     this._systemPrompt = state.core.systemPrompt || "";
     this._instructions = state.core.instructions || "";
-    this._history = state.core.history || [];
     this._toolCalls = state.core.toolCalls || [];
+    if (state.version >= 2 && state.core.conversation) {
+      this._conversation = state.core.conversation;
+      this._messageMetadata.clear();
+      if (state.core.messageMetadata) {
+        for (const [key, value] of Object.entries(state.core.messageMetadata)) {
+          this._messageMetadata.set(key, value);
+        }
+      }
+    } else if (state.core.history) {
+      this._conversation = [];
+      this._messageMetadata.clear();
+      for (const msg of state.core.history) {
+        const role = msg.role === "user" ? "user" /* USER */ : msg.role === "assistant" ? "assistant" /* ASSISTANT */ : msg.role === "system" ? "developer" /* DEVELOPER */ : "user" /* USER */;
+        const inputItem = {
+          type: "message",
+          id: msg.id,
+          role,
+          content: [{ type: "input_text" /* INPUT_TEXT */, text: msg.content }]
+        };
+        this._conversation.push(inputItem);
+        this._messageMetadata.set(msg.id, {
+          timestamp: msg.timestamp,
+          tokenCount: this._estimator.estimateTokens(msg.content)
+        });
+      }
+    } else {
+      this._conversation = [];
+      this._messageMetadata.clear();
+    }
+    this._protectedFromIndex = 0;
     if (state.config.maxContextTokens) {
       this._maxContextTokens = state.config.maxContextTokens;
     }
@@ -11363,7 +11648,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * await ctx.save();
    * ```
    */
-  async save(sessionId, metadata) {
+  async save(sessionId, metadata, stateOverride) {
     if (!this._storage) {
       throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
     }
@@ -11371,7 +11656,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     if (!targetSessionId) {
       throw new Error("No sessionId provided and no current session. Provide a sessionId or load a session first.");
     }
-    const state = await this.getState();
+    const state = stateOverride ?? await this.getState();
     const finalMetadata = {
       ...this._sessionMetadata,
       ...metadata
@@ -11398,17 +11683,31 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * ```
    */
   async load(sessionId) {
+    const result = await this.loadRaw(sessionId);
+    if (!result) {
+      return false;
+    }
+    await this.restoreState(result.state);
+    return true;
+  }
+  /**
+   * Load session state from storage without restoring it.
+   * Useful for agents that need to process state before restoring (e.g., to restore agentState).
+   *
+   * @param sessionId - Session ID to load.
+   * @returns The stored state and metadata, or null if not found.
+   */
+  async loadRaw(sessionId) {
     if (!this._storage) {
       throw new Error("No storage configured. Provide storage in AgentContextConfig to enable session persistence.");
     }
     const stored = await this._storage.load(sessionId);
     if (!stored) {
-      return false;
+      return null;
     }
-    await this.restoreState(stored.state);
     this._sessionId = sessionId;
     this._sessionMetadata = stored.metadata;
-    return true;
+    return { state: stored.state, metadata: stored.metadata };
   }
   /**
    * Check if a session exists in storage.
@@ -11456,7 +11755,9 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     this._plugins.clear();
     this._cache?.destroy();
     this._tools.destroy();
-    this._history = [];
+    this._conversation = [];
+    this._messageMetadata.clear();
+    this._protectedFromIndex = 0;
     this._toolCalls = [];
     this.removeAllListeners();
   }
@@ -11496,14 +11797,14 @@ ${taskTypePrompt}` : taskTypePrompt;
     if (featureInstructions) {
       components.push(featureInstructions);
     }
-    if (this._features.history && this._history.length > 0) {
+    if (this._features.history && this._conversation.length > 0) {
       components.push({
         name: "conversation_history",
-        content: this.formatHistoryForContext(),
+        content: this.formatConversationForContext(),
         priority: priorityProfile.conversation_history ?? 6,
         compactable: true,
         metadata: {
-          messageCount: this._history.length,
+          messageCount: this._conversation.length,
           strategy: taskType === "research" ? "summarize" : "truncate"
         }
       });
@@ -11592,15 +11893,6 @@ Guidelines:
     return basePrompt;
   }
   /**
-   * Format history for context
-   */
-  formatHistoryForContext() {
-    return this._history.map((m) => {
-      const roleLabel = m.role.charAt(0).toUpperCase() + m.role.slice(1);
-      return `${roleLabel}: ${m.content}`;
-    }).join("\n\n");
-  }
-  /**
    * Calculate budget
    */
   calculateBudget(components) {
@@ -11675,19 +11967,31 @@ Guidelines:
     };
   }
   /**
-   * Compact history
+   * Compact history (legacy - calls new compactConversation)
    */
   compactHistory() {
     const preserve = this._config.history.preserveRecent;
-    const before = this._history.length;
+    const before = this._conversation.length;
     if (before <= preserve) return 0;
-    const removed = this._history.slice(0, -preserve);
-    this._history = this._history.slice(-preserve);
-    const tokensFreed = removed.reduce(
-      (sum, m) => sum + this._estimator.estimateTokens(m.content),
-      0
-    );
-    this.emit("history:compacted", { removedCount: removed.length });
+    const toRemove = before - preserve;
+    const removed = [];
+    let tokensFreed = 0;
+    for (let i = 0; i < toRemove && i < this._protectedFromIndex; i++) {
+      const item = this._conversation[i];
+      if (!item) continue;
+      const id = item.id;
+      const metadata = id ? this._messageMetadata.get(id) : null;
+      tokensFreed += metadata?.tokenCount || this.estimateMessageTokens(item);
+      removed.push(item);
+      if (id) {
+        this._messageMetadata.delete(id);
+      }
+    }
+    if (removed.length > 0) {
+      this._conversation = this._conversation.slice(removed.length);
+      this._protectedFromIndex = Math.max(0, this._protectedFromIndex - removed.length);
+      this.emit("history:compacted", { removedCount: removed.length });
+    }
     return tokensFreed;
   }
   /**
@@ -11726,6 +12030,322 @@ Guidelines:
    */
   generateId() {
     return `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  }
+  // ============================================================================
+  // Helper Methods for Conversation Management (NEW)
+  // ============================================================================
+  /**
+   * Extract text content from Content array
+   */
+  extractTextFromContent(content) {
+    const texts = [];
+    for (const c of content) {
+      if (c.type === "input_text" /* INPUT_TEXT */ || c.type === "output_text" /* OUTPUT_TEXT */) {
+        texts.push(c.text || "");
+      } else if (c.type === "tool_result" /* TOOL_RESULT */) {
+        texts.push(c.content || "");
+      }
+    }
+    return texts.join(" ");
+  }
+  /**
+   * Convert InputItem to HistoryMessage (backward compatibility)
+   */
+  convertToHistoryMessage(item) {
+    let content = "";
+    let role = "user";
+    const metadata = this._messageMetadata.get(item.id);
+    if (metadata?.legacyRole) {
+      role = metadata.legacyRole;
+    } else if (item.type === "message") {
+      const msg = item;
+      role = msg.role === "user" /* USER */ ? "user" : msg.role === "assistant" /* ASSISTANT */ ? "assistant" : msg.role === "developer" /* DEVELOPER */ ? "system" : "user";
+    }
+    if (item.type === "message") {
+      const msg = item;
+      content = this.extractTextFromContent(msg.content);
+    }
+    return {
+      id: item.id || this.generateId(),
+      role,
+      content,
+      timestamp: metadata?.timestamp || Date.now()
+    };
+  }
+  /**
+   * Estimate tokens for a single InputItem
+   */
+  estimateMessageTokens(item) {
+    if (item.type === "message") {
+      const msg = item;
+      let total = 4;
+      for (const c of msg.content) {
+        if (c.type === "input_text" /* INPUT_TEXT */ || c.type === "output_text" /* OUTPUT_TEXT */) {
+          total += this._estimator.estimateTokens(c.text || "");
+        } else if (c.type === "tool_use" /* TOOL_USE */) {
+          total += this._estimator.estimateTokens(c.name || "");
+          total += this._estimator.estimateDataTokens(c.input || {});
+        } else if (c.type === "tool_result" /* TOOL_RESULT */) {
+          total += this._estimator.estimateTokens(c.content || "");
+        } else if (c.type === "input_image_url" /* INPUT_IMAGE_URL */) {
+          total += 200;
+        }
+      }
+      return total;
+    }
+    return 50;
+  }
+  /**
+   * Estimate total tokens for conversation
+   */
+  estimateConversationTokens() {
+    let total = 0;
+    for (const item of this._conversation) {
+      const id = item.id;
+      const metadata = id ? this._messageMetadata.get(id) : null;
+      if (metadata?.tokenCount) {
+        total += metadata.tokenCount;
+      } else {
+        total += this.estimateMessageTokens(item);
+      }
+    }
+    return total;
+  }
+  /**
+   * Estimate system tokens (prompts, instructions, plugins)
+   */
+  async estimateSystemTokens() {
+    let total = 0;
+    if (this._systemPrompt) {
+      total += this._estimator.estimateTokens(this._systemPrompt);
+    }
+    if (this._instructions) {
+      total += this._estimator.estimateTokens(this._instructions);
+    }
+    const taskTypePrompt = this.getTaskTypePrompt();
+    if (taskTypePrompt) {
+      total += this._estimator.estimateTokens(taskTypePrompt);
+    }
+    const featureInstructions = buildFeatureInstructions(this._features);
+    if (featureInstructions?.content && typeof featureInstructions.content === "string") {
+      total += this._estimator.estimateTokens(featureInstructions.content);
+    }
+    if (this._features.memory && this._memory) {
+      const memoryIndex = await this._memory.formatIndex();
+      if (memoryIndex && !memoryIndex.includes("Memory is empty.")) {
+        total += this._estimator.estimateTokens(memoryIndex);
+      }
+    }
+    for (const plugin of this._plugins.values()) {
+      try {
+        const component = await plugin.getComponent();
+        if (component?.content && typeof component.content === "string") {
+          total += this._estimator.estimateTokens(component.content);
+        }
+      } catch {
+      }
+    }
+    return total;
+  }
+  /**
+   * Calculate budget from token usage
+   */
+  calculateBudgetFromTokens(used) {
+    const total = this._maxContextTokens;
+    const reserved = Math.floor(total * this._config.responseReserve);
+    const available = total - reserved - used;
+    const utilizationRatio = (used + reserved) / total;
+    const utilizationPercent = used / (total - reserved) * 100;
+    let status;
+    if (utilizationRatio >= 0.9) {
+      status = "critical";
+    } else if (utilizationRatio >= 0.75) {
+      status = "warning";
+    } else {
+      status = "ok";
+    }
+    return {
+      total,
+      reserved,
+      used,
+      available,
+      utilizationPercent,
+      status,
+      breakdown: {
+        conversation: this.estimateConversationTokens(),
+        system: used - this.estimateConversationTokens()
+      }
+    };
+  }
+  /**
+   * Find tool_use/tool_result pairs in conversation
+   * Returns Map<tool_use_id, message_index>
+   */
+  findToolPairs() {
+    const pairs = /* @__PURE__ */ new Map();
+    for (let i = 0; i < this._conversation.length; i++) {
+      const item = this._conversation[i];
+      if (!item) continue;
+      if (item.type === "message") {
+        const msg = item;
+        for (const content of msg.content) {
+          if (content.type === "tool_use" /* TOOL_USE */) {
+            const toolUseId = content.id;
+            if (toolUseId) {
+              pairs.set(toolUseId, { useIndex: i, resultIndex: null });
+            }
+          } else if (content.type === "tool_result" /* TOOL_RESULT */) {
+            const toolUseId = content.tool_use_id;
+            const pair = pairs.get(toolUseId);
+            if (pair) {
+              pair.resultIndex = i;
+            }
+          }
+        }
+      }
+    }
+    return pairs;
+  }
+  /**
+   * Compact conversation respecting tool pairs and protected messages
+   */
+  async compactConversation(_budget) {
+    const log = [];
+    const toolPairs = this.findToolPairs();
+    const compactableEnd = this._protectedFromIndex;
+    if (compactableEnd <= 0) {
+      log.push("No compactable messages (all protected)");
+      return log;
+    }
+    const safeIndices = [];
+    for (let i = 0; i < compactableEnd; i++) {
+      let isSafe = true;
+      for (const [, pair] of toolPairs) {
+        if (pair.useIndex === i && pair.resultIndex !== null && pair.resultIndex >= compactableEnd) {
+          isSafe = false;
+          break;
+        }
+        if (pair.resultIndex === i && pair.useIndex >= compactableEnd) {
+          isSafe = false;
+          break;
+        }
+      }
+      if (isSafe) {
+        safeIndices.push(i);
+      }
+    }
+    if (safeIndices.length === 0) {
+      log.push("No safe messages to compact (all involved in tool pairs)");
+      return log;
+    }
+    const targetRemoval = Math.min(
+      Math.floor(safeIndices.length / 2),
+      safeIndices.length
+    );
+    const toRemove = new Set(safeIndices.slice(0, targetRemoval));
+    let tokensFreed = 0;
+    const newConversation = [];
+    for (let i = 0; i < this._conversation.length; i++) {
+      const item = this._conversation[i];
+      if (!item) continue;
+      if (toRemove.has(i)) {
+        const id = item.id;
+        const metadata = id ? this._messageMetadata.get(id) : null;
+        tokensFreed += metadata?.tokenCount || this.estimateMessageTokens(item);
+        if (id) {
+          this._messageMetadata.delete(id);
+        }
+      } else {
+        newConversation.push(item);
+      }
+    }
+    this._conversation = newConversation;
+    let removedBeforeProtected = 0;
+    for (const idx of toRemove) {
+      if (idx < this._protectedFromIndex) {
+        removedBeforeProtected++;
+      }
+    }
+    this._protectedFromIndex -= removedBeforeProtected;
+    log.push(`Removed ${toRemove.size} messages, freed ~${tokensFreed} tokens`);
+    this._compactionCount++;
+    this._totalTokensFreed += tokensFreed;
+    this.emit("history:compacted", { removedCount: toRemove.size });
+    return log;
+  }
+  /**
+   * Build final InputItem[] for LLM call
+   */
+  async buildLLMInput(instructionOverride) {
+    const input = [];
+    const systemParts = [];
+    if (this._systemPrompt) {
+      systemParts.push(this._systemPrompt);
+    }
+    const taskTypePrompt = this.buildTaskTypePromptForFeatures(this.getTaskType());
+    if (taskTypePrompt) {
+      systemParts.push(taskTypePrompt);
+    }
+    const instructions = instructionOverride ?? this._instructions;
+    if (instructions) {
+      systemParts.push(instructions);
+    }
+    const featureInstructions = buildFeatureInstructions(this._features);
+    if (featureInstructions?.content && typeof featureInstructions.content === "string") {
+      systemParts.push(featureInstructions.content);
+    }
+    if (this._features.memory && this._memory) {
+      const memoryIndex = await this._memory.formatIndex();
+      if (memoryIndex && !memoryIndex.includes("Memory is empty.")) {
+        systemParts.push(`## Working Memory
+${memoryIndex}`);
+      }
+    }
+    for (const plugin of this._plugins.values()) {
+      try {
+        const component = await plugin.getComponent();
+        if (component?.content && typeof component.content === "string") {
+          systemParts.push(component.content);
+        }
+      } catch {
+      }
+    }
+    if (systemParts.length > 0) {
+      input.push({
+        type: "message",
+        role: "developer" /* DEVELOPER */,
+        content: [{ type: "input_text" /* INPUT_TEXT */, text: systemParts.join("\n\n") }]
+      });
+    }
+    input.push(...this._conversation);
+    return input;
+  }
+  /**
+   * Format conversation for context (backward compat for buildComponents)
+   */
+  formatConversationForContext() {
+    const lines = [];
+    for (const item of this._conversation) {
+      if (item.type === "message") {
+        const msg = item;
+        const roleLabel = msg.role === "user" /* USER */ ? "User" : msg.role === "assistant" /* ASSISTANT */ ? "Assistant" : msg.role === "developer" /* DEVELOPER */ ? "System" : "Message";
+        const textContent = this.extractTextFromContent(msg.content);
+        if (textContent) {
+          lines.push(`${roleLabel}: ${textContent}`);
+        }
+        for (const c of msg.content) {
+          if (c.type === "tool_use" /* TOOL_USE */) {
+            const toolUse = c;
+            lines.push(`${roleLabel}: [Called tool: ${toolUse.name}]`);
+          } else if (c.type === "tool_result" /* TOOL_RESULT */) {
+            const toolResult = c;
+            const preview = (toolResult.content || "").slice(0, 200);
+            lines.push(`${roleLabel}: [Tool result: ${preview}${toolResult.content?.length > 200 ? "..." : ""}]`);
+          }
+        }
+      }
+    }
+    return lines.join("\n\n");
   }
 };
 
@@ -11962,14 +12582,6 @@ var BaseTextProvider = class extends BaseProvider {
     this._isObservabilityInitialized = false;
   }
 };
-
-// src/domain/entities/Message.ts
-var MessageRole = /* @__PURE__ */ ((MessageRole2) => {
-  MessageRole2["USER"] = "user";
-  MessageRole2["ASSISTANT"] = "assistant";
-  MessageRole2["DEVELOPER"] = "developer";
-  return MessageRole2;
-})(MessageRole || {});
 
 // src/infrastructure/providers/openai/OpenAIResponsesConverter.ts
 var OpenAIResponsesConverter = class {
@@ -12545,17 +13157,6 @@ var OpenAITextProvider = class extends BaseTextProvider {
     throw error;
   }
 };
-
-// src/domain/entities/Content.ts
-var ContentType = /* @__PURE__ */ ((ContentType2) => {
-  ContentType2["INPUT_TEXT"] = "input_text";
-  ContentType2["INPUT_IMAGE_URL"] = "input_image_url";
-  ContentType2["INPUT_FILE"] = "input_file";
-  ContentType2["OUTPUT_TEXT"] = "output_text";
-  ContentType2["TOOL_USE"] = "tool_use";
-  ContentType2["TOOL_RESULT"] = "tool_result";
-  return ContentType2;
-})(ContentType || {});
 function buildLLMResponse(options) {
   const {
     provider,
@@ -14572,7 +15173,7 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
   }
   /**
    * Save the current session to storage.
-   * Delegates to AgentContext.save().
+   * Uses getContextState() to get state, allowing subclasses to inject agent-level state.
    *
    * @param sessionId - Optional session ID (uses current or generates new)
    * @param metadata - Optional session metadata
@@ -14580,27 +15181,29 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
    */
   async saveSession(sessionId, metadata) {
     await this.ensureSessionLoaded();
-    await this._agentContext.save(sessionId, metadata);
+    const state = await this.getContextState();
+    await this._agentContext.save(sessionId, metadata, state);
     this._logger.debug({ sessionId: this._agentContext.sessionId }, "Session saved");
     this.emit("session:saved", { sessionId: this._agentContext.sessionId });
   }
   /**
    * Load a session from storage.
-   * Delegates to AgentContext.load().
+   * Uses restoreContextState() to restore state, allowing subclasses to restore agent-level state.
    *
    * @param sessionId - Session ID to load
    * @returns true if session was found and loaded, false if not found
    * @throws Error if storage is not configured
    */
   async loadSession(sessionId) {
-    const loaded = await this._agentContext.load(sessionId);
-    if (loaded) {
-      this._logger.info({ sessionId }, "Session loaded");
-      this.emit("session:loaded", { sessionId });
-    } else {
+    const result = await this._agentContext.loadRaw(sessionId);
+    if (!result) {
       this._logger.warn({ sessionId }, "Session not found");
+      return false;
     }
-    return loaded;
+    await this.restoreContextState(result.state);
+    this._logger.info({ sessionId }, "Session loaded");
+    this.emit("session:loaded", { sessionId });
+    return true;
   }
   /**
    * Check if a session exists in storage.
@@ -14616,6 +15219,20 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
   async deleteSession(sessionId) {
     await this._agentContext.deleteSession(sessionId);
     this._logger.debug({ sessionId }, "Session deleted");
+  }
+  /**
+   * Get context state for session persistence.
+   * Override in subclasses to include agent-specific state in agentState field.
+   */
+  async getContextState() {
+    return this._agentContext.getState();
+  }
+  /**
+   * Restore context from saved state.
+   * Override in subclasses to restore agent-specific state from agentState field.
+   */
+  async restoreContextState(state) {
+    await this._agentContext.restoreState(state);
   }
   // ===== Public Permission API =====
   /**
@@ -15723,6 +16340,15 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
     });
     this.paused = false;
     this.cancelled = false;
+    const useAgentContext = !!config.agentContext;
+    const agentContext = config.agentContext;
+    if (useAgentContext && agentContext) {
+      if (typeof config.input === "string") {
+        agentContext.addUserMessage(config.input);
+      } else if (Array.isArray(config.input)) {
+        agentContext.addInputItems(config.input);
+      }
+    }
     this.emit("execution:start", {
       executionId,
       config,
@@ -15760,8 +16386,20 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
           timestamp: /* @__PURE__ */ new Date()
         });
         const iterationStartTime = Date.now();
-        const response = await this.generateWithHooks(config, currentInput, iteration, executionId);
+        let llmInput;
+        if (useAgentContext && agentContext) {
+          const prepared = await agentContext.prepareConversation({
+            instructionOverride: config.instructions
+          });
+          llmInput = prepared.input;
+        } else {
+          llmInput = currentInput;
+        }
+        const response = await this.generateWithHooks(config, llmInput, iteration, executionId);
         const toolCalls = this.extractToolCalls(response.output, config.tools);
+        if (useAgentContext && agentContext) {
+          agentContext.addAssistantResponse(response.output);
+        }
         if (toolCalls.length > 0) {
           this.emit("tool:detected", {
             executionId,
@@ -15782,11 +16420,14 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
           break;
         }
         const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId, config);
+        if (useAgentContext && agentContext) {
+          agentContext.addToolResults(toolResults);
+        }
         this.context.addIteration({
           iteration,
           request: {
             model: config.model,
-            input: currentInput,
+            input: useAgentContext ? llmInput : currentInput,
             instructions: config.instructions,
             tools: config.tools,
             temperature: config.temperature
@@ -15810,10 +16451,12 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
           timestamp: /* @__PURE__ */ new Date(),
           duration: Date.now() - iterationStartTime
         });
-        const newMessages = this.buildNewMessages(response.output, toolResults);
-        currentInput = this.appendToContext(currentInput, newMessages);
-        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        if (!useAgentContext) {
+          const newMessages = this.buildNewMessages(response.output, toolResults);
+          currentInput = this.appendToContext(currentInput, newMessages);
+          const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+          currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        }
         iteration++;
       }
       if (iteration >= config.maxIterations) {
@@ -15866,6 +16509,15 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
     this.cancelled = false;
     this.pausePromise = null;
     this.resumeCallback = null;
+    const useAgentContext = !!config.agentContext;
+    const agentContext = config.agentContext;
+    if (useAgentContext && agentContext) {
+      if (typeof config.input === "string") {
+        agentContext.addUserMessage(config.input);
+      } else if (Array.isArray(config.input)) {
+        agentContext.addInputItems(config.input);
+      }
+    }
     const startTime = Date.now();
     let iteration = 0;
     let currentInput = config.input;
@@ -15905,9 +16557,18 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
           iteration,
           timestamp: /* @__PURE__ */ new Date()
         });
+        let llmInput;
+        if (useAgentContext && agentContext) {
+          const prepared = await agentContext.prepareConversation({
+            instructionOverride: config.instructions
+          });
+          llmInput = prepared.input;
+        } else {
+          llmInput = currentInput;
+        }
         const iterationStreamState = new StreamState(executionId, config.model);
         const toolCallsMap = /* @__PURE__ */ new Map();
-        yield* this.streamGenerateWithHooks(config, currentInput, iteration, executionId, iterationStreamState, toolCallsMap);
+        yield* this.streamGenerateWithHooks(config, llmInput, iteration, executionId, iterationStreamState, toolCallsMap);
         globalStreamState.accumulateUsage(iterationStreamState.usage);
         const toolCalls = [];
         for (const [toolCallId, buffer] of toolCallsMap) {
@@ -16024,10 +16685,15 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
             error: tr.error
           }))
         };
-        const newMessages = [assistantMessage, toolResultsMessage];
-        currentInput = this.appendToContext(currentInput, newMessages);
-        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        if (useAgentContext && agentContext) {
+          agentContext.addInputItems([assistantMessage]);
+          agentContext.addToolResults(toolResults);
+        } else {
+          const newMessages = [assistantMessage, toolResultsMessage];
+          currentInput = this.appendToContext(currentInput, newMessages);
+          const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+          currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        }
         yield {
           type: "response.iteration.complete" /* ITERATION_COMPLETE */,
           response_id: executionId,
@@ -16988,7 +17654,6 @@ var Agent = class _Agent extends BaseAgent {
     });
     const startTime = Date.now();
     const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
-    this._agentContext.addMessageSync("user", userContent);
     this._agentContext.setCurrentInput(userContent);
     try {
       const tools = this.getEnabledToolDefinitions();
@@ -17005,13 +17670,13 @@ var Agent = class _Agent extends BaseAgent {
         limits: this._config.limits,
         errorHandling: this._config.errorHandling,
         permissionManager: this._permissionManager,
-        agentType: "agent"
+        agentType: "agent",
+        // Pass AgentContext for unified context management
+        // AgenticLoop will use prepareConversation() and add messages automatically
+        agentContext: this._agentContext
       };
       const response = await this.agenticLoop.execute(loopConfig);
       const duration = Date.now() - startTime;
-      if (response.output_text) {
-        await this._agentContext.addMessage("assistant", response.output_text);
-      }
       this._logger.info({ duration }, "Agent run completed");
       exports.metrics.timing("agent.run.duration", duration, {
         model: this.model,
@@ -17054,9 +17719,7 @@ var Agent = class _Agent extends BaseAgent {
     });
     const startTime = Date.now();
     const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
-    this._agentContext.addMessageSync("user", userContent);
     this._agentContext.setCurrentInput(userContent);
-    let accumulatedResponse = "";
     try {
       const tools = this.getEnabledToolDefinitions();
       const loopConfig = {
@@ -17072,16 +17735,13 @@ var Agent = class _Agent extends BaseAgent {
         limits: this._config.limits,
         errorHandling: this._config.errorHandling,
         permissionManager: this._permissionManager,
-        agentType: "agent"
+        agentType: "agent",
+        // Pass AgentContext for unified context management
+        // AgenticLoop will use prepareConversation() and add messages automatically
+        agentContext: this._agentContext
       };
       for await (const event of this.agenticLoop.executeStreaming(loopConfig)) {
-        if (isOutputTextDelta(event)) {
-          accumulatedResponse += event.delta;
-        }
         yield event;
-      }
-      if (accumulatedResponse) {
-        await this._agentContext.addMessage("assistant", accumulatedResponse);
       }
       const duration = Date.now() - startTime;
       this._logger.info({ duration }, "Agent stream completed");
@@ -33046,6 +33706,10 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
       }
     });
     await agent.ensureSessionLoaded();
+    const pendingPlan = agent.modeManager.getPendingPlan();
+    if (pendingPlan) {
+      agent.currentPlan = pendingPlan;
+    }
     return agent;
   }
   // ============================================================================
@@ -33096,6 +33760,28 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
   // ============================================================================
   getAgentType() {
     return "universal-agent";
+  }
+  // ============================================================================
+  // Session State Overrides (Agent-Level State)
+  // ============================================================================
+  /**
+   * Override to include ModeManager state in agentState field.
+   * ModeManager is agent-level state, not a context plugin.
+   */
+  async getContextState() {
+    const state = await super.getContextState();
+    state.agentState = state.agentState || {};
+    state.agentState.modeManager = this.modeManager.serialize();
+    return state;
+  }
+  /**
+   * Override to restore ModeManager state from agentState field.
+   */
+  async restoreContextState(state) {
+    await super.restoreContextState(state);
+    if (state.agentState?.modeManager) {
+      this.modeManager.restore(state.agentState.modeManager);
+    }
   }
   // ============================================================================
   // Main API

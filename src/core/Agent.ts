@@ -20,7 +20,6 @@ import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
 import { AgentContext } from './AgentContext.js';
 import type { AgentContextConfig, SerializedAgentContextState } from './AgentContext.js';
-import { isOutputTextDelta } from '../domain/entities/StreamEvent.js';
 import type {
   IAgentDefinitionStorage,
   StoredAgentDefinition,
@@ -301,11 +300,10 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
 
     const startTime = Date.now();
 
-    // Track user input in context (use sync for small user messages)
+    // Set current input for task type detection
     const userContent = typeof input === 'string'
       ? input
       : input.map(i => JSON.stringify(i)).join('\n');
-    this._agentContext.addMessageSync('user', userContent);
     this._agentContext.setCurrentInput(userContent);
 
     try {
@@ -326,16 +324,16 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
         errorHandling: this._config.errorHandling,
         permissionManager: this._permissionManager,
         agentType: 'agent',
+        // Pass AgentContext for unified context management
+        // AgenticLoop will use prepareConversation() and add messages automatically
+        agentContext: this._agentContext,
       };
 
       const response = await this.agenticLoop.execute(loopConfig);
 
       const duration = Date.now() - startTime;
 
-      // Track assistant response in context (use async for potentially large responses)
-      if (response.output_text) {
-        await this._agentContext.addMessage('assistant', response.output_text);
-      }
+      // Note: Assistant response is already tracked by AgenticLoop via agentContext
 
       this._logger.info({ duration }, 'Agent run completed');
 
@@ -394,15 +392,11 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
 
     const startTime = Date.now();
 
-    // Track user input in context (use sync for small user messages)
+    // Set current input for task type detection
     const userContent = typeof input === 'string'
       ? input
       : input.map(i => JSON.stringify(i)).join('\n');
-    this._agentContext.addMessageSync('user', userContent);
     this._agentContext.setCurrentInput(userContent);
-
-    // Accumulate streamed response for context tracking
-    let accumulatedResponse = '';
 
     try {
       // Get enabled tool definitions (respects enable/disable)
@@ -422,20 +416,16 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
         errorHandling: this._config.errorHandling,
         permissionManager: this._permissionManager,
         agentType: 'agent',
+        // Pass AgentContext for unified context management
+        // AgenticLoop will use prepareConversation() and add messages automatically
+        agentContext: this._agentContext,
       };
 
       for await (const event of this.agenticLoop.executeStreaming(loopConfig)) {
-        // Accumulate text deltas for context tracking
-        if (isOutputTextDelta(event)) {
-          accumulatedResponse += event.delta;
-        }
         yield event;
       }
 
-      // Track accumulated response in context (use async for potentially large responses)
-      if (accumulatedResponse) {
-        await this._agentContext.addMessage('assistant', accumulatedResponse);
-      }
+      // Note: Messages are already tracked by AgenticLoop via agentContext
 
       const duration = Date.now() - startTime;
 

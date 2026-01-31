@@ -1,7 +1,7 @@
 import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ConnectorFetchOptions, d as ITokenStorage, S as StoredToken$1, e as ConnectorConfig, f as ConnectorConfigResult } from './ImageModel-BkWFy986.js';
 export { m as APIKeyConnectorAuth, D as AspectRatio, l as ConnectorAuth, L as DEFAULT_BASE_DELAY_MS, G as DEFAULT_CONNECTOR_TIMEOUT, M as DEFAULT_MAX_DELAY_MS, H as DEFAULT_MAX_RETRIES, K as DEFAULT_RETRYABLE_STATUSES, n as IImageModelDescription, q as IMAGE_MODELS, r as IMAGE_MODEL_REGISTRY, F as ISourceLinks, y as ImageEditOptions, x as ImageGenerateOptions, h as ImageGeneration, j as ImageGenerationCreateOptions, o as ImageModelCapabilities, p as ImageModelPricing, B as ImageResponse, z as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, E as OutputFormat, Q as QualityLevel, k as SimpleGenerateOptions, g as VENDORS, w as calculateImageCost, u as getActiveImageModels, s as getImageModelInfo, t as getImageModelsByVendor, v as getImageModelsWithFeature, i as isVendor } from './ImageModel-BkWFy986.js';
-import { T as ToolFunction, a as ToolManager, I as IContextStorage, A as AgentPermissionsConfig, b as AgentContext, c as AgentContextConfig, d as ToolPermissionManager, C as ContextSessionMetadata, F as FunctionToolDefinition, e as InputItem, L as LLMResponse, S as StreamEvent, f as AgentContextFeatures, H as HookConfig, g as HistoryMode, h as AgenticLoopEvents, i as IDisposable, j as SerializedAgentContextState, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as CircuitState, o as CircuitBreakerMetrics, p as IContextComponent, q as ITextProvider, r as IMemoryStorage, M as MemoryEntry, s as MemoryScope, B as BaseContextPlugin, W as WorkingMemory, t as ITokenEstimator, u as StaleEntryInfo, v as IdempotencyCache, w as WorkingMemoryConfig, x as IContextStrategy, y as ContextBudget, z as ContextManagerConfig, D as IContextCompactor, G as TokenContentType, J as IPersistentInstructionsStorage, K as StoredContextSession, N as ContextStorageListOptions, O as ContextSessionSummary, P as TokenUsage, Q as ToolCall, R as StreamEventType, U as CircuitBreaker, V as TextGenerateOptions, X as ModelCapabilities, Y as ToolPermissionConfig, Z as MessageRole, _ as InContextMemoryConfig, $ as InContextMemoryPlugin, a0 as PersistentInstructionsConfig, a1 as PersistentInstructionsPlugin } from './index-DamderTy.js';
-export { ap as APPROVAL_STATE_VERSION, bA as AfterToolContext, a3 as AgentContextEvents, a5 as AgentContextHistoryMessage, a4 as AgentContextMetrics, bv as AgenticLoopEventName, ai as ApprovalCacheEntry, am as ApprovalDecision, bD as ApprovalResult, bB as ApproveToolContext, bz as BeforeToolContext, b7 as BuiltInTool, at as CONTEXT_SESSION_FORMAT_VERSION, ax as CacheStats, bI as CircuitBreakerConfig, bJ as CircuitBreakerEvents, bH as CircuitOpenError, b1 as CompactionItem, aV as Content, aU as ContentType, ar as DEFAULT_ALLOWLIST, bK as DEFAULT_CIRCUIT_BREAKER_CONFIG, aA as DEFAULT_CONTEXT_CONFIG, a2 as DEFAULT_FEATURES, ay as DEFAULT_IDEMPOTENCY_CONFIG, aI as DEFAULT_MEMORY_CONFIG, aq as DEFAULT_PERMISSION_CONFIG, as as DefaultAllowlistedTool, bm as ErrorEvent, av as EvictionStrategy, bx as Hook, bu as HookManager, bw as HookName, bF as IAsyncDisposable, bE as IToolExecutor, aw as IdempotencyCacheConfig, bL as InContextEntry, bM as InContextPriority, aX as InputImageContent, aW as InputTextContent, bk as IterationCompleteEvent, ba as JSONSchema, aR as MEMORY_PRIORITY_VALUES, aB as MemoryEntryInput, aC as MemoryIndex, aD as MemoryIndexEntry, aE as MemoryPriority, a$ as Message, by as ModifyingHook, b0 as OutputItem, aY as OutputTextContent, bd as OutputTextDeltaEvent, be as OutputTextDoneEvent, an as PermissionCheckContext, al as PermissionCheckResult, ao as PermissionManagerEvent, af as PermissionScope, az as PreparedContext, b2 as ReasoningItem, bl as ResponseCompleteEvent, bb as ResponseCreatedEvent, bc as ResponseInProgressEvent, ag as RiskLevel, ak as SerializedApprovalEntry, aj as SerializedApprovalState, bN as SerializedInContextMemoryState, bO as SerializedPersistentInstructionsState, ad as SerializedToolState, aG as SimpleScope, aF as TaskAwareScope, aH as TaskStatusForMemory, aS as TaskToolContext, b6 as Tool, bg as ToolCallArgumentsDeltaEvent, bh as ToolCallArgumentsDoneEvent, a6 as ToolCallRecord, bf as ToolCallStartEvent, b3 as ToolCallState, a8 as ToolCondition, aS as ToolContext, b9 as ToolExecutionContext, bj as ToolExecutionDoneEvent, bi as ToolExecutionStartEvent, ae as ToolManagerEvent, ac as ToolManagerStats, ab as ToolMetadata, bC as ToolModification, a7 as ToolOptions, ah as ToolPermissionConfig, aa as ToolRegistration, b8 as ToolResult, a_ as ToolResultContent, a9 as ToolSelectionContext, aZ as ToolUseContent, aT as WorkingMemoryAccess, au as WorkingMemoryEvents, bG as assertNotDestroyed, aQ as calculateEntrySize, b4 as defaultDescribeCall, aK as forPlan, aJ as forTasks, b5 as getToolCallDescription, bt as isErrorEvent, bo as isOutputTextDelta, bs as isResponseComplete, aN as isSimpleScope, bn as isStreamEvent, aO as isTaskAwareScope, aP as isTerminalMemoryStatus, bq as isToolCallArgumentsDelta, br as isToolCallArgumentsDone, bp as isToolCallStart, aL as scopeEquals, aM as scopeMatches } from './index-DamderTy.js';
+import { T as ToolFunction, a as ToolManager, I as IContextStorage, A as AgentPermissionsConfig, b as AgentContext, c as AgentContextConfig, d as ToolPermissionManager, C as ContextSessionMetadata, S as SerializedAgentContextState, F as FunctionToolDefinition, e as InputItem, L as LLMResponse, f as StreamEvent, g as AgentContextFeatures, H as HookConfig, h as HistoryMode, i as AgenticLoopEvents, j as IDisposable, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as CircuitState, o as CircuitBreakerMetrics, p as IContextComponent, q as ITextProvider, r as IMemoryStorage, M as MemoryEntry, s as MemoryScope, B as BaseContextPlugin, W as WorkingMemory, t as ITokenEstimator, u as StaleEntryInfo, v as IdempotencyCache, w as WorkingMemoryConfig, x as IContextStrategy, y as ContextBudget, z as ContextManagerConfig, D as IContextCompactor, G as TokenContentType, J as IPersistentInstructionsStorage, K as StoredContextSession, N as ContextStorageListOptions, O as ContextSessionSummary, P as TokenUsage, Q as ToolCall, R as StreamEventType, U as CircuitBreaker, V as TextGenerateOptions, X as ModelCapabilities, Y as ToolPermissionConfig, Z as MessageRole, _ as InContextMemoryConfig, $ as InContextMemoryPlugin, a0 as PersistentInstructionsConfig, a1 as PersistentInstructionsPlugin } from './index-DyEaHItM.js';
+export { ap as APPROVAL_STATE_VERSION, bA as AfterToolContext, a3 as AgentContextEvents, a5 as AgentContextHistoryMessage, a4 as AgentContextMetrics, bv as AgenticLoopEventName, ai as ApprovalCacheEntry, am as ApprovalDecision, bD as ApprovalResult, bB as ApproveToolContext, bz as BeforeToolContext, b7 as BuiltInTool, at as CONTEXT_SESSION_FORMAT_VERSION, ax as CacheStats, bI as CircuitBreakerConfig, bJ as CircuitBreakerEvents, bH as CircuitOpenError, b1 as CompactionItem, aV as Content, aU as ContentType, ar as DEFAULT_ALLOWLIST, bK as DEFAULT_CIRCUIT_BREAKER_CONFIG, aA as DEFAULT_CONTEXT_CONFIG, a2 as DEFAULT_FEATURES, ay as DEFAULT_IDEMPOTENCY_CONFIG, aI as DEFAULT_MEMORY_CONFIG, aq as DEFAULT_PERMISSION_CONFIG, as as DefaultAllowlistedTool, bm as ErrorEvent, av as EvictionStrategy, bx as Hook, bu as HookManager, bw as HookName, bF as IAsyncDisposable, bE as IToolExecutor, aw as IdempotencyCacheConfig, bL as InContextEntry, bM as InContextPriority, aX as InputImageContent, aW as InputTextContent, bk as IterationCompleteEvent, ba as JSONSchema, aR as MEMORY_PRIORITY_VALUES, aB as MemoryEntryInput, aC as MemoryIndex, aD as MemoryIndexEntry, aE as MemoryPriority, a$ as Message, by as ModifyingHook, b0 as OutputItem, aY as OutputTextContent, bd as OutputTextDeltaEvent, be as OutputTextDoneEvent, an as PermissionCheckContext, al as PermissionCheckResult, ao as PermissionManagerEvent, af as PermissionScope, az as PreparedContext, b2 as ReasoningItem, bl as ResponseCompleteEvent, bb as ResponseCreatedEvent, bc as ResponseInProgressEvent, ag as RiskLevel, ak as SerializedApprovalEntry, aj as SerializedApprovalState, bN as SerializedInContextMemoryState, bO as SerializedPersistentInstructionsState, ad as SerializedToolState, aG as SimpleScope, aF as TaskAwareScope, aH as TaskStatusForMemory, aS as TaskToolContext, b6 as Tool, bg as ToolCallArgumentsDeltaEvent, bh as ToolCallArgumentsDoneEvent, a6 as ToolCallRecord, bf as ToolCallStartEvent, b3 as ToolCallState, a8 as ToolCondition, aS as ToolContext, b9 as ToolExecutionContext, bj as ToolExecutionDoneEvent, bi as ToolExecutionStartEvent, ae as ToolManagerEvent, ac as ToolManagerStats, ab as ToolMetadata, bC as ToolModification, a7 as ToolOptions, ah as ToolPermissionConfig, aa as ToolRegistration, b8 as ToolResult, a_ as ToolResultContent, a9 as ToolSelectionContext, aZ as ToolUseContent, aT as WorkingMemoryAccess, au as WorkingMemoryEvents, bG as assertNotDestroyed, aQ as calculateEntrySize, b4 as defaultDescribeCall, aK as forPlan, aJ as forTasks, b5 as getToolCallDescription, bt as isErrorEvent, bo as isOutputTextDelta, bs as isResponseComplete, aN as isSimpleScope, bn as isStreamEvent, aO as isTaskAwareScope, aP as isTerminalMemoryStatus, bq as isToolCallArgumentsDelta, br as isToolCallArgumentsDone, bp as isToolCallStart, aL as scopeEquals, aM as scopeMatches } from './index-DyEaHItM.js';
 import { EventEmitter } from 'eventemitter3';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.js';
 
@@ -375,7 +375,7 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
     hasSession(): boolean;
     /**
      * Save the current session to storage.
-     * Delegates to AgentContext.save().
+     * Uses getContextState() to get state, allowing subclasses to inject agent-level state.
      *
      * @param sessionId - Optional session ID (uses current or generates new)
      * @param metadata - Optional session metadata
@@ -384,7 +384,7 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
     saveSession(sessionId?: string, metadata?: ContextSessionMetadata): Promise<void>;
     /**
      * Load a session from storage.
-     * Delegates to AgentContext.load().
+     * Uses restoreContextState() to restore state, allowing subclasses to restore agent-level state.
      *
      * @param sessionId - Session ID to load
      * @returns true if session was found and loaded, false if not found
@@ -401,6 +401,16 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
      * Delegates to AgentContext.deleteSession().
      */
     deleteSession(sessionId?: string): Promise<void>;
+    /**
+     * Get context state for session persistence.
+     * Override in subclasses to include agent-specific state in agentState field.
+     */
+    getContextState(): Promise<SerializedAgentContextState>;
+    /**
+     * Restore context from saved state.
+     * Override in subclasses to restore agent-specific state from agentState field.
+     */
+    restoreContextState(state: SerializedAgentContextState): Promise<void>;
     /**
      * Advanced tool management. Returns ToolManager for fine-grained control.
      * This is delegated to AgentContext.tools (single source of truth).
@@ -8518,7 +8528,7 @@ declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-01-31T16:40:11.783Z
+ * Generated at: 2026-01-31T18:20:20.497Z
  *
  * To regenerate: npm run generate:tools
  */
@@ -9001,6 +9011,15 @@ declare class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAg
     }): Promise<UniversalAgent>;
     private constructor();
     protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent';
+    /**
+     * Override to include ModeManager state in agentState field.
+     * ModeManager is agent-level state, not a context plugin.
+     */
+    getContextState(): Promise<SerializedAgentContextState>;
+    /**
+     * Override to restore ModeManager state from agentState field.
+     */
+    restoreContextState(state: SerializedAgentContextState): Promise<void>;
     /**
      * Chat with the agent - the main entry point
      */

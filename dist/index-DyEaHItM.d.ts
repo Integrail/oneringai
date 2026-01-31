@@ -2210,6 +2210,84 @@ interface ContextStorageListOptions {
 }
 
 /**
+ * Content types based on OpenAI Responses API format
+ */
+declare enum ContentType {
+    INPUT_TEXT = "input_text",
+    INPUT_IMAGE_URL = "input_image_url",
+    INPUT_FILE = "input_file",
+    OUTPUT_TEXT = "output_text",
+    TOOL_USE = "tool_use",
+    TOOL_RESULT = "tool_result"
+}
+interface BaseContent {
+    type: ContentType;
+}
+interface InputTextContent extends BaseContent {
+    type: ContentType.INPUT_TEXT;
+    text: string;
+}
+interface InputImageContent extends BaseContent {
+    type: ContentType.INPUT_IMAGE_URL;
+    image_url: {
+        url: string;
+        detail?: 'auto' | 'low' | 'high';
+    };
+}
+interface InputFileContent extends BaseContent {
+    type: ContentType.INPUT_FILE;
+    file_id: string;
+}
+interface OutputTextContent extends BaseContent {
+    type: ContentType.OUTPUT_TEXT;
+    text: string;
+    annotations?: any[];
+}
+interface ToolUseContent extends BaseContent {
+    type: ContentType.TOOL_USE;
+    id: string;
+    name: string;
+    arguments: string;
+}
+interface ToolResultContent extends BaseContent {
+    type: ContentType.TOOL_RESULT;
+    tool_use_id: string;
+    content: string | any;
+    error?: string;
+}
+type Content = InputTextContent | InputImageContent | InputFileContent | OutputTextContent | ToolUseContent | ToolResultContent;
+
+/**
+ * Message entity based on OpenAI Responses API format
+ */
+
+declare enum MessageRole {
+    USER = "user",
+    ASSISTANT = "assistant",
+    DEVELOPER = "developer"
+}
+interface Message {
+    type: 'message';
+    id?: string;
+    role: MessageRole;
+    content: Content[];
+}
+interface CompactionItem {
+    type: 'compaction';
+    id: string;
+    encrypted_content: string;
+}
+interface ReasoningItem {
+    type: 'reasoning';
+    id: string;
+    effort?: 'low' | 'medium' | 'high';
+    summary?: string;
+    encrypted_content?: string;
+}
+type InputItem = Message | CompactionItem;
+type OutputItem = Message | CompactionItem | ReasoningItem;
+
+/**
  * AgentContext - The "Swiss Army Knife" for Agent State Management
  *
  * Unified facade that composes all context-related managers:
@@ -2297,6 +2375,7 @@ interface AgentContextFeatures {
 declare const DEFAULT_FEATURES: Required<AgentContextFeatures>;
 /**
  * History message
+ * @deprecated Use InputItem from Message.ts instead. Kept for backward compatibility.
  */
 interface HistoryMessage {
     id: string;
@@ -2304,6 +2383,36 @@ interface HistoryMessage {
     content: string;
     timestamp: number;
     metadata?: Record<string, unknown>;
+}
+/**
+ * Message metadata for conversation tracking
+ */
+interface MessageMetadata {
+    timestamp: number;
+    tokenCount: number;
+    iteration?: number;
+    /** Original legacy role (for backward compatibility with 'tool' role) */
+    legacyRole?: 'user' | 'assistant' | 'system' | 'tool';
+}
+/**
+ * Prepared conversation result from prepareConversation()
+ */
+interface PreparedConversation {
+    /** InputItem[] ready for LLM */
+    input: InputItem[];
+    /** Current budget */
+    budget: ContextBudget;
+    /** Whether compaction occurred */
+    compacted: boolean;
+    /** Compaction log if compacted */
+    compactionLog: string[];
+}
+/**
+ * Options for prepareConversation()
+ */
+interface PrepareConversationOptions {
+    /** Override instructions for this call only */
+    instructionOverride?: string;
 }
 /**
  * Tool call record (stored in history)
@@ -2398,13 +2507,19 @@ interface AgentContextConfig {
 }
 /**
  * Serialized state for session persistence
+ * Version 2: Stores conversation as InputItem[] instead of HistoryMessage[]
  */
 interface SerializedAgentContextState {
     version: number;
     core: {
         systemPrompt: string;
         instructions: string;
-        history: HistoryMessage[];
+        /** @deprecated Use conversation instead (v2) */
+        history?: HistoryMessage[];
+        /** NEW in v2: Full conversation as InputItem[] */
+        conversation?: InputItem[];
+        /** NEW in v2: Message metadata */
+        messageMetadata?: Record<string, MessageMetadata>;
         toolCalls: ToolCallRecord[];
     };
     tools: SerializedToolState;
@@ -2412,10 +2527,17 @@ interface SerializedAgentContextState {
     memory?: SerializedMemory;
     permissions: SerializedApprovalState;
     plugins: Record<string, unknown>;
+    /**
+     * Agent-specific state (not context state).
+     * This is for agent-level data like ModeManager state that doesn't belong in plugins.
+     * Populated by agent subclasses via getContextState() override.
+     */
+    agentState?: Record<string, unknown>;
     config: {
         model: string;
         maxContextTokens: number;
         strategy: string;
+        features?: AgentContextFeatures;
     };
 }
 /**
@@ -2488,10 +2610,15 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     private readonly _features;
     private _systemPrompt;
     private _instructions;
-    private _history;
     private _toolCalls;
     private _currentInput;
     private _historyEnabled;
+    /** Conversation stored as InputItem[] - THE source of truth */
+    private _conversation;
+    /** Metadata for each message (keyed by message ID) */
+    private _messageMetadata;
+    /** Messages at or after this index cannot be compacted (current iteration protection) */
+    private _protectedFromIndex;
     private _plugins;
     private _config;
     private _maxContextTokens;
@@ -2564,6 +2691,63 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     /** Get current input */
     getCurrentInput(): string;
     /**
+     * Add user message to conversation.
+     *
+     * @param content - String or Content[] for the message
+     * @returns Message ID
+     */
+    addUserMessage(content: string | Content[]): string;
+    /**
+     * Add raw InputItem[] to conversation (for complex inputs with images, files, etc.)
+     *
+     * @param items - InputItem[] to add
+     */
+    addInputItems(items: InputItem[]): void;
+    /**
+     * Add assistant response to conversation (including tool calls).
+     *
+     * @param output - OutputItem[] from LLM response
+     * @returns Array of message IDs added
+     */
+    addAssistantResponse(output: OutputItem[]): string[];
+    /**
+     * Add tool results to conversation.
+     *
+     * @param results - ToolResult[] from tool execution
+     * @returns Message ID of the tool results message
+     */
+    addToolResults(results: ToolResult[]): string;
+    /**
+     * Mark current position as protected from compaction.
+     * Messages at or after this index cannot be compacted.
+     * Called at the start of each iteration by AgenticLoop.
+     */
+    protectFromCompaction(): void;
+    /**
+     * Get conversation (read-only).
+     */
+    getConversation(): ReadonlyArray<InputItem>;
+    /**
+     * Get conversation length.
+     */
+    getConversationLength(): number;
+    /**
+     * Clear conversation.
+     */
+    clearConversation(reason?: string): void;
+    /**
+     * Prepare conversation for LLM call.
+     *
+     * THE method that handles everything:
+     * 1. Marks current position as protected
+     * 2. Calculates token usage
+     * 3. Compacts if needed (respecting protection & tool pairs)
+     * 4. Builds final InputItem[] for LLM
+     *
+     * Called by AgenticLoop before EVERY LLM call.
+     */
+    prepareConversation(options?: PrepareConversationOptions): Promise<PreparedConversation>;
+    /**
      * Set explicit task type (overrides auto-detection)
      */
     setTaskType(type: TaskType): void;
@@ -2611,6 +2795,8 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * @param metadata - Optional metadata
      * @returns The added message, or null if history feature is disabled
      *
+     * @deprecated Use addUserMessage() or addAssistantResponse() instead
+     *
      * @example
      * ```typescript
      * // For large tool outputs, capacity is checked automatically
@@ -2632,6 +2818,8 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * @param content - Message content
      * @param metadata - Optional metadata
      * @returns The added message, or null if history feature is disabled
+     *
+     * @deprecated Use addUserMessage() or addAssistantResponse() instead
      */
     addMessageSync(role: 'user' | 'assistant' | 'system' | 'tool', content: string, metadata?: Record<string, unknown>): HistoryMessage | null;
     /**
@@ -2648,6 +2836,8 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * @param metadata - Optional metadata (e.g., tool name, duration)
      * @returns The added message, or null if history feature is disabled
      *
+     * @deprecated Use addToolResults() with ToolResult[] instead
+     *
      * @example
      * ```typescript
      * // Add large web fetch result
@@ -2660,19 +2850,23 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      */
     addToolResult(result: unknown, metadata?: Record<string, unknown>): Promise<HistoryMessage | null>;
     /**
-     * Get all history messages
+     * Get all history messages (computed from conversation)
+     * @deprecated Use getConversation() instead
      */
     getHistory(): HistoryMessage[];
     /**
-     * Get recent N messages
+     * Get recent N messages (computed from conversation)
+     * @deprecated Use getConversation() instead
      */
     getRecentHistory(count: number): HistoryMessage[];
     /**
      * Get message count
+     * @deprecated Use getConversationLength() instead
      */
     getMessageCount(): number;
     /**
      * Clear history
+     * @deprecated Use clearConversation() instead
      */
     clearHistory(reason?: string): void;
     /**
@@ -2800,6 +2994,7 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Restore from saved state
      *
      * Restores ALL state from a previous session.
+     * Handles both v1 (HistoryMessage[]) and v2 (InputItem[]) formats.
      */
     restoreState(state: SerializedAgentContextState): Promise<void>;
     /**
@@ -2818,7 +3013,7 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * await ctx.save();
      * ```
      */
-    save(sessionId?: string, metadata?: ContextSessionMetadata): Promise<void>;
+    save(sessionId?: string, metadata?: ContextSessionMetadata, stateOverride?: SerializedAgentContextState): Promise<void>;
     /**
      * Load a session from storage and restore its state.
      *
@@ -2837,6 +3032,17 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * ```
      */
     load(sessionId: string): Promise<boolean>;
+    /**
+     * Load session state from storage without restoring it.
+     * Useful for agents that need to process state before restoring (e.g., to restore agentState).
+     *
+     * @param sessionId - Session ID to load.
+     * @returns The stored state and metadata, or null if not found.
+     */
+    loadRaw(sessionId: string): Promise<{
+        state: SerializedAgentContextState;
+        metadata: ContextSessionMetadata;
+    } | null>;
     /**
      * Check if a session exists in storage.
      *
@@ -2867,10 +3073,6 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      */
     private buildTaskTypePromptForFeatures;
     /**
-     * Format history for context
-     */
-    private formatHistoryForContext;
-    /**
      * Calculate budget
      */
     private calculateBudget;
@@ -2879,7 +3081,7 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      */
     private doCompaction;
     /**
-     * Compact history
+     * Compact history (legacy - calls new compactConversation)
      */
     private compactHistory;
     /**
@@ -2894,6 +3096,47 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Generate unique ID
      */
     private generateId;
+    /**
+     * Extract text content from Content array
+     */
+    private extractTextFromContent;
+    /**
+     * Convert InputItem to HistoryMessage (backward compatibility)
+     */
+    private convertToHistoryMessage;
+    /**
+     * Estimate tokens for a single InputItem
+     */
+    private estimateMessageTokens;
+    /**
+     * Estimate total tokens for conversation
+     */
+    private estimateConversationTokens;
+    /**
+     * Estimate system tokens (prompts, instructions, plugins)
+     */
+    private estimateSystemTokens;
+    /**
+     * Calculate budget from token usage
+     */
+    private calculateBudgetFromTokens;
+    /**
+     * Find tool_use/tool_result pairs in conversation
+     * Returns Map<tool_use_id, message_index>
+     */
+    private findToolPairs;
+    /**
+     * Compact conversation respecting tool pairs and protected messages
+     */
+    private compactConversation;
+    /**
+     * Build final InputItem[] for LLM call
+     */
+    private buildLLMInput;
+    /**
+     * Format conversation for context (backward compat for buildComponents)
+     */
+    private formatConversationForContext;
 }
 
 /**
@@ -3390,84 +3633,6 @@ declare class ToolManager extends EventEmitter implements IToolExecutor, IDispos
     private filterByTokenBudget;
     private estimateToolTokens;
 }
-
-/**
- * Content types based on OpenAI Responses API format
- */
-declare enum ContentType {
-    INPUT_TEXT = "input_text",
-    INPUT_IMAGE_URL = "input_image_url",
-    INPUT_FILE = "input_file",
-    OUTPUT_TEXT = "output_text",
-    TOOL_USE = "tool_use",
-    TOOL_RESULT = "tool_result"
-}
-interface BaseContent {
-    type: ContentType;
-}
-interface InputTextContent extends BaseContent {
-    type: ContentType.INPUT_TEXT;
-    text: string;
-}
-interface InputImageContent extends BaseContent {
-    type: ContentType.INPUT_IMAGE_URL;
-    image_url: {
-        url: string;
-        detail?: 'auto' | 'low' | 'high';
-    };
-}
-interface InputFileContent extends BaseContent {
-    type: ContentType.INPUT_FILE;
-    file_id: string;
-}
-interface OutputTextContent extends BaseContent {
-    type: ContentType.OUTPUT_TEXT;
-    text: string;
-    annotations?: any[];
-}
-interface ToolUseContent extends BaseContent {
-    type: ContentType.TOOL_USE;
-    id: string;
-    name: string;
-    arguments: string;
-}
-interface ToolResultContent extends BaseContent {
-    type: ContentType.TOOL_RESULT;
-    tool_use_id: string;
-    content: string | any;
-    error?: string;
-}
-type Content = InputTextContent | InputImageContent | InputFileContent | OutputTextContent | ToolUseContent | ToolResultContent;
-
-/**
- * Message entity based on OpenAI Responses API format
- */
-
-declare enum MessageRole {
-    USER = "user",
-    ASSISTANT = "assistant",
-    DEVELOPER = "developer"
-}
-interface Message {
-    type: 'message';
-    id?: string;
-    role: MessageRole;
-    content: Content[];
-}
-interface CompactionItem {
-    type: 'compaction';
-    id: string;
-    encrypted_content: string;
-}
-interface ReasoningItem {
-    type: 'reasoning';
-    id: string;
-    effort?: 'low' | 'medium' | 'high';
-    summary?: string;
-    encrypted_content?: string;
-}
-type InputItem = Message | CompactionItem;
-type OutputItem = Message | CompactionItem | ReasoningItem;
 
 /**
  * LLM Response entity based on OpenAI Responses API format
@@ -4071,6 +4236,14 @@ interface AgenticLoopConfig {
      * Current task name (used for TaskAgent/UniversalAgent context).
      */
     taskName?: string;
+    /**
+     * AgentContext for unified context management.
+     * When provided, AgenticLoop delegates ALL context management to AgentContext:
+     * - Uses prepareConversation() before each LLM call
+     * - Uses addAssistantResponse() and addToolResults() after each iteration
+     * - Skips internal sliding window (AgentContext handles compaction)
+     */
+    agentContext?: AgentContext;
 }
 declare class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     private provider;
@@ -4402,4 +4575,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { InContextMemoryPlugin as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type IContextCompactor as D, ExecutionContext as E, type FunctionToolDefinition as F, type TokenContentType as G, type HookConfig as H, type IContextStorage as I, type IPersistentInstructionsStorage as J, type StoredContextSession as K, type LLMResponse as L, type MemoryEntry as M, type ContextStorageListOptions as N, type ContextSessionSummary as O, type TokenUsage as P, type ToolCall as Q, StreamEventType as R, type StreamEvent as S, type ToolFunction as T, CircuitBreaker as U, type TextGenerateOptions as V, WorkingMemory as W, type ModelCapabilities as X, type ToolPermissionConfig$1 as Y, MessageRole as Z, type InContextMemoryConfig as _, ToolManager as a, type Message as a$, type PersistentInstructionsConfig as a0, PersistentInstructionsPlugin as a1, DEFAULT_FEATURES as a2, type AgentContextEvents as a3, type AgentContextMetrics as a4, type HistoryMessage as a5, type ToolCallRecord as a6, type ToolOptions as a7, type ToolCondition as a8, type ToolSelectionContext as a9, DEFAULT_CONTEXT_CONFIG as aA, type MemoryEntryInput as aB, type MemoryIndex as aC, type MemoryIndexEntry as aD, type MemoryPriority as aE, type TaskAwareScope as aF, type SimpleScope as aG, type TaskStatusForMemory as aH, DEFAULT_MEMORY_CONFIG as aI, forTasks as aJ, forPlan as aK, scopeEquals as aL, scopeMatches as aM, isSimpleScope as aN, isTaskAwareScope as aO, isTerminalMemoryStatus as aP, calculateEntrySize as aQ, MEMORY_PRIORITY_VALUES as aR, type ToolContext as aS, type WorkingMemoryAccess as aT, ContentType as aU, type Content as aV, type InputTextContent as aW, type InputImageContent as aX, type OutputTextContent as aY, type ToolUseContent as aZ, type ToolResultContent as a_, type ToolRegistration as aa, type ToolMetadata as ab, type ToolManagerStats as ac, type SerializedToolState as ad, type ToolManagerEvent as ae, type PermissionScope as af, type RiskLevel as ag, type ToolPermissionConfig as ah, type ApprovalCacheEntry as ai, type SerializedApprovalState as aj, type SerializedApprovalEntry as ak, type PermissionCheckResult as al, type ApprovalDecision as am, type PermissionCheckContext as an, type PermissionManagerEvent as ao, APPROVAL_STATE_VERSION as ap, DEFAULT_PERMISSION_CONFIG as aq, DEFAULT_ALLOWLIST as ar, type DefaultAllowlistedTool as as, CONTEXT_SESSION_FORMAT_VERSION as at, type WorkingMemoryEvents as au, type EvictionStrategy as av, type IdempotencyCacheConfig as aw, type CacheStats as ax, DEFAULT_IDEMPOTENCY_CONFIG as ay, type PreparedContext as az, AgentContext as b, type OutputItem as b0, type CompactionItem as b1, type ReasoningItem as b2, ToolCallState as b3, defaultDescribeCall as b4, getToolCallDescription as b5, type Tool as b6, type BuiltInTool as b7, type ToolResult as b8, type ToolExecutionContext as b9, type AfterToolContext as bA, type ApproveToolContext as bB, type ToolModification as bC, type ApprovalResult as bD, type IToolExecutor as bE, type IAsyncDisposable as bF, assertNotDestroyed as bG, CircuitOpenError as bH, type CircuitBreakerConfig as bI, type CircuitBreakerEvents as bJ, DEFAULT_CIRCUIT_BREAKER_CONFIG as bK, type InContextEntry as bL, type InContextPriority as bM, type SerializedInContextMemoryState as bN, type SerializedPersistentInstructionsState as bO, AgenticLoop as bP, type AgenticLoopConfig as bQ, type ExecutionStartEvent as bR, type ExecutionCompleteEvent as bS, type ToolStartEvent as bT, type ToolCompleteEvent as bU, type LLMRequestEvent as bV, type LLMResponseEvent as bW, type JSONSchema as ba, type ResponseCreatedEvent as bb, type ResponseInProgressEvent as bc, type OutputTextDeltaEvent as bd, type OutputTextDoneEvent as be, type ToolCallStartEvent as bf, type ToolCallArgumentsDeltaEvent as bg, type ToolCallArgumentsDoneEvent as bh, type ToolExecutionStartEvent as bi, type ToolExecutionDoneEvent as bj, type IterationCompleteEvent$1 as bk, type ResponseCompleteEvent as bl, type ErrorEvent as bm, isStreamEvent as bn, isOutputTextDelta as bo, isToolCallStart as bp, isToolCallArgumentsDelta as bq, isToolCallArgumentsDone as br, isResponseComplete as bs, isErrorEvent as bt, HookManager as bu, type AgenticLoopEventName as bv, type HookName as bw, type Hook as bx, type ModifyingHook as by, type BeforeToolContext as bz, type AgentContextConfig as c, ToolPermissionManager as d, type InputItem as e, type AgentContextFeatures as f, type HistoryMode as g, type AgenticLoopEvents as h, type IDisposable as i, type SerializedAgentContextState as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type CircuitState as n, type CircuitBreakerMetrics as o, type IContextComponent as p, type ITextProvider as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type IContextStrategy as x, type ContextBudget as y, type ContextManagerConfig as z };
+export { InContextMemoryPlugin as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type IContextCompactor as D, ExecutionContext as E, type FunctionToolDefinition as F, type TokenContentType as G, type HookConfig as H, type IContextStorage as I, type IPersistentInstructionsStorage as J, type StoredContextSession as K, type LLMResponse as L, type MemoryEntry as M, type ContextStorageListOptions as N, type ContextSessionSummary as O, type TokenUsage as P, type ToolCall as Q, StreamEventType as R, type SerializedAgentContextState as S, type ToolFunction as T, CircuitBreaker as U, type TextGenerateOptions as V, WorkingMemory as W, type ModelCapabilities as X, type ToolPermissionConfig$1 as Y, MessageRole as Z, type InContextMemoryConfig as _, ToolManager as a, type Message as a$, type PersistentInstructionsConfig as a0, PersistentInstructionsPlugin as a1, DEFAULT_FEATURES as a2, type AgentContextEvents as a3, type AgentContextMetrics as a4, type HistoryMessage as a5, type ToolCallRecord as a6, type ToolOptions as a7, type ToolCondition as a8, type ToolSelectionContext as a9, DEFAULT_CONTEXT_CONFIG as aA, type MemoryEntryInput as aB, type MemoryIndex as aC, type MemoryIndexEntry as aD, type MemoryPriority as aE, type TaskAwareScope as aF, type SimpleScope as aG, type TaskStatusForMemory as aH, DEFAULT_MEMORY_CONFIG as aI, forTasks as aJ, forPlan as aK, scopeEquals as aL, scopeMatches as aM, isSimpleScope as aN, isTaskAwareScope as aO, isTerminalMemoryStatus as aP, calculateEntrySize as aQ, MEMORY_PRIORITY_VALUES as aR, type ToolContext as aS, type WorkingMemoryAccess as aT, ContentType as aU, type Content as aV, type InputTextContent as aW, type InputImageContent as aX, type OutputTextContent as aY, type ToolUseContent as aZ, type ToolResultContent as a_, type ToolRegistration as aa, type ToolMetadata as ab, type ToolManagerStats as ac, type SerializedToolState as ad, type ToolManagerEvent as ae, type PermissionScope as af, type RiskLevel as ag, type ToolPermissionConfig as ah, type ApprovalCacheEntry as ai, type SerializedApprovalState as aj, type SerializedApprovalEntry as ak, type PermissionCheckResult as al, type ApprovalDecision as am, type PermissionCheckContext as an, type PermissionManagerEvent as ao, APPROVAL_STATE_VERSION as ap, DEFAULT_PERMISSION_CONFIG as aq, DEFAULT_ALLOWLIST as ar, type DefaultAllowlistedTool as as, CONTEXT_SESSION_FORMAT_VERSION as at, type WorkingMemoryEvents as au, type EvictionStrategy as av, type IdempotencyCacheConfig as aw, type CacheStats as ax, DEFAULT_IDEMPOTENCY_CONFIG as ay, type PreparedContext as az, AgentContext as b, type OutputItem as b0, type CompactionItem as b1, type ReasoningItem as b2, ToolCallState as b3, defaultDescribeCall as b4, getToolCallDescription as b5, type Tool as b6, type BuiltInTool as b7, type ToolResult as b8, type ToolExecutionContext as b9, type AfterToolContext as bA, type ApproveToolContext as bB, type ToolModification as bC, type ApprovalResult as bD, type IToolExecutor as bE, type IAsyncDisposable as bF, assertNotDestroyed as bG, CircuitOpenError as bH, type CircuitBreakerConfig as bI, type CircuitBreakerEvents as bJ, DEFAULT_CIRCUIT_BREAKER_CONFIG as bK, type InContextEntry as bL, type InContextPriority as bM, type SerializedInContextMemoryState as bN, type SerializedPersistentInstructionsState as bO, AgenticLoop as bP, type AgenticLoopConfig as bQ, type ExecutionStartEvent as bR, type ExecutionCompleteEvent as bS, type ToolStartEvent as bT, type ToolCompleteEvent as bU, type LLMRequestEvent as bV, type LLMResponseEvent as bW, type JSONSchema as ba, type ResponseCreatedEvent as bb, type ResponseInProgressEvent as bc, type OutputTextDeltaEvent as bd, type OutputTextDoneEvent as be, type ToolCallStartEvent as bf, type ToolCallArgumentsDeltaEvent as bg, type ToolCallArgumentsDoneEvent as bh, type ToolExecutionStartEvent as bi, type ToolExecutionDoneEvent as bj, type IterationCompleteEvent$1 as bk, type ResponseCompleteEvent as bl, type ErrorEvent as bm, isStreamEvent as bn, isOutputTextDelta as bo, isToolCallStart as bp, isToolCallArgumentsDelta as bq, isToolCallArgumentsDone as br, isResponseComplete as bs, isErrorEvent as bt, HookManager as bu, type AgenticLoopEventName as bv, type HookName as bw, type Hook as bx, type ModifyingHook as by, type BeforeToolContext as bz, type AgentContextConfig as c, ToolPermissionManager as d, type InputItem as e, type StreamEvent as f, type AgentContextFeatures as g, type HistoryMode as h, type AgenticLoopEvents as i, type IDisposable as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type CircuitState as n, type CircuitBreakerMetrics as o, type IContextComponent as p, type ITextProvider as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type IContextStrategy as x, type ContextBudget as y, type ContextManagerConfig as z };

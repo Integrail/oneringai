@@ -20,6 +20,7 @@ import { StreamEvent, StreamEventType, isToolCallArgumentsDone } from '../../dom
 import { StreamState } from '../../domain/entities/StreamState.js';
 import type { ToolPermissionManager } from '../../core/permissions/ToolPermissionManager.js';
 import type { PermissionCheckContext } from '../../core/permissions/types.js';
+import type { AgentContext } from '../../core/AgentContext.js';
 
 export interface AgenticLoopConfig {
   model: string;
@@ -75,6 +76,15 @@ export interface AgenticLoopConfig {
    * Current task name (used for TaskAgent/UniversalAgent context).
    */
   taskName?: string;
+
+  /**
+   * AgentContext for unified context management.
+   * When provided, AgenticLoop delegates ALL context management to AgentContext:
+   * - Uses prepareConversation() before each LLM call
+   * - Uses addAssistantResponse() and addToolResults() after each iteration
+   * - Skips internal sliding window (AgentContext handles compaction)
+   */
+  agentContext?: AgentContext;
 }
 
 export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
@@ -121,6 +131,19 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     this.paused = false;
     this.cancelled = false;
 
+    // Determine if we're using AgentContext for context management
+    const useAgentContext = !!config.agentContext;
+    const agentContext = config.agentContext;
+
+    // If using AgentContext, add initial user message
+    if (useAgentContext && agentContext) {
+      if (typeof config.input === 'string') {
+        agentContext.addUserMessage(config.input);
+      } else if (Array.isArray(config.input)) {
+        agentContext.addInputItems(config.input);
+      }
+    }
+
     // Emit execution start
     this.emit('execution:start', {
       executionId,
@@ -135,6 +158,7 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
       timestamp: new Date(),
     }, undefined as any);
 
+    // Internal input tracking (only used when AgentContext is not provided)
     let currentInput = config.input;
     let iteration = 0;
     let finalResponse: AgentResponse;
@@ -177,11 +201,29 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
 
         const iterationStartTime = Date.now();
 
+        // Get input for LLM call
+        let llmInput: string | InputItem[];
+        if (useAgentContext && agentContext) {
+          // Use AgentContext for context management
+          const prepared = await agentContext.prepareConversation({
+            instructionOverride: config.instructions,
+          });
+          llmInput = prepared.input;
+        } else {
+          // Use internal context management
+          llmInput = currentInput;
+        }
+
         // Generate LLM response
-        const response = await this.generateWithHooks(config, currentInput, iteration, executionId);
+        const response = await this.generateWithHooks(config, llmInput, iteration, executionId);
 
         // Extract tool calls
         const toolCalls = this.extractToolCalls(response.output, config.tools);
+
+        // Add assistant response to AgentContext
+        if (useAgentContext && agentContext) {
+          agentContext.addAssistantResponse(response.output);
+        }
 
         // Emit tool detection
         if (toolCalls.length > 0) {
@@ -211,12 +253,17 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
         // Execute tools with hooks
         const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId, config);
 
+        // Add tool results to AgentContext
+        if (useAgentContext && agentContext) {
+          agentContext.addToolResults(toolResults);
+        }
+
         // Store iteration record
         this.context.addIteration({
           iteration,
           request: {
             model: config.model,
-            input: currentInput,
+            input: useAgentContext ? llmInput : currentInput,
             instructions: config.instructions,
             tools: config.tools,
             temperature: config.temperature,
@@ -245,13 +292,16 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
           duration: Date.now() - iterationStartTime,
         });
 
-        // Build next input - append to existing context (preserve history)
-        const newMessages = this.buildNewMessages(response.output, toolResults);
-        currentInput = this.appendToContext(currentInput, newMessages);
+        // Update input for next iteration (only if not using AgentContext)
+        if (!useAgentContext) {
+          // Build next input - append to existing context (preserve history)
+          const newMessages = this.buildNewMessages(response.output, toolResults);
+          currentInput = this.appendToContext(currentInput, newMessages);
 
-        // Apply sliding window to prevent unbounded input growth
-        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+          // Apply sliding window to prevent unbounded input growth
+          const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+          currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        }
 
         iteration++;
       }
@@ -326,6 +376,19 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
     this.pausePromise = null;
     this.resumeCallback = null;
 
+    // Determine if we're using AgentContext for context management
+    const useAgentContext = !!config.agentContext;
+    const agentContext = config.agentContext;
+
+    // If using AgentContext, add initial user message
+    if (useAgentContext && agentContext) {
+      if (typeof config.input === 'string') {
+        agentContext.addUserMessage(config.input);
+      } else if (Array.isArray(config.input)) {
+        agentContext.addInputItems(config.input);
+      }
+    }
+
     const startTime = Date.now();
     let iteration = 0;
     let currentInput: string | InputItem[] = config.input;
@@ -385,12 +448,25 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
           timestamp: new Date(),
         });
 
+        // Get input for LLM call
+        let llmInput: string | InputItem[];
+        if (useAgentContext && agentContext) {
+          // Use AgentContext for context management
+          const prepared = await agentContext.prepareConversation({
+            instructionOverride: config.instructions,
+          });
+          llmInput = prepared.input;
+        } else {
+          // Use internal context management
+          llmInput = currentInput;
+        }
+
         // Stream LLM response and accumulate state (per-iteration state)
         const iterationStreamState = new StreamState(executionId, config.model);
         const toolCallsMap = new Map<string, { name: string; args: string }>();
 
         // Stream from provider with hooks
-        yield* this.streamGenerateWithHooks(config, currentInput, iteration, executionId, iterationStreamState, toolCallsMap);
+        yield* this.streamGenerateWithHooks(config, llmInput, iteration, executionId, iterationStreamState, toolCallsMap);
 
         // Accumulate usage from this iteration into global state
         globalStreamState.accumulateUsage(iterationStreamState.usage);
@@ -538,13 +614,21 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
           })),
         };
 
-        // Update current input for next iteration using shared methods
-        const newMessages: InputItem[] = [assistantMessage, toolResultsMessage];
-        currentInput = this.appendToContext(currentInput, newMessages);
+        // Update context for next iteration
+        if (useAgentContext && agentContext) {
+          // Add assistant response to AgentContext
+          agentContext.addInputItems([assistantMessage]);
+          // Add tool results to AgentContext
+          agentContext.addToolResults(toolResults);
+        } else {
+          // Use internal context management
+          const newMessages: InputItem[] = [assistantMessage, toolResultsMessage];
+          currentInput = this.appendToContext(currentInput, newMessages);
 
-        // Apply sliding window to prevent unbounded input growth
-        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+          // Apply sliding window to prevent unbounded input growth
+          const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+          currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        }
 
         // Yield iteration complete
         yield {

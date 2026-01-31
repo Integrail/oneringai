@@ -212,18 +212,8 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       this.emit('mode:changed', data);
     });
 
-    // Register ModeManager plugin for session persistence
-    const modeManager = this.modeManager;
-    this._agentContext.registerPlugin({
-      name: 'universalAgent.modeManager',
-      prepare: async () => '',
-      getState: () => modeManager.serialize(),
-      restoreState: (state) => {
-        if (state && typeof state === 'object') {
-          modeManager.restore(state as ReturnType<ModeManager['serialize']>);
-        }
-      },
-    });
+    // Note: ModeManager state is persisted via getContextState()/restoreContextState() overrides,
+    // not as a plugin. ModeManager is agent-level state, not context (it doesn't contribute to LLM prompt).
 
     // Initialize planning agent if planning is enabled
     const planningEnabled = config.planning?.enabled !== false;
@@ -258,6 +248,31 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
 
   protected getAgentType(): 'agent' | 'task-agent' | 'universal-agent' {
     return 'universal-agent';
+  }
+
+  // ============================================================================
+  // Session State Overrides (Agent-Level State)
+  // ============================================================================
+
+  /**
+   * Override to include ModeManager state in agentState field.
+   * ModeManager is agent-level state, not a context plugin.
+   */
+  async getContextState(): Promise<import('../../core/AgentContext.js').SerializedAgentContextState> {
+    const state = await super.getContextState();
+    state.agentState = state.agentState || {};
+    state.agentState.modeManager = this.modeManager.serialize();
+    return state;
+  }
+
+  /**
+   * Override to restore ModeManager state from agentState field.
+   */
+  async restoreContextState(state: import('../../core/AgentContext.js').SerializedAgentContextState): Promise<void> {
+    await super.restoreContextState(state);
+    if (state.agentState?.modeManager) {
+      this.modeManager.restore(state.agentState.modeManager as ReturnType<ModeManager['serialize']>);
+    }
   }
 
   // ============================================================================

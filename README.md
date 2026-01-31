@@ -389,8 +389,8 @@ const ctx = AgentContext.create({
 });
 
 // Build up state
-ctx.addMessageSync('user', 'Remember: my favorite color is blue');
-ctx.addMessageSync('assistant', 'I\'ll remember that your favorite color is blue.');
+await ctx.addMessage('user', 'Remember: my favorite color is blue');
+await ctx.addMessage('assistant', 'I\'ll remember that your favorite color is blue.');
 await ctx.memory!.store('user_color', 'User favorite color', 'blue');
 
 // Save session with metadata

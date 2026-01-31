@@ -732,6 +732,15 @@ var AgenticLoop = class extends EventEmitter {
     });
     this.paused = false;
     this.cancelled = false;
+    const useAgentContext = !!config.agentContext;
+    const agentContext = config.agentContext;
+    if (useAgentContext && agentContext) {
+      if (typeof config.input === "string") {
+        agentContext.addUserMessage(config.input);
+      } else if (Array.isArray(config.input)) {
+        agentContext.addInputItems(config.input);
+      }
+    }
     this.emit("execution:start", {
       executionId,
       config,
@@ -769,8 +778,20 @@ var AgenticLoop = class extends EventEmitter {
           timestamp: /* @__PURE__ */ new Date()
         });
         const iterationStartTime = Date.now();
-        const response = await this.generateWithHooks(config, currentInput, iteration, executionId);
+        let llmInput;
+        if (useAgentContext && agentContext) {
+          const prepared = await agentContext.prepareConversation({
+            instructionOverride: config.instructions
+          });
+          llmInput = prepared.input;
+        } else {
+          llmInput = currentInput;
+        }
+        const response = await this.generateWithHooks(config, llmInput, iteration, executionId);
         const toolCalls = this.extractToolCalls(response.output, config.tools);
+        if (useAgentContext && agentContext) {
+          agentContext.addAssistantResponse(response.output);
+        }
         if (toolCalls.length > 0) {
           this.emit("tool:detected", {
             executionId,
@@ -791,11 +812,14 @@ var AgenticLoop = class extends EventEmitter {
           break;
         }
         const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId, config);
+        if (useAgentContext && agentContext) {
+          agentContext.addToolResults(toolResults);
+        }
         this.context.addIteration({
           iteration,
           request: {
             model: config.model,
-            input: currentInput,
+            input: useAgentContext ? llmInput : currentInput,
             instructions: config.instructions,
             tools: config.tools,
             temperature: config.temperature
@@ -819,10 +843,12 @@ var AgenticLoop = class extends EventEmitter {
           timestamp: /* @__PURE__ */ new Date(),
           duration: Date.now() - iterationStartTime
         });
-        const newMessages = this.buildNewMessages(response.output, toolResults);
-        currentInput = this.appendToContext(currentInput, newMessages);
-        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        if (!useAgentContext) {
+          const newMessages = this.buildNewMessages(response.output, toolResults);
+          currentInput = this.appendToContext(currentInput, newMessages);
+          const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+          currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        }
         iteration++;
       }
       if (iteration >= config.maxIterations) {
@@ -875,6 +901,15 @@ var AgenticLoop = class extends EventEmitter {
     this.cancelled = false;
     this.pausePromise = null;
     this.resumeCallback = null;
+    const useAgentContext = !!config.agentContext;
+    const agentContext = config.agentContext;
+    if (useAgentContext && agentContext) {
+      if (typeof config.input === "string") {
+        agentContext.addUserMessage(config.input);
+      } else if (Array.isArray(config.input)) {
+        agentContext.addInputItems(config.input);
+      }
+    }
     const startTime = Date.now();
     let iteration = 0;
     let currentInput = config.input;
@@ -914,9 +949,18 @@ var AgenticLoop = class extends EventEmitter {
           iteration,
           timestamp: /* @__PURE__ */ new Date()
         });
+        let llmInput;
+        if (useAgentContext && agentContext) {
+          const prepared = await agentContext.prepareConversation({
+            instructionOverride: config.instructions
+          });
+          llmInput = prepared.input;
+        } else {
+          llmInput = currentInput;
+        }
         const iterationStreamState = new StreamState(executionId, config.model);
         const toolCallsMap = /* @__PURE__ */ new Map();
-        yield* this.streamGenerateWithHooks(config, currentInput, iteration, executionId, iterationStreamState, toolCallsMap);
+        yield* this.streamGenerateWithHooks(config, llmInput, iteration, executionId, iterationStreamState, toolCallsMap);
         globalStreamState.accumulateUsage(iterationStreamState.usage);
         const toolCalls = [];
         for (const [toolCallId, buffer] of toolCallsMap) {
@@ -1033,10 +1077,15 @@ var AgenticLoop = class extends EventEmitter {
             error: tr.error
           }))
         };
-        const newMessages = [assistantMessage, toolResultsMessage];
-        currentInput = this.appendToContext(currentInput, newMessages);
-        const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-        currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        if (useAgentContext && agentContext) {
+          agentContext.addInputItems([assistantMessage]);
+          agentContext.addToolResults(toolResults);
+        } else {
+          const newMessages = [assistantMessage, toolResultsMessage];
+          currentInput = this.appendToContext(currentInput, newMessages);
+          const maxInputMessages = config.limits?.maxInputMessages ?? 50;
+          currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
+        }
         yield {
           type: "response.iteration.complete" /* ITERATION_COMPLETE */,
           response_id: executionId,

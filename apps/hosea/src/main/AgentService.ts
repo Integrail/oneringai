@@ -1388,27 +1388,21 @@ export class AgentService {
         };
       }
 
-      // Get in-context memory if available
+      // Get in-context memory if available (use direct accessor on ctx)
       let inContextData = null;
-      const inContextPlugin = ctx.getPlugin?.('inContextMemory');
-      if (inContextPlugin && 'list' in inContextPlugin && 'get' in inContextPlugin) {
-        // Cast to any first to avoid strict type checking issues with plugin interface
-        const icmPlugin = inContextPlugin as unknown as {
-          list: () => Array<{ key: string; description: string; priority: string; updatedAt: number }>;
-          get: (key: string) => unknown;
-          config?: { maxEntries: number; maxTotalTokens: number }
-        };
-        const entries = icmPlugin.list();
+      const inContextPlugin = ctx.inContextMemory;
+      if (inContextPlugin) {
+        const entries = inContextPlugin.list();
         inContextData = {
           entries: entries.map((e) => ({
             key: e.key,
             description: e.description,
             priority: e.priority,
             updatedAt: e.updatedAt,
-            value: icmPlugin.get(e.key),
+            value: inContextPlugin.get(e.key),
           })),
-          maxEntries: icmPlugin.config?.maxEntries || 20,
-          maxTokens: icmPlugin.config?.maxTotalTokens || 4000,
+          maxEntries: 20, // Default from InContextMemoryPlugin
+          maxTokens: 4000, // Default from InContextMemoryPlugin
         };
       }
 
@@ -1631,12 +1625,23 @@ export class AgentService {
       }
 
       // 3. Messages (conversation history) - get from context state
+      // Use v2 format (InputItem[]) with fallback to v1 (HistoryMessage[]) for backward compat
       const state = await ctx.getState();
-      const messages = state.core.history || [];
+      const messages = state.core.conversation || state.core.history || [];
       if (messages.length > 0) {
-        const messagesContent = messages.map((m: { role?: string; content?: unknown }, i: number) => {
+        const messagesContent = messages.map((m: { type?: string; role?: string; content?: unknown }, i: number) => {
           const role = m.role || 'unknown';
-          const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+          // Handle both v2 (InputItem - content is array) and v1 (HistoryMessage - content is string)
+          let content: string;
+          if (m.type === 'message' && Array.isArray(m.content)) {
+            // v2 InputItem format: content is Content[]
+            content = (m.content as Array<{ type?: string; text?: string }>)
+              .map(c => c.text || JSON.stringify(c))
+              .join('');
+          } else {
+            // v1 HistoryMessage format or fallback
+            content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+          }
           return `[${i + 1}] ${role.toUpperCase()}:\n${content}`;
         }).join('\n\n---\n\n');
 

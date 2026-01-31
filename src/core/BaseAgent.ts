@@ -447,7 +447,7 @@ export abstract class BaseAgent<
 
   /**
    * Save the current session to storage.
-   * Delegates to AgentContext.save().
+   * Uses getContextState() to get state, allowing subclasses to inject agent-level state.
    *
    * @param sessionId - Optional session ID (uses current or generates new)
    * @param metadata - Optional session metadata
@@ -455,7 +455,9 @@ export abstract class BaseAgent<
    */
   async saveSession(sessionId?: string, metadata?: ContextSessionMetadata): Promise<void> {
     await this.ensureSessionLoaded();
-    await this._agentContext.save(sessionId, metadata);
+    // Get state via overridable method (allows agents to inject agentState)
+    const state = await this.getContextState();
+    await this._agentContext.save(sessionId, metadata, state);
     this._logger.debug({ sessionId: this._agentContext.sessionId }, 'Session saved');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (this.emit as any)('session:saved', { sessionId: this._agentContext.sessionId });
@@ -463,22 +465,25 @@ export abstract class BaseAgent<
 
   /**
    * Load a session from storage.
-   * Delegates to AgentContext.load().
+   * Uses restoreContextState() to restore state, allowing subclasses to restore agent-level state.
    *
    * @param sessionId - Session ID to load
    * @returns true if session was found and loaded, false if not found
    * @throws Error if storage is not configured
    */
   async loadSession(sessionId: string): Promise<boolean> {
-    const loaded = await this._agentContext.load(sessionId);
-    if (loaded) {
-      this._logger.info({ sessionId }, 'Session loaded');
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this.emit as any)('session:loaded', { sessionId });
-    } else {
+    // Load raw state (doesn't restore yet)
+    const result = await this._agentContext.loadRaw(sessionId);
+    if (!result) {
       this._logger.warn({ sessionId }, 'Session not found');
+      return false;
     }
-    return loaded;
+    // Restore via overridable method (allows agents to restore agentState)
+    await this.restoreContextState(result.state);
+    this._logger.info({ sessionId }, 'Session loaded');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (this.emit as any)('session:loaded', { sessionId });
+    return true;
   }
 
   /**
@@ -496,6 +501,22 @@ export abstract class BaseAgent<
   async deleteSession(sessionId?: string): Promise<void> {
     await this._agentContext.deleteSession(sessionId);
     this._logger.debug({ sessionId }, 'Session deleted');
+  }
+
+  /**
+   * Get context state for session persistence.
+   * Override in subclasses to include agent-specific state in agentState field.
+   */
+  async getContextState(): Promise<import('./AgentContext.js').SerializedAgentContextState> {
+    return this._agentContext.getState();
+  }
+
+  /**
+   * Restore context from saved state.
+   * Override in subclasses to restore agent-specific state from agentState field.
+   */
+  async restoreContextState(state: import('./AgentContext.js').SerializedAgentContextState): Promise<void> {
+    await this._agentContext.restoreState(state);
   }
 
   // ===== Public Permission API =====

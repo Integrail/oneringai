@@ -3637,7 +3637,7 @@ AgentContext composes these existing managers (DRY - no duplication!):
 | **WorkingMemory** | `ctx.memory` | Key-value store with scopes, priority, eviction |
 | **IdempotencyCache** | `ctx.cache` | Tool result caching to prevent duplicates |
 | **ToolPermissionManager** | `ctx.permissions` | Approval workflows, allowlists, blocklists |
-| **History** | `ctx.getHistory()` | Built-in conversation tracking |
+| **Conversation** | `ctx.getConversation()` | Built-in conversation tracking (InputItem[]) |
 
 #### Using AgentContext with Agent
 
@@ -3674,7 +3674,7 @@ await agent.run('What is the weather?');
 
 // Access the context (never null)
 const ctx = agent.context;
-const history = ctx.getHistory();
+const conversation = ctx.getConversation(); // InputItem[] - the new API
 const metrics = await ctx.getMetrics();
 console.log(`Messages: ${metrics.historyMessageCount}`);
 
@@ -3972,19 +3972,141 @@ ctx.on('compacted', ({ log, tokensFreed }) => {
 });
 ```
 
-#### Session Persistence
+#### Conversation API (InputItem-based) - NEW
 
-AgentContext supports full state serialization:
+AgentContext now uses an **InputItem-based conversation model** that aligns with the OpenAI Responses API format. This replaces the deprecated `HistoryMessage[]` format.
+
+**New API vs Deprecated API:**
+
+| Operation | New API (v2) | Deprecated (v1) |
+|-----------|--------------|-----------------|
+| Get conversation | `ctx.getConversation()` | `ctx.getHistory()` |
+| Get length | `ctx.getConversationLength()` | `ctx.getMessageCount()` |
+| Clear | `ctx.clearConversation()` | `ctx.clearHistory()` |
+| Add message | `await ctx.addMessage()` | `ctx.addMessageSync()` |
+| Serialized format | `state.core.conversation` (InputItem[]) | `state.core.history` (HistoryMessage[]) |
+
+**InputItem Format:**
 
 ```typescript
-// Save state
-const state = await ctx.getState();
-// state contains: history, tool calls, permissions, plugin state
+import { InputItem, Message, MessageRole, ContentType } from '@oneringai/agents';
 
-// Restore state (e.g., after app restart)
+// InputItem is the new format - either a Message or CompactionItem
+type InputItem = Message | CompactionItem;
+
+// Message structure (aligned with OpenAI Responses API)
+interface Message {
+  type: 'message';
+  id?: string;
+  role: MessageRole;  // 'user' | 'assistant' | 'developer'
+  content: Content[]; // Array of content blocks
+}
+
+// Content types
+interface TextContent {
+  type: 'input_text';
+  text: string;
+}
+
+interface ImageContent {
+  type: 'input_image';
+  image_url: string;
+  detail?: 'auto' | 'low' | 'high';
+}
+```
+
+**Working with the Conversation:**
+
+```typescript
+import { AgentContext, MessageRole, ContentType } from '@oneringai/agents';
+
+const ctx = AgentContext.create({ model: 'gpt-4' });
+
+// Add messages (recommended - async with capacity checking)
+await ctx.addMessage('user', 'Hello!');
+await ctx.addMessage('assistant', 'Hi! How can I help?');
+
+// Get full conversation as InputItem[]
+const conversation = ctx.getConversation();
+console.log(conversation.length);  // 2
+
+// Iterate over conversation
+for (const item of conversation) {
+  if (item.type === 'message') {
+    console.log(`${item.role}: ${JSON.stringify(item.content)}`);
+  }
+}
+
+// Add multimodal content with addInputItems
+ctx.addInputItems([{
+  type: 'message',
+  role: MessageRole.USER,
+  content: [
+    { type: ContentType.INPUT_TEXT, text: 'What is this image?' },
+    { type: ContentType.INPUT_IMAGE, image_url: 'data:image/png;base64,...' }
+  ]
+}]);
+```
+
+**State Serialization (v2 Format):**
+
+```typescript
+// Get state - uses v2 format with InputItem[]
+const state = await ctx.getState();
+
+// v2 format:
+{
+  version: 2,
+  core: {
+    conversation: InputItem[],     // NEW: Primary conversation format
+    messageMetadata: Record<...>,  // NEW: Message metadata
+    history: HistoryMessage[],     // DEPRECATED: Kept for backward compat
+    // ...
+  },
+  // ...
+}
+
+// Access conversation from state
+const conversation = state.core.conversation;  // InputItem[] - preferred
+const history = state.core.history;            // HistoryMessage[] - deprecated
+```
+
+**Migration from v1 to v2:**
+
+```typescript
+// OLD (deprecated)
+const history = ctx.getHistory();           // HistoryMessage[]
+const count = ctx.getMessageCount();
+ctx.clearHistory();
+ctx.addMessageSync('user', 'Hello');
+
+// NEW (recommended)
+const conversation = ctx.getConversation(); // InputItem[]
+const count = ctx.getConversationLength();
+ctx.clearConversation();
+await ctx.addMessage('user', 'Hello');      // async with capacity check
+```
+
+**Backward Compatibility:**
+
+- `state.core.history` is still populated for backward compatibility
+- `getHistory()`, `getMessageCount()`, `clearHistory()` still work but are deprecated
+- Existing saved sessions (v1 format) are automatically migrated to v2 on load
+
+#### Session Persistence
+
+AgentContext supports full state serialization with automatic version migration:
+
+```typescript
+// Save state (uses v2 format with InputItem[])
+const state = await ctx.getState();
+// state.core.conversation: InputItem[] - primary format
+// state.core.history: HistoryMessage[] - backward compat
+
+// Restore state (auto-detects v1 or v2)
 const ctx = AgentContext.create({ model: 'gpt-4' });
 await ctx.restoreState(savedState);
-// All history, permissions, and plugin state restored
+// Works with both v1 (HistoryMessage[]) and v2 (InputItem[]) formats
 ```
 
 #### Plugin System
