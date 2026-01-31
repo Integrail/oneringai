@@ -68,16 +68,13 @@ import {
   createMemoryStoreTool,
   createMemoryRetrieveTool,
   createMemoryDeleteTool,
-  createMemoryListTool,
+  createMemoryQueryTool,
   createMemoryCleanupRawTool,
-  createMemoryRetrieveBatchTool,
 } from '../capabilities/taskAgent/memoryTools.js';
 import {
-  createContextInspectTool,
-  createContextBreakdownTool,
-  createCacheStatsTool,
-  createMemoryStatsTool,
+  createContextStatsTool,
 } from '../capabilities/taskAgent/contextTools.js';
+import { buildFeatureInstructions } from './context/FeatureInstructions.js';
 
 // ============================================================================
 // Task Types & Priority Profiles
@@ -783,31 +780,26 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    * This is the SINGLE source of truth for context-related tool registration.
    * All agent types (Agent, TaskAgent, UniversalAgent) automatically get these tools.
    *
-   * Tools registered:
-   * - Always: context_inspect, context_breakdown (basic introspection)
-   * - When memory feature enabled: memory_*, cache_stats, memory_stats
-   * - InContextMemory & PersistentInstructions tools are registered separately
-   *   in the constructor when those features are enabled.
+   * Consolidated tools (Phase 1):
+   * - Always: context_stats (unified introspection - gracefully handles disabled features)
+   * - When memory feature enabled: memory_store, memory_retrieve, memory_delete, memory_query, memory_cleanup_raw
+   * - InContextMemory (context_set, context_delete, context_list) & PersistentInstructions tools
+   *   are registered separately in the constructor when those features are enabled.
    */
   private _registerFeatureTools(): void {
-    // Always available: basic introspection tools
-    // These help the agent understand its own context state
-    this._tools.register(createContextInspectTool());
-    this._tools.register(createContextBreakdownTool());
+    // Always available: consolidated introspection tool
+    // This helps the agent understand its own context state
+    // It gracefully handles disabled features (returns "feature_disabled" for memory/cache sections)
+    this._tools.register(createContextStatsTool());
 
-    // Memory feature includes memory tools + cache stats
+    // Memory feature includes memory tools
     if (this._features.memory) {
-      // Memory manipulation tools
+      // Memory manipulation tools (consolidated)
       this._tools.register(createMemoryStoreTool());
       this._tools.register(createMemoryRetrieveTool());
       this._tools.register(createMemoryDeleteTool());
-      this._tools.register(createMemoryListTool());
+      this._tools.register(createMemoryQueryTool());
       this._tools.register(createMemoryCleanupRawTool());
-      this._tools.register(createMemoryRetrieveBatchTool());
-
-      // Stats tools (require memory/cache to be meaningful)
-      this._tools.register(createMemoryStatsTool());
-      this._tools.register(createCacheStatsTool());
     }
   }
 
@@ -1552,6 +1544,13 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
         priority: 0,
         compactable: false,
       });
+    }
+
+    // Feature instructions (compactable but high priority)
+    // Provides runtime guidance for using enabled features efficiently
+    const featureInstructions = buildFeatureInstructions(this._features);
+    if (featureInstructions) {
+      components.push(featureInstructions);
     }
 
     // Conversation history (compactable, priority from profile) - only if history enabled

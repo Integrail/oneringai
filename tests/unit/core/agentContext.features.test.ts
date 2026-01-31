@@ -199,9 +199,10 @@ describe('AgentContext Feature Configuration', () => {
 
       const tools = context.tools.getAll().map((t) => t.definition.function.name);
       expect(tools).toContain('context_set');
-      expect(tools).toContain('context_get');
       expect(tools).toContain('context_delete');
       expect(tools).toContain('context_list');
+      // Note: context_get was removed in tool consolidation (values are visible in context)
+      expect(tools).not.toContain('context_get');
     });
 
     it('should not register inContextMemory tools when disabled', () => {
@@ -211,7 +212,7 @@ describe('AgentContext Feature Configuration', () => {
 
       const tools = context.tools.getAll().map((t) => t.definition.function.name);
       expect(tools).not.toContain('context_set');
-      expect(tools).not.toContain('context_get');
+      expect(tools).not.toContain('context_delete');
     });
   });
 
@@ -302,15 +303,13 @@ describe('AgentContext Feature Configuration', () => {
       const tools = getAgentContextTools(context);
       const toolNames = tools.map((t) => t.definition.function.name);
 
-      // Basic introspection tools should always be present
-      expect(toolNames).toContain('context_inspect');
-      expect(toolNames).toContain('context_breakdown');
+      // Basic introspection tool should always be present (consolidated)
+      expect(toolNames).toContain('context_stats');
 
       // Memory tools should not be present
       expect(toolNames).not.toContain('memory_store');
       expect(toolNames).not.toContain('memory_retrieve');
-      expect(toolNames).not.toContain('cache_stats');
-      expect(toolNames).not.toContain('memory_stats');
+      expect(toolNames).not.toContain('memory_query');
     });
 
     it('should return all memory tools when memory is enabled', () => {
@@ -321,19 +320,15 @@ describe('AgentContext Feature Configuration', () => {
       const tools = getAgentContextTools(context);
       const toolNames = tools.map((t) => t.definition.function.name);
 
-      // Basic introspection tools
-      expect(toolNames).toContain('context_inspect');
-      expect(toolNames).toContain('context_breakdown');
+      // Basic introspection tool (consolidated)
+      expect(toolNames).toContain('context_stats');
 
-      // Memory tools
+      // Memory tools (consolidated - memory_query replaces memory_list + memory_retrieve_batch)
       expect(toolNames).toContain('memory_store');
       expect(toolNames).toContain('memory_retrieve');
       expect(toolNames).toContain('memory_delete');
-      expect(toolNames).toContain('memory_list');
+      expect(toolNames).toContain('memory_query');
       expect(toolNames).toContain('memory_cleanup_raw');
-      expect(toolNames).toContain('memory_retrieve_batch');
-      expect(toolNames).toContain('memory_stats');
-      expect(toolNames).toContain('cache_stats');
     });
   });
 

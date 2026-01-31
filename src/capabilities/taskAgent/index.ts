@@ -42,25 +42,28 @@ export type { CheckpointStrategy } from './CheckpointManager.js';
 export { DEFAULT_CHECKPOINT_STRATEGY } from './CheckpointManager.js';
 
 // Memory tools (individual creators for feature-aware registration)
+// Consolidated tools (Phase 1): memory_query replaces memory_list + memory_retrieve_batch
 export {
   createMemoryTools,
   createMemoryStoreTool,
   createMemoryRetrieveTool,
   createMemoryDeleteTool,
-  createMemoryListTool,
+  createMemoryQueryTool,
   createMemoryCleanupRawTool,
-  createMemoryRetrieveBatchTool,
   memoryStoreDefinition,
   memoryRetrieveDefinition,
   memoryDeleteDefinition,
-  memoryListDefinition,
+  memoryQueryDefinition,
   memoryCleanupRawDefinition,
-  memoryRetrieveBatchDefinition,
 } from './memoryTools.js';
 
 // Context inspection tools (individual creators for feature-aware registration)
+// Consolidated tools (Phase 1): context_stats replaces context_inspect + context_breakdown + cache_stats + memory_stats
 export {
   createContextTools,
+  createContextStatsTool,
+  contextStatsDefinition,
+  // Legacy tools (deprecated but kept for backward compatibility)
   createContextInspectTool,
   createContextBreakdownTool,
   createCacheStatsTool,

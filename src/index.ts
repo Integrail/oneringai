@@ -46,6 +46,16 @@ export type {
 // Feature-aware tool factory
 export { getAgentContextTools, getBasicIntrospectionTools, getMemoryTools } from './core/index.js';
 
+// Feature Instructions (runtime usage instructions for enabled features)
+export {
+  buildFeatureInstructions,
+  INTROSPECTION_INSTRUCTIONS,
+  WORKING_MEMORY_INSTRUCTIONS,
+  IN_CONTEXT_MEMORY_INSTRUCTIONS,
+  PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
+  getAllInstructions,
+} from './core/index.js';
+
 // Audio Capabilities
 export { TextToSpeech, SpeechToText } from './core/index.js';
 export type { TextToSpeechConfig, SpeechToTextConfig } from './core/index.js';

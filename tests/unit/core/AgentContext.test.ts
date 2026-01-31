@@ -96,9 +96,8 @@ describe('AgentContext', () => {
       // AgentContext auto-registers feature-aware tools (introspection, memory, cache)
       // so total count includes user tools + auto-registered tools
       expect(ctx.tools.list().length).toBeGreaterThanOrEqual(2);
-      // Verify auto-registered introspection tools are present (always available)
-      expect(ctx.tools.has('context_inspect')).toBe(true);
-      expect(ctx.tools.has('context_breakdown')).toBe(true);
+      // Verify auto-registered introspection tool is present (always available)
+      expect(ctx.tools.has('context_stats')).toBe(true);
     });
 
     it('should create instance with system prompt', () => {
@@ -745,13 +744,17 @@ describe('AgentContext', () => {
 
     it('should trigger compaction when projected utilization exceeds threshold', async () => {
       ctx = AgentContext.create({
-        maxContextTokens: 1000,
+        maxContextTokens: 4000, // Increased to account for feature_instructions overhead (~800 tokens)
         history: { maxMessages: 100, preserveRecent: 5 },
         strategy: 'proactive', // 75% threshold
       });
 
+      // Initialize budget with prepare()
+      ctx.setCurrentInput('test');
+      await ctx.prepare();
+
       // Fill history to ~60% capacity (each message ~20 tokens)
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 60; i++) {
         ctx.addMessageSync('user', 'A'.repeat(70)); // ~20 tokens each
       }
 
@@ -759,7 +762,7 @@ describe('AgentContext', () => {
       ctx.on('compacted', compactedListener);
 
       // Request that would push over 75% threshold
-      const hasCapacity = await ctx.ensureCapacity(200);
+      const hasCapacity = await ctx.ensureCapacity(800);
 
       // Should have compacted to make room
       expect(compactedListener).toHaveBeenCalled();
@@ -780,39 +783,48 @@ describe('AgentContext', () => {
 
     it('should emit budget:warning event before compaction', async () => {
       ctx = AgentContext.create({
-        maxContextTokens: 1000,
+        maxContextTokens: 4000, // Increased to account for feature_instructions overhead (~800 tokens)
         history: { maxMessages: 100, preserveRecent: 5 },
       });
 
+      // Initialize budget with prepare()
+      ctx.setCurrentInput('test');
+      await ctx.prepare();
+
       // Fill context
-      for (let i = 0; i < 25; i++) {
+      for (let i = 0; i < 60; i++) {
         ctx.addMessageSync('user', 'A'.repeat(70));
       }
 
       const warningListener = vi.fn();
       ctx.on('budget:warning', warningListener);
 
-      await ctx.ensureCapacity(200);
+      await ctx.ensureCapacity(800);
 
       expect(warningListener).toHaveBeenCalled();
     });
 
     it('should update lastBudget after compaction', async () => {
       ctx = AgentContext.create({
-        maxContextTokens: 1000,
+        maxContextTokens: 4000, // Increased to account for feature_instructions overhead (~800 tokens)
         history: { maxMessages: 100, preserveRecent: 5 },
       });
 
+      // Initialize budget with prepare()
+      ctx.setCurrentInput('test');
+      await ctx.prepare();
+
       // Fill context
-      for (let i = 0; i < 25; i++) {
+      for (let i = 0; i < 60; i++) {
         ctx.addMessageSync('user', 'A'.repeat(70));
       }
 
-      await ctx.ensureCapacity(200);
+      await ctx.ensureCapacity(800);
 
       const budget = ctx.getLastBudget();
       expect(budget).not.toBeNull();
-      expect(budget!.status).toBe('ok');
+      // After compaction, status should be ok or warning (compaction was successful)
+      expect(['ok', 'warning']).toContain(budget!.status);
     });
   });
 

@@ -45,12 +45,12 @@ export type {
 } from './InContextMemoryPlugin.js';
 
 // InContextMemory tools and factory functions
+// Note: context_get was removed since InContextMemory values are visible directly in context
 export {
   createInContextMemoryTools,
   createInContextMemory,
   setupInContextMemory,
   contextSetDefinition,
-  contextGetDefinition,
   contextDeleteDefinition,
   contextListDefinition,
 } from './inContextMemoryTools.js';

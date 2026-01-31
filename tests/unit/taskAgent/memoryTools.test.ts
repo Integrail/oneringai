@@ -9,9 +9,8 @@ import {
   memoryStoreDefinition,
   memoryRetrieveDefinition,
   memoryDeleteDefinition,
-  memoryListDefinition,
+  memoryQueryDefinition,
   memoryCleanupRawDefinition,
-  memoryRetrieveBatchDefinition,
 } from '@/capabilities/taskAgent/memoryTools.js';
 import { ToolFunction } from '@/domain/entities/Tool.js';
 import { ToolContext, WorkingMemoryAccess } from '@/domain/interfaces/IToolContext.js';
@@ -59,7 +58,7 @@ describe('Memory Tools', () => {
       const tools = createMemoryTools();
 
       expect(tools).toBeInstanceOf(Array);
-      expect(tools.length).toBeGreaterThanOrEqual(3);
+      expect(tools.length).toBe(5); // store, retrieve, delete, query, cleanup_raw
       expect(tools.every((t) => t.definition && t.execute)).toBe(true);
     });
 
@@ -84,11 +83,18 @@ describe('Memory Tools', () => {
       expect(deleteTool).toBeDefined();
     });
 
-    it('should include memory_list tool', () => {
+    it('should include memory_query tool', () => {
       const tools = createMemoryTools();
-      const listTool = tools.find((t) => t.definition.function.name === 'memory_list');
+      const queryTool = tools.find((t) => t.definition.function.name === 'memory_query');
 
-      expect(listTool).toBeDefined();
+      expect(queryTool).toBeDefined();
+    });
+
+    it('should include memory_cleanup_raw tool', () => {
+      const tools = createMemoryTools();
+      const cleanupTool = tools.find((t) => t.definition.function.name === 'memory_cleanup_raw');
+
+      expect(cleanupTool).toBeDefined();
     });
   });
 
@@ -249,105 +255,88 @@ describe('Memory Tools', () => {
     });
   });
 
-  describe('memory_list tool', () => {
-    let listTool: ToolFunction;
+  describe('memory_query tool', () => {
+    let queryTool: ToolFunction;
 
     beforeEach(() => {
       const tools = createMemoryTools();
-      listTool = tools.find((t) => t.definition.function.name === 'memory_list')!;
+      queryTool = tools.find((t) => t.definition.function.name === 'memory_query')!;
+
+      // Setup test data with different tiers
+      memoryStore.set('findings.topic1', { description: 'Finding 1', value: { summary: 'Topic 1 findings' } });
+      memoryStore.set('findings.topic2', { description: 'Finding 2', value: { summary: 'Topic 2 findings' } });
+      memoryStore.set('summary.overview', { description: 'Summary', value: { text: 'Overview text' } });
+      memoryStore.set('raw.data1', { description: 'Raw data', value: { content: 'Raw content' } });
     });
 
     it('should have correct definition', () => {
-      expect(listTool.definition.function.name).toBe('memory_list');
-      expect(listTool.definition.function.description).toContain('List');
+      expect(queryTool.definition.function.name).toBe('memory_query');
+      expect(queryTool.definition.function.description).toContain('Query');
+      expect(queryTool.definition.function.parameters?.properties?.pattern).toBeDefined();
+      expect(queryTool.definition.function.parameters?.properties?.tier).toBeDefined();
+      expect(queryTool.definition.function.parameters?.properties?.includeValues).toBeDefined();
+      expect(queryTool.definition.function.parameters?.properties?.includeMetadata).toBeDefined();
+      expect(queryTool.definition.function.parameters?.properties?.includeStats).toBeDefined();
     });
 
-    it('should list all keys with descriptions', async () => {
-      memoryStore.set('user.profile', { description: 'User profile data', value: {} });
-      memoryStore.set('order.items', { description: 'Order items', value: [] });
+    it('should list all keys by default', async () => {
+      const result = await queryTool.execute({}, mockContext);
 
-      const result = await listTool.execute({}, mockContext);
-
-      expect(result).toEqual({
-        entries: [
-          { key: 'user.profile', description: 'User profile data', priority: 'normal', tier: 'none', pinned: false },
-          { key: 'order.items', description: 'Order items', priority: 'normal', tier: 'none', pinned: false },
-        ],
-        count: 2,
-        tierFilter: 'all',
-      });
+      expect(result.count).toBe(4);
+      expect(result.entries).toHaveLength(4);
+      expect(result.filter).toBe('all');
     });
 
-    it('should return empty entries when memory is empty', async () => {
-      const result = await listTool.execute({}, mockContext);
-      expect(result).toEqual({
-        entries: [],
-        count: 0,
-        tierFilter: 'all',
-      });
+    it('should list entries by pattern', async () => {
+      const result = await queryTool.execute(
+        { pattern: 'findings.*' },
+        mockContext
+      );
+
+      expect(result.count).toBe(2);
+      expect(result.filter).toBe('pattern:findings.*');
+    });
+
+    it('should list entries by tier', async () => {
+      const result = await queryTool.execute(
+        { tier: 'findings' },
+        mockContext
+      );
+
+      expect(result.count).toBe(2);
+    });
+
+    it('should include values when requested', async () => {
+      const result = await queryTool.execute(
+        { pattern: 'findings.*', includeValues: true },
+        mockContext
+      );
+
+      expect(result.count).toBe(2);
+      expect(result.entries['findings.topic1']).toEqual({ summary: 'Topic 1 findings' });
+      expect(result.entries['findings.topic2']).toEqual({ summary: 'Topic 2 findings' });
+    });
+
+    it('should include metadata when requested', async () => {
+      const result = await queryTool.execute(
+        { pattern: 'findings.*', includeValues: true, includeMetadata: true },
+        mockContext
+      );
+
+      expect(result.metadata).toBeDefined();
+      expect(result.metadata['findings.topic1']).toBeDefined();
     });
 
     it('should be marked as idempotent', () => {
-      expect(listTool.idempotency?.safe).toBe(true);
-    });
-  });
-
-  describe('tool definitions', () => {
-    it('memoryStoreDefinition should be valid', () => {
-      expect(memoryStoreDefinition.type).toBe('function');
-      expect(memoryStoreDefinition.function.name).toBe('memory_store');
-      expect(memoryStoreDefinition.function.parameters).toBeDefined();
+      expect(queryTool.idempotency?.safe).toBe(true);
     });
 
-    it('memoryRetrieveDefinition should be valid', () => {
-      expect(memoryRetrieveDefinition.type).toBe('function');
-      expect(memoryRetrieveDefinition.function.name).toBe('memory_retrieve');
+    it('should have variable expected output size', () => {
+      expect(queryTool.output?.expectedSize).toBe('variable');
     });
 
-    it('memoryDeleteDefinition should be valid', () => {
-      expect(memoryDeleteDefinition.type).toBe('function');
-      expect(memoryDeleteDefinition.function.name).toBe('memory_delete');
-    });
-
-    it('memoryListDefinition should be valid', () => {
-      expect(memoryListDefinition.type).toBe('function');
-      expect(memoryListDefinition.function.name).toBe('memory_list');
-    });
-  });
-
-  describe('tool parameter validation', () => {
-    it('memory_store should require key, description, and value', () => {
-      const tools = createMemoryTools();
-      const storeTool = tools.find((t) => t.definition.function.name === 'memory_store')!;
-      const required = storeTool.definition.function.parameters?.required || [];
-
-      expect(required).toContain('key');
-      expect(required).toContain('description');
-      expect(required).toContain('value');
-    });
-
-    it('memory_retrieve should require key', () => {
-      const tools = createMemoryTools();
-      const retrieveTool = tools.find((t) => t.definition.function.name === 'memory_retrieve')!;
-      const required = retrieveTool.definition.function.parameters?.required || [];
-
-      expect(required).toContain('key');
-    });
-
-    it('memory_delete should require key', () => {
-      const tools = createMemoryTools();
-      const deleteTool = tools.find((t) => t.definition.function.name === 'memory_delete')!;
-      const required = deleteTool.definition.function.parameters?.required || [];
-
-      expect(required).toContain('key');
-    });
-
-    it('memory_list should not require any parameters', () => {
-      const tools = createMemoryTools();
-      const listTool = tools.find((t) => t.definition.function.name === 'memory_list')!;
-      const required = listTool.definition.function.parameters?.required || [];
-
-      expect(required).toHaveLength(0);
+    it('should throw ToolExecutionError without context', async () => {
+      await expect(queryTool.execute({ pattern: '*' })).rejects.toThrow(ToolExecutionError);
     });
   });
 
@@ -415,142 +404,69 @@ describe('Memory Tools', () => {
     });
   });
 
-  describe('memory_retrieve_batch tool', () => {
-    let batchTool: ToolFunction;
-
-    beforeEach(() => {
-      const tools = createMemoryTools();
-      batchTool = tools.find((t) => t.definition.function.name === 'memory_retrieve_batch')!;
-
-      // Setup test data with different tiers
-      memoryStore.set('findings.topic1', { description: 'Finding 1', value: { summary: 'Topic 1 findings' } });
-      memoryStore.set('findings.topic2', { description: 'Finding 2', value: { summary: 'Topic 2 findings' } });
-      memoryStore.set('summary.overview', { description: 'Summary', value: { text: 'Overview text' } });
-      memoryStore.set('raw.data1', { description: 'Raw data', value: { content: 'Raw content' } });
+  describe('tool definitions', () => {
+    it('memoryStoreDefinition should be valid', () => {
+      expect(memoryStoreDefinition.type).toBe('function');
+      expect(memoryStoreDefinition.function.name).toBe('memory_store');
+      expect(memoryStoreDefinition.function.parameters).toBeDefined();
     });
 
-    it('should have correct definition', () => {
-      expect(batchTool.definition.function.name).toBe('memory_retrieve_batch');
-      expect(batchTool.definition.function.description).toContain('multiple memory entries');
-      expect(batchTool.definition.function.parameters?.properties?.pattern).toBeDefined();
-      expect(batchTool.definition.function.parameters?.properties?.keys).toBeDefined();
-      expect(batchTool.definition.function.parameters?.properties?.tier).toBeDefined();
-      expect(batchTool.definition.function.parameters?.properties?.includeMetadata).toBeDefined();
+    it('memoryRetrieveDefinition should be valid', () => {
+      expect(memoryRetrieveDefinition.type).toBe('function');
+      expect(memoryRetrieveDefinition.function.name).toBe('memory_retrieve');
     });
 
-    it('should retrieve entries by pattern', async () => {
-      const result = await batchTool.execute(
-        { pattern: 'findings.*' },
-        mockContext
-      );
-
-      expect(result.count).toBe(2);
-      expect(result.entries['findings.topic1']).toEqual({ summary: 'Topic 1 findings' });
-      expect(result.entries['findings.topic2']).toEqual({ summary: 'Topic 2 findings' });
-      expect(result.filter).toBe('pattern:findings.*');
+    it('memoryDeleteDefinition should be valid', () => {
+      expect(memoryDeleteDefinition.type).toBe('function');
+      expect(memoryDeleteDefinition.function.name).toBe('memory_delete');
     });
 
-    it('should retrieve entries by specific keys', async () => {
-      const result = await batchTool.execute(
-        { keys: ['findings.topic1', 'summary.overview'] },
-        mockContext
-      );
-
-      expect(result.count).toBe(2);
-      expect(result.entries['findings.topic1']).toBeDefined();
-      expect(result.entries['summary.overview']).toBeDefined();
-      expect(result.entries['findings.topic2']).toBeUndefined();
+    it('memoryQueryDefinition should be valid', () => {
+      expect(memoryQueryDefinition.type).toBe('function');
+      expect(memoryQueryDefinition.function.name).toBe('memory_query');
+      expect(memoryQueryDefinition.function.parameters).toBeDefined();
     });
 
-    it('should retrieve entries by tier', async () => {
-      const result = await batchTool.execute(
-        { tier: 'findings' },
-        mockContext
-      );
-
-      expect(result.count).toBe(2);
-      expect(result.entries['findings.topic1']).toBeDefined();
-      expect(result.entries['findings.topic2']).toBeDefined();
-      expect(result.entries['summary.overview']).toBeUndefined();
-    });
-
-    it('should retrieve all entries when no filter provided', async () => {
-      const result = await batchTool.execute({}, mockContext);
-
-      expect(result.count).toBe(4);
-      expect(result.filter).toBe('all');
-    });
-
-    it('should include metadata when requested', async () => {
-      const result = await batchTool.execute(
-        { pattern: 'findings.*', includeMetadata: true },
-        mockContext
-      );
-
-      expect(result.metadata).toBeDefined();
-      expect(result.metadata['findings.topic1']).toEqual({
-        tier: 'findings',
-        priority: 'normal',
-        pinned: false,
-        description: 'Finding 1',
-      });
-    });
-
-    it('should handle non-existent keys', async () => {
-      const result = await batchTool.execute(
-        { keys: ['nonexistent1', 'nonexistent2', 'findings.topic1'] },
-        mockContext
-      );
-
-      expect(result.count).toBe(1);
-      expect(result.notFound).toContain('nonexistent1');
-      expect(result.notFound).toContain('nonexistent2');
-    });
-
-    it('should support wildcard patterns', async () => {
-      const result = await batchTool.execute(
-        { pattern: '*.topic1' },
-        mockContext
-      );
-
-      expect(result.count).toBe(1);
-      expect(result.entries['findings.topic1']).toBeDefined();
-    });
-
-    it('should support complex patterns', async () => {
-      const result = await batchTool.execute(
-        { pattern: '*.*' },
-        mockContext
-      );
-
-      // Should match all dot-separated keys
-      expect(result.count).toBe(4);
-    });
-
-    it('should be marked as idempotent', () => {
-      expect(batchTool.idempotency?.safe).toBe(true);
-    });
-
-    it('should have variable expected output size', () => {
-      expect(batchTool.output?.expectedSize).toBe('variable');
-    });
-
-    it('should throw ToolExecutionError without context', async () => {
-      await expect(batchTool.execute({ pattern: '*' })).rejects.toThrow(ToolExecutionError);
-    });
-  });
-
-  describe('new tool definitions', () => {
     it('memoryCleanupRawDefinition should be valid', () => {
       expect(memoryCleanupRawDefinition.type).toBe('function');
       expect(memoryCleanupRawDefinition.function.name).toBe('memory_cleanup_raw');
       expect(memoryCleanupRawDefinition.function.parameters).toBeDefined();
     });
+  });
 
-    it('memoryRetrieveBatchDefinition should be valid', () => {
-      expect(memoryRetrieveBatchDefinition.type).toBe('function');
-      expect(memoryRetrieveBatchDefinition.function.name).toBe('memory_retrieve_batch');
-      expect(memoryRetrieveBatchDefinition.function.parameters).toBeDefined();
+  describe('tool parameter validation', () => {
+    it('memory_store should require key, description, and value', () => {
+      const tools = createMemoryTools();
+      const storeTool = tools.find((t) => t.definition.function.name === 'memory_store')!;
+      const required = storeTool.definition.function.parameters?.required || [];
+
+      expect(required).toContain('key');
+      expect(required).toContain('description');
+      expect(required).toContain('value');
+    });
+
+    it('memory_retrieve should require key', () => {
+      const tools = createMemoryTools();
+      const retrieveTool = tools.find((t) => t.definition.function.name === 'memory_retrieve')!;
+      const required = retrieveTool.definition.function.parameters?.required || [];
+
+      expect(required).toContain('key');
+    });
+
+    it('memory_delete should require key', () => {
+      const tools = createMemoryTools();
+      const deleteTool = tools.find((t) => t.definition.function.name === 'memory_delete')!;
+      const required = deleteTool.definition.function.parameters?.required || [];
+
+      expect(required).toContain('key');
+    });
+
+    it('memory_query should not require any parameters', () => {
+      const tools = createMemoryTools();
+      const queryTool = tools.find((t) => t.definition.function.name === 'memory_query')!;
+      const required = queryTool.definition.function.parameters?.required || [];
+
+      expect(required).toHaveLength(0);
     });
   });
 });

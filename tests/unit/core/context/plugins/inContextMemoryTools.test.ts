@@ -8,7 +8,6 @@ import {
   createInContextMemoryTools,
   createInContextMemory,
   contextSetDefinition,
-  contextGetDefinition,
   contextDeleteDefinition,
   contextListDefinition,
 } from '../../../../../src/core/context/plugins/inContextMemoryTools.js';
@@ -60,16 +59,6 @@ describe('InContextMemory Tools', () => {
       });
     });
 
-    describe('contextGetDefinition', () => {
-      it('should have correct name', () => {
-        expect(contextGetDefinition.function.name).toBe('context_get');
-      });
-
-      it('should require key parameter', () => {
-        expect(contextGetDefinition.function.parameters?.required).toContain('key');
-      });
-    });
-
     describe('contextDeleteDefinition', () => {
       it('should have correct name', () => {
         expect(contextDeleteDefinition.function.name).toBe('context_delete');
@@ -96,16 +85,20 @@ describe('InContextMemory Tools', () => {
   // ============================================================================
 
   describe('createInContextMemoryTools', () => {
-    it('should return 4 tools', () => {
-      expect(tools).toHaveLength(4);
+    it('should return 3 tools', () => {
+      expect(tools).toHaveLength(3);
     });
 
     it('should return tools with correct names', () => {
       const names = tools.map((t) => t.definition.function.name);
       expect(names).toContain('context_set');
-      expect(names).toContain('context_get');
       expect(names).toContain('context_delete');
       expect(names).toContain('context_list');
+    });
+
+    it('should NOT include context_get (removed in consolidation)', () => {
+      const names = tools.map((t) => t.definition.function.name);
+      expect(names).not.toContain('context_get');
     });
 
     it('should return tools with execute functions', () => {
@@ -193,47 +186,6 @@ describe('InContextMemory Tools', () => {
 
     it('should have correct describeCall', () => {
       const desc = setTool.describeCall!({ key: 'my_key', description: 'desc', value: 'v' });
-      expect(desc).toBe('my_key');
-    });
-  });
-
-  // ============================================================================
-  // context_get Tool Tests
-  // ============================================================================
-
-  describe('context_get tool', () => {
-    let getTool: ToolFunction;
-
-    beforeEach(() => {
-      getTool = tools.find((t) => t.definition.function.name === 'context_get')!;
-    });
-
-    it('should retrieve existing value', async () => {
-      plugin.set('test_key', 'Description', { nested: { value: 42 } });
-
-      const result = await getTool.execute({ key: 'test_key' }, mockContext);
-
-      expect(result.key).toBe('test_key');
-      expect(result.value).toEqual({ nested: { value: 42 } });
-    });
-
-    it('should return error for non-existent key', async () => {
-      const result = await getTool.execute({ key: 'nonexistent' }, mockContext);
-
-      expect(result.error).toBeDefined();
-      expect(result.error).toContain('not found');
-    });
-
-    it('should throw when context is missing', async () => {
-      await expect(getTool.execute({ key: 'test' })).rejects.toThrow();
-    });
-
-    it('should have cacheable idempotency', () => {
-      expect(getTool.idempotency?.cacheable).toBe(true);
-    });
-
-    it('should have correct describeCall', () => {
-      const desc = getTool.describeCall!({ key: 'my_key' });
       expect(desc).toBe('my_key');
     });
   });
@@ -333,7 +285,7 @@ describe('InContextMemory Tools', () => {
       const result = createInContextMemory();
 
       expect(result.plugin).toBeInstanceOf(InContextMemoryPlugin);
-      expect(result.tools).toHaveLength(4);
+      expect(result.tools).toHaveLength(3);
     });
 
     it('should apply config to plugin', () => {
@@ -363,9 +315,8 @@ describe('InContextMemory Tools', () => {
   // ============================================================================
 
   describe('integration', () => {
-    it('should work end-to-end: set, get, list, delete', async () => {
+    it('should work end-to-end: set, list, delete', async () => {
       const setTool = tools.find((t) => t.definition.function.name === 'context_set')!;
-      const getTool = tools.find((t) => t.definition.function.name === 'context_get')!;
       const listTool = tools.find((t) => t.definition.function.name === 'context_list')!;
       const deleteTool = tools.find((t) => t.definition.function.name === 'context_delete')!;
 
@@ -383,17 +334,14 @@ describe('InContextMemory Tools', () => {
       const listResult = await listTool.execute({}, mockContext);
       expect(listResult.count).toBe(2);
 
-      // Get
-      const getResult = await getTool.execute({ key: 'state' }, mockContext);
-      expect(getResult.value).toEqual({ step: 1 });
+      // Note: context_get was removed - values are visible directly in context
+      // LLM can see values without a tool call
 
       // Update
       await setTool.execute(
         { key: 'state', description: 'Current state', value: { step: 2 } },
         mockContext
       );
-      const updatedResult = await getTool.execute({ key: 'state' }, mockContext);
-      expect(updatedResult.value).toEqual({ step: 2 });
 
       // Delete
       await deleteTool.execute({ key: 'prefs' }, mockContext);
@@ -403,7 +351,6 @@ describe('InContextMemory Tools', () => {
 
     it('should handle various data types', async () => {
       const setTool = tools.find((t) => t.definition.function.name === 'context_set')!;
-      const getTool = tools.find((t) => t.definition.function.name === 'context_get')!;
 
       // Set various types
       await setTool.execute({ key: 'string', description: 'String', value: 'hello' }, mockContext);
@@ -416,13 +363,13 @@ describe('InContextMemory Tools', () => {
       await setTool.execute({ key: 'null', description: 'Null', value: null }, mockContext);
       await setTool.execute({ key: 'boolean', description: 'Boolean', value: true }, mockContext);
 
-      // Verify each
-      expect((await getTool.execute({ key: 'string' }, mockContext)).value).toBe('hello');
-      expect((await getTool.execute({ key: 'number' }, mockContext)).value).toBe(42);
-      expect((await getTool.execute({ key: 'array' }, mockContext)).value).toEqual([1, 2, 3]);
-      expect((await getTool.execute({ key: 'object' }, mockContext)).value).toEqual({ a: { b: 'c' } });
-      expect((await getTool.execute({ key: 'null' }, mockContext)).value).toBeNull();
-      expect((await getTool.execute({ key: 'boolean' }, mockContext)).value).toBe(true);
+      // Verify each via plugin directly (context_get was removed)
+      expect(plugin.get('string')).toBe('hello');
+      expect(plugin.get('number')).toBe(42);
+      expect(plugin.get('array')).toEqual([1, 2, 3]);
+      expect(plugin.get('object')).toEqual({ a: { b: 'c' } });
+      expect(plugin.get('null')).toBeNull();
+      expect(plugin.get('boolean')).toBe(true);
     });
   });
 });

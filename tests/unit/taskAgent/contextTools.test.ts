@@ -4,19 +4,20 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { createContextTools } from '@/capabilities/taskAgent/contextTools.js';
+import {
+  createContextTools,
+  createContextStatsTool,
+  contextStatsDefinition,
+} from '@/capabilities/taskAgent/contextTools.js';
 import type { ToolContext } from '@/domain/interfaces/IToolContext.js';
 
 describe('Context Tools', () => {
   describe('createContextTools', () => {
-    it('should create all four context tools', () => {
+    it('should create one context tool (context_stats)', () => {
       const tools = createContextTools();
 
-      expect(tools).toHaveLength(4);
-      expect(tools[0].definition.function.name).toBe('context_inspect');
-      expect(tools[1].definition.function.name).toBe('context_breakdown');
-      expect(tools[2].definition.function.name).toBe('cache_stats');
-      expect(tools[3].definition.function.name).toBe('memory_stats');
+      expect(tools).toHaveLength(1);
+      expect(tools[0].definition.function.name).toBe('context_stats');
     });
 
     it('should mark all tools as safe (idempotent)', () => {
@@ -28,11 +29,11 @@ describe('Context Tools', () => {
     });
   });
 
-  describe('context_inspect', () => {
-    const [contextInspect] = createContextTools();
+  describe('context_stats', () => {
+    const contextStatsTool = createContextStatsTool();
 
     it('should return error when agentContext not available', async () => {
-      const result = await contextInspect.execute({}, undefined);
+      const result = await contextStatsTool.execute({}, undefined);
 
       expect(result).toEqual({
         error: 'AgentContext not available',
@@ -41,7 +42,7 @@ describe('Context Tools', () => {
     });
 
     it('should return error when context is empty object', async () => {
-      const result = await contextInspect.execute({}, {} as ToolContext);
+      const result = await contextStatsTool.execute({}, {} as ToolContext);
 
       expect(result).toEqual({
         error: 'AgentContext not available',
@@ -57,15 +58,16 @@ describe('Context Tools', () => {
         } as any,
       };
 
-      const result = await contextInspect.execute({}, mockContext);
+      const result = await contextStatsTool.execute({}, mockContext);
 
-      expect(result).toEqual({
+      // When no budget is available, it returns the status inside budget key
+      expect(result.budget).toEqual({
         status: 'no_budget_data',
         message: 'No context budget calculated yet. Run prepare() first.',
       });
     });
 
-    it('should return context budget with ok status', async () => {
+    it('should return budget info by default', async () => {
       const mockContext: ToolContext = {
         agentId: 'test',
         agentContext: {
@@ -81,14 +83,14 @@ describe('Context Tools', () => {
         } as any,
       };
 
-      const result = await contextInspect.execute({}, mockContext);
+      const result = await contextStatsTool.execute({}, mockContext);
 
-      expect(result).toEqual({
+      expect(result.budget).toEqual({
         total_tokens: 128000,
         reserved_tokens: 10000,
         used_tokens: 50000,
         available_tokens: 68000,
-        utilization_percent: 39.1, // Rounded to 1 decimal
+        utilization_percent: 39.1,
         status: 'ok',
         warning: null,
       });
@@ -110,11 +112,11 @@ describe('Context Tools', () => {
         } as any,
       };
 
-      const result = await contextInspect.execute({}, mockContext);
+      const result = await contextStatsTool.execute({}, mockContext);
 
-      expect(result.status).toBe('warning');
-      expect(result.warning).toBe('Context approaching limit - automatic compaction may trigger');
-      expect(result.utilization_percent).toBeGreaterThan(70);
+      expect(result.budget.status).toBe('warning');
+      expect(result.budget.warning).toBe('Context approaching limit - automatic compaction may trigger');
+      expect(result.budget.utilization_percent).toBeGreaterThan(70);
     });
 
     it('should return critical warning with critical status', async () => {
@@ -133,10 +135,194 @@ describe('Context Tools', () => {
         } as any,
       };
 
-      const result = await contextInspect.execute({}, mockContext);
+      const result = await contextStatsTool.execute({}, mockContext);
 
-      expect(result.status).toBe('critical');
-      expect(result.warning).toBe('Context at critical level - compaction will trigger');
+      expect(result.budget.status).toBe('critical');
+      expect(result.budget.warning).toBe('Context at critical level - compaction will trigger');
+    });
+
+    it('should include breakdown when requested', async () => {
+      const mockContext: ToolContext = {
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
+            total: 128000,
+            used: 50000,
+            available: 78000,
+            reserved: 10000,
+            utilizationPercent: 39.06,
+            status: 'ok',
+            breakdown: {
+              systemPrompt: 10000,
+              instructions: 5000,
+              memoryIndex: 15000,
+              conversationHistory: 18000,
+              currentInput: 2000,
+            },
+          }),
+        } as any,
+      };
+
+      const result = await contextStatsTool.execute({ sections: ['breakdown'] }, mockContext);
+
+      expect(result.breakdown).toBeDefined();
+      expect(result.breakdown.total_used).toBe(50000);
+      expect(result.breakdown.components).toHaveLength(5);
+
+      const systemPrompt = result.breakdown.components.find((c: any) => c.name === 'systemPrompt');
+      expect(systemPrompt.tokens).toBe(10000);
+      expect(systemPrompt.percent).toBe(20.0);
+    });
+
+    it('should include memory stats when requested and available', async () => {
+      // memory is checked on context, not agentContext
+      const mockContext: ToolContext = {
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
+            total: 128000,
+            used: 50000,
+            available: 78000,
+            reserved: 10000,
+            utilizationPercent: 39.06,
+            status: 'ok',
+            breakdown: {},
+          }),
+        } as any,
+        memory: {
+          list: vi.fn().mockResolvedValue([
+            { key: 'raw.user_id', description: 'Current user ID', effectivePriority: 'normal' },
+            { key: 'findings.token', description: 'Authentication token', effectivePriority: 'high' },
+          ]),
+        } as any,
+      };
+
+      const result = await contextStatsTool.execute({ sections: ['memory'] }, mockContext);
+
+      expect(result.memory).toBeDefined();
+      expect(result.memory.total_entries).toBe(2);
+      expect(result.memory.entries).toHaveLength(2);
+      expect(result.memory.by_tier).toBeDefined();
+    });
+
+    it('should indicate memory not enabled when disabled', async () => {
+      const mockContext: ToolContext = {
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
+            total: 128000,
+            used: 50000,
+            available: 78000,
+            reserved: 10000,
+            utilizationPercent: 39.06,
+            status: 'ok',
+            breakdown: {},
+          }),
+        } as any,
+        // No memory on context
+      };
+
+      const result = await contextStatsTool.execute({ sections: ['memory'] }, mockContext);
+
+      expect(result.memory).toEqual({
+        status: 'feature_disabled',
+        message: 'Memory feature is not enabled.',
+      });
+    });
+
+    it('should include cache stats when requested and available', async () => {
+      // idempotencyCache is checked on context, not agentContext
+      const mockContext: ToolContext = {
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
+            total: 128000,
+            used: 50000,
+            available: 78000,
+            reserved: 10000,
+            utilizationPercent: 39.06,
+            status: 'ok',
+            breakdown: {},
+          }),
+        } as any,
+        idempotencyCache: {
+          getStats: vi.fn().mockReturnValue({
+            entries: 50,
+            hits: 35,
+            misses: 15,
+            hitRate: 0.7,
+          }),
+        } as any,
+      };
+
+      const result = await contextStatsTool.execute({ sections: ['cache'] }, mockContext);
+
+      expect(result.cache).toBeDefined();
+      expect(result.cache.entries).toBe(50);
+      expect(result.cache.hit_rate_percent).toBe(70);
+      expect(result.cache.effectiveness).toBe('high');
+    });
+
+    it('should indicate cache not enabled when disabled', async () => {
+      const mockContext: ToolContext = {
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
+            total: 128000,
+            used: 50000,
+            available: 78000,
+            reserved: 10000,
+            utilizationPercent: 39.06,
+            status: 'ok',
+            breakdown: {},
+          }),
+        } as any,
+        // No idempotencyCache on context
+      };
+
+      const result = await contextStatsTool.execute({ sections: ['cache'] }, mockContext);
+
+      expect(result.cache).toEqual({
+        status: 'feature_disabled',
+        message: 'Cache is not enabled (requires memory feature).',
+      });
+    });
+
+    it('should include all sections when sections=all', async () => {
+      const mockContext: ToolContext = {
+        agentId: 'test',
+        agentContext: {
+          getLastBudget: vi.fn().mockReturnValue({
+            total: 128000,
+            used: 50000,
+            available: 78000,
+            reserved: 10000,
+            utilizationPercent: 39.06,
+            status: 'ok',
+            breakdown: {
+              systemPrompt: 10000,
+            },
+          }),
+        } as any,
+        memory: {
+          list: vi.fn().mockResolvedValue([{ key: 'test', description: 'test', effectivePriority: 'normal' }]),
+        } as any,
+        idempotencyCache: {
+          getStats: vi.fn().mockReturnValue({
+            entries: 10,
+            hits: 5,
+            misses: 5,
+            hitRate: 0.5,
+          }),
+        } as any,
+      };
+
+      const result = await contextStatsTool.execute({ sections: ['all'] }, mockContext);
+
+      expect(result.budget).toBeDefined();
+      expect(result.breakdown).toBeDefined();
+      expect(result.memory).toBeDefined();
+      expect(result.cache).toBeDefined();
     });
 
     it('should round utilization percent to 1 decimal place', async () => {
@@ -155,364 +341,85 @@ describe('Context Tools', () => {
         } as any,
       };
 
-      const result = await contextInspect.execute({}, mockContext);
+      const result = await contextStatsTool.execute({}, mockContext);
 
-      expect(result.utilization_percent).toBe(48.1);
-    });
-  });
-
-  describe('context_breakdown', () => {
-    const [, contextBreakdown] = createContextTools();
-
-    it('should return error when agentContext not available', async () => {
-      const result = await contextBreakdown.execute({}, undefined);
-
-      expect(result).toEqual({
-        error: 'AgentContext not available',
-        message: 'Tool context missing agentContext',
-      });
+      expect(result.budget.utilization_percent).toBe(48.1);
     });
 
-    it('should return message when no budget available', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        agentContext: {
-          getLastBudget: vi.fn().mockReturnValue(null),
-        } as any,
-      };
-
-      const result = await contextBreakdown.execute({}, mockContext);
-
-      expect(result).toEqual({
-        status: 'no_budget_data',
-        message: 'No context budget calculated yet. Run prepare() first.',
-      });
-    });
-
-    it('should return detailed breakdown with percentages', async () => {
-      const mockContext: ToolContext = {
+    it('should classify cache effectiveness correctly', async () => {
+      // High effectiveness (>50%)
+      let mockContext: ToolContext = {
         agentId: 'test',
         agentContext: {
           getLastBudget: vi.fn().mockReturnValue({
-            total: 128000,
-            used: 50000,
-            breakdown: {
-              systemPrompt: 10000,
-              instructions: 5000,
-              memoryIndex: 15000,
-              conversationHistory: 18000,
-              currentInput: 2000,
-            },
+            total: 128000, used: 50000, available: 78000, reserved: 10000,
+            utilizationPercent: 39.06, status: 'ok', breakdown: {},
           }),
         } as any,
+        idempotencyCache: { getStats: vi.fn().mockReturnValue({ entries: 100, hits: 70, misses: 30, hitRate: 0.7 }) } as any,
       };
+      let result = await contextStatsTool.execute({ sections: ['cache'] }, mockContext);
+      expect(result.cache.effectiveness).toBe('high');
 
-      const result = await contextBreakdown.execute({}, mockContext);
-
-      expect(result.total_used).toBe(50000);
-      expect(result.breakdown).toEqual({
-        systemPrompt: 10000,
-        instructions: 5000,
-        memoryIndex: 15000,
-        conversationHistory: 18000,
-        currentInput: 2000,
-      });
-      expect(result.components).toHaveLength(5);
-
-      // Check system prompt component
-      const systemPrompt = result.components.find((c: any) => c.name === 'systemPrompt');
-      expect(systemPrompt.tokens).toBe(10000);
-      expect(systemPrompt.percent).toBe(20.0); // 10000/50000 = 20%
-
-      // Check conversation history component
-      const history = result.components.find((c: any) => c.name === 'conversationHistory');
-      expect(history.tokens).toBe(18000);
-      expect(history.percent).toBe(36.0); // 18000/50000 = 36%
-    });
-
-    it('should handle zero values in breakdown', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        agentContext: {
-          getLastBudget: vi.fn().mockReturnValue({
-            total: 128000,
-            used: 10000,
-            breakdown: {
-              systemPrompt: 10000,
-              instructions: 0,
-              memoryIndex: 0,
-              conversationHistory: 0,
-              currentInput: 0,
-            },
-          }),
-        } as any,
+      // Medium effectiveness (20-50%)
+      mockContext = {
+        ...mockContext,
+        idempotencyCache: { getStats: vi.fn().mockReturnValue({ entries: 100, hits: 30, misses: 70, hitRate: 0.3 }) } as any,
       };
+      result = await contextStatsTool.execute({ sections: ['cache'] }, mockContext);
+      expect(result.cache.effectiveness).toBe('medium');
 
-      const result = await contextBreakdown.execute({}, mockContext);
-
-      const instructions = result.components.find((c: any) => c.name === 'instructions');
-      expect(instructions.tokens).toBe(0);
-      expect(instructions.percent).toBe(0);
-    });
-
-    it('should calculate percentages correctly with rounding', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        agentContext: {
-          getLastBudget: vi.fn().mockReturnValue({
-            total: 100000,
-            used: 30000,
-            breakdown: {
-              systemPrompt: 10001, // Should be 33.337% -> 33.3%
-              instructions: 10001,
-              memoryIndex: 5000,
-              conversationHistory: 3000,
-              currentInput: 1998,
-            },
-          }),
-        } as any,
+      // Low effectiveness (>0 but <20%)
+      mockContext = {
+        ...mockContext,
+        idempotencyCache: { getStats: vi.fn().mockReturnValue({ entries: 100, hits: 10, misses: 90, hitRate: 0.1 }) } as any,
       };
+      result = await contextStatsTool.execute({ sections: ['cache'] }, mockContext);
+      expect(result.cache.effectiveness).toBe('low');
 
-      const result = await contextBreakdown.execute({}, mockContext);
-
-      const systemPrompt = result.components.find((c: any) => c.name === 'systemPrompt');
-      expect(systemPrompt.percent).toBe(33.3);
+      // None effectiveness (0%)
+      mockContext = {
+        ...mockContext,
+        idempotencyCache: { getStats: vi.fn().mockReturnValue({ entries: 50, hits: 0, misses: 50, hitRate: 0 }) } as any,
+      };
+      result = await contextStatsTool.execute({ sections: ['cache'] }, mockContext);
+      expect(result.cache.effectiveness).toBe('none');
     });
   });
 
-  describe('cache_stats', () => {
-    const [, , cacheStats] = createContextTools();
-
-    it('should return error when cache not available', async () => {
-      const result = await cacheStats.execute({}, undefined);
-
-      expect(result).toEqual({
-        error: 'Idempotency cache not available',
-        message: 'This tool is only available within TaskAgent execution',
-      });
+  describe('contextStatsDefinition', () => {
+    it('should have correct name', () => {
+      expect(contextStatsDefinition.function.name).toBe('context_stats');
     });
 
-    it('should return cache statistics with high effectiveness', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        idempotencyCache: {
-          getStats: vi.fn().mockReturnValue({
-            entries: 50,
-            hits: 35,
-            misses: 15,
-            hitRate: 0.7,
-          }),
-        } as any,
-      };
-
-      const result = await cacheStats.execute({}, mockContext);
-
-      expect(result).toEqual({
-        entries: 50,
-        hits: 35,
-        misses: 15,
-        hit_rate: 70.0,
-        hit_rate_percent: '70%',
-        effectiveness: 'high',
-      });
+    it('should have description', () => {
+      expect(contextStatsDefinition.function.description).toBeDefined();
+      expect(contextStatsDefinition.function.description!.length).toBeGreaterThan(10);
     });
 
-    it('should classify medium effectiveness (20-50% hit rate)', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        idempotencyCache: {
-          getStats: vi.fn().mockReturnValue({
-            entries: 100,
-            hits: 30,
-            misses: 70,
-            hitRate: 0.3,
-          }),
-        } as any,
-      };
-
-      const result = await cacheStats.execute({}, mockContext);
-
-      expect(result.effectiveness).toBe('medium');
-      expect(result.hit_rate_percent).toBe('30%');
+    it('should have sections parameter', () => {
+      const props = contextStatsDefinition.function.parameters?.properties;
+      expect(props?.sections).toBeDefined();
+      expect(props?.sections?.type).toBe('array');
     });
 
-    it('should classify low effectiveness (0-20% hit rate)', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        idempotencyCache: {
-          getStats: vi.fn().mockReturnValue({
-            entries: 100,
-            hits: 10,
-            misses: 90,
-            hitRate: 0.1,
-          }),
-        } as any,
-      };
-
-      const result = await cacheStats.execute({}, mockContext);
-
-      expect(result.effectiveness).toBe('low');
-      expect(result.hit_rate).toBe(10.0);
+    it('should have function type', () => {
+      expect(contextStatsDefinition.type).toBe('function');
     });
 
-    it('should classify none effectiveness (0% hit rate)', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        idempotencyCache: {
-          getStats: vi.fn().mockReturnValue({
-            entries: 50,
-            hits: 0,
-            misses: 50,
-            hitRate: 0,
-          }),
-        } as any,
-      };
-
-      const result = await cacheStats.execute({}, mockContext);
-
-      expect(result.effectiveness).toBe('none');
-      expect(result.hit_rate).toBe(0);
-    });
-
-    it('should handle perfect hit rate (100%)', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        idempotencyCache: {
-          getStats: vi.fn().mockReturnValue({
-            entries: 25,
-            hits: 25,
-            misses: 0,
-            hitRate: 1.0,
-          }),
-        } as any,
-      };
-
-      const result = await cacheStats.execute({}, mockContext);
-
-      expect(result.hit_rate).toBe(100.0);
-      expect(result.hit_rate_percent).toBe('100%');
-      expect(result.effectiveness).toBe('high');
-    });
-
-    it('should round hit rate to 1 decimal place', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        idempotencyCache: {
-          getStats: vi.fn().mockReturnValue({
-            entries: 77,
-            hits: 48,
-            misses: 29,
-            hitRate: 0.6233766233766234,
-          }),
-        } as any,
-      };
-
-      const result = await cacheStats.execute({}, mockContext);
-
-      expect(result.hit_rate).toBe(62.3);
-      expect(result.hit_rate_percent).toBe('62%');
-    });
-  });
-
-  describe('memory_stats', () => {
-    const [, , , memoryStats] = createContextTools();
-
-    it('should return error when memory not available', async () => {
-      const result = await memoryStats.execute({}, undefined);
-
-      expect(result).toEqual({
-        error: 'Working memory not available',
-        message: 'This tool is only available within TaskAgent execution',
-      });
-    });
-
-    it('should return memory statistics with entries', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        memory: {
-          list: vi.fn().mockResolvedValue([
-            { key: 'user_id', description: 'Current user ID' },
-            { key: 'session_token', description: 'Authentication token' },
-            { key: 'preferences', description: 'User preferences' },
-          ]),
-        } as any,
-      };
-
-      const result = await memoryStats.execute({}, mockContext);
-
-      expect(result.entry_count).toBe(3);
-      expect(result.entries_by_scope.total).toBe(3);
-      expect(result.entries).toHaveLength(3);
-      expect(result.entries[0]).toEqual({
-        key: 'user_id',
-        description: 'Current user ID',
-      });
-    });
-
-    it('should handle empty memory', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        memory: {
-          list: vi.fn().mockResolvedValue([]),
-        } as any,
-      };
-
-      const result = await memoryStats.execute({}, mockContext);
-
-      expect(result.entry_count).toBe(0);
-      expect(result.entries).toEqual([]);
-    });
-
-    it('should handle memory entries without descriptions', async () => {
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        memory: {
-          list: vi.fn().mockResolvedValue([
-            { key: 'simple_key' },
-            { key: 'another_key', description: 'Has description' },
-          ]),
-        } as any,
-      };
-
-      const result = await memoryStats.execute({}, mockContext);
-
-      expect(result.entry_count).toBe(2);
-      expect(result.entries[0].key).toBe('simple_key');
-      expect(result.entries[0].description).toBeUndefined();
-      expect(result.entries[1].description).toBe('Has description');
-    });
-
-    it('should handle large number of memory entries', async () => {
-      const largeIndex = Array.from({ length: 1000 }, (_, i) => ({
-        key: `key_${i}`,
-        description: `Description ${i}`,
-      }));
-
-      const mockContext: ToolContext = {
-        agentId: 'test',
-        memory: {
-          list: vi.fn().mockResolvedValue(largeIndex),
-        } as any,
-      };
-
-      const result = await memoryStats.execute({}, mockContext);
-
-      expect(result.entry_count).toBe(1000);
-      expect(result.entries).toHaveLength(1000);
+    it('should have no required parameters', () => {
+      expect(contextStatsDefinition.function.parameters?.required).toEqual([]);
     });
   });
 
   describe('Tool definitions', () => {
     const tools = createContextTools();
 
-    it('should have correct tool names', () => {
-      expect(tools[0].definition.function.name).toBe('context_inspect');
-      expect(tools[1].definition.function.name).toBe('context_breakdown');
-      expect(tools[2].definition.function.name).toBe('cache_stats');
-      expect(tools[3].definition.function.name).toBe('memory_stats');
+    it('should have correct tool name', () => {
+      expect(tools[0].definition.function.name).toBe('context_stats');
     });
 
-    it('should have descriptions', () => {
+    it('should have description', () => {
       tools.forEach((tool) => {
         expect(tool.definition.function.description).toBeTruthy();
         expect(tool.definition.function.description.length).toBeGreaterThan(10);

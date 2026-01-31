@@ -123,20 +123,47 @@ export const memoryDeleteDefinition: FunctionToolDefinition = {
 };
 
 /**
- * Tool definition for memory_list
+ * Tool definition for memory_query (consolidated from memory_list + memory_retrieve_batch)
  */
-export const memoryListDefinition: FunctionToolDefinition = {
+export const memoryQueryDefinition: FunctionToolDefinition = {
   type: 'function',
   function: {
-    name: 'memory_list',
-    description: 'List all keys and their descriptions in working memory.',
+    name: 'memory_query',
+    description: `Query working memory. List entries, search by pattern, or retrieve values.
+
+Examples:
+- memory_query() → list all keys
+- memory_query({ pattern: "findings.*" }) → list matching keys
+- memory_query({ pattern: "findings.*", includeValues: true }) → retrieve values
+- memory_query({ includeStats: true }) → include memory statistics`,
     parameters: {
       type: 'object',
       properties: {
+        pattern: {
+          type: 'string',
+          description: 'Glob pattern to match keys (e.g., "raw.*", "findings.*", "*"). Default: "*" (all)',
+        },
         tier: {
           type: 'string',
-          enum: ['raw', 'summary', 'findings'],
-          description: 'Optional: Filter to only show entries from a specific tier',
+          enum: ['raw', 'summary', 'findings', 'data'],
+          description: 'Filter by tier (overrides pattern)',
+        },
+        scope: {
+          type: 'string',
+          enum: ['session', 'persistent'],
+          description: 'Filter by scope',
+        },
+        includeValues: {
+          type: 'boolean',
+          description: 'Include actual values (default: false = list keys only)',
+        },
+        includeMetadata: {
+          type: 'boolean',
+          description: 'Include metadata (priority, tier, pinned) for each entry',
+        },
+        includeStats: {
+          type: 'boolean',
+          description: 'Include memory statistics (entry count, size, utilization)',
         },
       },
       required: [],
@@ -162,48 +189,6 @@ export const memoryCleanupRawDefinition: FunctionToolDefinition = {
         },
       },
       required: ['keys'],
-    },
-  },
-};
-
-/**
- * Tool definition for memory_retrieve_batch
- */
-export const memoryRetrieveBatchDefinition: FunctionToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'memory_retrieve_batch',
-    description: `Retrieve multiple memory entries at once. More efficient than multiple memory_retrieve calls.
-
-Use this for:
-- Getting all findings before synthesis: pattern="findings.*"
-- Getting specific entries by keys: keys=["findings.search1", "findings.search2"]
-- Getting all entries from a tier: tier="findings"
-
-Returns all matching entries with their full values in one call.`,
-    parameters: {
-      type: 'object',
-      properties: {
-        pattern: {
-          type: 'string',
-          description: 'Glob-like pattern to match keys (e.g., "findings.*", "search.*", "*"). Supports * as wildcard.',
-        },
-        keys: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Specific keys to retrieve. Use this when you know exact keys.',
-        },
-        tier: {
-          type: 'string',
-          enum: ['raw', 'summary', 'findings'],
-          description: 'Retrieve all entries from a specific tier.',
-        },
-        includeMetadata: {
-          type: 'boolean',
-          description: 'If true, include metadata (priority, tier, pinned) with each entry. Default: false.',
-        },
-      },
-      required: [],
     },
   },
 };
@@ -344,42 +329,112 @@ export function createMemoryDeleteTool(): ToolFunction {
 }
 
 /**
- * Create memory_list tool
+ * Create memory_query tool (consolidated from memory_list + memory_retrieve_batch)
  */
-export function createMemoryListTool(): ToolFunction {
+export function createMemoryQueryTool(): ToolFunction {
   return {
-    definition: memoryListDefinition,
+    definition: memoryQueryDefinition,
     execute: async (args: Record<string, unknown>, context?: ToolContext) => {
       if (!context || !context.memory) {
-        throw new ToolExecutionError('memory_list', 'Memory tools require TaskAgent context');
+        throw new ToolExecutionError('memory_query', 'Memory tools require TaskAgent context');
       }
 
+      const pattern = args.pattern as string | undefined;
+      const tier = args.tier as MemoryTier | undefined;
+      const includeValues = args.includeValues as boolean | undefined;
+      const includeMetadata = args.includeMetadata as boolean | undefined;
+      const includeStats = args.includeStats as boolean | undefined;
+
+      // Get all entries to filter
       let entries = await context.memory.list();
 
-      // Filter by tier if specified
-      const tierFilter = args.tier as MemoryTier | undefined;
-      if (tierFilter) {
-        const prefix = `${tierFilter}.`;
+      // Apply filters
+      if (tier) {
+        // Tier filter overrides pattern
+        const prefix = `${tier}.`;
         entries = entries.filter((e) => e.key.startsWith(prefix));
+      } else if (pattern && pattern !== '*') {
+        // Pattern filter
+        entries = entries.filter((e) => matchPattern(e.key, pattern));
       }
 
-      return {
-        entries: entries.map((e) => ({
-          key: e.key,
-          description: e.description,
-          priority: e.effectivePriority,
-          tier: getTierFromKey(e.key) ?? 'none',
-          pinned: e.pinned,
-        })),
+      // Build base result
+      const result: Record<string, unknown> = {
         count: entries.length,
-        tierFilter: tierFilter ?? 'all',
+        filter: tier ? `tier:${tier}` : pattern ? `pattern:${pattern}` : 'all',
       };
+
+      // Build entries list
+      if (includeValues) {
+        // Include full values (like old memory_retrieve_batch)
+        const entriesWithValues: Record<string, unknown> = {};
+        const metadata: Record<string, { tier: string; priority: string; pinned: boolean; description: string }> = {};
+
+        for (const entry of entries) {
+          const value = await context.memory.get(entry.key);
+          if (value !== undefined) {
+            entriesWithValues[entry.key] = value;
+
+            if (includeMetadata) {
+              metadata[entry.key] = {
+                tier: getTierFromKey(entry.key) ?? 'none',
+                priority: entry.effectivePriority ?? 'normal',
+                pinned: entry.pinned ?? false,
+                description: entry.description,
+              };
+            }
+          }
+        }
+
+        result.entries = entriesWithValues;
+        if (includeMetadata) {
+          result.metadata = metadata;
+        }
+      } else {
+        // List mode (like old memory_list)
+        result.entries = entries.map((e) => {
+          const entryInfo: Record<string, unknown> = {
+            key: e.key,
+            description: e.description,
+          };
+
+          if (includeMetadata) {
+            entryInfo.priority = e.effectivePriority ?? 'normal';
+            entryInfo.tier = getTierFromKey(e.key) ?? 'none';
+            entryInfo.pinned = e.pinned ?? false;
+          }
+
+          return entryInfo;
+        });
+      }
+
+      // Include stats if requested
+      if (includeStats) {
+        const allEntries = await context.memory.list();
+        const byTier: Record<string, number> = {};
+
+        for (const entry of allEntries) {
+          const entryTier = getTierFromKey(entry.key) ?? 'other';
+          byTier[entryTier] = (byTier[entryTier] || 0) + 1;
+        }
+
+        result.stats = {
+          totalEntries: allEntries.length,
+          byTier,
+        };
+      }
+
+      return result;
     },
     idempotency: { safe: true },
-    output: { expectedSize: 'small' },
+    output: { expectedSize: 'variable' },
     describeCall: (args) => {
+      const pattern = args.pattern as string | undefined;
       const tier = args.tier as string | undefined;
-      return tier ? `tier:${tier}` : 'all';
+      const includeValues = args.includeValues as boolean | undefined;
+      if (tier) return `tier:${tier}${includeValues ? '+values' : ''}`;
+      if (pattern) return `pattern:${pattern}${includeValues ? '+values' : ''}`;
+      return includeValues ? 'all+values' : 'all';
     },
   };
 }
@@ -425,109 +480,26 @@ export function createMemoryCleanupRawTool(): ToolFunction {
   };
 }
 
-/**
- * Create memory_retrieve_batch tool
- */
-export function createMemoryRetrieveBatchTool(): ToolFunction {
-  return {
-    definition: memoryRetrieveBatchDefinition,
-    execute: async (args: Record<string, unknown>, context?: ToolContext) => {
-      if (!context || !context.memory) {
-        throw new ToolExecutionError('memory_retrieve_batch', 'Memory tools require TaskAgent context');
-      }
-
-      const pattern = args.pattern as string | undefined;
-      const keys = args.keys as string[] | undefined;
-      const tier = args.tier as MemoryTier | undefined;
-      const includeMetadata = args.includeMetadata as boolean | undefined;
-
-      // Get all entries to match against
-      const allEntries = await context.memory.list();
-
-      // Determine which keys to retrieve
-      let keysToRetrieve: string[] = [];
-
-      if (keys && keys.length > 0) {
-        // Explicit keys provided
-        keysToRetrieve = keys;
-      } else if (pattern) {
-        // Pattern matching
-        keysToRetrieve = allEntries
-          .filter((e) => matchPattern(e.key, pattern))
-          .map((e) => e.key);
-      } else if (tier) {
-        // Tier filter
-        const prefix = `${tier}.`;
-        keysToRetrieve = allEntries
-          .filter((e) => e.key.startsWith(prefix))
-          .map((e) => e.key);
-      } else {
-        // No filter - return all
-        keysToRetrieve = allEntries.map((e) => e.key);
-      }
-
-      // Retrieve all values
-      const results: Record<string, unknown> = {};
-      const metadata: Record<string, { tier: string; priority: string; pinned: boolean; description: string }> = {};
-      const notFound: string[] = [];
-
-      for (const key of keysToRetrieve) {
-        const value = await context.memory.get(key);
-        if (value !== undefined) {
-          results[key] = value;
-
-          if (includeMetadata) {
-            const entry = allEntries.find((e) => e.key === key);
-            if (entry) {
-              metadata[key] = {
-                tier: getTierFromKey(key) ?? 'none',
-                priority: entry.effectivePriority ?? 'normal',
-                pinned: entry.pinned ?? false,
-                description: entry.description,
-              };
-            }
-          }
-        } else {
-          notFound.push(key);
-        }
-      }
-
-      return {
-        entries: results,
-        count: Object.keys(results).length,
-        ...(includeMetadata ? { metadata } : {}),
-        ...(notFound.length > 0 ? { notFound } : {}),
-        filter: pattern ? `pattern:${pattern}` : tier ? `tier:${tier}` : keys ? `keys:${keys.length}` : 'all',
-      };
-    },
-    idempotency: { safe: true },
-    output: { expectedSize: 'variable' },
-    describeCall: (args) => {
-      const pattern = args.pattern as string | undefined;
-      const keys = args.keys as string[] | undefined;
-      const tier = args.tier as string | undefined;
-      if (pattern) return `pattern:${pattern}`;
-      if (tier) return `tier:${tier}`;
-      if (keys) return `${keys.length} keys`;
-      return 'all';
-    },
-  };
-}
-
 // ============================================================================
 // Convenience Functions
 // ============================================================================
 
 /**
  * Create all memory tools (convenience function for backward compatibility)
+ *
+ * Consolidated tools (Phase 1):
+ * - memory_store: Store data in working memory
+ * - memory_retrieve: Retrieve single entry by key
+ * - memory_delete: Delete entry by key
+ * - memory_query: Query/list/batch retrieve (merged memory_list + memory_retrieve_batch)
+ * - memory_cleanup_raw: Clean up raw tier data
  */
 export function createMemoryTools(): ToolFunction[] {
   return [
     createMemoryStoreTool(),
     createMemoryRetrieveTool(),
     createMemoryDeleteTool(),
-    createMemoryListTool(),
+    createMemoryQueryTool(),
     createMemoryCleanupRawTool(),
-    createMemoryRetrieveBatchTool(),
   ];
 }

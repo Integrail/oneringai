@@ -1,8 +1,13 @@
 /**
  * InContextMemory Tools - Tools for LLM to manipulate in-context memory
  *
- * These tools allow the LLM to store, retrieve, update, and delete
- * key-value pairs that are stored directly in the context.
+ * Consolidated tools (Phase 1):
+ * - context_set: Store/update key-value pairs
+ * - context_delete: Remove entries
+ * - context_list: List all entries with metadata
+ *
+ * Note: context_get was removed since InContextMemory values are already
+ * visible directly in the context - no retrieval tool needed.
  */
 
 import type { ToolFunction, FunctionToolDefinition } from '../../../domain/entities/Tool.js';
@@ -55,32 +60,6 @@ Priority levels (for eviction when space is needed):
         },
       },
       required: ['key', 'description', 'value'],
-    },
-  },
-};
-
-/**
- * Tool definition for context_get
- */
-export const contextGetDefinition: FunctionToolDefinition = {
-  type: 'function',
-  function: {
-    name: 'context_get',
-    description: `Retrieve a value from the live context by key.
-
-Note: Values are already visible in the context, so this tool is mainly for:
-- Verifying a value exists
-- Getting the value programmatically for processing
-- Debugging`,
-    parameters: {
-      type: 'object',
-      properties: {
-        key: {
-          type: 'string',
-          description: 'The key to retrieve',
-        },
-      },
-      required: ['key'],
     },
   },
 };
@@ -163,30 +142,6 @@ export function createInContextMemoryTools(): ToolFunction[] {
       output: { expectedSize: 'small' },
       permission: {
         scope: 'always', // Auto-approve context operations
-        riskLevel: 'low',
-      },
-      describeCall: (args) => args.key as string,
-    },
-
-    // context_get
-    {
-      definition: contextGetDefinition,
-      execute: async (args: Record<string, unknown>, context?: ToolContext) => {
-        const plugin = getPluginFromContext(context, 'context_get');
-
-        const key = args.key as string;
-        const value = plugin.get(key);
-
-        if (value === undefined) {
-          return { error: `Key "${key}" not found in live context` };
-        }
-
-        return { key, value };
-      },
-      idempotency: { cacheable: true, ttlMs: 1000 },
-      output: { expectedSize: 'variable' },
-      permission: {
-        scope: 'always',
         riskLevel: 'low',
       },
       describeCall: (args) => args.key as string,

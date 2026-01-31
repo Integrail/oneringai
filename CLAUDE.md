@@ -92,14 +92,15 @@ ctx.persistentInstructions;            // PersistentInstructionsPlugin | null
 ctx.agentId;                           // string (auto-generated or from config)
 ```
 
-**Tool Auto-Registration:**
+**Tool Auto-Registration (Consolidated):**
 - AgentContext automatically registers feature-aware tools during construction
 - All agent types (Agent, TaskAgent, UniversalAgent) get consistent tools automatically
-- Tools registered based on features:
-  - Always: `context_inspect`, `context_breakdown`
-  - memory=true (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`, `memory_cleanup_raw`, `memory_retrieve_batch`, `memory_stats`, `cache_stats`
-  - inContextMemory=true: `context_set`, `context_get`, `context_delete`, `context_list`
+- Consolidated tools registered based on features (12 tools total):
+  - Always: `context_stats` (unified introspection - budget, breakdown, memory stats, cache stats)
+  - memory=true (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_query`, `memory_cleanup_raw`
+  - inContextMemory=true: `context_set`, `context_delete`, `context_list`
   - persistentInstructions=true: `instructions_set`, `instructions_append`, `instructions_get`, `instructions_clear`
+- Feature instructions are automatically injected into context providing usage guidance
 - Disabled features = no associated tools registered = cleaner LLM experience
 
 ### ToolManager (`src/core/ToolManager.ts`)
@@ -248,7 +249,7 @@ toolManager.setCircuitBreakerConfig('tool', { failureThreshold: 3, resetTimeoutM
 
 ## Tool Permissions
 
-Default allowlist (no approval needed): `read_file`, `glob`, `grep`, `list_directory`, `memory_*`, `context_set`, `context_get`, `context_delete`, `context_list`, `cache_stats`, `_start_planning`, `_modify_plan`, `_report_progress`, `_request_approval`
+Default allowlist (no approval needed): `read_file`, `glob`, `grep`, `list_directory`, `memory_*`, `context_set`, `context_delete`, `context_list`, `context_stats`, `instructions_*`, `_start_planning`, `_modify_plan`, `_report_progress`, `_request_approval`
 
 Require approval: `write_file`, `edit_file`, `bash`, `web_*`, `execute_javascript`, custom tools
 
@@ -319,16 +320,25 @@ const autoSpill = new AutoSpillPlugin(memory, {
 // Cleanup: await autoSpill.cleanupConsumed()
 ```
 
-### memory_retrieve_batch Tool
+### memory_query Tool
 
-Efficient batch retrieval of memory entries:
+Unified query tool for listing, searching, and retrieving memory entries:
 
 ```typescript
-// Pattern matching
-await memory_retrieve_batch({ pattern: 'findings.*' });
+// List all keys
+await memory_query();
 
-// By tier
-await memory_retrieve_batch({ tier: 'findings', includeMetadata: true });
+// Pattern matching (list keys only)
+await memory_query({ pattern: 'findings.*' });
+
+// Retrieve values
+await memory_query({ pattern: 'findings.*', includeValues: true });
+
+// By tier with metadata
+await memory_query({ tier: 'findings', includeMetadata: true });
+
+// Include memory stats
+await memory_query({ includeStats: true });
 ```
 
 ## InContextMemory (NEW)
@@ -371,9 +381,10 @@ interface InContextMemoryConfig {
 | Tool | Purpose |
 |------|---------|
 | `context_set` | Store/update key-value pair |
-| `context_get` | Read value (for verification) |
 | `context_delete` | Remove entry to free space |
 | `context_list` | List all entries with metadata |
+
+Note: `context_get` was removed since InContextMemory values are already visible directly in context - no retrieval tool needed.
 
 ### Priority-Based Eviction
 
@@ -398,6 +409,48 @@ plugin.clear();             // Remove all
 - Counters, flags, control variables
 
 **Do NOT use for:** Large data (use WorkingMemory), rarely accessed reference data.
+
+## Context Stats Tool
+
+Consolidated introspection tool that provides context budget, breakdown, memory stats, and cache stats:
+
+```typescript
+// Budget summary (default)
+await context_stats();
+
+// Detailed token breakdown by component
+await context_stats({ sections: ['breakdown'] });
+
+// Memory statistics (entries by tier)
+await context_stats({ sections: ['memory'] });
+
+// Cache statistics (hits, misses)
+await context_stats({ sections: ['cache'] });
+
+// Everything
+await context_stats({ sections: ['all'] });
+```
+
+This tool is always available and gracefully handles disabled features (returns "feature_disabled" for memory/cache sections when those features are off).
+
+## Feature Instructions
+
+Runtime usage instructions are automatically injected into context based on enabled features:
+
+- **Always included**: Introspection instructions (~300 tokens)
+- **memory=true**: Working Memory workflow, naming conventions, query patterns (~500 tokens)
+- **inContextMemory=true**: In-context memory best practices (~350 tokens)
+- **persistentInstructions=true**: Persistent instructions usage (~300 tokens)
+
+Total overhead: ~1,450 tokens when all features enabled (~1.1% of 128K context).
+
+Access instructions programmatically:
+```typescript
+import { buildFeatureInstructions, getAllInstructions } from '@oneringai/agents';
+
+const component = buildFeatureInstructions(features);
+const allInstructions = getAllInstructions();
+```
 
 ## MCP Integration
 

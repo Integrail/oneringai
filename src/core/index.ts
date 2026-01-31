@@ -46,6 +46,16 @@ export type {
 // Feature-aware tool factory
 export { getAgentContextTools, getBasicIntrospectionTools, getMemoryTools } from './AgentContextTools.js';
 
+// Feature Instructions (runtime usage instructions for enabled features)
+export {
+  buildFeatureInstructions,
+  INTROSPECTION_INSTRUCTIONS,
+  WORKING_MEMORY_INSTRUCTIONS,
+  IN_CONTEXT_MEMORY_INSTRUCTIONS,
+  PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
+  getAllInstructions,
+} from './context/FeatureInstructions.js';
+
 // IdempotencyCache - Tool result caching (moved from taskAgent to core)
 export { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
 export type { IdempotencyCacheConfig, CacheStats } from './IdempotencyCache.js';

@@ -8,32 +8,27 @@
  * This file is kept for backwards compatibility only. If you were calling
  * getAgentContextTools() manually, you can safely remove that code.
  *
- * Features and their tools (now auto-registered in AgentContext):
- * - Always: context_inspect, context_breakdown
- * - memory: memory_store, memory_retrieve, memory_delete, memory_list,
- *           memory_cleanup_raw, memory_retrieve_batch, memory_stats, cache_stats
- * - inContextMemory: context_set, context_get, context_delete, context_list
+ * Consolidated tools (Phase 1):
+ * - Always: context_stats (unified introspection)
+ * - memory: memory_store, memory_retrieve, memory_delete, memory_query, memory_cleanup_raw
+ * - inContextMemory: context_set, context_delete, context_list
  * - persistentInstructions: instructions_set, instructions_append, instructions_get, instructions_clear
  */
 
 import type { ToolFunction } from '../domain/entities/Tool.js';
 import type { AgentContext } from './AgentContext.js';
 
-// Import individual tool creators
+// Import individual tool creators (consolidated)
 import {
   createMemoryStoreTool,
   createMemoryRetrieveTool,
   createMemoryDeleteTool,
-  createMemoryListTool,
+  createMemoryQueryTool,
   createMemoryCleanupRawTool,
-  createMemoryRetrieveBatchTool,
 } from '../capabilities/taskAgent/memoryTools.js';
 
 import {
-  createContextInspectTool,
-  createContextBreakdownTool,
-  createCacheStatsTool,
-  createMemoryStatsTool,
+  createContextStatsTool,
 } from '../capabilities/taskAgent/contextTools.js';
 
 /**
@@ -49,29 +44,20 @@ import {
 export function getAgentContextTools(context: AgentContext): ToolFunction[] {
   const tools: ToolFunction[] = [];
 
-  // Always available (basic introspection)
-  tools.push(createContextInspectTool());
-  tools.push(createContextBreakdownTool());
+  // Always available (consolidated introspection)
+  tools.push(createContextStatsTool());
 
-  // Memory feature includes both WorkingMemory tools AND cache_stats
+  // Memory feature includes consolidated memory tools
   if (context.isFeatureEnabled('memory')) {
-    // Memory tools
     tools.push(createMemoryStoreTool());
     tools.push(createMemoryRetrieveTool());
     tools.push(createMemoryDeleteTool());
-    tools.push(createMemoryListTool());
+    tools.push(createMemoryQueryTool());
     tools.push(createMemoryCleanupRawTool());
-    tools.push(createMemoryRetrieveBatchTool());
-
-    // Memory stats tool
-    tools.push(createMemoryStatsTool());
-
-    // Cache stats tool (cache is part of memory feature)
-    tools.push(createCacheStatsTool());
   }
 
-  // Note: InContextMemory tools (context_set, context_get, context_delete, context_list)
-  // are handled directly in AgentContext constructor when inContextMemory feature is enabled
+  // Note: InContextMemory tools (context_set, context_delete, context_list)
+  // and PersistentInstructions tools are handled directly in AgentContext constructor
 
   return tools;
 }
@@ -80,7 +66,7 @@ export function getAgentContextTools(context: AgentContext): ToolFunction[] {
  * Get only the basic introspection tools (always available)
  */
 export function getBasicIntrospectionTools(): ToolFunction[] {
-  return [createContextInspectTool(), createContextBreakdownTool()];
+  return [createContextStatsTool()];
 }
 
 /**
@@ -91,10 +77,7 @@ export function getMemoryTools(): ToolFunction[] {
     createMemoryStoreTool(),
     createMemoryRetrieveTool(),
     createMemoryDeleteTool(),
-    createMemoryListTool(),
+    createMemoryQueryTool(),
     createMemoryCleanupRawTool(),
-    createMemoryRetrieveBatchTool(),
-    createMemoryStatsTool(),
-    createCacheStatsTool(),
   ];
 }
