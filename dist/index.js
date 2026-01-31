@@ -4681,6 +4681,12 @@ var ToolManager = class extends EventEmitter {
   _isDestroyed = false;
   /** Optional tool context for execution (set by agent before runs) */
   _toolContext;
+  /**
+   * Parent AgentContext reference for auto-building ToolContext
+   * This ensures tools always have access to agentContext, memory, cache, etc.
+   * even when execute() is called directly (e.g., by AgenticLoop)
+   */
+  _parentContext = null;
   constructor() {
     super();
     this.namespaceIndex.set("default", /* @__PURE__ */ new Set());
@@ -4721,6 +4727,44 @@ var ToolManager = class extends EventEmitter {
    */
   getToolContext() {
     return this._toolContext;
+  }
+  /**
+   * Set parent AgentContext for automatic context building
+   * Called by AgentContext after construction to enable auto-context in execute()
+   *
+   * This is the KEY to making tools work correctly:
+   * - When AgenticLoop calls ToolManager.execute() directly, we auto-build context
+   * - When AgentContext.executeTool() is used, it sets explicit _toolContext
+   *
+   * @param context - The parent AgentContext that owns this ToolManager
+   */
+  setParentContext(context) {
+    this._parentContext = context;
+  }
+  /**
+   * Get current parent context
+   */
+  getParentContext() {
+    return this._parentContext;
+  }
+  /**
+   * Build ToolContext from parent AgentContext
+   * Used when execute() is called directly without explicit context
+   * @private
+   */
+  _buildContextFromParent() {
+    if (!this._parentContext) {
+      return void 0;
+    }
+    const ctx = this._parentContext;
+    return {
+      agentId: ctx.agentId,
+      memory: ctx.memory?.getAccess(),
+      agentContext: ctx,
+      idempotencyCache: ctx.cache ?? void 0,
+      inContextMemory: ctx.inContextMemory ?? void 0,
+      persistentInstructions: ctx.persistentInstructions ?? void 0
+    };
   }
   // ==========================================================================
   // Registration
@@ -5150,9 +5194,10 @@ var ToolManager = class extends EventEmitter {
     this.toolLogger.debug({ toolName, args }, "Tool execution started");
     const startTime = Date.now();
     metrics.increment("tool.executed", 1, { tool: toolName });
+    const effectiveContext = this._toolContext ?? this._buildContextFromParent();
     try {
       const result = await breaker.execute(async () => {
-        return await registration.tool.execute(args, this._toolContext);
+        return await registration.tool.execute(args, effectiveContext);
       });
       const duration = Date.now() - startTime;
       this.recordExecution(toolName, duration, true);
@@ -10860,6 +10905,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
     this._strategy = createStrategy(this._config.strategy, {});
     this._estimator = this.createEstimator();
     this._tools = new ToolManager();
+    this._tools.setParentContext(this);
     if (config.tools) {
       for (const tool of config.tools) {
         this._tools.register(tool);

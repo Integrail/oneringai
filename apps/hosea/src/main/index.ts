@@ -236,6 +236,10 @@ async function setupIPC(): Promise<void> {
   ipcMain.handle('internals:get-memory-entries', async () => {
     return agentService!.getMemoryEntries();
   });
+
+  ipcMain.handle('internals:get-prepared-context', async () => {
+    return agentService!.getPreparedContext();
+  });
 }
 
 // App lifecycle

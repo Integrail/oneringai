@@ -992,6 +992,255 @@ declare class PersistentInstructionsPlugin extends BaseContextPlugin {
 }
 
 /**
+ * Tool context interface - passed to tools during execution
+ */
+
+/**
+ * Limited memory access for tools
+ *
+ * This interface is designed to work with all agent types:
+ * - Basic agents: Use simple scopes ('session', 'persistent')
+ * - TaskAgent: Use task-aware scopes ({ type: 'task', taskIds: [...] })
+ * - UniversalAgent: Switches between simple and task-aware based on mode
+ */
+interface WorkingMemoryAccess {
+    get(key: string): Promise<unknown>;
+    /**
+     * Store a value in memory
+     *
+     * @param key - Unique key for the entry
+     * @param description - Short description (max 150 chars)
+     * @param value - Data to store
+     * @param options - Optional scope, priority, and pinning
+     */
+    set(key: string, description: string, value: unknown, options?: {
+        /** Scope determines lifecycle - defaults to 'session' */
+        scope?: MemoryScope;
+        /** Base priority for eviction ordering */
+        priority?: MemoryPriority;
+        /** If true, entry is never evicted */
+        pinned?: boolean;
+    }): Promise<void>;
+    delete(key: string): Promise<void>;
+    has(key: string): Promise<boolean>;
+    /**
+     * List all memory entries
+     * Returns key, description, and computed priority info
+     */
+    list(): Promise<Array<{
+        key: string;
+        description: string;
+        effectivePriority?: MemoryPriority;
+        pinned?: boolean;
+    }>>;
+}
+/**
+ * Context passed to tool execute function
+ */
+interface ToolContext {
+    /** Agent ID (for logging/tracing) */
+    agentId: string;
+    /** Task ID (if running in TaskAgent) */
+    taskId?: string;
+    /** Working memory access (if agent has memory feature enabled) */
+    memory?: WorkingMemoryAccess;
+    /**
+     * AgentContext - THE source of truth for all context management
+     * Use this to access budget info, prepare context, manage history, etc.
+     */
+    agentContext?: AgentContext;
+    /** Idempotency cache (if agent has memory feature enabled) */
+    idempotencyCache?: IdempotencyCache;
+    /** In-context memory plugin (if features.inContextMemory is enabled) */
+    inContextMemory?: InContextMemoryPlugin;
+    /** Persistent instructions plugin (if features.persistentInstructions is enabled) */
+    persistentInstructions?: PersistentInstructionsPlugin;
+    /** Abort signal for cancellation */
+    signal?: AbortSignal;
+}
+
+/**
+ * Tool entities with blocking/non-blocking execution support
+ */
+
+interface JSONSchema {
+    type: string;
+    properties?: Record<string, any>;
+    required?: string[];
+    [key: string]: any;
+}
+interface FunctionToolDefinition {
+    type: 'function';
+    function: {
+        name: string;
+        description?: string;
+        parameters?: JSONSchema;
+        strict?: boolean;
+    };
+    blocking?: boolean;
+    timeout?: number;
+}
+interface BuiltInTool {
+    type: 'web_search' | 'file_search' | 'computer_use' | 'code_interpreter';
+    blocking?: boolean;
+}
+type Tool = FunctionToolDefinition | BuiltInTool;
+declare enum ToolCallState {
+    PENDING = "pending",// Tool call identified, not yet executed
+    EXECUTING = "executing",// Currently executing
+    COMPLETED = "completed",// Successfully completed
+    FAILED = "failed",// Execution failed
+    TIMEOUT = "timeout"
+}
+interface ToolCall {
+    id: string;
+    type: 'function';
+    function: {
+        name: string;
+        arguments: string;
+    };
+    blocking: boolean;
+    state: ToolCallState;
+    startTime?: Date;
+    endTime?: Date;
+    error?: string;
+}
+interface ToolResult {
+    tool_use_id: string;
+    content: any;
+    error?: string;
+    executionTime?: number;
+    state: ToolCallState;
+}
+/**
+ * Tool execution context - tracks all tool calls in a generation
+ */
+interface ToolExecutionContext {
+    executionId: string;
+    toolCalls: Map<string, ToolCall>;
+    pendingNonBlocking: Set<string>;
+    completedResults: Map<string, ToolResult>;
+}
+/**
+ * Output handling hints for context management
+ */
+interface ToolOutputHints {
+    expectedSize?: 'small' | 'medium' | 'large' | 'variable';
+    summarize?: (output: unknown) => string;
+}
+/**
+ * Idempotency configuration for tool caching
+ */
+interface ToolIdempotency {
+    /**
+     * @deprecated Use 'cacheable' instead. Will be removed in a future version.
+     * If true, tool is naturally idempotent (e.g., read-only) and doesn't need caching.
+     * If false, tool results should be cached based on arguments.
+     */
+    safe?: boolean;
+    /**
+     * If true, tool results can be cached based on arguments.
+     * Use this for tools that return deterministic results for the same inputs.
+     * Takes precedence over the deprecated 'safe' field.
+     * @default false
+     */
+    cacheable?: boolean;
+    keyFn?: (args: Record<string, unknown>) => string;
+    ttlMs?: number;
+}
+/**
+ * Permission configuration for a tool
+ *
+ * Controls when approval is required for tool execution.
+ * Used by the ToolPermissionManager.
+ */
+interface ToolPermissionConfig$1 {
+    /**
+     * When approval is required.
+     * - 'once' - Require approval for each call
+     * - 'session' - Approve once per session
+     * - 'always' - Auto-approve (no prompts)
+     * - 'never' - Always blocked
+     * @default 'once'
+     */
+    scope?: 'once' | 'session' | 'always' | 'never';
+    /**
+     * Risk level classification.
+     * @default 'low'
+     */
+    riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+    /**
+     * Custom message shown in approval UI.
+     */
+    approvalMessage?: string;
+    /**
+     * Argument names that should be highlighted as sensitive.
+     */
+    sensitiveArgs?: string[];
+    /**
+     * TTL for session approvals (milliseconds).
+     */
+    sessionTTLMs?: number;
+}
+/**
+ * User-provided tool function
+ */
+interface ToolFunction<TArgs = any, TResult = any> {
+    definition: FunctionToolDefinition;
+    execute: (args: TArgs, context?: ToolContext) => Promise<TResult>;
+    idempotency?: ToolIdempotency;
+    output?: ToolOutputHints;
+    /** Permission settings for this tool. If not set, defaults are used. */
+    permission?: ToolPermissionConfig$1;
+    /**
+     * Returns a human-readable description of a tool call.
+     * Used for logging, UI display, and debugging.
+     *
+     * @param args - The arguments passed to the tool
+     * @returns A concise description (e.g., "reading /path/to/file.ts")
+     *
+     * If not implemented, use `defaultDescribeCall()` as a fallback.
+     *
+     * @example
+     * // For read_file tool:
+     * describeCall: (args) => args.file_path
+     *
+     * @example
+     * // For bash tool:
+     * describeCall: (args) => args.command.length > 50
+     *   ? args.command.slice(0, 47) + '...'
+     *   : args.command
+     */
+    describeCall?: (args: TArgs) => string;
+}
+/**
+ * Default implementation for describeCall.
+ * Shows the first meaningful argument value.
+ *
+ * @param args - Tool arguments object
+ * @param maxLength - Maximum length before truncation (default: 60)
+ * @returns Human-readable description
+ *
+ * @example
+ * defaultDescribeCall({ file_path: '/path/to/file.ts' })
+ * // Returns: '/path/to/file.ts'
+ *
+ * @example
+ * defaultDescribeCall({ query: 'search term', limit: 10 })
+ * // Returns: 'search term'
+ */
+declare function defaultDescribeCall(args: Record<string, unknown>, maxLength?: number): string;
+/**
+ * Get a human-readable description of a tool call.
+ * Uses the tool's describeCall method if available, otherwise falls back to default.
+ *
+ * @param tool - The tool function
+ * @param args - The arguments passed to the tool
+ * @returns Human-readable description
+ */
+declare function getToolCallDescription<TArgs>(tool: ToolFunction<TArgs>, args: TArgs): string;
+
+/**
  * Tool Permission Types
  *
  * Defines permission scopes, risk levels, and approval state for tool execution control.
@@ -1023,7 +1272,7 @@ type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
  *
  * Can be set on the tool definition or overridden at registration time.
  */
-interface ToolPermissionConfig$1 {
+interface ToolPermissionConfig {
     /**
      * When approval is required.
      * @default 'once'
@@ -1059,7 +1308,7 @@ interface PermissionCheckContext {
     /** Parsed arguments (for display/inspection) */
     parsedArgs: Record<string, unknown>;
     /** The tool's permission config */
-    config: ToolPermissionConfig$1;
+    config: ToolPermissionConfig;
     /** Current execution context ID */
     executionId: string;
     /** Current iteration (if in agentic loop) */
@@ -1123,7 +1372,7 @@ interface PermissionCheckResult {
     /** Reason for the decision */
     reason: string;
     /** The tool's permission config (for UI display) */
-    config?: ToolPermissionConfig$1;
+    config?: ToolPermissionConfig;
 }
 /**
  * Result from approval UI/hook
@@ -1173,7 +1422,7 @@ interface AgentPermissionsConfig {
      * Per-tool permission overrides.
      * Keys are tool names, values are permission configs.
      */
-    tools?: Record<string, ToolPermissionConfig$1>;
+    tools?: Record<string, ToolPermissionConfig>;
     /**
      * Callback invoked when a tool needs approval.
      * Return an ApprovalDecision to approve/deny.
@@ -1200,7 +1449,7 @@ declare const APPROVAL_STATE_VERSION = 1;
 /**
  * Default permission config applied when no config is specified
  */
-declare const DEFAULT_PERMISSION_CONFIG: Required<Pick<ToolPermissionConfig$1, 'scope' | 'riskLevel'>>;
+declare const DEFAULT_PERMISSION_CONFIG: Required<Pick<ToolPermissionConfig, 'scope' | 'riskLevel'>>;
 /**
  * Default allowlist - tools that never require user confirmation.
  *
@@ -1321,15 +1570,15 @@ declare class ToolPermissionManager extends EventEmitter {
     /**
      * Set permission config for a specific tool
      */
-    setToolConfig(toolName: string, config: ToolPermissionConfig$1): void;
+    setToolConfig(toolName: string, config: ToolPermissionConfig): void;
     /**
      * Get permission config for a specific tool
      */
-    getToolConfig(toolName: string): ToolPermissionConfig$1 | undefined;
+    getToolConfig(toolName: string): ToolPermissionConfig | undefined;
     /**
      * Get effective config (tool-specific or defaults)
      */
-    getEffectiveConfig(toolName: string): ToolPermissionConfig$1;
+    getEffectiveConfig(toolName: string): ToolPermissionConfig;
     /**
      * Request approval for a tool call
      *
@@ -2407,255 +2656,6 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
 }
 
 /**
- * Tool context interface - passed to tools during execution
- */
-
-/**
- * Limited memory access for tools
- *
- * This interface is designed to work with all agent types:
- * - Basic agents: Use simple scopes ('session', 'persistent')
- * - TaskAgent: Use task-aware scopes ({ type: 'task', taskIds: [...] })
- * - UniversalAgent: Switches between simple and task-aware based on mode
- */
-interface WorkingMemoryAccess {
-    get(key: string): Promise<unknown>;
-    /**
-     * Store a value in memory
-     *
-     * @param key - Unique key for the entry
-     * @param description - Short description (max 150 chars)
-     * @param value - Data to store
-     * @param options - Optional scope, priority, and pinning
-     */
-    set(key: string, description: string, value: unknown, options?: {
-        /** Scope determines lifecycle - defaults to 'session' */
-        scope?: MemoryScope;
-        /** Base priority for eviction ordering */
-        priority?: MemoryPriority;
-        /** If true, entry is never evicted */
-        pinned?: boolean;
-    }): Promise<void>;
-    delete(key: string): Promise<void>;
-    has(key: string): Promise<boolean>;
-    /**
-     * List all memory entries
-     * Returns key, description, and computed priority info
-     */
-    list(): Promise<Array<{
-        key: string;
-        description: string;
-        effectivePriority?: MemoryPriority;
-        pinned?: boolean;
-    }>>;
-}
-/**
- * Context passed to tool execute function
- */
-interface ToolContext {
-    /** Agent ID (for logging/tracing) */
-    agentId: string;
-    /** Task ID (if running in TaskAgent) */
-    taskId?: string;
-    /** Working memory access (if agent has memory feature enabled) */
-    memory?: WorkingMemoryAccess;
-    /**
-     * AgentContext - THE source of truth for all context management
-     * Use this to access budget info, prepare context, manage history, etc.
-     */
-    agentContext?: AgentContext;
-    /** Idempotency cache (if agent has memory feature enabled) */
-    idempotencyCache?: IdempotencyCache;
-    /** In-context memory plugin (if features.inContextMemory is enabled) */
-    inContextMemory?: InContextMemoryPlugin;
-    /** Persistent instructions plugin (if features.persistentInstructions is enabled) */
-    persistentInstructions?: PersistentInstructionsPlugin;
-    /** Abort signal for cancellation */
-    signal?: AbortSignal;
-}
-
-/**
- * Tool entities with blocking/non-blocking execution support
- */
-
-interface JSONSchema {
-    type: string;
-    properties?: Record<string, any>;
-    required?: string[];
-    [key: string]: any;
-}
-interface FunctionToolDefinition {
-    type: 'function';
-    function: {
-        name: string;
-        description?: string;
-        parameters?: JSONSchema;
-        strict?: boolean;
-    };
-    blocking?: boolean;
-    timeout?: number;
-}
-interface BuiltInTool {
-    type: 'web_search' | 'file_search' | 'computer_use' | 'code_interpreter';
-    blocking?: boolean;
-}
-type Tool = FunctionToolDefinition | BuiltInTool;
-declare enum ToolCallState {
-    PENDING = "pending",// Tool call identified, not yet executed
-    EXECUTING = "executing",// Currently executing
-    COMPLETED = "completed",// Successfully completed
-    FAILED = "failed",// Execution failed
-    TIMEOUT = "timeout"
-}
-interface ToolCall {
-    id: string;
-    type: 'function';
-    function: {
-        name: string;
-        arguments: string;
-    };
-    blocking: boolean;
-    state: ToolCallState;
-    startTime?: Date;
-    endTime?: Date;
-    error?: string;
-}
-interface ToolResult {
-    tool_use_id: string;
-    content: any;
-    error?: string;
-    executionTime?: number;
-    state: ToolCallState;
-}
-/**
- * Tool execution context - tracks all tool calls in a generation
- */
-interface ToolExecutionContext {
-    executionId: string;
-    toolCalls: Map<string, ToolCall>;
-    pendingNonBlocking: Set<string>;
-    completedResults: Map<string, ToolResult>;
-}
-/**
- * Output handling hints for context management
- */
-interface ToolOutputHints {
-    expectedSize?: 'small' | 'medium' | 'large' | 'variable';
-    summarize?: (output: unknown) => string;
-}
-/**
- * Idempotency configuration for tool caching
- */
-interface ToolIdempotency {
-    /**
-     * @deprecated Use 'cacheable' instead. Will be removed in a future version.
-     * If true, tool is naturally idempotent (e.g., read-only) and doesn't need caching.
-     * If false, tool results should be cached based on arguments.
-     */
-    safe?: boolean;
-    /**
-     * If true, tool results can be cached based on arguments.
-     * Use this for tools that return deterministic results for the same inputs.
-     * Takes precedence over the deprecated 'safe' field.
-     * @default false
-     */
-    cacheable?: boolean;
-    keyFn?: (args: Record<string, unknown>) => string;
-    ttlMs?: number;
-}
-/**
- * Permission configuration for a tool
- *
- * Controls when approval is required for tool execution.
- * Used by the ToolPermissionManager.
- */
-interface ToolPermissionConfig {
-    /**
-     * When approval is required.
-     * - 'once' - Require approval for each call
-     * - 'session' - Approve once per session
-     * - 'always' - Auto-approve (no prompts)
-     * - 'never' - Always blocked
-     * @default 'once'
-     */
-    scope?: 'once' | 'session' | 'always' | 'never';
-    /**
-     * Risk level classification.
-     * @default 'low'
-     */
-    riskLevel?: 'low' | 'medium' | 'high' | 'critical';
-    /**
-     * Custom message shown in approval UI.
-     */
-    approvalMessage?: string;
-    /**
-     * Argument names that should be highlighted as sensitive.
-     */
-    sensitiveArgs?: string[];
-    /**
-     * TTL for session approvals (milliseconds).
-     */
-    sessionTTLMs?: number;
-}
-/**
- * User-provided tool function
- */
-interface ToolFunction<TArgs = any, TResult = any> {
-    definition: FunctionToolDefinition;
-    execute: (args: TArgs, context?: ToolContext) => Promise<TResult>;
-    idempotency?: ToolIdempotency;
-    output?: ToolOutputHints;
-    /** Permission settings for this tool. If not set, defaults are used. */
-    permission?: ToolPermissionConfig;
-    /**
-     * Returns a human-readable description of a tool call.
-     * Used for logging, UI display, and debugging.
-     *
-     * @param args - The arguments passed to the tool
-     * @returns A concise description (e.g., "reading /path/to/file.ts")
-     *
-     * If not implemented, use `defaultDescribeCall()` as a fallback.
-     *
-     * @example
-     * // For read_file tool:
-     * describeCall: (args) => args.file_path
-     *
-     * @example
-     * // For bash tool:
-     * describeCall: (args) => args.command.length > 50
-     *   ? args.command.slice(0, 47) + '...'
-     *   : args.command
-     */
-    describeCall?: (args: TArgs) => string;
-}
-/**
- * Default implementation for describeCall.
- * Shows the first meaningful argument value.
- *
- * @param args - Tool arguments object
- * @param maxLength - Maximum length before truncation (default: 60)
- * @returns Human-readable description
- *
- * @example
- * defaultDescribeCall({ file_path: '/path/to/file.ts' })
- * // Returns: '/path/to/file.ts'
- *
- * @example
- * defaultDescribeCall({ query: 'search term', limit: 10 })
- * // Returns: 'search term'
- */
-declare function defaultDescribeCall(args: Record<string, unknown>, maxLength?: number): string;
-/**
- * Get a human-readable description of a tool call.
- * Uses the tool's describeCall method if available, otherwise falls back to default.
- *
- * @param tool - The tool function
- * @param args - The arguments passed to the tool
- * @returns Human-readable description
- */
-declare function getToolCallDescription<TArgs>(tool: ToolFunction<TArgs>, args: TArgs): string;
-
-/**
  * Tool executor interface
  */
 
@@ -2839,7 +2839,7 @@ interface ToolOptions {
     /** Conditions for auto-enable/disable */
     conditions?: ToolCondition[];
     /** Permission configuration override. If not set, uses tool's config or defaults. */
-    permission?: ToolPermissionConfig;
+    permission?: ToolPermissionConfig$1;
 }
 interface ToolCondition {
     type: 'mode' | 'context' | 'custom';
@@ -2867,7 +2867,7 @@ interface ToolRegistration {
     conditions: ToolCondition[];
     metadata: ToolMetadata;
     /** Effective permission config (merged from tool.permission and options.permission) */
-    permission?: ToolPermissionConfig;
+    permission?: ToolPermissionConfig$1;
     /** Circuit breaker configuration for this tool (uses shared CircuitBreakerConfig from resilience) */
     circuitBreakerConfig?: Partial<CircuitBreakerConfig>;
 }
@@ -2897,7 +2897,7 @@ interface SerializedToolState {
     namespaces: Record<string, string>;
     priorities: Record<string, number>;
     /** Permission configs by tool name */
-    permissions?: Record<string, ToolPermissionConfig>;
+    permissions?: Record<string, ToolPermissionConfig$1>;
 }
 type ToolManagerEvent = 'tool:registered' | 'tool:unregistered' | 'tool:enabled' | 'tool:disabled' | 'tool:executed' | 'namespace:enabled' | 'namespace:disabled';
 declare class ToolManager extends EventEmitter implements IToolExecutor, IDisposable {
@@ -2908,6 +2908,12 @@ declare class ToolManager extends EventEmitter implements IToolExecutor, IDispos
     private _isDestroyed;
     /** Optional tool context for execution (set by agent before runs) */
     private _toolContext;
+    /**
+     * Parent AgentContext reference for auto-building ToolContext
+     * This ensures tools always have access to agentContext, memory, cache, etc.
+     * even when execute() is called directly (e.g., by AgenticLoop)
+     */
+    private _parentContext;
     constructor();
     /**
      * Returns true if destroy() has been called.
@@ -2927,6 +2933,27 @@ declare class ToolManager extends EventEmitter implements IToolExecutor, IDispos
      * Get current tool context
      */
     getToolContext(): ToolContext | undefined;
+    /**
+     * Set parent AgentContext for automatic context building
+     * Called by AgentContext after construction to enable auto-context in execute()
+     *
+     * This is the KEY to making tools work correctly:
+     * - When AgenticLoop calls ToolManager.execute() directly, we auto-build context
+     * - When AgentContext.executeTool() is used, it sets explicit _toolContext
+     *
+     * @param context - The parent AgentContext that owns this ToolManager
+     */
+    setParentContext(context: AgentContext | null): void;
+    /**
+     * Get current parent context
+     */
+    getParentContext(): AgentContext | null;
+    /**
+     * Build ToolContext from parent AgentContext
+     * Used when execute() is called directly without explicit context
+     * @private
+     */
+    private _buildContextFromParent;
     /**
      * Register a tool with optional configuration
      */
@@ -2995,11 +3022,11 @@ declare class ToolManager extends EventEmitter implements IToolExecutor, IDispos
     /**
      * Get permission config for a tool
      */
-    getPermission(name: string): ToolPermissionConfig | undefined;
+    getPermission(name: string): ToolPermissionConfig$1 | undefined;
     /**
      * Set permission config for a tool
      */
-    setPermission(name: string, permission: ToolPermissionConfig): boolean;
+    setPermission(name: string, permission: ToolPermissionConfig$1): boolean;
     /**
      * Get a tool by name
      */
@@ -4134,4 +4161,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { DEFAULT_FEATURES as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type CircuitState as C, type IContextCompactor as D, ExecutionContext as E, type FunctionToolDefinition as F, type TokenContentType as G, type HookConfig as H, type IDisposable as I, type IPersistentInstructionsStorage as J, type TokenUsage as K, type LLMResponse as L, type MemoryScope as M, type ToolCall as N, StreamEventType as O, CircuitBreaker as P, type TextGenerateOptions as Q, type ModelCapabilities as R, type SerializedToolState as S, type ToolFunction as T, type ToolPermissionConfig as U, MessageRole as V, WorkingMemory as W, type InContextMemoryConfig as X, InContextMemoryPlugin as Y, type PersistentInstructionsConfig as Z, PersistentInstructionsPlugin as _, type MemoryPriority as a, getToolCallDescription as a$, type AgentContextFeatures as a0, type AgentContextEvents as a1, type AgentContextMetrics as a2, type HistoryMessage as a3, type ToolCallRecord as a4, type ToolOptions as a5, type ToolCondition as a6, type ToolSelectionContext as a7, type ToolRegistration as a8, type ToolMetadata as a9, type SimpleScope as aA, type TaskStatusForMemory as aB, DEFAULT_MEMORY_CONFIG as aC, forTasks as aD, forPlan as aE, scopeEquals as aF, scopeMatches as aG, isSimpleScope as aH, isTaskAwareScope as aI, isTerminalMemoryStatus as aJ, calculateEntrySize as aK, MEMORY_PRIORITY_VALUES as aL, type ToolContext as aM, type WorkingMemoryAccess as aN, ContentType as aO, type Content as aP, type InputTextContent as aQ, type InputImageContent as aR, type OutputTextContent as aS, type ToolUseContent as aT, type ToolResultContent as aU, type Message as aV, type OutputItem as aW, type CompactionItem as aX, type ReasoningItem as aY, ToolCallState as aZ, defaultDescribeCall as a_, type ToolManagerStats as aa, type ToolManagerEvent as ab, type PermissionScope as ac, type RiskLevel as ad, type ToolPermissionConfig$1 as ae, type ApprovalCacheEntry as af, type SerializedApprovalEntry as ag, type PermissionCheckResult as ah, type ApprovalDecision as ai, type PermissionCheckContext as aj, type PermissionManagerEvent as ak, APPROVAL_STATE_VERSION as al, DEFAULT_PERMISSION_CONFIG as am, DEFAULT_ALLOWLIST as an, type DefaultAllowlistedTool as ao, type WorkingMemoryEvents as ap, type EvictionStrategy as aq, type IdempotencyCacheConfig as ar, type CacheStats as as, DEFAULT_IDEMPOTENCY_CONFIG as at, type PreparedContext as au, DEFAULT_CONTEXT_CONFIG as av, type MemoryEntryInput as aw, type MemoryIndex as ax, type MemoryIndexEntry as ay, type TaskAwareScope as az, type SerializedApprovalState as b, type Tool as b0, type BuiltInTool as b1, type ToolResult as b2, type ToolExecutionContext as b3, type JSONSchema as b4, type ResponseCreatedEvent as b5, type ResponseInProgressEvent as b6, type OutputTextDeltaEvent as b7, type OutputTextDoneEvent as b8, type ToolCallStartEvent as b9, assertNotDestroyed as bA, CircuitOpenError as bB, type CircuitBreakerConfig as bC, type CircuitBreakerEvents as bD, DEFAULT_CIRCUIT_BREAKER_CONFIG as bE, type InContextEntry as bF, type InContextPriority as bG, type SerializedInContextMemoryState as bH, type SerializedPersistentInstructionsState as bI, AgenticLoop as bJ, type AgenticLoopConfig as bK, type ExecutionStartEvent as bL, type ExecutionCompleteEvent as bM, type ToolStartEvent as bN, type ToolCompleteEvent as bO, type LLMRequestEvent as bP, type LLMResponseEvent as bQ, type ToolCallArgumentsDeltaEvent as ba, type ToolCallArgumentsDoneEvent as bb, type ToolExecutionStartEvent as bc, type ToolExecutionDoneEvent as bd, type IterationCompleteEvent$1 as be, type ResponseCompleteEvent as bf, type ErrorEvent as bg, isStreamEvent as bh, isOutputTextDelta as bi, isToolCallStart as bj, isToolCallArgumentsDelta as bk, isToolCallArgumentsDone as bl, isResponseComplete as bm, isErrorEvent as bn, HookManager as bo, type AgenticLoopEventName as bp, type HookName as bq, type Hook as br, type ModifyingHook as bs, type BeforeToolContext as bt, type AfterToolContext as bu, type ApproveToolContext as bv, type ToolModification as bw, type ApprovalResult as bx, type IToolExecutor as by, type IAsyncDisposable as bz, ToolManager as c, AgentContext as d, type AgentContextConfig as e, ToolPermissionManager as f, type InputItem as g, type StreamEvent as h, type HistoryMode as i, type AgenticLoopEvents as j, type SerializedAgentContextState as k, type AgentResponse as l, type ExecutionMetrics as m, type AuditEntry as n, type CircuitBreakerMetrics as o, type ITextProvider as p, type IMemoryStorage as q, type MemoryEntry as r, type IContextComponent as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type IContextStrategy as x, type ContextBudget as y, type ContextManagerConfig as z };
+export { DEFAULT_FEATURES as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type CircuitState as C, type IContextCompactor as D, ExecutionContext as E, type FunctionToolDefinition as F, type TokenContentType as G, type HookConfig as H, type IDisposable as I, type IPersistentInstructionsStorage as J, type TokenUsage as K, type LLMResponse as L, type MemoryScope as M, type ToolCall as N, StreamEventType as O, CircuitBreaker as P, type TextGenerateOptions as Q, type ModelCapabilities as R, type SerializedToolState as S, type ToolFunction as T, type ToolPermissionConfig$1 as U, MessageRole as V, WorkingMemory as W, type InContextMemoryConfig as X, InContextMemoryPlugin as Y, type PersistentInstructionsConfig as Z, PersistentInstructionsPlugin as _, type MemoryPriority as a, getToolCallDescription as a$, type AgentContextFeatures as a0, type AgentContextEvents as a1, type AgentContextMetrics as a2, type HistoryMessage as a3, type ToolCallRecord as a4, type ToolOptions as a5, type ToolCondition as a6, type ToolSelectionContext as a7, type ToolRegistration as a8, type ToolMetadata as a9, type SimpleScope as aA, type TaskStatusForMemory as aB, DEFAULT_MEMORY_CONFIG as aC, forTasks as aD, forPlan as aE, scopeEquals as aF, scopeMatches as aG, isSimpleScope as aH, isTaskAwareScope as aI, isTerminalMemoryStatus as aJ, calculateEntrySize as aK, MEMORY_PRIORITY_VALUES as aL, type ToolContext as aM, type WorkingMemoryAccess as aN, ContentType as aO, type Content as aP, type InputTextContent as aQ, type InputImageContent as aR, type OutputTextContent as aS, type ToolUseContent as aT, type ToolResultContent as aU, type Message as aV, type OutputItem as aW, type CompactionItem as aX, type ReasoningItem as aY, ToolCallState as aZ, defaultDescribeCall as a_, type ToolManagerStats as aa, type ToolManagerEvent as ab, type PermissionScope as ac, type RiskLevel as ad, type ToolPermissionConfig as ae, type ApprovalCacheEntry as af, type SerializedApprovalEntry as ag, type PermissionCheckResult as ah, type ApprovalDecision as ai, type PermissionCheckContext as aj, type PermissionManagerEvent as ak, APPROVAL_STATE_VERSION as al, DEFAULT_PERMISSION_CONFIG as am, DEFAULT_ALLOWLIST as an, type DefaultAllowlistedTool as ao, type WorkingMemoryEvents as ap, type EvictionStrategy as aq, type IdempotencyCacheConfig as ar, type CacheStats as as, DEFAULT_IDEMPOTENCY_CONFIG as at, type PreparedContext as au, DEFAULT_CONTEXT_CONFIG as av, type MemoryEntryInput as aw, type MemoryIndex as ax, type MemoryIndexEntry as ay, type TaskAwareScope as az, type SerializedApprovalState as b, type Tool as b0, type BuiltInTool as b1, type ToolResult as b2, type ToolExecutionContext as b3, type JSONSchema as b4, type ResponseCreatedEvent as b5, type ResponseInProgressEvent as b6, type OutputTextDeltaEvent as b7, type OutputTextDoneEvent as b8, type ToolCallStartEvent as b9, assertNotDestroyed as bA, CircuitOpenError as bB, type CircuitBreakerConfig as bC, type CircuitBreakerEvents as bD, DEFAULT_CIRCUIT_BREAKER_CONFIG as bE, type InContextEntry as bF, type InContextPriority as bG, type SerializedInContextMemoryState as bH, type SerializedPersistentInstructionsState as bI, AgenticLoop as bJ, type AgenticLoopConfig as bK, type ExecutionStartEvent as bL, type ExecutionCompleteEvent as bM, type ToolStartEvent as bN, type ToolCompleteEvent as bO, type LLMRequestEvent as bP, type LLMResponseEvent as bQ, type ToolCallArgumentsDeltaEvent as ba, type ToolCallArgumentsDoneEvent as bb, type ToolExecutionStartEvent as bc, type ToolExecutionDoneEvent as bd, type IterationCompleteEvent$1 as be, type ResponseCompleteEvent as bf, type ErrorEvent as bg, isStreamEvent as bh, isOutputTextDelta as bi, isToolCallStart as bj, isToolCallArgumentsDelta as bk, isToolCallArgumentsDone as bl, isResponseComplete as bm, isErrorEvent as bn, HookManager as bo, type AgenticLoopEventName as bp, type HookName as bq, type Hook as br, type ModifyingHook as bs, type BeforeToolContext as bt, type AfterToolContext as bu, type ApproveToolContext as bv, type ToolModification as bw, type ApprovalResult as bx, type IToolExecutor as by, type IAsyncDisposable as bz, ToolManager as c, AgentContext as d, type AgentContextConfig as e, ToolPermissionManager as f, type InputItem as g, type StreamEvent as h, type HistoryMode as i, type AgenticLoopEvents as j, type SerializedAgentContextState as k, type AgentResponse as l, type ExecutionMetrics as m, type AuditEntry as n, type CircuitBreakerMetrics as o, type ITextProvider as p, type IMemoryStorage as q, type MemoryEntry as r, type IContextComponent as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type IContextStrategy as x, type ContextBudget as y, type ContextManagerConfig as z };

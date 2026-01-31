@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Badge, Spinner } from 'react-bootstrap';
+import { Badge, Spinner, Modal, Button } from 'react-bootstrap';
 import {
   X,
   RefreshCw,
@@ -15,6 +15,9 @@ import {
   ChevronDown,
   ChevronRight,
   Zap,
+  FileText,
+  BookOpen,
+  Eye,
 } from 'lucide-react';
 
 // Types for internals data
@@ -83,6 +86,23 @@ interface ToolCall {
   timestamp: number;
 }
 
+interface PersistentInstructions {
+  content: string;
+  path: string;
+  length: number;
+}
+
+interface PreparedContext {
+  available: boolean;
+  components: Array<{
+    name: string;
+    content: string;
+    tokenEstimate: number;
+  }>;
+  totalTokens: number;
+  rawContext: string;
+}
+
 interface InternalsData {
   available: boolean;
   agentName: string | null;
@@ -92,6 +112,9 @@ interface InternalsData {
   inContextMemory: InContextMemory | null;
   tools: ToolInfo[];
   toolCalls: ToolCall[];
+  // New fields
+  systemPrompt: string | null;
+  persistentInstructions: PersistentInstructions | null;
 }
 
 interface InternalsPanelProps {
@@ -113,6 +136,9 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
   );
   const [selectedMemoryKey, setSelectedMemoryKey] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [showContextModal, setShowContextModal] = useState(false);
+  const [preparedContext, setPreparedContext] = useState<PreparedContext | null>(null);
+  const [isLoadingContext, setIsLoadingContext] = useState(false);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -129,6 +155,25 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
       setIsLoading(false);
     }
   }, []);
+
+  // Fetch prepared context for modal
+  const fetchPreparedContext = useCallback(async () => {
+    try {
+      setIsLoadingContext(true);
+      const context = await window.hosea.internals.getPreparedContext();
+      setPreparedContext(context);
+    } catch (error) {
+      console.error('Failed to fetch prepared context:', error);
+    } finally {
+      setIsLoadingContext(false);
+    }
+  }, []);
+
+  // Open context modal
+  const handleViewFullContext = useCallback(() => {
+    setShowContextModal(true);
+    fetchPreparedContext();
+  }, [fetchPreparedContext]);
 
   // Fetch on mount and set up auto-refresh
   useEffect(() => {
@@ -300,9 +345,68 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
                       <Badge bg="primary" className="internals-stat__value">{data.context.strategy}</Badge>
                     </div>
                   </div>
+                  {/* View Full Context Button */}
+                  <button
+                    className="btn btn-sm btn-outline-primary w-100 mt-3"
+                    onClick={handleViewFullContext}
+                  >
+                    <Eye size={14} className="me-1" />
+                    View Full Context
+                  </button>
                 </div>
               )}
             </div>
+
+            {/* System Prompt Section */}
+            {data.systemPrompt && (
+              <div className="internals-section">
+                <div
+                  className="internals-section__header"
+                  onClick={() => toggleSection('systemPrompt')}
+                >
+                  {expandedSections.has('systemPrompt') ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <FileText size={14} />
+                  <span>System Prompt</span>
+                  <span className="internals-section__badge">
+                    {Math.ceil(data.systemPrompt.length / 4)} tok
+                  </span>
+                </div>
+                {expandedSections.has('systemPrompt') && (
+                  <div className="internals-section__body">
+                    <pre className="internals-code-block">
+                      {data.systemPrompt}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Persistent Instructions Section */}
+            {data.persistentInstructions && data.persistentInstructions.content && (
+              <div className="internals-section">
+                <div
+                  className="internals-section__header"
+                  onClick={() => toggleSection('persistentInstructions')}
+                >
+                  {expandedSections.has('persistentInstructions') ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <BookOpen size={14} />
+                  <span>Persistent Instructions</span>
+                  <span className="internals-section__badge">
+                    {data.persistentInstructions.length} chars
+                  </span>
+                </div>
+                {expandedSections.has('persistentInstructions') && (
+                  <div className="internals-section__body">
+                    <div className="text-muted small mb-2">
+                      <code>{data.persistentInstructions.path}</code>
+                    </div>
+                    <pre className="internals-code-block">
+                      {data.persistentInstructions.content || '(empty)'}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Cache Section */}
             {data.cache && (
@@ -473,6 +577,76 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
           </>
         )}
       </div>
+
+      {/* Full Context Modal */}
+      <Modal
+        show={showContextModal}
+        onHide={() => setShowContextModal(false)}
+        size="xl"
+        dialogClassName="context-modal"
+        contentClassName="context-modal__content"
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>
+            <Eye size={18} className="me-2" />
+            Full Prepared Context
+            {preparedContext?.available && (
+              <Badge bg="secondary" className="ms-2">
+                ~{preparedContext.totalTokens.toLocaleString()} tokens
+              </Badge>
+            )}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="context-modal__body">
+          {isLoadingContext ? (
+            <div className="text-center p-4">
+              <Spinner animation="border" />
+              <p className="mt-2 text-muted">Loading context...</p>
+            </div>
+          ) : preparedContext?.available ? (
+            <div className="context-components">
+              {preparedContext.components.map((component, index) => (
+                <div key={index} className="context-component">
+                  <div className="context-component__header">
+                    <span className="context-component__name">{component.name}</span>
+                    <Badge bg="outline-secondary">
+                      ~{component.tokenEstimate.toLocaleString()} tokens
+                    </Badge>
+                  </div>
+                  <pre className="context-component__content">
+                    {component.content}
+                  </pre>
+                </div>
+              ))}
+              {preparedContext.components.length === 0 && (
+                <div className="text-muted text-center p-4">
+                  No context components available
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-muted text-center p-4">
+              Context not available. Make sure an agent is active.
+            </div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowContextModal(false)}>
+            Close
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              if (preparedContext?.rawContext) {
+                navigator.clipboard.writeText(preparedContext.rawContext);
+              }
+            }}
+            disabled={!preparedContext?.rawContext}
+          >
+            Copy All
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }

@@ -531,6 +531,12 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
     // ToolManager - always created
     this._tools = new ToolManager();
+
+    // IMPORTANT: Set parent context so ToolManager can auto-build ToolContext
+    // This ensures tools have access to agentContext, memory, cache, etc.
+    // even when ToolManager.execute() is called directly (e.g., by AgenticLoop)
+    this._tools.setParentContext(this);
+
     if (config.tools) {
       for (const tool of config.tools) {
         this._tools.register(tool);

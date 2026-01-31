@@ -1168,6 +1168,13 @@ export class AgentService {
       durationMs: number;
       timestamp: number;
     }>;
+    // New fields for prompt inspection
+    systemPrompt: string | null;
+    persistentInstructions: {
+      content: string;
+      path: string;
+      length: number;
+    } | null;
   }> {
     if (!this.agent) {
       return {
@@ -1179,6 +1186,8 @@ export class AgentService {
         inContextMemory: null,
         tools: [],
         toolCalls: [],
+        systemPrompt: null,
+        persistentInstructions: null,
       };
     }
 
@@ -1279,6 +1288,23 @@ export class AgentService {
       // Get active agent config for name
       const activeAgent = this.getActiveAgent();
 
+      // Get system prompt from context
+      const systemPrompt = ctx.systemPrompt || null;
+
+      // Get persistent instructions if available
+      let persistentInstructionsData = null;
+      if (ctx.persistentInstructions) {
+        const component = await ctx.persistentInstructions.getComponent();
+        const agentId = activeAgent?.id || 'default';
+        // Component content can be string or unknown, ensure we get a string
+        const contentStr = typeof component?.content === 'string' ? component.content : '';
+        persistentInstructionsData = {
+          content: contentStr,
+          path: join(this.dataDir, 'agents', `${agentId}-instructions.md`),
+          length: contentStr.length,
+        };
+      }
+
       return {
         available: true,
         agentName: activeAgent?.name || 'Default Assistant',
@@ -1288,6 +1314,8 @@ export class AgentService {
         inContextMemory: inContextData,
         tools: toolsWithStats,
         toolCalls: toolCalls.slice(-50), // Last 50 tool calls
+        systemPrompt,
+        persistentInstructions: persistentInstructionsData,
       };
     } catch (error) {
       console.error('Error getting internals:', error);
@@ -1300,6 +1328,8 @@ export class AgentService {
         inContextMemory: null,
         tools: [],
         toolCalls: [],
+        systemPrompt: null,
+        persistentInstructions: null,
       };
     }
   }
@@ -1374,6 +1404,104 @@ export class AgentService {
       return result;
     } catch {
       return [];
+    }
+  }
+
+  /**
+   * Get the full prepared context as it would be sent to the LLM
+   * This shows all components assembled: system prompt, plugins, memory index, history, etc.
+   */
+  async getPreparedContext(): Promise<{
+    available: boolean;
+    components: Array<{
+      name: string;
+      content: string;
+      tokenEstimate: number;
+    }>;
+    totalTokens: number;
+    rawContext: string;
+  }> {
+    if (!this.agent) {
+      return {
+        available: false,
+        components: [],
+        totalTokens: 0,
+        rawContext: '',
+      };
+    }
+
+    try {
+      const ctx = this.agent.context;
+
+      // Prepare context (this assembles all components)
+      const prepared = await ctx.prepare();
+
+      // Get individual components for detailed view
+      const components: Array<{ name: string; content: string; tokenEstimate: number }> = [];
+
+      // 1. System Prompt
+      if (ctx.systemPrompt) {
+        components.push({
+          name: 'System Prompt',
+          content: ctx.systemPrompt,
+          tokenEstimate: Math.ceil(ctx.systemPrompt.length / 4), // Rough estimate
+        });
+      }
+
+      // 2. Plugin components (persistent instructions, memory index, etc.)
+      for (const component of prepared.components) {
+        // Component content can be string or unknown
+        const contentStr = typeof component.content === 'string'
+          ? component.content
+          : JSON.stringify(component.content, null, 2);
+        if (contentStr) {
+          components.push({
+            name: component.name || 'Plugin',
+            content: contentStr,
+            tokenEstimate: Math.ceil(contentStr.length / 4),
+          });
+        }
+      }
+
+      // 3. Messages (conversation history) - get from context state
+      const state = await ctx.getState();
+      const messages = state.core.history || [];
+      if (messages.length > 0) {
+        const messagesContent = messages.map((m: { role?: string; content?: unknown }, i: number) => {
+          const role = m.role || 'unknown';
+          const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+          return `[${i + 1}] ${role.toUpperCase()}:\n${content}`;
+        }).join('\n\n---\n\n');
+
+        components.push({
+          name: `Conversation History (${messages.length} messages)`,
+          content: messagesContent,
+          tokenEstimate: Math.ceil(messagesContent.length / 4),
+        });
+      }
+
+      // Build raw context representation
+      const rawContext = components.map(c => {
+        const separator = '='.repeat(60);
+        return `${separator}\n## ${c.name} (~${c.tokenEstimate} tokens)\n${separator}\n\n${c.content}`;
+      }).join('\n\n');
+
+      const totalTokens = components.reduce((sum, c) => sum + c.tokenEstimate, 0);
+
+      return {
+        available: true,
+        components,
+        totalTokens,
+        rawContext,
+      };
+    } catch (error) {
+      console.error('Error getting prepared context:', error);
+      return {
+        available: false,
+        components: [],
+        totalTokens: 0,
+        rawContext: `Error: ${error}`,
+      };
     }
   }
 }

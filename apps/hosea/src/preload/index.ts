@@ -243,6 +243,13 @@ export interface HoseaAPI {
         durationMs: number;
         timestamp: number;
       }>;
+      // New fields for prompt inspection
+      systemPrompt: string | null;
+      persistentInstructions: {
+        content: string;
+        path: string;
+        length: number;
+      } | null;
     }>;
     getContextStats: () => Promise<{
       available: boolean;
@@ -262,6 +269,16 @@ export interface HoseaAPI {
       updatedAt: number;
       value?: unknown;
     }>>;
+    getPreparedContext: () => Promise<{
+      available: boolean;
+      components: Array<{
+        name: string;
+        content: string;
+        tokenEstimate: number;
+      }>;
+      totalTokens: number;
+      rawContext: string;
+    }>;
   };
 
   // API Connectors (for tools like web_search, web_scrape)
@@ -366,6 +383,7 @@ const api: HoseaAPI = {
     getAll: () => ipcRenderer.invoke('internals:get-all'),
     getContextStats: () => ipcRenderer.invoke('internals:get-context-stats'),
     getMemoryEntries: () => ipcRenderer.invoke('internals:get-memory-entries'),
+    getPreparedContext: () => ipcRenderer.invoke('internals:get-prepared-context'),
   },
 
   log: {
