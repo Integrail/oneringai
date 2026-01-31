@@ -825,3 +825,20 @@ export type {
   InContextMemoryConfig,
   SerializedInContextMemoryState,
 } from './core/context/plugins/index.js';
+
+// ============ PersistentInstructions (Disk-Persisted Custom Instructions) ============
+export {
+  PersistentInstructionsPlugin,
+  createPersistentInstructionsTools,
+  createPersistentInstructions,
+  setupPersistentInstructions,
+} from './core/context/plugins/index.js';
+export type {
+  PersistentInstructionsConfig,
+  SerializedPersistentInstructionsState,
+} from './core/context/plugins/index.js';
+
+// PersistentInstructions Storage
+export { FilePersistentInstructionsStorage } from './infrastructure/storage/index.js';
+export type { FilePersistentInstructionsStorageConfig } from './infrastructure/storage/index.js';
+export type { IPersistentInstructionsStorage } from './domain/interfaces/IPersistentInstructionsStorage.js';

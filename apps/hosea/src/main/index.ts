@@ -223,6 +223,19 @@ async function setupIPC(): Promise<void> {
   ipcMain.handle('log:set-level', async (_event, level: string) => {
     return agentService!.setLogLevel(level as any);
   });
+
+  // Internals monitoring (Look Inside)
+  ipcMain.handle('internals:get-all', async () => {
+    return agentService!.getInternals();
+  });
+
+  ipcMain.handle('internals:get-context-stats', async () => {
+    return agentService!.getContextStats();
+  });
+
+  ipcMain.handle('internals:get-memory-entries', async () => {
+    return agentService!.getMemoryEntries();
+  });
 }
 
 // App lifecycle

@@ -6,9 +6,7 @@ import React, { useState } from 'react';
 import {
   MessageSquare,
   Bot,
-  Plug,
   Brain,
-  Search,
   Settings,
   PanelLeftClose,
   PanelLeft,
@@ -48,12 +46,6 @@ const navSections: NavSection[] = [
     label: 'Tools',
     items: [
       { id: 'tool-connectors', label: 'Tool Catalog', icon: <Wrench size={20} /> },
-    ],
-  },
-  {
-    label: 'Debug',
-    items: [
-      { id: 'internals', label: 'Look Inside', icon: <Search size={20} /> },
     ],
   },
 ];

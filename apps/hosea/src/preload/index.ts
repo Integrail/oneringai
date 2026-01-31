@@ -181,6 +181,87 @@ export interface HoseaAPI {
     createDefault: (connectorName: string, model: string) => Promise<{ success: boolean; id?: string; error?: string }>;
   };
 
+  // Internals monitoring (Look Inside)
+  internals: {
+    getAll: () => Promise<{
+      available: boolean;
+      agentName: string | null;
+      context: {
+        totalTokens: number;
+        maxTokens: number;
+        utilizationPercent: number;
+        messagesCount: number;
+        toolCallsCount: number;
+        strategy: string;
+      } | null;
+      cache: {
+        entries: number;
+        hits: number;
+        misses: number;
+        hitRate: number;
+        ttlMs: number;
+      } | null;
+      memory: {
+        totalEntries: number;
+        totalSizeBytes: number;
+        utilizationPercent: number;
+        entries: Array<{
+          key: string;
+          description: string;
+          scope: string;
+          priority: string;
+          sizeBytes: number;
+          updatedAt: number;
+        }>;
+      } | null;
+      inContextMemory: {
+        entries: Array<{
+          key: string;
+          description: string;
+          priority: string;
+          updatedAt: number;
+          value: unknown;
+        }>;
+        maxEntries: number;
+        maxTokens: number;
+      } | null;
+      tools: Array<{
+        name: string;
+        description: string;
+        enabled: boolean;
+        callCount: number;
+        namespace?: string;
+      }>;
+      toolCalls: Array<{
+        id: string;
+        name: string;
+        args: unknown;
+        result?: unknown;
+        error?: string;
+        durationMs: number;
+        timestamp: number;
+      }>;
+    }>;
+    getContextStats: () => Promise<{
+      available: boolean;
+      totalTokens: number;
+      maxTokens: number;
+      utilizationPercent: number;
+      messagesCount: number;
+      toolCallsCount: number;
+      strategy: string;
+    } | null>;
+    getMemoryEntries: () => Promise<Array<{
+      key: string;
+      description: string;
+      scope: string;
+      priority: string;
+      sizeBytes: number;
+      updatedAt: number;
+      value?: unknown;
+    }>>;
+  };
+
   // API Connectors (for tools like web_search, web_scrape)
   apiConnector: {
     list: () => Promise<Array<{
@@ -277,6 +358,12 @@ const api: HoseaAPI = {
     add: (config) => ipcRenderer.invoke('api-connector:add', config),
     update: (name, updates) => ipcRenderer.invoke('api-connector:update', name, updates),
     delete: (name) => ipcRenderer.invoke('api-connector:delete', name),
+  },
+
+  internals: {
+    getAll: () => ipcRenderer.invoke('internals:get-all'),
+    getContextStats: () => ipcRenderer.invoke('internals:get-context-stats'),
+    getMemoryEntries: () => ipcRenderer.invoke('internals:get-memory-entries'),
   },
 
   log: {

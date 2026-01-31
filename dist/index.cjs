@@ -2,24 +2,23 @@
 
 var crypto2 = require('crypto');
 var jose = require('jose');
-var fs13 = require('fs');
+var fs14 = require('fs');
 var eventemitter3 = require('eventemitter3');
 var path2 = require('path');
+var os = require('os');
 var OpenAI2 = require('openai');
 var Anthropic = require('@anthropic-ai/sdk');
 var genai = require('@google/genai');
-var os = require('os');
 var index_js = require('@modelcontextprotocol/sdk/client/index.js');
 var stdio_js = require('@modelcontextprotocol/sdk/client/stdio.js');
 var streamableHttp_js = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 var types_js = require('@modelcontextprotocol/sdk/types.js');
-var fs12 = require('fs/promises');
+var fs13 = require('fs/promises');
 var child_process = require('child_process');
 var util = require('util');
 var cheerio = require('cheerio');
 var TurndownService = require('turndown');
 var readability = require('@mozilla/readability');
-var jsdom = require('jsdom');
 var vm = require('vm');
 
 function _interopDefault (e) { return e && e.__esModule ? e : { default: e }; }
@@ -43,12 +42,12 @@ function _interopNamespace(e) {
 }
 
 var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
-var fs13__namespace = /*#__PURE__*/_interopNamespace(fs13);
+var fs14__namespace = /*#__PURE__*/_interopNamespace(fs14);
 var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
+var os__namespace = /*#__PURE__*/_interopNamespace(os);
 var OpenAI2__default = /*#__PURE__*/_interopDefault(OpenAI2);
 var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
-var os__namespace = /*#__PURE__*/_interopNamespace(os);
-var fs12__namespace = /*#__PURE__*/_interopNamespace(fs12);
+var fs13__namespace = /*#__PURE__*/_interopNamespace(fs13);
 var TurndownService__default = /*#__PURE__*/_interopDefault(TurndownService);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
 
@@ -626,7 +625,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs13__namespace.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs14__namespace.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1277,10 +1276,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2__namespace.dirname(filePath);
-          if (!fs13__namespace.existsSync(dir)) {
-            fs13__namespace.mkdirSync(dir, { recursive: true });
+          if (!fs14__namespace.existsSync(dir)) {
+            fs14__namespace.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs13__namespace.createWriteStream(filePath, {
+          this.fileStream = fs14__namespace.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -2152,7 +2151,7 @@ var require_old = __commonJS({
   "node_modules/fs.realpath/old.js"(exports$1) {
     var pathModule = __require("path");
     var isWindows = process.platform === "win32";
-    var fs14 = __require("fs");
+    var fs15 = __require("fs");
     var DEBUG = process.env.NODE_DEBUG && /fs/.test(process.env.NODE_DEBUG);
     function rethrow() {
       var callback;
@@ -2217,7 +2216,7 @@ var require_old = __commonJS({
         base = m[0];
         previous = "";
         if (isWindows && !knownHard[base]) {
-          fs14.lstatSync(base);
+          fs15.lstatSync(base);
           knownHard[base] = true;
         }
       }
@@ -2235,7 +2234,7 @@ var require_old = __commonJS({
         if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
           resolvedLink = cache[base];
         } else {
-          var stat6 = fs14.lstatSync(base);
+          var stat6 = fs15.lstatSync(base);
           if (!stat6.isSymbolicLink()) {
             knownHard[base] = true;
             if (cache) cache[base] = base;
@@ -2249,8 +2248,8 @@ var require_old = __commonJS({
             }
           }
           if (linkTarget === null) {
-            fs14.statSync(base);
-            linkTarget = fs14.readlinkSync(base);
+            fs15.statSync(base);
+            linkTarget = fs15.readlinkSync(base);
           }
           resolvedLink = pathModule.resolve(previous, linkTarget);
           if (cache) cache[base] = resolvedLink;
@@ -2284,7 +2283,7 @@ var require_old = __commonJS({
         base = m[0];
         previous = "";
         if (isWindows && !knownHard[base]) {
-          fs14.lstat(base, function(err) {
+          fs15.lstat(base, function(err) {
             if (err) return cb(err);
             knownHard[base] = true;
             LOOP();
@@ -2310,7 +2309,7 @@ var require_old = __commonJS({
         if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
           return gotResolvedLink(cache[base]);
         }
-        return fs14.lstat(base, gotStat);
+        return fs15.lstat(base, gotStat);
       }
       function gotStat(err, stat6) {
         if (err) return cb(err);
@@ -2325,9 +2324,9 @@ var require_old = __commonJS({
             return gotTarget(null, seenLinks[id], base);
           }
         }
-        fs14.stat(base, function(err2) {
+        fs15.stat(base, function(err2) {
           if (err2) return cb(err2);
-          fs14.readlink(base, function(err3, target) {
+          fs15.readlink(base, function(err3, target) {
             if (!isWindows) seenLinks[id] = target;
             gotTarget(err3, target);
           });
@@ -2356,9 +2355,9 @@ var require_fs = __commonJS({
     realpath.realpathSync = realpathSync;
     realpath.monkeypatch = monkeypatch;
     realpath.unmonkeypatch = unmonkeypatch;
-    var fs14 = __require("fs");
-    var origRealpath = fs14.realpath;
-    var origRealpathSync = fs14.realpathSync;
+    var fs15 = __require("fs");
+    var origRealpath = fs15.realpath;
+    var origRealpathSync = fs15.realpathSync;
     var version = process.version;
     var ok = /^v[0-5]\./.test(version);
     var old = require_old();
@@ -2396,12 +2395,12 @@ var require_fs = __commonJS({
       }
     }
     function monkeypatch() {
-      fs14.realpath = realpath;
-      fs14.realpathSync = realpathSync;
+      fs15.realpath = realpath;
+      fs15.realpathSync = realpathSync;
     }
     function unmonkeypatch() {
-      fs14.realpath = origRealpath;
-      fs14.realpathSync = origRealpathSync;
+      fs15.realpath = origRealpath;
+      fs15.realpathSync = origRealpathSync;
     }
   }
 });
@@ -3276,7 +3275,7 @@ var require_common = __commonJS({
     function ownProp(obj, field) {
       return Object.prototype.hasOwnProperty.call(obj, field);
     }
-    var fs14 = __require("fs");
+    var fs15 = __require("fs");
     var path6 = __require("path");
     var minimatch = require_minimatch();
     var isAbsolute2 = require_path_is_absolute();
@@ -3331,7 +3330,7 @@ var require_common = __commonJS({
       self.stat = !!options.stat;
       self.noprocess = !!options.noprocess;
       self.absolute = !!options.absolute;
-      self.fs = options.fs || fs14;
+      self.fs = options.fs || fs15;
       self.maxLength = options.maxLength || Infinity;
       self.cache = options.cache || /* @__PURE__ */ Object.create(null);
       self.statCache = options.statCache || /* @__PURE__ */ Object.create(null);
@@ -9540,6 +9539,612 @@ function getPluginFromContext(context, toolName) {
   }
   return plugin;
 }
+function getDefaultBaseDirectory() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return path2.join(appData, "oneringai", "agents");
+    }
+  }
+  return path2.join(os.homedir(), ".oneringai", "agents");
+}
+function sanitizeAgentId(agentId) {
+  return agentId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FilePersistentInstructionsStorage = class {
+  directory;
+  filePath;
+  agentId;
+  constructor(config) {
+    this.agentId = config.agentId;
+    const sanitizedId = sanitizeAgentId(config.agentId);
+    const baseDir = config.baseDirectory ?? getDefaultBaseDirectory();
+    const filename = config.filename ?? "custom_instructions.md";
+    this.directory = path2.join(baseDir, sanitizedId);
+    this.filePath = path2.join(this.directory, filename);
+  }
+  /**
+   * Load instructions from file
+   */
+  async load() {
+    try {
+      const content = await fs14.promises.readFile(this.filePath, "utf-8");
+      return content.trim() || null;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+  }
+  /**
+   * Save instructions to file
+   * Creates directory if it doesn't exist
+   */
+  async save(content) {
+    await this.ensureDirectory();
+    const tempPath = `${this.filePath}.tmp`;
+    try {
+      await fs14.promises.writeFile(tempPath, content, "utf-8");
+      await fs14.promises.rename(tempPath, this.filePath);
+    } catch (error) {
+      try {
+        await fs14.promises.unlink(tempPath);
+      } catch {
+      }
+      throw error;
+    }
+  }
+  /**
+   * Delete instructions file
+   */
+  async delete() {
+    try {
+      await fs14.promises.unlink(this.filePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  /**
+   * Check if instructions file exists
+   */
+  async exists() {
+    try {
+      await fs14.promises.access(this.filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Get the file path (for display/debugging)
+   */
+  getPath() {
+    return this.filePath;
+  }
+  /**
+   * Get the agent ID
+   */
+  getAgentId() {
+    return this.agentId;
+  }
+  /**
+   * Ensure the directory exists
+   */
+  async ensureDirectory() {
+    try {
+      await fs14.promises.mkdir(this.directory, { recursive: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+};
+
+// src/core/context/plugins/PersistentInstructionsPlugin.ts
+var DEFAULT_CONFIG2 = {
+  maxLength: 5e4
+};
+function buildContextExplanation(path6) {
+  return `## Custom Instructions
+
+These are your persistent instructions that apply across all sessions.
+They are stored on disk and automatically loaded when you start.
+
+**To modify:** Use \`instructions_set\` (replace all), \`instructions_append\` (add section), or \`instructions_clear\` (remove all).
+**Storage path:** ${path6}
+
+---
+`;
+}
+var PersistentInstructionsPlugin = class extends BaseContextPlugin {
+  name = "persistent_instructions";
+  priority = 0;
+  // Never compact
+  compactable = false;
+  _content = null;
+  _dirty = false;
+  _initialized = false;
+  _destroyed = false;
+  storage;
+  maxLength;
+  agentId;
+  /**
+   * Create a PersistentInstructionsPlugin
+   *
+   * @param config - Configuration options (agentId is required)
+   */
+  constructor(config) {
+    super();
+    this.agentId = config.agentId;
+    this.maxLength = config.maxLength ?? DEFAULT_CONFIG2.maxLength;
+    this.storage = config.storage ?? new FilePersistentInstructionsStorage({
+      agentId: config.agentId
+    });
+  }
+  /**
+   * Check if plugin is destroyed
+   */
+  get isDestroyed() {
+    return this._destroyed;
+  }
+  /**
+   * Check if plugin has been initialized (loaded from disk)
+   */
+  get isInitialized() {
+    return this._initialized;
+  }
+  /**
+   * Check if content has been modified since last save
+   */
+  get isDirty() {
+    return this._dirty;
+  }
+  // ============ Initialization ============
+  /**
+   * Initialize by loading instructions from storage
+   * Called lazily on first getComponent() call
+   */
+  async initialize() {
+    if (this._initialized || this._destroyed) {
+      return;
+    }
+    try {
+      this._content = await this.storage.load();
+      this._initialized = true;
+      this._dirty = false;
+    } catch (error) {
+      console.warn(`Failed to load persistent instructions for agent '${this.agentId}':`, error);
+      this._content = null;
+      this._initialized = true;
+    }
+  }
+  // ============ Content Management ============
+  /**
+   * Set the entire instructions content (replaces existing)
+   *
+   * @param content - New instructions content
+   * @returns true if set successfully, false if content exceeds max length
+   */
+  async set(content) {
+    this.assertNotDestroyed();
+    if (content.length > this.maxLength) {
+      return false;
+    }
+    this._content = content.trim() || null;
+    this._dirty = true;
+    if (this._content) {
+      await this.storage.save(this._content);
+    } else {
+      await this.storage.delete();
+    }
+    this._dirty = false;
+    return true;
+  }
+  /**
+   * Append a section to existing instructions
+   *
+   * @param section - Section to append (will add newlines before)
+   * @returns true if appended successfully, false if would exceed max length
+   */
+  async append(section) {
+    this.assertNotDestroyed();
+    const trimmedSection = section.trim();
+    if (!trimmedSection) {
+      return true;
+    }
+    const currentContent = this._content || "";
+    const newContent = currentContent ? `${currentContent}
+
+${trimmedSection}` : trimmedSection;
+    if (newContent.length > this.maxLength) {
+      return false;
+    }
+    this._content = newContent;
+    this._dirty = true;
+    await this.storage.save(this._content);
+    this._dirty = false;
+    return true;
+  }
+  /**
+   * Get current instructions content
+   *
+   * @returns Instructions content, or null if none
+   */
+  get() {
+    this.assertNotDestroyed();
+    return this._content;
+  }
+  /**
+   * Check if instructions exist
+   */
+  has() {
+    this.assertNotDestroyed();
+    return this._content !== null && this._content.length > 0;
+  }
+  /**
+   * Clear all instructions
+   */
+  async clear() {
+    this.assertNotDestroyed();
+    this._content = null;
+    this._dirty = true;
+    await this.storage.delete();
+    this._dirty = false;
+  }
+  /**
+   * Get storage path (for display/debugging)
+   */
+  getPath() {
+    return this.storage.getPath();
+  }
+  /**
+   * Get agent ID
+   */
+  getAgentId() {
+    return this.agentId;
+  }
+  /**
+   * Get current content length
+   */
+  getLength() {
+    return this._content?.length ?? 0;
+  }
+  /**
+   * Get maximum allowed content length
+   */
+  getMaxLength() {
+    return this.maxLength;
+  }
+  // ============ IContextPlugin Implementation ============
+  /**
+   * Get the context component for this plugin
+   * Performs lazy initialization on first call
+   */
+  async getComponent() {
+    this.assertNotDestroyed();
+    if (!this._initialized) {
+      await this.initialize();
+    }
+    if (!this._content) {
+      return null;
+    }
+    const explanation = buildContextExplanation(this.storage.getPath());
+    const content = `${explanation}
+${this._content}`;
+    return {
+      name: this.name,
+      content,
+      priority: this.priority,
+      compactable: this.compactable,
+      metadata: {
+        agentId: this.agentId,
+        length: this._content.length,
+        path: this.storage.getPath()
+      }
+    };
+  }
+  /**
+   * Compact - not applicable (compactable is false)
+   */
+  async compact(_targetTokens, _estimator) {
+    return 0;
+  }
+  /**
+   * Get serialized state for session persistence
+   */
+  getState() {
+    return {
+      content: this._content,
+      dirty: this._dirty,
+      agentId: this.agentId
+    };
+  }
+  /**
+   * Restore state from serialization
+   * Note: This restores in-memory state, not disk state
+   */
+  restoreState(state) {
+    this.assertNotDestroyed();
+    if (!state || typeof state !== "object") {
+      return;
+    }
+    const typedState = state;
+    if ("content" in typedState) {
+      this._content = typedState.content;
+    }
+    if ("dirty" in typedState) {
+      this._dirty = typedState.dirty;
+    }
+    this._initialized = true;
+  }
+  /**
+   * Clean up resources
+   */
+  destroy() {
+    this._content = null;
+    this._initialized = false;
+    this._destroyed = true;
+  }
+  // ============ Private Methods ============
+  /**
+   * Assert that the plugin hasn't been destroyed
+   */
+  assertNotDestroyed() {
+    if (this._destroyed) {
+      throw new Error("PersistentInstructionsPlugin has been destroyed");
+    }
+  }
+};
+
+// src/core/context/plugins/persistentInstructionsTools.ts
+var instructionsSetDefinition = {
+  type: "function",
+  function: {
+    name: "instructions_set",
+    description: `Set or replace all custom instructions for this agent.
+
+Custom instructions persist across sessions and are stored on disk.
+Use this to define:
+- Agent personality/behavior
+- User preferences
+- Custom rules and guidelines
+- Tool usage patterns
+
+The instructions will be loaded automatically in future sessions.
+IMPORTANT: This replaces ALL existing instructions.`,
+    parameters: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "The full instructions content (markdown supported)"
+        }
+      },
+      required: ["content"]
+    }
+  }
+};
+var instructionsAppendDefinition = {
+  type: "function",
+  function: {
+    name: "instructions_append",
+    description: `Append a new section to existing custom instructions.
+
+Use this to incrementally add:
+- New rules based on user feedback
+- Learned preferences
+- Additional guidelines
+
+The section will be added with appropriate spacing.`,
+    parameters: {
+      type: "object",
+      properties: {
+        section: {
+          type: "string",
+          description: "The section to append (will add newlines before)"
+        }
+      },
+      required: ["section"]
+    }
+  }
+};
+var instructionsGetDefinition = {
+  type: "function",
+  function: {
+    name: "instructions_get",
+    description: `Get current custom instructions.
+
+Returns the full instructions content and metadata.
+Instructions are also shown in context, so this is mainly for:
+- Verification before modifications
+- Getting programmatic access
+- Debugging`,
+    parameters: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  }
+};
+var instructionsClearDefinition = {
+  type: "function",
+  function: {
+    name: "instructions_clear",
+    description: `Clear all custom instructions (DESTRUCTIVE).
+
+This permanently removes all custom instructions from disk.
+Requires explicit confirmation.`,
+    parameters: {
+      type: "object",
+      properties: {
+        confirm: {
+          type: "boolean",
+          description: "Must be true to confirm deletion"
+        }
+      },
+      required: ["confirm"]
+    }
+  }
+};
+function createPersistentInstructionsTools() {
+  return [
+    // instructions_set
+    {
+      definition: instructionsSetDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext2(context, "instructions_set");
+        const content = args.content;
+        if (!content || content.trim().length === 0) {
+          return {
+            error: "Content cannot be empty. Use instructions_clear to remove instructions."
+          };
+        }
+        const success = await plugin.set(content);
+        if (!success) {
+          return {
+            error: `Instructions too long. Maximum ${plugin.getMaxLength()} characters, got ${content.length}.`
+          };
+        }
+        return {
+          success: true,
+          message: "Instructions saved successfully",
+          path: plugin.getPath(),
+          length: plugin.getLength()
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        // Auto-approve - instructions management is safe
+        riskLevel: "low"
+      },
+      describeCall: () => "set"
+    },
+    // instructions_append
+    {
+      definition: instructionsAppendDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext2(context, "instructions_append");
+        const section = args.section;
+        if (!section || section.trim().length === 0) {
+          return {
+            error: "Section cannot be empty"
+          };
+        }
+        const success = await plugin.append(section);
+        if (!success) {
+          return {
+            error: `Would exceed maximum length of ${plugin.getMaxLength()} characters. Current: ${plugin.getLength()}, Adding: ${section.length}.`
+          };
+        }
+        return {
+          success: true,
+          message: "Section appended successfully",
+          newLength: plugin.getLength()
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: () => "append"
+    },
+    // instructions_get
+    {
+      definition: instructionsGetDefinition,
+      execute: async (_args, context) => {
+        const plugin = getPluginFromContext2(context, "instructions_get");
+        const content = plugin.get();
+        if (!content) {
+          return {
+            exists: false,
+            message: "No custom instructions set",
+            path: plugin.getPath()
+          };
+        }
+        return {
+          exists: true,
+          content,
+          length: content.length,
+          maxLength: plugin.getMaxLength(),
+          path: plugin.getPath()
+        };
+      },
+      idempotency: { cacheable: true, ttlMs: 1e3 },
+      output: { expectedSize: "variable" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: () => "read"
+    },
+    // instructions_clear
+    {
+      definition: instructionsClearDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext2(context, "instructions_clear");
+        const confirm = args.confirm;
+        if (confirm !== true) {
+          return {
+            error: "Must set confirm: true to clear instructions"
+          };
+        }
+        const hadContent = plugin.has();
+        await plugin.clear();
+        return {
+          success: true,
+          message: hadContent ? "Instructions cleared successfully" : "No instructions to clear",
+          path: plugin.getPath()
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: () => "clear"
+    }
+  ];
+}
+function createPersistentInstructions(config) {
+  const plugin = new PersistentInstructionsPlugin(config);
+  const tools = createPersistentInstructionsTools();
+  return { plugin, tools };
+}
+function setupPersistentInstructions(agentContext, config) {
+  const { plugin, tools } = createPersistentInstructions(config);
+  agentContext.registerPlugin(plugin);
+  for (const tool of tools) {
+    agentContext.tools.register(tool);
+  }
+  agentContext.persistentInstructions = plugin;
+  return plugin;
+}
+function getPluginFromContext2(context, toolName) {
+  if (!context) {
+    throw new ToolExecutionError(
+      toolName,
+      "PersistentInstructions tools require a tool context"
+    );
+  }
+  const plugin = context.persistentInstructions;
+  if (!plugin) {
+    throw new ToolExecutionError(
+      toolName,
+      "PersistentInstructions plugin not found. Enable features.persistentInstructions or use setupPersistentInstructions()."
+    );
+  }
+  return plugin;
+}
 
 // src/core/AgentContext.ts
 var PRIORITY_PROFILES = {
@@ -9619,7 +10224,8 @@ var DEFAULT_FEATURES = {
   memory: true,
   inContextMemory: false,
   history: true,
-  permissions: true
+  permissions: true,
+  persistentInstructions: false
 };
 var DEFAULT_AGENT_CONTEXT_CONFIG = {
   model: "gpt-4",
@@ -9641,6 +10247,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   _cache;
   _permissions;
   _inContextMemory = null;
+  _persistentInstructions = null;
+  _agentId;
   // ===== Feature Configuration =====
   _features;
   // ===== Built-in State =====
@@ -9682,6 +10290,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     };
     this._systemPrompt = config.systemPrompt ?? "";
     this._instructions = config.instructions ?? "";
+    this._agentId = config.agentId ?? config.persistentInstructions?.agentId ?? `agent-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     this._historyEnabled = this._features.history;
     this._maxContextTokens = config.maxContextTokens ?? getModelInfo(config.model ?? "gpt-4")?.features.input.tokens ?? 128e3;
     this._strategy = createStrategy(this._config.strategy, {});
@@ -9723,6 +10332,17 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         this._tools.register(tool);
       }
     }
+    if (this._features.persistentInstructions) {
+      const { plugin, tools } = createPersistentInstructions({
+        agentId: this._agentId,
+        ...config.persistentInstructions
+      });
+      this._persistentInstructions = plugin;
+      this.registerPlugin(plugin);
+      for (const tool of tools) {
+        this._tools.register(tool);
+      }
+    }
     this._explicitTaskType = config.taskType;
     this._autoDetectTaskType = config.autoDetectTaskType !== false;
   }
@@ -9754,6 +10374,14 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   /** InContextMemory plugin (null if inContextMemory feature disabled) */
   get inContextMemory() {
     return this._inContextMemory;
+  }
+  /** PersistentInstructions plugin (null if persistentInstructions feature disabled) */
+  get persistentInstructions() {
+    return this._persistentInstructions;
+  }
+  /** Agent ID (auto-generated or from config) */
+  get agentId() {
+    return this._agentId;
   }
   // ============================================================================
   // Feature Configuration
@@ -10048,7 +10676,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       }
       if (!cached) {
         const fullContext = {
-          agentId: context?.agentId ?? "agent-context",
+          agentId: context?.agentId ?? this._agentId,
           taskId: context?.taskId,
           memory: this._memory?.getAccess(),
           // May be undefined if memory disabled
@@ -10056,6 +10684,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
           // May be undefined if memory disabled
           inContextMemory: this._inContextMemory ?? void 0,
           // May be undefined if inContextMemory disabled
+          persistentInstructions: this._persistentInstructions ?? void 0,
+          // May be undefined if persistentInstructions disabled
           signal: context?.signal
         };
         this._tools.setToolContext(fullContext);
@@ -16932,7 +17562,7 @@ function getMemoryTools() {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const content = await fs13.promises.readFile(configPath, "utf-8");
+      const content = await fs14.promises.readFile(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -16953,8 +17583,8 @@ function getMemoryTools() {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs14 = __require("fs");
-      const content = fs14.readFileSync(configPath, "utf-8");
+      const fs15 = __require("fs");
+      const content = fs15.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -16972,7 +17602,7 @@ function getMemoryTools() {
   static async findConfig() {
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        await fs13.promises.access(path2.resolve(path6));
+        await fs14.promises.access(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -16983,10 +17613,10 @@ function getMemoryTools() {
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs14 = __require("fs");
+    const fs15 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs14.accessSync(path2.resolve(path6));
+        fs15.accessSync(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -17695,7 +18325,7 @@ var MCPRegistry = class {
   static async loadFromConfigFile(path6) {
     try {
       const configPath = path2.resolve(path6);
-      const content = await fs13.promises.readFile(configPath, "utf-8");
+      const content = await fs14.promises.readFile(configPath, "utf-8");
       const config = JSON.parse(content);
       if (!config.mcp) {
         throw new MCPError("Configuration file does not contain MCP section");
@@ -18287,7 +18917,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
       const blob = new Blob([audio]);
       return new File([blob], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs13__namespace.createReadStream(audio);
+      return fs14__namespace.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -18840,7 +19470,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs12__namespace.writeFile(filePath, response.audio);
+    await fs13__namespace.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -19188,7 +19818,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs12__namespace.readFile(filePath);
+    const audio = await fs13__namespace.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -19514,7 +20144,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([image], "image.png", { type: "image/png" });
     }
-    return fs13__namespace.createReadStream(image);
+    return fs14__namespace.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -19661,8 +20291,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs14 = await import('fs');
-      const buffer = fs14.readFileSync(image);
+      const fs15 = await import('fs');
+      const buffer = fs15.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -20610,8 +21240,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([image], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs14 = await import('fs');
-      const data = fs14.readFileSync(image);
+      const fs15 = await import('fs');
+      const data = fs15.readFileSync(image);
       return new File([data], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -20908,8 +21538,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs14 = await import('fs/promises');
-    const data = await fs14.readFile(image);
+    const fs15 = await import('fs/promises');
+    const data = await fs15.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -24774,7 +25404,7 @@ async function generateSimplePlan(goal, context) {
     // Allow agent to modify plan
   });
 }
-var DEFAULT_CONFIG2 = {
+var DEFAULT_CONFIG3 = {
   sizeThreshold: 10 * 1024,
   // 10KB
   tools: [],
@@ -24797,7 +25427,7 @@ var AutoSpillPlugin = class extends BaseContextPlugin {
   constructor(memory, config = {}) {
     super();
     this.memory = memory;
-    this.config = { ...DEFAULT_CONFIG2, ...config };
+    this.config = { ...DEFAULT_CONFIG3, ...config };
   }
   /**
    * Subscribe to events
@@ -25820,9 +26450,9 @@ var FileSearchSource = class {
         }
         if (this.searchMode === "content" || this.searchMode === "both") {
           try {
-            const stat6 = await fs12__namespace.stat(filePath);
+            const stat6 = await fs13__namespace.stat(filePath);
             if (stat6.size > this.maxFileSize) continue;
-            const content = await fs12__namespace.readFile(filePath, "utf-8");
+            const content = await fs13__namespace.readFile(filePath, "utf-8");
             const match = this.findContentMatch(content, query);
             if (match) {
               results.push({
@@ -25869,7 +26499,7 @@ var FileSearchSource = class {
           error: "Path is outside allowed base directory"
         };
       }
-      const stat6 = await fs12__namespace.stat(absolutePath);
+      const stat6 = await fs13__namespace.stat(absolutePath);
       const maxSize = options?.maxSize ?? this.maxFileSize;
       if (stat6.size > maxSize) {
         return {
@@ -25880,7 +26510,7 @@ var FileSearchSource = class {
           sizeBytes: stat6.size
         };
       }
-      const content = await fs12__namespace.readFile(absolutePath, "utf-8");
+      const content = await fs13__namespace.readFile(absolutePath, "utf-8");
       const ext = path2__namespace.extname(absolutePath).toLowerCase();
       return {
         success: true,
@@ -25905,7 +26535,7 @@ var FileSearchSource = class {
   }
   async isAvailable() {
     try {
-      await fs12__namespace.access(this.basePath);
+      await fs13__namespace.access(this.basePath);
       return true;
     } catch {
       return false;
@@ -26924,13 +27554,13 @@ var FileSessionStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(session.id);
     const data = this.prettyPrint ? JSON.stringify(session, null, 2) : JSON.stringify(session);
-    await fs13.promises.writeFile(filePath, data, "utf-8");
+    await fs14.promises.writeFile(filePath, data, "utf-8");
     await this.updateIndex(session);
   }
   async load(sessionId) {
     const filePath = this.getFilePath(sessionId);
     try {
-      const data = await fs13.promises.readFile(filePath, "utf-8");
+      const data = await fs14.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error.code === "ENOENT") {
@@ -26945,7 +27575,7 @@ var FileSessionStorage = class {
   async delete(sessionId) {
     const filePath = this.getFilePath(sessionId);
     try {
-      await fs13.promises.unlink(filePath);
+      await fs14.promises.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -26956,7 +27586,7 @@ var FileSessionStorage = class {
   async exists(sessionId) {
     const filePath = this.getFilePath(sessionId);
     try {
-      await fs13.promises.access(filePath);
+      await fs14.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -27013,7 +27643,7 @@ var FileSessionStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory();
-    const files = await fs13.promises.readdir(this.directory);
+    const files = await fs14.promises.readdir(this.directory);
     const sessionFiles = files.filter(
       (f) => f.endsWith(this.extension) && !f.startsWith("_")
     );
@@ -27021,7 +27651,7 @@ var FileSessionStorage = class {
     for (const file of sessionFiles) {
       try {
         const filePath = path2.join(this.directory, file);
-        const data = await fs13.promises.readFile(filePath, "utf-8");
+        const data = await fs14.promises.readFile(filePath, "utf-8");
         const session = JSON.parse(data);
         entries.push(this.sessionToIndexEntry(session));
       } catch {
@@ -27049,7 +27679,7 @@ var FileSessionStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs13.promises.mkdir(this.directory, { recursive: true });
+      await fs14.promises.mkdir(this.directory, { recursive: true });
     } catch (error) {
       if (error.code !== "EEXIST") {
         throw error;
@@ -27061,7 +27691,7 @@ var FileSessionStorage = class {
       return this.index;
     }
     try {
-      const data = await fs13.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs14.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -27080,7 +27710,7 @@ var FileSessionStorage = class {
     if (!this.index) return;
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs13.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs14.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(session) {
     const index = await this.loadIndex();
@@ -28235,8 +28865,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs12__namespace.mkdir(this.directory, { recursive: true });
-      await fs12__namespace.chmod(this.directory, 448);
+      await fs13__namespace.mkdir(this.directory, { recursive: true });
+      await fs13__namespace.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -28252,13 +28882,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs12__namespace.writeFile(filePath, encrypted, "utf8");
-    await fs12__namespace.chmod(filePath, 384);
+    await fs13__namespace.writeFile(filePath, encrypted, "utf8");
+    await fs13__namespace.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs12__namespace.readFile(filePath, "utf8");
+      const encrypted = await fs13__namespace.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -28267,7 +28897,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs12__namespace.unlink(filePath);
+        await fs13__namespace.unlink(filePath);
       } catch {
       }
       return null;
@@ -28276,7 +28906,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs12__namespace.unlink(filePath);
+      await fs13__namespace.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -28286,7 +28916,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs12__namespace.access(filePath);
+      await fs13__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -28297,7 +28927,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs12__namespace.readdir(this.directory);
+      const files = await fs13__namespace.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -28308,10 +28938,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs12__namespace.readdir(this.directory);
+      const files = await fs13__namespace.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs12__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs13__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -28716,14 +29346,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs12__namespace.writeFile(filePath, json, "utf8");
-    await fs12__namespace.chmod(filePath, 384);
+    await fs13__namespace.writeFile(filePath, json, "utf8");
+    await fs13__namespace.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs12__namespace.readFile(filePath, "utf8");
+      const json = await fs13__namespace.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -28736,7 +29366,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs12__namespace.unlink(filePath);
+      await fs13__namespace.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -28750,7 +29380,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs12__namespace.access(filePath);
+      await fs13__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -28776,13 +29406,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs12__namespace.readdir(this.directory);
+      const files = await fs13__namespace.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs12__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+          (f) => fs13__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -28809,8 +29439,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs12__namespace.mkdir(this.directory, { recursive: true });
-      await fs12__namespace.chmod(this.directory, 448);
+      await fs13__namespace.mkdir(this.directory, { recursive: true });
+      await fs13__namespace.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -28821,7 +29451,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs12__namespace.readFile(this.indexPath, "utf8");
+      const json = await fs13__namespace.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -28839,8 +29469,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs12__namespace.writeFile(this.indexPath, json, "utf8");
-    await fs12__namespace.chmod(this.indexPath, 384);
+    await fs13__namespace.writeFile(this.indexPath, json, "utf8");
+    await fs13__namespace.chmod(this.indexPath, 384);
   }
 };
 
@@ -28984,8 +29614,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = util.promisify(child_process.exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs13__namespace.existsSync(filePath)) {
-      fs13__namespace.unlinkSync(filePath);
+    if (fs14__namespace.existsSync(filePath)) {
+      fs14__namespace.unlinkSync(filePath);
     }
   } catch {
   }
@@ -29036,7 +29666,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs13__namespace.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs14__namespace.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -29053,14 +29683,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs13__namespace.existsSync(tempFile) && fs13__namespace.statSync(tempFile).size > 0) {
+      if (fs14__namespace.existsSync(tempFile) && fs14__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs13__namespace.existsSync(tempFile) && fs13__namespace.statSync(tempFile).size > 0) {
+      if (fs14__namespace.existsSync(tempFile) && fs14__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -29087,7 +29717,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs13__namespace.existsSync(tempFile) && fs13__namespace.statSync(tempFile).size > 0) {
+    if (fs14__namespace.existsSync(tempFile) && fs14__namespace.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -29100,7 +29730,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs13__namespace.readFileSync(filePath);
+    const imageBuffer = fs14__namespace.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -29387,7 +30017,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs13.existsSync(resolvedPath)) {
+      if (!fs14.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -29395,7 +30025,7 @@ EXAMPLES:
         };
       }
       try {
-        const stats = await fs12.stat(resolvedPath);
+        const stats = await fs13.stat(resolvedPath);
         if (!stats.isFile()) {
           return {
             success: false,
@@ -29411,7 +30041,7 @@ EXAMPLES:
             size: stats.size
           };
         }
-        const content = await fs12.readFile(resolvedPath, "utf-8");
+        const content = await fs13.readFile(resolvedPath, "utf-8");
         const allLines = content.split("\n");
         const totalLines = allLines.length;
         const startIndex = Math.max(0, offset - 1);
@@ -29516,13 +30146,13 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      const fileExists = fs13.existsSync(resolvedPath);
+      const fileExists = fs14.existsSync(resolvedPath);
       try {
         const parentDir = path2.dirname(resolvedPath);
-        if (!fs13.existsSync(parentDir)) {
-          await fs12.mkdir(parentDir, { recursive: true });
+        if (!fs14.existsSync(parentDir)) {
+          await fs13.mkdir(parentDir, { recursive: true });
         }
-        await fs12.writeFile(resolvedPath, content, "utf-8");
+        await fs13.writeFile(resolvedPath, content, "utf-8");
         return {
           success: true,
           path: file_path,
@@ -29625,7 +30255,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs13.existsSync(resolvedPath)) {
+      if (!fs14.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -29633,7 +30263,7 @@ EXAMPLES:
         };
       }
       try {
-        const content = await fs12.readFile(resolvedPath, "utf-8");
+        const content = await fs13.readFile(resolvedPath, "utf-8");
         let occurrences = 0;
         let searchIndex = 0;
         while (true) {
@@ -29672,7 +30302,7 @@ EXAMPLES:
         } else {
           newContent = content.replace(old_string, new_string);
         }
-        await fs12.writeFile(resolvedPath, newContent, "utf-8");
+        await fs13.writeFile(resolvedPath, newContent, "utf-8");
         const diffPreview = generateDiffPreview(old_string, new_string);
         return {
           success: true,
@@ -29728,7 +30358,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
     return results;
   }
   try {
-    const entries = await fs12.readdir(dir, { withFileTypes: true });
+    const entries = await fs13.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (results.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -29742,7 +30372,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
       } else if (entry.isFile()) {
         if (matchGlobPattern(pattern, relativePath)) {
           try {
-            const stats = await fs12.stat(fullPath);
+            const stats = await fs13.stat(fullPath);
             results.push({
               path: relativePath,
               mtime: stats.mtimeMs
@@ -29824,7 +30454,7 @@ WHEN TO USE:
         };
       }
       const resolvedDir = validation.resolvedPath;
-      if (!fs13.existsSync(resolvedDir)) {
+      if (!fs14.existsSync(resolvedDir)) {
         return {
           success: false,
           error: `Directory not found: ${searchDir}`
@@ -29879,7 +30509,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
     return files;
   }
   try {
-    const entries = await fs12.readdir(dir, { withFileTypes: true });
+    const entries = await fs13.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path2.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -29912,7 +30542,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
 async function searchFile(filePath, regex, contextBefore, contextAfter) {
   const matches = [];
   try {
-    const content = await fs12.readFile(filePath, "utf-8");
+    const content = await fs13.readFile(filePath, "utf-8");
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
@@ -30053,7 +30683,7 @@ WHEN TO USE:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs13.existsSync(resolvedPath)) {
+      if (!fs14.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -30069,7 +30699,7 @@ WHEN TO USE:
         };
       }
       try {
-        const stats = await fs12.stat(resolvedPath);
+        const stats = await fs13.stat(resolvedPath);
         let filesToSearch;
         if (stats.isFile()) {
           filesToSearch = [resolvedPath];
@@ -30157,7 +30787,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
     return entries;
   }
   try {
-    const dirEntries = await fs12.readdir(dir, { withFileTypes: true });
+    const dirEntries = await fs13.readdir(dir, { withFileTypes: true });
     for (const entry of dirEntries) {
       if (entries.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -30175,7 +30805,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
       }
       if (filter === "directories" && !isDir) continue;
       try {
-        const stats = await fs12.stat(fullPath);
+        const stats = await fs13.stat(fullPath);
         const dirEntry = {
           name: entry.name,
           path: relativePath,
@@ -30271,14 +30901,14 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs13.existsSync(resolvedPath)) {
+      if (!fs14.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Directory not found: ${path6}`
         };
       }
       try {
-        const stats = await fs12.stat(resolvedPath);
+        const stats = await fs13.stat(resolvedPath);
         if (!stats.isDirectory()) {
           return {
             success: false,
@@ -30973,8 +31603,17 @@ function detectContentQuality(html, text, $) {
     issues
   };
 }
-function htmlToMarkdown(html, url, maxLength = 5e4) {
-  const dom = new jsdom.JSDOM(html, { url });
+var JSDOM = null;
+async function getJSDOM() {
+  if (!JSDOM) {
+    const jsdom = await import('jsdom');
+    JSDOM = jsdom.JSDOM;
+  }
+  return JSDOM;
+}
+async function htmlToMarkdown(html, url, maxLength = 5e4) {
+  const JSDOMClass = await getJSDOM();
+  const dom = new JSDOMClass(html, { url });
   const document = dom.window.document;
   let title = document.title || "";
   let byline;
@@ -31181,7 +31820,7 @@ With custom user agent:
       }
       const html = await response.text();
       const $ = cheerio.load(html);
-      const mdResult = htmlToMarkdown(html, args.url);
+      const mdResult = await htmlToMarkdown(html, args.url);
       const title = mdResult.title || $("title").text() || $("h1").first().text() || "Untitled";
       const quality = detectContentQuality(html, mdResult.markdown, $);
       return {
@@ -31384,7 +32023,7 @@ With screenshot:
         screenshot = buffer.toString("base64");
       }
       await page.close();
-      const mdResult = htmlToMarkdown(html, args.url);
+      const mdResult = await htmlToMarkdown(html, args.url);
       const title = browserTitle || mdResult.title || "Untitled";
       return {
         success: true,
@@ -33977,6 +34616,7 @@ exports.ErrorHandler = ErrorHandler;
 exports.ExecutionContext = ExecutionContext;
 exports.ExternalDependencyHandler = ExternalDependencyHandler;
 exports.FileConnectorStorage = FileConnectorStorage;
+exports.FilePersistentInstructionsStorage = FilePersistentInstructionsStorage;
 exports.FileSearchSource = FileSearchSource;
 exports.FileSessionStorage = FileSessionStorage;
 exports.FileStorage = FileStorage;
@@ -34013,6 +34653,7 @@ exports.MessageRole = MessageRole;
 exports.ModeManager = ModeManager;
 exports.ModelNotSupportedError = ModelNotSupportedError;
 exports.ParallelTasksError = ParallelTasksError;
+exports.PersistentInstructionsPlugin = PersistentInstructionsPlugin;
 exports.PlanExecutor = PlanExecutor;
 exports.PlanningAgent = PlanningAgent;
 exports.ProactiveCompactionStrategy = ProactiveCompactionStrategy;
@@ -34102,6 +34743,8 @@ exports.createListDirectoryTool = createListDirectoryTool;
 exports.createMemoryTools = createMemoryTools;
 exports.createMessageWithImages = createMessageWithImages;
 exports.createMetricsCollector = createMetricsCollector;
+exports.createPersistentInstructions = createPersistentInstructions;
+exports.createPersistentInstructionsTools = createPersistentInstructionsTools;
 exports.createPlan = createPlan;
 exports.createProvider = createProvider;
 exports.createReadFileTool = createReadFileTool;
@@ -34200,6 +34843,7 @@ exports.scopeEquals = scopeEquals;
 exports.scopeMatches = scopeMatches;
 exports.setMetricsCollector = setMetricsCollector;
 exports.setupInContextMemory = setupInContextMemory;
+exports.setupPersistentInstructions = setupPersistentInstructions;
 exports.toConnectorOptions = toConnectorOptions;
 exports.toolRegistry = toolRegistry;
 exports.tools = tools_exports;

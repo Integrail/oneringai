@@ -19,8 +19,6 @@ describe('webSearch', () => {
     it('should have optional parameters', () => {
       const props = webSearch.definition.function.parameters.properties as Record<string, any>;
       expect(props.numResults).toBeDefined();
-      expect(props.connectorName).toBeDefined();
-      expect(props.provider).toBeDefined();
       expect(props.country).toBeDefined();
       expect(props.language).toBeDefined();
     });
@@ -30,21 +28,19 @@ describe('webSearch', () => {
     });
 
     it('should have timeout defined', () => {
-      expect(webSearch.definition.timeout).toBe(10000);
+      expect(webSearch.definition.timeout).toBe(15000);
     });
 
     it('should have comprehensive description', () => {
       const desc = webSearch.definition.function.description;
       expect(desc).toContain('Search the web');
-      expect(desc).toContain('Connector');
+      expect(desc).toContain('results');
     });
 
-    it('should define provider enum values', () => {
+    it('should define query parameter with description', () => {
       const props = webSearch.definition.function.parameters.properties as Record<string, any>;
-      expect(props.provider.enum).toContain('serper');
-      expect(props.provider.enum).toContain('brave');
-      expect(props.provider.enum).toContain('tavily');
-      expect(props.provider.enum).toContain('rapidapi');
+      expect(props.query.type).toBe('string');
+      expect(props.query.description).toBeDefined();
     });
   });
 });

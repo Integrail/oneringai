@@ -22,6 +22,7 @@
 - 🔬 **Research Agent** - NEW: Generic research agent with pluggable sources (web, vector, file, API)
 - 🎯 **Context Management** - Smart strategies (proactive, aggressive, lazy, rolling-window, adaptive)
 - 📌 **InContextMemory** - NEW: Live key-value storage directly in LLM context for instant access
+- 📝 **Persistent Instructions** - NEW: Agent-level custom instructions that persist across sessions on disk
 - 🛠️ **Agentic Workflows** - Built-in tool calling and multi-turn conversations
 - 🔧 **Developer Tools** - NEW: Filesystem and shell tools for coding assistants (read, write, edit, grep, glob, bash)
 - 🔌 **MCP Integration** - NEW: Model Context Protocol client for seamless tool discovery from local and remote servers
@@ -552,6 +553,7 @@ console.log(agent.context.memory);                     // null (disabled)
 |---------|---------|------------|------------------|
 | `memory` | `true` | WorkingMemory + IdempotencyCache | `memory_*`, `cache_stats` |
 | `inContextMemory` | `false` | InContextMemoryPlugin | `context_set/get/delete/list` |
+| `persistentInstructions` | `false` | PersistentInstructionsPlugin | `instructions_set/get/append/clear` |
 | `history` | `true` | Conversation tracking | (affects context preparation) |
 | `permissions` | `true` | ToolPermissionManager | (affects tool execution) |
 
@@ -619,7 +621,43 @@ const state = inContextMemory.get('current_state');  // { step: 2, status: 'acti
 
 **Use cases:** Session state, user preferences, counters, flags, small accumulated results.
 
-### 8. Direct LLM Access (NEW)
+### 8. Persistent Instructions (NEW)
+
+Store agent-level custom instructions that persist across sessions on disk:
+
+```typescript
+import { Agent } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  agentId: 'my-assistant',  // Used for storage path
+  context: {
+    features: {
+      persistentInstructions: true,
+    },
+  },
+});
+
+// LLM can now use instructions_set/append/get/clear tools
+// Instructions persist to ~/.oneringai/agents/my-assistant/custom_instructions.md
+```
+
+**Key Features:**
+- 📁 **Disk Persistence** - Instructions survive process restarts and sessions
+- 🔧 **LLM-Modifiable** - Agent can update its own instructions during execution
+- 🔄 **Auto-Load** - Instructions loaded automatically on agent start
+- 🛡️ **Never Compacted** - Critical instructions always preserved in context
+
+**Available Tools:**
+- `instructions_set` - Replace all custom instructions
+- `instructions_append` - Add a new section to existing instructions
+- `instructions_get` - Read current instructions
+- `instructions_clear` - Remove all instructions (requires confirmation)
+
+**Use cases:** Agent personality/behavior, user preferences, learned rules, tool usage patterns.
+
+### 9. Direct LLM Access (NEW)
 
 Bypass all context management for simple, stateless LLM calls:
 
@@ -665,7 +703,7 @@ for await (const event of agent.streamDirect('Tell me a story')) {
 
 **Use cases:** Quick one-off queries, embeddings-like simplicity, testing, hybrid workflows.
 
-### 9. Audio Capabilities (NEW)
+### 10. Audio Capabilities (NEW)
 
 Text-to-Speech and Speech-to-Text with multiple providers:
 
@@ -714,7 +752,7 @@ const english = await stt.translate(frenchAudio);
 - **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-tts`)
 - **STT**: OpenAI (`whisper-1`, `gpt-4o-transcribe`), Groq (`whisper-large-v3` - 12x cheaper!)
 
-### 10. Model Registry
+### 11. Model Registry
 
 Complete metadata for 23+ models:
 
@@ -742,7 +780,7 @@ console.log(`Cached: $${cachedCost}`);  // $0.0293 (90% discount)
 - **Anthropic (5)**: Claude 4.5 series, Claude 4.x
 - **Google (7)**: Gemini 3, Gemini 2.5
 
-### 11. Streaming
+### 12. Streaming
 
 Real-time responses:
 
@@ -754,7 +792,7 @@ for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
 }
 ```
 
-### 12. OAuth for External APIs
+### 13. OAuth for External APIs
 
 ```typescript
 import { OAuthManager, FileStorage } from '@oneringai/agents';
@@ -771,7 +809,7 @@ const oauth = new OAuthManager({
 const authUrl = await oauth.startAuthFlow('user123');
 ```
 
-### 13. Developer Tools (NEW)
+### 14. Developer Tools (NEW)
 
 File system and shell tools for building coding assistants:
 
@@ -813,7 +851,7 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
-### 14. External API Integration (NEW)
+### 15. External API Integration (NEW)
 
 Connect your AI agents to 35+ external services with enterprise-grade resilience:
 

@@ -197,7 +197,7 @@ With custom user agent:
       const $ = load(html);
 
       // Convert HTML to clean markdown
-      const mdResult = htmlToMarkdown(html, args.url);
+      const mdResult = await htmlToMarkdown(html, args.url);
 
       // Use markdown result title or fallback to cheerio extraction
       const title = mdResult.title || $('title').text() || $('h1').first().text() || 'Untitled';

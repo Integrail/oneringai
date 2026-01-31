@@ -36,20 +36,25 @@ A comprehensive guide to using all features of the @oneringai/agents library.
     - Priority-Based Eviction
     - Tools (context_set, context_get, context_delete, context_list)
     - Use Cases and Best Practices
-12. [Tools & Function Calling](#tools--function-calling)
-13. [Dynamic Tool Management](#dynamic-tool-management)
-14. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
-15. [Multimodal (Vision)](#multimodal-vision)
-16. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
-17. [Image Generation](#image-generation) **NEW**
-18. [Video Generation](#video-generation) **NEW**
-19. [Web Search](#web-search) **NEW**
-20. [Streaming](#streaming)
-21. [External API Integration](#external-api-integration) **NEW**
-22. [OAuth for External APIs](#oauth-for-external-apis)
-23. [Model Registry](#model-registry)
-24. [Advanced Features](#advanced-features)
-25. [Production Deployment](#production-deployment)
+12. [Persistent Instructions](#persistent-instructions) **NEW**
+    - Setup and Configuration
+    - Tools (instructions_set, instructions_get, instructions_append, instructions_clear)
+    - Storage and Persistence
+    - Use Cases and Best Practices
+13. [Tools & Function Calling](#tools--function-calling)
+14. [Dynamic Tool Management](#dynamic-tool-management)
+15. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
+16. [Multimodal (Vision)](#multimodal-vision)
+17. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
+18. [Image Generation](#image-generation) **NEW**
+19. [Video Generation](#video-generation) **NEW**
+20. [Web Search](#web-search) **NEW**
+21. [Streaming](#streaming)
+22. [External API Integration](#external-api-integration) **NEW**
+23. [OAuth for External APIs](#oauth-for-external-apis)
+24. [Model Registry](#model-registry)
+25. [Advanced Features](#advanced-features)
+26. [Production Deployment](#production-deployment)
 
 ---
 
@@ -5289,6 +5294,326 @@ plugin.set('search_status', 'Search status', { completed: 3, pending: 2 });
 // LLM sees:
 // - Memory Index: "search_results: Web search results" (needs memory_retrieve)
 // - Live Context: Full search_status value (instant access)
+```
+
+---
+
+## Persistent Instructions
+
+**Persistent Instructions** is a context plugin that stores agent-level custom instructions on disk. Unlike InContextMemory (volatile key-value pairs), persistent instructions survive process restarts and are automatically loaded when the agent starts.
+
+### Key Difference from InContextMemory
+
+| Feature | InContextMemory | Persistent Instructions |
+|---------|-----------------|------------------------|
+| **Storage** | In-memory (volatile) | Disk (persistent) |
+| **Survives restarts** | No | Yes |
+| **Best for** | Session state, counters, flags | Agent personality, learned rules |
+| **LLM can modify** | Yes (context_set) | Yes (instructions_set/append) |
+| **Auto-loaded** | Via session restore | Always on agent start |
+| **Default capacity** | 20 entries, 4000 tokens | 50,000 characters |
+
+### Quick Setup
+
+```typescript
+import { Agent } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  agentId: 'my-assistant',  // Used for storage path
+  context: {
+    features: {
+      persistentInstructions: true,
+    },
+  },
+});
+
+// Plugin is accessible via agent.context.persistentInstructions
+// Instructions are automatically loaded from disk on first context prepare
+```
+
+### Manual Setup
+
+For more control, you can set up the plugin manually:
+
+```typescript
+import { AgentContext, setupPersistentInstructions } from '@oneringai/agents';
+
+const ctx = AgentContext.create({ model: 'gpt-4' });
+
+// Setup with custom options
+const plugin = setupPersistentInstructions(ctx, {
+  agentId: 'my-assistant',
+  maxLength: 100000,  // Characters, default is 50000
+});
+
+// Set instructions programmatically
+await plugin.set('Always respond in a friendly tone.\n\nPrefer bullet points for lists.');
+```
+
+### Configuration Options
+
+```typescript
+interface PersistentInstructionsConfig {
+  /** Agent ID - used to determine storage path (required) */
+  agentId: string;
+
+  /** Custom storage implementation (default: FilePersistentInstructionsStorage) */
+  storage?: IPersistentInstructionsStorage;
+
+  /** Maximum instructions length in characters (default: 50000) */
+  maxLength?: number;
+}
+```
+
+### Storage Path
+
+Instructions are stored at:
+- **Unix/macOS**: `~/.oneringai/agents/<agentId>/custom_instructions.md`
+- **Windows**: `%APPDATA%/oneringai/agents/<agentId>/custom_instructions.md`
+
+The agent ID is sanitized to be filesystem-safe (lowercase, special chars replaced with underscores).
+
+### Available Tools
+
+The LLM has access to four tools for managing persistent instructions:
+
+#### instructions_set
+
+Replace all custom instructions:
+
+```typescript
+// Tool call from LLM
+{
+  "name": "instructions_set",
+  "arguments": {
+    "content": "## Personality\nAlways be friendly and helpful.\n\n## Formatting\n- Use bullet points for lists\n- Keep responses concise"
+  }
+}
+// Returns: { "success": true, "message": "Instructions saved successfully", "path": "...", "length": 95 }
+```
+
+#### instructions_append
+
+Add a new section to existing instructions:
+
+```typescript
+// Tool call from LLM
+{
+  "name": "instructions_append",
+  "arguments": {
+    "section": "## Learned Preferences\n- User prefers dark mode\n- User likes technical details"
+  }
+}
+// Returns: { "success": true, "message": "Section appended successfully", "newLength": 180 }
+```
+
+#### instructions_get
+
+Read current instructions:
+
+```typescript
+// Tool call from LLM
+{
+  "name": "instructions_get",
+  "arguments": {}
+}
+// Returns: {
+//   "exists": true,
+//   "content": "## Personality\n...",
+//   "length": 180,
+//   "maxLength": 50000,
+//   "path": "/Users/.../.oneringai/agents/my-assistant/custom_instructions.md"
+// }
+```
+
+#### instructions_clear
+
+Remove all instructions (requires confirmation):
+
+```typescript
+// Tool call from LLM
+{
+  "name": "instructions_clear",
+  "arguments": {
+    "confirm": true  // Must be true, otherwise rejected
+  }
+}
+// Returns: { "success": true, "message": "Instructions cleared successfully", "path": "..." }
+```
+
+### Direct API Access
+
+The plugin provides a programmatic API for direct manipulation:
+
+```typescript
+const plugin = agent.context.persistentInstructions;
+
+// Set instructions (replaces existing)
+await plugin.set('New instructions content');
+
+// Append section
+await plugin.append('## New Section\nContent here');
+
+// Get current instructions
+const content = plugin.get();  // string | null
+
+// Check if instructions exist
+plugin.has();  // true/false
+
+// Clear all
+await plugin.clear();
+
+// Get storage path
+plugin.getPath();  // "/Users/.../.oneringai/agents/my-assistant/custom_instructions.md"
+
+// Get length info
+plugin.getLength();     // Current length in characters
+plugin.getMaxLength();  // Maximum allowed length
+```
+
+### Context Output Format
+
+When the LLM context is prepared, persistent instructions appear with an explanation:
+
+```markdown
+## Custom Instructions
+
+These are your persistent instructions that apply across all sessions.
+They are stored on disk and automatically loaded when you start.
+
+**To modify:** Use `instructions_set` (replace all), `instructions_append` (add section), or `instructions_clear` (remove all).
+**Storage path:** /Users/.../.oneringai/agents/my-assistant/custom_instructions.md
+
+---
+
+## Personality
+Always be friendly and helpful.
+
+## Formatting
+- Use bullet points for lists
+- Keep responses concise
+
+## Learned Preferences
+- User prefers dark mode
+- User likes technical details
+```
+
+### Session Persistence
+
+Persistent instructions support state serialization, but since they're stored on disk, the primary persistence mechanism is the file itself:
+
+```typescript
+// State includes current content and dirty flag
+const state = plugin.getState();
+// state = { content: "...", dirty: false, agentId: "my-assistant" }
+
+// Restore state (useful for in-memory state sync)
+plugin.restoreState(state);
+```
+
+### Use Cases
+
+**Ideal for:**
+- **Agent personality/behavior** - Tone, style, expertise areas
+- **User preferences** - Formatting, verbosity, topics of interest
+- **Learned rules** - Patterns discovered during conversation
+- **Tool usage guidelines** - When to use specific tools
+- **Custom instructions** - Domain-specific knowledge
+
+**Example: Building a Learning Assistant**
+
+```typescript
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  agentId: 'learning-assistant',
+  systemPrompt: `You are a learning assistant. When the user expresses preferences or
+gives feedback about your responses, use instructions_append to remember them for
+future sessions. Review your custom instructions at the start of each conversation.`,
+  context: {
+    features: { persistentInstructions: true },
+  },
+});
+
+// User: "I prefer when you explain things with analogies"
+// Agent calls: instructions_append({ section: "## User Preferences\n- Explain concepts using analogies" })
+// Next session, agent sees this in context automatically
+```
+
+### Best Practices
+
+#### 1. Use Structured Markdown
+
+```markdown
+## Personality
+- Be friendly and approachable
+- Use clear, simple language
+
+## Formatting Preferences
+- Use bullet points for lists
+- Include code examples when relevant
+
+## Domain Knowledge
+- User works in fintech
+- Focus on practical applications
+```
+
+#### 2. Append Rather Than Replace
+
+```typescript
+// GOOD: Append new learnings
+await plugin.append('## New Learning\n- User prefers concise responses');
+
+// AVOID: Replacing everything (loses previous instructions)
+await plugin.set('User prefers concise responses');  // Lost previous content!
+```
+
+#### 3. Organize with Sections
+
+```typescript
+// Encourage LLM to organize instructions
+const systemPrompt = `When updating your custom instructions:
+1. Use ## headings for sections
+2. Group related items together
+3. Keep each section focused`;
+```
+
+#### 4. Combine with InContextMemory
+
+Use both systems for their strengths:
+
+```typescript
+// Persistent instructions for long-term knowledge
+// - Agent personality
+// - User preferences
+// - Learned rules
+
+// InContextMemory for session-specific state
+// - Current task progress
+// - Temporary flags
+// - Running totals
+```
+
+#### 5. Set Reasonable Max Length
+
+```typescript
+// For simple agents
+const agent = Agent.create({
+  context: {
+    features: { persistentInstructions: true },
+    persistentInstructions: { maxLength: 10000 },  // 10KB
+  },
+});
+
+// For complex agents with lots of learned rules
+const agent = Agent.create({
+  context: {
+    features: { persistentInstructions: true },
+    persistentInstructions: { maxLength: 100000 },  // 100KB
+  },
+});
 ```
 
 ---

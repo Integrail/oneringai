@@ -59,6 +59,8 @@ import { getModelInfo } from '../domain/entities/Model.js';
 import { PlanPlugin } from './context/plugins/PlanPlugin.js';
 import { createInContextMemory } from './context/plugins/inContextMemoryTools.js';
 import type { InContextMemoryPlugin, InContextMemoryConfig as InContextMemoryPluginConfig } from './context/plugins/InContextMemoryPlugin.js';
+import { createPersistentInstructions } from './context/plugins/persistentInstructionsTools.js';
+import type { PersistentInstructionsPlugin, PersistentInstructionsConfig as PersistentInstructionsPluginConfig } from './context/plugins/PersistentInstructionsPlugin.js';
 
 // ============================================================================
 // Task Types & Priority Profiles
@@ -193,6 +195,14 @@ export interface AgentContextFeatures {
    * @default true
    */
   permissions?: boolean;
+
+  /**
+   * Enable PersistentInstructionsPlugin for disk-persisted custom instructions
+   * When enabled: instructions_set/get/append/clear tools
+   * Requires agentId in config
+   * @default false (opt-in)
+   */
+  persistentInstructions?: boolean;
 }
 
 /**
@@ -208,6 +218,7 @@ export const DEFAULT_FEATURES: Required<AgentContextFeatures> = {
   inContextMemory: false,
   history: true,
   permissions: true,
+  persistentInstructions: false,
 };
 
 // ============================================================================
@@ -282,6 +293,21 @@ export interface AgentContextConfig {
   /** InContextMemory configuration (only used if features.inContextMemory is true) */
   inContextMemory?: InContextMemoryPluginConfig;
 
+  /**
+   * PersistentInstructions configuration (only used if features.persistentInstructions is true)
+   * If not provided, agentId will be auto-generated
+   */
+  persistentInstructions?: Omit<PersistentInstructionsPluginConfig, 'agentId'> & {
+    /** Override the agent ID (default: auto-generated or from agent name) */
+    agentId?: string;
+  };
+
+  /**
+   * Agent ID - used for persistent storage paths and identification
+   * If not provided, will be auto-generated
+   */
+  agentId?: string;
+
   /** History configuration */
   history?: {
     /** Max messages before compaction */
@@ -309,7 +335,7 @@ export interface AgentContextConfig {
 /**
  * Default configuration
  */
-const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory'>> & {
+const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'agentId'>> & {
   history: Required<NonNullable<AgentContextConfig['history']>>;
 } = {
   model: 'gpt-4',
@@ -408,6 +434,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private readonly _cache: IdempotencyCache | null;
   private readonly _permissions: ToolPermissionManager | null;
   private _inContextMemory: InContextMemoryPlugin | null = null;
+  private _persistentInstructions: PersistentInstructionsPlugin | null = null;
+  private readonly _agentId: string;
 
   // ===== Feature Configuration =====
   private readonly _features: Required<AgentContextFeatures>;
@@ -464,6 +492,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
     this._systemPrompt = config.systemPrompt ?? '';
     this._instructions = config.instructions ?? '';
+
+    // Generate or use provided agent ID
+    this._agentId = config.agentId
+      ?? config.persistentInstructions?.agentId
+      ?? `agent-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
     // History feature
     this._historyEnabled = this._features.history;
@@ -527,6 +560,20 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       }
     }
 
+    // PersistentInstructions - opt-in feature
+    // Note: Plugin initialization is lazy (loads from disk on first getComponent call)
+    if (this._features.persistentInstructions) {
+      const { plugin, tools } = createPersistentInstructions({
+        agentId: this._agentId,
+        ...config.persistentInstructions,
+      });
+      this._persistentInstructions = plugin;
+      this.registerPlugin(plugin);
+      for (const tool of tools) {
+        this._tools.register(tool);
+      }
+    }
+
     // Task type configuration
     this._explicitTaskType = config.taskType;
     this._autoDetectTaskType = config.autoDetectTaskType !== false;
@@ -566,6 +613,16 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   /** InContextMemory plugin (null if inContextMemory feature disabled) */
   get inContextMemory(): InContextMemoryPlugin | null {
     return this._inContextMemory;
+  }
+
+  /** PersistentInstructions plugin (null if persistentInstructions feature disabled) */
+  get persistentInstructions(): PersistentInstructionsPlugin | null {
+    return this._persistentInstructions;
+  }
+
+  /** Agent ID (auto-generated or from config) */
+  get agentId(): string {
+    return this._agentId;
   }
 
   // ============================================================================
@@ -941,11 +998,12 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       if (!cached) {
         // Set tool context on manager before execution
         const fullContext: ToolContext = {
-          agentId: context?.agentId ?? 'agent-context',
+          agentId: context?.agentId ?? this._agentId,
           taskId: context?.taskId,
           memory: this._memory?.getAccess(),  // May be undefined if memory disabled
           idempotencyCache: this._cache ?? undefined,  // May be undefined if memory disabled
           inContextMemory: this._inContextMemory ?? undefined,  // May be undefined if inContextMemory disabled
+          persistentInstructions: this._persistentInstructions ?? undefined,  // May be undefined if persistentInstructions disabled
           signal: context?.signal,
         };
         this._tools.setToolContext(fullContext);

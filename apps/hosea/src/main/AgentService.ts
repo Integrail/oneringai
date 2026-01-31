@@ -1060,4 +1060,280 @@ export class AgentService {
     this.agent?.destroy();
     this.agent = null;
   }
+
+  // ============ Internals Monitoring (Look Inside) ============
+
+  /**
+   * Internals data types for monitoring
+   */
+
+  /**
+   * Get all agent internals in one call (for Look Inside panel)
+   */
+  async getInternals(): Promise<{
+    available: boolean;
+    agentName: string | null;
+    context: {
+      totalTokens: number;
+      maxTokens: number;
+      utilizationPercent: number;
+      messagesCount: number;
+      toolCallsCount: number;
+      strategy: string;
+    } | null;
+    cache: {
+      entries: number;
+      hits: number;
+      misses: number;
+      hitRate: number;
+      ttlMs: number;
+    } | null;
+    memory: {
+      totalEntries: number;
+      totalSizeBytes: number;
+      utilizationPercent: number;
+      entries: Array<{
+        key: string;
+        description: string;
+        scope: string;
+        priority: string;
+        sizeBytes: number;
+        updatedAt: number;
+      }>;
+    } | null;
+    inContextMemory: {
+      entries: Array<{
+        key: string;
+        description: string;
+        priority: string;
+        updatedAt: number;
+        value: unknown;
+      }>;
+      maxEntries: number;
+      maxTokens: number;
+    } | null;
+    tools: Array<{
+      name: string;
+      description: string;
+      enabled: boolean;
+      callCount: number;
+      namespace?: string;
+    }>;
+    toolCalls: Array<{
+      id: string;
+      name: string;
+      args: unknown;
+      result?: unknown;
+      error?: string;
+      durationMs: number;
+      timestamp: number;
+    }>;
+  }> {
+    if (!this.agent) {
+      return {
+        available: false,
+        agentName: null,
+        context: null,
+        cache: null,
+        memory: null,
+        inContextMemory: null,
+        tools: [],
+        toolCalls: [],
+      };
+    }
+
+    try {
+      const ctx = this.agent.context;
+      const metrics = await ctx.getMetrics();
+      const state = await ctx.getState();
+
+      // Get context stats
+      const contextStats = {
+        totalTokens: Math.round((metrics.utilizationPercent / 100) * (state.config?.maxContextTokens || 128000)),
+        maxTokens: state.config?.maxContextTokens || 128000,
+        utilizationPercent: metrics.utilizationPercent,
+        messagesCount: metrics.historyMessageCount,
+        toolCallsCount: metrics.toolCallCount,
+        strategy: state.config?.strategy || 'proactive',
+      };
+
+      // Get cache stats
+      const cacheStats = metrics.cacheStats ? {
+        entries: metrics.cacheStats.entries,
+        hits: metrics.cacheStats.hits,
+        misses: metrics.cacheStats.misses,
+        hitRate: metrics.cacheStats.hitRate,
+        ttlMs: 300000, // Default TTL from CACHE_DEFAULTS
+      } : null;
+
+      // Get memory stats and entries
+      let memoryData = null;
+      if (ctx.memory) {
+        const memStats = await ctx.memory.getStats();
+        const memIndex = await ctx.memory.getIndex();
+        memoryData = {
+          totalEntries: memStats.totalEntries,
+          totalSizeBytes: memStats.totalSizeBytes,
+          utilizationPercent: memStats.utilizationPercent,
+          entries: memIndex.entries.map((e) => ({
+            key: e.key,
+            description: e.description,
+            scope: String(typeof e.scope === 'object' ? JSON.stringify(e.scope) : e.scope),
+            priority: e.effectivePriority,
+            sizeBytes: 0, // Size is in human format in index, we don't have bytes
+            updatedAt: Date.now(), // Index doesn't have updatedAt
+          })),
+        };
+      }
+
+      // Get in-context memory if available
+      let inContextData = null;
+      const inContextPlugin = ctx.getPlugin?.('inContextMemory');
+      if (inContextPlugin && 'list' in inContextPlugin && 'get' in inContextPlugin) {
+        // Cast to any first to avoid strict type checking issues with plugin interface
+        const icmPlugin = inContextPlugin as unknown as {
+          list: () => Array<{ key: string; description: string; priority: string; updatedAt: number }>;
+          get: (key: string) => unknown;
+          config?: { maxEntries: number; maxTotalTokens: number }
+        };
+        const entries = icmPlugin.list();
+        inContextData = {
+          entries: entries.map((e) => ({
+            key: e.key,
+            description: e.description,
+            priority: e.priority,
+            updatedAt: e.updatedAt,
+            value: icmPlugin.get(e.key),
+          })),
+          maxEntries: icmPlugin.config?.maxEntries || 20,
+          maxTokens: icmPlugin.config?.maxTotalTokens || 4000,
+        };
+      }
+
+      // Get tools with stats
+      const toolStats = this.agent.tools.getStats();
+      const allTools = this.agent.tools.getAll();
+      const toolsWithStats = allTools.map((tool: ToolFunction) => {
+        const name = tool.definition.function.name;
+        const usageInfo = toolStats.mostUsed.find((u: { name: string; count: number }) => u.name === name);
+        return {
+          name,
+          description: tool.definition.function.description || '',
+          enabled: this.agent!.tools.isEnabled(name),
+          callCount: usageInfo?.count || 0,
+          namespace: undefined, // Could be extracted from registry if needed
+        };
+      });
+
+      // Get tool call history from context state
+      const toolCalls = state.core.toolCalls.map((tc: { id: string; name: string; args: unknown; result?: unknown; error?: string; durationMs?: number; timestamp?: number }, index: number) => ({
+        id: tc.id || `tc_${index}`,
+        name: tc.name,
+        args: tc.args,
+        result: tc.result,
+        error: tc.error,
+        durationMs: tc.durationMs || 0,
+        timestamp: tc.timestamp || Date.now(),
+      }));
+
+      // Get active agent config for name
+      const activeAgent = this.getActiveAgent();
+
+      return {
+        available: true,
+        agentName: activeAgent?.name || 'Default Assistant',
+        context: contextStats,
+        cache: cacheStats,
+        memory: memoryData,
+        inContextMemory: inContextData,
+        tools: toolsWithStats,
+        toolCalls: toolCalls.slice(-50), // Last 50 tool calls
+      };
+    } catch (error) {
+      console.error('Error getting internals:', error);
+      return {
+        available: false,
+        agentName: null,
+        context: null,
+        cache: null,
+        memory: null,
+        inContextMemory: null,
+        tools: [],
+        toolCalls: [],
+      };
+    }
+  }
+
+  /**
+   * Get just the context stats (lighter weight for frequent polling)
+   */
+  async getContextStats(): Promise<{
+    available: boolean;
+    totalTokens: number;
+    maxTokens: number;
+    utilizationPercent: number;
+    messagesCount: number;
+    toolCallsCount: number;
+    strategy: string;
+  } | null> {
+    if (!this.agent) {
+      return null;
+    }
+
+    try {
+      const ctx = this.agent.context;
+      const metrics = await ctx.getMetrics();
+      const state = await ctx.getState();
+
+      return {
+        available: true,
+        totalTokens: Math.round((metrics.utilizationPercent / 100) * (state.config?.maxContextTokens || 128000)),
+        maxTokens: state.config?.maxContextTokens || 128000,
+        utilizationPercent: metrics.utilizationPercent,
+        messagesCount: metrics.historyMessageCount,
+        toolCallsCount: metrics.toolCallCount,
+        strategy: state.config?.strategy || 'proactive',
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get memory entries only
+   */
+  async getMemoryEntries(): Promise<Array<{
+    key: string;
+    description: string;
+    scope: string;
+    priority: string;
+    sizeBytes: number;
+    updatedAt: number;
+    value?: unknown;
+  }>> {
+    if (!this.agent?.context.memory) {
+      return [];
+    }
+
+    try {
+      const memIndex = await this.agent.context.memory.getIndex();
+      const result = [];
+      for (const entry of memIndex.entries) {
+        // Optionally get the value (may be expensive for large entries)
+        const value = await this.agent.context.memory.retrieve(entry.key);
+        result.push({
+          key: entry.key,
+          description: entry.description,
+          scope: String(typeof entry.scope === 'object' ? JSON.stringify(entry.scope) : entry.scope),
+          priority: entry.effectivePriority,
+          sizeBytes: 0, // Not available from index
+          updatedAt: Date.now(),
+          value,
+        });
+      }
+      return result;
+    } catch {
+      return [];
+    }
+  }
 }

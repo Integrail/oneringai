@@ -5,9 +5,10 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Spinner } from 'react-bootstrap';
-import { Send, Square, Bot, User, Copy, Share } from 'lucide-react';
+import { Send, Square, Bot, User, Copy, Share, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { MarkdownRenderer } from '../components/markdown';
 import { ToolCallDisplay, type ToolCallInfo } from '../components/ToolCallDisplay';
+import { InternalsPanel, INTERNALS_PANEL_DEFAULT_WIDTH } from '../components/InternalsPanel';
 
 interface Message {
   id: string;
@@ -41,6 +42,10 @@ export function ChatPage(): React.ReactElement {
   const [streamingContent, setStreamingContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Internals panel state
+  const [showInternals, setShowInternals] = useState(false);
+  const [internalsWidth, setInternalsWidth] = useState(INTERNALS_PANEL_DEFAULT_WIDTH);
 
   // Check agent status on mount and when returning to this page
   useEffect(() => {
@@ -319,69 +324,91 @@ export function ChatPage(): React.ReactElement {
   };
 
   return (
-    <div className="chat">
-      <div className={`chat__messages ${messages.length === 0 ? 'chat__messages--empty' : ''}`}>
-        {messages.length === 0 ? (
-          <div className="chat__welcome">
-            <div className="chat__welcome-icon">
-              <Bot size={40} />
-            </div>
-            <h2 className="chat__welcome-title">Welcome to HOSEA</h2>
-            <p className="chat__welcome-subtitle">
-              {status.initialized
-                ? `Connected to ${status.model}. Start a conversation!`
-                : 'Configure an LLM provider to get started.'}
-            </p>
-            {!status.initialized && (
-              <Button variant="primary" className="mt-4" onClick={() => navigate('llm-connectors')}>
-                Add LLM Provider
-              </Button>
-            )}
-          </div>
-        ) : (
-          <div className="chat__messages-inner">
-            {messages.map(renderMessage)}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
+    <div className="chat-container">
+      <div
+        className="chat"
+        style={{ width: showInternals ? `calc(100% - ${internalsWidth}px)` : '100%' }}
+      >
+        {/* Internals toggle button */}
+        <button
+          className={`chat__internals-toggle ${showInternals ? 'chat__internals-toggle--active' : ''}`}
+          onClick={() => setShowInternals(!showInternals)}
+          title={showInternals ? 'Hide internals panel' : 'Show internals panel (Look Inside)'}
+        >
+          {showInternals ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
+        </button>
 
-      <div className="chat__input">
-        <div className="chat__input-wrapper">
-          <div className="chat__input-form">
-            <textarea
-              ref={textareaRef}
-              className="chat__input-field"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                status.initialized
-                  ? 'Type a message... (Shift+Enter for new line)'
-                  : 'Connect to an agent first...'
-              }
-              disabled={!status.initialized || isLoading}
-              rows={1}
-            />
-            {isLoading ? (
-              <button
-                className="chat__send-btn chat__send-btn--danger"
-                onClick={handleCancel}
-              >
-                <Square size={18} />
-              </button>
-            ) : (
-              <button
-                className="chat__send-btn"
-                onClick={handleSend}
-                disabled={!input.trim() || !status.initialized}
-              >
-                <Send size={18} />
-              </button>
-            )}
+        <div className={`chat__messages ${messages.length === 0 ? 'chat__messages--empty' : ''}`}>
+          {messages.length === 0 ? (
+            <div className="chat__welcome">
+              <div className="chat__welcome-icon">
+                <Bot size={40} />
+              </div>
+              <h2 className="chat__welcome-title">Welcome to HOSEA</h2>
+              <p className="chat__welcome-subtitle">
+                {status.initialized
+                  ? `Connected to ${status.model}. Start a conversation!`
+                  : 'Configure an LLM provider to get started.'}
+              </p>
+              {!status.initialized && (
+                <Button variant="primary" className="mt-4" onClick={() => navigate('llm-connectors')}>
+                  Add LLM Provider
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="chat__messages-inner">
+              {messages.map(renderMessage)}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        <div className="chat__input">
+          <div className="chat__input-wrapper">
+            <div className="chat__input-form">
+              <textarea
+                ref={textareaRef}
+                className="chat__input-field"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  status.initialized
+                    ? 'Type a message... (Shift+Enter for new line)'
+                    : 'Connect to an agent first...'
+                }
+                disabled={!status.initialized || isLoading}
+                rows={1}
+              />
+              {isLoading ? (
+                <button
+                  className="chat__send-btn chat__send-btn--danger"
+                  onClick={handleCancel}
+                >
+                  <Square size={18} />
+                </button>
+              ) : (
+                <button
+                  className="chat__send-btn"
+                  onClick={handleSend}
+                  disabled={!input.trim() || !status.initialized}
+                >
+                  <Send size={18} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Internals Panel */}
+      <InternalsPanel
+        isOpen={showInternals}
+        onClose={() => setShowInternals(false)}
+        width={internalsWidth}
+        onWidthChange={setInternalsWidth}
+      />
     </div>
   );
 }

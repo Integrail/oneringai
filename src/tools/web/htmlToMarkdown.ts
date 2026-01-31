@@ -5,8 +5,18 @@
 
 import TurndownService from 'turndown';
 import { Readability } from '@mozilla/readability';
-import { JSDOM } from 'jsdom';
 import type { Node as TurndownNode } from 'turndown';
+
+// Lazy-loaded jsdom to avoid bundling issues in Electron
+let JSDOM: typeof import('jsdom').JSDOM | null = null;
+
+async function getJSDOM(): Promise<typeof import('jsdom').JSDOM> {
+  if (!JSDOM) {
+    const jsdom = await import('jsdom');
+    JSDOM = jsdom.JSDOM;
+  }
+  return JSDOM;
+}
 
 export interface MarkdownResult {
   markdown: string;
@@ -28,13 +38,14 @@ export interface MarkdownResult {
  * @param maxLength - Maximum length of output markdown (default: 50000)
  * @returns MarkdownResult with cleaned content
  */
-export function htmlToMarkdown(
+export async function htmlToMarkdown(
   html: string,
   url: string,
   maxLength: number = 50000
-): MarkdownResult {
-  // 1. Parse HTML with JSDOM
-  const dom = new JSDOM(html, { url });
+): Promise<MarkdownResult> {
+  // 1. Parse HTML with JSDOM (lazy-loaded)
+  const JSDOMClass = await getJSDOM();
+  const dom = new JSDOMClass(html, { url });
   const document = dom.window.document;
 
   let title = document.title || '';

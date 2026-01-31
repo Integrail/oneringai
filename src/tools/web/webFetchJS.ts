@@ -221,7 +221,7 @@ With screenshot:
       await page.close();
 
       // Convert HTML to clean markdown
-      const mdResult = htmlToMarkdown(html, args.url);
+      const mdResult = await htmlToMarkdown(html, args.url);
 
       // Use browser title or markdown extraction
       const title = browserTitle || mdResult.title || 'Untitled';

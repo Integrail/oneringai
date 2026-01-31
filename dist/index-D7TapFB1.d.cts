@@ -1,5 +1,5 @@
 import { EventEmitter } from 'eventemitter3';
-import { I as IProvider } from './IProvider-BP49c93d.js';
+import { I as IProvider } from './IProvider-BP49c93d.cjs';
 
 /**
  * Core types for context management system
@@ -956,6 +956,203 @@ declare class InContextMemoryPlugin extends BaseContextPlugin {
 }
 
 /**
+ * IPersistentInstructionsStorage - Storage interface for persistent instructions
+ *
+ * Abstracted storage interface following Clean Architecture principles.
+ * Implementations can use file system, database, or any other storage backend.
+ */
+/**
+ * Storage interface for persistent agent instructions
+ *
+ * Implementations handle the actual storage mechanism while the plugin
+ * handles the business logic.
+ */
+interface IPersistentInstructionsStorage {
+    /**
+     * Load instructions from storage
+     *
+     * @returns The stored instructions content, or null if none exist
+     */
+    load(): Promise<string | null>;
+    /**
+     * Save instructions to storage
+     *
+     * @param content - The instructions content to save
+     */
+    save(content: string): Promise<void>;
+    /**
+     * Delete instructions from storage
+     */
+    delete(): Promise<void>;
+    /**
+     * Check if instructions exist in storage
+     *
+     * @returns true if instructions exist
+     */
+    exists(): Promise<boolean>;
+    /**
+     * Get the storage path (for display/debugging)
+     *
+     * @returns Human-readable path to the storage location
+     */
+    getPath(): string;
+}
+
+/**
+ * PersistentInstructionsPlugin - Store agent-level custom instructions in files
+ *
+ * Unlike InContextMemory (volatile key-value pairs), this plugin stores
+ * INSTRUCTIONS that persist across sessions in files on disk.
+ *
+ * Use cases:
+ * - Agent personality/behavior customization
+ * - User-specific preferences
+ * - Accumulated knowledge/rules
+ * - Custom tool usage guidelines
+ *
+ * Storage: ~/.oneringai/agents/<agentId>/custom_instructions.md
+ *
+ * Key Behaviors:
+ * - Loaded automatically when feature is enabled
+ * - Never compacted (priority 0)
+ * - Session serialization tracks dirty state
+ */
+
+/**
+ * Configuration for PersistentInstructionsPlugin
+ */
+interface PersistentInstructionsConfig {
+    /** Agent ID - used to determine storage path */
+    agentId: string;
+    /** Custom storage implementation (default: FilePersistentInstructionsStorage) */
+    storage?: IPersistentInstructionsStorage;
+    /** Maximum instructions length in characters (default: 50000) */
+    maxLength?: number;
+}
+/**
+ * Serialized state for session persistence
+ */
+interface SerializedPersistentInstructionsState {
+    content: string | null;
+    dirty: boolean;
+    agentId: string;
+}
+/**
+ * PersistentInstructionsPlugin - Persists custom instructions across sessions
+ *
+ * This plugin manages custom instructions that:
+ * - Are stored on disk (survive process restarts)
+ * - Can be modified by the LLM during execution
+ * - Are never compacted (always included in context)
+ * - Support append operations for incremental updates
+ */
+declare class PersistentInstructionsPlugin extends BaseContextPlugin {
+    readonly name = "persistent_instructions";
+    readonly priority = 0;
+    readonly compactable = false;
+    private _content;
+    private _dirty;
+    private _initialized;
+    private _destroyed;
+    private readonly storage;
+    private readonly maxLength;
+    private readonly agentId;
+    /**
+     * Create a PersistentInstructionsPlugin
+     *
+     * @param config - Configuration options (agentId is required)
+     */
+    constructor(config: PersistentInstructionsConfig);
+    /**
+     * Check if plugin is destroyed
+     */
+    get isDestroyed(): boolean;
+    /**
+     * Check if plugin has been initialized (loaded from disk)
+     */
+    get isInitialized(): boolean;
+    /**
+     * Check if content has been modified since last save
+     */
+    get isDirty(): boolean;
+    /**
+     * Initialize by loading instructions from storage
+     * Called lazily on first getComponent() call
+     */
+    initialize(): Promise<void>;
+    /**
+     * Set the entire instructions content (replaces existing)
+     *
+     * @param content - New instructions content
+     * @returns true if set successfully, false if content exceeds max length
+     */
+    set(content: string): Promise<boolean>;
+    /**
+     * Append a section to existing instructions
+     *
+     * @param section - Section to append (will add newlines before)
+     * @returns true if appended successfully, false if would exceed max length
+     */
+    append(section: string): Promise<boolean>;
+    /**
+     * Get current instructions content
+     *
+     * @returns Instructions content, or null if none
+     */
+    get(): string | null;
+    /**
+     * Check if instructions exist
+     */
+    has(): boolean;
+    /**
+     * Clear all instructions
+     */
+    clear(): Promise<void>;
+    /**
+     * Get storage path (for display/debugging)
+     */
+    getPath(): string;
+    /**
+     * Get agent ID
+     */
+    getAgentId(): string;
+    /**
+     * Get current content length
+     */
+    getLength(): number;
+    /**
+     * Get maximum allowed content length
+     */
+    getMaxLength(): number;
+    /**
+     * Get the context component for this plugin
+     * Performs lazy initialization on first call
+     */
+    getComponent(): Promise<IContextComponent | null>;
+    /**
+     * Compact - not applicable (compactable is false)
+     */
+    compact(_targetTokens: number, _estimator: ITokenEstimator): Promise<number>;
+    /**
+     * Get serialized state for session persistence
+     */
+    getState(): SerializedPersistentInstructionsState;
+    /**
+     * Restore state from serialization
+     * Note: This restores in-memory state, not disk state
+     */
+    restoreState(state: unknown): void;
+    /**
+     * Clean up resources
+     */
+    destroy(): void;
+    /**
+     * Assert that the plugin hasn't been destroyed
+     */
+    private assertNotDestroyed;
+}
+
+/**
  * Tool context interface - passed to tools during execution
  */
 
@@ -1014,6 +1211,8 @@ interface ToolContext {
     idempotencyCache?: IdempotencyCache;
     /** In-context memory plugin (if set up with setupInContextMemory) */
     inContextMemory?: InContextMemoryPlugin;
+    /** Persistent instructions plugin (if features.persistentInstructions is enabled) */
+    persistentInstructions?: PersistentInstructionsPlugin;
     /** Abort signal for cancellation */
     signal?: AbortSignal;
 }
@@ -2647,4 +2846,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type PermissionScope as $, type AgentPermissionsConfig as A, type ExecutionMetrics as B, type ContextBudget as C, type AuditEntry as D, ExecutionContext as E, type FunctionToolDefinition as F, type ITextProvider as G, type HookConfig as H, type IToolExecutor as I, BaseContextPlugin as J, type IContextComponent as K, type LLMResponse as L, type MemoryScope as M, type ITokenEstimator as N, type IContextStrategy as O, type PriorityCalculator as P, type ContextManagerConfig as Q, type IContextCompactor as R, type SerializedApprovalState as S, type ToolContext as T, type TokenUsage as U, type ToolCall as V, type WorkingMemoryConfig as W, StreamEventType as X, type TextGenerateOptions as Y, type ModelCapabilities as Z, MessageRole as _, type IDisposable as a, isToolCallArgumentsDelta as a$, type RiskLevel as a0, type ToolPermissionConfig as a1, type ApprovalCacheEntry as a2, type SerializedApprovalEntry as a3, type PermissionCheckResult as a4, type ApprovalDecision as a5, type PermissionCheckContext as a6, type PermissionManagerEvent as a7, APPROVAL_STATE_VERSION as a8, DEFAULT_PERMISSION_CONFIG as a9, type ToolResultContent as aA, type Message as aB, type OutputItem as aC, type CompactionItem as aD, type ReasoningItem as aE, ToolCallState as aF, defaultDescribeCall as aG, getToolCallDescription as aH, type BuiltInTool as aI, type ToolResult as aJ, type ToolExecutionContext as aK, type JSONSchema as aL, type ResponseCreatedEvent as aM, type ResponseInProgressEvent as aN, type OutputTextDeltaEvent as aO, type OutputTextDoneEvent as aP, type ToolCallStartEvent as aQ, type ToolCallArgumentsDeltaEvent as aR, type ToolCallArgumentsDoneEvent as aS, type ToolExecutionStartEvent as aT, type ToolExecutionDoneEvent as aU, type IterationCompleteEvent$1 as aV, type ResponseCompleteEvent as aW, type ErrorEvent as aX, isStreamEvent as aY, isOutputTextDelta as aZ, isToolCallStart as a_, DEFAULT_ALLOWLIST as aa, type DefaultAllowlistedTool as ab, DEFAULT_IDEMPOTENCY_CONFIG as ac, ContextManager as ad, type IContextProvider as ae, DEFAULT_CONTEXT_CONFIG as af, type MemoryEntryInput as ag, type MemoryIndexEntry as ah, type TaskAwareScope as ai, type SimpleScope as aj, DEFAULT_MEMORY_CONFIG as ak, forTasks as al, forPlan as am, scopeEquals as an, scopeMatches as ao, isSimpleScope as ap, isTaskAwareScope as aq, isTerminalMemoryStatus as ar, calculateEntrySize as as, MEMORY_PRIORITY_VALUES as at, ContentType as au, type Content as av, type InputTextContent as aw, type InputImageContent as ax, type OutputTextContent as ay, type ToolUseContent as az, type ToolFunction as b, isToolCallArgumentsDone as b0, isResponseComplete as b1, isErrorEvent as b2, HookManager as b3, type AgenticLoopEventName as b4, type HookName as b5, type Hook as b6, type ModifyingHook as b7, type BeforeToolContext as b8, type AfterToolContext as b9, type ApproveToolContext as ba, type ToolModification as bb, type ApprovalResult as bc, type IAsyncDisposable as bd, assertNotDestroyed as be, type InContextEntry as bf, type InContextPriority as bg, type SerializedInContextMemoryState as bh, AgenticLoop as bi, type AgenticLoopConfig as bj, type ExecutionStartEvent as bk, type ExecutionCompleteEvent as bl, type ToolStartEvent as bm, type ToolCompleteEvent as bn, type LLMRequestEvent as bo, type LLMResponseEvent as bp, type ToolPermissionConfig$1 as c, type Tool as d, type MemoryPriority as e, type MemoryEntry as f, type StaleEntryInfo as g, type PriorityContext as h, type MemoryIndex as i, type TaskStatusForMemory as j, type WorkingMemoryAccess as k, type MemoryTier as l, type IdempotencyCacheConfig as m, type InContextMemoryConfig as n, IdempotencyCache as o, ToolPermissionManager as p, InContextMemoryPlugin as q, type IContextPlugin as r, type PreparedContext as s, type TokenContentType as t, type CacheStats as u, type InputItem as v, type StreamEvent as w, type HistoryMode as x, type AgenticLoopEvents as y, type AgentResponse as z };
+export { type TextGenerateOptions as $, type AgentPermissionsConfig as A, type AgenticLoopEvents as B, type ContextBudget as C, type AgentResponse as D, ExecutionContext as E, type FunctionToolDefinition as F, type ExecutionMetrics as G, type HookConfig as H, type IToolExecutor as I, type AuditEntry as J, type ITextProvider as K, type LLMResponse as L, type MemoryScope as M, BaseContextPlugin as N, type IContextComponent as O, type PriorityCalculator as P, type ITokenEstimator as Q, type IContextStrategy as R, type SerializedApprovalState as S, type ToolContext as T, type ContextManagerConfig as U, type IContextCompactor as V, type WorkingMemoryConfig as W, type IPersistentInstructionsStorage as X, type TokenUsage as Y, type ToolCall as Z, StreamEventType as _, type IDisposable as a, isStreamEvent as a$, type ModelCapabilities as a0, MessageRole as a1, type PermissionScope as a2, type RiskLevel as a3, type ToolPermissionConfig as a4, type ApprovalCacheEntry as a5, type SerializedApprovalEntry as a6, type PermissionCheckResult as a7, type ApprovalDecision as a8, type PermissionCheckContext as a9, type InputImageContent as aA, type OutputTextContent as aB, type ToolUseContent as aC, type ToolResultContent as aD, type Message as aE, type OutputItem as aF, type CompactionItem as aG, type ReasoningItem as aH, ToolCallState as aI, defaultDescribeCall as aJ, getToolCallDescription as aK, type BuiltInTool as aL, type ToolResult as aM, type ToolExecutionContext as aN, type JSONSchema as aO, type ResponseCreatedEvent as aP, type ResponseInProgressEvent as aQ, type OutputTextDeltaEvent as aR, type OutputTextDoneEvent as aS, type ToolCallStartEvent as aT, type ToolCallArgumentsDeltaEvent as aU, type ToolCallArgumentsDoneEvent as aV, type ToolExecutionStartEvent as aW, type ToolExecutionDoneEvent as aX, type IterationCompleteEvent$1 as aY, type ResponseCompleteEvent as aZ, type ErrorEvent as a_, type PermissionManagerEvent as aa, APPROVAL_STATE_VERSION as ab, DEFAULT_PERMISSION_CONFIG as ac, DEFAULT_ALLOWLIST as ad, type DefaultAllowlistedTool as ae, DEFAULT_IDEMPOTENCY_CONFIG as af, ContextManager as ag, type IContextProvider as ah, DEFAULT_CONTEXT_CONFIG as ai, type MemoryEntryInput as aj, type MemoryIndexEntry as ak, type TaskAwareScope as al, type SimpleScope as am, DEFAULT_MEMORY_CONFIG as an, forTasks as ao, forPlan as ap, scopeEquals as aq, scopeMatches as ar, isSimpleScope as as, isTaskAwareScope as at, isTerminalMemoryStatus as au, calculateEntrySize as av, MEMORY_PRIORITY_VALUES as aw, ContentType as ax, type Content as ay, type InputTextContent as az, type ToolFunction as b, isOutputTextDelta as b0, isToolCallStart as b1, isToolCallArgumentsDelta as b2, isToolCallArgumentsDone as b3, isResponseComplete as b4, isErrorEvent as b5, HookManager as b6, type AgenticLoopEventName as b7, type HookName as b8, type Hook as b9, type ModifyingHook as ba, type BeforeToolContext as bb, type AfterToolContext as bc, type ApproveToolContext as bd, type ToolModification as be, type ApprovalResult as bf, type IAsyncDisposable as bg, assertNotDestroyed as bh, type InContextEntry as bi, type InContextPriority as bj, type SerializedInContextMemoryState as bk, type SerializedPersistentInstructionsState as bl, AgenticLoop as bm, type AgenticLoopConfig as bn, type ExecutionStartEvent as bo, type ExecutionCompleteEvent as bp, type ToolStartEvent as bq, type ToolCompleteEvent as br, type LLMRequestEvent as bs, type LLMResponseEvent as bt, type ToolPermissionConfig$1 as c, type Tool as d, type MemoryPriority as e, type MemoryEntry as f, type StaleEntryInfo as g, type PriorityContext as h, type MemoryIndex as i, type TaskStatusForMemory as j, type WorkingMemoryAccess as k, type MemoryTier as l, type IdempotencyCacheConfig as m, type InContextMemoryConfig as n, type PersistentInstructionsConfig as o, IdempotencyCache as p, ToolPermissionManager as q, InContextMemoryPlugin as r, PersistentInstructionsPlugin as s, type IContextPlugin as t, type PreparedContext as u, type TokenContentType as v, type CacheStats as w, type InputItem as x, type StreamEvent as y, type HistoryMode as z };

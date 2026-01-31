@@ -54,3 +54,21 @@ export {
   contextDeleteDefinition,
   contextListDefinition,
 } from './inContextMemoryTools.js';
+
+// PersistentInstructions plugin - stores custom instructions on disk
+export { PersistentInstructionsPlugin } from './PersistentInstructionsPlugin.js';
+export type {
+  PersistentInstructionsConfig,
+  SerializedPersistentInstructionsState,
+} from './PersistentInstructionsPlugin.js';
+
+// PersistentInstructions tools and factory functions
+export {
+  createPersistentInstructionsTools,
+  createPersistentInstructions,
+  setupPersistentInstructions,
+  instructionsSetDefinition,
+  instructionsAppendDefinition,
+  instructionsGetDefinition,
+  instructionsClearDefinition,
+} from './persistentInstructionsTools.js';

@@ -6,6 +6,7 @@ import type { ContextManager } from '../../core/context/ContextManager.js';
 import type { IdempotencyCache } from '../../capabilities/taskAgent/IdempotencyCache.js';
 import type { MemoryScope, MemoryPriority } from '../entities/Memory.js';
 import type { InContextMemoryPlugin } from '../../core/context/plugins/InContextMemoryPlugin.js';
+import type { PersistentInstructionsPlugin } from '../../core/context/plugins/PersistentInstructionsPlugin.js';
 
 /**
  * Limited memory access for tools
@@ -78,6 +79,9 @@ export interface ToolContext {
 
   /** In-context memory plugin (if set up with setupInContextMemory) */
   inContextMemory?: InContextMemoryPlugin;
+
+  /** Persistent instructions plugin (if features.persistentInstructions is enabled) */
+  persistentInstructions?: PersistentInstructionsPlugin;
 
   /** Abort signal for cancellation */
   signal?: AbortSignal;

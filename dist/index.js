@@ -1,28 +1,27 @@
 import * as crypto2 from 'crypto';
 import { randomUUID } from 'crypto';
 import { importPKCS8, SignJWT } from 'jose';
-import * as fs13 from 'fs';
+import * as fs14 from 'fs';
 import { promises, existsSync } from 'fs';
 import { EventEmitter } from 'eventemitter3';
 import * as path2 from 'path';
 import { join, resolve, dirname, relative, isAbsolute, normalize, extname } from 'path';
+import * as os from 'os';
+import { homedir } from 'os';
 import OpenAI2 from 'openai';
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
-import * as os from 'os';
-import { homedir } from 'os';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ListToolsResultSchema, CallToolResultSchema, ListResourcesResultSchema, ReadResourceResultSchema, ListPromptsResultSchema, GetPromptResultSchema } from '@modelcontextprotocol/sdk/types.js';
-import * as fs12 from 'fs/promises';
+import * as fs13 from 'fs/promises';
 import { stat, readFile, mkdir, writeFile, readdir } from 'fs/promises';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { load } from 'cheerio';
 import TurndownService from 'turndown';
 import { Readability } from '@mozilla/readability';
-import { JSDOM } from 'jsdom';
 import * as vm from 'vm';
 
 var __create = Object.create;
@@ -599,7 +598,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs13.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs14.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1250,10 +1249,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2.dirname(filePath);
-          if (!fs13.existsSync(dir)) {
-            fs13.mkdirSync(dir, { recursive: true });
+          if (!fs14.existsSync(dir)) {
+            fs14.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs13.createWriteStream(filePath, {
+          this.fileStream = fs14.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -2125,7 +2124,7 @@ var require_old = __commonJS({
   "node_modules/fs.realpath/old.js"(exports$1) {
     var pathModule = __require("path");
     var isWindows = process.platform === "win32";
-    var fs14 = __require("fs");
+    var fs15 = __require("fs");
     var DEBUG = process.env.NODE_DEBUG && /fs/.test(process.env.NODE_DEBUG);
     function rethrow() {
       var callback;
@@ -2190,7 +2189,7 @@ var require_old = __commonJS({
         base = m[0];
         previous = "";
         if (isWindows && !knownHard[base]) {
-          fs14.lstatSync(base);
+          fs15.lstatSync(base);
           knownHard[base] = true;
         }
       }
@@ -2208,7 +2207,7 @@ var require_old = __commonJS({
         if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
           resolvedLink = cache[base];
         } else {
-          var stat6 = fs14.lstatSync(base);
+          var stat6 = fs15.lstatSync(base);
           if (!stat6.isSymbolicLink()) {
             knownHard[base] = true;
             if (cache) cache[base] = base;
@@ -2222,8 +2221,8 @@ var require_old = __commonJS({
             }
           }
           if (linkTarget === null) {
-            fs14.statSync(base);
-            linkTarget = fs14.readlinkSync(base);
+            fs15.statSync(base);
+            linkTarget = fs15.readlinkSync(base);
           }
           resolvedLink = pathModule.resolve(previous, linkTarget);
           if (cache) cache[base] = resolvedLink;
@@ -2257,7 +2256,7 @@ var require_old = __commonJS({
         base = m[0];
         previous = "";
         if (isWindows && !knownHard[base]) {
-          fs14.lstat(base, function(err) {
+          fs15.lstat(base, function(err) {
             if (err) return cb(err);
             knownHard[base] = true;
             LOOP();
@@ -2283,7 +2282,7 @@ var require_old = __commonJS({
         if (cache && Object.prototype.hasOwnProperty.call(cache, base)) {
           return gotResolvedLink(cache[base]);
         }
-        return fs14.lstat(base, gotStat);
+        return fs15.lstat(base, gotStat);
       }
       function gotStat(err, stat6) {
         if (err) return cb(err);
@@ -2298,9 +2297,9 @@ var require_old = __commonJS({
             return gotTarget(null, seenLinks[id], base);
           }
         }
-        fs14.stat(base, function(err2) {
+        fs15.stat(base, function(err2) {
           if (err2) return cb(err2);
-          fs14.readlink(base, function(err3, target) {
+          fs15.readlink(base, function(err3, target) {
             if (!isWindows) seenLinks[id] = target;
             gotTarget(err3, target);
           });
@@ -2329,9 +2328,9 @@ var require_fs = __commonJS({
     realpath.realpathSync = realpathSync;
     realpath.monkeypatch = monkeypatch;
     realpath.unmonkeypatch = unmonkeypatch;
-    var fs14 = __require("fs");
-    var origRealpath = fs14.realpath;
-    var origRealpathSync = fs14.realpathSync;
+    var fs15 = __require("fs");
+    var origRealpath = fs15.realpath;
+    var origRealpathSync = fs15.realpathSync;
     var version = process.version;
     var ok = /^v[0-5]\./.test(version);
     var old = require_old();
@@ -2369,12 +2368,12 @@ var require_fs = __commonJS({
       }
     }
     function monkeypatch() {
-      fs14.realpath = realpath;
-      fs14.realpathSync = realpathSync;
+      fs15.realpath = realpath;
+      fs15.realpathSync = realpathSync;
     }
     function unmonkeypatch() {
-      fs14.realpath = origRealpath;
-      fs14.realpathSync = origRealpathSync;
+      fs15.realpath = origRealpath;
+      fs15.realpathSync = origRealpathSync;
     }
   }
 });
@@ -3249,7 +3248,7 @@ var require_common = __commonJS({
     function ownProp(obj, field) {
       return Object.prototype.hasOwnProperty.call(obj, field);
     }
-    var fs14 = __require("fs");
+    var fs15 = __require("fs");
     var path6 = __require("path");
     var minimatch = require_minimatch();
     var isAbsolute2 = require_path_is_absolute();
@@ -3304,7 +3303,7 @@ var require_common = __commonJS({
       self.stat = !!options.stat;
       self.noprocess = !!options.noprocess;
       self.absolute = !!options.absolute;
-      self.fs = options.fs || fs14;
+      self.fs = options.fs || fs15;
       self.maxLength = options.maxLength || Infinity;
       self.cache = options.cache || /* @__PURE__ */ Object.create(null);
       self.statCache = options.statCache || /* @__PURE__ */ Object.create(null);
@@ -9513,6 +9512,612 @@ function getPluginFromContext(context, toolName) {
   }
   return plugin;
 }
+function getDefaultBaseDirectory() {
+  const platform2 = process.platform;
+  if (platform2 === "win32") {
+    const appData = process.env.APPDATA || process.env.LOCALAPPDATA;
+    if (appData) {
+      return join(appData, "oneringai", "agents");
+    }
+  }
+  return join(homedir(), ".oneringai", "agents");
+}
+function sanitizeAgentId(agentId) {
+  return agentId.replace(/[^a-zA-Z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toLowerCase() || "default";
+}
+var FilePersistentInstructionsStorage = class {
+  directory;
+  filePath;
+  agentId;
+  constructor(config) {
+    this.agentId = config.agentId;
+    const sanitizedId = sanitizeAgentId(config.agentId);
+    const baseDir = config.baseDirectory ?? getDefaultBaseDirectory();
+    const filename = config.filename ?? "custom_instructions.md";
+    this.directory = join(baseDir, sanitizedId);
+    this.filePath = join(this.directory, filename);
+  }
+  /**
+   * Load instructions from file
+   */
+  async load() {
+    try {
+      const content = await promises.readFile(this.filePath, "utf-8");
+      return content.trim() || null;
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return null;
+      }
+      throw error;
+    }
+  }
+  /**
+   * Save instructions to file
+   * Creates directory if it doesn't exist
+   */
+  async save(content) {
+    await this.ensureDirectory();
+    const tempPath = `${this.filePath}.tmp`;
+    try {
+      await promises.writeFile(tempPath, content, "utf-8");
+      await promises.rename(tempPath, this.filePath);
+    } catch (error) {
+      try {
+        await promises.unlink(tempPath);
+      } catch {
+      }
+      throw error;
+    }
+  }
+  /**
+   * Delete instructions file
+   */
+  async delete() {
+    try {
+      await promises.unlink(this.filePath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+  /**
+   * Check if instructions file exists
+   */
+  async exists() {
+    try {
+      await promises.access(this.filePath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Get the file path (for display/debugging)
+   */
+  getPath() {
+    return this.filePath;
+  }
+  /**
+   * Get the agent ID
+   */
+  getAgentId() {
+    return this.agentId;
+  }
+  /**
+   * Ensure the directory exists
+   */
+  async ensureDirectory() {
+    try {
+      await promises.mkdir(this.directory, { recursive: true });
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
+        throw error;
+      }
+    }
+  }
+};
+
+// src/core/context/plugins/PersistentInstructionsPlugin.ts
+var DEFAULT_CONFIG2 = {
+  maxLength: 5e4
+};
+function buildContextExplanation(path6) {
+  return `## Custom Instructions
+
+These are your persistent instructions that apply across all sessions.
+They are stored on disk and automatically loaded when you start.
+
+**To modify:** Use \`instructions_set\` (replace all), \`instructions_append\` (add section), or \`instructions_clear\` (remove all).
+**Storage path:** ${path6}
+
+---
+`;
+}
+var PersistentInstructionsPlugin = class extends BaseContextPlugin {
+  name = "persistent_instructions";
+  priority = 0;
+  // Never compact
+  compactable = false;
+  _content = null;
+  _dirty = false;
+  _initialized = false;
+  _destroyed = false;
+  storage;
+  maxLength;
+  agentId;
+  /**
+   * Create a PersistentInstructionsPlugin
+   *
+   * @param config - Configuration options (agentId is required)
+   */
+  constructor(config) {
+    super();
+    this.agentId = config.agentId;
+    this.maxLength = config.maxLength ?? DEFAULT_CONFIG2.maxLength;
+    this.storage = config.storage ?? new FilePersistentInstructionsStorage({
+      agentId: config.agentId
+    });
+  }
+  /**
+   * Check if plugin is destroyed
+   */
+  get isDestroyed() {
+    return this._destroyed;
+  }
+  /**
+   * Check if plugin has been initialized (loaded from disk)
+   */
+  get isInitialized() {
+    return this._initialized;
+  }
+  /**
+   * Check if content has been modified since last save
+   */
+  get isDirty() {
+    return this._dirty;
+  }
+  // ============ Initialization ============
+  /**
+   * Initialize by loading instructions from storage
+   * Called lazily on first getComponent() call
+   */
+  async initialize() {
+    if (this._initialized || this._destroyed) {
+      return;
+    }
+    try {
+      this._content = await this.storage.load();
+      this._initialized = true;
+      this._dirty = false;
+    } catch (error) {
+      console.warn(`Failed to load persistent instructions for agent '${this.agentId}':`, error);
+      this._content = null;
+      this._initialized = true;
+    }
+  }
+  // ============ Content Management ============
+  /**
+   * Set the entire instructions content (replaces existing)
+   *
+   * @param content - New instructions content
+   * @returns true if set successfully, false if content exceeds max length
+   */
+  async set(content) {
+    this.assertNotDestroyed();
+    if (content.length > this.maxLength) {
+      return false;
+    }
+    this._content = content.trim() || null;
+    this._dirty = true;
+    if (this._content) {
+      await this.storage.save(this._content);
+    } else {
+      await this.storage.delete();
+    }
+    this._dirty = false;
+    return true;
+  }
+  /**
+   * Append a section to existing instructions
+   *
+   * @param section - Section to append (will add newlines before)
+   * @returns true if appended successfully, false if would exceed max length
+   */
+  async append(section) {
+    this.assertNotDestroyed();
+    const trimmedSection = section.trim();
+    if (!trimmedSection) {
+      return true;
+    }
+    const currentContent = this._content || "";
+    const newContent = currentContent ? `${currentContent}
+
+${trimmedSection}` : trimmedSection;
+    if (newContent.length > this.maxLength) {
+      return false;
+    }
+    this._content = newContent;
+    this._dirty = true;
+    await this.storage.save(this._content);
+    this._dirty = false;
+    return true;
+  }
+  /**
+   * Get current instructions content
+   *
+   * @returns Instructions content, or null if none
+   */
+  get() {
+    this.assertNotDestroyed();
+    return this._content;
+  }
+  /**
+   * Check if instructions exist
+   */
+  has() {
+    this.assertNotDestroyed();
+    return this._content !== null && this._content.length > 0;
+  }
+  /**
+   * Clear all instructions
+   */
+  async clear() {
+    this.assertNotDestroyed();
+    this._content = null;
+    this._dirty = true;
+    await this.storage.delete();
+    this._dirty = false;
+  }
+  /**
+   * Get storage path (for display/debugging)
+   */
+  getPath() {
+    return this.storage.getPath();
+  }
+  /**
+   * Get agent ID
+   */
+  getAgentId() {
+    return this.agentId;
+  }
+  /**
+   * Get current content length
+   */
+  getLength() {
+    return this._content?.length ?? 0;
+  }
+  /**
+   * Get maximum allowed content length
+   */
+  getMaxLength() {
+    return this.maxLength;
+  }
+  // ============ IContextPlugin Implementation ============
+  /**
+   * Get the context component for this plugin
+   * Performs lazy initialization on first call
+   */
+  async getComponent() {
+    this.assertNotDestroyed();
+    if (!this._initialized) {
+      await this.initialize();
+    }
+    if (!this._content) {
+      return null;
+    }
+    const explanation = buildContextExplanation(this.storage.getPath());
+    const content = `${explanation}
+${this._content}`;
+    return {
+      name: this.name,
+      content,
+      priority: this.priority,
+      compactable: this.compactable,
+      metadata: {
+        agentId: this.agentId,
+        length: this._content.length,
+        path: this.storage.getPath()
+      }
+    };
+  }
+  /**
+   * Compact - not applicable (compactable is false)
+   */
+  async compact(_targetTokens, _estimator) {
+    return 0;
+  }
+  /**
+   * Get serialized state for session persistence
+   */
+  getState() {
+    return {
+      content: this._content,
+      dirty: this._dirty,
+      agentId: this.agentId
+    };
+  }
+  /**
+   * Restore state from serialization
+   * Note: This restores in-memory state, not disk state
+   */
+  restoreState(state) {
+    this.assertNotDestroyed();
+    if (!state || typeof state !== "object") {
+      return;
+    }
+    const typedState = state;
+    if ("content" in typedState) {
+      this._content = typedState.content;
+    }
+    if ("dirty" in typedState) {
+      this._dirty = typedState.dirty;
+    }
+    this._initialized = true;
+  }
+  /**
+   * Clean up resources
+   */
+  destroy() {
+    this._content = null;
+    this._initialized = false;
+    this._destroyed = true;
+  }
+  // ============ Private Methods ============
+  /**
+   * Assert that the plugin hasn't been destroyed
+   */
+  assertNotDestroyed() {
+    if (this._destroyed) {
+      throw new Error("PersistentInstructionsPlugin has been destroyed");
+    }
+  }
+};
+
+// src/core/context/plugins/persistentInstructionsTools.ts
+var instructionsSetDefinition = {
+  type: "function",
+  function: {
+    name: "instructions_set",
+    description: `Set or replace all custom instructions for this agent.
+
+Custom instructions persist across sessions and are stored on disk.
+Use this to define:
+- Agent personality/behavior
+- User preferences
+- Custom rules and guidelines
+- Tool usage patterns
+
+The instructions will be loaded automatically in future sessions.
+IMPORTANT: This replaces ALL existing instructions.`,
+    parameters: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "The full instructions content (markdown supported)"
+        }
+      },
+      required: ["content"]
+    }
+  }
+};
+var instructionsAppendDefinition = {
+  type: "function",
+  function: {
+    name: "instructions_append",
+    description: `Append a new section to existing custom instructions.
+
+Use this to incrementally add:
+- New rules based on user feedback
+- Learned preferences
+- Additional guidelines
+
+The section will be added with appropriate spacing.`,
+    parameters: {
+      type: "object",
+      properties: {
+        section: {
+          type: "string",
+          description: "The section to append (will add newlines before)"
+        }
+      },
+      required: ["section"]
+    }
+  }
+};
+var instructionsGetDefinition = {
+  type: "function",
+  function: {
+    name: "instructions_get",
+    description: `Get current custom instructions.
+
+Returns the full instructions content and metadata.
+Instructions are also shown in context, so this is mainly for:
+- Verification before modifications
+- Getting programmatic access
+- Debugging`,
+    parameters: {
+      type: "object",
+      properties: {},
+      required: []
+    }
+  }
+};
+var instructionsClearDefinition = {
+  type: "function",
+  function: {
+    name: "instructions_clear",
+    description: `Clear all custom instructions (DESTRUCTIVE).
+
+This permanently removes all custom instructions from disk.
+Requires explicit confirmation.`,
+    parameters: {
+      type: "object",
+      properties: {
+        confirm: {
+          type: "boolean",
+          description: "Must be true to confirm deletion"
+        }
+      },
+      required: ["confirm"]
+    }
+  }
+};
+function createPersistentInstructionsTools() {
+  return [
+    // instructions_set
+    {
+      definition: instructionsSetDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext2(context, "instructions_set");
+        const content = args.content;
+        if (!content || content.trim().length === 0) {
+          return {
+            error: "Content cannot be empty. Use instructions_clear to remove instructions."
+          };
+        }
+        const success = await plugin.set(content);
+        if (!success) {
+          return {
+            error: `Instructions too long. Maximum ${plugin.getMaxLength()} characters, got ${content.length}.`
+          };
+        }
+        return {
+          success: true,
+          message: "Instructions saved successfully",
+          path: plugin.getPath(),
+          length: plugin.getLength()
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        // Auto-approve - instructions management is safe
+        riskLevel: "low"
+      },
+      describeCall: () => "set"
+    },
+    // instructions_append
+    {
+      definition: instructionsAppendDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext2(context, "instructions_append");
+        const section = args.section;
+        if (!section || section.trim().length === 0) {
+          return {
+            error: "Section cannot be empty"
+          };
+        }
+        const success = await plugin.append(section);
+        if (!success) {
+          return {
+            error: `Would exceed maximum length of ${plugin.getMaxLength()} characters. Current: ${plugin.getLength()}, Adding: ${section.length}.`
+          };
+        }
+        return {
+          success: true,
+          message: "Section appended successfully",
+          newLength: plugin.getLength()
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: () => "append"
+    },
+    // instructions_get
+    {
+      definition: instructionsGetDefinition,
+      execute: async (_args, context) => {
+        const plugin = getPluginFromContext2(context, "instructions_get");
+        const content = plugin.get();
+        if (!content) {
+          return {
+            exists: false,
+            message: "No custom instructions set",
+            path: plugin.getPath()
+          };
+        }
+        return {
+          exists: true,
+          content,
+          length: content.length,
+          maxLength: plugin.getMaxLength(),
+          path: plugin.getPath()
+        };
+      },
+      idempotency: { cacheable: true, ttlMs: 1e3 },
+      output: { expectedSize: "variable" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: () => "read"
+    },
+    // instructions_clear
+    {
+      definition: instructionsClearDefinition,
+      execute: async (args, context) => {
+        const plugin = getPluginFromContext2(context, "instructions_clear");
+        const confirm = args.confirm;
+        if (confirm !== true) {
+          return {
+            error: "Must set confirm: true to clear instructions"
+          };
+        }
+        const hadContent = plugin.has();
+        await plugin.clear();
+        return {
+          success: true,
+          message: hadContent ? "Instructions cleared successfully" : "No instructions to clear",
+          path: plugin.getPath()
+        };
+      },
+      idempotency: { cacheable: false },
+      output: { expectedSize: "small" },
+      permission: {
+        scope: "always",
+        riskLevel: "low"
+      },
+      describeCall: () => "clear"
+    }
+  ];
+}
+function createPersistentInstructions(config) {
+  const plugin = new PersistentInstructionsPlugin(config);
+  const tools = createPersistentInstructionsTools();
+  return { plugin, tools };
+}
+function setupPersistentInstructions(agentContext, config) {
+  const { plugin, tools } = createPersistentInstructions(config);
+  agentContext.registerPlugin(plugin);
+  for (const tool of tools) {
+    agentContext.tools.register(tool);
+  }
+  agentContext.persistentInstructions = plugin;
+  return plugin;
+}
+function getPluginFromContext2(context, toolName) {
+  if (!context) {
+    throw new ToolExecutionError(
+      toolName,
+      "PersistentInstructions tools require a tool context"
+    );
+  }
+  const plugin = context.persistentInstructions;
+  if (!plugin) {
+    throw new ToolExecutionError(
+      toolName,
+      "PersistentInstructions plugin not found. Enable features.persistentInstructions or use setupPersistentInstructions()."
+    );
+  }
+  return plugin;
+}
 
 // src/core/AgentContext.ts
 var PRIORITY_PROFILES = {
@@ -9592,7 +10197,8 @@ var DEFAULT_FEATURES = {
   memory: true,
   inContextMemory: false,
   history: true,
-  permissions: true
+  permissions: true,
+  persistentInstructions: false
 };
 var DEFAULT_AGENT_CONTEXT_CONFIG = {
   model: "gpt-4",
@@ -9614,6 +10220,8 @@ var AgentContext = class _AgentContext extends EventEmitter {
   _cache;
   _permissions;
   _inContextMemory = null;
+  _persistentInstructions = null;
+  _agentId;
   // ===== Feature Configuration =====
   _features;
   // ===== Built-in State =====
@@ -9655,6 +10263,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
     };
     this._systemPrompt = config.systemPrompt ?? "";
     this._instructions = config.instructions ?? "";
+    this._agentId = config.agentId ?? config.persistentInstructions?.agentId ?? `agent-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     this._historyEnabled = this._features.history;
     this._maxContextTokens = config.maxContextTokens ?? getModelInfo(config.model ?? "gpt-4")?.features.input.tokens ?? 128e3;
     this._strategy = createStrategy(this._config.strategy, {});
@@ -9696,6 +10305,17 @@ var AgentContext = class _AgentContext extends EventEmitter {
         this._tools.register(tool);
       }
     }
+    if (this._features.persistentInstructions) {
+      const { plugin, tools } = createPersistentInstructions({
+        agentId: this._agentId,
+        ...config.persistentInstructions
+      });
+      this._persistentInstructions = plugin;
+      this.registerPlugin(plugin);
+      for (const tool of tools) {
+        this._tools.register(tool);
+      }
+    }
     this._explicitTaskType = config.taskType;
     this._autoDetectTaskType = config.autoDetectTaskType !== false;
   }
@@ -9727,6 +10347,14 @@ var AgentContext = class _AgentContext extends EventEmitter {
   /** InContextMemory plugin (null if inContextMemory feature disabled) */
   get inContextMemory() {
     return this._inContextMemory;
+  }
+  /** PersistentInstructions plugin (null if persistentInstructions feature disabled) */
+  get persistentInstructions() {
+    return this._persistentInstructions;
+  }
+  /** Agent ID (auto-generated or from config) */
+  get agentId() {
+    return this._agentId;
   }
   // ============================================================================
   // Feature Configuration
@@ -10021,7 +10649,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
       }
       if (!cached) {
         const fullContext = {
-          agentId: context?.agentId ?? "agent-context",
+          agentId: context?.agentId ?? this._agentId,
           taskId: context?.taskId,
           memory: this._memory?.getAccess(),
           // May be undefined if memory disabled
@@ -10029,6 +10657,8 @@ var AgentContext = class _AgentContext extends EventEmitter {
           // May be undefined if memory disabled
           inContextMemory: this._inContextMemory ?? void 0,
           // May be undefined if inContextMemory disabled
+          persistentInstructions: this._persistentInstructions ?? void 0,
+          // May be undefined if persistentInstructions disabled
           signal: context?.signal
         };
         this._tools.setToolContext(fullContext);
@@ -16926,8 +17556,8 @@ function getMemoryTools() {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs14 = __require("fs");
-      const content = fs14.readFileSync(configPath, "utf-8");
+      const fs15 = __require("fs");
+      const content = fs15.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -16956,10 +17586,10 @@ function getMemoryTools() {
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs14 = __require("fs");
+    const fs15 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs14.accessSync(resolve(path6));
+        fs15.accessSync(resolve(path6));
         return resolve(path6);
       } catch {
       }
@@ -18260,7 +18890,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
       const blob = new Blob([audio]);
       return new File([blob], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs13.createReadStream(audio);
+      return fs14.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -18813,7 +19443,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs12.writeFile(filePath, response.audio);
+    await fs13.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -19161,7 +19791,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs12.readFile(filePath);
+    const audio = await fs13.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -19487,7 +20117,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([image], "image.png", { type: "image/png" });
     }
-    return fs13.createReadStream(image);
+    return fs14.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -19634,8 +20264,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs14 = await import('fs');
-      const buffer = fs14.readFileSync(image);
+      const fs15 = await import('fs');
+      const buffer = fs15.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -20583,8 +21213,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([image], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs14 = await import('fs');
-      const data = fs14.readFileSync(image);
+      const fs15 = await import('fs');
+      const data = fs15.readFileSync(image);
       return new File([data], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -20881,8 +21511,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs14 = await import('fs/promises');
-    const data = await fs14.readFile(image);
+    const fs15 = await import('fs/promises');
+    const data = await fs15.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -24747,7 +25377,7 @@ async function generateSimplePlan(goal, context) {
     // Allow agent to modify plan
   });
 }
-var DEFAULT_CONFIG2 = {
+var DEFAULT_CONFIG3 = {
   sizeThreshold: 10 * 1024,
   // 10KB
   tools: [],
@@ -24770,7 +25400,7 @@ var AutoSpillPlugin = class extends BaseContextPlugin {
   constructor(memory, config = {}) {
     super();
     this.memory = memory;
-    this.config = { ...DEFAULT_CONFIG2, ...config };
+    this.config = { ...DEFAULT_CONFIG3, ...config };
   }
   /**
    * Subscribe to events
@@ -25793,9 +26423,9 @@ var FileSearchSource = class {
         }
         if (this.searchMode === "content" || this.searchMode === "both") {
           try {
-            const stat6 = await fs12.stat(filePath);
+            const stat6 = await fs13.stat(filePath);
             if (stat6.size > this.maxFileSize) continue;
-            const content = await fs12.readFile(filePath, "utf-8");
+            const content = await fs13.readFile(filePath, "utf-8");
             const match = this.findContentMatch(content, query);
             if (match) {
               results.push({
@@ -25842,7 +26472,7 @@ var FileSearchSource = class {
           error: "Path is outside allowed base directory"
         };
       }
-      const stat6 = await fs12.stat(absolutePath);
+      const stat6 = await fs13.stat(absolutePath);
       const maxSize = options?.maxSize ?? this.maxFileSize;
       if (stat6.size > maxSize) {
         return {
@@ -25853,7 +26483,7 @@ var FileSearchSource = class {
           sizeBytes: stat6.size
         };
       }
-      const content = await fs12.readFile(absolutePath, "utf-8");
+      const content = await fs13.readFile(absolutePath, "utf-8");
       const ext = path2.extname(absolutePath).toLowerCase();
       return {
         success: true,
@@ -25878,7 +26508,7 @@ var FileSearchSource = class {
   }
   async isAvailable() {
     try {
-      await fs12.access(this.basePath);
+      await fs13.access(this.basePath);
       return true;
     } catch {
       return false;
@@ -28208,8 +28838,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs12.mkdir(this.directory, { recursive: true });
-      await fs12.chmod(this.directory, 448);
+      await fs13.mkdir(this.directory, { recursive: true });
+      await fs13.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -28225,13 +28855,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs12.writeFile(filePath, encrypted, "utf8");
-    await fs12.chmod(filePath, 384);
+    await fs13.writeFile(filePath, encrypted, "utf8");
+    await fs13.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs12.readFile(filePath, "utf8");
+      const encrypted = await fs13.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -28240,7 +28870,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs12.unlink(filePath);
+        await fs13.unlink(filePath);
       } catch {
       }
       return null;
@@ -28249,7 +28879,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs12.unlink(filePath);
+      await fs13.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -28259,7 +28889,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs12.access(filePath);
+      await fs13.access(filePath);
       return true;
     } catch {
       return false;
@@ -28270,7 +28900,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs12.readdir(this.directory);
+      const files = await fs13.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -28281,10 +28911,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs12.readdir(this.directory);
+      const files = await fs13.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs12.unlink(path2.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs13.unlink(path2.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -28689,14 +29319,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs12.writeFile(filePath, json, "utf8");
-    await fs12.chmod(filePath, 384);
+    await fs13.writeFile(filePath, json, "utf8");
+    await fs13.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs12.readFile(filePath, "utf8");
+      const json = await fs13.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -28709,7 +29339,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs12.unlink(filePath);
+      await fs13.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -28723,7 +29353,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs12.access(filePath);
+      await fs13.access(filePath);
       return true;
     } catch {
       return false;
@@ -28749,13 +29379,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs12.readdir(this.directory);
+      const files = await fs13.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs12.unlink(path2.join(this.directory, f)).catch(() => {
+          (f) => fs13.unlink(path2.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -28782,8 +29412,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs12.mkdir(this.directory, { recursive: true });
-      await fs12.chmod(this.directory, 448);
+      await fs13.mkdir(this.directory, { recursive: true });
+      await fs13.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -28794,7 +29424,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs12.readFile(this.indexPath, "utf8");
+      const json = await fs13.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -28812,8 +29442,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs12.writeFile(this.indexPath, json, "utf8");
-    await fs12.chmod(this.indexPath, 384);
+    await fs13.writeFile(this.indexPath, json, "utf8");
+    await fs13.chmod(this.indexPath, 384);
   }
 };
 
@@ -28957,8 +29587,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = promisify(exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs13.existsSync(filePath)) {
-      fs13.unlinkSync(filePath);
+    if (fs14.existsSync(filePath)) {
+      fs14.unlinkSync(filePath);
     }
   } catch {
   }
@@ -29009,7 +29639,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs13.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs14.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -29026,14 +29656,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs13.existsSync(tempFile) && fs13.statSync(tempFile).size > 0) {
+      if (fs14.existsSync(tempFile) && fs14.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs13.existsSync(tempFile) && fs13.statSync(tempFile).size > 0) {
+      if (fs14.existsSync(tempFile) && fs14.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -29060,7 +29690,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs13.existsSync(tempFile) && fs13.statSync(tempFile).size > 0) {
+    if (fs14.existsSync(tempFile) && fs14.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -29073,7 +29703,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs13.readFileSync(filePath);
+    const imageBuffer = fs14.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -30946,8 +31576,17 @@ function detectContentQuality(html, text, $) {
     issues
   };
 }
-function htmlToMarkdown(html, url, maxLength = 5e4) {
-  const dom = new JSDOM(html, { url });
+var JSDOM = null;
+async function getJSDOM() {
+  if (!JSDOM) {
+    const jsdom = await import('jsdom');
+    JSDOM = jsdom.JSDOM;
+  }
+  return JSDOM;
+}
+async function htmlToMarkdown(html, url, maxLength = 5e4) {
+  const JSDOMClass = await getJSDOM();
+  const dom = new JSDOMClass(html, { url });
   const document = dom.window.document;
   let title = document.title || "";
   let byline;
@@ -31154,7 +31793,7 @@ With custom user agent:
       }
       const html = await response.text();
       const $ = load(html);
-      const mdResult = htmlToMarkdown(html, args.url);
+      const mdResult = await htmlToMarkdown(html, args.url);
       const title = mdResult.title || $("title").text() || $("h1").first().text() || "Untitled";
       const quality = detectContentQuality(html, mdResult.markdown, $);
       return {
@@ -31357,7 +31996,7 @@ With screenshot:
         screenshot = buffer.toString("base64");
       }
       await page.close();
-      const mdResult = htmlToMarkdown(html, args.url);
+      const mdResult = await htmlToMarkdown(html, args.url);
       const title = browserTitle || mdResult.title || "Untitled";
       return {
         success: true,
@@ -33916,6 +34555,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FileSearchSource, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WebSearchSource, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextManager, ConversationHistoryManager, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileConnectorStorage, FilePersistentInstructionsStorage, FileSearchSource, FileSessionStorage, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemorySessionStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, ParallelTasksError, PersistentInstructionsPlugin, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SessionManager, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WebSearchSource, WorkingMemory, addHistoryEntry, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEmptyHistory, createEmptyMemory, createEstimator, createExecuteJavaScriptTool, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

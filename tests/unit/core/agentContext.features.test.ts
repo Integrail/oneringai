@@ -27,6 +27,7 @@ describe('AgentContext Feature Configuration', () => {
       expect(DEFAULT_FEATURES).toEqual({
         memory: true,
         inContextMemory: false,
+        persistentInstructions: false,
         history: true,
         permissions: true,
       });
@@ -39,6 +40,7 @@ describe('AgentContext Feature Configuration', () => {
 
       expect(context.features.memory).toBe(true);
       expect(context.features.inContextMemory).toBe(false);
+      expect(context.features.persistentInstructions).toBe(false);
       expect(context.features.history).toBe(true);
       expect(context.features.permissions).toBe(true);
     });
@@ -213,12 +215,71 @@ describe('AgentContext Feature Configuration', () => {
     });
   });
 
+  describe('PersistentInstructions Feature', () => {
+    it('should create PersistentInstructionsPlugin when persistentInstructions is enabled', () => {
+      context = AgentContext.create({
+        agentId: 'test-agent',
+        features: { persistentInstructions: true },
+      });
+
+      expect(context.persistentInstructions).not.toBeNull();
+    });
+
+    it('should not create PersistentInstructionsPlugin when persistentInstructions is disabled (default)', () => {
+      context = AgentContext.create({});
+
+      expect(context.persistentInstructions).toBeNull();
+    });
+
+    it('should register persistentInstructions tools when enabled', () => {
+      context = AgentContext.create({
+        agentId: 'test-agent',
+        features: { persistentInstructions: true },
+      });
+
+      const tools = context.tools.getAll().map((t) => t.definition.function.name);
+      expect(tools).toContain('instructions_set');
+      expect(tools).toContain('instructions_get');
+      expect(tools).toContain('instructions_append');
+      expect(tools).toContain('instructions_clear');
+    });
+
+    it('should not register persistentInstructions tools when disabled', () => {
+      context = AgentContext.create({
+        features: { persistentInstructions: false },
+      });
+
+      const tools = context.tools.getAll().map((t) => t.definition.function.name);
+      expect(tools).not.toContain('instructions_set');
+      expect(tools).not.toContain('instructions_get');
+    });
+
+    it('should auto-generate agentId when not provided', () => {
+      context = AgentContext.create({
+        features: { persistentInstructions: true },
+      });
+
+      expect(context.agentId).toMatch(/^agent-\d+-[a-z0-9]+$/);
+    });
+
+    it('should use provided agentId', () => {
+      context = AgentContext.create({
+        agentId: 'my-custom-agent',
+        features: { persistentInstructions: true },
+      });
+
+      expect(context.agentId).toBe('my-custom-agent');
+    });
+  });
+
   describe('isFeatureEnabled', () => {
     it('should return correct values for each feature', () => {
       context = AgentContext.create({
+        agentId: 'test-agent',
         features: {
           memory: false,
           inContextMemory: true,
+          persistentInstructions: true,
           history: true,
           permissions: false,
         },
@@ -226,6 +287,7 @@ describe('AgentContext Feature Configuration', () => {
 
       expect(context.isFeatureEnabled('memory')).toBe(false);
       expect(context.isFeatureEnabled('inContextMemory')).toBe(true);
+      expect(context.isFeatureEnabled('persistentInstructions')).toBe(true);
       expect(context.isFeatureEnabled('history')).toBe(true);
       expect(context.isFeatureEnabled('permissions')).toBe(false);
     });

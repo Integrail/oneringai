@@ -54,13 +54,14 @@ Features can be individually enabled/disabled. When disabled, associated tools a
 
 ```typescript
 interface AgentContextFeatures {
-  memory?: boolean;          // WorkingMemory + IdempotencyCache (default: true)
-  inContextMemory?: boolean; // InContextMemoryPlugin (default: false, opt-in)
-  history?: boolean;         // Conversation tracking (default: true)
-  permissions?: boolean;     // ToolPermissionManager (default: true)
+  memory?: boolean;                 // WorkingMemory + IdempotencyCache (default: true)
+  inContextMemory?: boolean;        // InContextMemoryPlugin (default: false, opt-in)
+  persistentInstructions?: boolean; // PersistentInstructionsPlugin (default: false, opt-in)
+  history?: boolean;                // Conversation tracking (default: true)
+  permissions?: boolean;            // ToolPermissionManager (default: true)
 }
 
-export const DEFAULT_FEATURES = { memory: true, inContextMemory: false, history: true, permissions: true };
+export const DEFAULT_FEATURES = { memory: true, inContextMemory: false, persistentInstructions: false, history: true, permissions: true };
 ```
 
 **Usage:**
@@ -80,13 +81,15 @@ const agent = Agent.create({
 
 **Feature-aware APIs:**
 ```typescript
-ctx.isFeatureEnabled('memory');    // Check if feature is on
-ctx.requireMemory();               // Throws if memory disabled
-ctx.requireCache();                // Throws if memory disabled
-ctx.requirePermissions();          // Throws if permissions disabled
-ctx.memory;                        // WorkingMemory | null
-ctx.cache;                         // IdempotencyCache | null
-ctx.permissions;                   // ToolPermissionManager | null
+ctx.isFeatureEnabled('memory');        // Check if feature is on
+ctx.requireMemory();                   // Throws if memory disabled
+ctx.requireCache();                    // Throws if memory disabled
+ctx.requirePermissions();              // Throws if permissions disabled
+ctx.memory;                            // WorkingMemory | null
+ctx.cache;                             // IdempotencyCache | null
+ctx.permissions;                       // ToolPermissionManager | null
+ctx.persistentInstructions;            // PersistentInstructionsPlugin | null
+ctx.agentId;                           // string (auto-generated or from config)
 ```
 
 **Tool Registration:**
