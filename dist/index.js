@@ -9003,6 +9003,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
     if (config.cache?.enabled === false) {
       this._features.memory = false;
     }
+    this.validateFeatures(this._features);
     this._config = {
       ...DEFAULT_AGENT_CONTEXT_CONFIG,
       ...config,
@@ -9182,6 +9183,22 @@ var AgentContext = class _AgentContext extends EventEmitter {
       throw new Error('ToolPermissionManager is not available. Enable the "permissions" feature in AgentContextConfig.');
     }
     return this._permissions;
+  }
+  /**
+   * Validate feature dependencies and warn about potential issues
+   * Called during construction after feature resolution
+   */
+  validateFeatures(features) {
+    if (features.autoSpill && !features.memory) {
+      throw new Error(
+        "AgentContext: autoSpill feature requires memory feature to be enabled. Either enable memory (features.memory: true) or disable autoSpill (features.autoSpill: false)."
+      );
+    }
+    if (features.inContextMemory && !features.memory) {
+      console.warn(
+        "AgentContext: inContextMemory enabled without memory feature. In-context data will not be backed by WorkingMemory for persistence or large data spilling."
+      );
+    }
   }
   // ============================================================================
   // Core Context (Built-in)
@@ -9657,7 +9674,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
    * @deprecated Use getConversation() instead - this is an alias
    */
   getHistory() {
-    return this._conversation;
+    return [...this._conversation];
   }
   /**
    * Get recent N messages as InputItem[]
@@ -25236,7 +25253,6 @@ async function generateSimplePlan(goal, context) {
 // src/capabilities/researchAgent/ResearchAgent.ts
 var ResearchAgent = class _ResearchAgent extends TaskAgent {
   sources = /* @__PURE__ */ new Map();
-  autoSpillPlugin;
   researchHooks;
   defaultSearchOptions = { maxResults: 10 };
   defaultFetchOptions = { maxSize: 1024 * 1024 };
@@ -25276,22 +25292,6 @@ var ResearchAgent = class _ResearchAgent extends TaskAgent {
     this.researchHooks = config.hooks;
     this.defaultSearchOptions = config.defaultSearchOptions ?? { maxResults: 10 };
     this.defaultFetchOptions = config.defaultFetchOptions ?? { maxSize: 1024 * 1024 };
-    const autoSpillConfig = {
-      sizeThreshold: 10 * 1024,
-      // 10KB
-      toolPatterns: [/^research_fetch/, /^web_fetch/, /^web_scrape/],
-      ...config.autoSpill
-    };
-    if (this._agentContext.memory) {
-      this.autoSpillPlugin = new AutoSpillPlugin(this._agentContext.memory, autoSpillConfig);
-      this._agentContext.registerPlugin(this.autoSpillPlugin);
-    }
-    this.setupAutoMemoryManagement();
-  }
-  /**
-   * Setup automatic memory management
-   */
-  setupAutoMemoryManagement() {
   }
   // ===== Public API =====
   /**
@@ -25361,8 +25361,9 @@ var ResearchAgent = class _ResearchAgent extends TaskAgent {
     const fetchOptions = { ...this.defaultFetchOptions, ...options };
     try {
       const result = await source.fetch(reference, fetchOptions);
-      if (result.success && result.sizeBytes && result.sizeBytes > (this.autoSpillPlugin?.["config"]?.sizeThreshold ?? 10240)) {
-        const spillKey = await this.autoSpillPlugin?.onToolOutput(`research_fetch_${sourceName}`, result.content);
+      const autoSpillPlugin = this._agentContext.autoSpillPlugin;
+      if (result.success && result.sizeBytes && autoSpillPlugin && autoSpillPlugin.shouldSpill(`research_fetch_${sourceName}`, result.sizeBytes)) {
+        const spillKey = await autoSpillPlugin.onToolOutput(`research_fetch_${sourceName}`, result.content);
         if (spillKey) {
           result.spilledKey = spillKey;
         }
@@ -25420,10 +25421,14 @@ var ResearchAgent = class _ResearchAgent extends TaskAgent {
    * Call this after creating summaries/findings from raw content
    */
   async cleanupProcessedRaw(rawKeys) {
-    for (const key of rawKeys) {
-      this.autoSpillPlugin?.markConsumed(key, "manual-cleanup");
+    const autoSpillPlugin = this._agentContext.autoSpillPlugin;
+    if (!autoSpillPlugin) {
+      return 0;
     }
-    const deleted = await this.autoSpillPlugin?.cleanup(rawKeys) ?? [];
+    for (const key of rawKeys) {
+      autoSpillPlugin.markConsumed(key, "manual-cleanup");
+    }
+    const deleted = await autoSpillPlugin.cleanup(rawKeys);
     return deleted.length;
   }
   /**
@@ -25536,10 +25541,11 @@ var ResearchAgent = class _ResearchAgent extends TaskAgent {
    * Get auto-spill statistics
    */
   getAutoSpillStats() {
-    if (!this.autoSpillPlugin) {
+    const autoSpillPlugin = this._agentContext.autoSpillPlugin;
+    if (!autoSpillPlugin) {
       return { totalSpilled: 0, consumed: 0, unconsumed: 0, totalSizeBytes: 0 };
     }
-    const entries = this.autoSpillPlugin.getEntries();
+    const entries = autoSpillPlugin.getEntries();
     const consumed = entries.filter((e) => e.consumed);
     const unconsumed = entries.filter((e) => !e.consumed);
     return {
@@ -34007,6 +34013,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FilePersistentInstructionsStorage, FileSearchSource, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, INTROSPECTION_INSTRUCTIONS, IN_CONTEXT_MEMORY_INSTRUCTIONS, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PERSISTENT_INSTRUCTIONS_INSTRUCTIONS, ParallelTasksError, PersistentInstructionsPlugin, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WORKING_MEMORY_INSTRUCTIONS, WebSearchSource, WorkingMemory, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildFeatureInstructions, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllInstructions, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, AUTO_SPILL_INSTRUCTIONS, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, AutoSpillPlugin, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FilePersistentInstructionsStorage, FileSearchSource, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, INTROSPECTION_INSTRUCTIONS, IN_CONTEXT_MEMORY_INSTRUCTIONS, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PERSISTENT_INSTRUCTIONS_INSTRUCTIONS, ParallelTasksError, PersistentInstructionsPlugin, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TOOL_OUTPUT_TRACKING_INSTRUCTIONS, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolOutputPlugin, ToolPermissionManager, ToolRegistry, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WORKING_MEMORY_INSTRUCTIONS, WebSearchSource, WorkingMemory, addJitter, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildEndpointWithQuery, buildFeatureInstructions, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createContextTools, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllInstructions, getAllServiceIds, getBackgroundOutput, getBasicIntrospectionTools, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map
