@@ -54,8 +54,11 @@ export function ImageTab(): React.ReactElement {
   const [options, setOptions] = useState<Record<string, unknown>>({});
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
-  const [revisedPrompt, setRevisedPrompt] = useState<string | undefined>();
+  const [generatedImages, setGeneratedImages] = useState<Array<{
+    data: string;
+    revisedPrompt?: string;
+  }>>([]);
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [estimatedCost, setEstimatedCost] = useState<number | null>(null);
 
@@ -171,8 +174,8 @@ export function ImageTab(): React.ReactElement {
 
     setIsGenerating(true);
     setError(null);
-    setGeneratedImage(null);
-    setRevisedPrompt(undefined);
+    setGeneratedImages([]);
+    setSelectedImageIndex(0);
 
     try {
       const result: GenerationResult = await window.hosea.multimedia.generateImage({
@@ -181,10 +184,19 @@ export function ImageTab(): React.ReactElement {
         ...options,
       });
 
-      if (result.success && result.data?.images?.[0]) {
-        const image = result.data.images[0];
-        setGeneratedImage(image.b64_json || image.url || null);
-        setRevisedPrompt(image.revisedPrompt);
+      if (result.success && result.data?.images?.length) {
+        const images = result.data.images
+          .map((img) => ({
+            data: img.b64_json || img.url || '',
+            revisedPrompt: img.revisedPrompt,
+          }))
+          .filter((img) => img.data); // Filter out any empty data
+
+        if (images.length > 0) {
+          setGeneratedImages(images);
+        } else {
+          setError('No images returned from generation');
+        }
       } else {
         setError(result.error || 'Failed to generate image');
       }
@@ -287,10 +299,11 @@ export function ImageTab(): React.ReactElement {
 
       <div className="image-tab__preview">
         <ImageDisplay
-          imageData={generatedImage}
+          images={generatedImages}
+          selectedIndex={selectedImageIndex}
+          onSelectImage={setSelectedImageIndex}
           isLoading={isGenerating}
           error={error}
-          revisedPrompt={revisedPrompt}
         />
       </div>
     </div>

@@ -1,28 +1,59 @@
 /**
- * ImageDisplay - Shows generated image with actions (download, copy)
+ * ImageDisplay - Shows generated images with grid/carousel view and actions
  */
 
 import React, { useState } from 'react';
 import { Spinner } from 'react-bootstrap';
-import { Image, Download, Copy, Check, AlertCircle } from 'lucide-react';
+import { Image, Download, Copy, Check, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 
-interface ImageDisplayProps {
-  imageData: string | null; // base64 or URL
-  isLoading: boolean;
-  error: string | null;
+interface GeneratedImage {
+  data: string; // base64 or URL
   revisedPrompt?: string;
 }
 
+interface ImageDisplayProps {
+  images: GeneratedImage[];
+  selectedIndex: number;
+  onSelectImage: (index: number) => void;
+  isLoading: boolean;
+  error: string | null;
+}
+
 export function ImageDisplay({
-  imageData,
+  images,
+  selectedIndex,
+  onSelectImage,
   isLoading,
   error,
-  revisedPrompt,
 }: ImageDisplayProps): React.ReactElement {
   const [copied, setCopied] = useState(false);
 
+  const selectedImage = images[selectedIndex];
+  const hasMultipleImages = images.length > 1;
+
+  const getImageSrc = (imageData: string) => {
+    if (!imageData) return '';
+    if (imageData.startsWith('data:') || imageData.startsWith('http')) {
+      return imageData;
+    }
+    // Clean the base64 data - remove any whitespace/newlines that might break the data URL
+    const cleanedData = imageData.replace(/\s/g, '');
+
+    // Detect image format from base64 magic bytes
+    // PNG: iVBORw0KGgo, JPEG: /9j/, WebP: UklGR
+    let mimeType = 'image/png';
+    if (cleanedData.startsWith('/9j/')) {
+      mimeType = 'image/jpeg';
+    } else if (cleanedData.startsWith('UklGR')) {
+      mimeType = 'image/webp';
+    }
+    return `data:${mimeType};base64,${cleanedData}`;
+  };
+
   const handleDownload = () => {
-    if (!imageData) return;
+    if (!selectedImage?.data) return;
+
+    const imageData = selectedImage.data;
 
     // Create download link
     const link = document.createElement('a');
@@ -36,21 +67,49 @@ export function ImageDisplay({
       return;
     } else {
       // Raw base64 - use getImageSrc which handles cleaning and format detection
-      link.href = getImageSrc();
+      link.href = getImageSrc(imageData);
     }
 
     // Determine file extension from MIME type
-    const ext = getImageSrc().includes('image/jpeg') ? 'jpg'
-      : getImageSrc().includes('image/webp') ? 'webp'
+    const src = getImageSrc(imageData);
+    const ext = src.includes('image/jpeg') ? 'jpg'
+      : src.includes('image/webp') ? 'webp'
       : 'png';
-    link.download = `generated-image-${Date.now()}.${ext}`;
+    link.download = `generated-image-${Date.now()}-${selectedIndex + 1}.${ext}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
+  const handleDownloadAll = () => {
+    images.forEach((img, index) => {
+      const imageData = img.data;
+      const link = document.createElement('a');
+
+      if (imageData.startsWith('data:')) {
+        link.href = imageData;
+      } else if (imageData.startsWith('http')) {
+        window.open(imageData, '_blank');
+        return;
+      } else {
+        link.href = getImageSrc(imageData);
+      }
+
+      const src = getImageSrc(imageData);
+      const ext = src.includes('image/jpeg') ? 'jpg'
+        : src.includes('image/webp') ? 'webp'
+        : 'png';
+      link.download = `generated-image-${Date.now()}-${index + 1}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+  };
+
   const handleCopy = async () => {
-    if (!imageData) return;
+    if (!selectedImage?.data) return;
+
+    const imageData = selectedImage.data;
 
     try {
       // Try to copy as image to clipboard
@@ -86,25 +145,13 @@ export function ImageDisplay({
     }
   };
 
-  const getImageSrc = () => {
-    if (!imageData) return '';
-    if (imageData.startsWith('data:') || imageData.startsWith('http')) {
-      return imageData;
-    }
-    // Clean the base64 data - remove any whitespace/newlines that might break the data URL
-    const cleanedData = imageData.replace(/\s/g, '');
-
-    // Detect image format from base64 magic bytes
-    // PNG: iVBORw0KGgo, JPEG: /9j/, WebP: UklGR
-    let mimeType = 'image/png';
-    if (cleanedData.startsWith('/9j/')) {
-      mimeType = 'image/jpeg';
-    } else if (cleanedData.startsWith('UklGR')) {
-      mimeType = 'image/webp';
-    }
-    return `data:${mimeType};base64,${cleanedData}`;
+  const handlePrevious = () => {
+    onSelectImage(selectedIndex > 0 ? selectedIndex - 1 : images.length - 1);
   };
 
+  const handleNext = () => {
+    onSelectImage(selectedIndex < images.length - 1 ? selectedIndex + 1 : 0);
+  };
 
   return (
     <div className="image-display">
@@ -119,12 +166,34 @@ export function ImageDisplay({
             <AlertCircle size={20} className="error-message__icon" />
             <span className="error-message__text">{error}</span>
           </div>
-        ) : imageData ? (
-          <img
-            src={getImageSrc()}
-            alt="Generated"
-            className="image-display__image"
-          />
+        ) : selectedImage ? (
+          <div className="image-display__main">
+            {hasMultipleImages && (
+              <button
+                className="image-display__nav image-display__nav--prev"
+                onClick={handlePrevious}
+                type="button"
+                aria-label="Previous image"
+              >
+                <ChevronLeft size={24} />
+              </button>
+            )}
+            <img
+              src={getImageSrc(selectedImage.data)}
+              alt={`Generated ${selectedIndex + 1}`}
+              className="image-display__image"
+            />
+            {hasMultipleImages && (
+              <button
+                className="image-display__nav image-display__nav--next"
+                onClick={handleNext}
+                type="button"
+                aria-label="Next image"
+              >
+                <ChevronRight size={24} />
+              </button>
+            )}
+          </div>
         ) : (
           <div className="image-display__empty">
             <div className="image-display__empty-icon">
@@ -137,12 +206,34 @@ export function ImageDisplay({
         )}
       </div>
 
-      {imageData && !isLoading && !error && (
+      {/* Thumbnails for multiple images */}
+      {hasMultipleImages && !isLoading && !error && (
+        <div className="image-display__thumbnails">
+          {images.map((img, index) => (
+            <button
+              key={index}
+              className={`image-display__thumbnail ${
+                index === selectedIndex ? 'image-display__thumbnail--selected' : ''
+              }`}
+              onClick={() => onSelectImage(index)}
+              type="button"
+              aria-label={`Select image ${index + 1}`}
+            >
+              <img
+                src={getImageSrc(img.data)}
+                alt={`Thumbnail ${index + 1}`}
+              />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectedImage && !isLoading && !error && (
         <>
-          {revisedPrompt && (
+          {selectedImage.revisedPrompt && (
             <div className="image-display__revised-prompt">
               <span className="image-display__revised-label">Revised prompt:</span>
-              <span className="image-display__revised-text">{revisedPrompt}</span>
+              <span className="image-display__revised-text">{selectedImage.revisedPrompt}</span>
             </div>
           )}
           <div className="image-display__actions">
@@ -154,6 +245,16 @@ export function ImageDisplay({
               <Download size={16} />
               Download
             </button>
+            {hasMultipleImages && (
+              <button
+                className="image-display__action"
+                onClick={handleDownloadAll}
+                type="button"
+              >
+                <Download size={16} />
+                Download All
+              </button>
+            )}
             <button
               className="image-display__action"
               onClick={handleCopy}
@@ -163,6 +264,11 @@ export function ImageDisplay({
               {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
+          {hasMultipleImages && (
+            <div className="image-display__counter">
+              {selectedIndex + 1} / {images.length}
+            </div>
+          )}
         </>
       )}
     </div>
