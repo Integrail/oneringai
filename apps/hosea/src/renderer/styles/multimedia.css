@@ -118,6 +118,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-4);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .image-tab__preview {
@@ -537,6 +539,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-4);
+  min-width: 0;
+  overflow: hidden;
 }
 
 .video-tab__preview {
@@ -742,6 +746,7 @@
   border-radius: var(--radius-lg);
   cursor: pointer;
   transition: all var(--transition-fast);
+  overflow: hidden;
 }
 
 .image-dropzone:hover:not(.image-dropzone--disabled) {
@@ -802,6 +807,7 @@
   align-items: center;
   gap: var(--spacing-4);
   width: 100%;
+  overflow: hidden;
 }
 
 .image-dropzone__preview-image {
