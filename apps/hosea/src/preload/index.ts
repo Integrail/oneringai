@@ -308,6 +308,64 @@ export interface HoseaAPI {
     update: (name: string, updates: unknown) => Promise<{ success: boolean; error?: string }>;
     delete: (name: string) => Promise<{ success: boolean; error?: string }>;
   };
+
+  // Multimedia - Image, Video, Audio generation
+  multimedia: {
+    getAvailableImageModels: () => Promise<Array<{
+      name: string;
+      displayName: string;
+      vendor: string;
+      description?: string;
+      deprecationDate?: string;
+      maxPromptLength: number;
+      maxImagesPerRequest: number;
+      pricing?: {
+        perImage?: number;
+        perImageStandard?: number;
+        perImageHD?: number;
+      };
+    }>>;
+    getImageModelCapabilities: (modelName: string) => Promise<{
+      sizes: readonly string[];
+      aspectRatios?: readonly string[];
+      maxImagesPerRequest: number;
+      outputFormats: readonly string[];
+      features: {
+        generation: boolean;
+        editing: boolean;
+        variations: boolean;
+        styleControl: boolean;
+        qualityControl: boolean;
+        transparency: boolean;
+        promptRevision: boolean;
+      };
+      limits: {
+        maxPromptLength: number;
+        maxRequestsPerMinute?: number;
+      };
+      vendorOptions?: Record<string, unknown>;
+    } | null>;
+    calculateImageCost: (modelName: string, imageCount: number, quality: string) => Promise<number | null>;
+    generateImage: (options: {
+      model: string;
+      prompt: string;
+      size?: string;
+      quality?: string;
+      style?: string;
+      n?: number;
+      [key: string]: unknown;
+    }) => Promise<{
+      success: boolean;
+      data?: {
+        images: Array<{
+          b64_json?: string;
+          url?: string;
+          revisedPrompt?: string;
+        }>;
+      };
+      error?: string;
+    }>;
+  };
 }
 
 // Expose to renderer
@@ -380,6 +438,13 @@ const api: HoseaAPI = {
     add: (config) => ipcRenderer.invoke('api-connector:add', config),
     update: (name, updates) => ipcRenderer.invoke('api-connector:update', name, updates),
     delete: (name) => ipcRenderer.invoke('api-connector:delete', name),
+  },
+
+  multimedia: {
+    getAvailableImageModels: () => ipcRenderer.invoke('multimedia:get-available-image-models'),
+    getImageModelCapabilities: (modelName) => ipcRenderer.invoke('multimedia:get-image-model-capabilities', modelName),
+    calculateImageCost: (modelName, imageCount, quality) => ipcRenderer.invoke('multimedia:calculate-image-cost', modelName, imageCount, quality),
+    generateImage: (options) => ipcRenderer.invoke('multimedia:generate-image', options),
   },
 
   internals: {

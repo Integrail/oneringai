@@ -244,6 +244,31 @@ async function setupIPC(): Promise<void> {
   ipcMain.handle('internals:get-memory-value', async (_event, key: string) => {
     return agentService!.getMemoryValue(key);
   });
+
+  // Multimedia - Image Generation
+  ipcMain.handle('multimedia:get-available-image-models', async () => {
+    return agentService!.getAvailableImageModels();
+  });
+
+  ipcMain.handle('multimedia:get-image-model-capabilities', async (_event, modelName: string) => {
+    return agentService!.getImageModelCapabilities(modelName);
+  });
+
+  ipcMain.handle('multimedia:calculate-image-cost', async (_event, modelName: string, imageCount: number, quality: string) => {
+    return agentService!.calculateImageCost(modelName, imageCount, quality as 'standard' | 'hd');
+  });
+
+  ipcMain.handle('multimedia:generate-image', async (_event, options: unknown) => {
+    return agentService!.generateImage(options as {
+      model: string;
+      prompt: string;
+      size?: string;
+      quality?: string;
+      style?: string;
+      n?: number;
+      [key: string]: unknown;
+    });
+  });
 }
 
 // App lifecycle

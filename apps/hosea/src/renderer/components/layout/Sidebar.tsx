@@ -12,6 +12,7 @@ import {
   PanelLeft,
   Key,
   Wrench,
+  Palette,
 } from 'lucide-react';
 import { useNavigation, type PageId } from '../../hooks/useNavigation';
 import logoFull from '../../assets/logo-full.svg';
@@ -35,6 +36,12 @@ const navSections: NavSection[] = [
     items: [
       { id: 'chat', label: 'Chat', icon: <MessageSquare size={20} /> },
       { id: 'agents', label: 'Agents', icon: <Bot size={20} /> },
+    ],
+  },
+  {
+    label: 'Creation',
+    items: [
+      { id: 'multimedia-studio', label: 'Multimedia Studio', icon: <Palette size={20} /> },
     ],
   },
   {

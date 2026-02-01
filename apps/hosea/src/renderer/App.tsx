@@ -12,6 +12,7 @@ import {
   LLMConnectorsPage,
   APIConnectorsPage,
   ToolConnectorsPage,
+  MultimediaStudioPage,
   InternalsPage,
   SettingsPage,
 } from './pages';
@@ -132,6 +133,8 @@ function AppContent(): React.ReactElement {
         return <APIConnectorsPage />;
       case 'tool-connectors':
         return <ToolConnectorsPage />;
+      case 'multimedia-studio':
+        return <MultimediaStudioPage />;
       case 'internals':
         return <InternalsPage />;
       case 'settings':

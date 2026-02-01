@@ -56,13 +56,26 @@ export interface ISourceLinks {
  * Used to describe vendor-specific options that fall outside semantic options
  */
 export interface VendorOptionSchema {
+  /** Data type of the option */
   type: 'string' | 'number' | 'boolean' | 'enum' | 'array';
+  /** Description of the option */
   description: string;
+  /** Whether the option is required */
   required?: boolean;
+  /** UI display label */
+  label?: string;
+  /** Valid values for enum/string types */
   enum?: string[];
-  min?: number;
-  max?: number;
+  /** Default value */
   default?: unknown;
+  /** Minimum value for numbers */
+  min?: number;
+  /** Maximum value for numbers */
+  max?: number;
+  /** Step value for number sliders */
+  step?: number;
+  /** UI control type hint */
+  controlType?: 'select' | 'radio' | 'slider' | 'checkbox' | 'text' | 'textarea';
 }
 
 /**

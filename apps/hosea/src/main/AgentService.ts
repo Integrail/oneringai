@@ -11,6 +11,7 @@ import {
   Connector,
   Vendor,
   UniversalAgent,
+  ImageGeneration,
   getModelsByVendor,
   getModelInfo,
   getToolByName,
@@ -19,6 +20,9 @@ import {
   getToolRegistry,
   logger,
   defaultDescribeCall,
+  getImageModelInfo,
+  getActiveImageModels,
+  calculateImageCost,
   type ToolFunction,
   type UniversalAgentConfig,
   type UniversalEvent,
@@ -28,6 +32,7 @@ import {
   type ToolRegistryEntry,
   type ILLMDescription,
   type LogLevel,
+  type IImageModelDescription,
 } from '@oneringai/agents';
 
 interface StoredConnectorConfig {
@@ -1689,6 +1694,193 @@ export class AgentService {
         components: [],
         totalTokens: 0,
         rawContext: `Error: ${error}`,
+      };
+    }
+  }
+
+  // ============ Multimedia - Image Generation ============
+
+  /**
+   * Get available image models based on configured connectors
+   */
+  getAvailableImageModels(): Array<{
+    name: string;
+    displayName: string;
+    vendor: string;
+    description?: string;
+    deprecationDate?: string;
+    maxPromptLength: number;
+    maxImagesPerRequest: number;
+    pricing?: {
+      perImage?: number;
+      perImageStandard?: number;
+      perImageHD?: number;
+    };
+  }> {
+    // Get vendors from configured connectors
+    const configuredVendors = new Set(
+      Array.from(this.connectors.values()).map((c) => c.vendor)
+    );
+
+    // Get all active image models
+    const allModels = getActiveImageModels();
+
+    // Filter to only show models for configured vendors
+    // Map vendor names to match what's stored in connectors
+    const vendorMapping: Record<string, string[]> = {
+      openai: ['openai'],
+      google: ['google', 'google-vertex'],
+    };
+
+    return allModels
+      .filter((model) => {
+        const modelVendor = model.provider.toLowerCase();
+        // Check if any configured vendor matches this model's vendor
+        return Array.from(configuredVendors).some((configuredVendor) => {
+          const mapped = vendorMapping[configuredVendor] || [configuredVendor];
+          return mapped.includes(modelVendor);
+        });
+      })
+      .map((model) => ({
+        name: model.name,
+        displayName: model.displayName,
+        vendor: model.provider.toLowerCase(),
+        description: model.description,
+        deprecationDate: model.deprecationDate,
+        maxPromptLength: model.capabilities.limits.maxPromptLength,
+        maxImagesPerRequest: model.capabilities.maxImagesPerRequest,
+        pricing: model.pricing,
+      }));
+  }
+
+  /**
+   * Get capabilities for a specific image model
+   */
+  getImageModelCapabilities(modelName: string): {
+    sizes: readonly string[];
+    aspectRatios?: readonly string[];
+    maxImagesPerRequest: number;
+    outputFormats: readonly string[];
+    features: {
+      generation: boolean;
+      editing: boolean;
+      variations: boolean;
+      styleControl: boolean;
+      qualityControl: boolean;
+      transparency: boolean;
+      promptRevision: boolean;
+    };
+    limits: {
+      maxPromptLength: number;
+      maxRequestsPerMinute?: number;
+    };
+    vendorOptions?: Record<string, unknown>;
+  } | null {
+    const model = getImageModelInfo(modelName);
+    if (!model) return null;
+
+    return model.capabilities;
+  }
+
+  /**
+   * Calculate estimated cost for image generation
+   */
+  calculateImageCost(
+    modelName: string,
+    imageCount: number,
+    quality: 'standard' | 'hd' = 'standard'
+  ): number | null {
+    return calculateImageCost(modelName, imageCount, quality);
+  }
+
+  /**
+   * Generate an image using the specified model
+   */
+  async generateImage(options: {
+    model: string;
+    prompt: string;
+    size?: string;
+    quality?: string;
+    style?: string;
+    n?: number;
+    [key: string]: unknown;
+  }): Promise<{
+    success: boolean;
+    data?: {
+      images: Array<{
+        b64_json?: string;
+        url?: string;
+        revisedPrompt?: string;
+      }>;
+    };
+    error?: string;
+  }> {
+    try {
+      // Get the model info to determine the vendor
+      const modelInfo = getImageModelInfo(options.model);
+      if (!modelInfo) {
+        return { success: false, error: `Unknown model: ${options.model}` };
+      }
+
+      const vendor = modelInfo.provider.toLowerCase();
+
+      // Find a connector for this vendor
+      const connector = Array.from(this.connectors.values()).find(
+        (c) => c.vendor.toLowerCase() === vendor
+      );
+
+      if (!connector) {
+        return {
+          success: false,
+          error: `No connector configured for vendor: ${vendor}`,
+        };
+      }
+
+      // Ensure connector is registered with the library
+      if (!Connector.has(connector.name)) {
+        Connector.create({
+          name: connector.name,
+          vendor: connector.vendor as Vendor,
+          auth: connector.auth,
+          baseURL: connector.baseURL,
+        });
+      }
+
+      // Create ImageGeneration instance
+      const imageGen = ImageGeneration.create({ connector: connector.name });
+
+      // Extract standard options
+      const { model, prompt, size, quality, style, n, ...vendorOptions } = options;
+
+      // Generate image
+      const response = await imageGen.generate({
+        model,
+        prompt,
+        size,
+        quality: quality as 'standard' | 'hd' | undefined,
+        style: style as 'vivid' | 'natural' | undefined,
+        n,
+        response_format: 'b64_json',
+        // Pass vendor-specific options
+        ...vendorOptions,
+      });
+
+      // Map response to our format
+      return {
+        success: true,
+        data: {
+          images: response.data.map((img) => ({
+            b64_json: img.b64_json,
+            url: img.url,
+            revisedPrompt: img.revised_prompt,
+          })),
+        },
+      };
+    } catch (error) {
+      console.error('Error generating image:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }

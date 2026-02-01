@@ -4,5 +4,6 @@ export { AgentEditorPage } from './AgentEditorPage';
 export { LLMConnectorsPage } from './LLMConnectorsPage';
 export { APIConnectorsPage } from './APIConnectorsPage';
 export { ToolConnectorsPage } from './ToolConnectorsPage';
+export { MultimediaStudioPage } from './MultimediaStudioPage';
 export { InternalsPage } from './InternalsPage';
 export { SettingsPage } from './SettingsPage';

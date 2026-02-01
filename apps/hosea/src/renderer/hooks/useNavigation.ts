@@ -11,6 +11,7 @@ export type PageId =
   | 'llm-connectors'
   | 'api-connectors'
   | 'tool-connectors'
+  | 'multimedia-studio'
   | 'internals'
   | 'settings';
 
