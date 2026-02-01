@@ -17068,8 +17068,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
    */
   async prepareAudioFile(audio) {
     if (Buffer.isBuffer(audio)) {
-      const blob = new Blob([audio]);
-      return new File([blob], "audio.wav", { type: "audio/wav" });
+      return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
       return fs15.createReadStream(audio);
     } else {
@@ -18296,7 +18295,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
    */
   prepareImageInput(image) {
     if (Buffer.isBuffer(image)) {
-      return new File([image], "image.png", { type: "image/png" });
+      return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
     return fs15.createReadStream(image);
   }
@@ -19391,12 +19390,12 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
    */
   async prepareImageInput(image) {
     if (Buffer.isBuffer(image)) {
-      return new File([image], "input.png", { type: "image/png" });
+      return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
       const fs16 = await import('fs');
       const data = fs16.readFileSync(image);
-      return new File([data], "input.png", { type: "image/png" });
+      return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
     const arrayBuffer = await response.arrayBuffer();

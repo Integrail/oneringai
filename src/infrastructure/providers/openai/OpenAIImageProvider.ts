@@ -232,7 +232,7 @@ export class OpenAIImageProvider extends BaseMediaProvider implements IImageProv
   private prepareImageInput(image: Buffer | string): any {
     if (Buffer.isBuffer(image)) {
       // OpenAI accepts File objects, we create a blob-like structure
-      return new File([image], 'image.png', { type: 'image/png' });
+      return new File([new Uint8Array(image)], 'image.png', { type: 'image/png' });
     }
 
     // It's a file path - create a readable stream

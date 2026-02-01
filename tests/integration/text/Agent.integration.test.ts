@@ -723,8 +723,13 @@ describeIfAllKeys('Cross-vendor consistency', () => {
       const agent = Agent.create({
         ...config,
         tools: [calculatorTool],
+        // Disable memory features to reduce tool clutter
+        context: { features: { memory: false } },
       });
-      const response = await agent.run('What is 10 + 5?');
+      // Disable the context_stats tool to avoid LLM confusion
+      agent.context.tools.disable('context_stats');
+
+      const response = await agent.run('Use the calculate tool to compute the sum of 10 and 5. Call the calculate tool with operation="add", a=10, b=5.');
 
       expect(response.status).toBe('completed');
       expect(response.output_text).toBeDefined();

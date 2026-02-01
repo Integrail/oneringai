@@ -14,6 +14,8 @@ import {
   Wrench,
 } from 'lucide-react';
 import { useNavigation, type PageId } from '../../hooks/useNavigation';
+import logoFull from '../../assets/logo-full.svg';
+import logoShort from '../../assets/logo-short.svg';
 
 interface NavItem {
   id: PageId;
@@ -61,14 +63,10 @@ export function Sidebar(): React.ReactElement {
 
       {/* Brand */}
       <div className="sidebar__brand" onClick={() => setExpanded(!expanded)}>
-        <div className="sidebar__logo">
-          <span className="sidebar__logo-letter">H</span>
-        </div>
-        {expanded && (
-          <div className="sidebar__brand-content">
-            <span className="sidebar__brand-text">HOSEA</span>
-            <span className="sidebar__brand-tagline">AI Agents</span>
-          </div>
+        {expanded ? (
+          <img src={logoFull} alt="Logo" className="sidebar__logo-full" />
+        ) : (
+          <img src={logoShort} alt="Logo" className="sidebar__logo-short" />
         )}
         <button
           className="sidebar__toggle"

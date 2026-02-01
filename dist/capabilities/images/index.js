@@ -2355,7 +2355,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
    */
   prepareImageInput(image) {
     if (Buffer.isBuffer(image)) {
-      return new File([image], "image.png", { type: "image/png" });
+      return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
     return fs2.createReadStream(image);
   }

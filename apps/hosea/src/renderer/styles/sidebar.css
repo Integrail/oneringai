@@ -48,45 +48,15 @@
   background-color: rgba(255, 255, 255, 0.05);
 }
 
-.sidebar__logo {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
-  border-radius: var(--radius-lg);
-  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
-}
-
-.sidebar__logo-letter {
-  color: var(--color-white);
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-xl);
-  line-height: 1;
-}
-
-.sidebar__brand-content {
+.sidebar__logo-full {
+  height: 32px;
+  width: auto;
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
 }
 
-.sidebar__brand-text {
-  font-weight: var(--font-weight-bold);
-  font-size: var(--font-size-lg);
-  color: var(--color-white);
-  white-space: nowrap;
-  display: block;
-  line-height: 1.2;
-}
-
-.sidebar__brand-tagline {
-  font-size: var(--font-size-xs);
-  color: var(--color-gray-500);
-  white-space: nowrap;
-  display: block;
+.sidebar__logo-short {
+  height: 32px;
+  width: auto;
 }
 
 .sidebar__toggle {

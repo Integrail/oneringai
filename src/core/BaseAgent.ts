@@ -356,8 +356,9 @@ export abstract class BaseAgent<
     const contextConfig: AgentContextConfig = {
       model: config.model,
       agentId: config.name,
-      // Include storage if session config is provided
+      // Include storage and sessionId if session config is provided
       storage: config.session?.storage,
+      sessionId: config.session?.id,
       // Subclasses can add systemPrompt via their config
       ...(typeof config.context === 'object' && config.context !== null ? config.context : {}),
     };

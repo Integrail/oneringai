@@ -161,8 +161,7 @@ export class OpenAISTTProvider extends BaseMediaProvider implements ISpeechToTex
   private async prepareAudioFile(audio: Buffer | string): Promise<any> {
     if (Buffer.isBuffer(audio)) {
       // Convert Buffer to File-like object that OpenAI SDK expects
-      const blob = new Blob([audio]);
-      return new File([blob], 'audio.wav', { type: 'audio/wav' });
+      return new File([new Uint8Array(audio)], 'audio.wav', { type: 'audio/wav' });
     } else if (typeof audio === 'string') {
       // File path - create ReadStream
       return fs.createReadStream(audio);

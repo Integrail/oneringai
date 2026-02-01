@@ -346,14 +346,14 @@ export class OpenAISoraProvider extends BaseMediaProvider implements IVideoProvi
   private async prepareImageInput(image: Buffer | string): Promise<any> {
     if (Buffer.isBuffer(image)) {
       // Create a File-like object from buffer
-      return new File([image], 'input.png', { type: 'image/png' });
+      return new File([new Uint8Array(image)], 'input.png', { type: 'image/png' });
     }
 
     // If it's a file path, read it
     if (!image.startsWith('http')) {
       const fs = await import('fs');
       const data = fs.readFileSync(image);
-      return new File([data], 'input.png', { type: 'image/png' });
+      return new File([new Uint8Array(data)], 'input.png', { type: 'image/png' });
     }
 
     // For URLs, fetch and convert to File

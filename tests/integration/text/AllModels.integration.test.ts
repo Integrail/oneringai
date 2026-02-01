@@ -45,12 +45,17 @@ const REASONING_MODEL_TIMEOUT = 240000; // 4 minutes for reasoning models (Googl
 const TEST_PROMPT = 'Hi! Say hello back in one short sentence.';
 
 /**
- * Models to skip (image-only models that don't support text generation)
+ * Models to skip (deprecated, image-only, or unsupported models)
  */
 const SKIP_MODELS: Set<string> = new Set([
   // Image generation models - don't support text-only requests
   'gemini-3-pro-image-preview',
   'gemini-2.5-flash-image',
+  // Deprecated Claude 3.x models - only test Claude 4+
+  'claude-3-7-sonnet-20250219',
+  'claude-3-haiku-20240307',
+  'claude-3-5-sonnet-20241022',
+  'claude-3-5-haiku-20241022',
 ]);
 
 /**

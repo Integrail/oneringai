@@ -335,7 +335,14 @@ describe('PlanExecutor Integration - Real LLM', () => {
           tasks: [
             {
               name: 'store_data',
-              description: 'Store the number 42 in memory with key "my_number" using memory_store tool',
+              description: 'You MUST call the memory_store tool with key="my_number", description="My number", value=42. Do NOT just say you stored the data - actually call the memory_store tool.',
+              maxAttempts: 5, // Allow retries if validation fails
+              validation: {
+                enabled: true,
+                method: 'llm_self_reflection',
+                requiredMemoryKeys: ['my_number'],
+                mode: 'strict', // Fail task if key is missing so it retries
+              },
             },
             {
               name: 'retrieve_data',

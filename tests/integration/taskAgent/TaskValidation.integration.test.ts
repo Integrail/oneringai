@@ -208,7 +208,8 @@ describe('TaskValidation Integration - LLM Self-Reflection', () => {
           tasks: [
             {
               name: 'store_user_data',
-              description: 'Store user name "Alice" with key "user_name" and age "30" with key "user_age" using memory_store tool',
+              description: 'You MUST call memory_store tool twice: first with key="user_name", description="User name", value="Alice"; then with key="user_age", description="User age", value=30. Do NOT just say you stored the data - actually call the memory_store tool.',
+              maxAttempts: 5, // Allow retries if validation fails
               validation: {
                 enabled: true,
                 method: 'llm_self_reflection',
@@ -217,6 +218,7 @@ describe('TaskValidation Integration - LLM Self-Reflection', () => {
                   'Both user_name and user_age are stored in memory',
                 ],
                 minCompletionScore: 90,
+                mode: 'strict', // Fail task if keys are missing so it retries
               },
             },
           ],
@@ -524,25 +526,29 @@ describe('TaskValidation Integration - LLM Self-Reflection', () => {
           tasks: [
             {
               name: 'gather_data',
-              description: 'Store "data collected" with key "status" using memory_store',
+              description: 'You MUST call the memory_store tool with key="status", description="Status", value="data collected". Do NOT just say you stored the data - actually call the memory_store tool.',
+              maxAttempts: 5, // Allow retries if validation fails
               validation: {
                 enabled: true,
                 method: 'llm_self_reflection',
                 requiredMemoryKeys: ['status'],
                 completionCriteria: ['Data is stored in memory'],
                 minCompletionScore: 80,
+                mode: 'strict', // Fail task if keys are missing so it retries
               },
             },
             {
               name: 'process_data',
-              description: 'Store "data processed" with key "result" using memory_store',
+              description: 'You MUST call the memory_store tool with key="result", description="Result", value="data processed". Do NOT just say you stored the data - actually call the memory_store tool.',
               dependsOn: ['gather_data'],
+              maxAttempts: 5, // Allow retries if validation fails
               validation: {
                 enabled: true,
                 method: 'llm_self_reflection',
                 requiredMemoryKeys: ['result'],
                 completionCriteria: ['Processing result is stored'],
                 minCompletionScore: 80,
+                mode: 'strict', // Fail task if keys are missing so it retries
               },
             },
           ],
