@@ -27,6 +27,12 @@ import {
   getVideoModelInfo,
   getActiveVideoModels,
   calculateVideoCost,
+  TextToSpeech,
+  getTTSModelInfo,
+  getActiveTTSModels,
+  calculateTTSCost,
+  type ITTSModelDescription,
+  type IVoiceInfo,
   type ToolFunction,
   type UniversalAgentConfig,
   type UniversalEvent,
@@ -2211,6 +2217,176 @@ export class AgentService {
       return { success: true };
     } catch (error) {
       console.error('Error canceling video job:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // ============ Multimedia - Text-to-Speech ============
+
+  /**
+   * Get available TTS models based on configured connectors
+   */
+  getAvailableTTSModels(): Array<{
+    name: string;
+    displayName: string;
+    vendor: string;
+    description?: string;
+    maxInputLength: number;
+    voiceCount: number;
+    pricing?: {
+      per1kCharacters: number;
+      currency: string;
+    };
+  }> {
+    // Get vendors from configured connectors
+    const configuredVendors = new Set(
+      Array.from(this.connectors.values()).map((c) => c.vendor)
+    );
+
+    // Get all active TTS models
+    const allModels = getActiveTTSModels();
+
+    // Map vendor names to match what's stored in connectors
+    const vendorMapping: Record<string, string[]> = {
+      openai: ['openai'],
+      google: ['google', 'google-vertex'],
+    };
+
+    return allModels
+      .filter((model) => {
+        const modelVendor = model.provider.toLowerCase();
+        // Check if any configured vendor matches this model's vendor
+        return Array.from(configuredVendors).some((configuredVendor) => {
+          const mapped = vendorMapping[configuredVendor] || [configuredVendor];
+          return mapped.includes(modelVendor);
+        });
+      })
+      .map((model) => ({
+        name: model.name,
+        displayName: model.displayName,
+        vendor: model.provider.toLowerCase(),
+        description: model.description,
+        maxInputLength: model.capabilities.limits.maxInputLength,
+        voiceCount: model.capabilities.voices.length,
+        pricing: model.pricing,
+      }));
+  }
+
+  /**
+   * Get capabilities for a specific TTS model
+   */
+  getTTSModelCapabilities(modelName: string): {
+    voices: IVoiceInfo[];
+    formats: readonly string[] | string[];
+    languages: readonly string[] | string[];
+    speed: {
+      supported: boolean;
+      min?: number;
+      max?: number;
+      default?: number;
+    };
+    features: {
+      streaming: boolean;
+      ssml: boolean;
+      emotions: boolean;
+      voiceCloning: boolean;
+      wordTimestamps: boolean;
+      instructionSteering?: boolean;
+    };
+    limits: {
+      maxInputLength: number;
+      maxRequestsPerMinute?: number;
+    };
+    vendorOptions?: Record<string, unknown>;
+  } | null {
+    const model = getTTSModelInfo(modelName);
+    if (!model) return null;
+
+    return model.capabilities;
+  }
+
+  /**
+   * Calculate estimated cost for TTS
+   */
+  calculateTTSCost(modelName: string, characterCount: number): number | null {
+    return calculateTTSCost(modelName, characterCount);
+  }
+
+  /**
+   * Synthesize speech from text
+   */
+  async synthesizeSpeech(options: {
+    model: string;
+    text: string;
+    voice: string;
+    format?: string;
+    speed?: number;
+    vendorOptions?: Record<string, unknown>;
+  }): Promise<{
+    success: boolean;
+    data?: {
+      audio: string; // base64 encoded
+      format: string;
+    };
+    error?: string;
+  }> {
+    try {
+      // Get the model info to determine the vendor
+      const modelInfo = getTTSModelInfo(options.model);
+      if (!modelInfo) {
+        return { success: false, error: `Unknown TTS model: ${options.model}` };
+      }
+
+      const vendor = modelInfo.provider.toLowerCase();
+
+      // Find a connector for this vendor
+      const connector = Array.from(this.connectors.values()).find(
+        (c) => c.vendor.toLowerCase() === vendor
+      );
+
+      if (!connector) {
+        return {
+          success: false,
+          error: `No connector configured for vendor: ${vendor}`,
+        };
+      }
+
+      // Ensure connector is registered with the library
+      if (!Connector.has(connector.name)) {
+        Connector.create({
+          name: connector.name,
+          vendor: connector.vendor as Vendor,
+          auth: connector.auth,
+          baseURL: connector.baseURL,
+        });
+      }
+
+      // Create TextToSpeech instance
+      const tts = TextToSpeech.create({
+        connector: connector.name,
+        model: options.model,
+      });
+
+      // Synthesize speech
+      const response = await tts.synthesize(options.text, {
+        voice: options.voice,
+        format: options.format as any,
+        speed: options.speed,
+        vendorOptions: options.vendorOptions,
+      });
+
+      return {
+        success: true,
+        data: {
+          audio: response.audio.toString('base64'),
+          format: response.format,
+        },
+      };
+    } catch (error) {
+      console.error('Error synthesizing speech:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),

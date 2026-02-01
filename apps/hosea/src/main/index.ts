@@ -311,6 +311,30 @@ async function setupIPC(): Promise<void> {
   ipcMain.handle('multimedia:cancel-video-job', async (_event, jobId: string) => {
     return agentService!.cancelVideoJob(jobId);
   });
+
+  // Multimedia - TTS
+  ipcMain.handle('multimedia:get-available-tts-models', async () => {
+    return agentService!.getAvailableTTSModels();
+  });
+
+  ipcMain.handle('multimedia:get-tts-model-capabilities', async (_event, modelName: string) => {
+    return agentService!.getTTSModelCapabilities(modelName);
+  });
+
+  ipcMain.handle('multimedia:calculate-tts-cost', async (_event, modelName: string, charCount: number) => {
+    return agentService!.calculateTTSCost(modelName, charCount);
+  });
+
+  ipcMain.handle('multimedia:synthesize-speech', async (_event, options: unknown) => {
+    return agentService!.synthesizeSpeech(options as {
+      model: string;
+      text: string;
+      voice: string;
+      format?: string;
+      speed?: number;
+      vendorOptions?: Record<string, unknown>;
+    });
+  });
 }
 
 // App lifecycle

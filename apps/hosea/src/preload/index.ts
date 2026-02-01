@@ -438,6 +438,69 @@ export interface HoseaAPI {
       success: boolean;
       error?: string;
     }>;
+    // TTS
+    getAvailableTTSModels: () => Promise<Array<{
+      name: string;
+      displayName: string;
+      vendor: string;
+      description?: string;
+      maxInputLength: number;
+      voiceCount: number;
+      pricing?: {
+        per1kCharacters: number;
+        currency: string;
+      };
+    }>>;
+    getTTSModelCapabilities: (modelName: string) => Promise<{
+      voices: Array<{
+        id: string;
+        name: string;
+        language: string;
+        gender: 'male' | 'female' | 'neutral';
+        style?: string;
+        previewUrl?: string;
+        isDefault?: boolean;
+        accent?: string;
+        age?: 'child' | 'young' | 'adult' | 'senior';
+      }>;
+      formats: string[];
+      languages: string[];
+      speed: {
+        supported: boolean;
+        min?: number;
+        max?: number;
+        default?: number;
+      };
+      features: {
+        streaming: boolean;
+        ssml: boolean;
+        emotions: boolean;
+        voiceCloning: boolean;
+        wordTimestamps: boolean;
+        instructionSteering?: boolean;
+      };
+      limits: {
+        maxInputLength: number;
+        maxRequestsPerMinute?: number;
+      };
+      vendorOptions?: Record<string, unknown>;
+    } | null>;
+    calculateTTSCost: (modelName: string, charCount: number) => Promise<number | null>;
+    synthesizeSpeech: (options: {
+      model: string;
+      text: string;
+      voice: string;
+      format?: string;
+      speed?: number;
+      vendorOptions?: Record<string, unknown>;
+    }) => Promise<{
+      success: boolean;
+      data?: {
+        audio: string;
+        format: string;
+      };
+      error?: string;
+    }>;
   };
 }
 
@@ -528,6 +591,11 @@ const api: HoseaAPI = {
     getVideoStatus: (jobId) => ipcRenderer.invoke('multimedia:get-video-status', jobId),
     downloadVideo: (jobId) => ipcRenderer.invoke('multimedia:download-video', jobId),
     cancelVideoJob: (jobId) => ipcRenderer.invoke('multimedia:cancel-video-job', jobId),
+    // TTS
+    getAvailableTTSModels: () => ipcRenderer.invoke('multimedia:get-available-tts-models'),
+    getTTSModelCapabilities: (modelName) => ipcRenderer.invoke('multimedia:get-tts-model-capabilities', modelName),
+    calculateTTSCost: (modelName, charCount) => ipcRenderer.invoke('multimedia:calculate-tts-cost', modelName, charCount),
+    synthesizeSpeech: (options) => ipcRenderer.invoke('multimedia:synthesize-speech', options),
   },
 
   internals: {
