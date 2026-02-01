@@ -5,10 +5,10 @@
 
 :root {
   /* Color Palette */
-  --color-primary: #6366f1;
-  --color-primary-hover: #4f46e5;
-  --color-primary-light: #e0e7ff;
-  --color-primary-dark: #3730a3;
+  --color-primary: #FF0D40;
+  --color-primary-hover: #E60B39;
+  --color-primary-light: #FFE5EA;
+  --color-primary-dark: #CC0A33;
 
   --color-secondary: #64748b;
   --color-secondary-hover: #475569;
@@ -115,6 +115,63 @@
 
   /* macOS titlebar area */
   --titlebar-height: 38px;
+
+  /* Bootstrap Primary Color Overrides */
+  --bs-primary: #FF0D40;
+  --bs-primary-rgb: 255, 13, 64;
+  --bs-link-color: #FF0D40;
+  --bs-link-color-rgb: 255, 13, 64;
+  --bs-link-hover-color: #CC0A33;
+  --bs-link-hover-color-rgb: 204, 10, 51;
+}
+
+/* Bootstrap Button Overrides */
+.btn-primary {
+  --bs-btn-bg: #FF0D40;
+  --bs-btn-border-color: #FF0D40;
+  --bs-btn-hover-bg: #E60B39;
+  --bs-btn-hover-border-color: #E60B39;
+  --bs-btn-active-bg: #CC0A33;
+  --bs-btn-active-border-color: #CC0A33;
+  --bs-btn-disabled-bg: #FF0D40;
+  --bs-btn-disabled-border-color: #FF0D40;
+}
+
+.btn-outline-primary {
+  --bs-btn-color: #FF0D40;
+  --bs-btn-border-color: #FF0D40;
+  --bs-btn-hover-bg: #FF0D40;
+  --bs-btn-hover-border-color: #FF0D40;
+  --bs-btn-active-bg: #E60B39;
+  --bs-btn-active-border-color: #E60B39;
+}
+
+/* Bootstrap Focus Ring */
+.btn:focus-visible {
+  box-shadow: 0 0 0 0.25rem rgba(255, 13, 64, 0.25);
+}
+
+/* Bootstrap Spinner */
+.spinner-border.text-primary {
+  color: #FF0D40 !important;
+}
+
+/* Bootstrap Form Controls Focus */
+.form-control:focus,
+.form-select:focus {
+  border-color: #FF0D40;
+  box-shadow: 0 0 0 0.25rem rgba(255, 13, 64, 0.25);
+}
+
+/* Bootstrap Checkbox/Radio */
+.form-check-input:checked {
+  background-color: #FF0D40;
+  border-color: #FF0D40;
+}
+
+.form-check-input:focus {
+  border-color: #FF0D40;
+  box-shadow: 0 0 0 0.25rem rgba(255, 13, 64, 0.25);
 }
 
 /* Dark mode overrides */
