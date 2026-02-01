@@ -13622,8 +13622,8 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
   _sessionConfig = null;
   _autoSaveInterval = null;
   _pendingSessionLoad = null;
-  // Lazy-initialized provider for direct calls
-  _directProvider = null;
+  // Provider for LLM calls - single instance shared by all methods
+  _provider;
   // ===== Constructor =====
   constructor(config, loggerComponent) {
     super();
@@ -13645,6 +13645,7 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
     }
     this._permissionManager = this.initializePermissionManager(config.permissions, config.tools);
     this._lifecycleHooks = config.lifecycleHooks ?? {};
+    this._provider = createProvider(this.connector);
   }
   // ===== Protected Initialization Helpers =====
   /**
@@ -13868,14 +13869,11 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
   }
   // ===== Direct LLM Access (Bypasses AgentContext) =====
   /**
-   * Get or create the provider for direct calls.
-   * Lazily initialized to avoid creating provider if not used.
+   * Get the provider for LLM calls.
+   * Returns the single shared provider instance.
    */
-  getDirectProvider() {
-    if (!this._directProvider) {
-      this._directProvider = createProvider(this.connector);
-    }
-    return this._directProvider;
+  getProvider() {
+    return this._provider;
   }
   /**
    * Make a direct LLM call bypassing all context management.
@@ -13924,7 +13922,7 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
     if (this._isDestroyed) {
       throw new Error("Agent has been destroyed");
     }
-    const provider = this.getDirectProvider();
+    const provider = this.getProvider();
     const generateOptions = {
       model: this.model,
       input,
@@ -13968,7 +13966,7 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
     if (this._isDestroyed) {
       throw new Error("Agent has been destroyed");
     }
-    const provider = this.getDirectProvider();
+    const provider = this.getProvider();
     const generateOptions = {
       model: this.model,
       input,
@@ -16085,7 +16083,6 @@ function assertNotDestroyed(obj, operation) {
 init_Metrics();
 var Agent = class _Agent extends BaseAgent {
   // ===== Agent-specific State =====
-  provider;
   agenticLoop;
   boundListeners = /* @__PURE__ */ new Map();
   // ===== Static Factory =====
@@ -16185,7 +16182,6 @@ var Agent = class _Agent extends BaseAgent {
       model: this.model,
       connector: this.connector.name
     });
-    this.provider = createProvider(this.connector);
     if (config.instructions) {
       this._agentContext.systemPrompt = config.instructions;
     }
@@ -16197,7 +16193,7 @@ var Agent = class _Agent extends BaseAgent {
       }
     });
     this.agenticLoop = new AgenticLoop(
-      this.provider,
+      this._provider,
       this._agentContext.tools,
       config.hooks,
       config.errorHandling
@@ -16218,18 +16214,7 @@ var Agent = class _Agent extends BaseAgent {
   hasContext() {
     return true;
   }
-  /**
-   * Get context state for session persistence.
-   */
-  async getContextState() {
-    return this._agentContext.getState();
-  }
-  /**
-   * Restore context from saved state.
-   */
-  async restoreContextState(state) {
-    await this._agentContext.restoreState(state);
-  }
+  // getContextState() and restoreContextState() are inherited from BaseAgent
   // ===== Main API =====
   /**
    * Run the agent with input
@@ -16509,8 +16494,8 @@ var Agent = class _Agent extends BaseAgent {
    * Get circuit breaker metrics for LLM provider
    */
   getProviderCircuitBreakerMetrics() {
-    if ("getCircuitBreakerMetrics" in this.provider) {
-      return this.provider.getCircuitBreakerMetrics();
+    if ("getCircuitBreakerMetrics" in this._provider) {
+      return this._provider.getCircuitBreakerMetrics();
     }
     return null;
   }

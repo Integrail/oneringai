@@ -279,8 +279,8 @@ export abstract class BaseAgent<
   protected _autoSaveInterval: ReturnType<typeof setInterval> | null = null;
   protected _pendingSessionLoad: Promise<boolean> | null = null;
 
-  // Lazy-initialized provider for direct calls
-  private _directProvider: ITextProvider | null = null;
+  // Provider for LLM calls - single instance shared by all methods
+  protected _provider: ITextProvider;
 
   // ===== Constructor =====
 
@@ -318,6 +318,9 @@ export abstract class BaseAgent<
 
     // Initialize lifecycle hooks
     this._lifecycleHooks = config.lifecycleHooks ?? {};
+
+    // Create provider from connector (single instance for all LLM calls)
+    this._provider = createProvider(this.connector);
   }
 
   // ===== Abstract Methods =====
@@ -599,14 +602,11 @@ export abstract class BaseAgent<
   // ===== Direct LLM Access (Bypasses AgentContext) =====
 
   /**
-   * Get or create the provider for direct calls.
-   * Lazily initialized to avoid creating provider if not used.
+   * Get the provider for LLM calls.
+   * Returns the single shared provider instance.
    */
-  private getDirectProvider(): ITextProvider {
-    if (!this._directProvider) {
-      this._directProvider = createProvider(this.connector);
-    }
-    return this._directProvider;
+  protected getProvider(): ITextProvider {
+    return this._provider;
   }
 
   /**
@@ -660,7 +660,7 @@ export abstract class BaseAgent<
       throw new Error('Agent has been destroyed');
     }
 
-    const provider = this.getDirectProvider();
+    const provider = this.getProvider();
 
     const generateOptions = {
       model: this.model,
@@ -712,7 +712,7 @@ export abstract class BaseAgent<
       throw new Error('Agent has been destroyed');
     }
 
-    const provider = this.getDirectProvider();
+    const provider = this.getProvider();
 
     const generateOptions = {
       model: this.model,

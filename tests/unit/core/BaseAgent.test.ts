@@ -349,7 +349,7 @@ describe('BaseAgent', () => {
       });
 
       // Access private provider and mock it
-      (agent as any)._directProvider = {
+      (agent as any)._provider = {
         generate: mockGenerate,
         streamGenerate: vi.fn(),
       };
@@ -379,7 +379,7 @@ describe('BaseAgent', () => {
         output: [],
       });
 
-      (agent as any)._directProvider = {
+      (agent as any)._provider = {
         generate: mockGenerate,
         streamGenerate: vi.fn(),
       };
@@ -427,7 +427,7 @@ describe('BaseAgent', () => {
         output: [],
       });
 
-      (agent as any)._directProvider = {
+      (agent as any)._provider = {
         generate: mockGenerate,
         streamGenerate: vi.fn(),
       };
@@ -471,7 +471,7 @@ describe('BaseAgent', () => {
         output: [],
       });
 
-      (agent as any)._directProvider = {
+      (agent as any)._provider = {
         generate: mockGenerate,
         streamGenerate: vi.fn(),
       };
@@ -498,7 +498,7 @@ describe('BaseAgent', () => {
         output: [],
       });
 
-      (agent as any)._directProvider = {
+      (agent as any)._provider = {
         generate: mockGenerate,
         streamGenerate: vi.fn(),
       };
@@ -555,7 +555,7 @@ describe('BaseAgent', () => {
         }
       };
 
-      (agent as any)._directProvider = {
+      (agent as any)._provider = {
         generate: vi.fn(),
         streamGenerate: mockStreamGenerate,
       };
@@ -583,7 +583,7 @@ describe('BaseAgent', () => {
         output: [],
       });
 
-      (agent as any)._directProvider = {
+      (agent as any)._provider = {
         generate: mockGenerate,
         streamGenerate: vi.fn(),
       };

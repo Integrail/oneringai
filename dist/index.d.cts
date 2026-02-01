@@ -1,7 +1,7 @@
 import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ConnectorFetchOptions, d as ITokenStorage, S as StoredToken$1, e as ConnectorConfig, f as ConnectorConfigResult } from './ImageModel-1aB1pSo6.cjs';
 export { m as APIKeyConnectorAuth, D as AspectRatio, l as ConnectorAuth, L as DEFAULT_BASE_DELAY_MS, G as DEFAULT_CONNECTOR_TIMEOUT, M as DEFAULT_MAX_DELAY_MS, H as DEFAULT_MAX_RETRIES, K as DEFAULT_RETRYABLE_STATUSES, n as IImageModelDescription, q as IMAGE_MODELS, r as IMAGE_MODEL_REGISTRY, F as ISourceLinks, y as ImageEditOptions, x as ImageGenerateOptions, h as ImageGeneration, j as ImageGenerationCreateOptions, o as ImageModelCapabilities, p as ImageModelPricing, B as ImageResponse, z as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, E as OutputFormat, Q as QualityLevel, k as SimpleGenerateOptions, g as VENDORS, w as calculateImageCost, u as getActiveImageModels, s as getImageModelInfo, t as getImageModelsByVendor, v as getImageModelsWithFeature, i as isVendor } from './ImageModel-1aB1pSo6.cjs';
-import { T as ToolFunction, a as ToolManager, I as IContextStorage, A as AgentPermissionsConfig, b as AgentContext, c as AgentContextConfig, d as ToolPermissionManager, C as ContextSessionMetadata, S as SerializedAgentContextState, F as FunctionToolDefinition, e as InputItem, L as LLMResponse, f as StreamEvent, g as AgentContextFeatures, H as HookConfig, h as HistoryMode, i as AgenticLoopEvents, j as IDisposable, k as AgentResponse, E as ExecutionContext, l as ExecutionMetrics, m as AuditEntry, n as CircuitState, o as CircuitBreakerMetrics, p as IContextComponent, q as ITextProvider, r as IMemoryStorage, M as MemoryEntry, s as MemoryScope, B as BaseContextPlugin, W as WorkingMemory, t as ITokenEstimator, u as StaleEntryInfo, v as IdempotencyCache, w as WorkingMemoryConfig, x as AutoSpillConfig, y as IContextStrategy, z as ContextBudget, D as ContextManagerConfig, G as IContextCompactor, J as TokenContentType, K as IPersistentInstructionsStorage, N as StoredContextSession, O as ContextStorageListOptions, P as ContextSessionSummary, Q as TokenUsage, R as ToolCall, U as StreamEventType, V as CircuitBreaker, X as TextGenerateOptions, Y as ModelCapabilities, Z as ToolPermissionConfig, _ as MessageRole, $ as InContextMemoryConfig, a0 as InContextMemoryPlugin, a1 as PersistentInstructionsConfig, a2 as PersistentInstructionsPlugin } from './index-B4RozoxY.cjs';
-export { ax as APPROVAL_STATE_VERSION, bI as AfterToolContext, a4 as AgentContextEvents, a6 as AgentContextHistoryMessage, a5 as AgentContextMetrics, bD as AgenticLoopEventName, aq as ApprovalCacheEntry, au as ApprovalDecision, bL as ApprovalResult, bJ as ApproveToolContext, ab as AutoSpillPlugin, bH as BeforeToolContext, bf as BuiltInTool, aB as CONTEXT_SESSION_FORMAT_VERSION, aF as CacheStats, bQ as CircuitBreakerConfig, bR as CircuitBreakerEvents, bP as CircuitOpenError, b9 as CompactionItem, b1 as Content, b0 as ContentType, az as DEFAULT_ALLOWLIST, bS as DEFAULT_CIRCUIT_BREAKER_CONFIG, aI as DEFAULT_CONTEXT_CONFIG, a3 as DEFAULT_FEATURES, aG as DEFAULT_IDEMPOTENCY_CONFIG, aQ as DEFAULT_MEMORY_CONFIG, ay as DEFAULT_PERMISSION_CONFIG, aA as DefaultAllowlistedTool, bu as ErrorEvent, aD as EvictionStrategy, bF as Hook, bC as HookManager, bE as HookName, bN as IAsyncDisposable, bM as IToolExecutor, aE as IdempotencyCacheConfig, bT as InContextEntry, bU as InContextPriority, b3 as InputImageContent, b2 as InputTextContent, bs as IterationCompleteEvent, bi as JSONSchema, aZ as MEMORY_PRIORITY_VALUES, aJ as MemoryEntryInput, aK as MemoryIndex, aL as MemoryIndexEntry, aM as MemoryPriority, b7 as Message, bG as ModifyingHook, b8 as OutputItem, b4 as OutputTextContent, bl as OutputTextDeltaEvent, bm as OutputTextDoneEvent, av as PermissionCheckContext, at as PermissionCheckResult, aw as PermissionManagerEvent, an as PermissionScope, a8 as PrepareOptions, aH as PreparedContext, a9 as PreparedResult, ba as ReasoningItem, bt as ResponseCompleteEvent, bj as ResponseCreatedEvent, bk as ResponseInProgressEvent, ao as RiskLevel, as as SerializedApprovalEntry, ar as SerializedApprovalState, bV as SerializedInContextMemoryState, bW as SerializedPersistentInstructionsState, al as SerializedToolState, aO as SimpleScope, ae as SpilledEntry, aN as TaskAwareScope, aP as TaskStatusForMemory, a_ as TaskToolContext, be as Tool, bo as ToolCallArgumentsDeltaEvent, bp as ToolCallArgumentsDoneEvent, a7 as ToolCallRecord, bn as ToolCallStartEvent, bb as ToolCallState, ag as ToolCondition, a_ as ToolContext, bh as ToolExecutionContext, br as ToolExecutionDoneEvent, bq as ToolExecutionStartEvent, am as ToolManagerEvent, ak as ToolManagerStats, aj as ToolMetadata, bK as ToolModification, af as ToolOptions, ad as ToolOutput, aa as ToolOutputPlugin, ac as ToolOutputPluginConfig, ap as ToolPermissionConfig, ai as ToolRegistration, bg as ToolResult, b6 as ToolResultContent, ah as ToolSelectionContext, b5 as ToolUseContent, a$ as WorkingMemoryAccess, aC as WorkingMemoryEvents, bO as assertNotDestroyed, aY as calculateEntrySize, bc as defaultDescribeCall, aS as forPlan, aR as forTasks, bd as getToolCallDescription, bB as isErrorEvent, bw as isOutputTextDelta, bA as isResponseComplete, aV as isSimpleScope, bv as isStreamEvent, aW as isTaskAwareScope, aX as isTerminalMemoryStatus, by as isToolCallArgumentsDelta, bz as isToolCallArgumentsDone, bx as isToolCallStart, aT as scopeEquals, aU as scopeMatches } from './index-B4RozoxY.cjs';
+import { T as ToolFunction, a as ToolManager, I as IContextStorage, A as AgentPermissionsConfig, b as AgentContext, c as AgentContextConfig, d as ToolPermissionManager, e as ITextProvider, C as ContextSessionMetadata, S as SerializedAgentContextState, F as FunctionToolDefinition, f as InputItem, L as LLMResponse, g as StreamEvent, h as AgentContextFeatures, H as HookConfig, i as HistoryMode, j as AgenticLoopEvents, k as IDisposable, l as AgentResponse, E as ExecutionContext, m as ExecutionMetrics, n as AuditEntry, o as CircuitState, p as CircuitBreakerMetrics, q as IContextComponent, r as IMemoryStorage, M as MemoryEntry, s as MemoryScope, B as BaseContextPlugin, W as WorkingMemory, t as ITokenEstimator, u as StaleEntryInfo, v as IdempotencyCache, w as WorkingMemoryConfig, x as AutoSpillConfig, y as IContextStrategy, z as ContextBudget, D as ContextManagerConfig, G as IContextCompactor, J as TokenContentType, K as IPersistentInstructionsStorage, N as StoredContextSession, O as ContextStorageListOptions, P as ContextSessionSummary, Q as TokenUsage, R as ToolCall, U as StreamEventType, V as CircuitBreaker, X as TextGenerateOptions, Y as ModelCapabilities, Z as ToolPermissionConfig, _ as MessageRole, $ as InContextMemoryConfig, a0 as InContextMemoryPlugin, a1 as PersistentInstructionsConfig, a2 as PersistentInstructionsPlugin } from './index-DYK9ygkJ.cjs';
+export { ax as APPROVAL_STATE_VERSION, bI as AfterToolContext, a4 as AgentContextEvents, a6 as AgentContextHistoryMessage, a5 as AgentContextMetrics, bD as AgenticLoopEventName, aq as ApprovalCacheEntry, au as ApprovalDecision, bL as ApprovalResult, bJ as ApproveToolContext, ab as AutoSpillPlugin, bH as BeforeToolContext, bf as BuiltInTool, aB as CONTEXT_SESSION_FORMAT_VERSION, aF as CacheStats, bQ as CircuitBreakerConfig, bR as CircuitBreakerEvents, bP as CircuitOpenError, b9 as CompactionItem, b1 as Content, b0 as ContentType, az as DEFAULT_ALLOWLIST, bS as DEFAULT_CIRCUIT_BREAKER_CONFIG, aI as DEFAULT_CONTEXT_CONFIG, a3 as DEFAULT_FEATURES, aG as DEFAULT_IDEMPOTENCY_CONFIG, aQ as DEFAULT_MEMORY_CONFIG, ay as DEFAULT_PERMISSION_CONFIG, aA as DefaultAllowlistedTool, bu as ErrorEvent, aD as EvictionStrategy, bF as Hook, bC as HookManager, bE as HookName, bN as IAsyncDisposable, bM as IToolExecutor, aE as IdempotencyCacheConfig, bT as InContextEntry, bU as InContextPriority, b3 as InputImageContent, b2 as InputTextContent, bs as IterationCompleteEvent, bi as JSONSchema, aZ as MEMORY_PRIORITY_VALUES, aJ as MemoryEntryInput, aK as MemoryIndex, aL as MemoryIndexEntry, aM as MemoryPriority, b7 as Message, bG as ModifyingHook, b8 as OutputItem, b4 as OutputTextContent, bl as OutputTextDeltaEvent, bm as OutputTextDoneEvent, av as PermissionCheckContext, at as PermissionCheckResult, aw as PermissionManagerEvent, an as PermissionScope, a8 as PrepareOptions, aH as PreparedContext, a9 as PreparedResult, ba as ReasoningItem, bt as ResponseCompleteEvent, bj as ResponseCreatedEvent, bk as ResponseInProgressEvent, ao as RiskLevel, as as SerializedApprovalEntry, ar as SerializedApprovalState, bV as SerializedInContextMemoryState, bW as SerializedPersistentInstructionsState, al as SerializedToolState, aO as SimpleScope, ae as SpilledEntry, aN as TaskAwareScope, aP as TaskStatusForMemory, a_ as TaskToolContext, be as Tool, bo as ToolCallArgumentsDeltaEvent, bp as ToolCallArgumentsDoneEvent, a7 as ToolCallRecord, bn as ToolCallStartEvent, bb as ToolCallState, ag as ToolCondition, a_ as ToolContext, bh as ToolExecutionContext, br as ToolExecutionDoneEvent, bq as ToolExecutionStartEvent, am as ToolManagerEvent, ak as ToolManagerStats, aj as ToolMetadata, bK as ToolModification, af as ToolOptions, ad as ToolOutput, aa as ToolOutputPlugin, ac as ToolOutputPluginConfig, ap as ToolPermissionConfig, ai as ToolRegistration, bg as ToolResult, b6 as ToolResultContent, ah as ToolSelectionContext, b5 as ToolUseContent, a$ as WorkingMemoryAccess, aC as WorkingMemoryEvents, bO as assertNotDestroyed, aY as calculateEntrySize, bc as defaultDescribeCall, aS as forPlan, aR as forTasks, bd as getToolCallDescription, bB as isErrorEvent, bw as isOutputTextDelta, bA as isResponseComplete, aV as isSimpleScope, bv as isStreamEvent, aW as isTaskAwareScope, aX as isTerminalMemoryStatus, by as isToolCallArgumentsDelta, bz as isToolCallArgumentsDone, bx as isToolCallStart, aT as scopeEquals, aU as scopeMatches } from './index-DYK9ygkJ.cjs';
 import { EventEmitter } from 'eventemitter3';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.cjs';
 
@@ -335,7 +335,7 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
     protected _sessionConfig: BaseSessionConfig | null;
     protected _autoSaveInterval: ReturnType<typeof setInterval> | null;
     protected _pendingSessionLoad: Promise<boolean> | null;
-    private _directProvider;
+    protected _provider: ITextProvider;
     constructor(config: TConfig, loggerComponent: string);
     /**
      * Get the agent type identifier
@@ -449,10 +449,10 @@ declare abstract class BaseAgent<TConfig extends BaseAgentConfig = BaseAgentConf
      */
     protected getEnabledToolDefinitions(): FunctionToolDefinition[];
     /**
-     * Get or create the provider for direct calls.
-     * Lazily initialized to avoid creating provider if not used.
+     * Get the provider for LLM calls.
+     * Returns the single shared provider instance.
      */
-    private getDirectProvider;
+    protected getProvider(): ITextProvider;
     /**
      * Make a direct LLM call bypassing all context management.
      *
@@ -776,7 +776,6 @@ interface AgentConfig$1 extends BaseAgentConfig {
  * - Lifecycle/cleanup
  */
 declare class Agent extends BaseAgent<AgentConfig$1, AgenticLoopEvents> implements IDisposable {
-    private provider;
     private agenticLoop;
     private boundListeners;
     /**
@@ -847,14 +846,6 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgenticLoopEvents> implemen
      * Always returns true since AgentContext is always created by BaseAgent.
      */
     hasContext(): boolean;
-    /**
-     * Get context state for session persistence.
-     */
-    getContextState(): Promise<SerializedAgentContextState>;
-    /**
-     * Restore context from saved state.
-     */
-    restoreContextState(state: SerializedAgentContextState): Promise<void>;
     /**
      * Run the agent with input
      */
@@ -8511,7 +8502,7 @@ declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-01T16:40:08.959Z
+ * Generated at: 2026-02-01T21:31:54.017Z
  *
  * To regenerate: npm run generate:tools
  */

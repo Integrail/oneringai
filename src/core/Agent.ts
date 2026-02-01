@@ -6,7 +6,6 @@
  */
 
 import { BaseAgent, BaseAgentConfig, BaseSessionConfig } from './BaseAgent.js';
-import { createProvider } from './createProvider.js';
 import { AgenticLoop, AgenticLoopConfig } from '../capabilities/agents/AgenticLoop.js';
 import { ExecutionContext, HistoryMode } from '../capabilities/agents/ExecutionContext.js';
 import { InputItem } from '../domain/entities/Message.js';
@@ -15,11 +14,10 @@ import { StreamEvent } from '../domain/entities/StreamEvent.js';
 import { HookConfig } from '../capabilities/agents/types/HookTypes.js';
 import { AgenticLoopEvents } from '../capabilities/agents/types/EventTypes.js';
 import { IDisposable, assertNotDestroyed } from '../domain/interfaces/IDisposable.js';
-import { ITextProvider } from '../domain/interfaces/ITextProvider.js';
 import type { IContextStorage } from '../domain/interfaces/IContextStorage.js';
 import { metrics } from '../infrastructure/observability/Metrics.js';
 import { AgentContext } from './AgentContext.js';
-import type { AgentContextConfig, SerializedAgentContextState } from './AgentContext.js';
+import type { AgentContextConfig } from './AgentContext.js';
 import type {
   IAgentDefinitionStorage,
   StoredAgentDefinition,
@@ -87,7 +85,6 @@ export interface AgentConfig extends BaseAgentConfig {
  */
 export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements IDisposable {
   // ===== Agent-specific State =====
-  private provider: ITextProvider;
   private agenticLoop: AgenticLoop;
   private boundListeners: Map<keyof AgenticLoopEvents, (...args: any[]) => void> = new Map();
 
@@ -208,8 +205,7 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
       connector: this.connector.name,
     });
 
-    // Create provider from connector
-    this.provider = createProvider(this.connector);
+    // Provider is inherited from BaseAgent (this._provider)
 
     // Set system prompt on inherited AgentContext if instructions provided
     if (config.instructions) {
@@ -226,9 +222,9 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
     });
 
     // Create agentic loop - ToolManager implements IToolExecutor
-    // Use AgentContext.tools as the single source of truth
+    // Use inherited provider and AgentContext.tools as single sources of truth
     this.agenticLoop = new AgenticLoop(
-      this.provider,
+      this._provider,
       this._agentContext.tools,
       config.hooks,
       config.errorHandling
@@ -259,19 +255,7 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
     return true;
   }
 
-  /**
-   * Get context state for session persistence.
-   */
-  async getContextState(): Promise<SerializedAgentContextState> {
-    return this._agentContext.getState();
-  }
-
-  /**
-   * Restore context from saved state.
-   */
-  async restoreContextState(state: SerializedAgentContextState): Promise<void> {
-    await this._agentContext.restoreState(state);
-  }
+  // getContextState() and restoreContextState() are inherited from BaseAgent
 
   // ===== Main API =====
 
@@ -635,8 +619,8 @@ export class Agent extends BaseAgent<AgentConfig, AgenticLoopEvents> implements 
    * Get circuit breaker metrics for LLM provider
    */
   getProviderCircuitBreakerMetrics() {
-    if ('getCircuitBreakerMetrics' in this.provider) {
-      return (this.provider as any).getCircuitBreakerMetrics();
+    if ('getCircuitBreakerMetrics' in this._provider) {
+      return (this._provider as any).getCircuitBreakerMetrics();
     }
     return null;
   }
