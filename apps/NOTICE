@@ -1,0 +1,8 @@
+PROPRIETARY SOFTWARE NOTICE
+
+The contents of this directory (apps/) are proprietary software owned by
+Everworker AI and are NOT covered by the MIT License in the repository root.
+
+See apps/LICENSE for the commercial license terms.
+
+For the open-source @oneringai/agents library, see ../LICENSE (MIT).

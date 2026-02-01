@@ -1,0 +1,63 @@
+EVERWORKER COMMERCIAL LICENSE
+Version 1.0, February 2026
+
+Copyright (c) 2025-2026 Anton Antic / Everworker AI
+All Rights Reserved.
+
+NOTICE: This software and associated documentation files (the "Software")
+contained in this directory and its subdirectories are proprietary and
+confidential. They are NOT licensed under the MIT License that covers
+the parent repository's core library.
+
+1. GRANT OF LICENSE
+
+   This Software is licensed, not sold. Subject to payment of applicable
+   license fees and compliance with this Agreement, Everworker AI grants
+   you a limited, non-exclusive, non-transferable license to:
+
+   a) Use the Software for your internal business purposes
+   b) Make copies of the Software for backup purposes only
+
+2. RESTRICTIONS
+
+   You may NOT:
+   a) Distribute, sublicense, lease, rent, or lend the Software
+   b) Modify, adapt, translate, or create derivative works
+   c) Reverse engineer, decompile, or disassemble the Software
+   d) Remove or alter any proprietary notices or labels
+   e) Use the Software to develop competing products
+
+3. OWNERSHIP
+
+   Everworker AI retains all right, title, and interest in the Software,
+   including all intellectual property rights. This license does not
+   grant you any rights to patents, copyrights, trade secrets, trade
+   names, trademarks, or any other rights in respect to the Software.
+
+4. TERMINATION
+
+   This license is effective until terminated. It will terminate
+   automatically if you fail to comply with any term. Upon termination,
+   you must destroy all copies of the Software.
+
+5. NO WARRANTY
+
+   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
+   EVERWORKER AI DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+   BUT NOT LIMITED TO MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+   AND NONINFRINGEMENT.
+
+6. LIMITATION OF LIABILITY
+
+   IN NO EVENT SHALL EVERWORKER AI BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
+   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE USE OR
+   INABILITY TO USE THE SOFTWARE.
+
+7. CONTACT
+
+   For licensing inquiries: anton@everworker.ai
+
+---
+
+For the open-source core library (@oneringai/agents), see the MIT License
+in the repository root: ../LICENSE
