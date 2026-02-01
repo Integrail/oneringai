@@ -29,7 +29,24 @@ export class GoogleConverter {
   // Track tool call ID → tool name mapping for tool results
   private toolCallMapping: Map<string, string> = new Map();
   // Track tool call ID → thought signature for Gemini 3+
+  // NOTE: This map is shared with GoogleStreamConverter for streaming responses
   private thoughtSignatures: Map<string, string> = new Map();
+
+  /**
+   * Get the thought signatures storage map
+   * Used by GoogleStreamConverter to store signatures from streaming responses
+   */
+  getThoughtSignatureStorage(): Map<string, string> {
+    return this.thoughtSignatures;
+  }
+
+  /**
+   * Get the tool call mapping storage
+   * Used by GoogleStreamConverter to store tool name mappings from streaming responses
+   */
+  getToolCallMappingStorage(): Map<string, string> {
+    return this.toolCallMapping;
+  }
 
   /**
    * Convert our format → Google Gemini format
@@ -372,6 +389,14 @@ export class GoogleConverter {
     // Fallback - log warning and return placeholder
     console.warn(`[GoogleConverter] Tool name not found for ID: ${toolUseId}`);
     return 'unknown_tool';
+  }
+
+  /**
+   * Check if content array has tool calls requiring follow-up
+   * Used to determine when to clear thought signatures (must persist across tool execution)
+   */
+  hasToolCalls(content: Content[]): boolean {
+    return content.some(c => c.type === ContentType.TOOL_USE);
   }
 
   /**

@@ -11,9 +11,9 @@ import { Vendor } from '../../../../src/core/Vendor.js';
 
 describe('Model Registry', () => {
   describe('MODEL_REGISTRY', () => {
-    it('should have all 26 models', () => {
+    it('should have all 35 models', () => {
       const modelCount = Object.keys(MODEL_REGISTRY).length;
-      expect(modelCount).toBe(26);
+      expect(modelCount).toBe(35);
     });
 
     it('should have 12 OpenAI models', () => {
@@ -37,11 +37,18 @@ describe('Model Registry', () => {
       expect(googleModels).toHaveLength(7);
     });
 
+    it('should have 9 Grok models', () => {
+      const grokModels = Object.values(MODEL_REGISTRY).filter(
+        (model) => model.provider === Vendor.Grok
+      );
+      expect(grokModels).toHaveLength(9);
+    });
+
     it('should have all models marked as active', () => {
       const activeCount = Object.values(MODEL_REGISTRY).filter(
         (model) => model.isActive
       ).length;
-      expect(activeCount).toBe(26);
+      expect(activeCount).toBe(35);
     });
 
     it('should have valid pricing for all models', () => {
@@ -87,10 +94,23 @@ describe('Model Registry', () => {
       expect(LLM_MODELS[Vendor.Google].GEMINI_2_5_PRO).toBe('gemini-2.5-pro');
     });
 
+    it('should have Grok model constants', () => {
+      expect(LLM_MODELS[Vendor.Grok].GROK_4_1_FAST_REASONING).toBe('grok-4-1-fast-reasoning');
+      expect(LLM_MODELS[Vendor.Grok].GROK_4_1_FAST_NON_REASONING).toBe('grok-4-1-fast-non-reasoning');
+      expect(LLM_MODELS[Vendor.Grok].GROK_4_FAST_REASONING).toBe('grok-4-fast-reasoning');
+      expect(LLM_MODELS[Vendor.Grok].GROK_4_FAST_NON_REASONING).toBe('grok-4-fast-non-reasoning');
+      expect(LLM_MODELS[Vendor.Grok].GROK_4_0709).toBe('grok-4-0709');
+      expect(LLM_MODELS[Vendor.Grok].GROK_CODE_FAST_1).toBe('grok-code-fast-1');
+      expect(LLM_MODELS[Vendor.Grok].GROK_3).toBe('grok-3');
+      expect(LLM_MODELS[Vendor.Grok].GROK_3_MINI).toBe('grok-3-mini');
+      expect(LLM_MODELS[Vendor.Grok].GROK_2_VISION_1212).toBe('grok-2-vision-1212');
+    });
+
     it('should have all model constants registered in MODEL_REGISTRY', () => {
       const openAIModels = Object.values(LLM_MODELS[Vendor.OpenAI]);
       const anthropicModels = Object.values(LLM_MODELS[Vendor.Anthropic]);
       const googleModels = Object.values(LLM_MODELS[Vendor.Google]);
+      const grokModels = Object.values(LLM_MODELS[Vendor.Grok]);
 
       openAIModels.forEach((modelName) => {
         expect(MODEL_REGISTRY[modelName]).toBeDefined();
@@ -101,6 +121,10 @@ describe('Model Registry', () => {
       });
 
       googleModels.forEach((modelName) => {
+        expect(MODEL_REGISTRY[modelName]).toBeDefined();
+      });
+
+      grokModels.forEach((modelName) => {
         expect(MODEL_REGISTRY[modelName]).toBeDefined();
       });
     });
@@ -159,6 +183,12 @@ describe('Model Registry', () => {
       expect(models.every((m) => m.provider === Vendor.Google)).toBe(true);
     });
 
+    it('should filter models by Grok vendor', () => {
+      const models = getModelsByVendor(Vendor.Grok);
+      expect(models).toHaveLength(9);
+      expect(models.every((m) => m.provider === Vendor.Grok)).toBe(true);
+    });
+
     it('should return empty array for vendor with no models', () => {
       const models = getModelsByVendor(Vendor.Ollama);
       expect(models).toHaveLength(0);
@@ -186,7 +216,7 @@ describe('Model Registry', () => {
   describe('getActiveModels()', () => {
     it('should return all active models', () => {
       const models = getActiveModels();
-      expect(models).toHaveLength(26);
+      expect(models).toHaveLength(35);
       expect(models.every((m) => m.isActive)).toBe(true);
     });
 
@@ -197,6 +227,7 @@ describe('Model Registry', () => {
       expect(providers.has(Vendor.OpenAI)).toBe(true);
       expect(providers.has(Vendor.Anthropic)).toBe(true);
       expect(providers.has(Vendor.Google)).toBe(true);
+      expect(providers.has(Vendor.Grok)).toBe(true);
     });
   });
 

@@ -12,17 +12,21 @@ import {
   Vendor,
   UniversalAgent,
   ImageGeneration,
+  VideoGeneration,
   getModelsByVendor,
   getModelInfo,
   getToolByName,
   FileContextStorage,
   FileAgentDefinitionStorage,
-  getToolRegistry,
+  ToolRegistry,
   logger,
   defaultDescribeCall,
   getImageModelInfo,
   getActiveImageModels,
   calculateImageCost,
+  getVideoModelInfo,
+  getActiveVideoModels,
+  calculateVideoCost,
   type ToolFunction,
   type UniversalAgentConfig,
   type UniversalEvent,
@@ -30,9 +34,11 @@ import {
   type IAgentDefinitionStorage,
   type StoredAgentDefinition,
   type ToolRegistryEntry,
+  type ConnectorToolEntry,
   type ILLMDescription,
   type LogLevel,
   type IImageModelDescription,
+  type IVideoModelDescription,
 } from '@oneringai/agents';
 
 interface StoredConnectorConfig {
@@ -239,6 +245,8 @@ export class AgentService {
   private agents: Map<string, StoredAgentConfig> = new Map();
   private sessionStorage: IContextStorage | null = null;
   private agentDefinitionStorage: IAgentDefinitionStorage;
+  // Active video generation jobs (jobId -> { connectorName, videoGen })
+  private activeVideoJobs: Map<string, { connectorName: string; videoGen: VideoGeneration }> = new Map();
 
   // ============ Conversion Helpers ============
 
@@ -674,6 +682,32 @@ export class AgentService {
       // Save to file
       const filePath = join(this.dataDir, 'connectors', `${connectorConfig.name}.json`);
       await writeFile(filePath, JSON.stringify(connectorConfig, null, 2));
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  async deleteConnector(name: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.connectors.has(name)) {
+        return { success: false, error: `Connector "${name}" not found` };
+      }
+
+      this.connectors.delete(name);
+
+      // Remove from library
+      if (Connector.has(name)) {
+        Connector.remove(name);
+      }
+
+      // Delete file
+      const filePath = join(this.dataDir, 'connectors', `${name}.json`);
+      if (existsSync(filePath)) {
+        const { unlink } = await import('node:fs/promises');
+        await unlink(filePath);
+      }
 
       return { success: true };
     } catch (error) {
@@ -1174,7 +1208,7 @@ export class AgentService {
   }
 
   /**
-   * Get all available tools from the registry (not just agent tools)
+   * Get all available tools from the registry (built-in + connector tools)
    */
   getAvailableTools(): {
     name: string;
@@ -1184,9 +1218,11 @@ export class AgentService {
     safeByDefault: boolean;
     requiresConnector: boolean;
     connectorServiceTypes?: string[];
+    connectorName?: string;
+    serviceType?: string;
   }[] {
-    const registry = getToolRegistry();
-    return registry.map((entry: ToolRegistryEntry) => ({
+    const allTools = ToolRegistry.getAllTools();
+    return allTools.map((entry: ToolRegistryEntry | ConnectorToolEntry) => ({
       name: entry.name,
       displayName: entry.displayName,
       category: entry.category,
@@ -1194,6 +1230,8 @@ export class AgentService {
       safeByDefault: entry.safeByDefault,
       requiresConnector: entry.requiresConnector || false,
       connectorServiceTypes: entry.connectorServiceTypes,
+      connectorName: (entry as ConnectorToolEntry).connectorName,
+      serviceType: (entry as ConnectorToolEntry).serviceType,
     }));
   }
 
@@ -1730,6 +1768,7 @@ export class AgentService {
     const vendorMapping: Record<string, string[]> = {
       openai: ['openai'],
       google: ['google', 'google-vertex'],
+      grok: ['grok'],
     };
 
     return allModels
@@ -1878,6 +1917,300 @@ export class AgentService {
       };
     } catch (error) {
       console.error('Error generating image:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  // ============ Multimedia - Video Generation ============
+
+  /**
+   * Get available video models based on configured connectors
+   */
+  getAvailableVideoModels(): Array<{
+    name: string;
+    displayName: string;
+    vendor: string;
+    description?: string;
+    durations: number[];
+    resolutions: string[];
+    maxFps: number;
+    audio: boolean;
+    imageToVideo: boolean;
+    pricing?: {
+      perSecond: number;
+      currency: string;
+    };
+  }> {
+    // Get vendors from configured connectors
+    const configuredVendors = new Set(
+      Array.from(this.connectors.values()).map((c) => c.vendor)
+    );
+
+    // Get all active video models
+    const allModels = getActiveVideoModels();
+
+    // Map vendor names to match what's stored in connectors
+    const vendorMapping: Record<string, string[]> = {
+      openai: ['openai'],
+      google: ['google', 'google-vertex'],
+      grok: ['grok'],
+    };
+
+    return allModels
+      .filter((model) => {
+        const modelVendor = model.provider.toLowerCase();
+        // Check if any configured vendor matches this model's vendor
+        return Array.from(configuredVendors).some((configuredVendor) => {
+          const mapped = vendorMapping[configuredVendor] || [configuredVendor];
+          return mapped.includes(modelVendor);
+        });
+      })
+      .map((model) => ({
+        name: model.name,
+        displayName: model.displayName,
+        vendor: model.provider.toLowerCase(),
+        description: model.description,
+        durations: model.capabilities.durations,
+        resolutions: model.capabilities.resolutions,
+        maxFps: model.capabilities.maxFps,
+        audio: model.capabilities.audio,
+        imageToVideo: model.capabilities.imageToVideo,
+        pricing: model.pricing,
+      }));
+  }
+
+  /**
+   * Get capabilities for a specific video model
+   */
+  getVideoModelCapabilities(modelName: string): {
+    durations: number[];
+    resolutions: string[];
+    aspectRatios?: string[];
+    maxFps: number;
+    audio: boolean;
+    imageToVideo: boolean;
+    videoExtension: boolean;
+    frameControl: boolean;
+    features: {
+      upscaling: boolean;
+      styleControl: boolean;
+      negativePrompt: boolean;
+      seed: boolean;
+    };
+    pricing?: {
+      perSecond: number;
+      currency: string;
+    };
+  } | null {
+    const model = getVideoModelInfo(modelName);
+    if (!model) return null;
+
+    return {
+      durations: model.capabilities.durations,
+      resolutions: model.capabilities.resolutions,
+      aspectRatios: model.capabilities.aspectRatios,
+      maxFps: model.capabilities.maxFps,
+      audio: model.capabilities.audio,
+      imageToVideo: model.capabilities.imageToVideo,
+      videoExtension: model.capabilities.videoExtension,
+      frameControl: model.capabilities.frameControl,
+      features: model.capabilities.features,
+      pricing: model.pricing,
+    };
+  }
+
+  /**
+   * Calculate estimated cost for video generation
+   */
+  calculateVideoCost(modelName: string, durationSeconds: number): number | null {
+    return calculateVideoCost(modelName, durationSeconds);
+  }
+
+  /**
+   * Start video generation - returns a job ID for polling
+   */
+  async generateVideo(options: {
+    model: string;
+    prompt: string;
+    duration?: number;
+    resolution?: string;
+    aspectRatio?: '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
+    image?: string; // base64 image data
+    seed?: number;
+    vendorOptions?: Record<string, unknown>;
+  }): Promise<{
+    success: boolean;
+    jobId?: string;
+    error?: string;
+  }> {
+    try {
+      // Get the model info to determine the vendor
+      const modelInfo = getVideoModelInfo(options.model);
+      if (!modelInfo) {
+        return { success: false, error: `Unknown model: ${options.model}` };
+      }
+
+      const vendor = modelInfo.provider.toLowerCase();
+
+      // Find a connector for this vendor
+      const connector = Array.from(this.connectors.values()).find(
+        (c) => c.vendor.toLowerCase() === vendor
+      );
+
+      if (!connector) {
+        return {
+          success: false,
+          error: `No connector configured for vendor: ${vendor}`,
+        };
+      }
+
+      // Ensure connector is registered with the library
+      if (!Connector.has(connector.name)) {
+        Connector.create({
+          name: connector.name,
+          vendor: connector.vendor as Vendor,
+          auth: connector.auth,
+          baseURL: connector.baseURL,
+        });
+      }
+
+      // Create VideoGeneration instance
+      const videoGen = VideoGeneration.create({ connector: connector.name });
+
+      // Convert base64 image to Buffer if provided
+      let imageBuffer: Buffer | undefined;
+      if (options.image) {
+        // Remove data URL prefix if present
+        const base64Data = options.image.startsWith('data:')
+          ? options.image.split(',')[1]
+          : options.image;
+        imageBuffer = Buffer.from(base64Data, 'base64');
+      }
+
+      // Start video generation
+      const response = await videoGen.generate({
+        model: options.model,
+        prompt: options.prompt,
+        duration: options.duration,
+        resolution: options.resolution,
+        aspectRatio: options.aspectRatio,
+        image: imageBuffer,
+        seed: options.seed,
+        vendorOptions: options.vendorOptions,
+      });
+
+      // Store the job for later status checks
+      this.activeVideoJobs.set(response.jobId, {
+        connectorName: connector.name,
+        videoGen,
+      });
+
+      return {
+        success: true,
+        jobId: response.jobId,
+      };
+    } catch (error) {
+      console.error('Error starting video generation:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Get the status of a video generation job
+   */
+  async getVideoStatus(jobId: string): Promise<{
+    success: boolean;
+    status?: 'pending' | 'processing' | 'completed' | 'failed';
+    progress?: number;
+    video?: {
+      url?: string;
+      duration?: number;
+    };
+    error?: string;
+  }> {
+    try {
+      const job = this.activeVideoJobs.get(jobId);
+      if (!job) {
+        return { success: false, error: `Job not found: ${jobId}` };
+      }
+
+      const status = await job.videoGen.getStatus(jobId);
+
+      return {
+        success: true,
+        status: status.status,
+        progress: status.progress,
+        video: status.video ? {
+          url: status.video.url,
+          duration: status.video.duration,
+        } : undefined,
+        error: status.error,
+      };
+    } catch (error) {
+      console.error('Error getting video status:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Download a completed video as base64
+   */
+  async downloadVideo(jobId: string): Promise<{
+    success: boolean;
+    data?: string; // base64 encoded video
+    mimeType?: string;
+    error?: string;
+  }> {
+    try {
+      const job = this.activeVideoJobs.get(jobId);
+      if (!job) {
+        return { success: false, error: `Job not found: ${jobId}` };
+      }
+
+      const videoBuffer = await job.videoGen.download(jobId);
+
+      // Clean up the job after download
+      this.activeVideoJobs.delete(jobId);
+
+      return {
+        success: true,
+        data: videoBuffer.toString('base64'),
+        mimeType: 'video/mp4',
+      };
+    } catch (error) {
+      console.error('Error downloading video:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Cancel a video generation job
+   */
+  async cancelVideoJob(jobId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const job = this.activeVideoJobs.get(jobId);
+      if (!job) {
+        return { success: false, error: `Job not found: ${jobId}` };
+      }
+
+      await job.videoGen.cancel(jobId);
+      this.activeVideoJobs.delete(jobId);
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error canceling video job:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),

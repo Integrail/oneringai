@@ -39,6 +39,12 @@ export class GoogleTextProvider extends BaseTextProvider {
     });
     this.converter = new GoogleConverter();
     this.streamConverter = new GoogleStreamConverter();
+
+    // Share storage between converters for multi-turn conversations
+    // This allows streaming responses to store signatures and mappings that the
+    // regular converter can use when preparing the next request
+    this.streamConverter.setThoughtSignatureStorage(this.converter.getThoughtSignatureStorage());
+    this.streamConverter.setToolCallMappingStorage(this.converter.getToolCallMappingStorage());
   }
 
   /**
@@ -88,14 +94,21 @@ export class GoogleTextProvider extends BaseTextProvider {
         // Convert Google response → our format
         const response = this.converter.convertResponse(result);
 
+        // Only clear mappings when conversation is complete (no pending tool calls)
+        // For Gemini 3+, thought signatures must persist across tool execution rounds
+        const firstOutput = response.output?.[0];
+        const outputContent = firstOutput && 'content' in firstOutput ? firstOutput.content : [];
+        const hasToolCalls = this.converter.hasToolCalls(outputContent);
+        if (!hasToolCalls) {
+          this.converter.clearMappings();
+        }
+
         return response;
       } catch (error: any) {
+        // Clear mappings on error to prevent stale state
+        this.converter.clearMappings();
         this.handleError(error);
         throw error; // TypeScript needs this
-      } finally {
-        // ALWAYS clear converter mappings to prevent memory leaks
-        // Use finally block to ensure cleanup even on exception
-        this.converter.clearMappings();
       }
     }, options.model);
   }
@@ -126,14 +139,19 @@ export class GoogleTextProvider extends BaseTextProvider {
 
       // Convert Google stream → our StreamEvent format
       yield* this.streamConverter.convertStream(stream, options.model);
+
+      // Only clear mappings when conversation is complete (no pending tool calls)
+      // For Gemini 3+, thought signatures must persist across tool execution rounds
+      if (!this.streamConverter.hasToolCalls()) {
+        this.converter.clearMappings();
+        this.streamConverter.clear();
+      }
     } catch (error: any) {
-      this.handleError(error);
-      throw error;
-    } finally {
-      // ALWAYS clear converters to prevent memory leaks
-      // Use finally block to ensure cleanup even on exception
+      // Clear converters on error to prevent stale state
       this.converter.clearMappings();
       this.streamConverter.clear();
+      this.handleError(error);
+      throw error;
     }
   }
 

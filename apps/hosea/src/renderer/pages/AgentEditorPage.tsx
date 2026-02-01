@@ -2,7 +2,7 @@
  * Agent Editor Page - Create or edit an agent
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Button,
   Form,
@@ -14,8 +14,9 @@ import {
   OverlayTrigger,
   Tooltip,
   Alert,
+  Collapse,
 } from 'react-bootstrap';
-import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 import { useNavigation } from '../hooks/useNavigation';
 
@@ -97,7 +98,20 @@ interface ToolInfo {
   safeByDefault: boolean;
   requiresConnector: boolean;
   connectorServiceTypes?: string[];
+  connectorName?: string;
+  serviceType?: string;
 }
+
+// Category display names and icons
+const CATEGORY_LABELS: Record<string, string> = {
+  filesystem: 'Filesystem',
+  shell: 'Shell',
+  web: 'Web',
+  code: 'Code Execution',
+  json: 'JSON',
+  connector: 'API Connectors',
+  other: 'Other',
+};
 
 interface APIConnector {
   name: string;
@@ -294,30 +308,110 @@ export function AgentEditorPage(): React.ReactElement {
     [apiConnectors]
   );
 
-  // Separate tools into operational and non-operational
-  const { operationalTools, nonOperationalTools } = React.useMemo(() => {
-    const operational: ToolInfo[] = [];
+  // Separate tools into operational and non-operational, and group them
+  const {
+    builtInToolsByCategory,
+    connectorToolsByConnector,
+    nonOperationalTools,
+    allOperationalToolNames
+  } = useMemo(() => {
+    const builtIn: Record<string, ToolInfo[]> = {};
+    const byConnector: Record<string, ToolInfo[]> = {};
     const nonOperational: ToolInfo[] = [];
+    const operationalNames: string[] = [];
 
     availableTools.forEach((tool) => {
-      if (isToolOperational(tool)) {
-        operational.push(tool);
-      } else {
+      const isOperational = isToolOperational(tool);
+
+      if (!isOperational) {
         nonOperational.push(tool);
+        return;
+      }
+
+      operationalNames.push(tool.name);
+
+      // Connector-generated tools (have connectorName)
+      if (tool.connectorName) {
+        if (!byConnector[tool.connectorName]) {
+          byConnector[tool.connectorName] = [];
+        }
+        byConnector[tool.connectorName].push(tool);
+      } else {
+        // Built-in tools - group by category
+        const category = tool.category || 'other';
+        if (!builtIn[category]) {
+          builtIn[category] = [];
+        }
+        builtIn[category].push(tool);
       }
     });
 
-    // Sort by category, then by name
-    const sortFn = (a: ToolInfo, b: ToolInfo) => {
-      if (a.category !== b.category) return a.category.localeCompare(b.category);
-      return a.displayName.localeCompare(b.displayName);
-    };
+    // Sort tools within each group
+    const sortFn = (a: ToolInfo, b: ToolInfo) => a.displayName.localeCompare(b.displayName);
+
+    Object.values(builtIn).forEach(tools => tools.sort(sortFn));
+    Object.values(byConnector).forEach(tools => tools.sort(sortFn));
+    nonOperational.sort(sortFn);
 
     return {
-      operationalTools: operational.sort(sortFn),
-      nonOperationalTools: nonOperational.sort(sortFn),
+      builtInToolsByCategory: builtIn,
+      connectorToolsByConnector: byConnector,
+      nonOperationalTools: nonOperational,
+      allOperationalToolNames: operationalNames,
     };
   }, [availableTools, isToolOperational]);
+
+  // Track expanded sections
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
+
+  const toggleSection = (sectionId: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionId]: !prev[sectionId],
+    }));
+  };
+
+  // Check if all tools in a group are selected
+  const isGroupFullySelected = (toolNames: string[]): boolean => {
+    return toolNames.every(name => formData.tools.includes(name));
+  };
+
+  // Check if some tools in a group are selected
+  const isGroupPartiallySelected = (toolNames: string[]): boolean => {
+    const selectedCount = toolNames.filter(name => formData.tools.includes(name)).length;
+    return selectedCount > 0 && selectedCount < toolNames.length;
+  };
+
+  // Toggle all tools in a group
+  const toggleGroup = (toolNames: string[], select: boolean) => {
+    setFormData(prev => {
+      if (select) {
+        // Add all tools from group that aren't already selected
+        const newTools = [...prev.tools];
+        toolNames.forEach(name => {
+          if (!newTools.includes(name)) {
+            newTools.push(name);
+          }
+        });
+        return { ...prev, tools: newTools };
+      } else {
+        // Remove all tools from group
+        return { ...prev, tools: prev.tools.filter(t => !toolNames.includes(t)) };
+      }
+    });
+  };
+
+  // Select all / deselect all
+  const allSelected = allOperationalToolNames.length > 0 &&
+    allOperationalToolNames.every(name => formData.tools.includes(name));
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setFormData(prev => ({ ...prev, tools: [] }));
+    } else {
+      setFormData(prev => ({ ...prev, tools: [...allOperationalToolNames] }));
+    }
+  };
 
   const handleSave = async () => {
     // Validate required fields
@@ -605,112 +699,260 @@ export function AgentEditorPage(): React.ReactElement {
 
         {/* Tools Tab */}
         {activeTab === 'tools' && (
-          <Card>
-            <Card.Body>
-              <p className="text-muted mb-4">
-                Select which tools this agent can use. Tools enable the agent to perform
-                actions like reading files, searching the web, or executing code.
+          <div>
+            {/* Header with Select All */}
+            <div className="d-flex justify-content-between align-items-center mb-3">
+              <p className="text-muted mb-0">
+                Select which tools this agent can use.
               </p>
+              <Form.Check
+                type="checkbox"
+                id="select-all-tools"
+                label={<span className="fw-medium">Select All</span>}
+                checked={allSelected}
+                onChange={toggleSelectAll}
+                className="user-select-none"
+              />
+            </div>
 
-              {operationalTools.length > 0 && (
-                <>
-                  <h6 className="mb-3">Available Tools</h6>
-                  <Row className="g-2 mb-4">
-                    {operationalTools.map((tool) => (
-                      <Col key={tool.name} md={6} lg={4}>
-                        <Card
-                          className={`h-100 ${
-                            formData.tools.includes(tool.name)
-                              ? 'border-primary'
-                              : ''
-                          }`}
+            {/* Built-in Tools by Category */}
+            {Object.entries(builtInToolsByCategory)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([category, tools]) => {
+                const sectionId = `builtin-${category}`;
+                const isExpanded = expandedSections[sectionId] !== false; // Default expanded
+                const toolNames = tools.map(t => t.name);
+                const isFullySelected = isGroupFullySelected(toolNames);
+                const isPartiallySelected = isGroupPartiallySelected(toolNames);
+                const selectedCount = tools.filter(t => formData.tools.includes(t.name)).length;
+
+                return (
+                  <Card key={sectionId} className="mb-2">
+                    <Card.Header
+                      className="py-2 d-flex align-items-center"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => toggleSection(sectionId)}
+                    >
+                      <div className="d-flex align-items-center flex-grow-1">
+                        {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                        <Form.Check
+                          type="checkbox"
+                          checked={isFullySelected}
+                          ref={(el: HTMLInputElement | null) => {
+                            if (el) el.indeterminate = isPartiallySelected;
+                          }}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleGroup(toolNames, !isFullySelected);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="ms-2 me-2"
+                        />
+                        <strong>{CATEGORY_LABELS[category] || category}</strong>
+                        <Badge bg="secondary" className="ms-2">
+                          {selectedCount}/{tools.length}
+                        </Badge>
+                      </div>
+                    </Card.Header>
+                    <Collapse in={isExpanded}>
+                      <div>
+                        <Card.Body className="py-2">
+                          <Row className="g-2">
+                            {tools.map((tool) => (
+                              <Col key={tool.name} md={6} lg={4}>
+                                <Card
+                                  className={`h-100 ${
+                                    formData.tools.includes(tool.name) ? 'border-primary' : ''
+                                  }`}
+                                  style={{ cursor: 'pointer' }}
+                                  onClick={() => toggleTool(tool.name)}
+                                >
+                                  <Card.Body className="py-2 px-3">
+                                    <div className="d-flex align-items-start">
+                                      <Form.Check
+                                        type="checkbox"
+                                        checked={formData.tools.includes(tool.name)}
+                                        onChange={() => toggleTool(tool.name)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="me-2"
+                                      />
+                                      <div className="flex-grow-1 overflow-hidden">
+                                        <div className="d-flex align-items-center">
+                                          <strong className="text-truncate">{tool.displayName}</strong>
+                                          {tool.safeByDefault && (
+                                            <Badge bg="success" className="ms-2" style={{ fontSize: '0.65rem' }}>
+                                              Safe
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        <small className="text-muted d-block text-truncate">
+                                          {tool.description}
+                                        </small>
+                                      </div>
+                                    </div>
+                                  </Card.Body>
+                                </Card>
+                              </Col>
+                            ))}
+                          </Row>
+                        </Card.Body>
+                      </div>
+                    </Collapse>
+                  </Card>
+                );
+              })}
+
+            {/* Connector Tools by Connector Name */}
+            {Object.keys(connectorToolsByConnector).length > 0 && (
+              <>
+                <h6 className="mt-4 mb-2 text-muted">API Connector Tools</h6>
+                {Object.entries(connectorToolsByConnector)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([connectorName, tools]) => {
+                    const sectionId = `connector-${connectorName}`;
+                    const isExpanded = expandedSections[sectionId] !== false;
+                    const toolNames = tools.map(t => t.name);
+                    const isFullySelected = isGroupFullySelected(toolNames);
+                    const isPartiallySelected = isGroupPartiallySelected(toolNames);
+                    const selectedCount = tools.filter(t => formData.tools.includes(t.name)).length;
+                    // Get service type from first tool for display
+                    const serviceType = tools[0]?.serviceType;
+
+                    return (
+                      <Card key={sectionId} className="mb-2">
+                        <Card.Header
+                          className="py-2 d-flex align-items-center"
                           style={{ cursor: 'pointer' }}
-                          onClick={() => toggleTool(tool.name)}
+                          onClick={() => toggleSection(sectionId)}
                         >
-                          <Card.Body className="py-2 px-3">
-                            <div className="d-flex align-items-start">
-                              <Form.Check
-                                type="checkbox"
-                                checked={formData.tools.includes(tool.name)}
-                                onChange={() => toggleTool(tool.name)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="me-2"
-                              />
-                              <div className="flex-grow-1 overflow-hidden">
-                                <div className="d-flex align-items-center">
-                                  <strong className="text-truncate">
-                                    {tool.displayName}
-                                  </strong>
-                                  {tool.safeByDefault && (
-                                    <Badge
-                                      bg="success"
-                                      className="ms-2"
-                                      style={{ fontSize: '0.65rem' }}
+                          <div className="d-flex align-items-center flex-grow-1">
+                            {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                            <Form.Check
+                              type="checkbox"
+                              checked={isFullySelected}
+                              ref={(el: HTMLInputElement | null) => {
+                                if (el) el.indeterminate = isPartiallySelected;
+                              }}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                toggleGroup(toolNames, !isFullySelected);
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="ms-2 me-2"
+                            />
+                            <strong>{connectorName}</strong>
+                            {serviceType && (
+                              <Badge bg="info" className="ms-2" style={{ fontSize: '0.65rem' }}>
+                                {serviceType}
+                              </Badge>
+                            )}
+                            <Badge bg="secondary" className="ms-2">
+                              {selectedCount}/{tools.length}
+                            </Badge>
+                          </div>
+                        </Card.Header>
+                        <Collapse in={isExpanded}>
+                          <div>
+                            <Card.Body className="py-2">
+                              <Row className="g-2">
+                                {tools.map((tool) => (
+                                  <Col key={tool.name} md={6} lg={4}>
+                                    <Card
+                                      className={`h-100 ${
+                                        formData.tools.includes(tool.name) ? 'border-primary' : ''
+                                      }`}
+                                      style={{ cursor: 'pointer' }}
+                                      onClick={() => toggleTool(tool.name)}
                                     >
-                                      Safe
-                                    </Badge>
-                                  )}
-                                </div>
-                                <small className="text-muted d-block text-truncate">
-                                  {tool.description}
-                                </small>
-                              </div>
-                            </div>
-                          </Card.Body>
-                        </Card>
-                      </Col>
-                    ))}
-                  </Row>
-                </>
-              )}
+                                      <Card.Body className="py-2 px-3">
+                                        <div className="d-flex align-items-start">
+                                          <Form.Check
+                                            type="checkbox"
+                                            checked={formData.tools.includes(tool.name)}
+                                            onChange={() => toggleTool(tool.name)}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="me-2"
+                                          />
+                                          <div className="flex-grow-1 overflow-hidden">
+                                            <div className="d-flex align-items-center">
+                                              <strong className="text-truncate">{tool.displayName}</strong>
+                                            </div>
+                                            <small className="text-muted d-block text-truncate">
+                                              {tool.description}
+                                            </small>
+                                          </div>
+                                        </div>
+                                      </Card.Body>
+                                    </Card>
+                                  </Col>
+                                ))}
+                              </Row>
+                            </Card.Body>
+                          </div>
+                        </Collapse>
+                      </Card>
+                    );
+                  })}
+              </>
+            )}
 
-              {nonOperationalTools.length > 0 && (
-                <>
-                  <h6 className="mb-2 text-muted">
-                    Unavailable Tools{' '}
-                    <Badge bg="secondary" className="ms-1">
+            {/* Unavailable Tools */}
+            {nonOperationalTools.length > 0 && (
+              <Card className="mt-4">
+                <Card.Header
+                  className="py-2 d-flex align-items-center bg-light"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => toggleSection('unavailable')}
+                >
+                  <div className="d-flex align-items-center flex-grow-1">
+                    {expandedSections['unavailable'] ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                    <span className="ms-2 text-muted">
+                      <strong>Unavailable Tools</strong>
+                    </span>
+                    <Badge bg="secondary" className="ms-2">
                       {nonOperationalTools.length}
                     </Badge>
-                  </h6>
-                  <Alert variant="warning" className="py-2 mb-3">
-                    <small>
-                      <AlertCircle size={14} className="me-1" />
-                      These tools require API connectors to be configured in{' '}
-                      <strong>Connectors &gt; API Services</strong>
-                    </small>
-                  </Alert>
-                  <Row className="g-2">
-                    {nonOperationalTools.map((tool) => (
-                      <Col key={tool.name} md={6} lg={4}>
-                        <Card className="h-100 bg-light" style={{ opacity: 0.6 }}>
-                          <Card.Body className="py-2 px-3">
-                            <div className="d-flex align-items-start">
-                              <Form.Check
-                                type="checkbox"
-                                disabled
-                                className="me-2"
-                              />
-                              <div className="flex-grow-1 overflow-hidden">
-                                <div className="d-flex align-items-center">
-                                  <strong className="text-truncate text-muted">
-                                    {tool.displayName}
-                                  </strong>
+                  </div>
+                </Card.Header>
+                <Collapse in={expandedSections['unavailable']}>
+                  <div>
+                    <Card.Body className="py-2">
+                      <Alert variant="warning" className="py-2 mb-3">
+                        <small>
+                          <AlertCircle size={14} className="me-1" />
+                          These tools require API connectors to be configured in{' '}
+                          <strong>Connectors &gt; API Services</strong>
+                        </small>
+                      </Alert>
+                      <Row className="g-2">
+                        {nonOperationalTools.map((tool) => (
+                          <Col key={tool.name} md={6} lg={4}>
+                            <Card className="h-100 bg-light" style={{ opacity: 0.6 }}>
+                              <Card.Body className="py-2 px-3">
+                                <div className="d-flex align-items-start">
+                                  <Form.Check type="checkbox" disabled className="me-2" />
+                                  <div className="flex-grow-1 overflow-hidden">
+                                    <div className="d-flex align-items-center">
+                                      <strong className="text-truncate text-muted">
+                                        {tool.displayName}
+                                      </strong>
+                                    </div>
+                                    <small className="text-muted d-block text-truncate">
+                                      Requires: {tool.connectorServiceTypes?.join(', ') || 'API connector'}
+                                    </small>
+                                  </div>
                                 </div>
-                                <small className="text-muted d-block text-truncate">
-                                  Requires:{' '}
-                                  {tool.connectorServiceTypes?.join(', ') || 'API connector'}
-                                </small>
-                              </div>
-                            </div>
-                          </Card.Body>
-                        </Card>
-                      </Col>
-                    ))}
-                  </Row>
-                </>
-              )}
-            </Card.Body>
-          </Card>
+                              </Card.Body>
+                            </Card>
+                          </Col>
+                        ))}
+                      </Row>
+                    </Card.Body>
+                  </div>
+                </Collapse>
+              </Card>
+            )}
+          </div>
         )}
 
         {/* Context Tab */}

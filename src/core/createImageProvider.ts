@@ -7,7 +7,8 @@ import type { IImageProvider } from '../domain/interfaces/IImageProvider.js';
 import { Vendor } from './Vendor.js';
 import { OpenAIImageProvider } from '../infrastructure/providers/openai/OpenAIImageProvider.js';
 import { GoogleImageProvider } from '../infrastructure/providers/google/GoogleImageProvider.js';
-import type { OpenAIMediaConfig, GoogleConfig } from '../domain/types/ProviderConfig.js';
+import { GrokImageProvider } from '../infrastructure/providers/grok/GrokImageProvider.js';
+import type { OpenAIMediaConfig, GoogleConfig, GrokMediaConfig } from '../domain/types/ProviderConfig.js';
 
 /**
  * Create an Image Generation provider from a connector
@@ -22,10 +23,13 @@ export function createImageProvider(connector: Connector): IImageProvider {
     case Vendor.Google:
       return new GoogleImageProvider(extractGoogleConfig(connector));
 
+    case Vendor.Grok:
+      return new GrokImageProvider(extractGrokConfig(connector));
+
     default:
       throw new Error(
         `No Image provider available for vendor: ${vendor}. ` +
-        `Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
+        `Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}, ${Vendor.Grok}`
       );
   }
 }
@@ -66,5 +70,28 @@ function extractGoogleConfig(connector: Connector): GoogleConfig {
 
   return {
     apiKey: auth.apiKey,
+  };
+}
+
+/**
+ * Extract Grok configuration from connector
+ */
+function extractGrokConfig(connector: Connector): GrokMediaConfig {
+  const auth = connector.config.auth;
+
+  if (auth.type !== 'api_key') {
+    throw new Error('Grok requires API key authentication');
+  }
+
+  const options = connector.getOptions();
+
+  return {
+    auth: {
+      type: 'api_key',
+      apiKey: auth.apiKey,
+    },
+    baseURL: connector.baseURL,
+    timeout: options.timeout as number | undefined,
+    maxRetries: options.maxRetries as number | undefined,
   };
 }

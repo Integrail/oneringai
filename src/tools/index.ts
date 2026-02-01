@@ -170,3 +170,9 @@ export {
   type ToolCategory,
   type ToolRegistryEntry,
 } from './registry.generated.js';
+
+// ============================================================================
+// Unified Tool Registry (Built-in + Connector Tools)
+// ============================================================================
+
+export { ToolRegistry, type ConnectorToolEntry } from './ToolRegistry.js';

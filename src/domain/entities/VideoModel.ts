@@ -15,8 +15,10 @@ import { createRegistryHelpers } from './RegistryUtils.js';
 export interface VideoModelCapabilities {
   /** Supported durations in seconds */
   durations: number[];
-  /** Supported resolutions (e.g., '720x1280', '1080x1920') */
+  /** Supported resolutions (e.g., '720p', '1080p', '720x1280') */
   resolutions: string[];
+  /** Supported aspect ratios (e.g., '16:9', '9:16') - for vendors that use this instead of resolution */
+  aspectRatios?: string[];
   /** Maximum frames per second */
   maxFps: number;
   /** Whether the model supports audio generation */
@@ -74,9 +76,12 @@ export const VIDEO_MODELS = {
   [Vendor.Google]: {
     // Gemini API (ai.google.dev) model names - use with API key
     VEO_2: 'veo-2.0-generate-001',
-    VEO_3: 'veo-3-generate-preview',
-    VEO_3_FAST: 'veo-3.1-fast-generate-preview',
+    VEO_3_1_FAST: 'veo-3.1-fast-generate-preview',
     VEO_3_1: 'veo-3.1-generate-preview',
+  },
+  [Vendor.Grok]: {
+    // xAI Grok Imagine video generation
+    GROK_IMAGINE_VIDEO: 'grok-imagine-video',
   },
 } as const;
 
@@ -93,6 +98,12 @@ const GOOGLE_SOURCES: ISourceLinks = {
   documentation: 'https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/overview',
   apiReference: 'https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/veo-video-generation',
   lastVerified: '2026-01-25',
+};
+
+const GROK_SOURCES: ISourceLinks = {
+  documentation: 'https://docs.x.ai/docs/guides/video-generations',
+  apiReference: 'https://docs.x.ai/api',
+  lastVerified: '2026-01-31',
 };
 
 /**
@@ -169,7 +180,8 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [5, 6, 7, 8],
-      resolutions: ['768x1408', '1408x768', '1024x1024'],
+      resolutions: [], // Veo 2.0 uses aspectRatio only, no resolution control
+      aspectRatios: ['16:9', '9:16'],
       maxFps: 24,
       audio: false,
       imageToVideo: true,
@@ -188,33 +200,6 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     },
   },
 
-  'veo-3-generate-preview': {
-    name: 'veo-3-generate-preview',
-    displayName: 'Veo 3.0',
-    provider: Vendor.Google,
-    isActive: true,
-    sources: GOOGLE_SOURCES,
-    capabilities: {
-      durations: [4, 6, 8],
-      resolutions: ['720p', '1080p', '768x1408', '1408x768'],
-      maxFps: 30,
-      audio: true,
-      imageToVideo: true,
-      videoExtension: true,
-      frameControl: true,
-      features: {
-        upscaling: true,
-        styleControl: true,
-        negativePrompt: true,
-        seed: true,
-      },
-    },
-    pricing: {
-      perSecond: 0.75,
-      currency: 'USD',
-    },
-  },
-
   'veo-3.1-fast-generate-preview': {
     name: 'veo-3.1-fast-generate-preview',
     displayName: 'Veo 3.1 Fast',
@@ -223,7 +208,8 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [4, 6, 8],
-      resolutions: ['720p', '768x1408', '1408x768'],
+      resolutions: ['720p'], // Fast model only supports 720p
+      aspectRatios: ['16:9', '9:16'],
       maxFps: 24,
       audio: true,
       imageToVideo: true,
@@ -250,7 +236,8 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [4, 6, 8],
-      resolutions: ['720p', '1080p', '4k', '768x1408', '1408x768'],
+      resolutions: ['720p', '1080p', '4k'], // 1080p and 4k require 8s duration
+      aspectRatios: ['16:9', '9:16'],
       maxFps: 30,
       audio: true,
       imageToVideo: true,
@@ -265,6 +252,38 @@ export const VIDEO_MODEL_REGISTRY: VideoModelRegistry = {
     },
     pricing: {
       perSecond: 0.75,
+      currency: 'USD',
+    },
+  },
+
+  // ============================================================================
+  // xAI Grok Imagine Models
+  // ============================================================================
+
+  'grok-imagine-video': {
+    name: 'grok-imagine-video',
+    displayName: 'Grok Imagine Video',
+    provider: Vendor.Grok,
+    isActive: true,
+    sources: GROK_SOURCES,
+    capabilities: {
+      durations: [1, 5, 8, 10, 15],
+      resolutions: ['480p', '720p'],
+      aspectRatios: ['16:9', '4:3', '1:1', '9:16', '3:4', '3:2', '2:3'],
+      maxFps: 24,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: false,
+      features: {
+        upscaling: false,
+        styleControl: false,
+        negativePrompt: false,
+        seed: true,
+      },
+    },
+    pricing: {
+      perSecond: 0.05,
       currency: 'USD',
     },
   },

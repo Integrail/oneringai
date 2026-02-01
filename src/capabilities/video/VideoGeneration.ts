@@ -258,7 +258,9 @@ export class VideoGeneration {
       case Vendor.OpenAI:
         return VIDEO_MODELS[Vendor.OpenAI].SORA_2;
       case Vendor.Google:
-        return VIDEO_MODELS[Vendor.Google].VEO_3;
+        return VIDEO_MODELS[Vendor.Google].VEO_3_1;
+      case Vendor.Grok:
+        return VIDEO_MODELS[Vendor.Grok].GROK_IMAGINE_VIDEO;
       default:
         throw new Error(`No default video model for vendor: ${vendor}`);
     }

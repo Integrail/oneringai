@@ -109,6 +109,10 @@ async function setupIPC(): Promise<void> {
     return agentService!.addConnector(config);
   });
 
+  ipcMain.handle('connector:delete', async (_event, name: string) => {
+    return agentService!.deleteConnector(name);
+  });
+
   // Model operations
   ipcMain.handle('model:list', async () => {
     return agentService!.listModels();
@@ -268,6 +272,44 @@ async function setupIPC(): Promise<void> {
       n?: number;
       [key: string]: unknown;
     });
+  });
+
+  // Multimedia - Video Generation
+  ipcMain.handle('multimedia:get-available-video-models', async () => {
+    return agentService!.getAvailableVideoModels();
+  });
+
+  ipcMain.handle('multimedia:get-video-model-capabilities', async (_event, modelName: string) => {
+    return agentService!.getVideoModelCapabilities(modelName);
+  });
+
+  ipcMain.handle('multimedia:calculate-video-cost', async (_event, modelName: string, durationSeconds: number) => {
+    return agentService!.calculateVideoCost(modelName, durationSeconds);
+  });
+
+  ipcMain.handle('multimedia:generate-video', async (_event, options: unknown) => {
+    return agentService!.generateVideo(options as {
+      model: string;
+      prompt: string;
+      duration?: number;
+      resolution?: string;
+      aspectRatio?: '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
+      image?: string;
+      seed?: number;
+      vendorOptions?: Record<string, unknown>;
+    });
+  });
+
+  ipcMain.handle('multimedia:get-video-status', async (_event, jobId: string) => {
+    return agentService!.getVideoStatus(jobId);
+  });
+
+  ipcMain.handle('multimedia:download-video', async (_event, jobId: string) => {
+    return agentService!.downloadVideo(jobId);
+  });
+
+  ipcMain.handle('multimedia:cancel-video-job', async (_event, jobId: string) => {
+    return agentService!.cancelVideoJob(jobId);
   });
 }
 

@@ -1,4 +1,4 @@
-import { I as IProvider } from './IProvider-BP49c93d.cjs';
+import { I as IProvider } from './IProvider-BP49c93d.js';
 
 /**
  * Supported AI Vendors
@@ -470,13 +470,26 @@ interface ISourceLinks {
  * Used to describe vendor-specific options that fall outside semantic options
  */
 interface VendorOptionSchema {
+    /** Data type of the option */
     type: 'string' | 'number' | 'boolean' | 'enum' | 'array';
+    /** Description of the option */
     description: string;
+    /** Whether the option is required */
     required?: boolean;
+    /** UI display label */
+    label?: string;
+    /** Valid values for enum/string types */
     enum?: string[];
-    min?: number;
-    max?: number;
+    /** Default value */
     default?: unknown;
+    /** Minimum value for numbers */
+    min?: number;
+    /** Maximum value for numbers */
+    max?: number;
+    /** Step value for number sliders */
+    step?: number;
+    /** UI control type hint */
+    controlType?: 'select' | 'radio' | 'slider' | 'checkbox' | 'text' | 'textarea';
 }
 /**
  * Base model description - shared by all registries
@@ -509,7 +522,8 @@ interface ImageGenerateOptions {
     model: string;
     prompt: string;
     size?: string;
-    quality?: 'standard' | 'hd';
+    aspectRatio?: string;
+    quality?: 'standard' | 'hd' | 'low' | 'medium' | 'high' | 'auto';
     style?: 'vivid' | 'natural';
     n?: number;
     response_format?: 'url' | 'b64_json';
@@ -644,9 +658,9 @@ declare class ImageGeneration {
  */
 type ImageSize = '256x256' | '512x512' | '1024x1024' | '1024x1536' | '1536x1024' | '1792x1024' | '1024x1792' | 'auto';
 /**
- * Supported aspect ratios (Google Imagen)
+ * Supported aspect ratios
  */
-type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9';
+type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9' | '3:2' | '2:3';
 /**
  * Image model capabilities
  */
@@ -721,6 +735,12 @@ declare const IMAGE_MODELS: {
         readonly IMAGEN_4_ULTRA: "imagen-4.0-ultra-generate-001";
         /** Imagen 4.0 Fast: Optimized for speed */
         readonly IMAGEN_4_FAST: "imagen-4.0-fast-generate-001";
+    };
+    readonly grok: {
+        /** Grok Imagine Image: xAI image generation with editing support */
+        readonly GROK_IMAGINE_IMAGE: "grok-imagine-image";
+        /** Grok 2 Image: xAI image generation (text-only input) */
+        readonly GROK_2_IMAGE_1212: "grok-2-image-1212";
     };
 };
 /**

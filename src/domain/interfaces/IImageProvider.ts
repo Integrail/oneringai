@@ -8,7 +8,8 @@ export interface ImageGenerateOptions {
   model: string;
   prompt: string;
   size?: string;
-  quality?: 'standard' | 'hd';
+  aspectRatio?: string; // e.g., '16:9', '4:3' - used by xAI and Google
+  quality?: 'standard' | 'hd' | 'low' | 'medium' | 'high' | 'auto';
   style?: 'vivid' | 'natural';
   n?: number; // Number of images to generate
   response_format?: 'url' | 'b64_json';

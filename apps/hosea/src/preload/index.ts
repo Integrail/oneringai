@@ -42,6 +42,7 @@ export interface HoseaAPI {
       createdAt: number;
     }>>;
     add: (config: unknown) => Promise<{ success: boolean; error?: string }>;
+    delete: (name: string) => Promise<{ success: boolean; error?: string }>;
   };
 
   // Models
@@ -311,6 +312,7 @@ export interface HoseaAPI {
 
   // Multimedia - Image, Video, Audio generation
   multimedia: {
+    // Image generation
     getAvailableImageModels: () => Promise<Array<{
       name: string;
       displayName: string;
@@ -365,6 +367,77 @@ export interface HoseaAPI {
       };
       error?: string;
     }>;
+    // Video generation
+    getAvailableVideoModels: () => Promise<Array<{
+      name: string;
+      displayName: string;
+      vendor: string;
+      description?: string;
+      durations: number[];
+      resolutions: string[];
+      maxFps: number;
+      audio: boolean;
+      imageToVideo: boolean;
+      pricing?: {
+        perSecond: number;
+        currency: string;
+      };
+    }>>;
+    getVideoModelCapabilities: (modelName: string) => Promise<{
+      durations: number[];
+      resolutions: string[];
+      aspectRatios?: string[];
+      maxFps: number;
+      audio: boolean;
+      imageToVideo: boolean;
+      videoExtension: boolean;
+      frameControl: boolean;
+      features: {
+        upscaling: boolean;
+        styleControl: boolean;
+        negativePrompt: boolean;
+        seed: boolean;
+      };
+      pricing?: {
+        perSecond: number;
+        currency: string;
+      };
+    } | null>;
+    calculateVideoCost: (modelName: string, durationSeconds: number) => Promise<number | null>;
+    generateVideo: (options: {
+      model: string;
+      prompt: string;
+      duration?: number;
+      resolution?: string;
+      aspectRatio?: '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
+      image?: string;
+      seed?: number;
+      vendorOptions?: Record<string, unknown>;
+    }) => Promise<{
+      success: boolean;
+      jobId?: string;
+      error?: string;
+    }>;
+    getVideoStatus: (jobId: string) => Promise<{
+      success: boolean;
+      status?: 'pending' | 'processing' | 'completed' | 'failed';
+      progress?: number;
+      video?: {
+        url?: string;
+        duration?: number;
+      };
+      error?: string;
+    }>;
+    downloadVideo: (jobId: string) => Promise<{
+      success: boolean;
+      data?: string;
+      mimeType?: string;
+      error?: string;
+    }>;
+    cancelVideoJob: (jobId: string) => Promise<{
+      success: boolean;
+      error?: string;
+    }>;
   };
 }
 
@@ -395,6 +468,7 @@ const api: HoseaAPI = {
   connector: {
     list: () => ipcRenderer.invoke('connector:list'),
     add: (config) => ipcRenderer.invoke('connector:add', config),
+    delete: (name) => ipcRenderer.invoke('connector:delete', name),
   },
 
   model: {
@@ -441,10 +515,19 @@ const api: HoseaAPI = {
   },
 
   multimedia: {
+    // Image generation
     getAvailableImageModels: () => ipcRenderer.invoke('multimedia:get-available-image-models'),
     getImageModelCapabilities: (modelName) => ipcRenderer.invoke('multimedia:get-image-model-capabilities', modelName),
     calculateImageCost: (modelName, imageCount, quality) => ipcRenderer.invoke('multimedia:calculate-image-cost', modelName, imageCount, quality),
     generateImage: (options) => ipcRenderer.invoke('multimedia:generate-image', options),
+    // Video generation
+    getAvailableVideoModels: () => ipcRenderer.invoke('multimedia:get-available-video-models'),
+    getVideoModelCapabilities: (modelName) => ipcRenderer.invoke('multimedia:get-video-model-capabilities', modelName),
+    calculateVideoCost: (modelName, durationSeconds) => ipcRenderer.invoke('multimedia:calculate-video-cost', modelName, durationSeconds),
+    generateVideo: (options) => ipcRenderer.invoke('multimedia:generate-video', options),
+    getVideoStatus: (jobId) => ipcRenderer.invoke('multimedia:get-video-status', jobId),
+    downloadVideo: (jobId) => ipcRenderer.invoke('multimedia:download-video', jobId),
+    cancelVideoJob: (jobId) => ipcRenderer.invoke('multimedia:cancel-video-job', jobId),
   },
 
   internals: {

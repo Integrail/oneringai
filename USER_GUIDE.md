@@ -9383,6 +9383,84 @@ if (ConnectorTools.hasServiceTools('slack')) {
 const services = ConnectorTools.listSupportedServices();
 ```
 
+### ToolRegistry API
+
+Unified view of all tools (built-in + connector-generated). Use this for UI tool pickers, inventory screens, or any code that needs to enumerate available tools.
+
+#### Basic Usage
+
+```typescript
+import { ToolRegistry } from '@oneringai/agents';
+
+// Get ALL tools (main API for UIs)
+const allTools = ToolRegistry.getAllTools();
+
+// Built-in tools only (filesystem, shell, web, code, json)
+const builtInTools = ToolRegistry.getBuiltInTools();
+
+// All connector-generated tools
+const connectorTools = ToolRegistry.getAllConnectorTools();
+
+// Tools for a specific connector
+const githubTools = ToolRegistry.getConnectorTools('github');
+
+// Filter by service type
+const slackTools = ToolRegistry.getToolsByService('slack');
+
+// Filter by connector name
+const myApiTools = ToolRegistry.getToolsByConnector('my-api');
+```
+
+#### Type Guard
+
+Use `isConnectorTool()` to distinguish built-in from connector tools:
+
+```typescript
+for (const tool of ToolRegistry.getAllTools()) {
+  if (ToolRegistry.isConnectorTool(tool)) {
+    // ConnectorToolEntry - has connectorName, serviceType
+    console.log(`API: ${tool.displayName} (${tool.connectorName})`);
+  } else {
+    // ToolRegistryEntry - built-in tool
+    console.log(`Built-in: ${tool.displayName}`);
+  }
+}
+```
+
+#### Methods Reference
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getAllTools()` | `(ToolRegistryEntry \| ConnectorToolEntry)[]` | All tools (main API) |
+| `getBuiltInTools()` | `ToolRegistryEntry[]` | Built-in tools only |
+| `getAllConnectorTools()` | `ConnectorToolEntry[]` | All connector tools |
+| `getConnectorTools(name)` | `ConnectorToolEntry[]` | Tools for specific connector |
+| `getToolsByService(type)` | `ConnectorToolEntry[]` | Filter by service type |
+| `getToolsByConnector(name)` | `ConnectorToolEntry[]` | Filter by connector name |
+| `isConnectorTool(entry)` | `boolean` | Type guard for ConnectorToolEntry |
+
+#### Entry Properties
+
+**ToolRegistryEntry** (built-in tools):
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | `string` | Tool name (e.g., `read_file`) |
+| `displayName` | `string` | Human-readable name (e.g., `Read File`) |
+| `category` | `ToolCategory` | `filesystem`, `shell`, `web`, `code`, `json` |
+| `description` | `string` | Brief description |
+| `safeByDefault` | `boolean` | Whether safe without approval |
+| `tool` | `ToolFunction` | The actual tool function |
+| `requiresConnector` | `boolean?` | If tool needs a connector |
+| `connectorServiceTypes` | `string[]?` | Supported service types |
+
+**ConnectorToolEntry** extends ToolRegistryEntry with:
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `connectorName` | `string` | Source connector name |
+| `serviceType` | `string?` | Detected service type (e.g., `github`) |
+
 ### Service Detection
 
 Services are detected from URL patterns or explicit `serviceType`:

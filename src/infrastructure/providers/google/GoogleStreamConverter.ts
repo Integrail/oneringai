@@ -14,7 +14,29 @@ export class GoogleStreamConverter {
   private model: string = '';
   private sequenceNumber: number = 0;
   private isFirst: boolean = true;
-  private toolCallBuffers: Map<string, { name: string; args: string }> = new Map();
+  private toolCallBuffers: Map<string, { name: string; args: string; signature?: string }> = new Map();
+  private hadToolCalls: boolean = false;
+
+  // External storage for thought signatures (shared with GoogleConverter)
+  private thoughtSignatureStorage: Map<string, string> | null = null;
+  // External storage for tool call ID → name mapping (shared with GoogleConverter)
+  private toolCallMappingStorage: Map<string, string> | null = null;
+
+  /**
+   * Set external storage for thought signatures
+   * This allows sharing signatures with GoogleConverter for multi-turn conversations
+   */
+  setThoughtSignatureStorage(storage: Map<string, string>): void {
+    this.thoughtSignatureStorage = storage;
+  }
+
+  /**
+   * Set external storage for tool call mappings
+   * This allows sharing tool name lookups with GoogleConverter
+   */
+  setToolCallMappingStorage(storage: Map<string, string>): void {
+    this.toolCallMappingStorage = storage;
+  }
 
   /**
    * Convert Google stream to our StreamEvent format
@@ -27,6 +49,7 @@ export class GoogleStreamConverter {
     this.sequenceNumber = 0;
     this.isFirst = true;
     this.toolCallBuffers.clear();
+    this.hadToolCalls = false;
 
     let lastUsage: { input_tokens: number; output_tokens: number; total_tokens: number } = {
       input_tokens: 0,
@@ -122,12 +145,32 @@ export class GoogleStreamConverter {
         const toolName = functionCall.name || 'unknown';
         const toolCallId = `call_${this.responseId}_${toolName}`;
 
+        // Extract thought signature if present (required for Gemini 3+)
+        const thoughtSignature = 'thoughtSignature' in part ? (part.thoughtSignature as string) : undefined;
+
         // Check if this is a new tool call
         if (!this.toolCallBuffers.has(toolCallId)) {
+          this.hadToolCalls = true;
           this.toolCallBuffers.set(toolCallId, {
             name: toolName,
             args: '',
+            signature: thoughtSignature,
           });
+
+          // Store tool call ID → name mapping for tool result conversion
+          if (this.toolCallMappingStorage) {
+            this.toolCallMappingStorage.set(toolCallId, toolName);
+          }
+
+          // Store signature in external storage for use in next request
+          if (thoughtSignature && this.thoughtSignatureStorage) {
+            this.thoughtSignatureStorage.set(toolCallId, thoughtSignature);
+            if (process.env.DEBUG_GOOGLE) {
+              console.error(`[DEBUG] Stream: Captured thought signature for tool ID: ${toolCallId}`);
+            }
+          } else if (process.env.DEBUG_GOOGLE && !thoughtSignature) {
+            console.error(`[DEBUG] Stream: NO thought signature in part for ${toolName}`);
+          }
 
           events.push({
             type: StreamEventType.TOOL_CALL_START,
@@ -136,6 +179,18 @@ export class GoogleStreamConverter {
             tool_call_id: toolCallId,
             tool_name: toolName,
           });
+        } else if (thoughtSignature) {
+          // Update signature if we get it in a later chunk
+          const buffer = this.toolCallBuffers.get(toolCallId)!;
+          if (!buffer.signature) {
+            buffer.signature = thoughtSignature;
+            if (this.thoughtSignatureStorage) {
+              this.thoughtSignatureStorage.set(toolCallId, thoughtSignature);
+              if (process.env.DEBUG_GOOGLE) {
+                console.error(`[DEBUG] Stream: Updated thought signature for tool ID: ${toolCallId}`);
+              }
+            }
+          }
         }
 
         // Convert args object to JSON string
@@ -175,6 +230,14 @@ export class GoogleStreamConverter {
   }
 
   /**
+   * Check if the stream had tool calls
+   * Used to determine when to clear thought signatures (must persist across tool execution)
+   */
+  hasToolCalls(): boolean {
+    return this.hadToolCalls;
+  }
+
+  /**
    * Clear all internal state
    * Should be called after each stream completes to prevent memory leaks
    */
@@ -184,6 +247,7 @@ export class GoogleStreamConverter {
     this.sequenceNumber = 0;
     this.isFirst = true;
     this.toolCallBuffers.clear();
+    this.hadToolCalls = false;
   }
 
   /**

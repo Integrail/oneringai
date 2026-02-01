@@ -925,6 +925,24 @@ const metrics = connector.getMetrics();
 console.log(`Success rate: ${metrics.successCount / metrics.requestCount * 100}%`);
 ```
 
+#### Tool Discovery with ToolRegistry
+
+For UIs or tool inventory, use `ToolRegistry` to get all available tools:
+
+```typescript
+import { ToolRegistry } from '@oneringai/agents';
+
+const allTools = ToolRegistry.getAllTools();
+
+for (const tool of allTools) {
+  if (ToolRegistry.isConnectorTool(tool)) {
+    console.log(`API: ${tool.displayName} (${tool.connectorName})`);
+  } else {
+    console.log(`Built-in: ${tool.displayName}`);
+  }
+}
+```
+
 ## MCP (Model Context Protocol) Integration
 
 Connect to MCP servers for automatic tool discovery and seamless integration:

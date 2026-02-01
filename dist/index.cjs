@@ -2,7 +2,7 @@
 
 var crypto2 = require('crypto');
 var jose = require('jose');
-var fs15 = require('fs');
+var fs16 = require('fs');
 var eventemitter3 = require('eventemitter3');
 var path2 = require('path');
 var os = require('os');
@@ -13,7 +13,7 @@ var index_js = require('@modelcontextprotocol/sdk/client/index.js');
 var stdio_js = require('@modelcontextprotocol/sdk/client/stdio.js');
 var streamableHttp_js = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 var types_js = require('@modelcontextprotocol/sdk/types.js');
-var fs14 = require('fs/promises');
+var fs15 = require('fs/promises');
 var glob = require('glob');
 var child_process = require('child_process');
 var util = require('util');
@@ -43,12 +43,12 @@ function _interopNamespace(e) {
 }
 
 var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
-var fs15__namespace = /*#__PURE__*/_interopNamespace(fs15);
+var fs16__namespace = /*#__PURE__*/_interopNamespace(fs16);
 var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
 var os__namespace = /*#__PURE__*/_interopNamespace(os);
 var OpenAI2__default = /*#__PURE__*/_interopDefault(OpenAI2);
 var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
-var fs14__namespace = /*#__PURE__*/_interopNamespace(fs14);
+var fs15__namespace = /*#__PURE__*/_interopNamespace(fs15);
 var TurndownService__default = /*#__PURE__*/_interopDefault(TurndownService);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
 
@@ -613,7 +613,7 @@ var init_JWTBearer = __esm({
           this.privateKey = config.privateKey;
         } else if (config.privateKeyPath) {
           try {
-            this.privateKey = fs15__namespace.readFileSync(config.privateKeyPath, "utf8");
+            this.privateKey = fs16__namespace.readFileSync(config.privateKeyPath, "utf8");
           } catch (error) {
             throw new Error(`Failed to read private key from ${config.privateKeyPath}: ${error.message}`);
           }
@@ -1264,10 +1264,10 @@ var init_Logger = __esm({
       initFileStream(filePath) {
         try {
           const dir = path2__namespace.dirname(filePath);
-          if (!fs15__namespace.existsSync(dir)) {
-            fs15__namespace.mkdirSync(dir, { recursive: true });
+          if (!fs16__namespace.existsSync(dir)) {
+            fs16__namespace.mkdirSync(dir, { recursive: true });
           }
-          this.fileStream = fs15__namespace.createWriteStream(filePath, {
+          this.fileStream = fs16__namespace.createWriteStream(filePath, {
             flags: "a",
             // append mode
             encoding: "utf8"
@@ -5394,6 +5394,22 @@ var LLM_MODELS = {
     GEMINI_2_5_FLASH: "gemini-2.5-flash",
     GEMINI_2_5_FLASH_LITE: "gemini-2.5-flash-lite",
     GEMINI_2_5_FLASH_IMAGE: "gemini-2.5-flash-image"
+  },
+  [Vendor.Grok]: {
+    // Grok 4.1 Series (2M context, fast)
+    GROK_4_1_FAST_REASONING: "grok-4-1-fast-reasoning",
+    GROK_4_1_FAST_NON_REASONING: "grok-4-1-fast-non-reasoning",
+    // Grok 4 Series
+    GROK_4_FAST_REASONING: "grok-4-fast-reasoning",
+    GROK_4_FAST_NON_REASONING: "grok-4-fast-non-reasoning",
+    GROK_4_0709: "grok-4-0709",
+    // Grok Code
+    GROK_CODE_FAST_1: "grok-code-fast-1",
+    // Grok 3 Series
+    GROK_3: "grok-3",
+    GROK_3_MINI: "grok-3-mini",
+    // Grok 2 Series (Vision)
+    GROK_2_VISION_1212: "grok-2-vision-1212"
   }
 };
 var MODEL_REGISTRY = {
@@ -6347,6 +6363,307 @@ var MODEL_REGISTRY = {
         cpm: 0.6
       }
     }
+  },
+  // ============================================================================
+  // xAI Grok Models (Verified from docs.x.ai - January 2026)
+  // ============================================================================
+  // Grok 4.1 Series (2M context, fast)
+  "grok-4-1-fast-reasoning": {
+    name: "grok-4-1-fast-reasoning",
+    provider: Vendor.Grok,
+    description: "Fast Grok 4.1 with reasoning capabilities, 2M context window, vision support",
+    isActive: true,
+    releaseDate: "2025-11-01",
+    knowledgeCutoff: "2024-11-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      input: {
+        tokens: 2e6,
+        text: true,
+        image: true,
+        cpm: 0.2
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 0.5
+      }
+    }
+  },
+  "grok-4-1-fast-non-reasoning": {
+    name: "grok-4-1-fast-non-reasoning",
+    provider: Vendor.Grok,
+    description: "Fast Grok 4.1 without reasoning, 2M context window, vision support",
+    isActive: true,
+    releaseDate: "2025-11-01",
+    knowledgeCutoff: "2024-11-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      input: {
+        tokens: 2e6,
+        text: true,
+        image: true,
+        cpm: 0.2
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 0.5
+      }
+    }
+  },
+  // Grok Code Series
+  "grok-code-fast-1": {
+    name: "grok-code-fast-1",
+    provider: Vendor.Grok,
+    description: "Specialized coding model with reasoning capabilities, 256K context",
+    isActive: true,
+    releaseDate: "2025-10-01",
+    knowledgeCutoff: "2024-11-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: false,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      input: {
+        tokens: 256e3,
+        text: true,
+        cpm: 0.2
+      },
+      output: {
+        tokens: 32768,
+        text: true,
+        cpm: 1.5
+      }
+    }
+  },
+  // Grok 4 Series
+  "grok-4-fast-reasoning": {
+    name: "grok-4-fast-reasoning",
+    provider: Vendor.Grok,
+    description: "Fast Grok 4 with reasoning capabilities, 2M context window",
+    isActive: true,
+    releaseDate: "2025-09-01",
+    knowledgeCutoff: "2024-11-01",
+    features: {
+      reasoning: true,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: false,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      input: {
+        tokens: 2e6,
+        text: true,
+        cpm: 0.2
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 0.5
+      }
+    }
+  },
+  "grok-4-fast-non-reasoning": {
+    name: "grok-4-fast-non-reasoning",
+    provider: Vendor.Grok,
+    description: "Fast Grok 4 without reasoning, 2M context window, vision support",
+    isActive: true,
+    releaseDate: "2025-09-01",
+    knowledgeCutoff: "2024-11-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      input: {
+        tokens: 2e6,
+        text: true,
+        image: true,
+        cpm: 0.2
+      },
+      output: {
+        tokens: 65536,
+        text: true,
+        cpm: 0.5
+      }
+    }
+  },
+  "grok-4-0709": {
+    name: "grok-4-0709",
+    provider: Vendor.Grok,
+    description: "Grok 4 flagship model (July 2025 release), 256K context, vision support",
+    isActive: true,
+    releaseDate: "2025-07-09",
+    knowledgeCutoff: "2024-11-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      input: {
+        tokens: 256e3,
+        text: true,
+        image: true,
+        cpm: 3
+      },
+      output: {
+        tokens: 32768,
+        text: true,
+        cpm: 15
+      }
+    }
+  },
+  // Grok 3 Series
+  "grok-3-mini": {
+    name: "grok-3-mini",
+    provider: Vendor.Grok,
+    description: "Lightweight, cost-efficient model for simpler tasks, 131K context",
+    isActive: true,
+    releaseDate: "2025-06-01",
+    knowledgeCutoff: "2024-11-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: false,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      input: {
+        tokens: 131072,
+        text: true,
+        cpm: 0.3
+      },
+      output: {
+        tokens: 32768,
+        text: true,
+        cpm: 0.5
+      }
+    }
+  },
+  "grok-3": {
+    name: "grok-3",
+    provider: Vendor.Grok,
+    description: "Production model for general-purpose tasks, 131K context",
+    isActive: true,
+    releaseDate: "2025-06-01",
+    knowledgeCutoff: "2024-11-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: false,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      input: {
+        tokens: 131072,
+        text: true,
+        cpm: 3
+      },
+      output: {
+        tokens: 32768,
+        text: true,
+        cpm: 15
+      }
+    }
+  },
+  // Grok 2 Series (Vision)
+  "grok-2-vision-1212": {
+    name: "grok-2-vision-1212",
+    provider: Vendor.Grok,
+    description: "Vision-capable model for image understanding, 32K context",
+    isActive: true,
+    releaseDate: "2024-12-12",
+    knowledgeCutoff: "2024-11-01",
+    features: {
+      reasoning: false,
+      streaming: true,
+      structuredOutput: true,
+      functionCalling: true,
+      fineTuning: false,
+      predictedOutputs: false,
+      realtime: false,
+      vision: true,
+      audio: false,
+      video: false,
+      batchAPI: false,
+      promptCaching: false,
+      input: {
+        tokens: 32768,
+        text: true,
+        image: true,
+        cpm: 2
+      },
+      output: {
+        tokens: 8192,
+        text: true,
+        cpm: 10
+      }
+    }
   }
 };
 function getModelInfo(modelName) {
@@ -6875,7 +7192,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async load() {
     try {
-      const content = await fs15.promises.readFile(this.filePath, "utf-8");
+      const content = await fs16.promises.readFile(this.filePath, "utf-8");
       return content.trim() || null;
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -6892,11 +7209,11 @@ var FilePersistentInstructionsStorage = class {
     await this.ensureDirectory();
     const tempPath = `${this.filePath}.tmp`;
     try {
-      await fs15.promises.writeFile(tempPath, content, "utf-8");
-      await fs15.promises.rename(tempPath, this.filePath);
+      await fs16.promises.writeFile(tempPath, content, "utf-8");
+      await fs16.promises.rename(tempPath, this.filePath);
     } catch (error) {
       try {
-        await fs15.promises.unlink(tempPath);
+        await fs16.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -6907,7 +7224,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async delete() {
     try {
-      await fs15.promises.unlink(this.filePath);
+      await fs16.promises.unlink(this.filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -6919,7 +7236,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async exists() {
     try {
-      await fs15.promises.access(this.filePath);
+      await fs16.promises.access(this.filePath);
       return true;
     } catch {
       return false;
@@ -6942,7 +7259,7 @@ var FilePersistentInstructionsStorage = class {
    */
   async ensureDirectory() {
     try {
-      await fs15.promises.mkdir(this.directory, { recursive: true });
+      await fs16.promises.mkdir(this.directory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -11869,7 +12186,22 @@ var GoogleConverter = class {
   // Track tool call ID → tool name mapping for tool results
   toolCallMapping = /* @__PURE__ */ new Map();
   // Track tool call ID → thought signature for Gemini 3+
+  // NOTE: This map is shared with GoogleStreamConverter for streaming responses
   thoughtSignatures = /* @__PURE__ */ new Map();
+  /**
+   * Get the thought signatures storage map
+   * Used by GoogleStreamConverter to store signatures from streaming responses
+   */
+  getThoughtSignatureStorage() {
+    return this.thoughtSignatures;
+  }
+  /**
+   * Get the tool call mapping storage
+   * Used by GoogleStreamConverter to store tool name mappings from streaming responses
+   */
+  getToolCallMappingStorage() {
+    return this.toolCallMapping;
+  }
   /**
    * Convert our format → Google Gemini format
    */
@@ -12136,6 +12468,13 @@ var GoogleConverter = class {
     return "unknown_tool";
   }
   /**
+   * Check if content array has tool calls requiring follow-up
+   * Used to determine when to clear thought signatures (must persist across tool execution)
+   */
+  hasToolCalls(content) {
+    return content.some((c) => c.type === "tool_use" /* TOOL_USE */);
+  }
+  /**
    * Clear all internal mappings
    * Should be called after each request/response cycle to prevent memory leaks
    */
@@ -12157,6 +12496,25 @@ var GoogleStreamConverter = class {
   sequenceNumber = 0;
   isFirst = true;
   toolCallBuffers = /* @__PURE__ */ new Map();
+  hadToolCalls = false;
+  // External storage for thought signatures (shared with GoogleConverter)
+  thoughtSignatureStorage = null;
+  // External storage for tool call ID → name mapping (shared with GoogleConverter)
+  toolCallMappingStorage = null;
+  /**
+   * Set external storage for thought signatures
+   * This allows sharing signatures with GoogleConverter for multi-turn conversations
+   */
+  setThoughtSignatureStorage(storage) {
+    this.thoughtSignatureStorage = storage;
+  }
+  /**
+   * Set external storage for tool call mappings
+   * This allows sharing tool name lookups with GoogleConverter
+   */
+  setToolCallMappingStorage(storage) {
+    this.toolCallMappingStorage = storage;
+  }
   /**
    * Convert Google stream to our StreamEvent format
    */
@@ -12165,6 +12523,7 @@ var GoogleStreamConverter = class {
     this.sequenceNumber = 0;
     this.isFirst = true;
     this.toolCallBuffers.clear();
+    this.hadToolCalls = false;
     let lastUsage = {
       input_tokens: 0,
       output_tokens: 0,
@@ -12243,11 +12602,25 @@ var GoogleStreamConverter = class {
         const functionCall = part.functionCall;
         const toolName = functionCall.name || "unknown";
         const toolCallId = `call_${this.responseId}_${toolName}`;
+        const thoughtSignature = "thoughtSignature" in part ? part.thoughtSignature : void 0;
         if (!this.toolCallBuffers.has(toolCallId)) {
+          this.hadToolCalls = true;
           this.toolCallBuffers.set(toolCallId, {
             name: toolName,
-            args: ""
+            args: "",
+            signature: thoughtSignature
           });
+          if (this.toolCallMappingStorage) {
+            this.toolCallMappingStorage.set(toolCallId, toolName);
+          }
+          if (thoughtSignature && this.thoughtSignatureStorage) {
+            this.thoughtSignatureStorage.set(toolCallId, thoughtSignature);
+            if (process.env.DEBUG_GOOGLE) {
+              console.error(`[DEBUG] Stream: Captured thought signature for tool ID: ${toolCallId}`);
+            }
+          } else if (process.env.DEBUG_GOOGLE && !thoughtSignature) {
+            console.error(`[DEBUG] Stream: NO thought signature in part for ${toolName}`);
+          }
           events.push({
             type: "response.tool_call.start" /* TOOL_CALL_START */,
             response_id: this.responseId,
@@ -12255,6 +12628,17 @@ var GoogleStreamConverter = class {
             tool_call_id: toolCallId,
             tool_name: toolName
           });
+        } else if (thoughtSignature) {
+          const buffer = this.toolCallBuffers.get(toolCallId);
+          if (!buffer.signature) {
+            buffer.signature = thoughtSignature;
+            if (this.thoughtSignatureStorage) {
+              this.thoughtSignatureStorage.set(toolCallId, thoughtSignature);
+              if (process.env.DEBUG_GOOGLE) {
+                console.error(`[DEBUG] Stream: Updated thought signature for tool ID: ${toolCallId}`);
+              }
+            }
+          }
         }
         if (functionCall.args) {
           const argsJson = JSON.stringify(functionCall.args);
@@ -12286,6 +12670,13 @@ var GoogleStreamConverter = class {
     return `resp_google_${crypto2.randomUUID()}`;
   }
   /**
+   * Check if the stream had tool calls
+   * Used to determine when to clear thought signatures (must persist across tool execution)
+   */
+  hasToolCalls() {
+    return this.hadToolCalls;
+  }
+  /**
    * Clear all internal state
    * Should be called after each stream completes to prevent memory leaks
    */
@@ -12295,6 +12686,7 @@ var GoogleStreamConverter = class {
     this.sequenceNumber = 0;
     this.isFirst = true;
     this.toolCallBuffers.clear();
+    this.hadToolCalls = false;
   }
   /**
    * Reset converter state for a new stream
@@ -12325,6 +12717,8 @@ var GoogleTextProvider = class extends BaseTextProvider {
     });
     this.converter = new GoogleConverter();
     this.streamConverter = new GoogleStreamConverter();
+    this.streamConverter.setThoughtSignatureStorage(this.converter.getThoughtSignatureStorage());
+    this.streamConverter.setToolCallMappingStorage(this.converter.getToolCallMappingStorage());
   }
   /**
    * Generate response using Google Gemini API
@@ -12363,12 +12757,17 @@ var GoogleTextProvider = class extends BaseTextProvider {
           }, null, 2));
         }
         const response = this.converter.convertResponse(result);
+        const firstOutput = response.output?.[0];
+        const outputContent = firstOutput && "content" in firstOutput ? firstOutput.content : [];
+        const hasToolCalls = this.converter.hasToolCalls(outputContent);
+        if (!hasToolCalls) {
+          this.converter.clearMappings();
+        }
         return response;
       } catch (error) {
+        this.converter.clearMappings();
         this.handleError(error);
         throw error;
-      } finally {
-        this.converter.clearMappings();
       }
     }, options.model);
   }
@@ -12390,12 +12789,15 @@ var GoogleTextProvider = class extends BaseTextProvider {
       });
       this.streamConverter.reset();
       yield* this.streamConverter.convertStream(stream, options.model);
+      if (!this.streamConverter.hasToolCalls()) {
+        this.converter.clearMappings();
+        this.streamConverter.clear();
+      }
     } catch (error) {
-      this.handleError(error);
-      throw error;
-    } finally {
       this.converter.clearMappings();
       this.streamConverter.clear();
+      this.handleError(error);
+      throw error;
     }
   }
   /**
@@ -12781,8 +13183,9 @@ var BaseAgent = class extends eventemitter3.EventEmitter {
     const contextConfig = {
       model: config.model,
       agentId: config.name,
-      // Include storage if session config is provided
+      // Include storage and sessionId if session config is provided
       storage: config.session?.storage,
+      sessionId: config.session?.id,
       // Subclasses can add systemPrompt via their config
       ...typeof config.context === "object" && config.context !== null ? config.context : {}
     };
@@ -15743,7 +16146,7 @@ function getMemoryTools() {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const content = await fs15.promises.readFile(configPath, "utf-8");
+      const content = await fs16.promises.readFile(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -15764,8 +16167,8 @@ function getMemoryTools() {
       throw new Error("Configuration file not found. Searched: " + this.DEFAULT_PATHS.join(", "));
     }
     try {
-      const fs16 = __require("fs");
-      const content = fs16.readFileSync(configPath, "utf-8");
+      const fs17 = __require("fs");
+      const content = fs17.readFileSync(configPath, "utf-8");
       let config = JSON.parse(content);
       config = this.interpolateEnvVars(config);
       this.validate(config);
@@ -15783,7 +16186,7 @@ function getMemoryTools() {
   static async findConfig() {
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        await fs15.promises.access(path2.resolve(path6));
+        await fs16.promises.access(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -15794,10 +16197,10 @@ function getMemoryTools() {
    * Find configuration file synchronously
    */
   static findConfigSync() {
-    const fs16 = __require("fs");
+    const fs17 = __require("fs");
     for (const path6 of this.DEFAULT_PATHS) {
       try {
-        fs16.accessSync(path2.resolve(path6));
+        fs17.accessSync(path2.resolve(path6));
         return path2.resolve(path6);
       } catch {
       }
@@ -16506,7 +16909,7 @@ var MCPRegistry = class {
   static async loadFromConfigFile(path6) {
     try {
       const configPath = path2.resolve(path6);
-      const content = await fs15.promises.readFile(configPath, "utf-8");
+      const content = await fs16.promises.readFile(configPath, "utf-8");
       const config = JSON.parse(content);
       if (!config.mcp) {
         throw new MCPError("Configuration file does not contain MCP section");
@@ -17097,7 +17500,7 @@ var OpenAISTTProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(audio)) {
       return new File([new Uint8Array(audio)], "audio.wav", { type: "audio/wav" });
     } else if (typeof audio === "string") {
-      return fs15__namespace.createReadStream(audio);
+      return fs16__namespace.createReadStream(audio);
     } else {
       throw new Error("Invalid audio input: must be Buffer or file path");
     }
@@ -17650,7 +18053,7 @@ var TextToSpeech = class _TextToSpeech {
    */
   async toFile(text, filePath, options) {
     const response = await this.synthesize(text, options);
-    await fs14__namespace.writeFile(filePath, response.audio);
+    await fs15__namespace.writeFile(filePath, response.audio);
   }
   // ======================== Introspection Methods ========================
   /**
@@ -17998,7 +18401,7 @@ var SpeechToText = class _SpeechToText {
    * @param options - Optional transcription parameters
    */
   async transcribeFile(filePath, options) {
-    const audio = await fs14__namespace.readFile(filePath);
+    const audio = await fs15__namespace.readFile(filePath);
     return this.transcribe(audio, options);
   }
   /**
@@ -18324,7 +18727,7 @@ var OpenAIImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
     }
-    return fs15__namespace.createReadStream(image);
+    return fs16__namespace.createReadStream(image);
   }
   /**
    * Handle OpenAI API errors
@@ -18471,8 +18874,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs16 = await import('fs');
-      const buffer = fs16.readFileSync(image);
+      const fs17 = await import('fs');
+      const buffer = fs17.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -18505,6 +18908,157 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     throw new ProviderError("google", message);
   }
 };
+var GROK_API_BASE_URL = "https://api.x.ai/v1";
+var GrokImageProvider = class extends BaseMediaProvider {
+  name = "grok-image";
+  vendor = "grok";
+  capabilities = {
+    text: false,
+    images: true,
+    videos: false,
+    audio: false,
+    features: {
+      imageGeneration: true,
+      imageEditing: true
+    }
+  };
+  client;
+  constructor(config) {
+    super({ apiKey: config.auth.apiKey, ...config });
+    this.client = new OpenAI2__default.default({
+      apiKey: config.auth.apiKey,
+      baseURL: config.baseURL || GROK_API_BASE_URL,
+      timeout: config.timeout,
+      maxRetries: config.maxRetries
+    });
+  }
+  /**
+   * Generate images from a text prompt
+   */
+  async generateImage(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("image.generate", {
+            model: options.model,
+            size: options.size,
+            quality: options.quality,
+            n: options.n
+          });
+          const params = {
+            model: options.model || "grok-imagine-image",
+            prompt: options.prompt,
+            n: options.n || 1,
+            response_format: options.response_format || "b64_json"
+          };
+          if (options.aspectRatio) {
+            params.aspect_ratio = options.aspectRatio;
+          }
+          const response = await this.client.images.generate(params);
+          const data = response.data || [];
+          this.logOperationComplete("image.generate", {
+            model: options.model,
+            imagesGenerated: data.length
+          });
+          return {
+            created: response.created,
+            data: data.map((img) => ({
+              url: img.url,
+              b64_json: img.b64_json,
+              revised_prompt: img.revised_prompt
+            }))
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "image.generate",
+      { model: options.model }
+    );
+  }
+  /**
+   * Edit an existing image with a prompt
+   */
+  async editImage(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("image.edit", {
+            model: options.model,
+            size: options.size,
+            n: options.n
+          });
+          const image = this.prepareImageInput(options.image);
+          const mask = options.mask ? this.prepareImageInput(options.mask) : void 0;
+          const params = {
+            model: options.model || "grok-imagine-image",
+            image,
+            prompt: options.prompt,
+            mask,
+            size: options.size,
+            n: options.n || 1,
+            response_format: options.response_format || "b64_json"
+          };
+          const response = await this.client.images.edit(params);
+          const data = response.data || [];
+          this.logOperationComplete("image.edit", {
+            model: options.model,
+            imagesGenerated: data.length
+          });
+          return {
+            created: response.created,
+            data: data.map((img) => ({
+              url: img.url,
+              b64_json: img.b64_json,
+              revised_prompt: img.revised_prompt
+            }))
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "image.edit",
+      { model: options.model }
+    );
+  }
+  /**
+   * List available image models
+   */
+  async listModels() {
+    return ["grok-imagine-image"];
+  }
+  /**
+   * Prepare image input (Buffer or file path) for API
+   */
+  prepareImageInput(image) {
+    if (Buffer.isBuffer(image)) {
+      return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
+    }
+    return fs16__namespace.createReadStream(image);
+  }
+  /**
+   * Handle API errors
+   */
+  handleError(error) {
+    const message = error.message || "Unknown Grok API error";
+    const status = error.status;
+    if (status === 401) {
+      throw new ProviderAuthError("grok", "Invalid API key");
+    }
+    if (status === 429) {
+      throw new ProviderRateLimitError("grok", message);
+    }
+    if (status === 400) {
+      if (message.includes("safety") || message.includes("policy")) {
+        throw new ProviderError("grok", `Content policy violation: ${message}`);
+      }
+      throw new ProviderError("grok", `Bad request: ${message}`);
+    }
+    throw new ProviderError("grok", message);
+  }
+};
 
 // src/core/createImageProvider.ts
 function createImageProvider(connector) {
@@ -18514,9 +19068,11 @@ function createImageProvider(connector) {
       return new OpenAIImageProvider(extractOpenAIConfig2(connector));
     case Vendor.Google:
       return new GoogleImageProvider(extractGoogleConfig2(connector));
+    case Vendor.Grok:
+      return new GrokImageProvider(extractGrokConfig(connector));
     default:
       throw new Error(
-        `No Image provider available for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
+        `No Image provider available for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}, ${Vendor.Grok}`
       );
   }
 }
@@ -18544,6 +19100,22 @@ function extractGoogleConfig2(connector) {
   }
   return {
     apiKey: auth.apiKey
+  };
+}
+function extractGrokConfig(connector) {
+  const auth = connector.config.auth;
+  if (auth.type !== "api_key") {
+    throw new Error("Grok requires API key authentication");
+  }
+  const options = connector.getOptions();
+  return {
+    auth: {
+      type: "api_key",
+      apiKey: auth.apiKey
+    },
+    baseURL: connector.baseURL,
+    timeout: options.timeout,
+    maxRetries: options.maxRetries
   };
 }
 
@@ -18775,6 +19347,12 @@ var IMAGE_MODELS = {
     IMAGEN_4_ULTRA: "imagen-4.0-ultra-generate-001",
     /** Imagen 4.0 Fast: Optimized for speed */
     IMAGEN_4_FAST: "imagen-4.0-fast-generate-001"
+  },
+  [Vendor.Grok]: {
+    /** Grok Imagine Image: xAI image generation with editing support */
+    GROK_IMAGINE_IMAGE: "grok-imagine-image",
+    /** Grok 2 Image: xAI image generation (text-only input) */
+    GROK_2_IMAGE_1212: "grok-2-image-1212"
   }
 };
 var IMAGE_MODEL_REGISTRY = {
@@ -18793,7 +19371,7 @@ var IMAGE_MODEL_REGISTRY = {
     },
     capabilities: {
       sizes: ["1024x1024", "1024x1536", "1536x1024", "auto"],
-      maxImagesPerRequest: 1,
+      maxImagesPerRequest: 10,
       outputFormats: ["png", "webp", "jpeg"],
       features: {
         generation: true,
@@ -18806,13 +19384,46 @@ var IMAGE_MODEL_REGISTRY = {
       },
       limits: { maxPromptLength: 32e3 },
       vendorOptions: {
+        quality: {
+          type: "enum",
+          label: "Quality",
+          description: "Image quality level",
+          enum: ["auto", "low", "medium", "high"],
+          default: "auto",
+          controlType: "select"
+        },
         background: {
-          type: "string",
-          description: "Background setting: transparent, opaque, or auto"
+          type: "enum",
+          label: "Background",
+          description: "Background transparency",
+          enum: ["auto", "transparent", "opaque"],
+          default: "auto",
+          controlType: "select"
         },
         output_format: {
-          type: "string",
-          description: "Output format: png, webp, or jpeg"
+          type: "enum",
+          label: "Output Format",
+          description: "Image file format",
+          enum: ["png", "jpeg", "webp"],
+          default: "png",
+          controlType: "select"
+        },
+        output_compression: {
+          type: "number",
+          label: "Compression",
+          description: "Compression level for JPEG/WebP (0-100)",
+          min: 0,
+          max: 100,
+          default: 75,
+          controlType: "slider"
+        },
+        moderation: {
+          type: "enum",
+          label: "Moderation",
+          description: "Content moderation strictness",
+          enum: ["auto", "low"],
+          default: "auto",
+          controlType: "radio"
         }
       }
     },
@@ -18829,6 +19440,7 @@ var IMAGE_MODEL_REGISTRY = {
     description: "High quality image generation with prompt revision",
     isActive: true,
     releaseDate: "2023-11-06",
+    deprecationDate: "2026-05-12",
     sources: {
       documentation: "https://platform.openai.com/docs/guides/images",
       pricing: "https://openai.com/pricing",
@@ -18849,9 +19461,21 @@ var IMAGE_MODEL_REGISTRY = {
       },
       limits: { maxPromptLength: 4e3 },
       vendorOptions: {
+        quality: {
+          type: "enum",
+          label: "Quality",
+          description: "Image quality: standard or HD",
+          enum: ["standard", "hd"],
+          default: "standard",
+          controlType: "radio"
+        },
         style: {
-          type: "string",
-          description: "Style: vivid (hyper-real) or natural (more natural)"
+          type: "enum",
+          label: "Style",
+          description: "Image style: vivid (hyper-real) or natural",
+          enum: ["vivid", "natural"],
+          default: "vivid",
+          controlType: "radio"
         }
       }
     },
@@ -18868,6 +19492,7 @@ var IMAGE_MODEL_REGISTRY = {
     description: "Fast image generation with editing and variation support",
     isActive: true,
     releaseDate: "2022-11-03",
+    deprecationDate: "2026-05-12",
     sources: {
       documentation: "https://platform.openai.com/docs/guides/images",
       pricing: "https://openai.com/pricing",
@@ -18886,7 +19511,8 @@ var IMAGE_MODEL_REGISTRY = {
         transparency: false,
         promptRevision: false
       },
-      limits: { maxPromptLength: 1e3 }
+      limits: { maxPromptLength: 1e3 },
+      vendorOptions: {}
     },
     pricing: {
       perImage: 0.02,
@@ -18922,17 +19548,81 @@ var IMAGE_MODEL_REGISTRY = {
       },
       limits: { maxPromptLength: 480 },
       vendorOptions: {
+        aspectRatio: {
+          type: "enum",
+          label: "Aspect Ratio",
+          description: "Output image proportions",
+          enum: ["1:1", "3:4", "4:3", "16:9", "9:16"],
+          default: "1:1",
+          controlType: "select"
+        },
+        sampleImageSize: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution",
+          enum: ["1K", "2K"],
+          default: "1K",
+          controlType: "radio"
+        },
+        outputMimeType: {
+          type: "enum",
+          label: "Output Format",
+          description: "Image file format",
+          enum: ["image/png", "image/jpeg"],
+          default: "image/png",
+          controlType: "select"
+        },
         negativePrompt: {
           type: "string",
-          description: "Description of what to avoid in the image"
+          label: "Negative Prompt",
+          description: "Elements to avoid in the generated image",
+          controlType: "textarea"
+        },
+        personGeneration: {
+          type: "enum",
+          label: "Person Generation",
+          description: "Controls whether people can appear in images",
+          enum: ["dont_allow", "allow_adult", "allow_all"],
+          default: "allow_adult",
+          controlType: "select"
+        },
+        safetyFilterLevel: {
+          type: "enum",
+          label: "Safety Filter",
+          description: "Content safety filtering threshold",
+          enum: ["block_none", "block_only_high", "block_medium_and_above", "block_low_and_above"],
+          default: "block_medium_and_above",
+          controlType: "select"
+        },
+        enhancePrompt: {
+          type: "boolean",
+          label: "Enhance Prompt",
+          description: "Use LLM-based prompt rewriting for better quality",
+          default: true,
+          controlType: "checkbox"
         },
         seed: {
           type: "number",
-          description: "Random seed for reproducible generation"
+          label: "Seed",
+          description: "Random seed for reproducible generation (1-2147483647)",
+          min: 1,
+          max: 2147483647,
+          controlType: "text"
         },
-        aspectRatio: {
-          type: "string",
-          description: "Aspect ratio: 1:1, 3:4, 4:3, 9:16, or 16:9"
+        addWatermark: {
+          type: "boolean",
+          label: "Add Watermark",
+          description: "Add invisible SynthID watermark",
+          default: true,
+          controlType: "checkbox"
+        },
+        language: {
+          type: "enum",
+          label: "Prompt Language",
+          description: "Language of the input prompt",
+          enum: ["auto", "en", "zh", "zh-CN", "zh-TW", "hi", "ja", "ko", "pt", "es"],
+          default: "en",
+          controlType: "select"
         }
       }
     },
@@ -18967,7 +19657,85 @@ var IMAGE_MODEL_REGISTRY = {
         transparency: false,
         promptRevision: false
       },
-      limits: { maxPromptLength: 480 }
+      limits: { maxPromptLength: 480 },
+      vendorOptions: {
+        aspectRatio: {
+          type: "enum",
+          label: "Aspect Ratio",
+          description: "Output image proportions",
+          enum: ["1:1", "3:4", "4:3", "16:9", "9:16"],
+          default: "1:1",
+          controlType: "select"
+        },
+        sampleImageSize: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution",
+          enum: ["1K", "2K"],
+          default: "1K",
+          controlType: "radio"
+        },
+        outputMimeType: {
+          type: "enum",
+          label: "Output Format",
+          description: "Image file format",
+          enum: ["image/png", "image/jpeg"],
+          default: "image/png",
+          controlType: "select"
+        },
+        negativePrompt: {
+          type: "string",
+          label: "Negative Prompt",
+          description: "Elements to avoid in the generated image",
+          controlType: "textarea"
+        },
+        personGeneration: {
+          type: "enum",
+          label: "Person Generation",
+          description: "Controls whether people can appear in images",
+          enum: ["dont_allow", "allow_adult", "allow_all"],
+          default: "allow_adult",
+          controlType: "select"
+        },
+        safetyFilterLevel: {
+          type: "enum",
+          label: "Safety Filter",
+          description: "Content safety filtering threshold",
+          enum: ["block_none", "block_only_high", "block_medium_and_above", "block_low_and_above"],
+          default: "block_medium_and_above",
+          controlType: "select"
+        },
+        enhancePrompt: {
+          type: "boolean",
+          label: "Enhance Prompt",
+          description: "Use LLM-based prompt rewriting for better quality",
+          default: true,
+          controlType: "checkbox"
+        },
+        seed: {
+          type: "number",
+          label: "Seed",
+          description: "Random seed for reproducible generation (1-2147483647)",
+          min: 1,
+          max: 2147483647,
+          controlType: "text"
+        },
+        addWatermark: {
+          type: "boolean",
+          label: "Add Watermark",
+          description: "Add invisible SynthID watermark",
+          default: true,
+          controlType: "checkbox"
+        },
+        language: {
+          type: "enum",
+          label: "Prompt Language",
+          description: "Language of the input prompt",
+          enum: ["auto", "en", "zh", "zh-CN", "zh-TW", "hi", "ja", "ko", "pt", "es"],
+          default: "en",
+          controlType: "select"
+        }
+      }
     },
     pricing: {
       perImage: 0.08,
@@ -19000,10 +19768,195 @@ var IMAGE_MODEL_REGISTRY = {
         transparency: false,
         promptRevision: false
       },
-      limits: { maxPromptLength: 480 }
+      limits: { maxPromptLength: 480 },
+      vendorOptions: {
+        aspectRatio: {
+          type: "enum",
+          label: "Aspect Ratio",
+          description: "Output image proportions",
+          enum: ["1:1", "3:4", "4:3", "16:9", "9:16"],
+          default: "1:1",
+          controlType: "select"
+        },
+        sampleImageSize: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution",
+          enum: ["1K", "2K"],
+          default: "1K",
+          controlType: "radio"
+        },
+        outputMimeType: {
+          type: "enum",
+          label: "Output Format",
+          description: "Image file format",
+          enum: ["image/png", "image/jpeg"],
+          default: "image/png",
+          controlType: "select"
+        },
+        negativePrompt: {
+          type: "string",
+          label: "Negative Prompt",
+          description: "Elements to avoid in the generated image",
+          controlType: "textarea"
+        },
+        personGeneration: {
+          type: "enum",
+          label: "Person Generation",
+          description: "Controls whether people can appear in images",
+          enum: ["dont_allow", "allow_adult", "allow_all"],
+          default: "allow_adult",
+          controlType: "select"
+        },
+        safetyFilterLevel: {
+          type: "enum",
+          label: "Safety Filter",
+          description: "Content safety filtering threshold",
+          enum: ["block_none", "block_only_high", "block_medium_and_above", "block_low_and_above"],
+          default: "block_medium_and_above",
+          controlType: "select"
+        },
+        enhancePrompt: {
+          type: "boolean",
+          label: "Enhance Prompt",
+          description: "Use LLM-based prompt rewriting for better quality",
+          default: true,
+          controlType: "checkbox"
+        },
+        seed: {
+          type: "number",
+          label: "Seed",
+          description: "Random seed for reproducible generation (1-2147483647)",
+          min: 1,
+          max: 2147483647,
+          controlType: "text"
+        },
+        addWatermark: {
+          type: "boolean",
+          label: "Add Watermark",
+          description: "Add invisible SynthID watermark",
+          default: true,
+          controlType: "checkbox"
+        },
+        language: {
+          type: "enum",
+          label: "Prompt Language",
+          description: "Language of the input prompt",
+          enum: ["auto", "en", "zh", "zh-CN", "zh-TW", "hi", "ja", "ko", "pt", "es"],
+          default: "en",
+          controlType: "select"
+        }
+      }
     },
     pricing: {
       perImage: 0.02,
+      currency: "USD"
+    }
+  },
+  // ======================== xAI Grok ========================
+  "grok-imagine-image": {
+    name: "grok-imagine-image",
+    displayName: "Grok Imagine Image",
+    provider: Vendor.Grok,
+    description: "xAI Grok Imagine image generation with aspect ratio control and editing support",
+    isActive: true,
+    releaseDate: "2025-01-01",
+    sources: {
+      documentation: "https://docs.x.ai/docs/guides/image-generation",
+      pricing: "https://docs.x.ai/docs/models",
+      lastVerified: "2026-02-01"
+    },
+    capabilities: {
+      sizes: ["1024x1024"],
+      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
+      maxImagesPerRequest: 10,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        // quality not supported by xAI API
+        transparency: false,
+        promptRevision: true
+      },
+      limits: { maxPromptLength: 4096 },
+      vendorOptions: {
+        n: {
+          type: "number",
+          label: "Number of Images",
+          description: "Number of images to generate (1-10)",
+          min: 1,
+          max: 10,
+          default: 1,
+          controlType: "slider"
+        },
+        response_format: {
+          type: "enum",
+          label: "Response Format",
+          description: "Format of the returned image",
+          enum: ["url", "b64_json"],
+          default: "url",
+          controlType: "radio"
+        }
+      }
+    },
+    pricing: {
+      perImage: 0.02,
+      currency: "USD"
+    }
+  },
+  "grok-2-image-1212": {
+    name: "grok-2-image-1212",
+    displayName: "Grok 2 Image",
+    provider: Vendor.Grok,
+    description: "xAI Grok 2 image generation (text-only input, no editing)",
+    isActive: true,
+    releaseDate: "2024-12-12",
+    sources: {
+      documentation: "https://docs.x.ai/docs/guides/image-generation",
+      pricing: "https://docs.x.ai/docs/models",
+      lastVerified: "2026-02-01"
+    },
+    capabilities: {
+      sizes: ["1024x1024"],
+      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
+      maxImagesPerRequest: 10,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: false,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        // quality not supported by xAI API
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 4096 },
+      vendorOptions: {
+        n: {
+          type: "number",
+          label: "Number of Images",
+          description: "Number of images to generate (1-10)",
+          min: 1,
+          max: 10,
+          default: 1,
+          controlType: "slider"
+        },
+        response_format: {
+          type: "enum",
+          label: "Response Format",
+          description: "Format of the returned image",
+          enum: ["url", "b64_json"],
+          default: "url",
+          controlType: "radio"
+        }
+      }
+    },
+    pricing: {
+      perImage: 0.07,
       currency: "USD"
     }
   }
@@ -19133,6 +20086,8 @@ var ImageGeneration = class _ImageGeneration {
         return IMAGE_MODELS[Vendor.OpenAI].DALL_E_3;
       case Vendor.Google:
         return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
+      case Vendor.Grok:
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE;
       default:
         throw new Error(`No default image model for vendor: ${vendor}`);
     }
@@ -19147,6 +20102,8 @@ var ImageGeneration = class _ImageGeneration {
         return IMAGE_MODELS[Vendor.OpenAI].GPT_IMAGE_1;
       case Vendor.Google:
         return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
+      case Vendor.Grok:
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE;
       default:
         throw new Error(`No edit model for vendor: ${vendor}`);
     }
@@ -19420,8 +20377,8 @@ var OpenAISoraProvider = class extends BaseMediaProvider {
       return new File([new Uint8Array(image)], "input.png", { type: "image/png" });
     }
     if (!image.startsWith("http")) {
-      const fs16 = await import('fs');
-      const data = fs16.readFileSync(image);
+      const fs17 = await import('fs');
+      const data = fs17.readFileSync(image);
       return new File([new Uint8Array(data)], "input.png", { type: "image/png" });
     }
     const response = await fetch(image);
@@ -19567,9 +20524,6 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
             jobId,
             status: response.status
           });
-          if (response.status === "completed" || response.status === "failed") {
-            this.pendingOperations.delete(jobId);
-          }
           return response;
         } catch (error) {
           if (error instanceof ProviderError) throw error;
@@ -19597,22 +20551,44 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
           if (!operation?.response?.generatedVideos?.[0]?.video) {
             throw new ProviderError("google", "No video available for download");
           }
-          const videoFile = operation.response.generatedVideos[0].video;
-          const downloadResponse = await this.client.files.download({
-            file: videoFile
-          });
+          const video = operation.response.generatedVideos[0].video;
           let buffer;
-          if (downloadResponse instanceof Buffer) {
-            buffer = downloadResponse;
-          } else if (downloadResponse.data) {
-            buffer = Buffer.from(downloadResponse.data);
+          if (video.videoBytes) {
+            buffer = Buffer.from(video.videoBytes, "base64");
+          } else if (video.uri) {
+            const fs17 = await import('fs/promises');
+            const os2 = await import('os');
+            const path6 = await import('path');
+            const tempDir = os2.tmpdir();
+            const tempFile = path6.join(tempDir, `veo-${Date.now()}.mp4`);
+            try {
+              await this.client.files.download({
+                file: { video },
+                // Pass as GeneratedVideo
+                downloadPath: tempFile
+              });
+              buffer = await fs17.readFile(tempFile);
+              await fs17.unlink(tempFile).catch(() => {
+              });
+            } catch (downloadError) {
+              await fs17.unlink(tempFile).catch(() => {
+              });
+              throw new ProviderError(
+                "google",
+                `Failed to download video: ${downloadError.message}`
+              );
+            }
           } else {
-            throw new ProviderError("google", "Unexpected download response format");
+            throw new ProviderError(
+              "google",
+              "No videoBytes or uri available for download"
+            );
           }
           this.logOperationComplete("video.download", {
             jobId,
             size: buffer.length
           });
+          this.pendingOperations.delete(jobId);
           return buffer;
         } catch (error) {
           if (error instanceof ProviderError) throw error;
@@ -19677,7 +20653,6 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
   async listModels() {
     return [
       "veo-2.0-generate-001",
-      "veo-3-generate-preview",
       "veo-3.1-fast-generate-preview",
       "veo-3.1-generate-preview"
     ];
@@ -19718,8 +20693,8 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
     if (image.startsWith("http://") || image.startsWith("https://")) {
       return { imageUri: image };
     }
-    const fs16 = await import('fs/promises');
-    const data = await fs16.readFile(image);
+    const fs17 = await import('fs/promises');
+    const data = await fs17.readFile(image);
     return {
       imageBytes: data.toString("base64")
     };
@@ -19786,6 +20761,281 @@ var GoogleVeoProvider = class extends BaseMediaProvider {
   }
 };
 
+// src/infrastructure/providers/grok/GrokImagineProvider.ts
+var GROK_API_BASE_URL2 = "https://api.x.ai/v1";
+var GrokImagineProvider = class extends BaseMediaProvider {
+  name = "grok-video";
+  vendor = "grok";
+  capabilities = {
+    text: false,
+    images: false,
+    videos: true,
+    audio: false,
+    features: {
+      videoGeneration: true,
+      imageToVideo: true
+    }
+  };
+  apiKey;
+  baseURL;
+  timeout;
+  constructor(config) {
+    super({ apiKey: config.auth.apiKey, ...config });
+    this.apiKey = config.auth.apiKey;
+    this.baseURL = config.baseURL || GROK_API_BASE_URL2;
+    this.timeout = config.timeout || 6e4;
+  }
+  /**
+   * Generate a video from a text prompt
+   */
+  async generateVideo(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.generate", {
+            model: options.model,
+            duration: options.duration,
+            resolution: options.resolution,
+            aspectRatio: options.aspectRatio
+          });
+          const request = {
+            prompt: options.prompt,
+            model: options.model || "grok-imagine-video",
+            duration: options.duration || 6
+          };
+          if (options.aspectRatio) {
+            request.aspect_ratio = options.aspectRatio;
+          }
+          if (options.resolution) {
+            request.resolution = options.resolution;
+          }
+          if (options.image) {
+            const imageUrl = await this.prepareImageUrl(options.image);
+            request.image = { url: imageUrl };
+          }
+          const response = await this.makeRequest(
+            "POST",
+            "/videos/generations",
+            request
+          );
+          this.logOperationComplete("video.generate", {
+            model: options.model,
+            jobId: response.request_id
+          });
+          return {
+            jobId: response.request_id,
+            status: "pending",
+            created: Date.now()
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.generate",
+      { model: options.model }
+    );
+  }
+  /**
+   * Get the status of a video generation job
+   */
+  async getVideoStatus(jobId) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.status", { jobId });
+          const response = await this.makeRequest(
+            "GET",
+            `/videos/${jobId}`
+          );
+          this.logOperationComplete("video.status", {
+            jobId,
+            status: response.video ? "done" : response.status || "pending",
+            hasVideo: !!response.video?.url
+          });
+          return this.mapStatusResponse(response, jobId);
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.status",
+      { jobId }
+    );
+  }
+  /**
+   * Download a completed video
+   */
+  async downloadVideo(jobId) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("video.download", { jobId });
+          const statusResponse = await this.getVideoStatus(jobId);
+          if (statusResponse.status !== "completed") {
+            throw new ProviderError("grok", `Video not ready. Status: ${statusResponse.status}`);
+          }
+          if (!statusResponse.video?.url) {
+            throw new ProviderError("grok", "No video URL available");
+          }
+          const response = await fetch(statusResponse.video.url);
+          if (!response.ok) {
+            throw new ProviderError("grok", `Failed to download video: ${response.statusText}`);
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          this.logOperationComplete("video.download", {
+            jobId,
+            size: buffer.length
+          });
+          return buffer;
+        } catch (error) {
+          if (error instanceof ProviderError) throw error;
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "video.download",
+      { jobId }
+    );
+  }
+  /**
+   * List available video models
+   */
+  async listModels() {
+    return ["grok-imagine-video"];
+  }
+  /**
+   * Cancel a pending video generation job
+   */
+  async cancelJob(jobId) {
+    try {
+      await this.makeRequest("DELETE", `/videos/${jobId}`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /**
+   * Make HTTP request to xAI API
+   */
+  async makeRequest(method, endpoint, body) {
+    const url = `${this.baseURL}${endpoint}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    try {
+      const headers = {
+        "Authorization": `Bearer ${this.apiKey}`,
+        "Accept": "application/json"
+      };
+      if (body) {
+        headers["Content-Type"] = "application/json";
+      }
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : void 0,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}));
+        const errorMessage = errorBody.error?.message || errorBody.message || errorBody.detail || JSON.stringify(errorBody) || `HTTP ${response.status}`;
+        const error = new Error(errorMessage);
+        error.status = response.status;
+        error.body = errorBody;
+        throw error;
+      }
+      return response.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+  /**
+   * Map xAI status response to our VideoResponse format
+   *
+   * xAI API response format:
+   * - Pending: { status: 'pending' }
+   * - Complete: { video: { url, duration, respect_moderation }, model: string }
+   *   (no 'status' field when complete)
+   */
+  mapStatusResponse(response, jobId) {
+    let status;
+    if (response.video) {
+      if (response.video.respect_moderation === false) {
+        status = "failed";
+      } else if (response.video.url) {
+        status = "completed";
+      } else {
+        status = "failed";
+      }
+    } else {
+      status = "processing";
+    }
+    const result = {
+      jobId,
+      status,
+      created: Date.now()
+    };
+    if (status === "completed" && response.video) {
+      result.video = {
+        url: response.video.url,
+        duration: response.video.duration,
+        format: "mp4"
+      };
+    }
+    if (response.video?.respect_moderation === false) {
+      result.error = "Video blocked by content moderation";
+    }
+    return result;
+  }
+  /**
+   * Prepare image URL for image-to-video
+   * xAI expects image.url - can be http(s) URL or data URL
+   */
+  async prepareImageUrl(image) {
+    if (Buffer.isBuffer(image)) {
+      const base642 = image.toString("base64");
+      return `data:image/png;base64,${base642}`;
+    }
+    if (image.startsWith("http") || image.startsWith("data:")) {
+      return image;
+    }
+    const fs17 = await import('fs');
+    const data = fs17.readFileSync(image);
+    const base64 = data.toString("base64");
+    const ext = image.split(".").pop()?.toLowerCase() || "png";
+    const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : `image/${ext}`;
+    return `data:${mimeType};base64,${base64}`;
+  }
+  /**
+   * Handle API errors
+   */
+  handleError(error) {
+    const message = error.message || "Unknown Grok API error";
+    const status = error.status;
+    if (status === 401) {
+      throw new ProviderAuthError("grok", "Invalid API key");
+    }
+    if (status === 429) {
+      throw new ProviderRateLimitError("grok", message);
+    }
+    if (status === 400) {
+      if (message.includes("safety") || message.includes("policy") || message.includes("moderation")) {
+        throw new ProviderError("grok", `Content policy violation: ${message}`);
+      }
+      throw new ProviderError("grok", `Bad request: ${message}`);
+    }
+    if (status === 422) {
+      throw new ProviderError("grok", `Validation error: ${message}`);
+    }
+    if (status === 404) {
+      throw new ProviderError("grok", `Not found: ${message}`);
+    }
+    throw new ProviderError("grok", message);
+  }
+};
+
 // src/core/createVideoProvider.ts
 function createVideoProvider(connector) {
   const vendor = connector.vendor;
@@ -19794,9 +21044,11 @@ function createVideoProvider(connector) {
       return new OpenAISoraProvider(extractOpenAIConfig3(connector));
     case Vendor.Google:
       return new GoogleVeoProvider(extractGoogleConfig3(connector));
+    case Vendor.Grok:
+      return new GrokImagineProvider(extractGrokConfig2(connector));
     default:
       throw new Error(
-        `Video generation not supported for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
+        `Video generation not supported for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}, ${Vendor.Grok}`
       );
   }
 }
@@ -19832,6 +21084,22 @@ function extractGoogleConfig3(connector) {
     maxRetries: options.maxRetries
   };
 }
+function extractGrokConfig2(connector) {
+  const auth = connector.config.auth;
+  if (auth.type !== "api_key") {
+    throw new Error("Grok requires API key authentication");
+  }
+  const options = connector.getOptions();
+  return {
+    auth: {
+      type: "api_key",
+      apiKey: auth.apiKey
+    },
+    baseURL: connector.baseURL,
+    timeout: options.timeout,
+    maxRetries: options.maxRetries
+  };
+}
 
 // src/domain/entities/VideoModel.ts
 var VIDEO_MODELS = {
@@ -19842,9 +21110,12 @@ var VIDEO_MODELS = {
   [Vendor.Google]: {
     // Gemini API (ai.google.dev) model names - use with API key
     VEO_2: "veo-2.0-generate-001",
-    VEO_3: "veo-3-generate-preview",
-    VEO_3_FAST: "veo-3.1-fast-generate-preview",
+    VEO_3_1_FAST: "veo-3.1-fast-generate-preview",
     VEO_3_1: "veo-3.1-generate-preview"
+  },
+  [Vendor.Grok]: {
+    // xAI Grok Imagine video generation
+    GROK_IMAGINE_VIDEO: "grok-imagine-video"
   }
 };
 var OPENAI_SOURCES = {
@@ -19856,6 +21127,11 @@ var GOOGLE_SOURCES = {
   documentation: "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/video/overview",
   apiReference: "https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/veo-video-generation",
   lastVerified: "2026-01-25"
+};
+var GROK_SOURCES = {
+  documentation: "https://docs.x.ai/docs/guides/video-generations",
+  apiReference: "https://docs.x.ai/api",
+  lastVerified: "2026-01-31"
 };
 var VIDEO_MODEL_REGISTRY = {
   // ============================================================================
@@ -19924,7 +21200,9 @@ var VIDEO_MODEL_REGISTRY = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [5, 6, 7, 8],
-      resolutions: ["768x1408", "1408x768", "1024x1024"],
+      resolutions: [],
+      // Veo 2.0 uses aspectRatio only, no resolution control
+      aspectRatios: ["16:9", "9:16"],
       maxFps: 24,
       audio: false,
       imageToVideo: true,
@@ -19942,32 +21220,6 @@ var VIDEO_MODEL_REGISTRY = {
       currency: "USD"
     }
   },
-  "veo-3-generate-preview": {
-    name: "veo-3-generate-preview",
-    displayName: "Veo 3.0",
-    provider: Vendor.Google,
-    isActive: true,
-    sources: GOOGLE_SOURCES,
-    capabilities: {
-      durations: [4, 6, 8],
-      resolutions: ["720p", "1080p", "768x1408", "1408x768"],
-      maxFps: 30,
-      audio: true,
-      imageToVideo: true,
-      videoExtension: true,
-      frameControl: true,
-      features: {
-        upscaling: true,
-        styleControl: true,
-        negativePrompt: true,
-        seed: true
-      }
-    },
-    pricing: {
-      perSecond: 0.75,
-      currency: "USD"
-    }
-  },
   "veo-3.1-fast-generate-preview": {
     name: "veo-3.1-fast-generate-preview",
     displayName: "Veo 3.1 Fast",
@@ -19976,7 +21228,9 @@ var VIDEO_MODEL_REGISTRY = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [4, 6, 8],
-      resolutions: ["720p", "768x1408", "1408x768"],
+      resolutions: ["720p"],
+      // Fast model only supports 720p
+      aspectRatios: ["16:9", "9:16"],
       maxFps: 24,
       audio: true,
       imageToVideo: true,
@@ -20002,7 +21256,9 @@ var VIDEO_MODEL_REGISTRY = {
     sources: GOOGLE_SOURCES,
     capabilities: {
       durations: [4, 6, 8],
-      resolutions: ["720p", "1080p", "4k", "768x1408", "1408x768"],
+      resolutions: ["720p", "1080p", "4k"],
+      // 1080p and 4k require 8s duration
+      aspectRatios: ["16:9", "9:16"],
       maxFps: 30,
       audio: true,
       imageToVideo: true,
@@ -20017,6 +21273,36 @@ var VIDEO_MODEL_REGISTRY = {
     },
     pricing: {
       perSecond: 0.75,
+      currency: "USD"
+    }
+  },
+  // ============================================================================
+  // xAI Grok Imagine Models
+  // ============================================================================
+  "grok-imagine-video": {
+    name: "grok-imagine-video",
+    displayName: "Grok Imagine Video",
+    provider: Vendor.Grok,
+    isActive: true,
+    sources: GROK_SOURCES,
+    capabilities: {
+      durations: [1, 5, 8, 10, 15],
+      resolutions: ["480p", "720p"],
+      aspectRatios: ["16:9", "4:3", "1:1", "9:16", "3:4", "3:2", "2:3"],
+      maxFps: 24,
+      audio: true,
+      imageToVideo: true,
+      videoExtension: false,
+      frameControl: false,
+      features: {
+        upscaling: false,
+        styleControl: false,
+        negativePrompt: false,
+        seed: true
+      }
+    },
+    pricing: {
+      perSecond: 0.05,
       currency: "USD"
     }
   }
@@ -20187,7 +21473,9 @@ var VideoGeneration = class _VideoGeneration {
       case Vendor.OpenAI:
         return VIDEO_MODELS[Vendor.OpenAI].SORA_2;
       case Vendor.Google:
-        return VIDEO_MODELS[Vendor.Google].VEO_3;
+        return VIDEO_MODELS[Vendor.Google].VEO_3_1;
+      case Vendor.Grok:
+        return VIDEO_MODELS[Vendor.Grok].GROK_IMAGINE_VIDEO;
       default:
         throw new Error(`No default video model for vendor: ${vendor}`);
     }
@@ -24525,9 +25813,9 @@ var FileSearchSource = class {
         }
         if (this.searchMode === "content" || this.searchMode === "both") {
           try {
-            const stat6 = await fs14__namespace.stat(filePath);
+            const stat6 = await fs15__namespace.stat(filePath);
             if (stat6.size > this.maxFileSize) continue;
-            const content = await fs14__namespace.readFile(filePath, "utf-8");
+            const content = await fs15__namespace.readFile(filePath, "utf-8");
             const match = this.findContentMatch(content, query);
             if (match) {
               results.push({
@@ -24574,7 +25862,7 @@ var FileSearchSource = class {
           error: "Path is outside allowed base directory"
         };
       }
-      const stat6 = await fs14__namespace.stat(absolutePath);
+      const stat6 = await fs15__namespace.stat(absolutePath);
       const maxSize = options?.maxSize ?? this.maxFileSize;
       if (stat6.size > maxSize) {
         return {
@@ -24585,7 +25873,7 @@ var FileSearchSource = class {
           sizeBytes: stat6.size
         };
       }
-      const content = await fs14__namespace.readFile(absolutePath, "utf-8");
+      const content = await fs15__namespace.readFile(absolutePath, "utf-8");
       const ext = path2__namespace.extname(absolutePath).toLowerCase();
       return {
         success: true,
@@ -24610,7 +25898,7 @@ var FileSearchSource = class {
   }
   async isAvailable() {
     try {
-      await fs14__namespace.access(this.basePath);
+      await fs15__namespace.access(this.basePath);
       return true;
     } catch {
       return false;
@@ -25159,11 +26447,11 @@ var FileContextStorage = class {
     const data = this.prettyPrint ? JSON.stringify(storedSession, null, 2) : JSON.stringify(storedSession);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs15.promises.writeFile(tempPath, data, "utf-8");
-      await fs15.promises.rename(tempPath, filePath);
+      await fs16.promises.writeFile(tempPath, data, "utf-8");
+      await fs16.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs15.promises.unlink(tempPath);
+        await fs16.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -25184,7 +26472,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs15.promises.unlink(filePath);
+      await fs16.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -25199,7 +26487,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      await fs15.promises.access(filePath);
+      await fs16.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -25264,7 +26552,7 @@ var FileContextStorage = class {
     const sanitizedSessionId = sanitizeId(sessionId);
     const filePath = this.getFilePath(sanitizedSessionId);
     const data = this.prettyPrint ? JSON.stringify(stored, null, 2) : JSON.stringify(stored);
-    await fs15.promises.writeFile(filePath, data, "utf-8");
+    await fs16.promises.writeFile(filePath, data, "utf-8");
     await this.updateIndex(stored);
   }
   /**
@@ -25285,13 +26573,13 @@ var FileContextStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory();
-    const files = await fs15.promises.readdir(this.sessionsDirectory);
+    const files = await fs16.promises.readdir(this.sessionsDirectory);
     const sessionFiles = files.filter((f) => f.endsWith(".json") && !f.startsWith("_"));
     const entries = [];
     for (const file of sessionFiles) {
       try {
         const filePath = path2.join(this.sessionsDirectory, file);
-        const data = await fs15.promises.readFile(filePath, "utf-8");
+        const data = await fs16.promises.readFile(filePath, "utf-8");
         const stored = JSON.parse(data);
         entries.push(this.storedToIndexEntry(stored));
       } catch {
@@ -25313,7 +26601,7 @@ var FileContextStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs15.promises.mkdir(this.sessionsDirectory, { recursive: true });
+      await fs16.promises.mkdir(this.sessionsDirectory, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -25323,7 +26611,7 @@ var FileContextStorage = class {
   async loadRaw(sanitizedSessionId) {
     const filePath = this.getFilePath(sanitizedSessionId);
     try {
-      const data = await fs15.promises.readFile(filePath, "utf-8");
+      const data = await fs16.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -25341,7 +26629,7 @@ var FileContextStorage = class {
       return this.index;
     }
     try {
-      const data = await fs15.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs16.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -25362,7 +26650,7 @@ var FileContextStorage = class {
     await this.ensureDirectory();
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs15.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs16.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(stored) {
     const index = await this.loadIndex();
@@ -25435,11 +26723,11 @@ var FileAgentDefinitionStorage = class {
     const data = this.prettyPrint ? JSON.stringify(definition, null, 2) : JSON.stringify(definition);
     const tempPath = `${filePath}.tmp`;
     try {
-      await fs15.promises.writeFile(tempPath, data, "utf-8");
-      await fs15.promises.rename(tempPath, filePath);
+      await fs16.promises.writeFile(tempPath, data, "utf-8");
+      await fs16.promises.rename(tempPath, filePath);
     } catch (error) {
       try {
-        await fs15.promises.unlink(tempPath);
+        await fs16.promises.unlink(tempPath);
       } catch {
       }
       throw error;
@@ -25461,7 +26749,7 @@ var FileAgentDefinitionStorage = class {
     const agentDir = path2.join(this.baseDirectory, sanitizedId);
     const filePath = path2.join(agentDir, "definition.json");
     try {
-      await fs15.promises.unlink(filePath);
+      await fs16.promises.unlink(filePath);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "ENOENT") {
         throw error;
@@ -25476,7 +26764,7 @@ var FileAgentDefinitionStorage = class {
     const sanitizedId = sanitizeAgentId2(agentId);
     const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      await fs15.promises.access(filePath);
+      await fs16.promises.access(filePath);
       return true;
     } catch {
       return false;
@@ -25538,13 +26826,13 @@ var FileAgentDefinitionStorage = class {
    */
   async rebuildIndex() {
     await this.ensureDirectory(this.baseDirectory);
-    const entries = await fs15.promises.readdir(this.baseDirectory, { withFileTypes: true });
+    const entries = await fs16.promises.readdir(this.baseDirectory, { withFileTypes: true });
     const agentDirs = entries.filter((e) => e.isDirectory() && !e.name.startsWith("_"));
     const indexEntries = [];
     for (const dir of agentDirs) {
       try {
         const filePath = path2.join(this.baseDirectory, dir.name, "definition.json");
-        const data = await fs15.promises.readFile(filePath, "utf-8");
+        const data = await fs16.promises.readFile(filePath, "utf-8");
         const definition = JSON.parse(data);
         indexEntries.push(this.definitionToIndexEntry(definition));
       } catch {
@@ -25562,7 +26850,7 @@ var FileAgentDefinitionStorage = class {
   // ==========================================================================
   async ensureDirectory(dir) {
     try {
-      await fs15.promises.mkdir(dir, { recursive: true });
+      await fs16.promises.mkdir(dir, { recursive: true });
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code !== "EEXIST") {
         throw error;
@@ -25572,7 +26860,7 @@ var FileAgentDefinitionStorage = class {
   async loadRaw(sanitizedId) {
     const filePath = path2.join(this.baseDirectory, sanitizedId, "definition.json");
     try {
-      const data = await fs15.promises.readFile(filePath, "utf-8");
+      const data = await fs16.promises.readFile(filePath, "utf-8");
       return JSON.parse(data);
     } catch (error) {
       if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -25590,7 +26878,7 @@ var FileAgentDefinitionStorage = class {
       return this.index;
     }
     try {
-      const data = await fs15.promises.readFile(this.indexPath, "utf-8");
+      const data = await fs16.promises.readFile(this.indexPath, "utf-8");
       this.index = JSON.parse(data);
       return this.index;
     } catch (error) {
@@ -25610,7 +26898,7 @@ var FileAgentDefinitionStorage = class {
     await this.ensureDirectory(this.baseDirectory);
     this.index.lastUpdated = (/* @__PURE__ */ new Date()).toISOString();
     const data = this.prettyPrint ? JSON.stringify(this.index, null, 2) : JSON.stringify(this.index);
-    await fs15.promises.writeFile(this.indexPath, data, "utf-8");
+    await fs16.promises.writeFile(this.indexPath, data, "utf-8");
   }
   async updateIndex(definition) {
     const index = await this.loadIndex();
@@ -26706,8 +27994,8 @@ var FileStorage = class {
   }
   async ensureDirectory() {
     try {
-      await fs14__namespace.mkdir(this.directory, { recursive: true });
-      await fs14__namespace.chmod(this.directory, 448);
+      await fs15__namespace.mkdir(this.directory, { recursive: true });
+      await fs15__namespace.chmod(this.directory, 448);
     } catch (error) {
     }
   }
@@ -26723,13 +28011,13 @@ var FileStorage = class {
     const filePath = this.getFilePath(key);
     const plaintext = JSON.stringify(token);
     const encrypted = encrypt(plaintext, this.encryptionKey);
-    await fs14__namespace.writeFile(filePath, encrypted, "utf8");
-    await fs14__namespace.chmod(filePath, 384);
+    await fs15__namespace.writeFile(filePath, encrypted, "utf8");
+    await fs15__namespace.chmod(filePath, 384);
   }
   async getToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      const encrypted = await fs14__namespace.readFile(filePath, "utf8");
+      const encrypted = await fs15__namespace.readFile(filePath, "utf8");
       const decrypted = decrypt(encrypted, this.encryptionKey);
       return JSON.parse(decrypted);
     } catch (error) {
@@ -26738,7 +28026,7 @@ var FileStorage = class {
       }
       console.error("Failed to read/decrypt token file:", error);
       try {
-        await fs14__namespace.unlink(filePath);
+        await fs15__namespace.unlink(filePath);
       } catch {
       }
       return null;
@@ -26747,7 +28035,7 @@ var FileStorage = class {
   async deleteToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs14__namespace.unlink(filePath);
+      await fs15__namespace.unlink(filePath);
     } catch (error) {
       if (error.code !== "ENOENT") {
         throw error;
@@ -26757,7 +28045,7 @@ var FileStorage = class {
   async hasToken(key) {
     const filePath = this.getFilePath(key);
     try {
-      await fs14__namespace.access(filePath);
+      await fs15__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -26768,7 +28056,7 @@ var FileStorage = class {
    */
   async listTokens() {
     try {
-      const files = await fs14__namespace.readdir(this.directory);
+      const files = await fs15__namespace.readdir(this.directory);
       return files.filter((f) => f.endsWith(".token")).map((f) => f.replace(".token", ""));
     } catch {
       return [];
@@ -26779,10 +28067,10 @@ var FileStorage = class {
    */
   async clearAll() {
     try {
-      const files = await fs14__namespace.readdir(this.directory);
+      const files = await fs15__namespace.readdir(this.directory);
       const tokenFiles = files.filter((f) => f.endsWith(".token"));
       await Promise.all(
-        tokenFiles.map((f) => fs14__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+        tokenFiles.map((f) => fs15__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
         }))
       );
     } catch {
@@ -27187,14 +28475,14 @@ var FileConnectorStorage = class {
     await this.ensureDirectory();
     const filePath = this.getFilePath(name);
     const json = JSON.stringify(stored, null, 2);
-    await fs14__namespace.writeFile(filePath, json, "utf8");
-    await fs14__namespace.chmod(filePath, 384);
+    await fs15__namespace.writeFile(filePath, json, "utf8");
+    await fs15__namespace.chmod(filePath, 384);
     await this.updateIndex(name, "add");
   }
   async get(name) {
     const filePath = this.getFilePath(name);
     try {
-      const json = await fs14__namespace.readFile(filePath, "utf8");
+      const json = await fs15__namespace.readFile(filePath, "utf8");
       return JSON.parse(json);
     } catch (error) {
       const err = error;
@@ -27207,7 +28495,7 @@ var FileConnectorStorage = class {
   async delete(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs14__namespace.unlink(filePath);
+      await fs15__namespace.unlink(filePath);
       await this.updateIndex(name, "remove");
       return true;
     } catch (error) {
@@ -27221,7 +28509,7 @@ var FileConnectorStorage = class {
   async has(name) {
     const filePath = this.getFilePath(name);
     try {
-      await fs14__namespace.access(filePath);
+      await fs15__namespace.access(filePath);
       return true;
     } catch {
       return false;
@@ -27247,13 +28535,13 @@ var FileConnectorStorage = class {
    */
   async clear() {
     try {
-      const files = await fs14__namespace.readdir(this.directory);
+      const files = await fs15__namespace.readdir(this.directory);
       const connectorFiles = files.filter(
         (f) => f.endsWith(".connector.json") || f === "_index.json"
       );
       await Promise.all(
         connectorFiles.map(
-          (f) => fs14__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
+          (f) => fs15__namespace.unlink(path2__namespace.join(this.directory, f)).catch(() => {
           })
         )
       );
@@ -27280,8 +28568,8 @@ var FileConnectorStorage = class {
   async ensureDirectory() {
     if (this.initialized) return;
     try {
-      await fs14__namespace.mkdir(this.directory, { recursive: true });
-      await fs14__namespace.chmod(this.directory, 448);
+      await fs15__namespace.mkdir(this.directory, { recursive: true });
+      await fs15__namespace.chmod(this.directory, 448);
       this.initialized = true;
     } catch {
       this.initialized = true;
@@ -27292,7 +28580,7 @@ var FileConnectorStorage = class {
    */
   async loadIndex() {
     try {
-      const json = await fs14__namespace.readFile(this.indexPath, "utf8");
+      const json = await fs15__namespace.readFile(this.indexPath, "utf8");
       return JSON.parse(json);
     } catch {
       return { connectors: {} };
@@ -27310,8 +28598,8 @@ var FileConnectorStorage = class {
       delete index.connectors[hash];
     }
     const json = JSON.stringify(index, null, 2);
-    await fs14__namespace.writeFile(this.indexPath, json, "utf8");
-    await fs14__namespace.chmod(this.indexPath, 384);
+    await fs15__namespace.writeFile(this.indexPath, json, "utf8");
+    await fs15__namespace.chmod(this.indexPath, 384);
   }
 };
 
@@ -27455,8 +28743,8 @@ function createMessageWithImages(text, imageUrls, role = "user" /* USER */) {
 var execAsync = util.promisify(child_process.exec);
 function cleanupTempFile(filePath) {
   try {
-    if (fs15__namespace.existsSync(filePath)) {
-      fs15__namespace.unlinkSync(filePath);
+    if (fs16__namespace.existsSync(filePath)) {
+      fs16__namespace.unlinkSync(filePath);
     }
   } catch {
   }
@@ -27507,7 +28795,7 @@ async function readClipboardImageMac() {
         end try
       `;
       const { stdout } = await execAsync(`osascript -e '${script}'`);
-      if (stdout.includes("success") || fs15__namespace.existsSync(tempFile)) {
+      if (stdout.includes("success") || fs16__namespace.existsSync(tempFile)) {
         return await convertFileToDataUri(tempFile);
       }
       return {
@@ -27524,14 +28812,14 @@ async function readClipboardImageLinux() {
   try {
     try {
       await execAsync(`xclip -selection clipboard -t image/png -o > "${tempFile}"`);
-      if (fs15__namespace.existsSync(tempFile) && fs15__namespace.statSync(tempFile).size > 0) {
+      if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
     }
     try {
       await execAsync(`wl-paste -t image/png > "${tempFile}"`);
-      if (fs15__namespace.existsSync(tempFile) && fs15__namespace.statSync(tempFile).size > 0) {
+      if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
         return await convertFileToDataUri(tempFile);
       }
     } catch {
@@ -27558,7 +28846,7 @@ async function readClipboardImageWindows() {
       }
     `;
     await execAsync(`powershell -Command "${psScript}"`);
-    if (fs15__namespace.existsSync(tempFile) && fs15__namespace.statSync(tempFile).size > 0) {
+    if (fs16__namespace.existsSync(tempFile) && fs16__namespace.statSync(tempFile).size > 0) {
       return await convertFileToDataUri(tempFile);
     }
     return {
@@ -27571,7 +28859,7 @@ async function readClipboardImageWindows() {
 }
 async function convertFileToDataUri(filePath) {
   try {
-    const imageBuffer = fs15__namespace.readFileSync(filePath);
+    const imageBuffer = fs16__namespace.readFileSync(filePath);
     const base64Image = imageBuffer.toString("base64");
     const magic = imageBuffer.slice(0, 4).toString("hex");
     let mimeType = "image/png";
@@ -27636,6 +28924,7 @@ __export(tools_exports, {
   ConnectorTools: () => ConnectorTools,
   DEFAULT_FILESYSTEM_CONFIG: () => DEFAULT_FILESYSTEM_CONFIG,
   DEFAULT_SHELL_CONFIG: () => DEFAULT_SHELL_CONFIG,
+  ToolRegistry: () => ToolRegistry,
   bash: () => bash,
   createBashTool: () => createBashTool,
   createEditFileTool: () => createEditFileTool,
@@ -27858,7 +29147,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedPath)) {
+      if (!fs16.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -27866,7 +29155,7 @@ EXAMPLES:
         };
       }
       try {
-        const stats = await fs14.stat(resolvedPath);
+        const stats = await fs15.stat(resolvedPath);
         if (!stats.isFile()) {
           return {
             success: false,
@@ -27882,7 +29171,7 @@ EXAMPLES:
             size: stats.size
           };
         }
-        const content = await fs14.readFile(resolvedPath, "utf-8");
+        const content = await fs15.readFile(resolvedPath, "utf-8");
         const allLines = content.split("\n");
         const totalLines = allLines.length;
         const startIndex = Math.max(0, offset - 1);
@@ -27987,13 +29276,13 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      const fileExists = fs15.existsSync(resolvedPath);
+      const fileExists = fs16.existsSync(resolvedPath);
       try {
         const parentDir = path2.dirname(resolvedPath);
-        if (!fs15.existsSync(parentDir)) {
-          await fs14.mkdir(parentDir, { recursive: true });
+        if (!fs16.existsSync(parentDir)) {
+          await fs15.mkdir(parentDir, { recursive: true });
         }
-        await fs14.writeFile(resolvedPath, content, "utf-8");
+        await fs15.writeFile(resolvedPath, content, "utf-8");
         return {
           success: true,
           path: file_path,
@@ -28096,7 +29385,7 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedPath)) {
+      if (!fs16.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `File not found: ${file_path}`,
@@ -28104,7 +29393,7 @@ EXAMPLES:
         };
       }
       try {
-        const content = await fs14.readFile(resolvedPath, "utf-8");
+        const content = await fs15.readFile(resolvedPath, "utf-8");
         let occurrences = 0;
         let searchIndex = 0;
         while (true) {
@@ -28143,7 +29432,7 @@ EXAMPLES:
         } else {
           newContent = content.replace(old_string, new_string);
         }
-        await fs14.writeFile(resolvedPath, newContent, "utf-8");
+        await fs15.writeFile(resolvedPath, newContent, "utf-8");
         const diffPreview = generateDiffPreview(old_string, new_string);
         return {
           success: true,
@@ -28199,7 +29488,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
     return results;
   }
   try {
-    const entries = await fs14.readdir(dir, { withFileTypes: true });
+    const entries = await fs15.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       if (results.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -28213,7 +29502,7 @@ async function findFiles(dir, pattern, baseDir, config, results = [], depth = 0)
       } else if (entry.isFile()) {
         if (matchGlobPattern(pattern, relativePath)) {
           try {
-            const stats = await fs14.stat(fullPath);
+            const stats = await fs15.stat(fullPath);
             results.push({
               path: relativePath,
               mtime: stats.mtimeMs
@@ -28295,7 +29584,7 @@ WHEN TO USE:
         };
       }
       const resolvedDir = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedDir)) {
+      if (!fs16.existsSync(resolvedDir)) {
         return {
           success: false,
           error: `Directory not found: ${searchDir}`
@@ -28350,7 +29639,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
     return files;
   }
   try {
-    const entries = await fs14.readdir(dir, { withFileTypes: true });
+    const entries = await fs15.readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path2.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -28383,7 +29672,7 @@ async function findFilesToSearch(dir, baseDir, config, globPattern, fileType, fi
 async function searchFile(filePath, regex, contextBefore, contextAfter) {
   const matches = [];
   try {
-    const content = await fs14.readFile(filePath, "utf-8");
+    const content = await fs15.readFile(filePath, "utf-8");
     const lines = content.split("\n");
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
@@ -28524,7 +29813,7 @@ WHEN TO USE:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedPath)) {
+      if (!fs16.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Path not found: ${searchPath}`
@@ -28540,7 +29829,7 @@ WHEN TO USE:
         };
       }
       try {
-        const stats = await fs14.stat(resolvedPath);
+        const stats = await fs15.stat(resolvedPath);
         let filesToSearch;
         if (stats.isFile()) {
           filesToSearch = [resolvedPath];
@@ -28628,7 +29917,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
     return entries;
   }
   try {
-    const dirEntries = await fs14.readdir(dir, { withFileTypes: true });
+    const dirEntries = await fs15.readdir(dir, { withFileTypes: true });
     for (const entry of dirEntries) {
       if (entries.length >= config.maxResults) break;
       const fullPath = path2.join(dir, entry.name);
@@ -28646,7 +29935,7 @@ async function listDir(dir, baseDir, config, recursive, filter, maxDepth = 3, cu
       }
       if (filter === "directories" && !isDir) continue;
       try {
-        const stats = await fs14.stat(fullPath);
+        const stats = await fs15.stat(fullPath);
         const dirEntry = {
           name: entry.name,
           path: relativePath,
@@ -28742,14 +30031,14 @@ EXAMPLES:
         };
       }
       const resolvedPath = validation.resolvedPath;
-      if (!fs15.existsSync(resolvedPath)) {
+      if (!fs16.existsSync(resolvedPath)) {
         return {
           success: false,
           error: `Directory not found: ${path6}`
         };
       }
       try {
-        const stats = await fs14.stat(resolvedPath);
+        const stats = await fs15.stat(resolvedPath);
         if (!stats.isDirectory()) {
           return {
             success: false,
@@ -30713,6 +32002,139 @@ function getToolCategories() {
   return [...new Set(toolRegistry.map((entry) => entry.category))];
 }
 
+// src/tools/ToolRegistry.ts
+init_Connector();
+var ToolRegistry = class {
+  /**
+   * Get built-in tools only (from registry.generated.ts)
+   *
+   * @returns Array of built-in tool registry entries
+   */
+  static getBuiltInTools() {
+    return [...toolRegistry];
+  }
+  /**
+   * Get tools for a specific connector
+   *
+   * @param connectorName - Name of the connector to get tools for
+   * @returns Array of connector tool entries
+   *
+   * @example
+   * ```typescript
+   * const githubTools = ToolRegistry.getConnectorTools('github');
+   * ```
+   */
+  static getConnectorTools(connectorName) {
+    try {
+      const tools = ConnectorTools.for(connectorName);
+      return tools.map((tool) => this.toRegistryEntry(tool, connectorName));
+    } catch {
+      return [];
+    }
+  }
+  /**
+   * Get all connector tools from all registered service connectors
+   *
+   * This discovers tools from all connectors that have:
+   * - Explicit serviceType, OR
+   * - baseURL but no vendor (external API, not AI provider)
+   *
+   * @returns Array of all connector tool entries
+   */
+  static getAllConnectorTools() {
+    const allTools = [];
+    const discovered = ConnectorTools.discoverAll();
+    for (const [connectorName, tools] of discovered) {
+      for (const tool of tools) {
+        allTools.push(this.toRegistryEntry(tool, connectorName));
+      }
+    }
+    return allTools;
+  }
+  /**
+   * Get ALL tools (built-in + connector) - main API for UIs
+   *
+   * This is the primary method for getting a complete list of available tools.
+   *
+   * @returns Array of all tool registry entries (built-in and connector)
+   *
+   * @example
+   * ```typescript
+   * const allTools = ToolRegistry.getAllTools();
+   * for (const tool of allTools) {
+   *   console.log(`${tool.displayName}: ${tool.description}`);
+   * }
+   * ```
+   */
+  static getAllTools() {
+    return [...this.getBuiltInTools(), ...this.getAllConnectorTools()];
+  }
+  /**
+   * Get tools filtered by service type
+   *
+   * @param serviceType - Service type to filter by (e.g., 'github', 'slack')
+   * @returns Array of connector tool entries for the service
+   */
+  static getToolsByService(serviceType) {
+    return this.getAllConnectorTools().filter((entry) => entry.serviceType === serviceType);
+  }
+  /**
+   * Get tools filtered by connector name
+   *
+   * @param connectorName - Connector name to filter by
+   * @returns Array of connector tool entries for the connector
+   */
+  static getToolsByConnector(connectorName) {
+    return this.getAllConnectorTools().filter((entry) => entry.connectorName === connectorName);
+  }
+  /**
+   * Check if a tool entry is a connector tool
+   *
+   * @param entry - Tool registry entry to check
+   * @returns True if the entry is a connector tool
+   */
+  static isConnectorTool(entry) {
+    return "connectorName" in entry && typeof entry.connectorName === "string";
+  }
+  /**
+   * Convert a ToolFunction to a ConnectorToolEntry
+   */
+  static toRegistryEntry(tool, connectorName) {
+    let serviceType;
+    try {
+      const connector = exports.Connector.get(connectorName);
+      serviceType = ConnectorTools.detectService(connector);
+    } catch {
+    }
+    const serviceInfo = serviceType ? getServiceInfo(serviceType) : void 0;
+    const def = tool.definition.function;
+    return {
+      name: def.name,
+      exportName: def.name,
+      displayName: this.deriveDisplayName(def.name, serviceInfo?.name),
+      category: "connector",
+      description: def.description || `API tool for ${connectorName}`,
+      tool,
+      safeByDefault: false,
+      requiresConnector: true,
+      connectorServiceTypes: serviceType ? [serviceType] : void 0,
+      connectorName,
+      serviceType
+    };
+  }
+  /**
+   * Derive a human-readable display name from a tool name
+   */
+  static deriveDisplayName(toolName, serviceName) {
+    if (serviceName) {
+      const suffix = toolName.includes("_api") ? " API" : "";
+      return `${serviceName}${suffix}`;
+    }
+    const withoutSuffix = toolName.replace(/_api$/, " API");
+    return withoutSuffix.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  }
+};
+
 // src/tools/index.ts
 var developerTools = [
   readFile5,
@@ -32520,6 +33942,7 @@ exports.ToolExecutionError = ToolExecutionError;
 exports.ToolManager = ToolManager;
 exports.ToolNotFoundError = ToolNotFoundError;
 exports.ToolPermissionManager = ToolPermissionManager;
+exports.ToolRegistry = ToolRegistry;
 exports.ToolTimeoutError = ToolTimeoutError;
 exports.TruncateCompactor = TruncateCompactor;
 exports.UniversalAgent = UniversalAgent;

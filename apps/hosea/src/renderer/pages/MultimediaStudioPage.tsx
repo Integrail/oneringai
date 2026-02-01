@@ -5,7 +5,7 @@
 import React, { useState } from 'react';
 import { Image, Video, Volume2, Mic } from 'lucide-react';
 import { PageHeader } from '../components/layout';
-import { ImageTab } from '../components/multimedia';
+import { ImageTab, VideoTab } from '../components/multimedia';
 
 type TabId = 'image' | 'video' | 'tts' | 'stt';
 
@@ -18,7 +18,7 @@ interface Tab {
 
 const tabs: Tab[] = [
   { id: 'image', label: 'Image', icon: <Image size={16} />, available: true },
-  { id: 'video', label: 'Video', icon: <Video size={16} />, available: false },
+  { id: 'video', label: 'Video', icon: <Video size={16} />, available: true },
   { id: 'tts', label: 'Text to Speech', icon: <Volume2 size={16} />, available: false },
   { id: 'stt', label: 'Speech to Text', icon: <Mic size={16} />, available: false },
 ];
@@ -31,6 +31,7 @@ export function MultimediaStudioPage(): React.ReactElement {
       case 'image':
         return <ImageTab />;
       case 'video':
+        return <VideoTab />;
       case 'tts':
       case 'stt':
         return (
@@ -40,7 +41,6 @@ export function MultimediaStudioPage(): React.ReactElement {
             </div>
             <h3 className="coming-soon__title">Coming Soon</h3>
             <p className="coming-soon__description">
-              {activeTab === 'video' && 'Video generation with Sora and Veo will be available soon.'}
               {activeTab === 'tts' && 'Text-to-speech synthesis will be available soon.'}
               {activeTab === 'stt' && 'Speech-to-text transcription will be available soon.'}
             </p>

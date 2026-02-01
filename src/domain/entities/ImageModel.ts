@@ -24,9 +24,9 @@ export type ImageSize =
   | 'auto';
 
 /**
- * Supported aspect ratios (Google Imagen)
+ * Supported aspect ratios
  */
-export type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9';
+export type AspectRatio = '1:1' | '3:4' | '4:3' | '9:16' | '16:9' | '3:2' | '2:3';
 
 /**
  * Image model capabilities
@@ -115,6 +115,12 @@ export const IMAGE_MODELS = {
     IMAGEN_4_ULTRA: 'imagen-4.0-ultra-generate-001',
     /** Imagen 4.0 Fast: Optimized for speed */
     IMAGEN_4_FAST: 'imagen-4.0-fast-generate-001',
+  },
+  [Vendor.Grok]: {
+    /** Grok Imagine Image: xAI image generation with editing support */
+    GROK_IMAGINE_IMAGE: 'grok-imagine-image',
+    /** Grok 2 Image: xAI image generation (text-only input) */
+    GROK_2_IMAGE_1212: 'grok-2-image-1212',
   },
 } as const;
 
@@ -628,6 +634,114 @@ export const IMAGE_MODEL_REGISTRY: Record<string, IImageModelDescription> = {
     },
     pricing: {
       perImage: 0.02,
+      currency: 'USD',
+    },
+  },
+
+  // ======================== xAI Grok ========================
+
+  'grok-imagine-image': {
+    name: 'grok-imagine-image',
+    displayName: 'Grok Imagine Image',
+    provider: Vendor.Grok,
+    description: 'xAI Grok Imagine image generation with aspect ratio control and editing support',
+    isActive: true,
+    releaseDate: '2025-01-01',
+    sources: {
+      documentation: 'https://docs.x.ai/docs/guides/image-generation',
+      pricing: 'https://docs.x.ai/docs/models',
+      lastVerified: '2026-02-01',
+    },
+    capabilities: {
+      sizes: ['1024x1024'],
+      aspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'],
+      maxImagesPerRequest: 10,
+      outputFormats: ['png', 'jpeg'],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: false, // quality not supported by xAI API
+        transparency: false,
+        promptRevision: true,
+      },
+      limits: { maxPromptLength: 4096 },
+      vendorOptions: {
+        n: {
+          type: 'number',
+          label: 'Number of Images',
+          description: 'Number of images to generate (1-10)',
+          min: 1,
+          max: 10,
+          default: 1,
+          controlType: 'slider',
+        },
+        response_format: {
+          type: 'enum',
+          label: 'Response Format',
+          description: 'Format of the returned image',
+          enum: ['url', 'b64_json'],
+          default: 'url',
+          controlType: 'radio',
+        },
+      },
+    },
+    pricing: {
+      perImage: 0.02,
+      currency: 'USD',
+    },
+  },
+
+  'grok-2-image-1212': {
+    name: 'grok-2-image-1212',
+    displayName: 'Grok 2 Image',
+    provider: Vendor.Grok,
+    description: 'xAI Grok 2 image generation (text-only input, no editing)',
+    isActive: true,
+    releaseDate: '2024-12-12',
+    sources: {
+      documentation: 'https://docs.x.ai/docs/guides/image-generation',
+      pricing: 'https://docs.x.ai/docs/models',
+      lastVerified: '2026-02-01',
+    },
+    capabilities: {
+      sizes: ['1024x1024'],
+      aspectRatios: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'],
+      maxImagesPerRequest: 10,
+      outputFormats: ['png', 'jpeg'],
+      features: {
+        generation: true,
+        editing: false,
+        variations: false,
+        styleControl: false,
+        qualityControl: false, // quality not supported by xAI API
+        transparency: false,
+        promptRevision: false,
+      },
+      limits: { maxPromptLength: 4096 },
+      vendorOptions: {
+        n: {
+          type: 'number',
+          label: 'Number of Images',
+          description: 'Number of images to generate (1-10)',
+          min: 1,
+          max: 10,
+          default: 1,
+          controlType: 'slider',
+        },
+        response_format: {
+          type: 'enum',
+          label: 'Response Format',
+          description: 'Format of the returned image',
+          enum: ['url', 'b64_json'],
+          default: 'url',
+          controlType: 'radio',
+        },
+      },
+    },
+    pricing: {
+      perImage: 0.07,
       currency: 'USD',
     },
   },

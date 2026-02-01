@@ -19,12 +19,15 @@ dotenv.config();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const XAI_API_KEY = process.env.XAI_API_KEY;
 const HAS_OPENAI_KEY = Boolean(OPENAI_API_KEY);
 const HAS_GOOGLE_KEY = Boolean(GOOGLE_API_KEY);
+const HAS_XAI_KEY = Boolean(XAI_API_KEY);
 
 // Skip tests if no API key
 const describeIfOpenAI = HAS_OPENAI_KEY ? describe : describe.skip;
 const describeIfGoogle = HAS_GOOGLE_KEY ? describe : describe.skip;
+const describeIfGrok = HAS_XAI_KEY ? describe : describe.skip;
 
 // ============================================================================
 // OpenAI Sora Video Generation Tests
@@ -254,6 +257,132 @@ describeIfGoogle('VideoGeneration Integration (Google Veo)', () => {
       expect(info?.name).toBe('veo-3.1-generate-preview');
       expect(info?.capabilities.videoExtension).toBe(true);
       expect(info?.capabilities.durations).toContain(8);
+    });
+  });
+});
+
+// ============================================================================
+// xAI Grok Imagine Video Generation Tests
+// ============================================================================
+
+describeIfGrok('VideoGeneration Integration (Grok Imagine)', () => {
+  const tempFiles: string[] = [];
+
+  beforeAll(() => {
+    if (!XAI_API_KEY) {
+      console.warn('⚠️  XAI_API_KEY not set, skipping Grok video integration tests');
+      return;
+    }
+
+    Connector.create({
+      name: 'grok-video-test',
+      vendor: Vendor.Grok,
+      auth: { type: 'api_key', apiKey: XAI_API_KEY },
+    });
+  });
+
+  afterAll(async () => {
+    // Cleanup temp files
+    for (const file of tempFiles) {
+      try {
+        await fs.unlink(file);
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    try {
+      Connector.clear();
+    } catch {
+      // Ignore if already cleared
+    }
+  });
+
+  describe('Basic generation with Grok Imagine Video', () => {
+    it('should start video generation and get a job ID', async () => {
+      const videoGen = VideoGeneration.create({
+        connector: 'grok-video-test',
+      });
+
+      const job = await videoGen.generate({
+        prompt: 'A simple rotating red cube on a white background',
+        model: 'grok-imagine-video',
+        duration: 5,
+        aspectRatio: '16:9',
+      });
+
+      expect(job.jobId).toBeDefined();
+      expect(job.status).toMatch(/pending|processing/);
+      expect(job.created).toBeGreaterThan(0);
+    }, 30000);
+
+    it('should check job status', async () => {
+      const videoGen = VideoGeneration.create({
+        connector: 'grok-video-test',
+      });
+
+      const job = await videoGen.generate({
+        prompt: 'A simple blue sphere floating',
+        model: 'grok-imagine-video',
+        duration: 5,
+      });
+
+      const status = await videoGen.getStatus(job.jobId);
+      expect(status.jobId).toBe(job.jobId);
+      expect(status.status).toMatch(/pending|processing|completed|failed/);
+    }, 30000);
+  });
+
+  describe('List models', () => {
+    it('should list available models', async () => {
+      const videoGen = VideoGeneration.create({
+        connector: 'grok-video-test',
+      });
+
+      const models = await videoGen.listModels();
+
+      expect(models).toContain('grok-imagine-video');
+    });
+  });
+
+  describe('Model info', () => {
+    it('should get Grok Imagine Video model info', () => {
+      const videoGen = VideoGeneration.create({
+        connector: 'grok-video-test',
+      });
+
+      const info = videoGen.getModelInfo('grok-imagine-video');
+
+      expect(info).toBeDefined();
+      expect(info?.name).toBe('grok-imagine-video');
+      expect(info?.capabilities.durations).toContain(5);
+      expect(info?.capabilities.durations).toContain(10);
+      expect(info?.capabilities.audio).toBe(true);
+      expect(info?.capabilities.imageToVideo).toBe(true);
+    });
+
+    it('should show correct aspect ratios', () => {
+      const videoGen = VideoGeneration.create({
+        connector: 'grok-video-test',
+      });
+
+      const info = videoGen.getModelInfo('grok-imagine-video');
+
+      expect(info?.capabilities.aspectRatios).toBeDefined();
+      expect(info?.capabilities.aspectRatios).toContain('16:9');
+      expect(info?.capabilities.aspectRatios).toContain('9:16');
+      expect(info?.capabilities.aspectRatios).toContain('1:1');
+    });
+
+    it('should show correct resolutions', () => {
+      const videoGen = VideoGeneration.create({
+        connector: 'grok-video-test',
+      });
+
+      const info = videoGen.getModelInfo('grok-imagine-video');
+
+      expect(info?.capabilities.resolutions).toContain('480p');
+      expect(info?.capabilities.resolutions).toContain('720p');
     });
   });
 });

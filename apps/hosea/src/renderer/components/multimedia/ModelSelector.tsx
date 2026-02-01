@@ -33,6 +33,7 @@ const vendorLabels: Record<string, string> = {
   openai: 'OpenAI',
   google: 'Google',
   anthropic: 'Anthropic',
+  grok: 'Grok (xAI)',
 };
 
 export function ModelSelector({

@@ -1959,7 +1959,8 @@ var Connector = class _Connector {
 // src/core/Vendor.ts
 var Vendor = {
   OpenAI: "openai",
-  Google: "google"};
+  Google: "google",
+  Grok: "grok"};
 
 // src/domain/errors/AIErrors.ts
 var AIError = class _AIError extends Error {
@@ -2531,8 +2532,8 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     if (Buffer.isBuffer(image)) {
       imageBytes = image.toString("base64");
     } else {
-      const fs4 = await import('fs');
-      const buffer = fs4.readFileSync(image);
+      const fs5 = await import('fs');
+      const buffer = fs5.readFileSync(image);
       imageBytes = buffer.toString("base64");
     }
     return {
@@ -2565,6 +2566,157 @@ var GoogleImageProvider = class extends BaseMediaProvider {
     throw new ProviderError("google", message);
   }
 };
+var GROK_API_BASE_URL = "https://api.x.ai/v1";
+var GrokImageProvider = class extends BaseMediaProvider {
+  name = "grok-image";
+  vendor = "grok";
+  capabilities = {
+    text: false,
+    images: true,
+    videos: false,
+    audio: false,
+    features: {
+      imageGeneration: true,
+      imageEditing: true
+    }
+  };
+  client;
+  constructor(config) {
+    super({ apiKey: config.auth.apiKey, ...config });
+    this.client = new OpenAI__default.default({
+      apiKey: config.auth.apiKey,
+      baseURL: config.baseURL || GROK_API_BASE_URL,
+      timeout: config.timeout,
+      maxRetries: config.maxRetries
+    });
+  }
+  /**
+   * Generate images from a text prompt
+   */
+  async generateImage(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("image.generate", {
+            model: options.model,
+            size: options.size,
+            quality: options.quality,
+            n: options.n
+          });
+          const params = {
+            model: options.model || "grok-imagine-image",
+            prompt: options.prompt,
+            n: options.n || 1,
+            response_format: options.response_format || "b64_json"
+          };
+          if (options.aspectRatio) {
+            params.aspect_ratio = options.aspectRatio;
+          }
+          const response = await this.client.images.generate(params);
+          const data = response.data || [];
+          this.logOperationComplete("image.generate", {
+            model: options.model,
+            imagesGenerated: data.length
+          });
+          return {
+            created: response.created,
+            data: data.map((img) => ({
+              url: img.url,
+              b64_json: img.b64_json,
+              revised_prompt: img.revised_prompt
+            }))
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "image.generate",
+      { model: options.model }
+    );
+  }
+  /**
+   * Edit an existing image with a prompt
+   */
+  async editImage(options) {
+    return this.executeWithCircuitBreaker(
+      async () => {
+        try {
+          this.logOperationStart("image.edit", {
+            model: options.model,
+            size: options.size,
+            n: options.n
+          });
+          const image = this.prepareImageInput(options.image);
+          const mask = options.mask ? this.prepareImageInput(options.mask) : void 0;
+          const params = {
+            model: options.model || "grok-imagine-image",
+            image,
+            prompt: options.prompt,
+            mask,
+            size: options.size,
+            n: options.n || 1,
+            response_format: options.response_format || "b64_json"
+          };
+          const response = await this.client.images.edit(params);
+          const data = response.data || [];
+          this.logOperationComplete("image.edit", {
+            model: options.model,
+            imagesGenerated: data.length
+          });
+          return {
+            created: response.created,
+            data: data.map((img) => ({
+              url: img.url,
+              b64_json: img.b64_json,
+              revised_prompt: img.revised_prompt
+            }))
+          };
+        } catch (error) {
+          this.handleError(error);
+          throw error;
+        }
+      },
+      "image.edit",
+      { model: options.model }
+    );
+  }
+  /**
+   * List available image models
+   */
+  async listModels() {
+    return ["grok-imagine-image"];
+  }
+  /**
+   * Prepare image input (Buffer or file path) for API
+   */
+  prepareImageInput(image) {
+    if (Buffer.isBuffer(image)) {
+      return new File([new Uint8Array(image)], "image.png", { type: "image/png" });
+    }
+    return fs2__namespace.createReadStream(image);
+  }
+  /**
+   * Handle API errors
+   */
+  handleError(error) {
+    const message = error.message || "Unknown Grok API error";
+    const status = error.status;
+    if (status === 401) {
+      throw new ProviderAuthError("grok", "Invalid API key");
+    }
+    if (status === 429) {
+      throw new ProviderRateLimitError("grok", message);
+    }
+    if (status === 400) {
+      if (message.includes("safety") || message.includes("policy")) {
+        throw new ProviderError("grok", `Content policy violation: ${message}`);
+      }
+      throw new ProviderError("grok", `Bad request: ${message}`);
+    }
+    throw new ProviderError("grok", message);
+  }
+};
 
 // src/core/createImageProvider.ts
 function createImageProvider(connector) {
@@ -2574,9 +2726,11 @@ function createImageProvider(connector) {
       return new OpenAIImageProvider(extractOpenAIConfig(connector));
     case Vendor.Google:
       return new GoogleImageProvider(extractGoogleConfig(connector));
+    case Vendor.Grok:
+      return new GrokImageProvider(extractGrokConfig(connector));
     default:
       throw new Error(
-        `No Image provider available for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
+        `No Image provider available for vendor: ${vendor}. Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}, ${Vendor.Grok}`
       );
   }
 }
@@ -2604,6 +2758,22 @@ function extractGoogleConfig(connector) {
   }
   return {
     apiKey: auth.apiKey
+  };
+}
+function extractGrokConfig(connector) {
+  const auth = connector.config.auth;
+  if (auth.type !== "api_key") {
+    throw new Error("Grok requires API key authentication");
+  }
+  const options = connector.getOptions();
+  return {
+    auth: {
+      type: "api_key",
+      apiKey: auth.apiKey
+    },
+    baseURL: connector.baseURL,
+    timeout: options.timeout,
+    maxRetries: options.maxRetries
   };
 }
 
@@ -2662,6 +2832,12 @@ var IMAGE_MODELS = {
     IMAGEN_4_ULTRA: "imagen-4.0-ultra-generate-001",
     /** Imagen 4.0 Fast: Optimized for speed */
     IMAGEN_4_FAST: "imagen-4.0-fast-generate-001"
+  },
+  [Vendor.Grok]: {
+    /** Grok Imagine Image: xAI image generation with editing support */
+    GROK_IMAGINE_IMAGE: "grok-imagine-image",
+    /** Grok 2 Image: xAI image generation (text-only input) */
+    GROK_2_IMAGE_1212: "grok-2-image-1212"
   }
 };
 var IMAGE_MODEL_REGISTRY = {
@@ -2680,7 +2856,7 @@ var IMAGE_MODEL_REGISTRY = {
     },
     capabilities: {
       sizes: ["1024x1024", "1024x1536", "1536x1024", "auto"],
-      maxImagesPerRequest: 1,
+      maxImagesPerRequest: 10,
       outputFormats: ["png", "webp", "jpeg"],
       features: {
         generation: true,
@@ -2693,13 +2869,46 @@ var IMAGE_MODEL_REGISTRY = {
       },
       limits: { maxPromptLength: 32e3 },
       vendorOptions: {
+        quality: {
+          type: "enum",
+          label: "Quality",
+          description: "Image quality level",
+          enum: ["auto", "low", "medium", "high"],
+          default: "auto",
+          controlType: "select"
+        },
         background: {
-          type: "string",
-          description: "Background setting: transparent, opaque, or auto"
+          type: "enum",
+          label: "Background",
+          description: "Background transparency",
+          enum: ["auto", "transparent", "opaque"],
+          default: "auto",
+          controlType: "select"
         },
         output_format: {
-          type: "string",
-          description: "Output format: png, webp, or jpeg"
+          type: "enum",
+          label: "Output Format",
+          description: "Image file format",
+          enum: ["png", "jpeg", "webp"],
+          default: "png",
+          controlType: "select"
+        },
+        output_compression: {
+          type: "number",
+          label: "Compression",
+          description: "Compression level for JPEG/WebP (0-100)",
+          min: 0,
+          max: 100,
+          default: 75,
+          controlType: "slider"
+        },
+        moderation: {
+          type: "enum",
+          label: "Moderation",
+          description: "Content moderation strictness",
+          enum: ["auto", "low"],
+          default: "auto",
+          controlType: "radio"
         }
       }
     },
@@ -2716,6 +2925,7 @@ var IMAGE_MODEL_REGISTRY = {
     description: "High quality image generation with prompt revision",
     isActive: true,
     releaseDate: "2023-11-06",
+    deprecationDate: "2026-05-12",
     sources: {
       documentation: "https://platform.openai.com/docs/guides/images",
       pricing: "https://openai.com/pricing",
@@ -2736,9 +2946,21 @@ var IMAGE_MODEL_REGISTRY = {
       },
       limits: { maxPromptLength: 4e3 },
       vendorOptions: {
+        quality: {
+          type: "enum",
+          label: "Quality",
+          description: "Image quality: standard or HD",
+          enum: ["standard", "hd"],
+          default: "standard",
+          controlType: "radio"
+        },
         style: {
-          type: "string",
-          description: "Style: vivid (hyper-real) or natural (more natural)"
+          type: "enum",
+          label: "Style",
+          description: "Image style: vivid (hyper-real) or natural",
+          enum: ["vivid", "natural"],
+          default: "vivid",
+          controlType: "radio"
         }
       }
     },
@@ -2755,6 +2977,7 @@ var IMAGE_MODEL_REGISTRY = {
     description: "Fast image generation with editing and variation support",
     isActive: true,
     releaseDate: "2022-11-03",
+    deprecationDate: "2026-05-12",
     sources: {
       documentation: "https://platform.openai.com/docs/guides/images",
       pricing: "https://openai.com/pricing",
@@ -2773,7 +2996,8 @@ var IMAGE_MODEL_REGISTRY = {
         transparency: false,
         promptRevision: false
       },
-      limits: { maxPromptLength: 1e3 }
+      limits: { maxPromptLength: 1e3 },
+      vendorOptions: {}
     },
     pricing: {
       perImage: 0.02,
@@ -2809,17 +3033,81 @@ var IMAGE_MODEL_REGISTRY = {
       },
       limits: { maxPromptLength: 480 },
       vendorOptions: {
+        aspectRatio: {
+          type: "enum",
+          label: "Aspect Ratio",
+          description: "Output image proportions",
+          enum: ["1:1", "3:4", "4:3", "16:9", "9:16"],
+          default: "1:1",
+          controlType: "select"
+        },
+        sampleImageSize: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution",
+          enum: ["1K", "2K"],
+          default: "1K",
+          controlType: "radio"
+        },
+        outputMimeType: {
+          type: "enum",
+          label: "Output Format",
+          description: "Image file format",
+          enum: ["image/png", "image/jpeg"],
+          default: "image/png",
+          controlType: "select"
+        },
         negativePrompt: {
           type: "string",
-          description: "Description of what to avoid in the image"
+          label: "Negative Prompt",
+          description: "Elements to avoid in the generated image",
+          controlType: "textarea"
+        },
+        personGeneration: {
+          type: "enum",
+          label: "Person Generation",
+          description: "Controls whether people can appear in images",
+          enum: ["dont_allow", "allow_adult", "allow_all"],
+          default: "allow_adult",
+          controlType: "select"
+        },
+        safetyFilterLevel: {
+          type: "enum",
+          label: "Safety Filter",
+          description: "Content safety filtering threshold",
+          enum: ["block_none", "block_only_high", "block_medium_and_above", "block_low_and_above"],
+          default: "block_medium_and_above",
+          controlType: "select"
+        },
+        enhancePrompt: {
+          type: "boolean",
+          label: "Enhance Prompt",
+          description: "Use LLM-based prompt rewriting for better quality",
+          default: true,
+          controlType: "checkbox"
         },
         seed: {
           type: "number",
-          description: "Random seed for reproducible generation"
+          label: "Seed",
+          description: "Random seed for reproducible generation (1-2147483647)",
+          min: 1,
+          max: 2147483647,
+          controlType: "text"
         },
-        aspectRatio: {
-          type: "string",
-          description: "Aspect ratio: 1:1, 3:4, 4:3, 9:16, or 16:9"
+        addWatermark: {
+          type: "boolean",
+          label: "Add Watermark",
+          description: "Add invisible SynthID watermark",
+          default: true,
+          controlType: "checkbox"
+        },
+        language: {
+          type: "enum",
+          label: "Prompt Language",
+          description: "Language of the input prompt",
+          enum: ["auto", "en", "zh", "zh-CN", "zh-TW", "hi", "ja", "ko", "pt", "es"],
+          default: "en",
+          controlType: "select"
         }
       }
     },
@@ -2854,7 +3142,85 @@ var IMAGE_MODEL_REGISTRY = {
         transparency: false,
         promptRevision: false
       },
-      limits: { maxPromptLength: 480 }
+      limits: { maxPromptLength: 480 },
+      vendorOptions: {
+        aspectRatio: {
+          type: "enum",
+          label: "Aspect Ratio",
+          description: "Output image proportions",
+          enum: ["1:1", "3:4", "4:3", "16:9", "9:16"],
+          default: "1:1",
+          controlType: "select"
+        },
+        sampleImageSize: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution",
+          enum: ["1K", "2K"],
+          default: "1K",
+          controlType: "radio"
+        },
+        outputMimeType: {
+          type: "enum",
+          label: "Output Format",
+          description: "Image file format",
+          enum: ["image/png", "image/jpeg"],
+          default: "image/png",
+          controlType: "select"
+        },
+        negativePrompt: {
+          type: "string",
+          label: "Negative Prompt",
+          description: "Elements to avoid in the generated image",
+          controlType: "textarea"
+        },
+        personGeneration: {
+          type: "enum",
+          label: "Person Generation",
+          description: "Controls whether people can appear in images",
+          enum: ["dont_allow", "allow_adult", "allow_all"],
+          default: "allow_adult",
+          controlType: "select"
+        },
+        safetyFilterLevel: {
+          type: "enum",
+          label: "Safety Filter",
+          description: "Content safety filtering threshold",
+          enum: ["block_none", "block_only_high", "block_medium_and_above", "block_low_and_above"],
+          default: "block_medium_and_above",
+          controlType: "select"
+        },
+        enhancePrompt: {
+          type: "boolean",
+          label: "Enhance Prompt",
+          description: "Use LLM-based prompt rewriting for better quality",
+          default: true,
+          controlType: "checkbox"
+        },
+        seed: {
+          type: "number",
+          label: "Seed",
+          description: "Random seed for reproducible generation (1-2147483647)",
+          min: 1,
+          max: 2147483647,
+          controlType: "text"
+        },
+        addWatermark: {
+          type: "boolean",
+          label: "Add Watermark",
+          description: "Add invisible SynthID watermark",
+          default: true,
+          controlType: "checkbox"
+        },
+        language: {
+          type: "enum",
+          label: "Prompt Language",
+          description: "Language of the input prompt",
+          enum: ["auto", "en", "zh", "zh-CN", "zh-TW", "hi", "ja", "ko", "pt", "es"],
+          default: "en",
+          controlType: "select"
+        }
+      }
     },
     pricing: {
       perImage: 0.08,
@@ -2887,10 +3253,195 @@ var IMAGE_MODEL_REGISTRY = {
         transparency: false,
         promptRevision: false
       },
-      limits: { maxPromptLength: 480 }
+      limits: { maxPromptLength: 480 },
+      vendorOptions: {
+        aspectRatio: {
+          type: "enum",
+          label: "Aspect Ratio",
+          description: "Output image proportions",
+          enum: ["1:1", "3:4", "4:3", "16:9", "9:16"],
+          default: "1:1",
+          controlType: "select"
+        },
+        sampleImageSize: {
+          type: "enum",
+          label: "Resolution",
+          description: "Output image resolution",
+          enum: ["1K", "2K"],
+          default: "1K",
+          controlType: "radio"
+        },
+        outputMimeType: {
+          type: "enum",
+          label: "Output Format",
+          description: "Image file format",
+          enum: ["image/png", "image/jpeg"],
+          default: "image/png",
+          controlType: "select"
+        },
+        negativePrompt: {
+          type: "string",
+          label: "Negative Prompt",
+          description: "Elements to avoid in the generated image",
+          controlType: "textarea"
+        },
+        personGeneration: {
+          type: "enum",
+          label: "Person Generation",
+          description: "Controls whether people can appear in images",
+          enum: ["dont_allow", "allow_adult", "allow_all"],
+          default: "allow_adult",
+          controlType: "select"
+        },
+        safetyFilterLevel: {
+          type: "enum",
+          label: "Safety Filter",
+          description: "Content safety filtering threshold",
+          enum: ["block_none", "block_only_high", "block_medium_and_above", "block_low_and_above"],
+          default: "block_medium_and_above",
+          controlType: "select"
+        },
+        enhancePrompt: {
+          type: "boolean",
+          label: "Enhance Prompt",
+          description: "Use LLM-based prompt rewriting for better quality",
+          default: true,
+          controlType: "checkbox"
+        },
+        seed: {
+          type: "number",
+          label: "Seed",
+          description: "Random seed for reproducible generation (1-2147483647)",
+          min: 1,
+          max: 2147483647,
+          controlType: "text"
+        },
+        addWatermark: {
+          type: "boolean",
+          label: "Add Watermark",
+          description: "Add invisible SynthID watermark",
+          default: true,
+          controlType: "checkbox"
+        },
+        language: {
+          type: "enum",
+          label: "Prompt Language",
+          description: "Language of the input prompt",
+          enum: ["auto", "en", "zh", "zh-CN", "zh-TW", "hi", "ja", "ko", "pt", "es"],
+          default: "en",
+          controlType: "select"
+        }
+      }
     },
     pricing: {
       perImage: 0.02,
+      currency: "USD"
+    }
+  },
+  // ======================== xAI Grok ========================
+  "grok-imagine-image": {
+    name: "grok-imagine-image",
+    displayName: "Grok Imagine Image",
+    provider: Vendor.Grok,
+    description: "xAI Grok Imagine image generation with aspect ratio control and editing support",
+    isActive: true,
+    releaseDate: "2025-01-01",
+    sources: {
+      documentation: "https://docs.x.ai/docs/guides/image-generation",
+      pricing: "https://docs.x.ai/docs/models",
+      lastVerified: "2026-02-01"
+    },
+    capabilities: {
+      sizes: ["1024x1024"],
+      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
+      maxImagesPerRequest: 10,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: true,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        // quality not supported by xAI API
+        transparency: false,
+        promptRevision: true
+      },
+      limits: { maxPromptLength: 4096 },
+      vendorOptions: {
+        n: {
+          type: "number",
+          label: "Number of Images",
+          description: "Number of images to generate (1-10)",
+          min: 1,
+          max: 10,
+          default: 1,
+          controlType: "slider"
+        },
+        response_format: {
+          type: "enum",
+          label: "Response Format",
+          description: "Format of the returned image",
+          enum: ["url", "b64_json"],
+          default: "url",
+          controlType: "radio"
+        }
+      }
+    },
+    pricing: {
+      perImage: 0.02,
+      currency: "USD"
+    }
+  },
+  "grok-2-image-1212": {
+    name: "grok-2-image-1212",
+    displayName: "Grok 2 Image",
+    provider: Vendor.Grok,
+    description: "xAI Grok 2 image generation (text-only input, no editing)",
+    isActive: true,
+    releaseDate: "2024-12-12",
+    sources: {
+      documentation: "https://docs.x.ai/docs/guides/image-generation",
+      pricing: "https://docs.x.ai/docs/models",
+      lastVerified: "2026-02-01"
+    },
+    capabilities: {
+      sizes: ["1024x1024"],
+      aspectRatios: ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3"],
+      maxImagesPerRequest: 10,
+      outputFormats: ["png", "jpeg"],
+      features: {
+        generation: true,
+        editing: false,
+        variations: false,
+        styleControl: false,
+        qualityControl: false,
+        // quality not supported by xAI API
+        transparency: false,
+        promptRevision: false
+      },
+      limits: { maxPromptLength: 4096 },
+      vendorOptions: {
+        n: {
+          type: "number",
+          label: "Number of Images",
+          description: "Number of images to generate (1-10)",
+          min: 1,
+          max: 10,
+          default: 1,
+          controlType: "slider"
+        },
+        response_format: {
+          type: "enum",
+          label: "Response Format",
+          description: "Format of the returned image",
+          enum: ["url", "b64_json"],
+          default: "url",
+          controlType: "radio"
+        }
+      }
+    },
+    pricing: {
+      perImage: 0.07,
       currency: "USD"
     }
   }
@@ -3003,6 +3554,8 @@ var ImageGeneration = class _ImageGeneration {
         return IMAGE_MODELS[Vendor.OpenAI].DALL_E_3;
       case Vendor.Google:
         return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
+      case Vendor.Grok:
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE;
       default:
         throw new Error(`No default image model for vendor: ${vendor}`);
     }
@@ -3017,6 +3570,8 @@ var ImageGeneration = class _ImageGeneration {
         return IMAGE_MODELS[Vendor.OpenAI].GPT_IMAGE_1;
       case Vendor.Google:
         return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
+      case Vendor.Grok:
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE;
       default:
         throw new Error(`No edit model for vendor: ${vendor}`);
     }

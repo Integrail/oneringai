@@ -197,10 +197,8 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
             status: response.status,
           });
 
-          // Clean up completed operations
-          if (response.status === 'completed' || response.status === 'failed') {
-            this.pendingOperations.delete(jobId);
-          }
+          // Note: Don't clean up here - downloadVideo() needs the operation
+          // Cleanup happens in downloadVideo() after successful download
 
           return response;
         } catch (error: any) {
@@ -235,25 +233,57 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
             throw new ProviderError('google', 'No video available for download');
           }
 
-          // Download using the files API
-          const videoFile = operation.response.generatedVideos[0].video;
-          const downloadResponse = await (this.client.files as any).download({
-            file: videoFile,
-          });
-
+          const video = operation.response.generatedVideos[0].video;
           let buffer: Buffer;
-          if (downloadResponse instanceof Buffer) {
-            buffer = downloadResponse;
-          } else if (downloadResponse.data) {
-            buffer = Buffer.from(downloadResponse.data);
+
+          // Option 1: Check if videoBytes is available directly (base64)
+          if (video.videoBytes) {
+            buffer = Buffer.from(video.videoBytes, 'base64');
+          }
+          // Option 2: Use files.download() with a temp file
+          else if (video.uri) {
+            const fs = await import('fs/promises');
+            const os = await import('os');
+            const path = await import('path');
+
+            // Create temp file path
+            const tempDir = os.tmpdir();
+            const tempFile = path.join(tempDir, `veo-${Date.now()}.mp4`);
+
+            try {
+              // Download to temp file using SDK
+              await this.client.files.download({
+                file: { video }, // Pass as GeneratedVideo
+                downloadPath: tempFile,
+              });
+
+              // Read temp file into buffer
+              buffer = await fs.readFile(tempFile);
+
+              // Clean up temp file
+              await fs.unlink(tempFile).catch(() => {});
+            } catch (downloadError: any) {
+              // Clean up temp file on error
+              await fs.unlink(tempFile).catch(() => {});
+              throw new ProviderError(
+                'google',
+                `Failed to download video: ${downloadError.message}`
+              );
+            }
           } else {
-            throw new ProviderError('google', 'Unexpected download response format');
+            throw new ProviderError(
+              'google',
+              'No videoBytes or uri available for download'
+            );
           }
 
           this.logOperationComplete('video.download', {
             jobId,
             size: buffer.length,
           });
+
+          // Clean up after successful download
+          this.pendingOperations.delete(jobId);
 
           return buffer;
         } catch (error: any) {
@@ -333,7 +363,6 @@ export class GoogleVeoProvider extends BaseMediaProvider implements IVideoProvid
   async listModels(): Promise<string[]> {
     return [
       'veo-2.0-generate-001',
-      'veo-3-generate-preview',
       'veo-3.1-fast-generate-preview',
       'veo-3.1-generate-preview',
     ];

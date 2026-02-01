@@ -24,9 +24,12 @@ describe('VideoModel Registry', () => {
 
     it('should have all declared Google models', () => {
       expect(VIDEO_MODEL_REGISTRY['veo-2.0-generate-001']).toBeDefined();
-      expect(VIDEO_MODEL_REGISTRY['veo-3-generate-preview']).toBeDefined();
       expect(VIDEO_MODEL_REGISTRY['veo-3.1-fast-generate-preview']).toBeDefined();
       expect(VIDEO_MODEL_REGISTRY['veo-3.1-generate-preview']).toBeDefined();
+    });
+
+    it('should have all declared Grok models', () => {
+      expect(VIDEO_MODEL_REGISTRY['grok-imagine-video']).toBeDefined();
     });
 
     it('should have consistent structure', () => {
@@ -78,6 +81,12 @@ describe('VideoModel Registry', () => {
       expect(models.every((m) => m.provider === Vendor.Google)).toBe(true);
     });
 
+    it('should return Grok models', () => {
+      const models = getVideoModelsByVendor(Vendor.Grok);
+      expect(models.length).toBeGreaterThan(0);
+      expect(models.every((m) => m.provider === Vendor.Grok)).toBe(true);
+    });
+
     it('should return empty for unsupported vendor', () => {
       const models = getVideoModelsByVendor(Vendor.Anthropic);
       expect(models.length).toBe(0);
@@ -97,7 +106,7 @@ describe('VideoModel Registry', () => {
       const models = getVideoModelsWithFeature('upscaling');
       expect(models.length).toBeGreaterThan(0);
       expect(models.some((m) => m.name === 'sora-2-pro')).toBe(true);
-      expect(models.some((m) => m.name === 'veo-3-generate-preview')).toBe(true);
+      expect(models.some((m) => m.name === 'veo-3.1-generate-preview')).toBe(true);
     });
 
     it('should find models with style control', () => {
@@ -112,6 +121,7 @@ describe('VideoModel Registry', () => {
       // All models should support seed
       expect(models.some((m) => m.name === 'sora-2')).toBe(true);
       expect(models.some((m) => m.name === 'veo-2.0-generate-001')).toBe(true);
+      expect(models.some((m) => m.name === 'grok-imagine-video')).toBe(true);
     });
   });
 
@@ -120,8 +130,8 @@ describe('VideoModel Registry', () => {
       const models = getVideoModelsWithAudio();
       expect(models.length).toBeGreaterThan(0);
       expect(models.some((m) => m.name === 'sora-2')).toBe(true);
-      expect(models.some((m) => m.name === 'veo-3-generate-preview')).toBe(true);
       expect(models.some((m) => m.name === 'veo-3.1-generate-preview')).toBe(true);
+      expect(models.some((m) => m.name === 'grok-imagine-video')).toBe(true);
     });
 
     it('should not include models without audio', () => {
@@ -143,7 +153,7 @@ describe('VideoModel Registry', () => {
     });
 
     it('should calculate cost for Google Veo', () => {
-      const cost = calculateVideoCost('veo-3-generate-preview', 8);
+      const cost = calculateVideoCost('veo-3.1-generate-preview', 8);
       expect(cost).toBe(6.00); // 8 * 0.75
     });
 
@@ -161,9 +171,12 @@ describe('VideoModel Registry', () => {
 
     it('should have VIDEO_MODELS constants for Google', () => {
       expect(VIDEO_MODELS[Vendor.Google].VEO_2).toBe('veo-2.0-generate-001');
-      expect(VIDEO_MODELS[Vendor.Google].VEO_3).toBe('veo-3-generate-preview');
-      expect(VIDEO_MODELS[Vendor.Google].VEO_3_FAST).toBe('veo-3.1-fast-generate-preview');
+      expect(VIDEO_MODELS[Vendor.Google].VEO_3_1_FAST).toBe('veo-3.1-fast-generate-preview');
       expect(VIDEO_MODELS[Vendor.Google].VEO_3_1).toBe('veo-3.1-generate-preview');
+    });
+
+    it('should have VIDEO_MODELS constants for Grok', () => {
+      expect(VIDEO_MODELS[Vendor.Grok].GROK_IMAGINE_VIDEO).toBe('grok-imagine-video');
     });
   });
 
@@ -199,6 +212,54 @@ describe('VideoModel Registry', () => {
     it('should mark Veo 2 as supporting frame control', () => {
       const model = getVideoModelInfo('veo-2.0-generate-001');
       expect(model?.capabilities.frameControl).toBe(true);
+    });
+
+    it('should have correct durations for Grok Imagine Video', () => {
+      const model = getVideoModelInfo('grok-imagine-video');
+      expect(model?.capabilities.durations).toContain(1);
+      expect(model?.capabilities.durations).toContain(5);
+      expect(model?.capabilities.durations).toContain(15);
+    });
+
+    it('should have correct resolutions for Grok Imagine Video', () => {
+      const model = getVideoModelInfo('grok-imagine-video');
+      expect(model?.capabilities.resolutions).toContain('480p');
+      expect(model?.capabilities.resolutions).toContain('720p');
+    });
+
+    it('should mark Grok Imagine Video as having audio', () => {
+      const model = getVideoModelInfo('grok-imagine-video');
+      expect(model?.capabilities.audio).toBe(true);
+    });
+
+    it('should mark Grok Imagine Video as supporting image-to-video', () => {
+      const model = getVideoModelInfo('grok-imagine-video');
+      expect(model?.capabilities.imageToVideo).toBe(true);
+    });
+
+    it('should show Grok Imagine Video aspect ratios', () => {
+      const model = getVideoModelInfo('grok-imagine-video');
+      expect(model?.capabilities.aspectRatios).toBeDefined();
+      expect(model?.capabilities.aspectRatios).toContain('16:9');
+      expect(model?.capabilities.aspectRatios).toContain('9:16');
+      expect(model?.capabilities.aspectRatios).toContain('1:1');
+    });
+
+    it('should mark Grok Imagine Video as supporting seed', () => {
+      const model = getVideoModelInfo('grok-imagine-video');
+      expect(model?.capabilities.features.seed).toBe(true);
+    });
+  });
+
+  describe('Grok video cost calculation', () => {
+    it('should calculate cost for grok-imagine-video', () => {
+      const cost = calculateVideoCost('grok-imagine-video', 10);
+      expect(cost).toBe(0.50); // 10 * 0.05
+    });
+
+    it('should calculate cost for short grok video', () => {
+      const cost = calculateVideoCost('grok-imagine-video', 5);
+      expect(cost).toBe(0.25); // 5 * 0.05
     });
   });
 });

@@ -447,12 +447,60 @@ Organize tools by category:
 - **json/** - JSON manipulation
 - **web/** - Web scraping, HTTP, search
 - **code/** - Code execution
-- **file/** - File operations (future)
-- **data/** - Data transformation (future)
-- **image/** - Image processing (future)
+- **filesystem/** - File read/write/edit, glob, grep
+- **shell/** - Bash command execution
+- **connector/** - External API tools (generated from connectors)
+
+---
+
+## Tool Registry
+
+Unified API for discovering all available tools (built-in + connector-generated).
+
+### Usage
+
+```typescript
+import { ToolRegistry } from '@oneringai/agents';
+
+// Get ALL tools (built-in + connector)
+const allTools = ToolRegistry.getAllTools();
+
+// Get only built-in tools
+const builtInTools = ToolRegistry.getBuiltInTools();
+
+// Get connector tools for a specific connector
+const githubTools = ToolRegistry.getConnectorTools('github');
+
+// Get tools by service type
+const slackTools = ToolRegistry.getToolsByService('slack');
+```
+
+### Type Guard
+
+```typescript
+for (const tool of ToolRegistry.getAllTools()) {
+  if (ToolRegistry.isConnectorTool(tool)) {
+    console.log(`Connector: ${tool.displayName} (${tool.connectorName})`);
+  } else {
+    console.log(`Built-in: ${tool.displayName}`);
+  }
+}
+```
+
+### Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getAllTools()` | `(ToolRegistryEntry \| ConnectorToolEntry)[]` | All tools (main API) |
+| `getBuiltInTools()` | `ToolRegistryEntry[]` | Built-in tools only |
+| `getAllConnectorTools()` | `ConnectorToolEntry[]` | All connector tools |
+| `getConnectorTools(name)` | `ConnectorToolEntry[]` | Tools for specific connector |
+| `getToolsByService(type)` | `ConnectorToolEntry[]` | Filter by service type |
+| `getToolsByConnector(name)` | `ConnectorToolEntry[]` | Filter by connector name |
+| `isConnectorTool(entry)` | `boolean` | Type guard |
 
 ---
 
 **Version**: 0.3.0
-**Total Tools**: 5 (JSON, Web Fetch, Web Fetch JS, Web Search, Execute JavaScript)
+**Total Tools**: 13 (Filesystem: 6, Shell: 1, Web: 4, Code: 1, JSON: 1)
 **All tools**: Type-safe, well-documented, production-ready

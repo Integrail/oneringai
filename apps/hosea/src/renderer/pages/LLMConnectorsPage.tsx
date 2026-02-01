@@ -13,15 +13,12 @@ interface ConnectorConfig {
   createdAt: number;
 }
 
-// Vendor icons and colors
+// Vendor icons and colors - only supported/tested vendors
 const vendorInfo: Record<string, { color: string; label: string }> = {
   openai: { color: '#10a37f', label: 'OpenAI' },
   anthropic: { color: '#d4a27f', label: 'Anthropic' },
   google: { color: '#4285f4', label: 'Google' },
-  groq: { color: '#f55036', label: 'Groq' },
-  together: { color: '#6366f1', label: 'Together' },
-  mistral: { color: '#ff7000', label: 'Mistral' },
-  deepseek: { color: '#0066ff', label: 'DeepSeek' },
+  grok: { color: '#1da1f2', label: 'Grok (xAI)' },
 };
 
 export function LLMConnectorsPage(): React.ReactElement {
@@ -58,6 +55,23 @@ export function LLMConnectorsPage(): React.ReactElement {
       setShowAddModal(false);
       setNewConnector({ name: '', vendor: 'openai', apiKey: '' });
       loadConnectors();
+    }
+  };
+
+  const handleDeleteConnector = async (name: string) => {
+    if (!confirm(`Delete connector "${name}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const result = await window.hosea.connector.delete(name);
+      if (result.success) {
+        await loadConnectors();
+      } else {
+        alert(result.error || 'Failed to delete connector');
+      }
+    } catch (error) {
+      alert(String(error));
     }
   };
 
@@ -119,7 +133,11 @@ export function LLMConnectorsPage(): React.ReactElement {
                       <Key size={14} className="me-1" />
                       Update Key
                     </Button>
-                    <Button variant="outline-danger" size="sm">
+                    <Button
+                      variant="outline-danger"
+                      size="sm"
+                      onClick={() => handleDeleteConnector(connector.name)}
+                    >
                       <Trash2 size={14} />
                     </Button>
                   </div>

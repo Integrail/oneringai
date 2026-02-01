@@ -5,9 +5,10 @@
 import { Connector } from './Connector.js';
 import { Vendor } from './Vendor.js';
 import type { IVideoProvider } from '../domain/interfaces/IVideoProvider.js';
-import type { OpenAIMediaConfig, GoogleMediaConfig } from '../domain/types/ProviderConfig.js';
+import type { OpenAIMediaConfig, GoogleMediaConfig, GrokMediaConfig } from '../domain/types/ProviderConfig.js';
 import { OpenAISoraProvider } from '../infrastructure/providers/openai/OpenAISoraProvider.js';
 import { GoogleVeoProvider } from '../infrastructure/providers/google/GoogleVeoProvider.js';
+import { GrokImagineProvider } from '../infrastructure/providers/grok/GrokImagineProvider.js';
 /**
  * Create a video provider from a connector
  */
@@ -21,10 +22,13 @@ export function createVideoProvider(connector: Connector): IVideoProvider {
     case Vendor.Google:
       return new GoogleVeoProvider(extractGoogleConfig(connector));
 
+    case Vendor.Grok:
+      return new GrokImagineProvider(extractGrokConfig(connector));
+
     default:
       throw new Error(
         `Video generation not supported for vendor: ${vendor}. ` +
-          `Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}`
+          `Supported vendors: ${Vendor.OpenAI}, ${Vendor.Google}, ${Vendor.Grok}`
       );
   }
 }
@@ -70,6 +74,29 @@ function extractGoogleConfig(connector: Connector): GoogleMediaConfig {
       type: 'api_key',
       apiKey: auth.apiKey,
     },
+    timeout: options.timeout as number | undefined,
+    maxRetries: options.maxRetries as number | undefined,
+  };
+}
+
+/**
+ * Extract Grok configuration from connector
+ */
+function extractGrokConfig(connector: Connector): GrokMediaConfig {
+  const auth = connector.config.auth;
+
+  if (auth.type !== 'api_key') {
+    throw new Error('Grok requires API key authentication');
+  }
+
+  const options = connector.getOptions();
+
+  return {
+    auth: {
+      type: 'api_key',
+      apiKey: auth.apiKey,
+    },
+    baseURL: connector.baseURL,
     timeout: options.timeout as number | undefined,
     maxRetries: options.maxRetries as number | undefined,
   };

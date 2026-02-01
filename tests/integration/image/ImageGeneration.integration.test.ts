@@ -16,12 +16,15 @@ dotenv.config();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const XAI_API_KEY = process.env.XAI_API_KEY;
 const HAS_OPENAI_KEY = Boolean(OPENAI_API_KEY);
 const HAS_GOOGLE_KEY = Boolean(GOOGLE_API_KEY);
+const HAS_XAI_KEY = Boolean(XAI_API_KEY);
 
 // Skip tests if no API key
 const describeIfOpenAI = HAS_OPENAI_KEY ? describe : describe.skip;
 const describeIfGoogle = HAS_GOOGLE_KEY ? describe : describe.skip;
+const describeIfGrok = HAS_XAI_KEY ? describe : describe.skip;
 
 // ============================================================================
 // OpenAI Image Generation Tests
@@ -522,6 +525,182 @@ describeIfGoogle('ImageGeneration Integration (Google)', () => {
       expect(info?.name).toBe('imagen-4.0-generate-001');
       expect(info?.capabilities.aspectRatios).toBeDefined();
       expect(info?.capabilities.aspectRatios).toContain('16:9');
+    });
+  });
+});
+
+// ============================================================================
+// xAI Grok Image Generation Tests
+// ============================================================================
+
+describeIfGrok('ImageGeneration Integration (Grok)', () => {
+  const tempFiles: string[] = [];
+
+  beforeAll(() => {
+    if (!XAI_API_KEY) {
+      console.warn('⚠️  XAI_API_KEY not set, skipping Grok image integration tests');
+      return;
+    }
+
+    Connector.create({
+      name: 'grok-image-test',
+      vendor: Vendor.Grok,
+      auth: { type: 'api_key', apiKey: XAI_API_KEY },
+    });
+  });
+
+  afterAll(async () => {
+    // Cleanup temp files
+    for (const file of tempFiles) {
+      try {
+        await fs.unlink(file);
+      } catch {
+        // Ignore errors
+      }
+    }
+
+    try {
+      Connector.clear();
+    } catch {
+      // Ignore if already cleared
+    }
+  });
+
+  describe('Basic generation with Grok Imagine', () => {
+    it('should generate an image from a prompt', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'grok-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A simple red circle on a white background',
+        model: 'grok-imagine-image',
+        size: '1024x1024',
+      });
+
+      expect(response.created).toBeGreaterThan(0);
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json || response.data[0].url).toBeDefined();
+    }, 60000);
+
+    it('should generate multiple images', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'grok-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A colorful abstract pattern',
+        model: 'grok-imagine-image',
+        size: '1024x1024',
+        n: 2,
+      });
+
+      expect(response.data.length).toBeGreaterThanOrEqual(1);
+    }, 90000);
+  });
+
+  describe('HD quality', () => {
+    it('should generate HD quality image', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'grok-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A detailed cityscape at night',
+        model: 'grok-imagine-image',
+        size: '1024x1024',
+        quality: 'hd',
+      });
+
+      expect(response.data).toHaveLength(1);
+      expect(response.data[0].b64_json || response.data[0].url).toBeDefined();
+    }, 90000);
+  });
+
+  describe('Different aspect ratios', () => {
+    it('should generate landscape image', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'grok-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A panoramic mountain view',
+        model: 'grok-imagine-image',
+        size: '1536x1024', // Landscape
+      });
+
+      expect(response.data).toHaveLength(1);
+    }, 60000);
+
+    it('should generate portrait image', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'grok-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A tall waterfall',
+        model: 'grok-imagine-image',
+        size: '1024x1536', // Portrait
+      });
+
+      expect(response.data).toHaveLength(1);
+    }, 60000);
+  });
+
+  describe('Save to file', () => {
+    it('should save generated image to file', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'grok-image-test',
+      });
+
+      const response = await imageGen.generate({
+        prompt: 'A simple star shape',
+        model: 'grok-imagine-image',
+        size: '1024x1024',
+      });
+
+      expect(response.data[0].b64_json || response.data[0].url).toBeDefined();
+
+      if (response.data[0].b64_json) {
+        // Save to file
+        const outputPath = path.join(__dirname, 'test-output-grok.png');
+        tempFiles.push(outputPath);
+
+        const buffer = Buffer.from(response.data[0].b64_json, 'base64');
+        await fs.writeFile(outputPath, buffer);
+
+        const stats = await fs.stat(outputPath);
+        expect(stats.size).toBeGreaterThan(0);
+      }
+    }, 60000);
+  });
+
+  describe('List models', () => {
+    it('should list available models', async () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'grok-image-test',
+      });
+
+      const models = await imageGen.listModels();
+
+      expect(models).toContain('grok-imagine-image');
+      expect(models).toContain('grok-2-image-1212');
+    });
+  });
+
+  describe('Model info', () => {
+    it('should get model info', () => {
+      const imageGen = ImageGeneration.create({
+        connector: 'grok-image-test',
+      });
+
+      const info = imageGen.getModelInfo('grok-imagine-image');
+
+      expect(info).toBeDefined();
+      expect(info?.name).toBe('grok-imagine-image');
+      expect(info?.capabilities.features.generation).toBe(true);
+      expect(info?.capabilities.features.editing).toBe(true);
+      expect(info?.capabilities.maxImagesPerRequest).toBe(10);
     });
   });
 });

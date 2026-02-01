@@ -771,6 +771,9 @@ export type {
   ToolRegistryEntry,
 } from './tools/index.js';
 
+// Unified Tool Registry (built-in + connector tools)
+export { ToolRegistry, type ConnectorToolEntry } from './tools/index.js';
+
 // ============ Built-in Agents ============
 export { ProviderConfigAgent } from './agents/index.js';
 export type { ConnectorConfigResult } from './agents/index.js';

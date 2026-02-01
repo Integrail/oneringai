@@ -41,6 +41,17 @@ export interface GoogleMediaConfig {
   maxRetries?: number;
 }
 
+/**
+ * Extended Grok config for media providers (Image, Video)
+ * Uses OpenAI-compatible API at api.x.ai
+ */
+export interface GrokMediaConfig {
+  auth: APIKeyAuth;
+  baseURL?: string;
+  timeout?: number;
+  maxRetries?: number;
+}
+
 export interface OpenAIConfig extends BaseProviderConfig {
   organization?: string;
   project?: string;

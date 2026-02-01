@@ -197,6 +197,8 @@ export class ImageGeneration {
         return IMAGE_MODELS[Vendor.OpenAI].DALL_E_3;
       case Vendor.Google:
         return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
+      case Vendor.Grok:
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE;
       default:
         throw new Error(`No default image model for vendor: ${vendor}`);
     }
@@ -214,6 +216,9 @@ export class ImageGeneration {
       case Vendor.Google:
         // Imagen 4 doesn't have a separate editing model yet
         return IMAGE_MODELS[Vendor.Google].IMAGEN_4_GENERATE;
+      case Vendor.Grok:
+        // grok-imagine-image supports editing
+        return IMAGE_MODELS[Vendor.Grok].GROK_IMAGINE_IMAGE;
       default:
         throw new Error(`No edit model for vendor: ${vendor}`);
     }
