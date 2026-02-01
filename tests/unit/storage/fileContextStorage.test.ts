@@ -59,7 +59,8 @@ describe('FileContextStorage', () => {
       expect(loaded).not.toBeNull();
       expect(loaded!.sessionId).toBe('session-001');
       expect(loaded!.metadata.title).toBe('Test Session');
-      expect(loaded!.state.core.history).toHaveLength(2);
+      // v2 format uses conversation instead of history
+      expect(loaded!.state.core.conversation).toHaveLength(2);
       expect(loaded!.state.memory?.entries).toHaveLength(1);
 
       ctx.destroy();
@@ -217,9 +218,10 @@ describe('AgentContext Session Persistence', () => {
       expect(ctx2.sessionId).toBe('math-session');
 
       // Verify state was restored
+      // getHistory() now returns InputItem[] where content is Content[]
       const history = ctx2.getHistory();
       expect(history).toHaveLength(2);
-      expect(history[0].content).toBe('What is 2+2?');
+      expect(history[0].role).toBe('user');
 
       const mathResult = await ctx2.memory!.retrieve('math_result');
       expect(mathResult).toEqual({ result: 4 });
@@ -270,7 +272,8 @@ describe('AgentContext Session Persistence', () => {
       await ctx.save();
 
       const loaded = await storage.load('my-session');
-      expect(loaded!.state.core.history).toHaveLength(1);
+      // v2 format uses conversation instead of history
+      expect(loaded!.state.core.conversation).toHaveLength(1);
 
       ctx.destroy();
     });

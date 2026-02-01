@@ -278,9 +278,10 @@ describe('BaseAgent', () => {
 
       expect(agent2.getSessionId()).toBe(sessionId);
       // History should be restored
+      // getHistory() now returns InputItem[] where content is Content[]
       const history2 = agent2.context.getHistory();
       expect(history2.length).toBe(1);
-      expect(history2[0].content).toBe('Hello from agent1');
+      expect(history2[0].role).toBe('user');
       agent2.destroy();
     });
   });

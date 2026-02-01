@@ -1268,11 +1268,11 @@ Guidelines:
 
     // Set current input and prepare context
     this._agentContext.setCurrentInput(currentInput);
-    const prepared = await this._agentContext.prepare();
+    const prepared = await this._agentContext.prepare({ returnFormat: 'components' });
 
     // Format components into context string
     const parts: string[] = [];
-    for (const component of prepared.components) {
+    for (const component of prepared.components!) {
       if (component.content) {
         const content = typeof component.content === 'string'
           ? component.content

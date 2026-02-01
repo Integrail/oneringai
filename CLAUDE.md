@@ -59,9 +59,15 @@ interface AgentContextFeatures {
   persistentInstructions?: boolean; // PersistentInstructionsPlugin (default: false, opt-in)
   history?: boolean;                // Conversation tracking (default: true)
   permissions?: boolean;            // ToolPermissionManager (default: true)
+  toolOutputTracking?: boolean;     // ToolOutputPlugin - track recent tool outputs (default: true)
+  autoSpill?: boolean;              // AutoSpillPlugin - auto-spill large outputs to memory (default: true)
 }
 
-export const DEFAULT_FEATURES = { memory: true, inContextMemory: false, persistentInstructions: false, history: true, permissions: true };
+export const DEFAULT_FEATURES = {
+  memory: true, inContextMemory: false, persistentInstructions: false,
+  history: true, permissions: true,
+  toolOutputTracking: true, autoSpill: true  // NEW - both default ON
+};
 ```
 
 **Usage:**
@@ -89,8 +95,14 @@ ctx.memory;                            // WorkingMemory | null
 ctx.cache;                             // IdempotencyCache | null
 ctx.permissions;                       // ToolPermissionManager | null
 ctx.persistentInstructions;            // PersistentInstructionsPlugin | null
+ctx.toolOutputPlugin;                  // ToolOutputPlugin | null (NEW)
+ctx.autoSpillPlugin;                   // AutoSpillPlugin | null (NEW)
 ctx.agentId;                           // string (auto-generated or from config)
 ```
+
+**Feature Validation:**
+- `autoSpill` requires `memory` to be enabled (throws error if invalid)
+- `inContextMemory` without `memory` logs a warning (allowed but limited)
 
 **Tool Auto-Registration (Consolidated):**
 - AgentContext automatically registers feature-aware tools during construction
@@ -307,17 +319,53 @@ interface IResearchSource {
 
 ### AutoSpillPlugin
 
-Automatically spills large tool outputs to memory:
+Automatically spills large tool outputs to memory. **Now enabled by default** via AgentContext feature flag:
 
 ```typescript
-const autoSpill = new AutoSpillPlugin(memory, {
-  sizeThreshold: 10 * 1024,  // 10KB
-  toolPatterns: [/^web_fetch/, /^research_/],
-});
+// Default behavior (autoSpill: true) - auto-enabled when memory is also enabled
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+// Large tool outputs are automatically spilled to memory's raw tier
 
-// Integrated with ResearchAgent automatically
-// Manual usage: autoSpill.onToolOutput(toolName, output)
-// Cleanup: await autoSpill.cleanupConsumed()
+// Access the plugin
+agent.context.autoSpillPlugin?.getEntries();
+agent.context.autoSpillPlugin?.markConsumed(key, reason);
+
+// Custom configuration
+const agent = Agent.create({
+  connector: 'openai', model: 'gpt-4',
+  context: {
+    autoSpill: {
+      sizeThreshold: 10 * 1024,  // 10KB (default)
+      toolPatterns: [/^web_/, /^research_/, /^read_file/],  // Tools to monitor
+    },
+  },
+});
+```
+
+**Note:** AutoSpill requires `memory` feature to be enabled. Attempting to enable autoSpill without memory throws an error.
+
+### ToolOutputPlugin
+
+Tracks recent tool outputs in context for LLM visibility. **Enabled by default** via AgentContext feature flag:
+
+```typescript
+// Default behavior (toolOutputTracking: true)
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+
+// Access the plugin
+const outputs = agent.context.toolOutputPlugin?.getOutputs();
+
+// Custom configuration
+const agent = Agent.create({
+  connector: 'openai', model: 'gpt-4',
+  context: {
+    toolOutputTracking: {
+      maxOutputs: 10,           // Max outputs to track
+      maxOutputSize: 5000,      // Truncate large outputs
+      includeInContext: true,   // Include in prepared context
+    },
+  },
+});
 ```
 
 ### memory_query Tool
@@ -441,8 +489,10 @@ Runtime usage instructions are automatically injected into context based on enab
 - **memory=true**: Working Memory workflow, naming conventions, query patterns (~500 tokens)
 - **inContextMemory=true**: In-context memory best practices (~350 tokens)
 - **persistentInstructions=true**: Persistent instructions usage (~300 tokens)
+- **toolOutputTracking=true**: Tool output tracking best practices (~200 tokens)
+- **autoSpill=true**: Auto-spill workflow for large outputs (~250 tokens)
 
-Total overhead: ~1,450 tokens when all features enabled (~1.1% of 128K context).
+Total overhead: ~1,900 tokens when all features enabled (~1.5% of 128K context).
 
 Access instructions programmatically:
 ```typescript

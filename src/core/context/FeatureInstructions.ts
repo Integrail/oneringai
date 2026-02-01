@@ -133,6 +133,47 @@ Persistent instructions survive across sessions. Use for stable user preferences
 - Keep concise - these consume context every session
 - Review periodically with \`instructions_get\``;
 
+/**
+ * Tool Output Tracking instructions
+ * ~200 tokens
+ */
+export const TOOL_OUTPUT_TRACKING_INSTRUCTIONS = `## Tool Output Tracking
+
+Recent tool outputs are tracked and available in context. This helps you reference previous results.
+
+### Automatic Behavior
+- Tool outputs are automatically tracked
+- Oldest outputs are evicted when space is needed
+- Large outputs may be truncated in context
+
+### Best Practices
+- Reference previous outputs by tool name
+- For large outputs, immediately extract and store key information in memory
+- Don't rely on tool outputs persisting - they are compacted aggressively`;
+
+/**
+ * Auto-Spill instructions
+ * ~250 tokens
+ */
+export const AUTO_SPILL_INSTRUCTIONS = `## Auto-Spill (Large Output Management)
+
+Large tool outputs (>10KB) are automatically stored in Working Memory's raw tier.
+
+### What Happens
+- Large outputs from web_fetch, read_file, research_* tools are auto-stored
+- You'll see: "[Large output spilled to memory: key]"
+- Use \`memory_retrieve(key)\` to access the full content
+
+### Workflow
+1. Tool returns large output → auto-stored as \`raw.autospill.*\`
+2. Retrieve when needed: \`memory_retrieve({ key: "raw.autospill.*" })\`
+3. Process and summarize the content
+4. Store summary: \`memory_store({ key: "summary.*", tier: "summary", value: "..." })\`
+5. Cleanup raw: \`memory_cleanup_raw()\`
+
+### Note
+Auto-spilled entries are automatically cleaned up after being consumed (summarized).`;
+
 // ============================================================================
 // Builder Function
 // ============================================================================
@@ -175,6 +216,16 @@ export function buildFeatureInstructions(
     sections.push(PERSISTENT_INSTRUCTIONS_INSTRUCTIONS);
   }
 
+  // Tool Output Tracking (if enabled)
+  if (features.toolOutputTracking) {
+    sections.push(TOOL_OUTPUT_TRACKING_INSTRUCTIONS);
+  }
+
+  // Auto-Spill (if enabled and memory is also enabled)
+  if (features.autoSpill && features.memory) {
+    sections.push(AUTO_SPILL_INSTRUCTIONS);
+  }
+
   // If only introspection is included (minimal features), still return it
   // as it provides valuable guidance for context management
   if (sections.length === 0) {
@@ -193,6 +244,8 @@ export function buildFeatureInstructions(
       memoryEnabled: features.memory,
       inContextMemoryEnabled: features.inContextMemory,
       persistentInstructionsEnabled: features.persistentInstructions,
+      toolOutputTrackingEnabled: features.toolOutputTracking,
+      autoSpillEnabled: features.autoSpill,
     },
   };
 }
@@ -206,5 +259,7 @@ export function getAllInstructions(): Record<string, string> {
     workingMemory: WORKING_MEMORY_INSTRUCTIONS,
     inContextMemory: IN_CONTEXT_MEMORY_INSTRUCTIONS,
     persistentInstructions: PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
+    toolOutputTracking: TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
+    autoSpill: AUTO_SPILL_INSTRUCTIONS,
   };
 }

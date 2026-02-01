@@ -68,6 +68,10 @@ import { createInContextMemory } from './context/plugins/inContextMemoryTools.js
 import type { InContextMemoryPlugin, InContextMemoryConfig as InContextMemoryPluginConfig } from './context/plugins/InContextMemoryPlugin.js';
 import { createPersistentInstructions } from './context/plugins/persistentInstructionsTools.js';
 import type { PersistentInstructionsPlugin, PersistentInstructionsConfig as PersistentInstructionsPluginConfig } from './context/plugins/PersistentInstructionsPlugin.js';
+import { ToolOutputPlugin } from './context/plugins/ToolOutputPlugin.js';
+import type { ToolOutputPluginConfig } from './context/plugins/ToolOutputPlugin.js';
+import { AutoSpillPlugin } from './context/plugins/AutoSpillPlugin.js';
+import type { AutoSpillConfig } from './context/plugins/AutoSpillPlugin.js';
 
 // Memory & Context introspection tool creators
 // These are registered automatically based on enabled features for ALL agent types
@@ -224,6 +228,21 @@ export interface AgentContextFeatures {
    * @default false (opt-in)
    */
   persistentInstructions?: boolean;
+
+  /**
+   * Enable ToolOutputPlugin for tracking recent tool outputs in context
+   * When enabled: Tool outputs are tracked and can be compacted
+   * @default true
+   */
+  toolOutputTracking?: boolean;
+
+  /**
+   * Enable AutoSpillPlugin for auto-spilling large tool outputs to memory
+   * When enabled: Large outputs are automatically stored in WorkingMemory's raw tier
+   * Requires memory feature to be enabled
+   * @default true
+   */
+  autoSpill?: boolean;
 }
 
 /**
@@ -233,6 +252,8 @@ export interface AgentContextFeatures {
  * - inContextMemory: false (opt-in)
  * - history: true
  * - permissions: true
+ * - toolOutputTracking: true (NEW)
+ * - autoSpill: true (NEW)
  */
 export const DEFAULT_FEATURES: Required<AgentContextFeatures> = {
   memory: true,
@@ -240,6 +261,8 @@ export const DEFAULT_FEATURES: Required<AgentContextFeatures> = {
   history: true,
   permissions: true,
   persistentInstructions: false,
+  toolOutputTracking: true,
+  autoSpill: true,
 };
 
 // ============================================================================
@@ -247,8 +270,12 @@ export const DEFAULT_FEATURES: Required<AgentContextFeatures> = {
 // ============================================================================
 
 /**
- * History message
- * @deprecated Use InputItem from Message.ts instead. Kept for backward compatibility.
+ * History message - LEGACY FORMAT
+ * @deprecated Use InputItem from Message.ts instead.
+ * This interface is kept ONLY for backward compatibility with:
+ * - v1 session deserialization
+ * - Legacy addMessage()/addMessageSync() return types
+ * New code should use InputItem[] exclusively.
  */
 export interface HistoryMessage {
   id: string;
@@ -271,6 +298,7 @@ export interface MessageMetadata {
 
 /**
  * Prepared conversation result from prepareConversation()
+ * @deprecated Use PreparedResult instead
  */
 export interface PreparedConversation {
   /** InputItem[] ready for LLM */
@@ -285,10 +313,42 @@ export interface PreparedConversation {
 
 /**
  * Options for prepareConversation()
+ * @deprecated Use PrepareOptions instead
  */
 export interface PrepareConversationOptions {
   /** Override instructions for this call only */
   instructionOverride?: string;
+}
+
+/**
+ * Options for the unified prepare() method
+ */
+export interface PrepareOptions {
+  /** Override instructions for this call only */
+  instructionOverride?: string;
+  /**
+   * Return format:
+   * - 'llm-input': Returns LLM-ready InputItem[] (default)
+   * - 'components': Returns raw context components for custom assembly
+   */
+  returnFormat?: 'llm-input' | 'components';
+}
+
+/**
+ * Result from unified prepare() method
+ */
+export interface PreparedResult {
+  /** Current budget */
+  budget: ContextBudget;
+  /** Whether compaction occurred */
+  compacted: boolean;
+  /** Compaction log if compacted */
+  compactionLog: string[];
+
+  /** LLM-ready input (when returnFormat='llm-input') */
+  input?: InputItem[];
+  /** Raw context components (when returnFormat='components') */
+  components?: IContextComponent[];
 }
 
 /**
@@ -358,6 +418,17 @@ export interface AgentContextConfig {
   };
 
   /**
+   * ToolOutputPlugin configuration (only used if features.toolOutputTracking is true)
+   */
+  toolOutputTracking?: ToolOutputPluginConfig;
+
+  /**
+   * AutoSpillPlugin configuration (only used if features.autoSpill is true)
+   * Requires features.memory to be true
+   */
+  autoSpill?: AutoSpillConfig;
+
+  /**
    * Agent ID - used for persistent storage paths and identification
    * If not provided, will be auto-generated
    */
@@ -409,7 +480,7 @@ export interface AgentContextConfig {
 /**
  * Default configuration
  */
-const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'agentId' | 'storage' | 'sessionId' | 'sessionMetadata'>> & {
+const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'toolOutputTracking' | 'autoSpill' | 'agentId' | 'storage' | 'sessionId' | 'sessionMetadata'>> & {
   history: Required<NonNullable<AgentContextConfig['history']>>;
 } = {
   model: 'gpt-4',
@@ -482,8 +553,10 @@ export interface AgentContextMetrics {
 // ============================================================================
 
 export interface AgentContextEvents {
-  // History events
-  'message:added': { message: HistoryMessage };
+  // History/conversation events (NEW: uses InputItem, not HistoryMessage)
+  'message:added': { item: InputItem; index: number };
+  'message:user': { item: InputItem };
+  'message:assistant': { item: InputItem };
   'history:cleared': { reason?: string };
   'history:compacted': { removedCount: number };
 
@@ -518,6 +591,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private readonly _permissions: ToolPermissionManager | null;
   private _inContextMemory: InContextMemoryPlugin | null = null;
   private _persistentInstructions: PersistentInstructionsPlugin | null = null;
+  private _toolOutputPlugin: ToolOutputPlugin | null = null;
+  private _autoSpillPlugin: AutoSpillPlugin | null = null;
   private readonly _agentId: string;
 
   // ===== Feature Configuration =====
@@ -577,6 +652,9 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     if (config.cache?.enabled === false) {
       this._features.memory = false;
     }
+
+    // Validate feature dependencies
+    this.validateFeatures(this._features);
 
     // Merge config with defaults
     this._config = {
@@ -675,6 +753,23 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       }
     }
 
+    // ToolOutputPlugin - tracks recent tool outputs in context (default ON)
+    if (this._features.toolOutputTracking) {
+      this._toolOutputPlugin = new ToolOutputPlugin(config.toolOutputTracking);
+      this.registerPlugin(this._toolOutputPlugin);
+    }
+
+    // AutoSpillPlugin - auto-spills large tool outputs to memory (default ON)
+    // Requires memory feature to be enabled
+    if (this._features.autoSpill && this._memory) {
+      this._autoSpillPlugin = new AutoSpillPlugin(this._memory, {
+        sizeThreshold: 10 * 1024,  // 10KB default
+        toolPatterns: [/^web_/, /^research_/, /^read_file/],  // Common large-output tools
+        ...config.autoSpill,
+      });
+      this.registerPlugin(this._autoSpillPlugin);
+    }
+
     // Register feature-aware tools (memory, cache, introspection)
     // This ensures ALL agent types have consistent tool availability
     this._registerFeatureTools();
@@ -728,6 +823,16 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   /** PersistentInstructions plugin (null if persistentInstructions feature disabled) */
   get persistentInstructions(): PersistentInstructionsPlugin | null {
     return this._persistentInstructions;
+  }
+
+  /** ToolOutputPlugin (null if toolOutputTracking feature disabled) */
+  get toolOutputPlugin(): ToolOutputPlugin | null {
+    return this._toolOutputPlugin;
+  }
+
+  /** AutoSpillPlugin (null if autoSpill feature disabled or memory disabled) */
+  get autoSpillPlugin(): AutoSpillPlugin | null {
+    return this._autoSpillPlugin;
   }
 
   /** Agent ID (auto-generated or from config) */
@@ -794,6 +899,31 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       throw new Error('ToolPermissionManager is not available. Enable the "permissions" feature in AgentContextConfig.');
     }
     return this._permissions;
+  }
+
+  /**
+   * Validate feature dependencies and warn about potential issues
+   * Called during construction after feature resolution
+   */
+  private validateFeatures(features: Required<AgentContextFeatures>): void {
+    // autoSpill requires memory - throw error if invalid
+    if (features.autoSpill && !features.memory) {
+      throw new Error(
+        'AgentContext: autoSpill feature requires memory feature to be enabled. ' +
+        'Either enable memory (features.memory: true) or disable autoSpill (features.autoSpill: false).'
+      );
+    }
+
+    // inContextMemory without memory is allowed but warn about limitation
+    if (features.inContextMemory && !features.memory) {
+      console.warn(
+        'AgentContext: inContextMemory enabled without memory feature. ' +
+        'In-context data will not be backed by WorkingMemory for persistence or large data spilling.'
+      );
+    }
+
+    // persistentInstructions without an agentId may cause issues
+    // (handled separately in constructor, but we could add a warning here if needed)
   }
 
   // ============================================================================
@@ -863,7 +993,9 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       this.setCurrentInput(textContent);
     }
 
-    this.emit('message:added', { message: this.convertToHistoryMessage(message) });
+    const index = this._conversation.length - 1;
+    this.emit('message:added', { item: message, index });
+    this.emit('message:user', { item: message });
     return id;
   }
 
@@ -882,7 +1014,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
           timestamp: Date.now(),
           tokenCount: this.estimateMessageTokens(messageWithId),
         });
-        this.emit('message:added', { message: this.convertToHistoryMessage(messageWithId) });
+        const index = this._conversation.length - 1;
+        this.emit('message:added', { item: messageWithId, index });
       }
     }
   }
@@ -906,7 +1039,9 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
           tokenCount: this.estimateMessageTokens(messageWithId),
         });
         ids.push(id);
-        this.emit('message:added', { message: this.convertToHistoryMessage(messageWithId) });
+        const index = this._conversation.length - 1;
+        this.emit('message:added', { item: messageWithId as InputItem, index });
+        this.emit('message:assistant', { item: messageWithId as InputItem });
       }
     }
 
@@ -952,7 +1087,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       });
     }
 
-    this.emit('message:added', { message: this.convertToHistoryMessage(message) });
+    const index = this._conversation.length - 1;
+    this.emit('message:added', { item: message, index });
     return id;
   }
 
@@ -990,17 +1126,29 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   }
 
   /**
-   * Prepare conversation for LLM call.
+   * Unified context preparation method.
    *
-   * THE method that handles everything:
-   * 1. Marks current position as protected
+   * Handles everything for preparing context before LLM calls:
+   * 1. Marks current position as protected from compaction
    * 2. Calculates token usage
    * 3. Compacts if needed (respecting protection & tool pairs)
-   * 4. Builds final InputItem[] for LLM
+   * 4. Builds final output based on returnFormat option
    *
-   * Called by AgenticLoop before EVERY LLM call.
+   * @param options - Preparation options
+   * @returns PreparedResult with budget, compaction info, and either input or components
+   *
+   * @example
+   * ```typescript
+   * // For LLM calls (default)
+   * const { input, budget } = await ctx.prepare();
+   *
+   * // For component inspection/custom assembly
+   * const { components, budget } = await ctx.prepare({ returnFormat: 'components' });
+   * ```
    */
-  async prepareConversation(options?: PrepareConversationOptions): Promise<PreparedConversation> {
+  async prepare(options?: PrepareOptions): Promise<PreparedResult> {
+    const returnFormat = options?.returnFormat ?? 'llm-input';
+
     // 1. Protect current messages from compaction
     this.protectFromCompaction();
 
@@ -1036,16 +1184,43 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       this._lastBudget = budget;
     }
 
-    // 5. Build final input
-    const input = await this.buildLLMInput(options?.instructionOverride);
-
     this.emit('context:prepared', { budget, compacted: needsCompaction });
 
+    // 5. Build result based on format
+    if (returnFormat === 'components') {
+      const components = await this.buildComponents();
+      return {
+        components,
+        budget,
+        compacted: needsCompaction,
+        compactionLog,
+      };
+    }
+
+    // Default: build LLM input
+    const input = await this.buildLLMInput(options?.instructionOverride);
     return {
       input,
       budget,
       compacted: needsCompaction,
       compactionLog,
+    };
+  }
+
+  /**
+   * Prepare conversation for LLM call.
+   * @deprecated Use prepare() instead. This is a thin wrapper for backward compatibility.
+   */
+  async prepareConversation(options?: PrepareConversationOptions): Promise<PreparedConversation> {
+    const result = await this.prepare({
+      instructionOverride: options?.instructionOverride,
+      returnFormat: 'llm-input',
+    });
+    return {
+      input: result.input!,
+      budget: result.budget,
+      compacted: result.compacted,
+      compactionLog: result.compactionLog,
     };
   }
 
@@ -1221,7 +1396,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       legacyRole: role,  // Preserve original role for backward compat
     });
 
-    // Return legacy format
+    // Emit new-style event
+    const index = this._conversation.length - 1;
+    this.emit('message:added', { item: message, index });
+
+    // Return legacy format for backward compatibility
     const historyMessage: HistoryMessage = {
       id,
       role,
@@ -1229,8 +1408,6 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       timestamp: Date.now(),
       metadata,
     };
-
-    this.emit('message:added', { message: historyMessage });
     return historyMessage;
   }
 
@@ -1279,7 +1456,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       legacyRole: role,  // Preserve original role for backward compat
     });
 
-    // Return legacy format
+    // Emit new-style event
+    const index = this._conversation.length - 1;
+    this.emit('message:added', { item: message, index });
+
+    // Return legacy format for backward compatibility
     const historyMessage: HistoryMessage = {
       id,
       role,
@@ -1287,8 +1468,6 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       timestamp: Date.now(),
       metadata,
     };
-
-    this.emit('message:added', { message: historyMessage });
     return historyMessage;
   }
 
@@ -1337,20 +1516,20 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   }
 
   /**
-   * Get all history messages (computed from conversation)
-   * @deprecated Use getConversation() instead
+   * Get all history messages as InputItem[]
+   * @deprecated Use getConversation() instead - this is an alias
    */
-  getHistory(): HistoryMessage[] {
-    return this._conversation.map(item => this.convertToHistoryMessage(item));
+  getHistory(): ReadonlyArray<InputItem> {
+    // Return a copy to prevent external mutation
+    return [...this._conversation];
   }
 
   /**
-   * Get recent N messages (computed from conversation)
-   * @deprecated Use getConversation() instead
+   * Get recent N messages as InputItem[]
+   * @deprecated Use getConversation().slice(-count) instead
    */
-  getRecentHistory(count: number): HistoryMessage[] {
-    const recentItems = this._conversation.slice(-count);
-    return recentItems.map(item => this.convertToHistoryMessage(item));
+  getRecentHistory(count: number): InputItem[] {
+    return this._conversation.slice(-count);
   }
 
   /**
@@ -1509,47 +1688,16 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   // ============================================================================
 
   /**
-   * Prepare context for LLM call
-   *
-   * Assembles all components:
-   * - System prompt, instructions
-   * - Conversation history
-   * - Memory index
-   * - Plugin components
-   * - Current input
-   *
-   * Handles compaction automatically if budget is exceeded.
+   * Get context components for custom assembly.
+   * @deprecated Use prepare({ returnFormat: 'components' }) instead.
    */
-  async prepare(): Promise<PreparedContext> {
-    const components = await this.buildComponents();
-    this.emit('context:preparing', { componentCount: components.length });
-
-    let budget = this.calculateBudget(components);
-    this._lastBudget = budget;
-
-    // Emit warnings
-    if (budget.status === 'warning') {
-      this.emit('budget:warning', { budget });
-    } else if (budget.status === 'critical') {
-      this.emit('budget:critical', { budget });
-    }
-
-    // Compact if needed
-    const needsCompaction = this._config.autoCompact &&
-      this._strategy.shouldCompact(budget, {
-        ...DEFAULT_CONTEXT_CONFIG,
-        maxContextTokens: this._maxContextTokens,
-        responseReserve: this._config.responseReserve,
-      });
-
-    if (needsCompaction) {
-      const result = await this.doCompaction(components, budget);
-      this.emit('context:prepared', { budget: result.budget, compacted: true });
-      return result;
-    }
-
-    this.emit('context:prepared', { budget, compacted: false });
-    return { components, budget, compacted: false };
+  async prepareComponents(): Promise<PreparedContext> {
+    const result = await this.prepare({ returnFormat: 'components' });
+    return {
+      components: result.components!,
+      budget: result.budget,
+      compacted: result.compacted,
+    };
   }
 
   /**
@@ -1785,15 +1933,13 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     }
 
     return {
-      version: 2,  // v2 format with conversation
+      version: 2,  // v2 format with conversation as InputItem[] only
       core: {
         systemPrompt: this._systemPrompt,
         instructions: this._instructions,
-        // v2: Store conversation as InputItem[]
+        // v2: Store conversation as InputItem[] (no legacy HistoryMessage[])
         conversation: this._conversation,
         messageMetadata: metadataObj,
-        // v1 backward compat: Also include history for older consumers
-        history: this._conversation.map(item => this.convertToHistoryMessage(item)),
         toolCalls: this._toolCalls,
       },
       tools: this._tools.getState(),
@@ -1804,6 +1950,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
         model: this._config.model,
         maxContextTokens: this._maxContextTokens,
         strategy: this._strategy.name,
+        features: this._features,
       },
     };
   }
@@ -2045,6 +2192,9 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
     // Destroy cache if it exists (clears interval and entries)
     this._cache?.destroy();
+
+    // Destroy memory if it exists (FIX: was missing before)
+    this._memory?.destroy();
 
     // Destroy tool manager (cleans up circuit breaker listeners)
     this._tools.destroy();
@@ -2413,39 +2563,6 @@ Guidelines:
       }
     }
     return texts.join(' ');
-  }
-
-  /**
-   * Convert InputItem to HistoryMessage (backward compatibility)
-   */
-  private convertToHistoryMessage(item: InputItem): HistoryMessage {
-    let content = '';
-    let role: 'user' | 'assistant' | 'system' | 'tool' = 'user';
-
-    const metadata = this._messageMetadata.get((item as any).id);
-
-    // Use legacy role from metadata if available (preserves 'tool' role)
-    if (metadata?.legacyRole) {
-      role = metadata.legacyRole;
-    } else if (item.type === 'message') {
-      const msg = item as Message;
-      role = msg.role === MessageRole.USER ? 'user'
-        : msg.role === MessageRole.ASSISTANT ? 'assistant'
-        : msg.role === MessageRole.DEVELOPER ? 'system'
-        : 'user';
-    }
-
-    if (item.type === 'message') {
-      const msg = item as Message;
-      content = this.extractTextFromContent(msg.content);
-    }
-
-    return {
-      id: (item as any).id || this.generateId(),
-      role,
-      content,
-      timestamp: metadata?.timestamp || Date.now(),
-    };
   }
 
   /**

@@ -7769,6 +7769,411 @@ function getPluginFromContext2(context, toolName) {
   return plugin;
 }
 
+// src/core/context/plugins/ToolOutputPlugin.ts
+var DEFAULT_CONFIG3 = {
+  maxOutputs: 10,
+  maxTokensPerOutput: 1e3,
+  includeTimestamps: false
+};
+var ToolOutputPlugin = class extends BaseContextPlugin {
+  name = "tool_outputs";
+  priority = 10;
+  // Highest = first to compact
+  compactable = true;
+  outputs = [];
+  config;
+  constructor(config = {}) {
+    super();
+    this.config = { ...DEFAULT_CONFIG3, ...config };
+  }
+  /**
+   * Add a tool output
+   */
+  addOutput(toolName, result) {
+    this.outputs.push({
+      tool: toolName,
+      output: result,
+      timestamp: Date.now()
+    });
+    if (this.outputs.length > this.config.maxOutputs * 2) {
+      this.outputs = this.outputs.slice(-this.config.maxOutputs);
+    }
+  }
+  /**
+   * Get recent outputs
+   */
+  getOutputs() {
+    return this.outputs.slice(-this.config.maxOutputs);
+  }
+  /**
+   * Clear all outputs
+   */
+  clear() {
+    this.outputs = [];
+  }
+  /**
+   * Get component for context
+   */
+  async getComponent() {
+    const recentOutputs = this.getOutputs();
+    if (recentOutputs.length === 0) {
+      return null;
+    }
+    return {
+      name: this.name,
+      content: this.formatOutputs(recentOutputs),
+      priority: this.priority,
+      compactable: this.compactable,
+      metadata: {
+        outputCount: recentOutputs.length,
+        oldestTimestamp: recentOutputs[0]?.timestamp,
+        newestTimestamp: recentOutputs[recentOutputs.length - 1]?.timestamp
+      }
+    };
+  }
+  /**
+   * Compact by removing oldest outputs and truncating large ones
+   */
+  async compact(_targetTokens, estimator) {
+    const before = estimator.estimateTokens(this.formatOutputs(this.outputs));
+    const keepCount = Math.max(3, Math.floor(this.outputs.length / 2));
+    this.outputs = this.outputs.slice(-keepCount);
+    for (const output of this.outputs) {
+      const outputStr = this.stringifyOutput(output.output);
+      const tokens = estimator.estimateTokens(outputStr);
+      if (tokens > this.config.maxTokensPerOutput) {
+        const maxChars = this.config.maxTokensPerOutput * 4;
+        const truncated = outputStr.slice(0, maxChars) + "... [truncated]";
+        output.output = truncated;
+        output.truncated = true;
+      }
+    }
+    const after = estimator.estimateTokens(this.formatOutputs(this.outputs));
+    return Math.max(0, before - after);
+  }
+  /**
+   * Format outputs for context
+   */
+  formatOutputs(outputs) {
+    if (outputs.length === 0) return "";
+    const lines = ["## Recent Tool Outputs", ""];
+    for (const output of outputs) {
+      const outputStr = this.stringifyOutput(output.output);
+      const truncatedNote = output.truncated ? " (truncated)" : "";
+      const timeNote = this.config.includeTimestamps ? ` at ${new Date(output.timestamp).toISOString()}` : "";
+      lines.push(`### ${output.tool}${truncatedNote}${timeNote}`);
+      lines.push("```");
+      lines.push(outputStr);
+      lines.push("```");
+      lines.push("");
+    }
+    return lines.join("\n");
+  }
+  /**
+   * Safely stringify output
+   */
+  stringifyOutput(output) {
+    if (typeof output === "string") {
+      return output;
+    }
+    try {
+      return JSON.stringify(output, null, 2);
+    } catch {
+      return String(output);
+    }
+  }
+  // Session persistence
+  getState() {
+    return { outputs: this.outputs };
+  }
+  restoreState(state) {
+    const s = state;
+    if (s?.outputs && Array.isArray(s.outputs)) {
+      this.outputs = s.outputs;
+    }
+  }
+};
+var DEFAULT_CONFIG4 = {
+  sizeThreshold: 10 * 1024,
+  // 10KB
+  tools: [],
+  toolPatterns: [],
+  maxTrackedEntries: 100,
+  autoCleanupAfterIterations: 5,
+  keyPrefix: "autospill"
+};
+var AutoSpillPlugin = class extends BaseContextPlugin {
+  name = "auto_spill_tracker";
+  priority = 9;
+  // High priority - compact before conversation but after tool outputs
+  compactable = true;
+  memory;
+  config;
+  entries = /* @__PURE__ */ new Map();
+  iterationsSinceCleanup = 0;
+  entryCounter = 0;
+  events = new eventemitter3.EventEmitter();
+  constructor(memory, config = {}) {
+    super();
+    this.memory = memory;
+    this.config = { ...DEFAULT_CONFIG4, ...config };
+  }
+  /**
+   * Subscribe to events
+   */
+  on(event, listener) {
+    this.events.on(event, listener);
+    return this;
+  }
+  /**
+   * Check if a tool should be auto-spilled
+   */
+  shouldSpill(toolName, outputSize) {
+    if (outputSize < this.config.sizeThreshold) {
+      return false;
+    }
+    if (this.config.tools.length > 0) {
+      if (this.config.tools.includes(toolName)) {
+        return true;
+      }
+    }
+    if (this.config.toolPatterns.length > 0) {
+      for (const pattern of this.config.toolPatterns) {
+        if (pattern.test(toolName)) {
+          return true;
+        }
+      }
+    }
+    if (this.config.tools.length === 0 && this.config.toolPatterns.length === 0) {
+      return true;
+    }
+    return false;
+  }
+  /**
+   * Called when a tool produces output
+   * Should be called from afterToolExecution hook
+   *
+   * @param toolName - Name of the tool
+   * @param output - Tool output
+   * @returns The memory key if spilled, undefined otherwise
+   */
+  async onToolOutput(toolName, output) {
+    const outputStr = typeof output === "string" ? output : JSON.stringify(output);
+    const sizeBytes = Buffer.byteLength(outputStr, "utf8");
+    if (!this.shouldSpill(toolName, sizeBytes)) {
+      return void 0;
+    }
+    const key = `${this.config.keyPrefix}_${toolName}_${Date.now()}_${this.entryCounter++}`;
+    const fullKey = addTierPrefix(key, "raw");
+    await this.memory.storeRaw(
+      key,
+      `Auto-spilled output from ${toolName} (${formatBytes(sizeBytes)})`,
+      output
+    );
+    const entry = {
+      key: fullKey,
+      sourceTool: toolName,
+      sizeBytes,
+      timestamp: Date.now(),
+      consumed: false,
+      derivedSummaries: []
+    };
+    this.entries.set(fullKey, entry);
+    this.events.emit("spilled", { key: fullKey, tool: toolName, sizeBytes });
+    this.pruneOldEntries();
+    return fullKey;
+  }
+  /**
+   * Mark a spilled entry as consumed (summarized)
+   * Call this when the agent creates a summary from raw data
+   *
+   * @param rawKey - Key of the spilled raw entry
+   * @param summaryKey - Key of the summary created from it
+   */
+  markConsumed(rawKey, summaryKey) {
+    const entry = this.entries.get(rawKey);
+    if (entry) {
+      entry.consumed = true;
+      entry.derivedSummaries.push(summaryKey);
+      this.events.emit("consumed", { key: rawKey, summaryKey });
+    }
+  }
+  /**
+   * Get all tracked spilled entries
+   */
+  getEntries() {
+    return Array.from(this.entries.values());
+  }
+  /**
+   * Get unconsumed entries (not yet summarized)
+   */
+  getUnconsumed() {
+    return this.getEntries().filter((e) => !e.consumed);
+  }
+  /**
+   * Get consumed entries (ready for cleanup)
+   */
+  getConsumed() {
+    return this.getEntries().filter((e) => e.consumed);
+  }
+  /**
+   * Cleanup consumed entries from memory
+   *
+   * @returns Keys that were deleted
+   */
+  async cleanupConsumed() {
+    const consumed = this.getConsumed();
+    const deleted = [];
+    for (const entry of consumed) {
+      try {
+        const tier = getTierFromKey(entry.key);
+        if (tier === "raw") {
+          const exists = await this.memory.has(entry.key);
+          if (exists) {
+            await this.memory.delete(entry.key);
+            deleted.push(entry.key);
+          }
+        }
+        this.entries.delete(entry.key);
+      } catch {
+      }
+    }
+    if (deleted.length > 0) {
+      this.events.emit("cleaned", { keys: deleted, reason: "consumed" });
+    }
+    return deleted;
+  }
+  /**
+   * Cleanup specific entries
+   *
+   * @param keys - Keys to cleanup
+   * @returns Keys that were actually deleted
+   */
+  async cleanup(keys) {
+    const deleted = [];
+    for (const key of keys) {
+      try {
+        const tier = getTierFromKey(key);
+        if (tier === "raw") {
+          const exists = await this.memory.has(key);
+          if (exists) {
+            await this.memory.delete(key);
+            deleted.push(key);
+          }
+        }
+        this.entries.delete(key);
+      } catch {
+      }
+    }
+    if (deleted.length > 0) {
+      this.events.emit("cleaned", { keys: deleted, reason: "manual" });
+    }
+    return deleted;
+  }
+  /**
+   * Cleanup all tracked entries
+   */
+  async cleanupAll() {
+    const keys = Array.from(this.entries.keys());
+    return this.cleanup(keys);
+  }
+  /**
+   * Called after each agent iteration
+   * Handles automatic cleanup if configured
+   */
+  async onIteration() {
+    this.iterationsSinceCleanup++;
+    if (this.iterationsSinceCleanup >= this.config.autoCleanupAfterIterations) {
+      await this.cleanupConsumed();
+      this.iterationsSinceCleanup = 0;
+    }
+  }
+  /**
+   * Get spill info for a specific key
+   */
+  getSpillInfo(key) {
+    return this.entries.get(key);
+  }
+  // ============================================================================
+  // IContextPlugin implementation
+  // ============================================================================
+  async getComponent() {
+    const unconsumed = this.getUnconsumed();
+    if (unconsumed.length === 0) {
+      return null;
+    }
+    const lines = [
+      "## Auto-Spilled Data",
+      "",
+      `The following tool outputs were auto-stored in memory (${unconsumed.length} entries):`,
+      ""
+    ];
+    for (const entry of unconsumed) {
+      lines.push(`- **${entry.key}**: from \`${entry.sourceTool}\` (${formatBytes(entry.sizeBytes)})`);
+    }
+    lines.push("");
+    lines.push("Use `memory_retrieve(key)` to access this data when needed.");
+    lines.push('After summarizing, use `memory_store(...)` with tier="summary" or tier="findings".');
+    return {
+      name: this.name,
+      content: lines.join("\n"),
+      priority: this.priority,
+      compactable: this.compactable,
+      metadata: {
+        unconsumedCount: unconsumed.length,
+        consumedCount: this.getConsumed().length,
+        totalSizeBytes: unconsumed.reduce((sum, e) => sum + e.sizeBytes, 0)
+      }
+    };
+  }
+  async compact(_targetTokens, _estimator) {
+    const deleted = await this.cleanupConsumed();
+    return deleted.length * 12;
+  }
+  getState() {
+    return {
+      entries: Array.from(this.entries.values()),
+      iterationsSinceCleanup: this.iterationsSinceCleanup
+    };
+  }
+  restoreState(state) {
+    const s = state;
+    if (s?.entries && Array.isArray(s.entries)) {
+      this.entries.clear();
+      for (const entry of s.entries) {
+        this.entries.set(entry.key, entry);
+      }
+    }
+    if (typeof s?.iterationsSinceCleanup === "number") {
+      this.iterationsSinceCleanup = s.iterationsSinceCleanup;
+    }
+  }
+  destroy() {
+    this.events.removeAllListeners();
+    this.entries.clear();
+  }
+  // ============================================================================
+  // Private helpers
+  // ============================================================================
+  pruneOldEntries() {
+    if (this.entries.size <= this.config.maxTrackedEntries) {
+      return;
+    }
+    const sorted = Array.from(this.entries.entries()).sort(
+      ([, a], [, b]) => a.timestamp - b.timestamp
+    );
+    const toRemove = sorted.slice(0, sorted.length - this.config.maxTrackedEntries);
+    for (const [key] of toRemove) {
+      this.entries.delete(key);
+    }
+  }
+};
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 // src/capabilities/taskAgent/memoryTools.ts
 var memoryStoreDefinition = {
   type: "function",
@@ -8393,6 +8798,37 @@ Persistent instructions survive across sessions. Use for stable user preferences
 - Use markdown headers for organization
 - Keep concise - these consume context every session
 - Review periodically with \`instructions_get\``;
+var TOOL_OUTPUT_TRACKING_INSTRUCTIONS = `## Tool Output Tracking
+
+Recent tool outputs are tracked and available in context. This helps you reference previous results.
+
+### Automatic Behavior
+- Tool outputs are automatically tracked
+- Oldest outputs are evicted when space is needed
+- Large outputs may be truncated in context
+
+### Best Practices
+- Reference previous outputs by tool name
+- For large outputs, immediately extract and store key information in memory
+- Don't rely on tool outputs persisting - they are compacted aggressively`;
+var AUTO_SPILL_INSTRUCTIONS = `## Auto-Spill (Large Output Management)
+
+Large tool outputs (>10KB) are automatically stored in Working Memory's raw tier.
+
+### What Happens
+- Large outputs from web_fetch, read_file, research_* tools are auto-stored
+- You'll see: "[Large output spilled to memory: key]"
+- Use \`memory_retrieve(key)\` to access the full content
+
+### Workflow
+1. Tool returns large output \u2192 auto-stored as \`raw.autospill.*\`
+2. Retrieve when needed: \`memory_retrieve({ key: "raw.autospill.*" })\`
+3. Process and summarize the content
+4. Store summary: \`memory_store({ key: "summary.*", tier: "summary", value: "..." })\`
+5. Cleanup raw: \`memory_cleanup_raw()\`
+
+### Note
+Auto-spilled entries are automatically cleaned up after being consumed (summarized).`;
 function buildFeatureInstructions(features) {
   const sections = [];
   sections.push(INTROSPECTION_INSTRUCTIONS);
@@ -8404,6 +8840,12 @@ function buildFeatureInstructions(features) {
   }
   if (features.persistentInstructions) {
     sections.push(PERSISTENT_INSTRUCTIONS_INSTRUCTIONS);
+  }
+  if (features.toolOutputTracking) {
+    sections.push(TOOL_OUTPUT_TRACKING_INSTRUCTIONS);
+  }
+  if (features.autoSpill && features.memory) {
+    sections.push(AUTO_SPILL_INSTRUCTIONS);
   }
   if (sections.length === 0) {
     return null;
@@ -8420,7 +8862,9 @@ function buildFeatureInstructions(features) {
       featureCount: sections.length,
       memoryEnabled: features.memory,
       inContextMemoryEnabled: features.inContextMemory,
-      persistentInstructionsEnabled: features.persistentInstructions
+      persistentInstructionsEnabled: features.persistentInstructions,
+      toolOutputTrackingEnabled: features.toolOutputTracking,
+      autoSpillEnabled: features.autoSpill
     }
   };
 }
@@ -8429,7 +8873,9 @@ function getAllInstructions() {
     introspection: INTROSPECTION_INSTRUCTIONS,
     workingMemory: WORKING_MEMORY_INSTRUCTIONS,
     inContextMemory: IN_CONTEXT_MEMORY_INSTRUCTIONS,
-    persistentInstructions: PERSISTENT_INSTRUCTIONS_INSTRUCTIONS
+    persistentInstructions: PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
+    toolOutputTracking: TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
+    autoSpill: AUTO_SPILL_INSTRUCTIONS
   };
 }
 
@@ -8512,7 +8958,9 @@ var DEFAULT_FEATURES = {
   inContextMemory: false,
   history: true,
   permissions: true,
-  persistentInstructions: false
+  persistentInstructions: false,
+  toolOutputTracking: true,
+  autoSpill: true
 };
 var DEFAULT_AGENT_CONTEXT_CONFIG = {
   model: "gpt-4",
@@ -8535,6 +8983,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   _permissions;
   _inContextMemory = null;
   _persistentInstructions = null;
+  _toolOutputPlugin = null;
+  _autoSpillPlugin = null;
   _agentId;
   // ===== Feature Configuration =====
   _features;
@@ -8641,6 +9091,20 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         this._tools.register(tool);
       }
     }
+    if (this._features.toolOutputTracking) {
+      this._toolOutputPlugin = new ToolOutputPlugin(config.toolOutputTracking);
+      this.registerPlugin(this._toolOutputPlugin);
+    }
+    if (this._features.autoSpill && this._memory) {
+      this._autoSpillPlugin = new AutoSpillPlugin(this._memory, {
+        sizeThreshold: 10 * 1024,
+        // 10KB default
+        toolPatterns: [/^web_/, /^research_/, /^read_file/],
+        // Common large-output tools
+        ...config.autoSpill
+      });
+      this.registerPlugin(this._autoSpillPlugin);
+    }
     this._registerFeatureTools();
     this._explicitTaskType = config.taskType;
     this._autoDetectTaskType = config.autoDetectTaskType !== false;
@@ -8680,6 +9144,14 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   /** PersistentInstructions plugin (null if persistentInstructions feature disabled) */
   get persistentInstructions() {
     return this._persistentInstructions;
+  }
+  /** ToolOutputPlugin (null if toolOutputTracking feature disabled) */
+  get toolOutputPlugin() {
+    return this._toolOutputPlugin;
+  }
+  /** AutoSpillPlugin (null if autoSpill feature disabled or memory disabled) */
+  get autoSpillPlugin() {
+    return this._autoSpillPlugin;
   }
   /** Agent ID (auto-generated or from config) */
   get agentId() {
@@ -8790,7 +9262,9 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     if (textContent) {
       this.setCurrentInput(textContent);
     }
-    this.emit("message:added", { message: this.convertToHistoryMessage(message) });
+    const index = this._conversation.length - 1;
+    this.emit("message:added", { item: message, index });
+    this.emit("message:user", { item: message });
     return id;
   }
   /**
@@ -8808,7 +9282,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
           timestamp: Date.now(),
           tokenCount: this.estimateMessageTokens(messageWithId)
         });
-        this.emit("message:added", { message: this.convertToHistoryMessage(messageWithId) });
+        const index = this._conversation.length - 1;
+        this.emit("message:added", { item: messageWithId, index });
       }
     }
   }
@@ -8830,7 +9305,9 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
           tokenCount: this.estimateMessageTokens(messageWithId)
         });
         ids.push(id);
-        this.emit("message:added", { message: this.convertToHistoryMessage(messageWithId) });
+        const index = this._conversation.length - 1;
+        this.emit("message:added", { item: messageWithId, index });
+        this.emit("message:assistant", { item: messageWithId });
       }
     }
     return ids;
@@ -8870,7 +9347,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         timestamp: Date.now()
       });
     }
-    this.emit("message:added", { message: this.convertToHistoryMessage(message) });
+    const index = this._conversation.length - 1;
+    this.emit("message:added", { item: message, index });
     return id;
   }
   /**
@@ -8903,17 +9381,28 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     this.emit("history:cleared", { reason });
   }
   /**
-   * Prepare conversation for LLM call.
+   * Unified context preparation method.
    *
-   * THE method that handles everything:
-   * 1. Marks current position as protected
+   * Handles everything for preparing context before LLM calls:
+   * 1. Marks current position as protected from compaction
    * 2. Calculates token usage
    * 3. Compacts if needed (respecting protection & tool pairs)
-   * 4. Builds final InputItem[] for LLM
+   * 4. Builds final output based on returnFormat option
    *
-   * Called by AgenticLoop before EVERY LLM call.
+   * @param options - Preparation options
+   * @returns PreparedResult with budget, compaction info, and either input or components
+   *
+   * @example
+   * ```typescript
+   * // For LLM calls (default)
+   * const { input, budget } = await ctx.prepare();
+   *
+   * // For component inspection/custom assembly
+   * const { components, budget } = await ctx.prepare({ returnFormat: 'components' });
+   * ```
    */
-  async prepareConversation(options) {
+  async prepare(options) {
+    const returnFormat = options?.returnFormat ?? "llm-input";
     this.protectFromCompaction();
     const conversationTokens = this.estimateConversationTokens();
     const systemTokens = await this.estimateSystemTokens();
@@ -8937,13 +9426,38 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       budget = this.calculateBudgetFromTokens(newTokens);
       this._lastBudget = budget;
     }
-    const input = await this.buildLLMInput(options?.instructionOverride);
     this.emit("context:prepared", { budget, compacted: needsCompaction });
+    if (returnFormat === "components") {
+      const components = await this.buildComponents();
+      return {
+        components,
+        budget,
+        compacted: needsCompaction,
+        compactionLog
+      };
+    }
+    const input = await this.buildLLMInput(options?.instructionOverride);
     return {
       input,
       budget,
       compacted: needsCompaction,
       compactionLog
+    };
+  }
+  /**
+   * Prepare conversation for LLM call.
+   * @deprecated Use prepare() instead. This is a thin wrapper for backward compatibility.
+   */
+  async prepareConversation(options) {
+    const result = await this.prepare({
+      instructionOverride: options?.instructionOverride,
+      returnFormat: "llm-input"
+    });
+    return {
+      input: result.input,
+      budget: result.budget,
+      compacted: result.compacted,
+      compactionLog: result.compactionLog
     };
   }
   // ============================================================================
@@ -9077,6 +9591,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       legacyRole: role
       // Preserve original role for backward compat
     });
+    const index = this._conversation.length - 1;
+    this.emit("message:added", { item: message, index });
     const historyMessage = {
       id,
       role,
@@ -9084,7 +9600,6 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       timestamp: Date.now(),
       metadata
     };
-    this.emit("message:added", { message: historyMessage });
     return historyMessage;
   }
   /**
@@ -9120,6 +9635,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       legacyRole: role
       // Preserve original role for backward compat
     });
+    const index = this._conversation.length - 1;
+    this.emit("message:added", { item: message, index });
     const historyMessage = {
       id,
       role,
@@ -9127,7 +9644,6 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       timestamp: Date.now(),
       metadata
     };
-    this.emit("message:added", { message: historyMessage });
     return historyMessage;
   }
   /**
@@ -9164,19 +9680,18 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     return this.addMessage("tool", content, metadata);
   }
   /**
-   * Get all history messages (computed from conversation)
-   * @deprecated Use getConversation() instead
+   * Get all history messages as InputItem[]
+   * @deprecated Use getConversation() instead - this is an alias
    */
   getHistory() {
-    return this._conversation.map((item) => this.convertToHistoryMessage(item));
+    return this._conversation;
   }
   /**
-   * Get recent N messages (computed from conversation)
-   * @deprecated Use getConversation() instead
+   * Get recent N messages as InputItem[]
+   * @deprecated Use getConversation().slice(-count) instead
    */
   getRecentHistory(count) {
-    const recentItems = this._conversation.slice(-count);
-    return recentItems.map((item) => this.convertToHistoryMessage(item));
+    return this._conversation.slice(-count);
   }
   /**
    * Get message count
@@ -9311,39 +9826,16 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   // Context Preparation (Unified)
   // ============================================================================
   /**
-   * Prepare context for LLM call
-   *
-   * Assembles all components:
-   * - System prompt, instructions
-   * - Conversation history
-   * - Memory index
-   * - Plugin components
-   * - Current input
-   *
-   * Handles compaction automatically if budget is exceeded.
+   * Get context components for custom assembly.
+   * @deprecated Use prepare({ returnFormat: 'components' }) instead.
    */
-  async prepare() {
-    const components = await this.buildComponents();
-    this.emit("context:preparing", { componentCount: components.length });
-    let budget = this.calculateBudget(components);
-    this._lastBudget = budget;
-    if (budget.status === "warning") {
-      this.emit("budget:warning", { budget });
-    } else if (budget.status === "critical") {
-      this.emit("budget:critical", { budget });
-    }
-    const needsCompaction = this._config.autoCompact && this._strategy.shouldCompact(budget, {
-      ...DEFAULT_CONTEXT_CONFIG,
-      maxContextTokens: this._maxContextTokens,
-      responseReserve: this._config.responseReserve
-    });
-    if (needsCompaction) {
-      const result = await this.doCompaction(components, budget);
-      this.emit("context:prepared", { budget: result.budget, compacted: true });
-      return result;
-    }
-    this.emit("context:prepared", { budget, compacted: false });
-    return { components, budget, compacted: false };
+  async prepareComponents() {
+    const result = await this.prepare({ returnFormat: "components" });
+    return {
+      components: result.components,
+      budget: result.budget,
+      compacted: result.compacted
+    };
   }
   /**
    * Get current budget without full preparation
@@ -9538,15 +10030,13 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     }
     return {
       version: 2,
-      // v2 format with conversation
+      // v2 format with conversation as InputItem[] only
       core: {
         systemPrompt: this._systemPrompt,
         instructions: this._instructions,
-        // v2: Store conversation as InputItem[]
+        // v2: Store conversation as InputItem[] (no legacy HistoryMessage[])
         conversation: this._conversation,
         messageMetadata: metadataObj,
-        // v1 backward compat: Also include history for older consumers
-        history: this._conversation.map((item) => this.convertToHistoryMessage(item)),
         toolCalls: this._toolCalls
       },
       tools: this._tools.getState(),
@@ -9556,7 +10046,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       config: {
         model: this._config.model,
         maxContextTokens: this._maxContextTokens,
-        strategy: this._strategy.name
+        strategy: this._strategy.name,
+        features: this._features
       }
     };
   }
@@ -9744,6 +10235,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     }
     this._plugins.clear();
     this._cache?.destroy();
+    this._memory?.destroy();
     this._tools.destroy();
     this._conversation = [];
     this._messageMetadata.clear();
@@ -10037,30 +10529,6 @@ Guidelines:
       }
     }
     return texts.join(" ");
-  }
-  /**
-   * Convert InputItem to HistoryMessage (backward compatibility)
-   */
-  convertToHistoryMessage(item) {
-    let content = "";
-    let role = "user";
-    const metadata = this._messageMetadata.get(item.id);
-    if (metadata?.legacyRole) {
-      role = metadata.legacyRole;
-    } else if (item.type === "message") {
-      const msg = item;
-      role = msg.role === "user" /* USER */ ? "user" : msg.role === "assistant" /* ASSISTANT */ ? "assistant" : msg.role === "developer" /* DEVELOPER */ ? "system" : "user";
-    }
-    if (item.type === "message") {
-      const msg = item;
-      content = this.extractTextFromContent(msg.content);
-    }
-    return {
-      id: item.id || this.generateId(),
-      role,
-      content,
-      timestamp: metadata?.timestamp || Date.now()
-    };
   }
   /**
    * Estimate tokens for a single InputItem
@@ -12094,7 +12562,7 @@ async function fetchImageAsBase64(url, options) {
       const base64Data = matches[2] || "";
       const size = calculateBase64Size(base64Data);
       if (size > maxSizeBytes) {
-        throw new Error(`Image size (${formatBytes(size)}) exceeds maximum allowed (${formatBytes(maxSizeBytes)})`);
+        throw new Error(`Image size (${formatBytes2(size)}) exceeds maximum allowed (${formatBytes2(maxSizeBytes)})`);
       }
       return {
         mimeType: matches[1] || "image/png",
@@ -12117,7 +12585,7 @@ async function fetchImageAsBase64(url, options) {
       const size = parseInt(contentLength, 10);
       if (size > maxSizeBytes) {
         throw new Error(
-          `Image size (${formatBytes(size)}) exceeds maximum allowed (${formatBytes(maxSizeBytes)})`
+          `Image size (${formatBytes2(size)}) exceeds maximum allowed (${formatBytes2(maxSizeBytes)})`
         );
       }
     }
@@ -12134,7 +12602,7 @@ async function fetchImageAsBase64(url, options) {
       if (totalSize > maxSizeBytes) {
         reader.cancel();
         throw new Error(
-          `Image size exceeds maximum allowed (${formatBytes(maxSizeBytes)})`
+          `Image size exceeds maximum allowed (${formatBytes2(maxSizeBytes)})`
         );
       }
       chunks.push(value);
@@ -12175,7 +12643,7 @@ function calculateBase64Size(base64Data) {
   else if (data.endsWith("=")) padding = 1;
   return Math.floor(data.length * 3 / 4) - padding;
 }
-function formatBytes(bytes) {
+function formatBytes2(bytes) {
   if (bytes < 1024) return `${bytes} bytes`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -14540,6 +15008,7 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
           const maxInputMessages = config.limits?.maxInputMessages ?? 50;
           currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         }
+        await agentContext?.autoSpillPlugin?.onIteration();
         iteration++;
       }
       if (iteration >= config.maxIterations) {
@@ -14782,6 +15251,7 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
           const maxInputMessages = config.limits?.maxInputMessages ?? 50;
           currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         }
+        await agentContext?.autoSpillPlugin?.onIteration();
         yield {
           type: "response.iteration.complete" /* ITERATION_COMPLETE */,
           response_id: executionId,
@@ -15233,6 +15703,25 @@ var AgenticLoop = class extends eventemitter3.EventEmitter {
         }, {});
         if (afterTool.modified) {
           toolResult = { ...toolResult, ...afterTool.modified };
+        }
+        const agentContext = config.agentContext;
+        if (agentContext && toolResult.content) {
+          agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, toolResult.content);
+          const autoSpillPlugin = agentContext.autoSpillPlugin;
+          if (autoSpillPlugin) {
+            const outputStr = typeof toolResult.content === "string" ? toolResult.content : JSON.stringify(toolResult.content);
+            const outputSize = Buffer.byteLength(outputStr, "utf8");
+            if (autoSpillPlugin.shouldSpill(toolCall.function.name, outputSize)) {
+              const spillKey = await autoSpillPlugin.onToolOutput(
+                toolCall.function.name,
+                toolResult.content
+              );
+              if (spillKey) {
+                toolResult.spilledKey = spillKey;
+                toolResult.content = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
+              }
+            }
+          }
         }
         results.push(toolResult);
         this.context?.addToolResult(toolResult);
@@ -24770,286 +25259,6 @@ async function generateSimplePlan(goal, context) {
     // Allow agent to modify plan
   });
 }
-var DEFAULT_CONFIG3 = {
-  sizeThreshold: 10 * 1024,
-  // 10KB
-  tools: [],
-  toolPatterns: [],
-  maxTrackedEntries: 100,
-  autoCleanupAfterIterations: 5,
-  keyPrefix: "autospill"
-};
-var AutoSpillPlugin = class extends BaseContextPlugin {
-  name = "auto_spill_tracker";
-  priority = 9;
-  // High priority - compact before conversation but after tool outputs
-  compactable = true;
-  memory;
-  config;
-  entries = /* @__PURE__ */ new Map();
-  iterationsSinceCleanup = 0;
-  entryCounter = 0;
-  events = new eventemitter3.EventEmitter();
-  constructor(memory, config = {}) {
-    super();
-    this.memory = memory;
-    this.config = { ...DEFAULT_CONFIG3, ...config };
-  }
-  /**
-   * Subscribe to events
-   */
-  on(event, listener) {
-    this.events.on(event, listener);
-    return this;
-  }
-  /**
-   * Check if a tool should be auto-spilled
-   */
-  shouldSpill(toolName, outputSize) {
-    if (outputSize < this.config.sizeThreshold) {
-      return false;
-    }
-    if (this.config.tools.length > 0) {
-      if (this.config.tools.includes(toolName)) {
-        return true;
-      }
-    }
-    if (this.config.toolPatterns.length > 0) {
-      for (const pattern of this.config.toolPatterns) {
-        if (pattern.test(toolName)) {
-          return true;
-        }
-      }
-    }
-    if (this.config.tools.length === 0 && this.config.toolPatterns.length === 0) {
-      return true;
-    }
-    return false;
-  }
-  /**
-   * Called when a tool produces output
-   * Should be called from afterToolExecution hook
-   *
-   * @param toolName - Name of the tool
-   * @param output - Tool output
-   * @returns The memory key if spilled, undefined otherwise
-   */
-  async onToolOutput(toolName, output) {
-    const outputStr = typeof output === "string" ? output : JSON.stringify(output);
-    const sizeBytes = Buffer.byteLength(outputStr, "utf8");
-    if (!this.shouldSpill(toolName, sizeBytes)) {
-      return void 0;
-    }
-    const key = `${this.config.keyPrefix}_${toolName}_${Date.now()}_${this.entryCounter++}`;
-    const fullKey = addTierPrefix(key, "raw");
-    await this.memory.storeRaw(
-      key,
-      `Auto-spilled output from ${toolName} (${formatBytes2(sizeBytes)})`,
-      output
-    );
-    const entry = {
-      key: fullKey,
-      sourceTool: toolName,
-      sizeBytes,
-      timestamp: Date.now(),
-      consumed: false,
-      derivedSummaries: []
-    };
-    this.entries.set(fullKey, entry);
-    this.events.emit("spilled", { key: fullKey, tool: toolName, sizeBytes });
-    this.pruneOldEntries();
-    return fullKey;
-  }
-  /**
-   * Mark a spilled entry as consumed (summarized)
-   * Call this when the agent creates a summary from raw data
-   *
-   * @param rawKey - Key of the spilled raw entry
-   * @param summaryKey - Key of the summary created from it
-   */
-  markConsumed(rawKey, summaryKey) {
-    const entry = this.entries.get(rawKey);
-    if (entry) {
-      entry.consumed = true;
-      entry.derivedSummaries.push(summaryKey);
-      this.events.emit("consumed", { key: rawKey, summaryKey });
-    }
-  }
-  /**
-   * Get all tracked spilled entries
-   */
-  getEntries() {
-    return Array.from(this.entries.values());
-  }
-  /**
-   * Get unconsumed entries (not yet summarized)
-   */
-  getUnconsumed() {
-    return this.getEntries().filter((e) => !e.consumed);
-  }
-  /**
-   * Get consumed entries (ready for cleanup)
-   */
-  getConsumed() {
-    return this.getEntries().filter((e) => e.consumed);
-  }
-  /**
-   * Cleanup consumed entries from memory
-   *
-   * @returns Keys that were deleted
-   */
-  async cleanupConsumed() {
-    const consumed = this.getConsumed();
-    const deleted = [];
-    for (const entry of consumed) {
-      try {
-        const tier = getTierFromKey(entry.key);
-        if (tier === "raw") {
-          const exists = await this.memory.has(entry.key);
-          if (exists) {
-            await this.memory.delete(entry.key);
-            deleted.push(entry.key);
-          }
-        }
-        this.entries.delete(entry.key);
-      } catch {
-      }
-    }
-    if (deleted.length > 0) {
-      this.events.emit("cleaned", { keys: deleted, reason: "consumed" });
-    }
-    return deleted;
-  }
-  /**
-   * Cleanup specific entries
-   *
-   * @param keys - Keys to cleanup
-   * @returns Keys that were actually deleted
-   */
-  async cleanup(keys) {
-    const deleted = [];
-    for (const key of keys) {
-      try {
-        const tier = getTierFromKey(key);
-        if (tier === "raw") {
-          const exists = await this.memory.has(key);
-          if (exists) {
-            await this.memory.delete(key);
-            deleted.push(key);
-          }
-        }
-        this.entries.delete(key);
-      } catch {
-      }
-    }
-    if (deleted.length > 0) {
-      this.events.emit("cleaned", { keys: deleted, reason: "manual" });
-    }
-    return deleted;
-  }
-  /**
-   * Cleanup all tracked entries
-   */
-  async cleanupAll() {
-    const keys = Array.from(this.entries.keys());
-    return this.cleanup(keys);
-  }
-  /**
-   * Called after each agent iteration
-   * Handles automatic cleanup if configured
-   */
-  async onIteration() {
-    this.iterationsSinceCleanup++;
-    if (this.iterationsSinceCleanup >= this.config.autoCleanupAfterIterations) {
-      await this.cleanupConsumed();
-      this.iterationsSinceCleanup = 0;
-    }
-  }
-  /**
-   * Get spill info for a specific key
-   */
-  getSpillInfo(key) {
-    return this.entries.get(key);
-  }
-  // ============================================================================
-  // IContextPlugin implementation
-  // ============================================================================
-  async getComponent() {
-    const unconsumed = this.getUnconsumed();
-    if (unconsumed.length === 0) {
-      return null;
-    }
-    const lines = [
-      "## Auto-Spilled Data",
-      "",
-      `The following tool outputs were auto-stored in memory (${unconsumed.length} entries):`,
-      ""
-    ];
-    for (const entry of unconsumed) {
-      lines.push(`- **${entry.key}**: from \`${entry.sourceTool}\` (${formatBytes2(entry.sizeBytes)})`);
-    }
-    lines.push("");
-    lines.push("Use `memory_retrieve(key)` to access this data when needed.");
-    lines.push('After summarizing, use `memory_store(...)` with tier="summary" or tier="findings".');
-    return {
-      name: this.name,
-      content: lines.join("\n"),
-      priority: this.priority,
-      compactable: this.compactable,
-      metadata: {
-        unconsumedCount: unconsumed.length,
-        consumedCount: this.getConsumed().length,
-        totalSizeBytes: unconsumed.reduce((sum, e) => sum + e.sizeBytes, 0)
-      }
-    };
-  }
-  async compact(_targetTokens, _estimator) {
-    const deleted = await this.cleanupConsumed();
-    return deleted.length * 12;
-  }
-  getState() {
-    return {
-      entries: Array.from(this.entries.values()),
-      iterationsSinceCleanup: this.iterationsSinceCleanup
-    };
-  }
-  restoreState(state) {
-    const s = state;
-    if (s?.entries && Array.isArray(s.entries)) {
-      this.entries.clear();
-      for (const entry of s.entries) {
-        this.entries.set(entry.key, entry);
-      }
-    }
-    if (typeof s?.iterationsSinceCleanup === "number") {
-      this.iterationsSinceCleanup = s.iterationsSinceCleanup;
-    }
-  }
-  destroy() {
-    this.events.removeAllListeners();
-    this.entries.clear();
-  }
-  // ============================================================================
-  // Private helpers
-  // ============================================================================
-  pruneOldEntries() {
-    if (this.entries.size <= this.config.maxTrackedEntries) {
-      return;
-    }
-    const sorted = Array.from(this.entries.entries()).sort(
-      ([, a], [, b]) => a.timestamp - b.timestamp
-    );
-    const toRemove = sorted.slice(0, sorted.length - this.config.maxTrackedEntries);
-    for (const [key] of toRemove) {
-      this.entries.delete(key);
-    }
-  }
-};
-function formatBytes2(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 // src/capabilities/researchAgent/ResearchAgent.ts
 var ResearchAgent = class _ResearchAgent extends TaskAgent {
@@ -33606,7 +33815,7 @@ Guidelines:
       this._planPlugin.setPlan(this.currentPlan);
     }
     this._agentContext.setCurrentInput(currentInput);
-    const prepared = await this._agentContext.prepare();
+    const prepared = await this._agentContext.prepare({ returnFormat: "components" });
     const parts = [];
     for (const component of prepared.components) {
       if (component.content) {

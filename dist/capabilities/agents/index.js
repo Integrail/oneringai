@@ -849,6 +849,7 @@ var AgenticLoop = class extends EventEmitter {
           const maxInputMessages = config.limits?.maxInputMessages ?? 50;
           currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         }
+        await agentContext?.autoSpillPlugin?.onIteration();
         iteration++;
       }
       if (iteration >= config.maxIterations) {
@@ -1091,6 +1092,7 @@ var AgenticLoop = class extends EventEmitter {
           const maxInputMessages = config.limits?.maxInputMessages ?? 50;
           currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         }
+        await agentContext?.autoSpillPlugin?.onIteration();
         yield {
           type: "response.iteration.complete" /* ITERATION_COMPLETE */,
           response_id: executionId,
@@ -1542,6 +1544,25 @@ var AgenticLoop = class extends EventEmitter {
         }, {});
         if (afterTool.modified) {
           toolResult = { ...toolResult, ...afterTool.modified };
+        }
+        const agentContext = config.agentContext;
+        if (agentContext && toolResult.content) {
+          agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, toolResult.content);
+          const autoSpillPlugin = agentContext.autoSpillPlugin;
+          if (autoSpillPlugin) {
+            const outputStr = typeof toolResult.content === "string" ? toolResult.content : JSON.stringify(toolResult.content);
+            const outputSize = Buffer.byteLength(outputStr, "utf8");
+            if (autoSpillPlugin.shouldSpill(toolCall.function.name, outputSize)) {
+              const spillKey = await autoSpillPlugin.onToolOutput(
+                toolCall.function.name,
+                toolResult.content
+              );
+              if (spillKey) {
+                toolResult.spilledKey = spillKey;
+                toolResult.content = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
+              }
+            }
+          }
         }
         results.push(toolResult);
         this.context?.addToolResult(toolResult);

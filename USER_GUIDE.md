@@ -1,7 +1,7 @@
 # @oneringai/agents - Complete User Guide
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-30
+**Last Updated:** 2026-02-01
 
 A comprehensive guide to using all features of the @oneringai/agents library.
 
@@ -3749,17 +3749,22 @@ import { AgentContext, DEFAULT_FEATURES } from '@oneringai/agents';
 
 // View default feature settings
 console.log(DEFAULT_FEATURES);
-// { memory: true, inContextMemory: false, history: true, permissions: true }
+// { memory: true, inContextMemory: false, persistentInstructions: false, history: true, permissions: true, toolOutputTracking: true, autoSpill: true }
 ```
 
 **Available Features:**
 
 | Feature | Default | Description | When Disabled |
 |---------|---------|-------------|---------------|
-| `memory` | `true` | WorkingMemory + IdempotencyCache for persistent data storage and tool result caching | `memory_*` and `cache_stats` tools not registered; `ctx.memory` and `ctx.cache` return `null` |
-| `inContextMemory` | `false` | InContextMemoryPlugin for live key-value storage directly in context | `context_set/get/delete/list` tools not registered; `ctx.inContextMemory` returns `null` |
+| `memory` | `true` | WorkingMemory + IdempotencyCache for persistent data storage and tool result caching | `memory_*` tools not registered; `ctx.memory` and `ctx.cache` return `null` |
+| `inContextMemory` | `false` | InContextMemoryPlugin for live key-value storage directly in context | `context_set/delete/list` tools not registered; `ctx.inContextMemory` returns `null` |
+| `persistentInstructions` | `false` | PersistentInstructionsPlugin for agent-level instructions persisted to disk | `instructions_*` tools not registered; `ctx.persistentInstructions` returns `null` |
 | `history` | `true` | Conversation history tracking | `addMessage()` and `addMessageSync()` become no-ops, history not included in prepared context |
 | `permissions` | `true` | ToolPermissionManager for approval workflows | All tools auto-approved; `ctx.permissions` returns `null` |
+| `toolOutputTracking` | `true` | ToolOutputPlugin tracks recent tool outputs in context for reference | Tool outputs not tracked in context; `ctx.toolOutputPlugin` returns `null` |
+| `autoSpill` | `true` | AutoSpillPlugin auto-spills large tool outputs to WorkingMemory | Large outputs remain in context (may cause overflow); `ctx.autoSpillPlugin` returns `null` |
+
+**Note:** `autoSpill` requires `memory` to be enabled. If you disable `memory`, you must also disable `autoSpill`.
 
 **Usage Examples:**
 
@@ -3767,7 +3772,7 @@ console.log(DEFAULT_FEATURES);
 // 1. Minimal stateless agent (no memory, no history tracking)
 const ctx = AgentContext.create({
   model: 'gpt-4',
-  features: { memory: false, history: false },
+  features: { memory: false, autoSpill: false, history: false },  // autoSpill requires memory
 });
 
 console.log(ctx.memory);                      // null
@@ -3789,7 +3794,7 @@ const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    features: { memory: false },  // Disable just memory
+    features: { memory: false, autoSpill: false },  // autoSpill requires memory
   },
 });
 
@@ -3798,7 +3803,7 @@ const chatAgent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    features: { memory: false, history: true },
+    features: { memory: false, autoSpill: false, history: true },  // autoSpill requires memory
   },
 });
 ```
@@ -3813,7 +3818,7 @@ ctx.isFeatureEnabled('history');
 ctx.isFeatureEnabled('permissions');
 
 // Get read-only feature configuration
-ctx.features; // { memory: boolean, inContextMemory: boolean, history: boolean, permissions: boolean }
+ctx.features; // { memory, inContextMemory, persistentInstructions, history, permissions, toolOutputTracking, autoSpill }
 
 // Access nullable components
 ctx.memory;         // WorkingMemory | null
@@ -3837,22 +3842,24 @@ import { AgentContext } from '@oneringai/agents';
 // With memory enabled (default)
 const ctx = AgentContext.create({ model: 'gpt-4' });
 console.log(ctx.tools.has('memory_store'));     // true
-console.log(ctx.tools.has('context_inspect'));  // true (always available)
+console.log(ctx.tools.has('context_stats'));    // true (always available)
 
 // With memory disabled - no memory tools registered
 const ctx2 = AgentContext.create({
   model: 'gpt-4',
-  features: { memory: false },
+  features: { memory: false, autoSpill: false },  // autoSpill requires memory
 });
 console.log(ctx2.tools.has('memory_store'));    // false
-console.log(ctx2.tools.has('context_inspect')); // true (always available)
+console.log(ctx2.tools.has('context_stats'));   // true (always available)
 ```
 
 **Tools registered by feature:**
-- **Always**: `context_inspect`, `context_breakdown`
-- **memory=true** (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_list`, `memory_cleanup_raw`, `memory_retrieve_batch`, `memory_stats`, `cache_stats`
-- **inContextMemory=true**: `context_set`, `context_get`, `context_delete`, `context_list`
+- **Always**: `context_stats` (unified introspection tool)
+- **memory=true** (default): `memory_store`, `memory_retrieve`, `memory_delete`, `memory_query`, `memory_cleanup_raw`
+- **inContextMemory=true**: `context_set`, `context_delete`, `context_list`
 - **persistentInstructions=true**: `instructions_set`, `instructions_append`, `instructions_get`, `instructions_clear`
+- **toolOutputTracking=true** (default): Tracks recent tool outputs in context (no additional tools)
+- **autoSpill=true** (default): Auto-spills large outputs to memory (no additional tools, requires memory enabled)
 
 **Backward Compatibility:**
 

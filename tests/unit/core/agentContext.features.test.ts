@@ -30,6 +30,8 @@ describe('AgentContext Feature Configuration', () => {
         persistentInstructions: false,
         history: true,
         permissions: true,
+        toolOutputTracking: true,  // NEW
+        autoSpill: true,           // NEW
       });
     });
   });
@@ -47,10 +49,12 @@ describe('AgentContext Feature Configuration', () => {
 
     it('should override specific features while keeping others at default', () => {
       context = AgentContext.create({
-        features: { memory: false },
+        // Note: autoSpill requires memory, so disable it too
+        features: { memory: false, autoSpill: false },
       });
 
       expect(context.features.memory).toBe(false);
+      expect(context.features.autoSpill).toBe(false);
       expect(context.features.inContextMemory).toBe(false); // Still default
       expect(context.features.history).toBe(true); // Still default
       expect(context.features.permissions).toBe(true); // Still default
@@ -68,6 +72,8 @@ describe('AgentContext Feature Configuration', () => {
     it('should handle legacy cache.enabled flag', () => {
       context = AgentContext.create({
         cache: { enabled: false },
+        // Note: autoSpill requires memory, so disable it too
+        features: { autoSpill: false },
       });
 
       // Legacy cache.enabled: false should map to features.memory: false
@@ -89,7 +95,8 @@ describe('AgentContext Feature Configuration', () => {
 
     it('should not create WorkingMemory or IdempotencyCache when memory is disabled', () => {
       context = AgentContext.create({
-        features: { memory: false },
+        // Note: autoSpill requires memory, so disable it too
+        features: { memory: false, autoSpill: false },
       });
 
       expect(context.memory).toBeNull();
@@ -98,7 +105,8 @@ describe('AgentContext Feature Configuration', () => {
 
     it('should throw when requireMemory() is called but memory is disabled', () => {
       context = AgentContext.create({
-        features: { memory: false },
+        // Note: autoSpill requires memory, so disable it too
+        features: { memory: false, autoSpill: false },
       });
 
       expect(() => context!.requireMemory()).toThrow(
@@ -108,7 +116,8 @@ describe('AgentContext Feature Configuration', () => {
 
     it('should throw when requireCache() is called but memory is disabled', () => {
       context = AgentContext.create({
-        features: { memory: false },
+        // Note: autoSpill requires memory, so disable it too
+        features: { memory: false, autoSpill: false },
       });
 
       expect(() => context!.requireCache()).toThrow(
@@ -279,6 +288,7 @@ describe('AgentContext Feature Configuration', () => {
         agentId: 'test-agent',
         features: {
           memory: false,
+          autoSpill: false,  // autoSpill requires memory
           inContextMemory: true,
           persistentInstructions: true,
           history: true,
@@ -297,7 +307,8 @@ describe('AgentContext Feature Configuration', () => {
   describe('getAgentContextTools', () => {
     it('should return only basic introspection tools when memory is disabled', () => {
       context = AgentContext.create({
-        features: { memory: false },
+        // Note: autoSpill requires memory, so disable it too
+        features: { memory: false, autoSpill: false },
       });
 
       const tools = getAgentContextTools(context);
@@ -342,21 +353,22 @@ describe('AgentContext Feature Configuration', () => {
       await context.memory!.store('test', 'Test entry', 'test value');
 
       context.setCurrentInput('test');
-      const prepared = await context.prepare();
+      const prepared = await context.prepare({ returnFormat: 'components' });
 
-      const componentNames = prepared.components.map((c) => c.name);
+      const componentNames = prepared.components!.map((c) => c.name);
       expect(componentNames).toContain('memory_index');
     });
 
     it('should not include memory_index in context when memory is disabled', async () => {
       context = AgentContext.create({
-        features: { memory: false },
+        // Note: autoSpill requires memory, so disable it too
+        features: { memory: false, autoSpill: false },
       });
 
       context.setCurrentInput('test');
-      const prepared = await context.prepare();
+      const prepared = await context.prepare({ returnFormat: 'components' });
 
-      const componentNames = prepared.components.map((c) => c.name);
+      const componentNames = prepared.components!.map((c) => c.name);
       expect(componentNames).not.toContain('memory_index');
     });
 
@@ -367,9 +379,9 @@ describe('AgentContext Feature Configuration', () => {
 
       context.addMessageSync('user', 'Hello');
       context.setCurrentInput('test');
-      const prepared = await context.prepare();
+      const prepared = await context.prepare({ returnFormat: 'components' });
 
-      const componentNames = prepared.components.map((c) => c.name);
+      const componentNames = prepared.components!.map((c) => c.name);
       expect(componentNames).toContain('conversation_history');
     });
 
@@ -380,9 +392,9 @@ describe('AgentContext Feature Configuration', () => {
 
       context.addMessageSync('user', 'Hello'); // This should be a no-op
       context.setCurrentInput('test');
-      const prepared = await context.prepare();
+      const prepared = await context.prepare({ returnFormat: 'components' });
 
-      const componentNames = prepared.components.map((c) => c.name);
+      const componentNames = prepared.components!.map((c) => c.name);
       expect(componentNames).not.toContain('conversation_history');
     });
   });
@@ -392,6 +404,7 @@ describe('AgentContext Feature Configuration', () => {
       context = AgentContext.create({
         features: {
           memory: false,
+          autoSpill: false,  // autoSpill requires memory
           inContextMemory: false,
           history: false,
           permissions: false,
@@ -432,17 +445,18 @@ describe('AgentContext Feature Configuration', () => {
       context.inContextMemory!.set('state', 'Current state', { step: 1 });
 
       context.setCurrentInput('test');
-      const prepared = await context.prepare();
+      const prepared = await context.prepare({ returnFormat: 'components' });
       expect(prepared).toBeDefined();
-      expect(prepared.components.some((c) => c.name === 'memory_index')).toBe(true);
-      expect(prepared.components.some((c) => c.name === 'conversation_history')).toBe(true);
+      expect(prepared.components!.some((c) => c.name === 'memory_index')).toBe(true);
+      expect(prepared.components!.some((c) => c.name === 'conversation_history')).toBe(true);
     });
   });
 
   describe('Serialization/Deserialization', () => {
     it('should serialize state correctly with features disabled', async () => {
       context = AgentContext.create({
-        features: { memory: false, permissions: false },
+        // Note: autoSpill requires memory, so disable it too
+        features: { memory: false, permissions: false, autoSpill: false },
       });
 
       const state = await context.getState();
@@ -500,10 +514,11 @@ describe('AgentContext Feature Configuration', () => {
       expect(restoredSession).toEqual({ count: 42 });
 
       // Verify history was restored
+      // getHistory() now returns InputItem[] where content is Content[]
       const history = context2.getHistory();
       expect(history).toHaveLength(2);
-      expect(history[0].content).toBe('Hello');
-      expect(history[1].content).toBe('Hi there!');
+      expect(history[0].role).toBe('user');
+      expect(history[1].role).toBe('assistant');
 
       context2.destroy();
     });

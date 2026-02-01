@@ -459,13 +459,12 @@ const webSource = createWebSearchSource('serper-main');
 const fileSource = createFileSearchSource('./docs');
 
 // Create research agent
+// Note: autoSpill is now enabled by default in AgentContext
 const agent = await ResearchAgent.create({
   connector: 'openai',
   model: 'gpt-4',
   sources: [webSource, fileSource],
-  autoSpill: {
-    sizeThreshold: 10 * 1024, // Auto-spill outputs > 10KB
-  },
+  // autoSpill config is optional - defaults are applied automatically
 });
 
 // Execute research
@@ -566,11 +565,15 @@ console.log(agent.context.memory);                     // null (disabled)
 **Available Features:**
 | Feature | Default | Components | Associated Tools |
 |---------|---------|------------|------------------|
-| `memory` | `true` | WorkingMemory + IdempotencyCache | `memory_*`, `cache_stats` |
-| `inContextMemory` | `false` | InContextMemoryPlugin | `context_set/get/delete/list` |
+| `memory` | `true` | WorkingMemory + IdempotencyCache | `memory_*` |
+| `inContextMemory` | `false` | InContextMemoryPlugin | `context_set/delete/list` |
 | `persistentInstructions` | `false` | PersistentInstructionsPlugin | `instructions_set/get/append/clear` |
 | `history` | `true` | Conversation tracking | (affects context preparation) |
 | `permissions` | `true` | ToolPermissionManager | (affects tool execution) |
+| `toolOutputTracking` | `true` | ToolOutputPlugin | (tracks recent tool outputs in context) |
+| `autoSpill` | `true` | AutoSpillPlugin | (auto-spills large outputs to memory) |
+
+**Note:** `autoSpill` requires `memory` to be enabled. The `autoSpill` feature is particularly useful for research and data-heavy workflows where tool outputs can be large.
 
 **AgentContext composes:**
 - **ToolManager** - Tool registration, execution, circuit breakers
@@ -1101,7 +1104,7 @@ MIT License - See [LICENSE](./LICENSE) file.
 ---
 
 **Version:** 0.2.0
-**Last Updated:** 2026-01-31
+**Last Updated:** 2026-02-01
 
 For detailed documentation on all features, see the **[Complete User Guide](./USER_GUIDE.md)**.
 

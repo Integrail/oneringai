@@ -1,5 +1,5 @@
 import { EventEmitter } from 'eventemitter3';
-import { I as IProvider } from './IProvider-BP49c93d.js';
+import { I as IProvider } from './IProvider-BP49c93d.cjs';
 
 /**
  * Interface for objects that manage resources and need explicit cleanup.
@@ -2290,6 +2290,264 @@ type InputItem = Message | CompactionItem;
 type OutputItem = Message | CompactionItem | ReasoningItem;
 
 /**
+ * ToolOutputPlugin - Tracks recent tool outputs for context
+ *
+ * Tool outputs are the most expendable context - they can be truncated
+ * or removed when space is needed. Recent outputs are kept for reference.
+ */
+
+/**
+ * A single tool output entry
+ */
+interface ToolOutput {
+    /** Tool name */
+    tool: string;
+    /** Tool result (may be truncated) */
+    output: unknown;
+    /** When the tool was called */
+    timestamp: number;
+    /** Whether output was truncated */
+    truncated?: boolean;
+}
+/**
+ * Serialized tool output state
+ */
+interface SerializedToolOutputState {
+    outputs: ToolOutput[];
+}
+/**
+ * Tool output plugin configuration
+ */
+interface ToolOutputPluginConfig {
+    /** Maximum outputs to keep (default: 10) */
+    maxOutputs?: number;
+    /** Maximum tokens per individual output (default: 1000) */
+    maxTokensPerOutput?: number;
+    /** Whether to include timestamps in context (default: false) */
+    includeTimestamps?: boolean;
+}
+/**
+ * Tool output plugin for context management
+ *
+ * Provides recent tool outputs as a context component.
+ * Highest compaction priority - first to be reduced when space is needed.
+ */
+declare class ToolOutputPlugin extends BaseContextPlugin {
+    readonly name = "tool_outputs";
+    readonly priority = 10;
+    readonly compactable = true;
+    private outputs;
+    private config;
+    constructor(config?: ToolOutputPluginConfig);
+    /**
+     * Add a tool output
+     */
+    addOutput(toolName: string, result: unknown): void;
+    /**
+     * Get recent outputs
+     */
+    getOutputs(): ToolOutput[];
+    /**
+     * Clear all outputs
+     */
+    clear(): void;
+    /**
+     * Get component for context
+     */
+    getComponent(): Promise<IContextComponent | null>;
+    /**
+     * Compact by removing oldest outputs and truncating large ones
+     */
+    compact(_targetTokens: number, estimator: ITokenEstimator): Promise<number>;
+    /**
+     * Format outputs for context
+     */
+    private formatOutputs;
+    /**
+     * Safely stringify output
+     */
+    private stringifyOutput;
+    getState(): SerializedToolOutputState;
+    restoreState(state: unknown): void;
+}
+
+/**
+ * AutoSpillPlugin - Automatically spills large tool outputs to memory
+ *
+ * This plugin monitors tool outputs and automatically stores large results
+ * in working memory's raw tier. This prevents context overflow while keeping
+ * data available for later retrieval.
+ *
+ * Features:
+ * - Configurable size threshold for auto-spill
+ * - Tracks spilled entries with source metadata
+ * - Provides cleanup methods (manual and auto on summarization)
+ * - Integrates with WorkingMemory's hierarchical tier system
+ */
+
+/**
+ * Spilled entry metadata
+ */
+interface SpilledEntry {
+    /** Memory key where the entry is stored */
+    key: string;
+    /** Tool that produced the output */
+    sourceTool: string;
+    /** Original size in bytes */
+    sizeBytes: number;
+    /** When the entry was spilled */
+    timestamp: number;
+    /** Whether this entry has been consumed (summarized) */
+    consumed: boolean;
+    /** Keys of summaries derived from this entry */
+    derivedSummaries: string[];
+}
+/**
+ * Auto-spill configuration
+ */
+interface AutoSpillConfig {
+    /** Minimum size (bytes) to trigger auto-spill. Default: 10KB */
+    sizeThreshold?: number;
+    /** Tools to auto-spill. If not provided, uses toolPatterns or spills all large outputs */
+    tools?: string[];
+    /** Regex patterns for tools to auto-spill (e.g., /^web_/ for all web tools) */
+    toolPatterns?: RegExp[];
+    /** Maximum entries to track (oldest are cleaned up). Default: 100 */
+    maxTrackedEntries?: number;
+    /** Auto-cleanup consumed entries after this many iterations. Default: 5 */
+    autoCleanupAfterIterations?: number;
+    /** Key prefix for spilled entries. Default: 'autospill' */
+    keyPrefix?: string;
+}
+/**
+ * Serialized plugin state
+ */
+interface SerializedAutoSpillState {
+    entries: SpilledEntry[];
+    iterationsSinceCleanup: number;
+}
+/**
+ * Events emitted by AutoSpillPlugin
+ */
+interface AutoSpillEvents {
+    spilled: {
+        key: string;
+        tool: string;
+        sizeBytes: number;
+    };
+    consumed: {
+        key: string;
+        summaryKey: string;
+    };
+    cleaned: {
+        keys: string[];
+        reason: 'manual' | 'auto' | 'consumed';
+    };
+}
+/**
+ * AutoSpillPlugin - Monitors tool outputs and auto-stores large ones in memory
+ *
+ * Usage:
+ * ```typescript
+ * const autoSpill = new AutoSpillPlugin(memory, {
+ *   sizeThreshold: 10 * 1024, // 10KB
+ *   tools: ['web_fetch', 'web_scrape'],
+ * });
+ * agentContext.registerPlugin(autoSpill);
+ *
+ * // Call this from afterToolExecution hook
+ * autoSpill.onToolOutput('web_fetch', largeHtmlContent);
+ *
+ * // When agent creates summary, mark the raw data as consumed
+ * autoSpill.markConsumed('autospill_web_fetch_123', 'summary.search1');
+ *
+ * // Cleanup consumed entries
+ * await autoSpill.cleanupConsumed();
+ * ```
+ */
+declare class AutoSpillPlugin extends BaseContextPlugin {
+    readonly name = "auto_spill_tracker";
+    readonly priority = 9;
+    readonly compactable = true;
+    private memory;
+    private config;
+    private entries;
+    private iterationsSinceCleanup;
+    private entryCounter;
+    private events;
+    constructor(memory: WorkingMemory, config?: AutoSpillConfig);
+    /**
+     * Subscribe to events
+     */
+    on<K extends keyof AutoSpillEvents>(event: K, listener: (...args: any[]) => void): this;
+    /**
+     * Check if a tool should be auto-spilled
+     */
+    shouldSpill(toolName: string, outputSize: number): boolean;
+    /**
+     * Called when a tool produces output
+     * Should be called from afterToolExecution hook
+     *
+     * @param toolName - Name of the tool
+     * @param output - Tool output
+     * @returns The memory key if spilled, undefined otherwise
+     */
+    onToolOutput(toolName: string, output: unknown): Promise<string | undefined>;
+    /**
+     * Mark a spilled entry as consumed (summarized)
+     * Call this when the agent creates a summary from raw data
+     *
+     * @param rawKey - Key of the spilled raw entry
+     * @param summaryKey - Key of the summary created from it
+     */
+    markConsumed(rawKey: string, summaryKey: string): void;
+    /**
+     * Get all tracked spilled entries
+     */
+    getEntries(): SpilledEntry[];
+    /**
+     * Get unconsumed entries (not yet summarized)
+     */
+    getUnconsumed(): SpilledEntry[];
+    /**
+     * Get consumed entries (ready for cleanup)
+     */
+    getConsumed(): SpilledEntry[];
+    /**
+     * Cleanup consumed entries from memory
+     *
+     * @returns Keys that were deleted
+     */
+    cleanupConsumed(): Promise<string[]>;
+    /**
+     * Cleanup specific entries
+     *
+     * @param keys - Keys to cleanup
+     * @returns Keys that were actually deleted
+     */
+    cleanup(keys: string[]): Promise<string[]>;
+    /**
+     * Cleanup all tracked entries
+     */
+    cleanupAll(): Promise<string[]>;
+    /**
+     * Called after each agent iteration
+     * Handles automatic cleanup if configured
+     */
+    onIteration(): Promise<void>;
+    /**
+     * Get spill info for a specific key
+     */
+    getSpillInfo(key: string): SpilledEntry | undefined;
+    getComponent(): Promise<IContextComponent | null>;
+    compact(_targetTokens: number, _estimator: ITokenEstimator): Promise<number>;
+    getState(): SerializedAutoSpillState;
+    restoreState(state: unknown): void;
+    destroy(): void;
+    private pruneOldEntries;
+}
+
+/**
  * AgentContext - The "Swiss Army Knife" for Agent State Management
  *
  * Unified facade that composes all context-related managers:
@@ -2365,6 +2623,19 @@ interface AgentContextFeatures {
      * @default false (opt-in)
      */
     persistentInstructions?: boolean;
+    /**
+     * Enable ToolOutputPlugin for tracking recent tool outputs in context
+     * When enabled: Tool outputs are tracked and can be compacted
+     * @default true
+     */
+    toolOutputTracking?: boolean;
+    /**
+     * Enable AutoSpillPlugin for auto-spilling large tool outputs to memory
+     * When enabled: Large outputs are automatically stored in WorkingMemory's raw tier
+     * Requires memory feature to be enabled
+     * @default true
+     */
+    autoSpill?: boolean;
 }
 /**
  * Default feature configuration
@@ -2373,11 +2644,17 @@ interface AgentContextFeatures {
  * - inContextMemory: false (opt-in)
  * - history: true
  * - permissions: true
+ * - toolOutputTracking: true (NEW)
+ * - autoSpill: true (NEW)
  */
 declare const DEFAULT_FEATURES: Required<AgentContextFeatures>;
 /**
- * History message
- * @deprecated Use InputItem from Message.ts instead. Kept for backward compatibility.
+ * History message - LEGACY FORMAT
+ * @deprecated Use InputItem from Message.ts instead.
+ * This interface is kept ONLY for backward compatibility with:
+ * - v1 session deserialization
+ * - Legacy addMessage()/addMessageSync() return types
+ * New code should use InputItem[] exclusively.
  */
 interface HistoryMessage {
     id: string;
@@ -2398,6 +2675,7 @@ interface MessageMetadata {
 }
 /**
  * Prepared conversation result from prepareConversation()
+ * @deprecated Use PreparedResult instead
  */
 interface PreparedConversation {
     /** InputItem[] ready for LLM */
@@ -2411,10 +2689,39 @@ interface PreparedConversation {
 }
 /**
  * Options for prepareConversation()
+ * @deprecated Use PrepareOptions instead
  */
 interface PrepareConversationOptions {
     /** Override instructions for this call only */
     instructionOverride?: string;
+}
+/**
+ * Options for the unified prepare() method
+ */
+interface PrepareOptions {
+    /** Override instructions for this call only */
+    instructionOverride?: string;
+    /**
+     * Return format:
+     * - 'llm-input': Returns LLM-ready InputItem[] (default)
+     * - 'components': Returns raw context components for custom assembly
+     */
+    returnFormat?: 'llm-input' | 'components';
+}
+/**
+ * Result from unified prepare() method
+ */
+interface PreparedResult {
+    /** Current budget */
+    budget: ContextBudget;
+    /** Whether compaction occurred */
+    compacted: boolean;
+    /** Compaction log if compacted */
+    compactionLog: string[];
+    /** LLM-ready input (when returnFormat='llm-input') */
+    input?: InputItem[];
+    /** Raw context components (when returnFormat='components') */
+    components?: IContextComponent[];
 }
 /**
  * Tool call record (stored in history)
@@ -2470,6 +2777,15 @@ interface AgentContextConfig {
         /** Override the agent ID (default: auto-generated or from agent name) */
         agentId?: string;
     };
+    /**
+     * ToolOutputPlugin configuration (only used if features.toolOutputTracking is true)
+     */
+    toolOutputTracking?: ToolOutputPluginConfig;
+    /**
+     * AutoSpillPlugin configuration (only used if features.autoSpill is true)
+     * Requires features.memory to be true
+     */
+    autoSpill?: AutoSpillConfig;
     /**
      * Agent ID - used for persistent storage paths and identification
      * If not provided, will be auto-generated
@@ -2559,7 +2875,14 @@ interface AgentContextMetrics {
 }
 interface AgentContextEvents {
     'message:added': {
-        message: HistoryMessage;
+        item: InputItem;
+        index: number;
+    };
+    'message:user': {
+        item: InputItem;
+    };
+    'message:assistant': {
+        item: InputItem;
     };
     'history:cleared': {
         reason?: string;
@@ -2608,6 +2931,8 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     private readonly _permissions;
     private _inContextMemory;
     private _persistentInstructions;
+    private _toolOutputPlugin;
+    private _autoSpillPlugin;
     private readonly _agentId;
     private readonly _features;
     private _systemPrompt;
@@ -2653,6 +2978,10 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     get inContextMemory(): InContextMemoryPlugin | null;
     /** PersistentInstructions plugin (null if persistentInstructions feature disabled) */
     get persistentInstructions(): PersistentInstructionsPlugin | null;
+    /** ToolOutputPlugin (null if toolOutputTracking feature disabled) */
+    get toolOutputPlugin(): ToolOutputPlugin | null;
+    /** AutoSpillPlugin (null if autoSpill feature disabled or memory disabled) */
+    get autoSpillPlugin(): AutoSpillPlugin | null;
     /** Agent ID (auto-generated or from config) */
     get agentId(): string;
     /** Current session ID (null if no session loaded/saved) */
@@ -2738,15 +3067,30 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      */
     clearConversation(reason?: string): void;
     /**
-     * Prepare conversation for LLM call.
+     * Unified context preparation method.
      *
-     * THE method that handles everything:
-     * 1. Marks current position as protected
+     * Handles everything for preparing context before LLM calls:
+     * 1. Marks current position as protected from compaction
      * 2. Calculates token usage
      * 3. Compacts if needed (respecting protection & tool pairs)
-     * 4. Builds final InputItem[] for LLM
+     * 4. Builds final output based on returnFormat option
      *
-     * Called by AgenticLoop before EVERY LLM call.
+     * @param options - Preparation options
+     * @returns PreparedResult with budget, compaction info, and either input or components
+     *
+     * @example
+     * ```typescript
+     * // For LLM calls (default)
+     * const { input, budget } = await ctx.prepare();
+     *
+     * // For component inspection/custom assembly
+     * const { components, budget } = await ctx.prepare({ returnFormat: 'components' });
+     * ```
+     */
+    prepare(options?: PrepareOptions): Promise<PreparedResult>;
+    /**
+     * Prepare conversation for LLM call.
+     * @deprecated Use prepare() instead. This is a thin wrapper for backward compatibility.
      */
     prepareConversation(options?: PrepareConversationOptions): Promise<PreparedConversation>;
     /**
@@ -2852,15 +3196,15 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      */
     addToolResult(result: unknown, metadata?: Record<string, unknown>): Promise<HistoryMessage | null>;
     /**
-     * Get all history messages (computed from conversation)
-     * @deprecated Use getConversation() instead
+     * Get all history messages as InputItem[]
+     * @deprecated Use getConversation() instead - this is an alias
      */
-    getHistory(): HistoryMessage[];
+    getHistory(): ReadonlyArray<InputItem>;
     /**
-     * Get recent N messages (computed from conversation)
-     * @deprecated Use getConversation() instead
+     * Get recent N messages as InputItem[]
+     * @deprecated Use getConversation().slice(-count) instead
      */
-    getRecentHistory(count: number): HistoryMessage[];
+    getRecentHistory(count: number): InputItem[];
     /**
      * Get message count
      * @deprecated Use getConversationLength() instead
@@ -2902,18 +3246,10 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      */
     listPlugins(): string[];
     /**
-     * Prepare context for LLM call
-     *
-     * Assembles all components:
-     * - System prompt, instructions
-     * - Conversation history
-     * - Memory index
-     * - Plugin components
-     * - Current input
-     *
-     * Handles compaction automatically if budget is exceeded.
+     * Get context components for custom assembly.
+     * @deprecated Use prepare({ returnFormat: 'components' }) instead.
      */
-    prepare(): Promise<PreparedContext>;
+    prepareComponents(): Promise<PreparedContext>;
     /**
      * Get current budget without full preparation
      */
@@ -3102,10 +3438,6 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Extract text content from Content array
      */
     private extractTextFromContent;
-    /**
-     * Convert InputItem to HistoryMessage (backward compatibility)
-     */
-    private convertToHistoryMessage;
     /**
      * Estimate tokens for a single InputItem
      */
@@ -4577,4 +4909,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { InContextMemoryPlugin as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type IContextCompactor as D, ExecutionContext as E, type FunctionToolDefinition as F, type TokenContentType as G, type HookConfig as H, type IContextStorage as I, type IPersistentInstructionsStorage as J, type StoredContextSession as K, type LLMResponse as L, type MemoryEntry as M, type ContextStorageListOptions as N, type ContextSessionSummary as O, type TokenUsage as P, type ToolCall as Q, StreamEventType as R, type SerializedAgentContextState as S, type ToolFunction as T, CircuitBreaker as U, type TextGenerateOptions as V, WorkingMemory as W, type ModelCapabilities as X, type ToolPermissionConfig$1 as Y, MessageRole as Z, type InContextMemoryConfig as _, ToolManager as a, type Message as a$, type PersistentInstructionsConfig as a0, PersistentInstructionsPlugin as a1, DEFAULT_FEATURES as a2, type AgentContextEvents as a3, type AgentContextMetrics as a4, type HistoryMessage as a5, type ToolCallRecord as a6, type ToolOptions as a7, type ToolCondition as a8, type ToolSelectionContext as a9, DEFAULT_CONTEXT_CONFIG as aA, type MemoryEntryInput as aB, type MemoryIndex as aC, type MemoryIndexEntry as aD, type MemoryPriority as aE, type TaskAwareScope as aF, type SimpleScope as aG, type TaskStatusForMemory as aH, DEFAULT_MEMORY_CONFIG as aI, forTasks as aJ, forPlan as aK, scopeEquals as aL, scopeMatches as aM, isSimpleScope as aN, isTaskAwareScope as aO, isTerminalMemoryStatus as aP, calculateEntrySize as aQ, MEMORY_PRIORITY_VALUES as aR, type ToolContext as aS, type WorkingMemoryAccess as aT, ContentType as aU, type Content as aV, type InputTextContent as aW, type InputImageContent as aX, type OutputTextContent as aY, type ToolUseContent as aZ, type ToolResultContent as a_, type ToolRegistration as aa, type ToolMetadata as ab, type ToolManagerStats as ac, type SerializedToolState as ad, type ToolManagerEvent as ae, type PermissionScope as af, type RiskLevel as ag, type ToolPermissionConfig as ah, type ApprovalCacheEntry as ai, type SerializedApprovalState as aj, type SerializedApprovalEntry as ak, type PermissionCheckResult as al, type ApprovalDecision as am, type PermissionCheckContext as an, type PermissionManagerEvent as ao, APPROVAL_STATE_VERSION as ap, DEFAULT_PERMISSION_CONFIG as aq, DEFAULT_ALLOWLIST as ar, type DefaultAllowlistedTool as as, CONTEXT_SESSION_FORMAT_VERSION as at, type WorkingMemoryEvents as au, type EvictionStrategy as av, type IdempotencyCacheConfig as aw, type CacheStats as ax, DEFAULT_IDEMPOTENCY_CONFIG as ay, type PreparedContext as az, AgentContext as b, type OutputItem as b0, type CompactionItem as b1, type ReasoningItem as b2, ToolCallState as b3, defaultDescribeCall as b4, getToolCallDescription as b5, type Tool as b6, type BuiltInTool as b7, type ToolResult as b8, type ToolExecutionContext as b9, type AfterToolContext as bA, type ApproveToolContext as bB, type ToolModification as bC, type ApprovalResult as bD, type IToolExecutor as bE, type IAsyncDisposable as bF, assertNotDestroyed as bG, CircuitOpenError as bH, type CircuitBreakerConfig as bI, type CircuitBreakerEvents as bJ, DEFAULT_CIRCUIT_BREAKER_CONFIG as bK, type InContextEntry as bL, type InContextPriority as bM, type SerializedInContextMemoryState as bN, type SerializedPersistentInstructionsState as bO, AgenticLoop as bP, type AgenticLoopConfig as bQ, type ExecutionStartEvent as bR, type ExecutionCompleteEvent as bS, type ToolStartEvent as bT, type ToolCompleteEvent as bU, type LLMRequestEvent as bV, type LLMResponseEvent as bW, type JSONSchema as ba, type ResponseCreatedEvent as bb, type ResponseInProgressEvent as bc, type OutputTextDeltaEvent as bd, type OutputTextDoneEvent as be, type ToolCallStartEvent as bf, type ToolCallArgumentsDeltaEvent as bg, type ToolCallArgumentsDoneEvent as bh, type ToolExecutionStartEvent as bi, type ToolExecutionDoneEvent as bj, type IterationCompleteEvent$1 as bk, type ResponseCompleteEvent as bl, type ErrorEvent as bm, isStreamEvent as bn, isOutputTextDelta as bo, isToolCallStart as bp, isToolCallArgumentsDelta as bq, isToolCallArgumentsDone as br, isResponseComplete as bs, isErrorEvent as bt, HookManager as bu, type AgenticLoopEventName as bv, type HookName as bw, type Hook as bx, type ModifyingHook as by, type BeforeToolContext as bz, type AgentContextConfig as c, ToolPermissionManager as d, type InputItem as e, type StreamEvent as f, type AgentContextFeatures as g, type HistoryMode as h, type AgenticLoopEvents as i, type IDisposable as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type CircuitState as n, type CircuitBreakerMetrics as o, type IContextComponent as p, type ITextProvider as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type IContextStrategy as x, type ContextBudget as y, type ContextManagerConfig as z };
+export { type InContextMemoryConfig as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type ContextManagerConfig as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextCompactor as G, type HookConfig as H, type IContextStorage as I, type TokenContentType as J, type IPersistentInstructionsStorage as K, type LLMResponse as L, type MemoryEntry as M, type StoredContextSession as N, type ContextStorageListOptions as O, type ContextSessionSummary as P, type TokenUsage as Q, type ToolCall as R, type SerializedAgentContextState as S, type ToolFunction as T, StreamEventType as U, CircuitBreaker as V, WorkingMemory as W, type TextGenerateOptions as X, type ModelCapabilities as Y, type ToolPermissionConfig$1 as Z, MessageRole as _, ToolManager as a, type ToolResultContent as a$, InContextMemoryPlugin as a0, type PersistentInstructionsConfig as a1, PersistentInstructionsPlugin as a2, DEFAULT_FEATURES as a3, type AgentContextEvents as a4, type AgentContextMetrics as a5, type HistoryMessage as a6, type ToolCallRecord as a7, type ToolOptions as a8, type ToolCondition as a9, type PreparedContext as aA, DEFAULT_CONTEXT_CONFIG as aB, type MemoryEntryInput as aC, type MemoryIndex as aD, type MemoryIndexEntry as aE, type MemoryPriority as aF, type TaskAwareScope as aG, type SimpleScope as aH, type TaskStatusForMemory as aI, DEFAULT_MEMORY_CONFIG as aJ, forTasks as aK, forPlan as aL, scopeEquals as aM, scopeMatches as aN, isSimpleScope as aO, isTaskAwareScope as aP, isTerminalMemoryStatus as aQ, calculateEntrySize as aR, MEMORY_PRIORITY_VALUES as aS, type ToolContext as aT, type WorkingMemoryAccess as aU, ContentType as aV, type Content as aW, type InputTextContent as aX, type InputImageContent as aY, type OutputTextContent as aZ, type ToolUseContent as a_, type ToolSelectionContext as aa, type ToolRegistration as ab, type ToolMetadata as ac, type ToolManagerStats as ad, type SerializedToolState as ae, type ToolManagerEvent as af, type PermissionScope as ag, type RiskLevel as ah, type ToolPermissionConfig as ai, type ApprovalCacheEntry as aj, type SerializedApprovalState as ak, type SerializedApprovalEntry as al, type PermissionCheckResult as am, type ApprovalDecision as an, type PermissionCheckContext as ao, type PermissionManagerEvent as ap, APPROVAL_STATE_VERSION as aq, DEFAULT_PERMISSION_CONFIG as ar, DEFAULT_ALLOWLIST as as, type DefaultAllowlistedTool as at, CONTEXT_SESSION_FORMAT_VERSION as au, type WorkingMemoryEvents as av, type EvictionStrategy as aw, type IdempotencyCacheConfig as ax, type CacheStats as ay, DEFAULT_IDEMPOTENCY_CONFIG as az, AgentContext as b, type Message as b0, type OutputItem as b1, type CompactionItem as b2, type ReasoningItem as b3, ToolCallState as b4, defaultDescribeCall as b5, getToolCallDescription as b6, type Tool as b7, type BuiltInTool as b8, type ToolResult as b9, type BeforeToolContext as bA, type AfterToolContext as bB, type ApproveToolContext as bC, type ToolModification as bD, type ApprovalResult as bE, type IToolExecutor as bF, type IAsyncDisposable as bG, assertNotDestroyed as bH, CircuitOpenError as bI, type CircuitBreakerConfig as bJ, type CircuitBreakerEvents as bK, DEFAULT_CIRCUIT_BREAKER_CONFIG as bL, type InContextEntry as bM, type InContextPriority as bN, type SerializedInContextMemoryState as bO, type SerializedPersistentInstructionsState as bP, AgenticLoop as bQ, type AgenticLoopConfig as bR, type ExecutionStartEvent as bS, type ExecutionCompleteEvent as bT, type ToolStartEvent as bU, type ToolCompleteEvent as bV, type LLMRequestEvent as bW, type LLMResponseEvent as bX, type ToolExecutionContext as ba, type JSONSchema as bb, type ResponseCreatedEvent as bc, type ResponseInProgressEvent as bd, type OutputTextDeltaEvent as be, type OutputTextDoneEvent as bf, type ToolCallStartEvent as bg, type ToolCallArgumentsDeltaEvent as bh, type ToolCallArgumentsDoneEvent as bi, type ToolExecutionStartEvent as bj, type ToolExecutionDoneEvent as bk, type IterationCompleteEvent$1 as bl, type ResponseCompleteEvent as bm, type ErrorEvent as bn, isStreamEvent as bo, isOutputTextDelta as bp, isToolCallStart as bq, isToolCallArgumentsDelta as br, isToolCallArgumentsDone as bs, isResponseComplete as bt, isErrorEvent as bu, HookManager as bv, type AgenticLoopEventName as bw, type HookName as bx, type Hook as by, type ModifyingHook as bz, type AgentContextConfig as c, ToolPermissionManager as d, type InputItem as e, type StreamEvent as f, type AgentContextFeatures as g, type HistoryMode as h, type AgenticLoopEvents as i, type IDisposable as j, type AgentResponse as k, type ExecutionMetrics as l, type AuditEntry as m, type CircuitState as n, type CircuitBreakerMetrics as o, type IContextComponent as p, type ITextProvider as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type AutoSpillConfig as x, type IContextStrategy as y, type ContextBudget as z };

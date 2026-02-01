@@ -41,6 +41,8 @@ export type {
   ToolCallRecord,
   SerializedAgentContextState,
   DirectCallOptions,
+  PrepareOptions,
+  PreparedResult,
 } from './core/index.js';
 
 // Feature-aware tool factory
@@ -53,8 +55,14 @@ export {
   WORKING_MEMORY_INSTRUCTIONS,
   IN_CONTEXT_MEMORY_INSTRUCTIONS,
   PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
+  TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
+  AUTO_SPILL_INSTRUCTIONS,
   getAllInstructions,
 } from './core/index.js';
+
+// Context Plugins
+export { ToolOutputPlugin, AutoSpillPlugin } from './core/index.js';
+export type { ToolOutputPluginConfig, ToolOutput, AutoSpillConfig, SpilledEntry } from './core/index.js';
 
 // Audio Capabilities
 export { TextToSpeech, SpeechToText } from './core/index.js';

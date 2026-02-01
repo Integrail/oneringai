@@ -17,7 +17,7 @@ import { TaskAgent, TaskAgentConfig, TaskAgentHooks } from '../taskAgent/TaskAge
 import { ToolFunction, FunctionToolDefinition } from '../../domain/entities/Tool.js';
 import { ToolContext } from '../../domain/interfaces/IToolContext.js';
 import { ToolExecutionError } from '../../domain/errors/AIErrors.js';
-import { AutoSpillPlugin, AutoSpillConfig } from '../../core/context/plugins/AutoSpillPlugin.js';
+import type { AutoSpillConfig } from '../../core/context/plugins/AutoSpillPlugin.js';
 import { addTierPrefix } from '../../domain/entities/Memory.js';
 import type {
   IResearchSource,
@@ -77,7 +77,6 @@ export interface ResearchAgentConfig extends Omit<TaskAgentConfig, 'hooks'> {
  */
 export class ResearchAgent extends TaskAgent {
   private sources: Map<string, IResearchSource> = new Map();
-  private autoSpillPlugin?: AutoSpillPlugin;
   private researchHooks?: ResearchAgentHooks;
   private defaultSearchOptions: SearchOptions = { maxResults: 10 };
   private defaultFetchOptions: FetchOptions = { maxSize: 1024 * 1024 };
@@ -141,29 +140,9 @@ export class ResearchAgent extends TaskAgent {
     this.defaultFetchOptions = config.defaultFetchOptions ?? { maxSize: 1024 * 1024 }; // 1MB
     // Note: autoSummarizeThreshold from config is reserved for future auto-summarization feature
 
-    // Setup auto-spill plugin
-    const autoSpillConfig: AutoSpillConfig = {
-      sizeThreshold: 10 * 1024, // 10KB
-      toolPatterns: [/^research_fetch/, /^web_fetch/, /^web_scrape/],
-      ...config.autoSpill,
-    };
-
-    // Only set up auto-spill if memory feature is enabled
-    if (this._agentContext.memory) {
-      this.autoSpillPlugin = new AutoSpillPlugin(this._agentContext.memory, autoSpillConfig);
-      this._agentContext.registerPlugin(this.autoSpillPlugin);
-    }
-
-    // Wire up research hooks to auto-memory management
-    this.setupAutoMemoryManagement();
-  }
-
-  /**
-   * Setup automatic memory management
-   */
-  private setupAutoMemoryManagement(): void {
-    // Listen for tool executions to auto-spill large outputs
-    // This is handled by the AutoSpillPlugin via afterToolExecution hook
+    // NOTE: AutoSpill is now handled by AgentContext's features (default ON)
+    // Use this._agentContext.autoSpillPlugin to access the plugin
+    // Custom config can be passed via context.autoSpill in ResearchAgentConfig
   }
 
   // ===== Public API =====
@@ -257,9 +236,10 @@ export class ResearchAgent extends TaskAgent {
     try {
       const result = await source.fetch(reference, fetchOptions);
 
-      // Auto-spill large content
-      if (result.success && result.sizeBytes && result.sizeBytes > (this.autoSpillPlugin?.['config']?.sizeThreshold ?? 10240)) {
-        const spillKey = await this.autoSpillPlugin?.onToolOutput(`research_fetch_${sourceName}`, result.content);
+      // Auto-spill large content (uses AgentContext's autoSpillPlugin)
+      const autoSpillPlugin = this._agentContext.autoSpillPlugin;
+      if (result.success && result.sizeBytes && autoSpillPlugin && autoSpillPlugin.shouldSpill(`research_fetch_${sourceName}`, result.sizeBytes)) {
+        const spillKey = await autoSpillPlugin.onToolOutput(`research_fetch_${sourceName}`, result.content);
         if (spillKey) {
           // Modify result to reference spilled data
           (result as any).spilledKey = spillKey;
@@ -334,13 +314,18 @@ export class ResearchAgent extends TaskAgent {
    * Call this after creating summaries/findings from raw content
    */
   async cleanupProcessedRaw(rawKeys: string[]): Promise<number> {
+    const autoSpillPlugin = this._agentContext.autoSpillPlugin;
+    if (!autoSpillPlugin) {
+      return 0;
+    }
+
     // Mark as consumed in auto-spill
     for (const key of rawKeys) {
-      this.autoSpillPlugin?.markConsumed(key, 'manual-cleanup');
+      autoSpillPlugin.markConsumed(key, 'manual-cleanup');
     }
 
     // Cleanup via auto-spill plugin
-    const deleted = await this.autoSpillPlugin?.cleanup(rawKeys) ?? [];
+    const deleted = await autoSpillPlugin.cleanup(rawKeys);
     return deleted.length;
   }
 
@@ -487,11 +472,12 @@ export class ResearchAgent extends TaskAgent {
     unconsumed: number;
     totalSizeBytes: number;
   } {
-    if (!this.autoSpillPlugin) {
+    const autoSpillPlugin = this._agentContext.autoSpillPlugin;
+    if (!autoSpillPlugin) {
       return { totalSpilled: 0, consumed: 0, unconsumed: 0, totalSizeBytes: 0 };
     }
 
-    const entries = this.autoSpillPlugin.getEntries();
+    const entries = autoSpillPlugin.getEntries();
     const consumed = entries.filter((e) => e.consumed);
     const unconsumed = entries.filter((e) => !e.consumed);
 
@@ -522,7 +508,6 @@ interface ResearchToolContext {
   sourcesMap: Map<string, IResearchSource>;
   defaultSearchOptions: SearchOptions;
   defaultFetchOptions: FetchOptions;
-  autoSpillPlugin?: AutoSpillPlugin;
 }
 
 /**

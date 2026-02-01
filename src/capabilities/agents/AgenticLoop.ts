@@ -303,6 +303,9 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
           currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         }
 
+        // Auto-cleanup consumed spills at end of iteration
+        await agentContext?.autoSpillPlugin?.onIteration();
+
         iteration++;
       }
 
@@ -636,6 +639,9 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
           const maxInputMessages = config.limits?.maxInputMessages ?? 50;
           currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
         }
+
+        // Auto-cleanup consumed spills at end of iteration
+        await agentContext?.autoSpillPlugin?.onIteration();
 
         // Yield iteration complete
         yield {
@@ -1261,6 +1267,34 @@ export class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
         // Apply result modifications
         if (afterTool.modified) {
           toolResult = { ...toolResult, ...afterTool.modified };
+        }
+
+        // === AutoSpill & ToolOutput Plugin Integration ===
+        const agentContext = config.agentContext;
+        if (agentContext && toolResult.content) {
+          // Track in tool output plugin (if enabled)
+          agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, toolResult.content);
+
+          // Auto-spill large outputs to memory (if enabled)
+          const autoSpillPlugin = agentContext.autoSpillPlugin;
+          if (autoSpillPlugin) {
+            const outputStr = typeof toolResult.content === 'string'
+              ? toolResult.content
+              : JSON.stringify(toolResult.content);
+            const outputSize = Buffer.byteLength(outputStr, 'utf8');
+
+            if (autoSpillPlugin.shouldSpill(toolCall.function.name, outputSize)) {
+              const spillKey = await autoSpillPlugin.onToolOutput(
+                toolCall.function.name,
+                toolResult.content
+              );
+              if (spillKey) {
+                // Mark result as spilled - replace content with reference
+                (toolResult as any).spilledKey = spillKey;
+                toolResult.content = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
+              }
+            }
+          }
         }
 
         results.push(toolResult);

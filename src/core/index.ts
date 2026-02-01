@@ -41,6 +41,8 @@ export type {
   HistoryMessage,
   ToolCallRecord,
   SerializedAgentContextState,
+  PrepareOptions,
+  PreparedResult,
 } from './AgentContext.js';
 
 // Feature-aware tool factory
@@ -53,8 +55,16 @@ export {
   WORKING_MEMORY_INSTRUCTIONS,
   IN_CONTEXT_MEMORY_INSTRUCTIONS,
   PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
+  TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
+  AUTO_SPILL_INSTRUCTIONS,
   getAllInstructions,
 } from './context/FeatureInstructions.js';
+
+// Context Plugins
+export { ToolOutputPlugin } from './context/plugins/ToolOutputPlugin.js';
+export type { ToolOutputPluginConfig, ToolOutput } from './context/plugins/ToolOutputPlugin.js';
+export { AutoSpillPlugin } from './context/plugins/AutoSpillPlugin.js';
+export type { AutoSpillConfig, SpilledEntry } from './context/plugins/AutoSpillPlugin.js';
 
 // IdempotencyCache - Tool result caching (moved from taskAgent to core)
 export { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
