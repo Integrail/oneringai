@@ -116,8 +116,8 @@ describe('AgentContext', () => {
     });
 
     it('should create instance with cache disabled', () => {
-      // Note: disabling cache (via cache.enabled or features.memory) also requires disabling autoSpill
-      ctx = AgentContext.create({ cache: { enabled: false }, features: { autoSpill: false } });
+      // Note: disabling cache (via cache.enabled or features.memory) also requires disabling autoSpill and toolResultEviction
+      ctx = AgentContext.create({ cache: { enabled: false }, features: { autoSpill: false, toolResultEviction: false } });
       expect(ctx.isCacheEnabled()).toBe(false);
     });
 
@@ -582,7 +582,7 @@ describe('AgentContext', () => {
       ctx = AgentContext.create({
         tools: [cacheableTool],
         cache: { enabled: false },
-        features: { autoSpill: false },  // autoSpill requires memory, so disable it too
+        features: { autoSpill: false, toolResultEviction: false },  // autoSpill and toolResultEviction require memory, so disable them too
       });
 
       await ctx.executeTool('cacheable_tool', { id: 1 });

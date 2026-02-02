@@ -4,11 +4,12 @@
  * These instructions are injected into the LLM context to provide guidance on
  * efficient, autonomous use of memory, context, and other features.
  *
- * Token budget (~1,450 tokens total when all features enabled):
+ * Token budget (~1,700 tokens total when all features enabled):
  * - Introspection (always): ~300 tokens
  * - Working Memory: ~500 tokens
  * - In-Context Memory: ~350 tokens
  * - Persistent Instructions: ~300 tokens
+ * - Tool Result Eviction: ~250 tokens
  */
 
 import type { IContextComponent } from './types.js';
@@ -174,6 +175,37 @@ Large tool outputs (>10KB) are automatically stored in Working Memory's raw tier
 ### Note
 Auto-spilled entries are automatically cleaned up after being consumed (summarized).`;
 
+/**
+ * Tool Result Eviction instructions
+ * ~250 tokens
+ */
+export const TOOL_RESULT_EVICTION_INSTRUCTIONS = `## Tool Result Eviction
+
+Old tool results are automatically moved to memory to save context space.
+
+### What Happens
+- Results older than 3 iterations are evicted to memory
+- Results are stored under \`tool_result:<tool>:<id>\` keys
+- Both tool_use and tool_result messages are removed together
+- This keeps your conversation history lean while preserving data
+
+### Retrieving Evicted Results
+If you need a previously evicted result:
+\`\`\`
+memory_query({ pattern: "tool_result:*" })  // List evicted results
+memory_retrieve({ key: "tool_result:web_fetch:toolu_abc" })  // Get full content
+\`\`\`
+
+### Per-Tool Retention
+Some tools keep results longer in conversation:
+- \`read_file\`, \`bash\`, \`grep\`: 6-10 iterations (often referenced)
+- \`web_fetch\`, \`web_search\`: 3 iterations (can re-fetch if needed)
+
+### Best Practices
+- Extract and store key information promptly before eviction
+- Use \`memory_store()\` for findings you'll need later
+- Don't rely on tool results persisting in conversation`;
+
 // ============================================================================
 // Builder Function
 // ============================================================================
@@ -226,6 +258,11 @@ export function buildFeatureInstructions(
     sections.push(AUTO_SPILL_INSTRUCTIONS);
   }
 
+  // Tool Result Eviction (if enabled and memory is also enabled)
+  if (features.toolResultEviction && features.memory) {
+    sections.push(TOOL_RESULT_EVICTION_INSTRUCTIONS);
+  }
+
   // If only introspection is included (minimal features), still return it
   // as it provides valuable guidance for context management
   if (sections.length === 0) {
@@ -246,6 +283,7 @@ export function buildFeatureInstructions(
       persistentInstructionsEnabled: features.persistentInstructions,
       toolOutputTrackingEnabled: features.toolOutputTracking,
       autoSpillEnabled: features.autoSpill,
+      toolResultEvictionEnabled: features.toolResultEviction,
     },
   };
 }
@@ -261,5 +299,6 @@ export function getAllInstructions(): Record<string, string> {
     persistentInstructions: PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
     toolOutputTracking: TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
     autoSpill: AUTO_SPILL_INSTRUCTIONS,
+    toolResultEviction: TOOL_RESULT_EVICTION_INSTRUCTIONS,
   };
 }

@@ -72,6 +72,8 @@ import { ToolOutputPlugin } from './context/plugins/ToolOutputPlugin.js';
 import type { ToolOutputPluginConfig } from './context/plugins/ToolOutputPlugin.js';
 import { AutoSpillPlugin } from './context/plugins/AutoSpillPlugin.js';
 import type { AutoSpillConfig } from './context/plugins/AutoSpillPlugin.js';
+import { ToolResultEvictionPlugin } from './context/plugins/ToolResultEvictionPlugin.js';
+import type { ToolResultEvictionConfig } from './context/plugins/ToolResultEvictionPlugin.js';
 
 // Memory & Context introspection tool creators
 // These are registered automatically based on enabled features for ALL agent types
@@ -243,6 +245,16 @@ export interface AgentContextFeatures {
    * @default true
    */
   autoSpill?: boolean;
+
+  /**
+   * Enable ToolResultEvictionPlugin for smart eviction of old tool results
+   * When enabled: Old tool results are automatically moved to WorkingMemory
+   * and their tool_use/tool_result pairs are removed from conversation.
+   * Agent can retrieve evicted results via memory_retrieve.
+   * Requires memory feature to be enabled.
+   * @default true
+   */
+  toolResultEviction?: boolean;
 }
 
 /**
@@ -252,8 +264,9 @@ export interface AgentContextFeatures {
  * - inContextMemory: false (opt-in)
  * - history: true
  * - permissions: true
- * - toolOutputTracking: true (NEW)
- * - autoSpill: true (NEW)
+ * - toolOutputTracking: true
+ * - autoSpill: true
+ * - toolResultEviction: true (NEW - moves old results to memory)
  */
 export const DEFAULT_FEATURES: Required<AgentContextFeatures> = {
   memory: true,
@@ -263,6 +276,7 @@ export const DEFAULT_FEATURES: Required<AgentContextFeatures> = {
   persistentInstructions: false,
   toolOutputTracking: true,
   autoSpill: true,
+  toolResultEviction: true,
 };
 
 // ============================================================================
@@ -429,6 +443,12 @@ export interface AgentContextConfig {
   autoSpill?: AutoSpillConfig;
 
   /**
+   * ToolResultEvictionPlugin configuration (only used if features.toolResultEviction is true)
+   * Requires features.memory to be true
+   */
+  toolResultEviction?: ToolResultEvictionConfig;
+
+  /**
    * Agent ID - used for persistent storage paths and identification
    * If not provided, will be auto-generated
    */
@@ -480,7 +500,7 @@ export interface AgentContextConfig {
 /**
  * Default configuration
  */
-const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'toolOutputTracking' | 'autoSpill' | 'agentId' | 'storage' | 'sessionId' | 'sessionMetadata'>> & {
+const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'toolOutputTracking' | 'autoSpill' | 'toolResultEviction' | 'agentId' | 'storage' | 'sessionId' | 'sessionMetadata'>> & {
   history: Required<NonNullable<AgentContextConfig['history']>>;
 } = {
   model: 'gpt-4',
@@ -593,6 +613,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private _persistentInstructions: PersistentInstructionsPlugin | null = null;
   private _toolOutputPlugin: ToolOutputPlugin | null = null;
   private _autoSpillPlugin: AutoSpillPlugin | null = null;
+  private _toolResultEvictionPlugin: ToolResultEvictionPlugin | null = null;
   private readonly _agentId: string;
 
   // ===== Feature Configuration =====
@@ -770,6 +791,19 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       this.registerPlugin(this._autoSpillPlugin);
     }
 
+    // ToolResultEvictionPlugin - smart eviction of old tool results (default ON)
+    // Requires memory feature to be enabled
+    if (this._features.toolResultEviction && this._memory) {
+      this._toolResultEvictionPlugin = new ToolResultEvictionPlugin(this._memory, {
+        ...config.toolResultEviction,
+      });
+      // Set up callback for removing tool pairs from conversation
+      this._toolResultEvictionPlugin.setRemoveCallback((toolUseId: string) => {
+        return this.removeToolPair(toolUseId);
+      });
+      this.registerPlugin(this._toolResultEvictionPlugin);
+    }
+
     // Register feature-aware tools (memory, cache, introspection)
     // This ensures ALL agent types have consistent tool availability
     this._registerFeatureTools();
@@ -833,6 +867,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   /** AutoSpillPlugin (null if autoSpill feature disabled or memory disabled) */
   get autoSpillPlugin(): AutoSpillPlugin | null {
     return this._autoSpillPlugin;
+  }
+
+  /** ToolResultEvictionPlugin (null if toolResultEviction feature disabled or memory disabled) */
+  get toolResultEvictionPlugin(): ToolResultEvictionPlugin | null {
+    return this._toolResultEvictionPlugin;
   }
 
   /** Agent ID (auto-generated or from config) */
@@ -911,6 +950,14 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       throw new Error(
         'AgentContext: autoSpill feature requires memory feature to be enabled. ' +
         'Either enable memory (features.memory: true) or disable autoSpill (features.autoSpill: false).'
+      );
+    }
+
+    // toolResultEviction requires memory - throw error if invalid
+    if (features.toolResultEviction && !features.memory) {
+      throw new Error(
+        'AgentContext: toolResultEviction feature requires memory feature to be enabled. ' +
+        'Either enable memory (features.memory: true) or disable toolResultEviction (features.toolResultEviction: false).'
       );
     }
 
@@ -1089,6 +1136,19 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
     const index = this._conversation.length - 1;
     this.emit('message:added', { item: message, index });
+
+    // Track tool results for eviction (if plugin enabled)
+    if (this._toolResultEvictionPlugin) {
+      for (const r of results) {
+        this._toolResultEvictionPlugin.onToolResult(
+          r.tool_use_id,
+          (r as any).tool_name || 'unknown',
+          r.content,
+          index
+        );
+      }
+    }
+
     return id;
   }
 
@@ -1130,9 +1190,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    *
    * Handles everything for preparing context before LLM calls:
    * 1. Marks current position as protected from compaction
-   * 2. Calculates token usage
-   * 3. Compacts if needed (respecting protection & tool pairs)
-   * 4. Builds final output based on returnFormat option
+   * 2. Advances iteration counter and evicts old tool results (if enabled)
+   * 3. Builds components and calculates token usage
+   * 4. Emits budget warnings if needed
+   * 5. Compacts conversation if needed (respecting protection & tool pairs)
+   * 6. Builds final output based on returnFormat option
    *
    * @param options - Preparation options
    * @returns PreparedResult with budget, compaction info, and either input or components
@@ -1148,23 +1210,39 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    */
   async prepare(options?: PrepareOptions): Promise<PreparedResult> {
     const returnFormat = options?.returnFormat ?? 'llm-input';
+    let compactionLog: string[] = [];
 
     // 1. Protect current messages from compaction
     this.protectFromCompaction();
 
-    // 2. Build components and calculate DETAILED budget (shows per-component breakdown)
+    // 2. Advance iteration counter and run tool result eviction (if enabled)
+    if (this._toolResultEvictionPlugin) {
+      this._toolResultEvictionPlugin.onIteration();
+
+      // Run eviction at iteration boundary (handles age-based eviction)
+      if (this._toolResultEvictionPlugin.shouldEvict()) {
+        const evictionResult = await this._toolResultEvictionPlugin.evictOldResults();
+        if (evictionResult.evicted > 0) {
+          compactionLog.push(
+            `Evicted ${evictionResult.evicted} tool results to memory (${evictionResult.tokensFreed} tokens freed)`
+          );
+        }
+      }
+    }
+
+    // 3. Build components and calculate DETAILED budget (shows per-component breakdown)
     let components = await this.buildComponents();
     let budget = this.calculateBudget(components);
     this._lastBudget = budget;
 
-    // 3. Emit warnings
+    // 4. Emit warnings
     if (budget.status === 'warning') {
       this.emit('budget:warning', { budget });
     } else if (budget.status === 'critical') {
       this.emit('budget:critical', { budget });
     }
 
-    // 4. Check if compaction needed
+    // 5. Check if compaction needed
     const needsCompaction = this._config.autoCompact &&
       this._strategy.shouldCompact(budget, {
         ...DEFAULT_CONTEXT_CONFIG,
@@ -1172,10 +1250,9 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
         responseReserve: this._config.responseReserve,
       });
 
-    let compactionLog: string[] = [];
     if (needsCompaction) {
       const compactionResult = await this.compactConversation(budget);
-      compactionLog = compactionResult.log;
+      compactionLog.push(...compactionResult.log);
       // Recalculate with detailed components
       components = await this.buildComponents();
       budget = this.calculateBudget(components);
@@ -1184,7 +1261,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
     this.emit('context:prepared', { budget, compacted: needsCompaction });
 
-    // 5. Build result based on format - reuse already-built components
+    // 6. Build result based on format - reuse already-built components
     if (returnFormat === 'components') {
       return {
         components,
@@ -2585,6 +2662,65 @@ Guidelines:
   }
 
   /**
+   * Remove a tool_use/tool_result pair from conversation by toolUseId.
+   * Used by ToolResultEvictionPlugin to evict old tool results.
+   *
+   * @param toolUseId - The tool_use ID linking request/response
+   * @returns Estimated tokens freed
+   */
+  removeToolPair(toolUseId: string): number {
+    let tokensFreed = 0;
+    const indicesToRemove = new Set<number>();
+
+    // Find indices of both tool_use and tool_result for this toolUseId
+    for (let i = 0; i < this._conversation.length; i++) {
+      const item = this._conversation[i];
+      if (item?.type !== 'message') continue;
+
+      const msg = item as Message;
+      for (const content of msg.content) {
+        // Match tool_use by id
+        if (content.type === ContentType.TOOL_USE && (content as any).id === toolUseId) {
+          indicesToRemove.add(i);
+          const meta = this._messageMetadata.get(msg.id!);
+          tokensFreed += meta?.tokenCount ?? this.estimateMessageTokens(msg);
+        }
+        // Match tool_result by tool_use_id
+        if (content.type === ContentType.TOOL_RESULT && (content as any).tool_use_id === toolUseId) {
+          indicesToRemove.add(i);
+          const meta = this._messageMetadata.get(msg.id!);
+          tokensFreed += meta?.tokenCount ?? this.estimateMessageTokens(msg);
+        }
+      }
+    }
+
+    if (indicesToRemove.size === 0) return 0;
+
+    // Remove in reverse order to preserve indices
+    const sortedIndices = [...indicesToRemove].sort((a, b) => b - a);
+    for (const idx of sortedIndices) {
+      const item = this._conversation[idx];
+      const id = (item as any)?.id;
+      if (id) this._messageMetadata.delete(id);
+      this._conversation.splice(idx, 1);
+    }
+
+    // Adjust protected index
+    let removedBeforeProtected = 0;
+    for (const idx of indicesToRemove) {
+      if (idx < this._protectedFromIndex) removedBeforeProtected++;
+    }
+    this._protectedFromIndex = Math.max(0, this._protectedFromIndex - removedBeforeProtected);
+
+    // Notify eviction plugin to update its message indices
+    if (this._toolResultEvictionPlugin) {
+      this._toolResultEvictionPlugin.updateMessageIndices(indicesToRemove);
+    }
+
+    return tokensFreed;
+  }
+
+  /**
    * Compact conversation respecting tool pairs and protected messages
    */
   private async compactConversation(_budget: ContextBudget): Promise<{ log: string[]; tokensFreed: number }> {
@@ -2598,22 +2734,31 @@ Guidelines:
       return { log, tokensFreed: 0 };
     }
 
+    // Build set of indices that are part of tool pairs (must be removed together)
+    const toolPairIndices = new Map<number, Set<number>>(); // index → all indices in same pair group
+    for (const [, pair] of toolPairs) {
+      if (pair.resultIndex !== null) {
+        // Both tool_use and tool_result exist - they form a group
+        const group = new Set([pair.useIndex, pair.resultIndex]);
+        toolPairIndices.set(pair.useIndex, group);
+        toolPairIndices.set(pair.resultIndex, group);
+      }
+    }
+
     // Identify safe compaction boundaries (don't split tool pairs)
     const safeIndices: number[] = [];
     for (let i = 0; i < compactableEnd; i++) {
       let isSafe = true;
 
-      // Check if removing this would orphan a tool pair
-      for (const [, pair] of toolPairs) {
-        // If this message contains a tool_use whose result is after protection
-        if (pair.useIndex === i && pair.resultIndex !== null && pair.resultIndex >= compactableEnd) {
-          isSafe = false;
-          break;
-        }
-        // If this message contains a tool_result whose call is after protection
-        if (pair.resultIndex === i && pair.useIndex >= compactableEnd) {
-          isSafe = false;
-          break;
+      const pairGroup = toolPairIndices.get(i);
+      if (pairGroup) {
+        // This message is part of a tool pair - check if ALL members are compactable
+        for (const pairIndex of pairGroup) {
+          if (pairIndex >= compactableEnd) {
+            // Partner is protected - can't remove this one
+            isSafe = false;
+            break;
+          }
         }
       }
 
@@ -2627,13 +2772,32 @@ Guidelines:
       return { log, tokensFreed: 0 };
     }
 
-    // Remove oldest safe messages (up to half of compactable, or until budget is OK)
+    // Remove oldest safe messages, ensuring tool pairs stay together
+    const toRemove = new Set<number>();
+    let removed = 0;
     const targetRemoval = Math.min(
       Math.floor(safeIndices.length / 2),
       safeIndices.length
     );
 
-    const toRemove = new Set(safeIndices.slice(0, targetRemoval));
+    for (const idx of safeIndices) {
+      if (removed >= targetRemoval) break;
+
+      // If this is part of a tool pair, add all members
+      const pairGroup = toolPairIndices.get(idx);
+      if (pairGroup) {
+        // Only add if we haven't already added this group
+        if (!toRemove.has(idx)) {
+          for (const pairIdx of pairGroup) {
+            toRemove.add(pairIdx);
+            removed++;
+          }
+        }
+      } else {
+        toRemove.add(idx);
+        removed++;
+      }
+    }
     let tokensFreed = 0;
 
     // Build new conversation excluding removed messages

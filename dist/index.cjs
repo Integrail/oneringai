@@ -5125,6 +5125,31 @@ var ROLLING_WINDOW_DEFAULTS = {
   /** Default maximum messages to keep */
   MAX_MESSAGES: 20
 };
+var TOOL_RESULT_EVICTION_DEFAULTS = {
+  /** Keep last N tool result pairs in conversation (default: 5) */
+  MAX_FULL_RESULTS: 5,
+  /** Evict results after N iterations (default: 3) */
+  MAX_AGE_ITERATIONS: 3,
+  /** Only evict results larger than this (bytes, default: 1KB) */
+  MIN_SIZE_TO_EVICT: 1024,
+  /** Trigger size-based eviction when total exceeds this (bytes, default: 100KB) */
+  MAX_TOTAL_SIZE_BYTES: 100 * 1024
+};
+var DEFAULT_TOOL_RETENTION = {
+  // Long retention - outputs often referenced later
+  read_file: 10,
+  bash: 8,
+  grep: 8,
+  glob: 6,
+  edit_file: 6,
+  // Medium retention
+  memory_retrieve: 5,
+  list_directory: 5,
+  // Short retention - web content can be re-fetched
+  web_fetch: 3,
+  web_search: 3,
+  web_scrape: 3
+};
 
 // src/core/context/strategies/ProactiveStrategy.ts
 var DEFAULT_OPTIONS = {
@@ -8173,6 +8198,353 @@ function formatBytes(bytes) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+var ToolResultEvictionPlugin = class extends BaseContextPlugin {
+  name = "tool_result_eviction";
+  priority = 8;
+  // Higher than tool outputs (9), lower than conversation (5)
+  compactable = true;
+  memory;
+  config;
+  tracked = /* @__PURE__ */ new Map();
+  currentIteration = 0;
+  totalTrackedSize = 0;
+  totalEvicted = 0;
+  totalTokensFreed = 0;
+  events = new eventemitter3.EventEmitter();
+  /**
+   * Callback to remove tool pairs from conversation.
+   * Set by AgentContext during registration.
+   */
+  removeToolPairCallback = null;
+  constructor(memory, config = {}) {
+    super();
+    this.memory = memory;
+    this.config = {
+      maxFullResults: config.maxFullResults ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_FULL_RESULTS,
+      maxAgeIterations: config.maxAgeIterations ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_AGE_ITERATIONS,
+      minSizeToEvict: config.minSizeToEvict ?? TOOL_RESULT_EVICTION_DEFAULTS.MIN_SIZE_TO_EVICT,
+      maxTotalSizeBytes: config.maxTotalSizeBytes ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_TOTAL_SIZE_BYTES,
+      toolRetention: { ...DEFAULT_TOOL_RETENTION, ...config.toolRetention },
+      keyPrefix: config.keyPrefix ?? "tool_result"
+    };
+  }
+  // ============================================================================
+  // Event Handling
+  // ============================================================================
+  /**
+   * Subscribe to events
+   */
+  on(event, listener) {
+    this.events.on(event, listener);
+    return this;
+  }
+  /**
+   * Unsubscribe from events
+   */
+  off(event, listener) {
+    this.events.off(event, listener);
+    return this;
+  }
+  // ============================================================================
+  // Configuration
+  // ============================================================================
+  /**
+   * Set the callback for removing tool pairs from conversation.
+   * This is called by AgentContext during plugin registration.
+   */
+  setRemoveCallback(callback) {
+    this.removeToolPairCallback = callback;
+  }
+  /**
+   * Get current configuration
+   */
+  getConfig() {
+    return this.config;
+  }
+  // ============================================================================
+  // Tracking
+  // ============================================================================
+  /**
+   * Track a new tool result.
+   * Called by AgentContext when tool results are added to conversation.
+   *
+   * @param toolUseId - The tool_use ID linking request/response
+   * @param toolName - Name of the executed tool
+   * @param result - The tool result content
+   * @param messageIndex - Index of the message in conversation
+   */
+  onToolResult(toolUseId, toolName, result, messageIndex) {
+    const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+    const sizeBytes = Buffer.byteLength(resultStr, "utf8");
+    const tracked = {
+      toolUseId,
+      toolName,
+      result,
+      sizeBytes,
+      addedAtIteration: this.currentIteration,
+      messageIndex,
+      timestamp: Date.now()
+    };
+    this.tracked.set(toolUseId, tracked);
+    this.totalTrackedSize += sizeBytes;
+    this.events.emit("tracked", { toolUseId, toolName, sizeBytes });
+  }
+  /**
+   * Called at the start of each agent iteration.
+   * Advances the iteration counter for age-based eviction.
+   */
+  onIteration() {
+    this.currentIteration++;
+    this.events.emit("iteration", { current: this.currentIteration });
+  }
+  /**
+   * Get the current iteration number
+   */
+  getCurrentIteration() {
+    return this.currentIteration;
+  }
+  // ============================================================================
+  // Eviction Logic
+  // ============================================================================
+  /**
+   * Check if eviction is needed based on current state.
+   * Returns true if any eviction trigger is met.
+   */
+  shouldEvict() {
+    const { maxFullResults, maxTotalSizeBytes, maxAgeIterations, minSizeToEvict } = this.config;
+    if (this.totalTrackedSize > maxTotalSizeBytes) {
+      return true;
+    }
+    if (this.tracked.size > maxFullResults) {
+      return true;
+    }
+    for (const r of this.tracked.values()) {
+      if (r.sizeBytes < minSizeToEvict) continue;
+      const age = this.currentIteration - r.addedAtIteration;
+      const toolMaxAge = this.config.toolRetention[r.toolName] ?? maxAgeIterations;
+      if (age >= toolMaxAge) {
+        return true;
+      }
+    }
+    return false;
+  }
+  /**
+   * Get candidates for eviction, sorted by priority.
+   * Candidates are selected to bring the system under all thresholds.
+   */
+  getEvictionCandidates() {
+    const { maxFullResults, maxTotalSizeBytes, maxAgeIterations, minSizeToEvict } = this.config;
+    const evictable = [...this.tracked.values()].filter(
+      (r) => r.sizeBytes >= minSizeToEvict
+    );
+    evictable.sort((a, b) => {
+      const ageDiff = a.addedAtIteration - b.addedAtIteration;
+      if (ageDiff !== 0) return ageDiff;
+      return b.sizeBytes - a.sizeBytes;
+    });
+    const candidates = [];
+    let projectedSize = this.totalTrackedSize;
+    let projectedCount = this.tracked.size;
+    for (const r of evictable) {
+      const underSizeLimit = projectedSize <= maxTotalSizeBytes;
+      const underCountLimit = projectedCount <= maxFullResults;
+      const age = this.currentIteration - r.addedAtIteration;
+      const toolMaxAge = this.config.toolRetention[r.toolName] ?? maxAgeIterations;
+      const isStale = age >= toolMaxAge;
+      if (!isStale && underSizeLimit && underCountLimit) {
+        break;
+      }
+      candidates.push(r);
+      projectedSize -= r.sizeBytes;
+      projectedCount--;
+    }
+    return candidates;
+  }
+  /**
+   * Evict old results to memory and remove from conversation.
+   * This is the main eviction entry point.
+   *
+   * @returns Eviction result with counts and log
+   */
+  async evictOldResults() {
+    const result = {
+      evicted: 0,
+      tokensFreed: 0,
+      memoryKeys: [],
+      log: []
+    };
+    if (!this.shouldEvict()) {
+      return result;
+    }
+    if (!this.removeToolPairCallback) {
+      result.log.push("Cannot evict: removeToolPairCallback not set");
+      return result;
+    }
+    const candidates = this.getEvictionCandidates();
+    if (candidates.length === 0) {
+      result.log.push("No candidates for eviction (all below size threshold)");
+      return result;
+    }
+    result.log.push(`Evicting ${candidates.length} tool result pairs`);
+    for (const candidate of candidates) {
+      try {
+        const memoryKey = `${this.config.keyPrefix}:${candidate.toolName}:${candidate.toolUseId}`;
+        await this.memory.storeRaw(
+          memoryKey,
+          `Evicted result from ${candidate.toolName} (${formatBytes2(candidate.sizeBytes)})`,
+          candidate.result
+        );
+        result.memoryKeys.push(memoryKey);
+        const tokensFreed = this.removeToolPairCallback(candidate.toolUseId);
+        result.tokensFreed += tokensFreed;
+        this.totalTrackedSize -= candidate.sizeBytes;
+        this.tracked.delete(candidate.toolUseId);
+        result.evicted++;
+        result.log.push(
+          `  Evicted ${candidate.toolName}:${candidate.toolUseId} \u2192 ${memoryKey} (${tokensFreed} tokens)`
+        );
+      } catch (error) {
+        result.log.push(
+          `  Failed to evict ${candidate.toolUseId}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
+    }
+    this.totalEvicted += result.evicted;
+    this.totalTokensFreed += result.tokensFreed;
+    if (result.evicted > 0) {
+      this.events.emit("evicted", {
+        count: result.evicted,
+        tokensFreed: result.tokensFreed,
+        keys: result.memoryKeys
+      });
+    }
+    return result;
+  }
+  // ============================================================================
+  // Stats and Info
+  // ============================================================================
+  /**
+   * Get current tracking statistics
+   */
+  getStats() {
+    let oldestAge = 0;
+    for (const r of this.tracked.values()) {
+      const age = this.currentIteration - r.addedAtIteration;
+      if (age > oldestAge) oldestAge = age;
+    }
+    return {
+      count: this.tracked.size,
+      totalSizeBytes: this.totalTrackedSize,
+      oldestAge,
+      currentIteration: this.currentIteration,
+      totalEvicted: this.totalEvicted,
+      totalTokensFreed: this.totalTokensFreed
+    };
+  }
+  /**
+   * Get all tracked results
+   */
+  getTracked() {
+    return [...this.tracked.values()];
+  }
+  /**
+   * Check if a specific tool result is tracked
+   */
+  isTracked(toolUseId) {
+    return this.tracked.has(toolUseId);
+  }
+  /**
+   * Get tracked result by ID
+   */
+  getTrackedResult(toolUseId) {
+    return this.tracked.get(toolUseId);
+  }
+  // ============================================================================
+  // Message Index Updates
+  // ============================================================================
+  /**
+   * Update message indices after conversation modification.
+   * Called when messages are removed from conversation.
+   *
+   * @param removedIndices - Set of indices that were removed
+   */
+  updateMessageIndices(removedIndices) {
+    for (const tracked of this.tracked.values()) {
+      if (removedIndices.has(tracked.messageIndex)) {
+        this.totalTrackedSize -= tracked.sizeBytes;
+        this.tracked.delete(tracked.toolUseId);
+        continue;
+      }
+      let shift = 0;
+      for (const idx of removedIndices) {
+        if (idx < tracked.messageIndex) shift++;
+      }
+      tracked.messageIndex -= shift;
+    }
+  }
+  // ============================================================================
+  // IContextPlugin Implementation
+  // ============================================================================
+  async getComponent() {
+    const stats = this.getStats();
+    if (stats.count === 0 && stats.totalEvicted === 0) {
+      return null;
+    }
+    return {
+      name: this.name,
+      content: `Tool Result Eviction: ${stats.count} tracked, ${stats.totalEvicted} evicted to memory`,
+      priority: this.priority,
+      compactable: this.compactable,
+      metadata: stats
+    };
+  }
+  async compact(_targetTokens, _estimator) {
+    const result = await this.evictOldResults();
+    return result.tokensFreed;
+  }
+  async onPrepared(_budget) {
+  }
+  getState() {
+    return {
+      tracked: [...this.tracked.values()],
+      currentIteration: this.currentIteration,
+      totalEvicted: this.totalEvicted,
+      totalTokensFreed: this.totalTokensFreed
+    };
+  }
+  restoreState(state) {
+    const s = state;
+    if (!s) return;
+    if (Array.isArray(s.tracked)) {
+      this.tracked.clear();
+      this.totalTrackedSize = 0;
+      for (const t of s.tracked) {
+        this.tracked.set(t.toolUseId, t);
+        this.totalTrackedSize += t.sizeBytes;
+      }
+    }
+    if (typeof s.currentIteration === "number") {
+      this.currentIteration = s.currentIteration;
+    }
+    if (typeof s.totalEvicted === "number") {
+      this.totalEvicted = s.totalEvicted;
+    }
+    if (typeof s.totalTokensFreed === "number") {
+      this.totalTokensFreed = s.totalTokensFreed;
+    }
+  }
+  destroy() {
+    this.events.removeAllListeners();
+    this.tracked.clear();
+    this.totalTrackedSize = 0;
+    this.removeToolPairCallback = null;
+  }
+};
+function formatBytes2(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 // src/capabilities/taskAgent/memoryTools.ts
 var memoryStoreDefinition = {
@@ -8829,6 +9201,32 @@ Large tool outputs (>10KB) are automatically stored in Working Memory's raw tier
 
 ### Note
 Auto-spilled entries are automatically cleaned up after being consumed (summarized).`;
+var TOOL_RESULT_EVICTION_INSTRUCTIONS = `## Tool Result Eviction
+
+Old tool results are automatically moved to memory to save context space.
+
+### What Happens
+- Results older than 3 iterations are evicted to memory
+- Results are stored under \`tool_result:<tool>:<id>\` keys
+- Both tool_use and tool_result messages are removed together
+- This keeps your conversation history lean while preserving data
+
+### Retrieving Evicted Results
+If you need a previously evicted result:
+\`\`\`
+memory_query({ pattern: "tool_result:*" })  // List evicted results
+memory_retrieve({ key: "tool_result:web_fetch:toolu_abc" })  // Get full content
+\`\`\`
+
+### Per-Tool Retention
+Some tools keep results longer in conversation:
+- \`read_file\`, \`bash\`, \`grep\`: 6-10 iterations (often referenced)
+- \`web_fetch\`, \`web_search\`: 3 iterations (can re-fetch if needed)
+
+### Best Practices
+- Extract and store key information promptly before eviction
+- Use \`memory_store()\` for findings you'll need later
+- Don't rely on tool results persisting in conversation`;
 function buildFeatureInstructions(features) {
   const sections = [];
   sections.push(INTROSPECTION_INSTRUCTIONS);
@@ -8847,6 +9245,9 @@ function buildFeatureInstructions(features) {
   if (features.autoSpill && features.memory) {
     sections.push(AUTO_SPILL_INSTRUCTIONS);
   }
+  if (features.toolResultEviction && features.memory) {
+    sections.push(TOOL_RESULT_EVICTION_INSTRUCTIONS);
+  }
   if (sections.length === 0) {
     return null;
   }
@@ -8864,7 +9265,8 @@ function buildFeatureInstructions(features) {
       inContextMemoryEnabled: features.inContextMemory,
       persistentInstructionsEnabled: features.persistentInstructions,
       toolOutputTrackingEnabled: features.toolOutputTracking,
-      autoSpillEnabled: features.autoSpill
+      autoSpillEnabled: features.autoSpill,
+      toolResultEvictionEnabled: features.toolResultEviction
     }
   };
 }
@@ -8875,7 +9277,8 @@ function getAllInstructions() {
     inContextMemory: IN_CONTEXT_MEMORY_INSTRUCTIONS,
     persistentInstructions: PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
     toolOutputTracking: TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
-    autoSpill: AUTO_SPILL_INSTRUCTIONS
+    autoSpill: AUTO_SPILL_INSTRUCTIONS,
+    toolResultEviction: TOOL_RESULT_EVICTION_INSTRUCTIONS
   };
 }
 
@@ -8960,7 +9363,8 @@ var DEFAULT_FEATURES = {
   permissions: true,
   persistentInstructions: false,
   toolOutputTracking: true,
-  autoSpill: true
+  autoSpill: true,
+  toolResultEviction: true
 };
 var DEFAULT_AGENT_CONTEXT_CONFIG = {
   model: "gpt-4",
@@ -8985,6 +9389,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   _persistentInstructions = null;
   _toolOutputPlugin = null;
   _autoSpillPlugin = null;
+  _toolResultEvictionPlugin = null;
   _agentId;
   // ===== Feature Configuration =====
   _features;
@@ -9106,6 +9511,15 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       });
       this.registerPlugin(this._autoSpillPlugin);
     }
+    if (this._features.toolResultEviction && this._memory) {
+      this._toolResultEvictionPlugin = new ToolResultEvictionPlugin(this._memory, {
+        ...config.toolResultEviction
+      });
+      this._toolResultEvictionPlugin.setRemoveCallback((toolUseId) => {
+        return this.removeToolPair(toolUseId);
+      });
+      this.registerPlugin(this._toolResultEvictionPlugin);
+    }
     this._registerFeatureTools();
     this._explicitTaskType = config.taskType;
     this._autoDetectTaskType = config.autoDetectTaskType !== false;
@@ -9153,6 +9567,10 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   /** AutoSpillPlugin (null if autoSpill feature disabled or memory disabled) */
   get autoSpillPlugin() {
     return this._autoSpillPlugin;
+  }
+  /** ToolResultEvictionPlugin (null if toolResultEviction feature disabled or memory disabled) */
+  get toolResultEvictionPlugin() {
+    return this._toolResultEvictionPlugin;
   }
   /** Agent ID (auto-generated or from config) */
   get agentId() {
@@ -9219,6 +9637,11 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     if (features.autoSpill && !features.memory) {
       throw new Error(
         "AgentContext: autoSpill feature requires memory feature to be enabled. Either enable memory (features.memory: true) or disable autoSpill (features.autoSpill: false)."
+      );
+    }
+    if (features.toolResultEviction && !features.memory) {
+      throw new Error(
+        "AgentContext: toolResultEviction feature requires memory feature to be enabled. Either enable memory (features.memory: true) or disable toolResultEviction (features.toolResultEviction: false)."
       );
     }
     if (features.inContextMemory && !features.memory) {
@@ -9366,6 +9789,16 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     }
     const index = this._conversation.length - 1;
     this.emit("message:added", { item: message, index });
+    if (this._toolResultEvictionPlugin) {
+      for (const r of results) {
+        this._toolResultEvictionPlugin.onToolResult(
+          r.tool_use_id,
+          r.tool_name || "unknown",
+          r.content,
+          index
+        );
+      }
+    }
     return id;
   }
   /**
@@ -9402,9 +9835,11 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    *
    * Handles everything for preparing context before LLM calls:
    * 1. Marks current position as protected from compaction
-   * 2. Calculates token usage
-   * 3. Compacts if needed (respecting protection & tool pairs)
-   * 4. Builds final output based on returnFormat option
+   * 2. Advances iteration counter and evicts old tool results (if enabled)
+   * 3. Builds components and calculates token usage
+   * 4. Emits budget warnings if needed
+   * 5. Compacts conversation if needed (respecting protection & tool pairs)
+   * 6. Builds final output based on returnFormat option
    *
    * @param options - Preparation options
    * @returns PreparedResult with budget, compaction info, and either input or components
@@ -9420,7 +9855,19 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    */
   async prepare(options) {
     const returnFormat = options?.returnFormat ?? "llm-input";
+    let compactionLog = [];
     this.protectFromCompaction();
+    if (this._toolResultEvictionPlugin) {
+      this._toolResultEvictionPlugin.onIteration();
+      if (this._toolResultEvictionPlugin.shouldEvict()) {
+        const evictionResult = await this._toolResultEvictionPlugin.evictOldResults();
+        if (evictionResult.evicted > 0) {
+          compactionLog.push(
+            `Evicted ${evictionResult.evicted} tool results to memory (${evictionResult.tokensFreed} tokens freed)`
+          );
+        }
+      }
+    }
     let components = await this.buildComponents();
     let budget = this.calculateBudget(components);
     this._lastBudget = budget;
@@ -9434,10 +9881,9 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       maxContextTokens: this._maxContextTokens,
       responseReserve: this._config.responseReserve
     });
-    let compactionLog = [];
     if (needsCompaction) {
       const compactionResult = await this.compactConversation(budget);
-      compactionLog = compactionResult.log;
+      compactionLog.push(...compactionResult.log);
       components = await this.buildComponents();
       budget = this.calculateBudget(components);
       this._lastBudget = budget;
@@ -10571,6 +11017,51 @@ Guidelines:
     return pairs;
   }
   /**
+   * Remove a tool_use/tool_result pair from conversation by toolUseId.
+   * Used by ToolResultEvictionPlugin to evict old tool results.
+   *
+   * @param toolUseId - The tool_use ID linking request/response
+   * @returns Estimated tokens freed
+   */
+  removeToolPair(toolUseId) {
+    let tokensFreed = 0;
+    const indicesToRemove = /* @__PURE__ */ new Set();
+    for (let i = 0; i < this._conversation.length; i++) {
+      const item = this._conversation[i];
+      if (item?.type !== "message") continue;
+      const msg = item;
+      for (const content of msg.content) {
+        if (content.type === "tool_use" /* TOOL_USE */ && content.id === toolUseId) {
+          indicesToRemove.add(i);
+          const meta = this._messageMetadata.get(msg.id);
+          tokensFreed += meta?.tokenCount ?? this.estimateMessageTokens(msg);
+        }
+        if (content.type === "tool_result" /* TOOL_RESULT */ && content.tool_use_id === toolUseId) {
+          indicesToRemove.add(i);
+          const meta = this._messageMetadata.get(msg.id);
+          tokensFreed += meta?.tokenCount ?? this.estimateMessageTokens(msg);
+        }
+      }
+    }
+    if (indicesToRemove.size === 0) return 0;
+    const sortedIndices = [...indicesToRemove].sort((a, b) => b - a);
+    for (const idx of sortedIndices) {
+      const item = this._conversation[idx];
+      const id = item?.id;
+      if (id) this._messageMetadata.delete(id);
+      this._conversation.splice(idx, 1);
+    }
+    let removedBeforeProtected = 0;
+    for (const idx of indicesToRemove) {
+      if (idx < this._protectedFromIndex) removedBeforeProtected++;
+    }
+    this._protectedFromIndex = Math.max(0, this._protectedFromIndex - removedBeforeProtected);
+    if (this._toolResultEvictionPlugin) {
+      this._toolResultEvictionPlugin.updateMessageIndices(indicesToRemove);
+    }
+    return tokensFreed;
+  }
+  /**
    * Compact conversation respecting tool pairs and protected messages
    */
   async compactConversation(_budget) {
@@ -10581,17 +11072,24 @@ Guidelines:
       log.push("No compactable messages (all protected)");
       return { log, tokensFreed: 0 };
     }
+    const toolPairIndices = /* @__PURE__ */ new Map();
+    for (const [, pair] of toolPairs) {
+      if (pair.resultIndex !== null) {
+        const group = /* @__PURE__ */ new Set([pair.useIndex, pair.resultIndex]);
+        toolPairIndices.set(pair.useIndex, group);
+        toolPairIndices.set(pair.resultIndex, group);
+      }
+    }
     const safeIndices = [];
     for (let i = 0; i < compactableEnd; i++) {
       let isSafe = true;
-      for (const [, pair] of toolPairs) {
-        if (pair.useIndex === i && pair.resultIndex !== null && pair.resultIndex >= compactableEnd) {
-          isSafe = false;
-          break;
-        }
-        if (pair.resultIndex === i && pair.useIndex >= compactableEnd) {
-          isSafe = false;
-          break;
+      const pairGroup = toolPairIndices.get(i);
+      if (pairGroup) {
+        for (const pairIndex of pairGroup) {
+          if (pairIndex >= compactableEnd) {
+            isSafe = false;
+            break;
+          }
         }
       }
       if (isSafe) {
@@ -10602,11 +11100,27 @@ Guidelines:
       log.push("No safe messages to compact (all involved in tool pairs)");
       return { log, tokensFreed: 0 };
     }
+    const toRemove = /* @__PURE__ */ new Set();
+    let removed = 0;
     const targetRemoval = Math.min(
       Math.floor(safeIndices.length / 2),
       safeIndices.length
     );
-    const toRemove = new Set(safeIndices.slice(0, targetRemoval));
+    for (const idx of safeIndices) {
+      if (removed >= targetRemoval) break;
+      const pairGroup = toolPairIndices.get(idx);
+      if (pairGroup) {
+        if (!toRemove.has(idx)) {
+          for (const pairIdx of pairGroup) {
+            toRemove.add(pairIdx);
+            removed++;
+          }
+        }
+      } else {
+        toRemove.add(idx);
+        removed++;
+      }
+    }
     let tokensFreed = 0;
     const newConversation = [];
     for (let i = 0; i < this._conversation.length; i++) {
@@ -12468,7 +12982,7 @@ async function fetchImageAsBase64(url, options) {
       const base64Data = matches[2] || "";
       const size = calculateBase64Size(base64Data);
       if (size > maxSizeBytes) {
-        throw new Error(`Image size (${formatBytes2(size)}) exceeds maximum allowed (${formatBytes2(maxSizeBytes)})`);
+        throw new Error(`Image size (${formatBytes3(size)}) exceeds maximum allowed (${formatBytes3(maxSizeBytes)})`);
       }
       return {
         mimeType: matches[1] || "image/png",
@@ -12491,7 +13005,7 @@ async function fetchImageAsBase64(url, options) {
       const size = parseInt(contentLength, 10);
       if (size > maxSizeBytes) {
         throw new Error(
-          `Image size (${formatBytes2(size)}) exceeds maximum allowed (${formatBytes2(maxSizeBytes)})`
+          `Image size (${formatBytes3(size)}) exceeds maximum allowed (${formatBytes3(maxSizeBytes)})`
         );
       }
     }
@@ -12508,7 +13022,7 @@ async function fetchImageAsBase64(url, options) {
       if (totalSize > maxSizeBytes) {
         reader.cancel();
         throw new Error(
-          `Image size exceeds maximum allowed (${formatBytes2(maxSizeBytes)})`
+          `Image size exceeds maximum allowed (${formatBytes3(maxSizeBytes)})`
         );
       }
       chunks.push(value);
@@ -12549,7 +13063,7 @@ function calculateBase64Size(base64Data) {
   else if (data.endsWith("=")) padding = 1;
   return Math.floor(data.length * 3 / 4) - padding;
 }
-function formatBytes2(bytes) {
+function formatBytes3(bytes) {
   if (bytes < 1024) return `${bytes} bytes`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -33435,6 +33949,7 @@ exports.StreamState = StreamState;
 exports.SummarizeCompactor = SummarizeCompactor;
 exports.TERMINAL_TASK_STATUSES = TERMINAL_TASK_STATUSES;
 exports.TOOL_OUTPUT_TRACKING_INSTRUCTIONS = TOOL_OUTPUT_TRACKING_INSTRUCTIONS;
+exports.TOOL_RESULT_EVICTION_INSTRUCTIONS = TOOL_RESULT_EVICTION_INSTRUCTIONS;
 exports.TTS_MODELS = TTS_MODELS;
 exports.TTS_MODEL_REGISTRY = TTS_MODEL_REGISTRY;
 exports.TaskAgent = TaskAgent;
@@ -33450,6 +33965,7 @@ exports.ToolNotFoundError = ToolNotFoundError;
 exports.ToolOutputPlugin = ToolOutputPlugin;
 exports.ToolPermissionManager = ToolPermissionManager;
 exports.ToolRegistry = ToolRegistry;
+exports.ToolResultEvictionPlugin = ToolResultEvictionPlugin;
 exports.ToolTimeoutError = ToolTimeoutError;
 exports.TruncateCompactor = TruncateCompactor;
 exports.UniversalAgent = UniversalAgent;

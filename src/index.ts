@@ -57,12 +57,21 @@ export {
   PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
   TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
   AUTO_SPILL_INSTRUCTIONS,
+  TOOL_RESULT_EVICTION_INSTRUCTIONS,
   getAllInstructions,
 } from './core/index.js';
 
 // Context Plugins
-export { ToolOutputPlugin, AutoSpillPlugin } from './core/index.js';
-export type { ToolOutputPluginConfig, ToolOutput, AutoSpillConfig, SpilledEntry } from './core/index.js';
+export { ToolOutputPlugin, AutoSpillPlugin, ToolResultEvictionPlugin } from './core/index.js';
+export type {
+  ToolOutputPluginConfig,
+  ToolOutput,
+  AutoSpillConfig,
+  SpilledEntry,
+  ToolResultEvictionConfig,
+  TrackedResult,
+  EvictionResult,
+} from './core/index.js';
 
 // Audio Capabilities
 export { TextToSpeech, SpeechToText } from './core/index.js';

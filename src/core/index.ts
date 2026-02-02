@@ -57,6 +57,7 @@ export {
   PERSISTENT_INSTRUCTIONS_INSTRUCTIONS,
   TOOL_OUTPUT_TRACKING_INSTRUCTIONS,
   AUTO_SPILL_INSTRUCTIONS,
+  TOOL_RESULT_EVICTION_INSTRUCTIONS,
   getAllInstructions,
 } from './context/FeatureInstructions.js';
 
@@ -65,6 +66,8 @@ export { ToolOutputPlugin } from './context/plugins/ToolOutputPlugin.js';
 export type { ToolOutputPluginConfig, ToolOutput } from './context/plugins/ToolOutputPlugin.js';
 export { AutoSpillPlugin } from './context/plugins/AutoSpillPlugin.js';
 export type { AutoSpillConfig, SpilledEntry } from './context/plugins/AutoSpillPlugin.js';
+export { ToolResultEvictionPlugin } from './context/plugins/ToolResultEvictionPlugin.js';
+export type { ToolResultEvictionConfig, TrackedResult, EvictionResult } from './context/plugins/ToolResultEvictionPlugin.js';
 
 // IdempotencyCache - Tool result caching (moved from taskAgent to core)
 export { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
@@ -95,6 +98,8 @@ export {
   CIRCUIT_BREAKER_DEFAULTS,
   HISTORY_DEFAULTS,
   TOKEN_ESTIMATION,
+  TOOL_RESULT_EVICTION_DEFAULTS,
+  DEFAULT_TOOL_RETENTION,
 } from './constants.js';
 
 // Global configuration

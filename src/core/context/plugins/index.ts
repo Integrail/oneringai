@@ -35,6 +35,16 @@ export type {
   AutoSpillEvents,
 } from './AutoSpillPlugin.js';
 
+// ToolResultEviction plugin - smart eviction of old tool results to memory
+export { ToolResultEvictionPlugin } from './ToolResultEvictionPlugin.js';
+export type {
+  TrackedResult,
+  ToolResultEvictionConfig,
+  SerializedToolResultEvictionState,
+  ToolResultEvictionEvents,
+  EvictionResult,
+} from './ToolResultEvictionPlugin.js';
+
 // InContextMemory plugin - stores key-value pairs directly in context
 export { InContextMemoryPlugin } from './InContextMemoryPlugin.js';
 export type {

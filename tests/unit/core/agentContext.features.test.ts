@@ -30,8 +30,9 @@ describe('AgentContext Feature Configuration', () => {
         persistentInstructions: false,
         history: true,
         permissions: true,
-        toolOutputTracking: true,  // NEW
-        autoSpill: true,           // NEW
+        toolOutputTracking: true,
+        autoSpill: true,
+        toolResultEviction: true,
       });
     });
   });
@@ -49,8 +50,8 @@ describe('AgentContext Feature Configuration', () => {
 
     it('should override specific features while keeping others at default', () => {
       context = AgentContext.create({
-        // Note: autoSpill requires memory, so disable it too
-        features: { memory: false, autoSpill: false },
+        // Note: autoSpill and toolResultEviction require memory, so disable them too
+        features: { memory: false, autoSpill: false, toolResultEviction: false },
       });
 
       expect(context.features.memory).toBe(false);
@@ -72,8 +73,8 @@ describe('AgentContext Feature Configuration', () => {
     it('should handle legacy cache.enabled flag', () => {
       context = AgentContext.create({
         cache: { enabled: false },
-        // Note: autoSpill requires memory, so disable it too
-        features: { autoSpill: false },
+        // Note: autoSpill and toolResultEviction require memory, so disable them too
+        features: { autoSpill: false, toolResultEviction: false },
       });
 
       // Legacy cache.enabled: false should map to features.memory: false
@@ -95,8 +96,8 @@ describe('AgentContext Feature Configuration', () => {
 
     it('should not create WorkingMemory or IdempotencyCache when memory is disabled', () => {
       context = AgentContext.create({
-        // Note: autoSpill requires memory, so disable it too
-        features: { memory: false, autoSpill: false },
+        // Note: autoSpill and toolResultEviction require memory, so disable them too
+        features: { memory: false, autoSpill: false, toolResultEviction: false },
       });
 
       expect(context.memory).toBeNull();
@@ -105,8 +106,8 @@ describe('AgentContext Feature Configuration', () => {
 
     it('should throw when requireMemory() is called but memory is disabled', () => {
       context = AgentContext.create({
-        // Note: autoSpill requires memory, so disable it too
-        features: { memory: false, autoSpill: false },
+        // Note: autoSpill and toolResultEviction require memory, so disable them too
+        features: { memory: false, autoSpill: false, toolResultEviction: false },
       });
 
       expect(() => context!.requireMemory()).toThrow(
@@ -116,8 +117,8 @@ describe('AgentContext Feature Configuration', () => {
 
     it('should throw when requireCache() is called but memory is disabled', () => {
       context = AgentContext.create({
-        // Note: autoSpill requires memory, so disable it too
-        features: { memory: false, autoSpill: false },
+        // Note: autoSpill and toolResultEviction require memory, so disable them too
+        features: { memory: false, autoSpill: false, toolResultEviction: false },
       });
 
       expect(() => context!.requireCache()).toThrow(
@@ -289,6 +290,7 @@ describe('AgentContext Feature Configuration', () => {
         features: {
           memory: false,
           autoSpill: false,  // autoSpill requires memory
+          toolResultEviction: false,  // toolResultEviction requires memory
           inContextMemory: true,
           persistentInstructions: true,
           history: true,
@@ -307,8 +309,8 @@ describe('AgentContext Feature Configuration', () => {
   describe('getAgentContextTools', () => {
     it('should return only basic introspection tools when memory is disabled', () => {
       context = AgentContext.create({
-        // Note: autoSpill requires memory, so disable it too
-        features: { memory: false, autoSpill: false },
+        // Note: autoSpill and toolResultEviction require memory, so disable them too
+        features: { memory: false, autoSpill: false, toolResultEviction: false },
       });
 
       const tools = getAgentContextTools(context);
@@ -361,8 +363,8 @@ describe('AgentContext Feature Configuration', () => {
 
     it('should not include memory_index in context when memory is disabled', async () => {
       context = AgentContext.create({
-        // Note: autoSpill requires memory, so disable it too
-        features: { memory: false, autoSpill: false },
+        // Note: autoSpill and toolResultEviction require memory, so disable them too
+        features: { memory: false, autoSpill: false, toolResultEviction: false },
       });
 
       context.setCurrentInput('test');
@@ -405,6 +407,7 @@ describe('AgentContext Feature Configuration', () => {
         features: {
           memory: false,
           autoSpill: false,  // autoSpill requires memory
+          toolResultEviction: false,  // toolResultEviction requires memory
           inContextMemory: false,
           history: false,
           permissions: false,
@@ -455,8 +458,8 @@ describe('AgentContext Feature Configuration', () => {
   describe('Serialization/Deserialization', () => {
     it('should serialize state correctly with features disabled', async () => {
       context = AgentContext.create({
-        // Note: autoSpill requires memory, so disable it too
-        features: { memory: false, permissions: false, autoSpill: false },
+        // Note: autoSpill and toolResultEviction require memory, so disable them too
+        features: { memory: false, permissions: false, autoSpill: false, toolResultEviction: false },
       });
 
       const state = await context.getState();

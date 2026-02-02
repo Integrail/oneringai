@@ -2548,6 +2548,249 @@ declare class AutoSpillPlugin extends BaseContextPlugin {
 }
 
 /**
+ * ToolResultEvictionPlugin - Smart eviction of old tool results from context
+ *
+ * This plugin automatically moves old tool results to WorkingMemory to free
+ * context space while preserving retrievability. Unlike regular compaction
+ * which simply removes old messages, this plugin:
+ *
+ * 1. Tracks tool results with age (iteration count) and size
+ * 2. Stores results in WorkingMemory's raw tier before removal
+ * 3. Removes BOTH tool_use AND tool_result messages (as pairs)
+ * 4. Allows agent to retrieve evicted results via memory_retrieve
+ *
+ * Eviction Triggers:
+ * - Size pressure: Total tracked results exceed maxTotalSizeBytes
+ * - Count limit: Number of results exceeds maxFullResults
+ * - Staleness: Any result is older than maxAgeIterations
+ *
+ * @example
+ * ```typescript
+ * const plugin = new ToolResultEvictionPlugin(memory, {
+ *   maxFullResults: 5,        // Keep last 5 pairs in conversation
+ *   maxAgeIterations: 3,      // Evict after 3 iterations
+ *   maxTotalSizeBytes: 100 * 1024,  // 100KB total
+ * });
+ * agentContext.registerPlugin(plugin);
+ * ```
+ */
+
+/**
+ * Tracked tool result metadata
+ */
+interface TrackedResult {
+    /** Tool use ID (links tool_use and tool_result) */
+    toolUseId: string;
+    /** Name of the tool that was executed */
+    toolName: string;
+    /** The actual result content */
+    result: unknown;
+    /** Size of the result in bytes */
+    sizeBytes: number;
+    /** Iteration when this result was added */
+    addedAtIteration: number;
+    /** Index of the tool_result message in conversation */
+    messageIndex: number;
+    /** Timestamp when tracked */
+    timestamp: number;
+}
+/**
+ * Configuration for tool result eviction
+ */
+interface ToolResultEvictionConfig {
+    /**
+     * Maximum number of full tool result pairs to keep in conversation.
+     * Beyond this, oldest pairs are evicted to memory.
+     * @default 5
+     */
+    maxFullResults?: number;
+    /**
+     * Maximum age in iterations before eviction.
+     * Results older than this are evicted regardless of count.
+     * @default 3
+     */
+    maxAgeIterations?: number;
+    /**
+     * Minimum size (bytes) for a result to be eligible for eviction.
+     * Smaller results are kept in conversation.
+     * @default 1024 (1KB)
+     */
+    minSizeToEvict?: number;
+    /**
+     * Maximum total size (bytes) of tracked results before triggering eviction.
+     * When exceeded, oldest/largest results are evicted.
+     * @default 102400 (100KB)
+     */
+    maxTotalSizeBytes?: number;
+    /**
+     * Per-tool iteration retention overrides.
+     * Tools not in this map use maxAgeIterations.
+     * @example { 'read_file': 10, 'web_fetch': 3 }
+     */
+    toolRetention?: Record<string, number>;
+    /**
+     * Key prefix for evicted results stored in memory.
+     * Full key format: `<prefix>:<toolName>:<toolUseId>`
+     * @default 'tool_result'
+     */
+    keyPrefix?: string;
+}
+/**
+ * Serialized plugin state for session persistence
+ */
+interface SerializedToolResultEvictionState {
+    tracked: TrackedResult[];
+    currentIteration: number;
+    totalEvicted: number;
+    totalTokensFreed: number;
+}
+/**
+ * Events emitted by the plugin
+ */
+interface ToolResultEvictionEvents {
+    /** Emitted when results are evicted */
+    evicted: {
+        count: number;
+        tokensFreed: number;
+        keys: string[];
+    };
+    /** Emitted when a result is tracked */
+    tracked: {
+        toolUseId: string;
+        toolName: string;
+        sizeBytes: number;
+    };
+    /** Emitted on iteration advance */
+    iteration: {
+        current: number;
+    };
+}
+/**
+ * Result of eviction operation
+ */
+interface EvictionResult {
+    /** Number of tool pairs evicted */
+    evicted: number;
+    /** Estimated tokens freed */
+    tokensFreed: number;
+    /** Memory keys where results were stored */
+    memoryKeys: string[];
+    /** Log messages for debugging */
+    log: string[];
+}
+/**
+ * ToolResultEvictionPlugin - Manages automatic eviction of old tool results
+ */
+declare class ToolResultEvictionPlugin extends BaseContextPlugin {
+    readonly name = "tool_result_eviction";
+    readonly priority = 8;
+    readonly compactable = true;
+    private memory;
+    private config;
+    private tracked;
+    private currentIteration;
+    private totalTrackedSize;
+    private totalEvicted;
+    private totalTokensFreed;
+    private events;
+    /**
+     * Callback to remove tool pairs from conversation.
+     * Set by AgentContext during registration.
+     */
+    private removeToolPairCallback;
+    constructor(memory: WorkingMemory, config?: ToolResultEvictionConfig);
+    /**
+     * Subscribe to events
+     */
+    on<K extends keyof ToolResultEvictionEvents>(event: K, listener: (...args: any[]) => void): this;
+    /**
+     * Unsubscribe from events
+     */
+    off<K extends keyof ToolResultEvictionEvents>(event: K, listener: (...args: any[]) => void): this;
+    /**
+     * Set the callback for removing tool pairs from conversation.
+     * This is called by AgentContext during plugin registration.
+     */
+    setRemoveCallback(callback: (toolUseId: string) => number): void;
+    /**
+     * Get current configuration
+     */
+    getConfig(): Readonly<Required<ToolResultEvictionConfig>>;
+    /**
+     * Track a new tool result.
+     * Called by AgentContext when tool results are added to conversation.
+     *
+     * @param toolUseId - The tool_use ID linking request/response
+     * @param toolName - Name of the executed tool
+     * @param result - The tool result content
+     * @param messageIndex - Index of the message in conversation
+     */
+    onToolResult(toolUseId: string, toolName: string, result: unknown, messageIndex: number): void;
+    /**
+     * Called at the start of each agent iteration.
+     * Advances the iteration counter for age-based eviction.
+     */
+    onIteration(): void;
+    /**
+     * Get the current iteration number
+     */
+    getCurrentIteration(): number;
+    /**
+     * Check if eviction is needed based on current state.
+     * Returns true if any eviction trigger is met.
+     */
+    shouldEvict(): boolean;
+    /**
+     * Get candidates for eviction, sorted by priority.
+     * Candidates are selected to bring the system under all thresholds.
+     */
+    private getEvictionCandidates;
+    /**
+     * Evict old results to memory and remove from conversation.
+     * This is the main eviction entry point.
+     *
+     * @returns Eviction result with counts and log
+     */
+    evictOldResults(): Promise<EvictionResult>;
+    /**
+     * Get current tracking statistics
+     */
+    getStats(): {
+        count: number;
+        totalSizeBytes: number;
+        oldestAge: number;
+        currentIteration: number;
+        totalEvicted: number;
+        totalTokensFreed: number;
+    };
+    /**
+     * Get all tracked results
+     */
+    getTracked(): TrackedResult[];
+    /**
+     * Check if a specific tool result is tracked
+     */
+    isTracked(toolUseId: string): boolean;
+    /**
+     * Get tracked result by ID
+     */
+    getTrackedResult(toolUseId: string): TrackedResult | undefined;
+    /**
+     * Update message indices after conversation modification.
+     * Called when messages are removed from conversation.
+     *
+     * @param removedIndices - Set of indices that were removed
+     */
+    updateMessageIndices(removedIndices: Set<number>): void;
+    getComponent(): Promise<IContextComponent | null>;
+    compact(_targetTokens: number, _estimator: ITokenEstimator): Promise<number>;
+    onPrepared(_budget: ContextBudget): Promise<void>;
+    getState(): SerializedToolResultEvictionState;
+    restoreState(state: unknown): void;
+    destroy(): void;
+}
+
+/**
  * AgentContext - The "Swiss Army Knife" for Agent State Management
  *
  * Unified facade that composes all context-related managers:
@@ -2636,6 +2879,15 @@ interface AgentContextFeatures {
      * @default true
      */
     autoSpill?: boolean;
+    /**
+     * Enable ToolResultEvictionPlugin for smart eviction of old tool results
+     * When enabled: Old tool results are automatically moved to WorkingMemory
+     * and their tool_use/tool_result pairs are removed from conversation.
+     * Agent can retrieve evicted results via memory_retrieve.
+     * Requires memory feature to be enabled.
+     * @default true
+     */
+    toolResultEviction?: boolean;
 }
 /**
  * Default feature configuration
@@ -2644,8 +2896,9 @@ interface AgentContextFeatures {
  * - inContextMemory: false (opt-in)
  * - history: true
  * - permissions: true
- * - toolOutputTracking: true (NEW)
- * - autoSpill: true (NEW)
+ * - toolOutputTracking: true
+ * - autoSpill: true
+ * - toolResultEviction: true (NEW - moves old results to memory)
  */
 declare const DEFAULT_FEATURES: Required<AgentContextFeatures>;
 /**
@@ -2786,6 +3039,11 @@ interface AgentContextConfig {
      * Requires features.memory to be true
      */
     autoSpill?: AutoSpillConfig;
+    /**
+     * ToolResultEvictionPlugin configuration (only used if features.toolResultEviction is true)
+     * Requires features.memory to be true
+     */
+    toolResultEviction?: ToolResultEvictionConfig;
     /**
      * Agent ID - used for persistent storage paths and identification
      * If not provided, will be auto-generated
@@ -2933,6 +3191,7 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     private _persistentInstructions;
     private _toolOutputPlugin;
     private _autoSpillPlugin;
+    private _toolResultEvictionPlugin;
     private readonly _agentId;
     private readonly _features;
     private _systemPrompt;
@@ -2982,6 +3241,8 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     get toolOutputPlugin(): ToolOutputPlugin | null;
     /** AutoSpillPlugin (null if autoSpill feature disabled or memory disabled) */
     get autoSpillPlugin(): AutoSpillPlugin | null;
+    /** ToolResultEvictionPlugin (null if toolResultEviction feature disabled or memory disabled) */
+    get toolResultEvictionPlugin(): ToolResultEvictionPlugin | null;
     /** Agent ID (auto-generated or from config) */
     get agentId(): string;
     /** Current session ID (null if no session loaded/saved) */
@@ -3076,9 +3337,11 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      *
      * Handles everything for preparing context before LLM calls:
      * 1. Marks current position as protected from compaction
-     * 2. Calculates token usage
-     * 3. Compacts if needed (respecting protection & tool pairs)
-     * 4. Builds final output based on returnFormat option
+     * 2. Advances iteration counter and evicts old tool results (if enabled)
+     * 3. Builds components and calculates token usage
+     * 4. Emits budget warnings if needed
+     * 5. Compacts conversation if needed (respecting protection & tool pairs)
+     * 6. Builds final output based on returnFormat option
      *
      * @param options - Preparation options
      * @returns PreparedResult with budget, compaction info, and either input or components
@@ -3448,6 +3711,14 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Returns Map<tool_use_id, message_index>
      */
     private findToolPairs;
+    /**
+     * Remove a tool_use/tool_result pair from conversation by toolUseId.
+     * Used by ToolResultEvictionPlugin to evict old tool results.
+     *
+     * @param toolUseId - The tool_use ID linking request/response
+     * @returns Estimated tokens freed
+     */
+    removeToolPair(toolUseId: string): number;
     /**
      * Compact conversation respecting tool pairs and protected messages
      */
@@ -4732,4 +5003,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type InContextMemoryConfig as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type ContextManagerConfig as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextCompactor as G, type HookConfig as H, type IContextStorage as I, type TokenContentType as J, type IPersistentInstructionsStorage as K, type LLMResponse as L, type MemoryEntry as M, type StoredContextSession as N, type ContextStorageListOptions as O, type ContextSessionSummary as P, type TokenUsage as Q, type ToolCall as R, type SerializedAgentContextState as S, type ToolFunction as T, StreamEventType as U, CircuitBreaker as V, WorkingMemory as W, type TextGenerateOptions as X, type ModelCapabilities as Y, type ToolPermissionConfig$1 as Z, MessageRole as _, ToolManager as a, type WorkingMemoryAccess as a$, InContextMemoryPlugin as a0, type PersistentInstructionsConfig as a1, PersistentInstructionsPlugin as a2, DEFAULT_FEATURES as a3, type AgentContextEvents as a4, type AgentContextMetrics as a5, type HistoryMessage as a6, type ToolCallRecord as a7, type PrepareOptions as a8, type PreparedResult as a9, type DefaultAllowlistedTool as aA, CONTEXT_SESSION_FORMAT_VERSION as aB, type WorkingMemoryEvents as aC, type EvictionStrategy as aD, type IdempotencyCacheConfig as aE, type CacheStats as aF, DEFAULT_IDEMPOTENCY_CONFIG as aG, type PreparedContext as aH, DEFAULT_CONTEXT_CONFIG as aI, type MemoryEntryInput as aJ, type MemoryIndex as aK, type MemoryIndexEntry as aL, type MemoryPriority as aM, type TaskAwareScope as aN, type SimpleScope as aO, type TaskStatusForMemory as aP, DEFAULT_MEMORY_CONFIG as aQ, forTasks as aR, forPlan as aS, scopeEquals as aT, scopeMatches as aU, isSimpleScope as aV, isTaskAwareScope as aW, isTerminalMemoryStatus as aX, calculateEntrySize as aY, MEMORY_PRIORITY_VALUES as aZ, type ToolContext as a_, ToolOutputPlugin as aa, AutoSpillPlugin as ab, type ToolOutputPluginConfig as ac, type ToolOutput as ad, type SpilledEntry as ae, type ToolOptions as af, type ToolCondition as ag, type ToolSelectionContext as ah, type ToolRegistration as ai, type ToolMetadata as aj, type ToolManagerStats as ak, type SerializedToolState as al, type ToolManagerEvent as am, type PermissionScope as an, type RiskLevel as ao, type ToolPermissionConfig as ap, type ApprovalCacheEntry as aq, type SerializedApprovalState as ar, type SerializedApprovalEntry as as, type PermissionCheckResult as at, type ApprovalDecision as au, type PermissionCheckContext as av, type PermissionManagerEvent as aw, APPROVAL_STATE_VERSION as ax, DEFAULT_PERMISSION_CONFIG as ay, DEFAULT_ALLOWLIST as az, AgentContext as b, type ExecutionCompleteEvent as b$, ContentType as b0, type Content as b1, type InputTextContent as b2, type InputImageContent as b3, type OutputTextContent as b4, type ToolUseContent as b5, type ToolResultContent as b6, type Message as b7, type OutputItem as b8, type CompactionItem as b9, isResponseComplete as bA, isErrorEvent as bB, HookManager as bC, type AgentEventName as bD, type ExecutionConfig as bE, type AgenticLoopEvents as bF, type AgenticLoopEventName as bG, type HookName as bH, type Hook as bI, type ModifyingHook as bJ, type BeforeToolContext as bK, type AfterToolContext as bL, type ApproveToolContext as bM, type ToolModification as bN, type ApprovalResult as bO, type IToolExecutor as bP, type IAsyncDisposable as bQ, assertNotDestroyed as bR, CircuitOpenError as bS, type CircuitBreakerConfig as bT, type CircuitBreakerEvents as bU, DEFAULT_CIRCUIT_BREAKER_CONFIG as bV, type InContextEntry as bW, type InContextPriority as bX, type SerializedInContextMemoryState as bY, type SerializedPersistentInstructionsState as bZ, type ExecutionStartEvent as b_, type ReasoningItem as ba, ToolCallState as bb, defaultDescribeCall as bc, getToolCallDescription as bd, type Tool as be, type BuiltInTool as bf, type ToolResult as bg, type ToolExecutionContext as bh, type JSONSchema as bi, type ResponseCreatedEvent as bj, type ResponseInProgressEvent as bk, type OutputTextDeltaEvent as bl, type OutputTextDoneEvent as bm, type ToolCallStartEvent as bn, type ToolCallArgumentsDeltaEvent as bo, type ToolCallArgumentsDoneEvent as bp, type ToolExecutionStartEvent as bq, type ToolExecutionDoneEvent as br, type IterationCompleteEvent$1 as bs, type ResponseCompleteEvent as bt, type ErrorEvent as bu, isStreamEvent as bv, isOutputTextDelta as bw, isToolCallStart as bx, isToolCallArgumentsDelta as by, isToolCallArgumentsDone as bz, type AgentContextConfig as c, type ToolStartEvent as c0, type ToolCompleteEvent as c1, type LLMRequestEvent as c2, type LLMResponseEvent as c3, ToolPermissionManager as d, type ITextProvider as e, type InputItem as f, type StreamEvent as g, type AgentContextFeatures as h, type HistoryMode as i, type AgentEvents as j, type IDisposable as k, type AgentResponse as l, type ExecutionMetrics as m, type AuditEntry as n, type CircuitState as o, type CircuitBreakerMetrics as p, type IContextComponent as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type AutoSpillConfig as x, type IContextStrategy as y, type ContextBudget as z };
+export { type InContextMemoryConfig as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type ContextManagerConfig as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextCompactor as G, type HookConfig as H, type IContextStorage as I, type TokenContentType as J, type IPersistentInstructionsStorage as K, type LLMResponse as L, type MemoryEntry as M, type StoredContextSession as N, type ContextStorageListOptions as O, type ContextSessionSummary as P, type TokenUsage as Q, type ToolCall as R, type SerializedAgentContextState as S, type ToolFunction as T, StreamEventType as U, CircuitBreaker as V, WorkingMemory as W, type TextGenerateOptions as X, type ModelCapabilities as Y, type ToolPermissionConfig$1 as Z, MessageRole as _, ToolManager as a, isTerminalMemoryStatus as a$, InContextMemoryPlugin as a0, type PersistentInstructionsConfig as a1, PersistentInstructionsPlugin as a2, DEFAULT_FEATURES as a3, type AgentContextEvents as a4, type AgentContextMetrics as a5, type HistoryMessage as a6, type ToolCallRecord as a7, type PrepareOptions as a8, type PreparedResult as a9, type PermissionManagerEvent as aA, APPROVAL_STATE_VERSION as aB, DEFAULT_PERMISSION_CONFIG as aC, DEFAULT_ALLOWLIST as aD, type DefaultAllowlistedTool as aE, CONTEXT_SESSION_FORMAT_VERSION as aF, type WorkingMemoryEvents as aG, type EvictionStrategy as aH, type IdempotencyCacheConfig as aI, type CacheStats as aJ, DEFAULT_IDEMPOTENCY_CONFIG as aK, type PreparedContext as aL, DEFAULT_CONTEXT_CONFIG as aM, type MemoryEntryInput as aN, type MemoryIndex as aO, type MemoryIndexEntry as aP, type MemoryPriority as aQ, type TaskAwareScope as aR, type SimpleScope as aS, type TaskStatusForMemory as aT, DEFAULT_MEMORY_CONFIG as aU, forTasks as aV, forPlan as aW, scopeEquals as aX, scopeMatches as aY, isSimpleScope as aZ, isTaskAwareScope as a_, ToolOutputPlugin as aa, AutoSpillPlugin as ab, ToolResultEvictionPlugin as ac, type ToolOutputPluginConfig as ad, type ToolOutput as ae, type SpilledEntry as af, type ToolResultEvictionConfig as ag, type TrackedResult as ah, type EvictionResult as ai, type ToolOptions as aj, type ToolCondition as ak, type ToolSelectionContext as al, type ToolRegistration as am, type ToolMetadata as an, type ToolManagerStats as ao, type SerializedToolState as ap, type ToolManagerEvent as aq, type PermissionScope as ar, type RiskLevel as as, type ToolPermissionConfig as at, type ApprovalCacheEntry as au, type SerializedApprovalState as av, type SerializedApprovalEntry as aw, type PermissionCheckResult as ax, type ApprovalDecision as ay, type PermissionCheckContext as az, AgentContext as b, type InContextPriority as b$, calculateEntrySize as b0, MEMORY_PRIORITY_VALUES as b1, type ToolContext as b2, type WorkingMemoryAccess as b3, ContentType as b4, type Content as b5, type InputTextContent as b6, type InputImageContent as b7, type OutputTextContent as b8, type ToolUseContent as b9, isOutputTextDelta as bA, isToolCallStart as bB, isToolCallArgumentsDelta as bC, isToolCallArgumentsDone as bD, isResponseComplete as bE, isErrorEvent as bF, HookManager as bG, type AgentEventName as bH, type ExecutionConfig as bI, type AgenticLoopEvents as bJ, type AgenticLoopEventName as bK, type HookName as bL, type Hook as bM, type ModifyingHook as bN, type BeforeToolContext as bO, type AfterToolContext as bP, type ApproveToolContext as bQ, type ToolModification as bR, type ApprovalResult as bS, type IToolExecutor as bT, type IAsyncDisposable as bU, assertNotDestroyed as bV, CircuitOpenError as bW, type CircuitBreakerConfig as bX, type CircuitBreakerEvents as bY, DEFAULT_CIRCUIT_BREAKER_CONFIG as bZ, type InContextEntry as b_, type ToolResultContent as ba, type Message as bb, type OutputItem as bc, type CompactionItem as bd, type ReasoningItem as be, ToolCallState as bf, defaultDescribeCall as bg, getToolCallDescription as bh, type Tool as bi, type BuiltInTool as bj, type ToolResult as bk, type ToolExecutionContext as bl, type JSONSchema as bm, type ResponseCreatedEvent as bn, type ResponseInProgressEvent as bo, type OutputTextDeltaEvent as bp, type OutputTextDoneEvent as bq, type ToolCallStartEvent as br, type ToolCallArgumentsDeltaEvent as bs, type ToolCallArgumentsDoneEvent as bt, type ToolExecutionStartEvent as bu, type ToolExecutionDoneEvent as bv, type IterationCompleteEvent$1 as bw, type ResponseCompleteEvent as bx, type ErrorEvent as by, isStreamEvent as bz, type AgentContextConfig as c, type SerializedInContextMemoryState as c0, type SerializedPersistentInstructionsState as c1, type ExecutionStartEvent as c2, type ExecutionCompleteEvent as c3, type ToolStartEvent as c4, type ToolCompleteEvent as c5, type LLMRequestEvent as c6, type LLMResponseEvent as c7, ToolPermissionManager as d, type ITextProvider as e, type InputItem as f, type StreamEvent as g, type AgentContextFeatures as h, type HistoryMode as i, type AgentEvents as j, type IDisposable as k, type AgentResponse as l, type ExecutionMetrics as m, type AuditEntry as n, type CircuitState as o, type CircuitBreakerMetrics as p, type IContextComponent as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type AutoSpillConfig as x, type IContextStrategy as y, type ContextBudget as z };

@@ -207,3 +207,50 @@ export const TOKEN_ESTIMATION = {
   /** Default characters per token */
   DEFAULT_CHARS_PER_TOKEN: 4,
 } as const;
+
+// ============ Tool Result Eviction Defaults ============
+
+/**
+ * Tool result eviction configuration.
+ * Controls when and how old tool results are moved from context to memory.
+ */
+export const TOOL_RESULT_EVICTION_DEFAULTS = {
+  /** Keep last N tool result pairs in conversation (default: 5) */
+  MAX_FULL_RESULTS: 5,
+
+  /** Evict results after N iterations (default: 3) */
+  MAX_AGE_ITERATIONS: 3,
+
+  /** Only evict results larger than this (bytes, default: 1KB) */
+  MIN_SIZE_TO_EVICT: 1024,
+
+  /** Trigger size-based eviction when total exceeds this (bytes, default: 100KB) */
+  MAX_TOTAL_SIZE_BYTES: 100 * 1024,
+} as const;
+
+/**
+ * Per-tool iteration retention overrides.
+ * Tools not listed use TOOL_RESULT_EVICTION_DEFAULTS.MAX_AGE_ITERATIONS.
+ *
+ * Higher values = keep results longer in conversation.
+ * Common patterns:
+ * - File/code tools: Keep longer (often referenced later)
+ * - Web tools: Keep shorter (can re-fetch if needed)
+ */
+export const DEFAULT_TOOL_RETENTION: Record<string, number> = {
+  // Long retention - outputs often referenced later
+  read_file: 10,
+  bash: 8,
+  grep: 8,
+  glob: 6,
+  edit_file: 6,
+
+  // Medium retention
+  memory_retrieve: 5,
+  list_directory: 5,
+
+  // Short retention - web content can be re-fetched
+  web_fetch: 3,
+  web_search: 3,
+  web_scrape: 3,
+};
