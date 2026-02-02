@@ -524,30 +524,28 @@ describe('Backward Compatibility', () => {
         model: 'gpt-4',
       });
 
-      // Mock the internal agenticLoop instead of provider
-      const mockLoop = {
-        execute: vi.fn().mockResolvedValue({
+      // Mock the internal provider (AgenticLoop was merged into Agent)
+      (agent as any)._provider = {
+        generate: vi.fn().mockResolvedValue({
+          id: 'resp_123',
+          object: 'response',
+          created_at: Date.now(),
+          status: 'completed',
+          model: 'gpt-4',
+          output: [],
           output_text: 'Hello',
-          output_items: [],
-          finish_reason: 'complete',
+          usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
         }),
-        on: vi.fn(),
-        off: vi.fn(),
-        cancel: vi.fn(),
-        getContext: vi.fn().mockReturnValue(null),
-        isRunning: vi.fn().mockReturnValue(false),
-        isPaused: vi.fn().mockReturnValue(false),
-        isCancelled: vi.fn().mockReturnValue(false),
+        streamGenerate: vi.fn(),
       };
-
-      (agent as any).agenticLoop = mockLoop;
 
       const response = await agent.run('test');
 
-      // Verify response structure (should match v0.1)
+      // Verify response structure matches current API
+      // Note: v0.1 had output_items/finish_reason, now we have output/status
       expect(response).toHaveProperty('output_text');
-      expect(response).toHaveProperty('output_items');
-      expect(response).toHaveProperty('finish_reason');
+      expect(response).toHaveProperty('output');
+      expect(response).toHaveProperty('status');
     });
   });
 
@@ -761,19 +759,11 @@ describe('Backward Compatibility', () => {
         model: 'gpt-4',
       });
 
-      // Mock agenticLoop to throw error
-      const mockLoop = {
-        execute: vi.fn().mockRejectedValue(new Error('API Error')),
-        on: vi.fn(),
-        off: vi.fn(),
-        cancel: vi.fn(),
-        getContext: vi.fn().mockReturnValue(null),
-        isRunning: vi.fn().mockReturnValue(false),
-        isPaused: vi.fn().mockReturnValue(false),
-        isCancelled: vi.fn().mockReturnValue(false),
+      // Mock provider to throw error (AgenticLoop was merged into Agent)
+      (agent as any)._provider = {
+        generate: vi.fn().mockRejectedValue(new Error('API Error')),
+        streamGenerate: vi.fn(),
       };
-
-      (agent as any).agenticLoop = mockLoop;
 
       // Should still throw (not swallow errors)
       await expect(agent.run('test')).rejects.toThrow('API Error');

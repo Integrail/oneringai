@@ -1,5 +1,5 @@
-import { EventEmitter } from 'eventemitter3';
 import { I as IProvider } from './IProvider-BP49c93d.js';
+import { EventEmitter } from 'eventemitter3';
 
 /**
  * Interface for objects that manage resources and need explicit cleanup.
@@ -1589,7 +1589,7 @@ declare class ToolPermissionManager extends EventEmitter {
      *
      * NOTE: If you want to require explicit approval, you MUST either:
      * 1. Set onApprovalRequired callback in AgentPermissionsConfig
-     * 2. Register an 'approve:tool' hook in the AgenticLoop
+     * 2. Register an 'approve:tool' hook in the Agent
      * 3. Add tools to the blocklist if they should never run
      *
      * This auto-approval behavior preserves backward compatibility with
@@ -3056,7 +3056,7 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     /**
      * Mark current position as protected from compaction.
      * Messages at or after this index cannot be compacted.
-     * Called at the start of each iteration by AgenticLoop.
+     * Called at the start of each iteration by Agent.
      */
     protectFromCompaction(): void;
     /**
@@ -3734,7 +3734,7 @@ declare class ToolManager extends EventEmitter implements IToolExecutor, IDispos
     /**
      * Parent AgentContext reference for auto-building ToolContext
      * This ensures tools always have access to agentContext, memory, cache, etc.
-     * even when execute() is called directly (e.g., by AgenticLoop)
+     * even when execute() is called directly (e.g., by Agent)
      */
     private _parentContext;
     constructor();
@@ -3761,7 +3761,7 @@ declare class ToolManager extends EventEmitter implements IToolExecutor, IDispos
      * Called by AgentContext after construction to enable auto-context in execute()
      *
      * This is the KEY to making tools work correctly:
-     * - When AgenticLoop calls ToolManager.execute() directly, we auto-build context
+     * - When Agent calls ToolManager.execute() directly, we auto-build context
      * - When AgentContext.executeTool() is used, it sets explicit _toolContext
      *
      * @param context - The parent AgentContext that owns this ToolManager
@@ -4372,13 +4372,23 @@ declare class ExecutionContext {
 }
 
 /**
- * Event types for agentic loop execution
+ * Event types for agent execution
  * These events are emitted asynchronously for notifications (UI updates, logging, etc.)
  */
 
+/**
+ * Minimal config type for execution start events.
+ * This captures the essential info without importing full AgentConfig.
+ */
+interface ExecutionConfig {
+    model: string;
+    instructions?: string;
+    temperature?: number;
+    maxIterations?: number;
+}
 interface ExecutionStartEvent {
     executionId: string;
-    config: AgenticLoopConfig;
+    config: ExecutionConfig;
     timestamp: Date;
 }
 interface ExecutionCompleteEvent {
@@ -4521,191 +4531,15 @@ interface AgenticLoopEvents {
     'circuit:closed': CircuitClosedEvent;
 }
 type AgenticLoopEventName = keyof AgenticLoopEvents;
-
 /**
- * Agentic loop - handles tool calling and multi-turn conversations
- * Now with events, hooks, pause/resume, and enterprise features
+ * Agent events - alias for AgenticLoopEvents for cleaner API
+ * This is the preferred export name going forward.
  */
-
-interface AgenticLoopConfig {
-    model: string;
-    input: string | InputItem[];
-    instructions?: string;
-    tools: Tool[];
-    temperature?: number;
-    maxIterations: number;
-    /** Vendor-specific options (e.g., Google's thinkingLevel) */
-    vendorOptions?: Record<string, any>;
-    hooks?: HookConfig;
-    historyMode?: HistoryMode;
-    limits?: {
-        maxExecutionTime?: number;
-        maxToolCalls?: number;
-        maxContextSize?: number;
-        /** Maximum input messages to keep (prevents unbounded growth). Default: 50 */
-        maxInputMessages?: number;
-    };
-    errorHandling?: {
-        hookFailureMode?: 'fail' | 'warn' | 'ignore';
-        /**
-         * Tool failure handling mode:
-         * - 'fail': Stop execution on first tool failure (throw error)
-         * - 'continue': Execute all tools even if some fail, return all results including errors
-         * @default 'continue'
-         */
-        toolFailureMode?: 'fail' | 'continue';
-        maxConsecutiveErrors?: number;
-    };
-    /**
-     * Tool execution timeout in milliseconds
-     * @default 30000 (30 seconds)
-     */
-    toolTimeout?: number;
-    /**
-     * Permission manager for tool approval/blocking.
-     * If provided, permission checks run BEFORE approve:tool hooks.
-     */
-    permissionManager?: ToolPermissionManager;
-    /**
-     * Agent type for permission context (used by TaskAgent/UniversalAgent).
-     * @default 'agent'
-     */
-    agentType?: 'agent' | 'task-agent' | 'universal-agent';
-    /**
-     * Current task name (used for TaskAgent/UniversalAgent context).
-     */
-    taskName?: string;
-    /**
-     * AgentContext for unified context management.
-     * When provided, AgenticLoop delegates ALL context management to AgentContext:
-     * - Uses prepareConversation() before each LLM call
-     * - Uses addAssistantResponse() and addToolResults() after each iteration
-     * - Skips internal sliding window (AgentContext handles compaction)
-     */
-    agentContext?: AgentContext;
-}
-declare class AgenticLoop extends EventEmitter<AgenticLoopEvents> {
-    private provider;
-    private toolExecutor;
-    private hookManager;
-    private context;
-    private paused;
-    private pausePromise;
-    private resumeCallback;
-    private cancelled;
-    private pauseResumeMutex;
-    constructor(provider: ITextProvider, toolExecutor: IToolExecutor, hookConfig?: HookConfig, errorHandling?: {
-        maxConsecutiveErrors?: number;
-    });
-    /**
-     * Execute agentic loop with tool calling
-     */
-    execute(config: AgenticLoopConfig): Promise<AgentResponse>;
-    /**
-     * Execute agentic loop with streaming and tool calling
-     */
-    executeStreaming(config: AgenticLoopConfig): AsyncIterableIterator<StreamEvent>;
-    /**
-     * Stream LLM response with hooks
-     * @private
-     */
-    private streamGenerateWithHooks;
-    /**
-     * Check tool permission before execution
-     * Returns true if approved, throws if blocked/rejected
-     * @private
-     */
-    private checkToolPermission;
-    /**
-     * Execute single tool with hooks
-     * @private
-     */
-    private executeToolWithHooks;
-    /**
-     * Generate LLM response with hooks
-     */
-    private generateWithHooks;
-    /**
-     * Execute tools with hooks
-     */
-    private executeToolsWithHooks;
-    /**
-     * Extract tool calls from response output
-     */
-    private extractToolCalls;
-    /**
-     * Execute function with timeout
-     */
-    private executeWithTimeout;
-    /**
-     * Build new messages from tool results (assistant response + tool results)
-     */
-    private buildNewMessages;
-    /**
-     * Append new messages to current context, preserving history
-     * Unified logic for both execute() and executeStreaming()
-     */
-    private appendToContext;
-    /**
-     * Apply sliding window to prevent unbounded input growth
-     * Preserves system/developer message at the start if present
-     * IMPORTANT: Ensures tool_use and tool_result pairs are never broken
-     */
-    private applySlidingWindow;
-    /**
-     * Find a safe index to cut the message array without breaking tool call/result pairs
-     * A safe boundary is one where all tool_use IDs have matching tool_result IDs
-     */
-    private findSafeToolBoundary;
-    /**
-     * Check if cutting at this index would leave tool calls/results balanced
-     * Returns true if all tool_use IDs in the slice have matching tool_result IDs
-     */
-    private isToolBoundarySafe;
-    /**
-     * Pause execution (thread-safe with mutex)
-     */
-    pause(reason?: string): void;
-    /**
-     * Internal pause implementation
-     */
-    private _doPause;
-    /**
-     * Resume execution (thread-safe with mutex)
-     */
-    resume(): void;
-    /**
-     * Internal resume implementation
-     */
-    private _doResume;
-    /**
-     * Cancel execution
-     */
-    cancel(reason?: string): void;
-    /**
-     * Check if paused and wait
-     */
-    private checkPause;
-    /**
-     * Get current execution context
-     */
-    getContext(): ExecutionContext | null;
-    /**
-     * Check if currently executing
-     */
-    isRunning(): boolean;
-    /**
-     * Check if paused
-     */
-    isPaused(): boolean;
-    /**
-     * Check if cancelled
-     */
-    isCancelled(): boolean;
-}
+type AgentEvents = AgenticLoopEvents;
+type AgentEventName = AgenticLoopEventName;
 
 /**
- * Hook types for agentic loop execution
+ * Hook types for agent execution
  * Hooks can modify execution flow synchronously or asynchronously
  */
 
@@ -4719,7 +4553,7 @@ type Hook<TContext, TResult = any> = (context: TContext) => TResult | Promise<TR
 type ModifyingHook<TContext, TModification> = Hook<TContext, TModification>;
 interface BeforeExecutionContext {
     executionId: string;
-    config: AgenticLoopConfig;
+    config: ExecutionConfig;
     timestamp: Date;
 }
 interface AfterExecutionContext {
@@ -4914,4 +4748,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type InContextMemoryConfig as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type ContextManagerConfig as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextCompactor as G, type HookConfig as H, type IContextStorage as I, type TokenContentType as J, type IPersistentInstructionsStorage as K, type LLMResponse as L, type MemoryEntry as M, type StoredContextSession as N, type ContextStorageListOptions as O, type ContextSessionSummary as P, type TokenUsage as Q, type ToolCall as R, type SerializedAgentContextState as S, type ToolFunction as T, StreamEventType as U, CircuitBreaker as V, WorkingMemory as W, type TextGenerateOptions as X, type ModelCapabilities as Y, type ToolPermissionConfig$1 as Z, MessageRole as _, ToolManager as a, type WorkingMemoryAccess as a$, InContextMemoryPlugin as a0, type PersistentInstructionsConfig as a1, PersistentInstructionsPlugin as a2, DEFAULT_FEATURES as a3, type AgentContextEvents as a4, type AgentContextMetrics as a5, type HistoryMessage as a6, type ToolCallRecord as a7, type PrepareOptions as a8, type PreparedResult as a9, type DefaultAllowlistedTool as aA, CONTEXT_SESSION_FORMAT_VERSION as aB, type WorkingMemoryEvents as aC, type EvictionStrategy as aD, type IdempotencyCacheConfig as aE, type CacheStats as aF, DEFAULT_IDEMPOTENCY_CONFIG as aG, type PreparedContext as aH, DEFAULT_CONTEXT_CONFIG as aI, type MemoryEntryInput as aJ, type MemoryIndex as aK, type MemoryIndexEntry as aL, type MemoryPriority as aM, type TaskAwareScope as aN, type SimpleScope as aO, type TaskStatusForMemory as aP, DEFAULT_MEMORY_CONFIG as aQ, forTasks as aR, forPlan as aS, scopeEquals as aT, scopeMatches as aU, isSimpleScope as aV, isTaskAwareScope as aW, isTerminalMemoryStatus as aX, calculateEntrySize as aY, MEMORY_PRIORITY_VALUES as aZ, type ToolContext as a_, ToolOutputPlugin as aa, AutoSpillPlugin as ab, type ToolOutputPluginConfig as ac, type ToolOutput as ad, type SpilledEntry as ae, type ToolOptions as af, type ToolCondition as ag, type ToolSelectionContext as ah, type ToolRegistration as ai, type ToolMetadata as aj, type ToolManagerStats as ak, type SerializedToolState as al, type ToolManagerEvent as am, type PermissionScope as an, type RiskLevel as ao, type ToolPermissionConfig as ap, type ApprovalCacheEntry as aq, type SerializedApprovalState as ar, type SerializedApprovalEntry as as, type PermissionCheckResult as at, type ApprovalDecision as au, type PermissionCheckContext as av, type PermissionManagerEvent as aw, APPROVAL_STATE_VERSION as ax, DEFAULT_PERMISSION_CONFIG as ay, DEFAULT_ALLOWLIST as az, AgentContext as b, type ToolStartEvent as b$, ContentType as b0, type Content as b1, type InputTextContent as b2, type InputImageContent as b3, type OutputTextContent as b4, type ToolUseContent as b5, type ToolResultContent as b6, type Message as b7, type OutputItem as b8, type CompactionItem as b9, isResponseComplete as bA, isErrorEvent as bB, HookManager as bC, type AgenticLoopEventName as bD, type HookName as bE, type Hook as bF, type ModifyingHook as bG, type BeforeToolContext as bH, type AfterToolContext as bI, type ApproveToolContext as bJ, type ToolModification as bK, type ApprovalResult as bL, type IToolExecutor as bM, type IAsyncDisposable as bN, assertNotDestroyed as bO, CircuitOpenError as bP, type CircuitBreakerConfig as bQ, type CircuitBreakerEvents as bR, DEFAULT_CIRCUIT_BREAKER_CONFIG as bS, type InContextEntry as bT, type InContextPriority as bU, type SerializedInContextMemoryState as bV, type SerializedPersistentInstructionsState as bW, AgenticLoop as bX, type AgenticLoopConfig as bY, type ExecutionStartEvent as bZ, type ExecutionCompleteEvent as b_, type ReasoningItem as ba, ToolCallState as bb, defaultDescribeCall as bc, getToolCallDescription as bd, type Tool as be, type BuiltInTool as bf, type ToolResult as bg, type ToolExecutionContext as bh, type JSONSchema as bi, type ResponseCreatedEvent as bj, type ResponseInProgressEvent as bk, type OutputTextDeltaEvent as bl, type OutputTextDoneEvent as bm, type ToolCallStartEvent as bn, type ToolCallArgumentsDeltaEvent as bo, type ToolCallArgumentsDoneEvent as bp, type ToolExecutionStartEvent as bq, type ToolExecutionDoneEvent as br, type IterationCompleteEvent$1 as bs, type ResponseCompleteEvent as bt, type ErrorEvent as bu, isStreamEvent as bv, isOutputTextDelta as bw, isToolCallStart as bx, isToolCallArgumentsDelta as by, isToolCallArgumentsDone as bz, type AgentContextConfig as c, type ToolCompleteEvent as c0, type LLMRequestEvent as c1, type LLMResponseEvent as c2, ToolPermissionManager as d, type ITextProvider as e, type InputItem as f, type StreamEvent as g, type AgentContextFeatures as h, type HistoryMode as i, type AgenticLoopEvents as j, type IDisposable as k, type AgentResponse as l, type ExecutionMetrics as m, type AuditEntry as n, type CircuitState as o, type CircuitBreakerMetrics as p, type IContextComponent as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type AutoSpillConfig as x, type IContextStrategy as y, type ContextBudget as z };
+export { type InContextMemoryConfig as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type ContextManagerConfig as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextCompactor as G, type HookConfig as H, type IContextStorage as I, type TokenContentType as J, type IPersistentInstructionsStorage as K, type LLMResponse as L, type MemoryEntry as M, type StoredContextSession as N, type ContextStorageListOptions as O, type ContextSessionSummary as P, type TokenUsage as Q, type ToolCall as R, type SerializedAgentContextState as S, type ToolFunction as T, StreamEventType as U, CircuitBreaker as V, WorkingMemory as W, type TextGenerateOptions as X, type ModelCapabilities as Y, type ToolPermissionConfig$1 as Z, MessageRole as _, ToolManager as a, type WorkingMemoryAccess as a$, InContextMemoryPlugin as a0, type PersistentInstructionsConfig as a1, PersistentInstructionsPlugin as a2, DEFAULT_FEATURES as a3, type AgentContextEvents as a4, type AgentContextMetrics as a5, type HistoryMessage as a6, type ToolCallRecord as a7, type PrepareOptions as a8, type PreparedResult as a9, type DefaultAllowlistedTool as aA, CONTEXT_SESSION_FORMAT_VERSION as aB, type WorkingMemoryEvents as aC, type EvictionStrategy as aD, type IdempotencyCacheConfig as aE, type CacheStats as aF, DEFAULT_IDEMPOTENCY_CONFIG as aG, type PreparedContext as aH, DEFAULT_CONTEXT_CONFIG as aI, type MemoryEntryInput as aJ, type MemoryIndex as aK, type MemoryIndexEntry as aL, type MemoryPriority as aM, type TaskAwareScope as aN, type SimpleScope as aO, type TaskStatusForMemory as aP, DEFAULT_MEMORY_CONFIG as aQ, forTasks as aR, forPlan as aS, scopeEquals as aT, scopeMatches as aU, isSimpleScope as aV, isTaskAwareScope as aW, isTerminalMemoryStatus as aX, calculateEntrySize as aY, MEMORY_PRIORITY_VALUES as aZ, type ToolContext as a_, ToolOutputPlugin as aa, AutoSpillPlugin as ab, type ToolOutputPluginConfig as ac, type ToolOutput as ad, type SpilledEntry as ae, type ToolOptions as af, type ToolCondition as ag, type ToolSelectionContext as ah, type ToolRegistration as ai, type ToolMetadata as aj, type ToolManagerStats as ak, type SerializedToolState as al, type ToolManagerEvent as am, type PermissionScope as an, type RiskLevel as ao, type ToolPermissionConfig as ap, type ApprovalCacheEntry as aq, type SerializedApprovalState as ar, type SerializedApprovalEntry as as, type PermissionCheckResult as at, type ApprovalDecision as au, type PermissionCheckContext as av, type PermissionManagerEvent as aw, APPROVAL_STATE_VERSION as ax, DEFAULT_PERMISSION_CONFIG as ay, DEFAULT_ALLOWLIST as az, AgentContext as b, type ExecutionCompleteEvent as b$, ContentType as b0, type Content as b1, type InputTextContent as b2, type InputImageContent as b3, type OutputTextContent as b4, type ToolUseContent as b5, type ToolResultContent as b6, type Message as b7, type OutputItem as b8, type CompactionItem as b9, isResponseComplete as bA, isErrorEvent as bB, HookManager as bC, type AgentEventName as bD, type ExecutionConfig as bE, type AgenticLoopEvents as bF, type AgenticLoopEventName as bG, type HookName as bH, type Hook as bI, type ModifyingHook as bJ, type BeforeToolContext as bK, type AfterToolContext as bL, type ApproveToolContext as bM, type ToolModification as bN, type ApprovalResult as bO, type IToolExecutor as bP, type IAsyncDisposable as bQ, assertNotDestroyed as bR, CircuitOpenError as bS, type CircuitBreakerConfig as bT, type CircuitBreakerEvents as bU, DEFAULT_CIRCUIT_BREAKER_CONFIG as bV, type InContextEntry as bW, type InContextPriority as bX, type SerializedInContextMemoryState as bY, type SerializedPersistentInstructionsState as bZ, type ExecutionStartEvent as b_, type ReasoningItem as ba, ToolCallState as bb, defaultDescribeCall as bc, getToolCallDescription as bd, type Tool as be, type BuiltInTool as bf, type ToolResult as bg, type ToolExecutionContext as bh, type JSONSchema as bi, type ResponseCreatedEvent as bj, type ResponseInProgressEvent as bk, type OutputTextDeltaEvent as bl, type OutputTextDoneEvent as bm, type ToolCallStartEvent as bn, type ToolCallArgumentsDeltaEvent as bo, type ToolCallArgumentsDoneEvent as bp, type ToolExecutionStartEvent as bq, type ToolExecutionDoneEvent as br, type IterationCompleteEvent$1 as bs, type ResponseCompleteEvent as bt, type ErrorEvent as bu, isStreamEvent as bv, isOutputTextDelta as bw, isToolCallStart as bx, isToolCallArgumentsDelta as by, isToolCallArgumentsDone as bz, type AgentContextConfig as c, type ToolStartEvent as c0, type ToolCompleteEvent as c1, type LLMRequestEvent as c2, type LLMResponseEvent as c3, ToolPermissionManager as d, type ITextProvider as e, type InputItem as f, type StreamEvent as g, type AgentContextFeatures as h, type HistoryMode as i, type AgentEvents as j, type IDisposable as k, type AgentResponse as l, type ExecutionMetrics as m, type AuditEntry as n, type CircuitState as o, type CircuitBreakerMetrics as p, type IContextComponent as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type AutoSpillConfig as x, type IContextStrategy as y, type ContextBudget as z };

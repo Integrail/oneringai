@@ -2444,7 +2444,7 @@ var ToolPermissionManager = class extends EventEmitter {
    *
    * NOTE: If you want to require explicit approval, you MUST either:
    * 1. Set onApprovalRequired callback in AgentPermissionsConfig
-   * 2. Register an 'approve:tool' hook in the AgenticLoop
+   * 2. Register an 'approve:tool' hook in the Agent
    * 3. Add tools to the blocklist if they should never run
    *
    * This auto-approval behavior preserves backward compatibility with
@@ -2832,7 +2832,7 @@ var ToolManager = class extends EventEmitter {
   /**
    * Parent AgentContext reference for auto-building ToolContext
    * This ensures tools always have access to agentContext, memory, cache, etc.
-   * even when execute() is called directly (e.g., by AgenticLoop)
+   * even when execute() is called directly (e.g., by Agent)
    */
   _parentContext = null;
   constructor() {
@@ -2881,7 +2881,7 @@ var ToolManager = class extends EventEmitter {
    * Called by AgentContext after construction to enable auto-context in execute()
    *
    * This is the KEY to making tools work correctly:
-   * - When AgenticLoop calls ToolManager.execute() directly, we auto-build context
+   * - When Agent calls ToolManager.execute() directly, we auto-build context
    * - When AgentContext.executeTool() is used, it sets explicit _toolContext
    *
    * @param context - The parent AgentContext that owns this ToolManager
@@ -9344,7 +9344,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
   /**
    * Mark current position as protected from compaction.
    * Messages at or after this index cannot be compacted.
-   * Called at the start of each iteration by AgenticLoop.
+   * Called at the start of each iteration by Agent.
    */
   protectFromCompaction() {
     this._protectedFromIndex = this._conversation.length;
@@ -14846,106 +14846,201 @@ var StreamState = class {
   }
 };
 
-// src/capabilities/agents/AgenticLoop.ts
-var AgenticLoop = class extends EventEmitter {
-  constructor(provider, toolExecutor, hookConfig, errorHandling) {
-    super();
-    this.provider = provider;
-    this.toolExecutor = toolExecutor;
-    this.hookManager = new HookManager(
-      hookConfig || {},
-      this,
-      errorHandling
-    );
+// src/domain/interfaces/IDisposable.ts
+function assertNotDestroyed(obj, operation) {
+  if (obj.isDestroyed) {
+    throw new Error(`Cannot ${operation}: instance has been destroyed`);
   }
+}
+
+// src/core/Agent.ts
+init_Metrics();
+var Agent = class _Agent extends BaseAgent {
+  // ===== Agent-specific State =====
   hookManager;
-  context = null;
-  // Pause/resume state
-  paused = false;
-  pausePromise = null;
-  resumeCallback = null;
-  cancelled = false;
-  // Mutex to prevent race conditions in pause/resume
-  pauseResumeMutex = Promise.resolve();
+  executionContext = null;
+  // Pause/resume/cancel state
+  _paused = false;
+  _cancelled = false;
+  _pausePromise = null;
+  _resumeCallback = null;
+  _pauseResumeMutex = Promise.resolve();
+  // ===== Static Factory =====
   /**
-   * Execute agentic loop with tool calling
+   * Create a new agent
+   *
+   * @example
+   * ```typescript
+   * const agent = Agent.create({
+   *   connector: 'openai',  // or Connector instance
+   *   model: 'gpt-4',
+   *   instructions: 'You are a helpful assistant',
+   *   tools: [myTool]
+   * });
+   * ```
    */
-  async execute(config) {
+  static create(config) {
+    return new _Agent(config);
+  }
+  /**
+   * Resume an agent from a saved session
+   *
+   * @example
+   * ```typescript
+   * const agent = await Agent.resume('session-123', {
+   *   connector: 'openai',
+   *   model: 'gpt-4',
+   *   session: { storage: myStorage }
+   * });
+   * ```
+   */
+  static async resume(sessionId, config) {
+    const agent = new _Agent({
+      ...config,
+      session: {
+        ...config.session,
+        id: sessionId
+      }
+    });
+    await agent.ensureSessionLoaded();
+    return agent;
+  }
+  /**
+   * Create an agent from a stored definition
+   *
+   * Loads agent configuration from storage and creates a new Agent instance.
+   * The connector must be registered at runtime before calling this method.
+   *
+   * @param agentId - Agent identifier to load
+   * @param storage - Storage backend to load from
+   * @param overrides - Optional config overrides
+   * @returns Agent instance, or null if not found
+   */
+  static async fromStorage(agentId, storage, overrides) {
+    const definition = await storage.load(agentId);
+    if (!definition) {
+      return null;
+    }
+    const config = {
+      connector: definition.connector.name,
+      model: definition.connector.model,
+      instructions: definition.systemPrompt,
+      context: {
+        agentId: definition.agentId,
+        systemPrompt: definition.systemPrompt,
+        instructions: definition.instructions,
+        features: definition.features
+      },
+      ...definition.typeConfig,
+      ...overrides
+    };
+    return new _Agent(config);
+  }
+  // ===== Constructor =====
+  constructor(config) {
+    super(config, "Agent");
+    this._logger.debug({ model: this.model, connector: this.connector.name }, "Agent created");
+    metrics.increment("agent.created", 1, {
+      model: this.model,
+      connector: this.connector.name
+    });
+    if (config.instructions) {
+      this._agentContext.systemPrompt = config.instructions;
+    }
+    this._agentContext.tools.on("tool:registered", ({ name }) => {
+      const permission = this._agentContext.tools.getPermission(name);
+      if (permission) {
+        this._permissionManager.setToolConfig(name, permission);
+      }
+    });
+    this.hookManager = new HookManager(
+      config.hooks || {},
+      this,
+      config.errorHandling
+    );
+    this.initializeSession(config.session);
+  }
+  // ===== Abstract Method Implementations =====
+  getAgentType() {
+    return "agent";
+  }
+  // ===== Context Access =====
+  // Note: `context` getter is inherited from BaseAgent (returns _agentContext)
+  /**
+   * Check if context management is enabled.
+   * Always returns true since AgentContext is always created by BaseAgent.
+   */
+  hasContext() {
+    return true;
+  }
+  // getContextState() and restoreContextState() are inherited from BaseAgent
+  // ===== Main API =====
+  /**
+   * Run the agent with input
+   */
+  async run(input) {
+    assertNotDestroyed(this, "run agent");
+    await this.ensureSessionLoaded();
+    const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
+    this._logger.info({ inputPreview, toolCount: this._config.tools?.length || 0 }, "Agent run started");
+    metrics.increment("agent.run.started", 1, { model: this.model, connector: this.connector.name });
+    const startTime = Date.now();
+    const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
+    this._agentContext.setCurrentInput(userContent);
     const executionId = `exec_${randomUUID()}`;
-    this.context = new ExecutionContext(executionId, {
+    this.executionContext = new ExecutionContext(executionId, {
       maxHistorySize: 10,
-      historyMode: config.historyMode || "summary",
+      historyMode: this._config.historyMode || "summary",
       maxAuditTrailSize: 1e3
     });
-    this.paused = false;
-    this.cancelled = false;
-    const useAgentContext = !!config.agentContext;
-    const agentContext = config.agentContext;
-    if (useAgentContext && agentContext) {
-      if (typeof config.input === "string") {
-        agentContext.addUserMessage(config.input);
-      } else if (Array.isArray(config.input)) {
-        agentContext.addInputItems(config.input);
-      }
+    this._paused = false;
+    this._cancelled = false;
+    if (typeof input === "string") {
+      this._agentContext.addUserMessage(input);
+    } else {
+      this._agentContext.addInputItems(input);
     }
     this.emit("execution:start", {
       executionId,
-      config,
+      config: { model: this.model, maxIterations: this._config.maxIterations || 10 },
       timestamp: /* @__PURE__ */ new Date()
     });
     await this.hookManager.executeHooks("before:execution", {
       executionId,
-      config,
+      config: { model: this.model },
       timestamp: /* @__PURE__ */ new Date()
     }, void 0);
-    let currentInput = config.input;
     let iteration = 0;
-    let finalResponse;
+    let finalResponse = null;
     try {
-      while (iteration < config.maxIterations) {
+      const maxIterations = this._config.maxIterations || 10;
+      while (iteration < maxIterations) {
         await this.checkPause();
-        if (this.cancelled) {
+        if (this._cancelled) {
           throw new Error("Execution cancelled");
         }
-        this.context.checkLimits(config.limits);
+        this.executionContext.checkLimits(this._config.limits);
         const pauseCheck = await this.hookManager.executeHooks("pause:check", {
           executionId,
           iteration,
-          context: this.context,
+          context: this.executionContext,
           timestamp: /* @__PURE__ */ new Date()
         }, { shouldPause: false });
         if (pauseCheck.shouldPause) {
           this.pause(pauseCheck.reason || "Hook requested pause");
           await this.checkPause();
         }
-        this.context.iteration = iteration;
-        this.emit("iteration:start", {
-          executionId,
-          iteration,
-          timestamp: /* @__PURE__ */ new Date()
-        });
+        this.executionContext.iteration = iteration;
+        this.emit("iteration:start", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
         const iterationStartTime = Date.now();
-        let llmInput;
-        if (useAgentContext && agentContext) {
-          const prepared = await agentContext.prepareConversation({
-            instructionOverride: config.instructions
-          });
-          llmInput = prepared.input;
-        } else {
-          llmInput = currentInput;
-        }
-        const response = await this.generateWithHooks(config, llmInput, iteration, executionId);
-        const toolCalls = this.extractToolCalls(response.output, config.tools);
-        if (useAgentContext && agentContext) {
-          agentContext.addAssistantResponse(response.output);
-        }
+        const prepared = await this._agentContext.prepareConversation({
+          instructionOverride: this._config.instructions
+        });
+        const response = await this.generateWithHooks(prepared.input, iteration, executionId);
+        const toolCalls = this.extractToolCalls(response.output);
+        this._agentContext.addAssistantResponse(response.output);
         if (toolCalls.length > 0) {
-          this.emit("tool:detected", {
-            executionId,
-            iteration,
-            toolCalls,
-            timestamp: /* @__PURE__ */ new Date()
-          });
+          this.emit("tool:detected", { executionId, iteration, toolCalls, timestamp: /* @__PURE__ */ new Date() });
         }
         if (toolCalls.length === 0) {
           this.emit("iteration:complete", {
@@ -14958,18 +15053,16 @@ var AgenticLoop = class extends EventEmitter {
           finalResponse = response;
           break;
         }
-        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId, config);
-        if (useAgentContext && agentContext) {
-          agentContext.addToolResults(toolResults);
-        }
-        this.context.addIteration({
+        const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId);
+        this._agentContext.addToolResults(toolResults);
+        this.executionContext.addIteration({
           iteration,
           request: {
-            model: config.model,
-            input: useAgentContext ? llmInput : currentInput,
-            instructions: config.instructions,
-            tools: config.tools,
-            temperature: config.temperature
+            model: this.model,
+            input: prepared.input,
+            instructions: this._config.instructions,
+            tools: this.getEnabledToolDefinitions(),
+            temperature: this._config.temperature
           },
           response,
           toolCalls,
@@ -14977,11 +15070,11 @@ var AgenticLoop = class extends EventEmitter {
           startTime: new Date(iterationStartTime),
           endTime: /* @__PURE__ */ new Date()
         });
-        this.context.updateMetrics({
+        this.executionContext.updateMetrics({
           iterationCount: iteration + 1,
-          inputTokens: this.context.metrics.inputTokens + (response.usage?.input_tokens || 0),
-          outputTokens: this.context.metrics.outputTokens + (response.usage?.output_tokens || 0),
-          totalTokens: this.context.metrics.totalTokens + (response.usage?.total_tokens || 0)
+          inputTokens: this.executionContext.metrics.inputTokens + (response.usage?.input_tokens || 0),
+          outputTokens: this.executionContext.metrics.outputTokens + (response.usage?.output_tokens || 0),
+          totalTokens: this.executionContext.metrics.totalTokens + (response.usage?.total_tokens || 0)
         });
         this.emit("iteration:complete", {
           executionId,
@@ -14990,24 +15083,18 @@ var AgenticLoop = class extends EventEmitter {
           timestamp: /* @__PURE__ */ new Date(),
           duration: Date.now() - iterationStartTime
         });
-        if (!useAgentContext) {
-          const newMessages = this.buildNewMessages(response.output, toolResults);
-          currentInput = this.appendToContext(currentInput, newMessages);
-          const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-          currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
-        }
-        await agentContext?.autoSpillPlugin?.onIteration();
+        await this._agentContext.autoSpillPlugin?.onIteration();
         iteration++;
       }
-      if (iteration >= config.maxIterations) {
-        throw new Error(`Max iterations (${config.maxIterations}) reached without completion`);
+      if (iteration >= maxIterations && !finalResponse) {
+        throw new Error(`Max iterations (${maxIterations}) reached without completion`);
       }
-      const totalDuration = Date.now() - this.context.startTime.getTime();
-      this.context.updateMetrics({ totalDuration });
+      const totalDuration = Date.now() - this.executionContext.startTime.getTime();
+      this.executionContext.updateMetrics({ totalDuration });
       await this.hookManager.executeHooks("after:execution", {
         executionId,
         response: finalResponse,
-        context: this.context,
+        context: this.executionContext,
         timestamp: /* @__PURE__ */ new Date(),
         duration: totalDuration
       }, void 0);
@@ -15017,98 +15104,100 @@ var AgenticLoop = class extends EventEmitter {
         timestamp: /* @__PURE__ */ new Date(),
         duration: totalDuration
       });
+      const duration = Date.now() - startTime;
+      this._logger.info({ duration }, "Agent run completed");
+      metrics.timing("agent.run.duration", duration, { model: this.model, connector: this.connector.name });
+      metrics.increment("agent.run.completed", 1, { model: this.model, connector: this.connector.name, status: "success" });
       return finalResponse;
     } catch (error) {
-      this.emit("execution:error", {
-        executionId,
-        error,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      this.context?.metrics.errors.push({
+      this.emit("execution:error", { executionId, error, timestamp: /* @__PURE__ */ new Date() });
+      this.executionContext?.metrics.errors.push({
         type: "execution_error",
         message: error.message,
         timestamp: /* @__PURE__ */ new Date()
       });
+      const duration = Date.now() - startTime;
+      this._logger.error({ error: error.message, duration }, "Agent run failed");
+      metrics.increment("agent.run.completed", 1, { model: this.model, connector: this.connector.name, status: "error" });
       throw error;
     } finally {
-      this.context?.cleanup();
+      this.executionContext?.cleanup();
       this.hookManager.clear();
     }
   }
   /**
-   * Execute agentic loop with streaming and tool calling
+   * Stream response from the agent
    */
-  async *executeStreaming(config) {
+  async *stream(input) {
+    assertNotDestroyed(this, "stream from agent");
+    await this.ensureSessionLoaded();
+    const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
+    this._logger.info({ inputPreview, toolCount: this._config.tools?.length || 0 }, "Agent stream started");
+    metrics.increment("agent.stream.started", 1, { model: this.model, connector: this.connector.name });
+    const startTime = Date.now();
+    const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
+    this._agentContext.setCurrentInput(userContent);
     const executionId = `exec_${randomUUID()}`;
-    this.context = new ExecutionContext(executionId, {
+    this.executionContext = new ExecutionContext(executionId, {
       maxHistorySize: 10,
-      historyMode: config.historyMode || "summary",
+      historyMode: this._config.historyMode || "summary",
       maxAuditTrailSize: 1e3
     });
-    this.paused = false;
-    this.cancelled = false;
-    this.pausePromise = null;
-    this.resumeCallback = null;
-    const useAgentContext = !!config.agentContext;
-    const agentContext = config.agentContext;
-    if (useAgentContext && agentContext) {
-      if (typeof config.input === "string") {
-        agentContext.addUserMessage(config.input);
-      } else if (Array.isArray(config.input)) {
-        agentContext.addInputItems(config.input);
-      }
+    this._paused = false;
+    this._cancelled = false;
+    this._pausePromise = null;
+    this._resumeCallback = null;
+    if (typeof input === "string") {
+      this._agentContext.addUserMessage(input);
+    } else {
+      this._agentContext.addInputItems(input);
     }
-    const startTime = Date.now();
+    const globalStreamState = new StreamState(executionId, this.model);
     let iteration = 0;
-    let currentInput = config.input;
-    const globalStreamState = new StreamState(executionId, config.model);
     try {
       this.emit("execution:start", {
         executionId,
-        model: config.model,
+        model: this.model,
         timestamp: /* @__PURE__ */ new Date()
       });
       await this.hookManager.executeHooks("before:execution", {
         executionId,
-        config,
+        config: { model: this.model },
         timestamp: /* @__PURE__ */ new Date()
       }, void 0);
-      while (iteration < config.maxIterations) {
+      const maxIterations = this._config.maxIterations || 10;
+      while (iteration < maxIterations) {
         iteration++;
         await this.checkPause();
-        if (this.cancelled) {
+        if (this._cancelled) {
           this.emit("execution:cancelled", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
           break;
         }
-        if (this.context) {
-          this.context.checkLimits(config.limits);
+        if (this.executionContext) {
+          this.executionContext.checkLimits(this._config.limits);
         }
         const pauseCheck = await this.hookManager.executeHooks("pause:check", {
           executionId,
           iteration,
-          context: this.context,
+          context: this.executionContext,
           timestamp: /* @__PURE__ */ new Date()
         }, { shouldPause: false });
         if (pauseCheck.shouldPause) {
           this.pause();
         }
-        this.emit("iteration:start", {
-          executionId,
-          iteration,
-          timestamp: /* @__PURE__ */ new Date()
+        this.emit("iteration:start", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
+        const prepared = await this._agentContext.prepareConversation({
+          instructionOverride: this._config.instructions
         });
-        let llmInput;
-        if (useAgentContext && agentContext) {
-          const prepared = await agentContext.prepareConversation({
-            instructionOverride: config.instructions
-          });
-          llmInput = prepared.input;
-        } else {
-          llmInput = currentInput;
-        }
-        const iterationStreamState = new StreamState(executionId, config.model);
+        const iterationStreamState = new StreamState(executionId, this.model);
         const toolCallsMap = /* @__PURE__ */ new Map();
-        yield* this.streamGenerateWithHooks(config, llmInput, iteration, executionId, iterationStreamState, toolCallsMap);
+        yield* this.streamGenerateWithHooks(
+          prepared.input,
+          iteration,
+          executionId,
+          iterationStreamState,
+          toolCallsMap
+        );
         globalStreamState.accumulateUsage(iterationStreamState.usage);
         const toolCalls = [];
         for (const [toolCallId, buffer] of toolCallsMap) {
@@ -15167,7 +15256,7 @@ var AgenticLoop = class extends EventEmitter {
           };
           const toolStartTime = Date.now();
           try {
-            const result = await this.executeToolWithHooks(toolCall, iteration, executionId, config);
+            const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
             toolResults.push(result);
             yield {
               type: "response.tool_execution.done" /* TOOL_EXECUTION_DONE */,
@@ -15187,7 +15276,7 @@ var AgenticLoop = class extends EventEmitter {
               execution_time_ms: Date.now() - toolStartTime,
               error: error.message
             };
-            const failureMode = config.errorHandling?.toolFailureMode || "continue";
+            const failureMode = this._config.errorHandling?.toolFailureMode || "continue";
             if (failureMode === "fail") {
               throw error;
             }
@@ -15220,26 +15309,9 @@ var AgenticLoop = class extends EventEmitter {
           role: "assistant" /* ASSISTANT */,
           content: assistantContent
         };
-        const toolResultsMessage = {
-          type: "message",
-          role: "user" /* USER */,
-          content: toolResults.map((tr) => ({
-            type: "tool_result" /* TOOL_RESULT */,
-            tool_use_id: tr.tool_use_id,
-            content: tr.content,
-            error: tr.error
-          }))
-        };
-        if (useAgentContext && agentContext) {
-          agentContext.addInputItems([assistantMessage]);
-          agentContext.addToolResults(toolResults);
-        } else {
-          const newMessages = [assistantMessage, toolResultsMessage];
-          currentInput = this.appendToContext(currentInput, newMessages);
-          const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-          currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
-        }
-        await agentContext?.autoSpillPlugin?.onIteration();
+        this._agentContext.addInputItems([assistantMessage]);
+        this._agentContext.addToolResults(toolResults);
+        await this._agentContext.autoSpillPlugin?.onIteration();
         yield {
           type: "response.iteration.complete" /* ITERATION_COMPLETE */,
           response_id: executionId,
@@ -15247,28 +15319,35 @@ var AgenticLoop = class extends EventEmitter {
           tool_calls_count: toolCalls.length,
           has_more_iterations: true
         };
-        if (this.context) {
+        if (this.executionContext) {
           globalStreamState.incrementIteration();
         }
         iterationStreamState.clear();
         toolCallsMap.clear();
       }
-      if (iteration >= config.maxIterations) {
+      if (iteration >= maxIterations) {
         yield {
           type: "response.complete" /* RESPONSE_COMPLETE */,
           response_id: executionId,
           status: "incomplete",
-          // Incomplete because we hit max iterations
           usage: globalStreamState.usage,
           iterations: iteration,
           duration_ms: Date.now() - startTime
         };
       }
+      const streamingResponse = {
+        id: executionId,
+        object: "response",
+        created_at: Math.floor(startTime / 1e3),
+        status: "completed",
+        model: this.model,
+        output: [],
+        usage: globalStreamState.usage
+      };
       await this.hookManager.executeHooks("after:execution", {
         executionId,
-        response: null,
-        // We don't have a complete response in streaming
-        context: this.context,
+        response: streamingResponse,
+        context: this.executionContext,
         timestamp: /* @__PURE__ */ new Date(),
         duration: Date.now() - startTime
       }, void 0);
@@ -15278,12 +15357,12 @@ var AgenticLoop = class extends EventEmitter {
         duration: Date.now() - startTime,
         timestamp: /* @__PURE__ */ new Date()
       });
+      const duration = Date.now() - startTime;
+      this._logger.info({ duration }, "Agent stream completed");
+      metrics.timing("agent.stream.duration", duration, { model: this.model, connector: this.connector.name });
+      metrics.increment("agent.stream.completed", 1, { model: this.model, connector: this.connector.name, status: "success" });
     } catch (error) {
-      this.emit("execution:error", {
-        executionId,
-        error,
-        timestamp: /* @__PURE__ */ new Date()
-      });
+      this.emit("execution:error", { executionId, error, timestamp: /* @__PURE__ */ new Date() });
       yield {
         type: "response.error" /* ERROR */,
         response_id: executionId,
@@ -15293,43 +15372,111 @@ var AgenticLoop = class extends EventEmitter {
         },
         recoverable: false
       };
+      const duration = Date.now() - startTime;
+      this._logger.error({ error: error.message, duration }, "Agent stream failed");
+      metrics.increment("agent.stream.completed", 1, { model: this.model, connector: this.connector.name, status: "error" });
       throw error;
     } finally {
       globalStreamState.clear();
-      this.context?.cleanup();
+      this.executionContext?.cleanup();
       this.hookManager.clear();
+    }
+  }
+  // ===== LLM Generation with Hooks =====
+  /**
+   * Generate LLM response with hooks
+   */
+  async generateWithHooks(input, iteration, executionId) {
+    const llmStartTime = Date.now();
+    let generateOptions = {
+      model: this.model,
+      input,
+      instructions: this._config.instructions,
+      tools: this.getEnabledToolDefinitions(),
+      tool_choice: "auto",
+      temperature: this._config.temperature,
+      vendorOptions: this._config.vendorOptions
+    };
+    const beforeLLM = await this.hookManager.executeHooks("before:llm", {
+      executionId,
+      iteration,
+      options: generateOptions,
+      context: this.executionContext,
+      timestamp: /* @__PURE__ */ new Date()
+    }, {});
+    if (beforeLLM.modified) {
+      generateOptions = { ...generateOptions, ...beforeLLM.modified };
+    }
+    if (beforeLLM.skip) {
+      throw new Error("LLM call skipped by hook");
+    }
+    this.emit("llm:request", {
+      executionId,
+      iteration,
+      options: generateOptions,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    try {
+      const response = await this._provider.generate(generateOptions);
+      const llmDuration = Date.now() - llmStartTime;
+      this.executionContext?.updateMetrics({
+        llmDuration: (this.executionContext.metrics.llmDuration || 0) + llmDuration
+      });
+      this.emit("llm:response", {
+        executionId,
+        iteration,
+        response,
+        timestamp: /* @__PURE__ */ new Date(),
+        duration: llmDuration
+      });
+      await this.hookManager.executeHooks("after:llm", {
+        executionId,
+        iteration,
+        response,
+        context: this.executionContext,
+        timestamp: /* @__PURE__ */ new Date(),
+        duration: llmDuration
+      }, {});
+      return response;
+    } catch (error) {
+      this.emit("llm:error", {
+        executionId,
+        iteration,
+        error,
+        timestamp: /* @__PURE__ */ new Date()
+      });
+      throw error;
     }
   }
   /**
    * Stream LLM response with hooks
-   * @private
    */
-  async *streamGenerateWithHooks(config, input, iteration, executionId, streamState, toolCallsMap) {
+  async *streamGenerateWithHooks(input, iteration, executionId, streamState, toolCallsMap) {
     const llmStartTime = Date.now();
-    let generateOptions = {
-      model: config.model,
+    const generateOptions = {
+      model: this.model,
       input,
-      instructions: config.instructions,
-      tools: config.tools,
+      instructions: this._config.instructions,
+      tools: this.getEnabledToolDefinitions(),
       tool_choice: "auto",
-      temperature: config.temperature,
-      vendorOptions: config.vendorOptions
+      temperature: this._config.temperature,
+      vendorOptions: this._config.vendorOptions
     };
     await this.hookManager.executeHooks("before:llm", {
       executionId,
       iteration,
       options: generateOptions,
-      context: this.context,
+      context: this.executionContext,
       timestamp: /* @__PURE__ */ new Date()
     }, {});
     this.emit("llm:request", {
       executionId,
       iteration,
-      model: config.model,
+      model: this.model,
       timestamp: /* @__PURE__ */ new Date()
     });
     try {
-      for await (const event of this.provider.streamGenerate(generateOptions)) {
+      for await (const event of this._provider.streamGenerate(generateOptions)) {
         if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
           streamState.accumulateTextDelta(event.item_id, event.delta);
         } else if (event.type === "response.tool_call.start" /* TOOL_CALL_START */) {
@@ -15349,29 +15496,30 @@ var AgenticLoop = class extends EventEmitter {
           }
         } else if (event.type === "response.complete" /* RESPONSE_COMPLETE */) {
           streamState.updateUsage(event.usage);
-          if (process.env.DEBUG_STREAMING) {
-            console.error("[DEBUG] Captured usage from provider:", event.usage);
-            console.error("[DEBUG] StreamState usage after update:", streamState.usage);
-          }
           continue;
         }
         yield event;
       }
-      if (this.context) {
-        this.context.metrics.llmDuration += Date.now() - llmStartTime;
-        this.context.metrics.inputTokens += streamState.usage.input_tokens;
-        this.context.metrics.outputTokens += streamState.usage.output_tokens;
-        this.context.metrics.totalTokens += streamState.usage.total_tokens;
+      if (this.executionContext) {
+        this.executionContext.metrics.llmDuration += Date.now() - llmStartTime;
+        this.executionContext.metrics.inputTokens += streamState.usage.input_tokens;
+        this.executionContext.metrics.outputTokens += streamState.usage.output_tokens;
+        this.executionContext.metrics.totalTokens += streamState.usage.total_tokens;
       }
-      if (process.env.DEBUG_STREAMING) {
-        console.error("[DEBUG] Stream iteration complete, usage:", streamState.usage);
-      }
+      const llmPlaceholderResponse = {
+        id: executionId,
+        object: "response",
+        created_at: Math.floor(llmStartTime / 1e3),
+        status: "completed",
+        model: this.model,
+        output: [],
+        usage: streamState.usage
+      };
       await this.hookManager.executeHooks("after:llm", {
         executionId,
         iteration,
-        response: null,
-        // Streaming doesn't have complete response yet
-        context: this.context,
+        response: llmPlaceholderResponse,
+        context: this.executionContext,
         timestamp: /* @__PURE__ */ new Date(),
         duration: Date.now() - llmStartTime
       }, {});
@@ -15390,386 +15538,13 @@ var AgenticLoop = class extends EventEmitter {
       throw error;
     }
   }
-  /**
-   * Check tool permission before execution
-   * Returns true if approved, throws if blocked/rejected
-   * @private
-   */
-  async checkToolPermission(toolCall, iteration, executionId, config) {
-    const permissionManager = config.permissionManager;
-    if (!permissionManager) {
-      return true;
-    }
-    const toolName = toolCall.function.name;
-    if (permissionManager.isBlocked(toolName)) {
-      this.context?.audit("tool_blocked", { reason: "Tool is blocklisted" }, void 0, toolName);
-      throw new Error(`Tool "${toolName}" is blocked and cannot be executed`);
-    }
-    if (permissionManager.isApproved(toolName)) {
-      return true;
-    }
-    const checkResult = permissionManager.checkPermission(toolName);
-    if (!checkResult.needsApproval) {
-      return true;
-    }
-    let parsedArgs = {};
-    try {
-      parsedArgs = JSON.parse(toolCall.function.arguments);
-    } catch {
-    }
-    const context = {
-      toolCall,
-      parsedArgs,
-      config: checkResult.config || {},
-      executionId,
-      iteration,
-      agentType: config.agentType || "agent",
-      taskName: config.taskName
-    };
-    const decision = await permissionManager.requestApproval(context);
-    if (decision.approved) {
-      this.context?.audit("tool_permission_approved", {
-        scope: decision.scope,
-        approvedBy: decision.approvedBy
-      }, void 0, toolName);
-      return true;
-    }
-    return false;
-  }
-  /**
-   * Execute single tool with hooks
-   * @private
-   */
-  async executeToolWithHooks(toolCall, iteration, executionId, config) {
-    const toolStartTime = Date.now();
-    toolCall.state = "executing" /* EXECUTING */;
-    toolCall.startTime = /* @__PURE__ */ new Date();
-    await this.hookManager.executeHooks("before:tool", {
-      executionId,
-      iteration,
-      toolCall,
-      context: this.context,
-      timestamp: /* @__PURE__ */ new Date()
-    }, {});
-    const permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId, config);
-    if (!permissionApproved || this.hookManager.hasHooks("approve:tool")) {
-      const approval = await this.hookManager.executeHooks("approve:tool", {
-        executionId,
-        iteration,
-        toolCall,
-        context: this.context,
-        timestamp: /* @__PURE__ */ new Date()
-      }, { approved: permissionApproved });
-      if (!approval.approved) {
-        throw new Error(`Tool execution rejected: ${approval.reason || "No reason provided"}`);
-      }
-    }
-    this.emit("tool:start", {
-      executionId,
-      iteration,
-      toolCall,
-      timestamp: /* @__PURE__ */ new Date()
-    });
-    try {
-      const args = JSON.parse(toolCall.function.arguments);
-      const result = await this.executeWithTimeout(
-        () => this.toolExecutor.execute(toolCall.function.name, args),
-        config.toolTimeout ?? 3e4
-      );
-      const toolResult = {
-        tool_use_id: toolCall.id,
-        content: result,
-        executionTime: Date.now() - toolStartTime,
-        state: "completed" /* COMPLETED */
-      };
-      toolCall.state = "completed" /* COMPLETED */;
-      toolCall.endTime = /* @__PURE__ */ new Date();
-      await this.hookManager.executeHooks("after:tool", {
-        executionId,
-        iteration,
-        toolCall,
-        result: toolResult,
-        context: this.context,
-        timestamp: /* @__PURE__ */ new Date()
-      }, {});
-      if (this.context) {
-        this.context.metrics.toolCallCount++;
-        this.context.metrics.toolSuccessCount++;
-        this.context.metrics.toolDuration += toolResult.executionTime || 0;
-      }
-      this.emit("tool:complete", {
-        executionId,
-        iteration,
-        toolCall,
-        result: toolResult,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      return toolResult;
-    } catch (error) {
-      toolCall.state = "failed" /* FAILED */;
-      toolCall.endTime = /* @__PURE__ */ new Date();
-      toolCall.error = error.message;
-      if (this.context) {
-        this.context.metrics.toolFailureCount++;
-      }
-      this.emit("tool:error", {
-        executionId,
-        iteration,
-        toolCall,
-        error,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      throw error;
-    }
-  }
-  /**
-   * Generate LLM response with hooks
-   */
-  async generateWithHooks(config, input, iteration, executionId) {
-    const llmStartTime = Date.now();
-    let generateOptions = {
-      model: config.model,
-      input,
-      instructions: config.instructions,
-      tools: config.tools,
-      tool_choice: "auto",
-      temperature: config.temperature,
-      vendorOptions: config.vendorOptions
-    };
-    const beforeLLM = await this.hookManager.executeHooks("before:llm", {
-      executionId,
-      iteration,
-      options: generateOptions,
-      context: this.context,
-      timestamp: /* @__PURE__ */ new Date()
-    }, {});
-    if (beforeLLM.modified) {
-      generateOptions = { ...generateOptions, ...beforeLLM.modified };
-    }
-    if (beforeLLM.skip) {
-      throw new Error("LLM call skipped by hook");
-    }
-    this.emit("llm:request", {
-      executionId,
-      iteration,
-      options: generateOptions,
-      timestamp: /* @__PURE__ */ new Date()
-    });
-    try {
-      const response = await this.provider.generate(generateOptions);
-      const llmDuration = Date.now() - llmStartTime;
-      this.context?.updateMetrics({
-        llmDuration: (this.context.metrics.llmDuration || 0) + llmDuration
-      });
-      this.emit("llm:response", {
-        executionId,
-        iteration,
-        response,
-        timestamp: /* @__PURE__ */ new Date(),
-        duration: llmDuration
-      });
-      await this.hookManager.executeHooks("after:llm", {
-        executionId,
-        iteration,
-        response,
-        context: this.context,
-        timestamp: /* @__PURE__ */ new Date(),
-        duration: llmDuration
-      }, {});
-      return response;
-    } catch (error) {
-      this.emit("llm:error", {
-        executionId,
-        iteration,
-        error,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      throw error;
-    }
-  }
-  /**
-   * Execute tools with hooks
-   */
-  async executeToolsWithHooks(toolCalls, iteration, executionId, config) {
-    const results = [];
-    for (const toolCall of toolCalls) {
-      this.context?.addToolCall(toolCall);
-      await this.checkPause();
-      const beforeTool = await this.hookManager.executeHooks("before:tool", {
-        executionId,
-        iteration,
-        toolCall,
-        context: this.context,
-        timestamp: /* @__PURE__ */ new Date()
-      }, {});
-      if (beforeTool.skip) {
-        this.context?.audit("tool_skipped", { toolCall }, void 0, toolCall.function.name);
-        const mockResult = {
-          tool_use_id: toolCall.id,
-          content: beforeTool.mockResult || "",
-          state: "completed" /* COMPLETED */,
-          executionTime: 0
-        };
-        results.push(mockResult);
-        this.context?.addToolResult(mockResult);
-        continue;
-      }
-      if (beforeTool.modified) {
-        Object.assign(toolCall, beforeTool.modified);
-        this.context?.audit("tool_modified", { modifications: beforeTool.modified }, void 0, toolCall.function.name);
-      }
-      let permissionApproved = true;
-      try {
-        permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId, config);
-      } catch (error) {
-        this.context?.audit("tool_blocked", { reason: error.message }, void 0, toolCall.function.name);
-        const blockedResult = {
-          tool_use_id: toolCall.id,
-          content: "",
-          error: error.message,
-          state: "failed" /* FAILED */
-        };
-        results.push(blockedResult);
-        this.context?.addToolResult(blockedResult);
-        continue;
-      }
-      if (!permissionApproved || this.hookManager.hasHooks("approve:tool")) {
-        const approval = await this.hookManager.executeHooks("approve:tool", {
-          executionId,
-          iteration,
-          toolCall,
-          context: this.context,
-          timestamp: /* @__PURE__ */ new Date()
-        }, { approved: permissionApproved });
-        if (!approval.approved) {
-          this.context?.audit("tool_rejected", { reason: approval.reason }, void 0, toolCall.function.name);
-          const rejectedResult = {
-            tool_use_id: toolCall.id,
-            content: "",
-            error: `Tool rejected: ${approval.reason || "Not approved"}`,
-            state: "failed" /* FAILED */
-          };
-          results.push(rejectedResult);
-          this.context?.addToolResult(rejectedResult);
-          continue;
-        }
-        this.context?.audit("tool_approved", { reason: approval.reason }, void 0, toolCall.function.name);
-      }
-      toolCall.state = "executing" /* EXECUTING */;
-      toolCall.startTime = /* @__PURE__ */ new Date();
-      this.emit("tool:start", {
-        executionId,
-        iteration,
-        toolCall,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      const toolStartTime = Date.now();
-      try {
-        const timeout = config.toolTimeout ?? 3e4;
-        const result = await this.executeWithTimeout(
-          () => this.toolExecutor.execute(
-            toolCall.function.name,
-            JSON.parse(toolCall.function.arguments)
-          ),
-          timeout
-        );
-        toolCall.state = "completed" /* COMPLETED */;
-        toolCall.endTime = /* @__PURE__ */ new Date();
-        let toolResult = {
-          tool_use_id: toolCall.id,
-          content: result,
-          state: "completed" /* COMPLETED */,
-          executionTime: Date.now() - toolStartTime
-        };
-        const afterTool = await this.hookManager.executeHooks("after:tool", {
-          executionId,
-          iteration,
-          toolCall,
-          result: toolResult,
-          context: this.context,
-          timestamp: /* @__PURE__ */ new Date()
-        }, {});
-        if (afterTool.modified) {
-          toolResult = { ...toolResult, ...afterTool.modified };
-        }
-        const agentContext = config.agentContext;
-        if (agentContext && toolResult.content) {
-          agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, toolResult.content);
-          const autoSpillPlugin = agentContext.autoSpillPlugin;
-          if (autoSpillPlugin) {
-            const outputStr = typeof toolResult.content === "string" ? toolResult.content : JSON.stringify(toolResult.content);
-            const outputSize = Buffer.byteLength(outputStr, "utf8");
-            if (autoSpillPlugin.shouldSpill(toolCall.function.name, outputSize)) {
-              const spillKey = await autoSpillPlugin.onToolOutput(
-                toolCall.function.name,
-                toolResult.content
-              );
-              if (spillKey) {
-                toolResult.spilledKey = spillKey;
-                toolResult.content = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
-              }
-            }
-          }
-        }
-        results.push(toolResult);
-        this.context?.addToolResult(toolResult);
-        this.context?.updateMetrics({
-          toolDuration: (this.context.metrics.toolDuration || 0) + toolResult.executionTime
-        });
-        this.emit("tool:complete", {
-          executionId,
-          iteration,
-          toolCall,
-          result: toolResult,
-          timestamp: /* @__PURE__ */ new Date()
-        });
-      } catch (error) {
-        toolCall.state = "failed" /* FAILED */;
-        toolCall.endTime = /* @__PURE__ */ new Date();
-        toolCall.error = error.message;
-        const toolResult = {
-          tool_use_id: toolCall.id,
-          content: "",
-          error: error.message,
-          state: "failed" /* FAILED */
-        };
-        results.push(toolResult);
-        this.context?.addToolResult(toolResult);
-        this.context?.metrics.errors.push({
-          type: "tool_error",
-          message: error.message,
-          timestamp: /* @__PURE__ */ new Date()
-        });
-        if (error instanceof ToolTimeoutError) {
-          this.emit("tool:timeout", {
-            executionId,
-            iteration,
-            toolCall,
-            timeout: config.toolTimeout ?? 3e4,
-            timestamp: /* @__PURE__ */ new Date()
-          });
-        } else {
-          this.emit("tool:error", {
-            executionId,
-            iteration,
-            toolCall,
-            error,
-            timestamp: /* @__PURE__ */ new Date()
-          });
-        }
-        const failureMode = config.errorHandling?.toolFailureMode || "continue";
-        if (failureMode === "fail") {
-          throw error;
-        }
-      }
-    }
-    return results;
-  }
+  // ===== Tool Execution =====
   /**
    * Extract tool calls from response output
    */
-  extractToolCalls(output, toolDefinitions) {
+  extractToolCalls(output) {
     const toolCalls = [];
+    const toolDefinitions = this.getEnabledToolDefinitions();
     const toolMap = /* @__PURE__ */ new Map();
     for (const tool of toolDefinitions) {
       if (tool.type === "function") {
@@ -15800,6 +15575,189 @@ var AgenticLoop = class extends EventEmitter {
     return toolCalls;
   }
   /**
+   * Execute tools with hooks
+   */
+  async executeToolsWithHooks(toolCalls, iteration, executionId) {
+    const results = [];
+    for (const toolCall of toolCalls) {
+      this.executionContext?.addToolCall(toolCall);
+      await this.checkPause();
+      const beforeTool = await this.hookManager.executeHooks("before:tool", {
+        executionId,
+        iteration,
+        toolCall,
+        context: this.executionContext,
+        timestamp: /* @__PURE__ */ new Date()
+      }, {});
+      if (beforeTool.skip) {
+        this.executionContext?.audit("tool_skipped", { toolCall }, void 0, toolCall.function.name);
+        const mockResult = {
+          tool_use_id: toolCall.id,
+          content: beforeTool.mockResult || "",
+          state: "completed" /* COMPLETED */,
+          executionTime: 0
+        };
+        results.push(mockResult);
+        this.executionContext?.addToolResult(mockResult);
+        continue;
+      }
+      if (beforeTool.modified) {
+        Object.assign(toolCall, beforeTool.modified);
+        this.executionContext?.audit("tool_modified", { modifications: beforeTool.modified }, void 0, toolCall.function.name);
+      }
+      try {
+        const result = await this.executeToolWithHooks(toolCall, iteration, executionId);
+        results.push(result);
+        this.executionContext?.addToolResult(result);
+      } catch (error) {
+        const toolResult = {
+          tool_use_id: toolCall.id,
+          content: "",
+          error: error.message,
+          state: "failed" /* FAILED */
+        };
+        results.push(toolResult);
+        this.executionContext?.addToolResult(toolResult);
+        const failureMode = this._config.errorHandling?.toolFailureMode || "continue";
+        if (failureMode === "fail") {
+          throw error;
+        }
+      }
+    }
+    return results;
+  }
+  /**
+   * Execute single tool with hooks
+   */
+  async executeToolWithHooks(toolCall, iteration, executionId) {
+    const toolStartTime = Date.now();
+    toolCall.state = "executing" /* EXECUTING */;
+    toolCall.startTime = /* @__PURE__ */ new Date();
+    const permissionApproved = await this.checkToolPermission(toolCall, iteration, executionId);
+    if (!permissionApproved || this.hookManager.hasHooks("approve:tool")) {
+      const approval = await this.hookManager.executeHooks("approve:tool", {
+        executionId,
+        iteration,
+        toolCall,
+        context: this.executionContext,
+        timestamp: /* @__PURE__ */ new Date()
+      }, { approved: permissionApproved });
+      if (!approval.approved) {
+        throw new Error(`Tool execution rejected: ${approval.reason || "No reason provided"}`);
+      }
+    }
+    this.emit("tool:start", { executionId, iteration, toolCall, timestamp: /* @__PURE__ */ new Date() });
+    try {
+      const args = JSON.parse(toolCall.function.arguments);
+      const timeout = this._config.toolTimeout ?? 3e4;
+      const result = await this.executeWithTimeout(
+        () => this._agentContext.tools.execute(toolCall.function.name, args),
+        timeout
+      );
+      toolCall.state = "completed" /* COMPLETED */;
+      toolCall.endTime = /* @__PURE__ */ new Date();
+      let toolResult = {
+        tool_use_id: toolCall.id,
+        content: result,
+        state: "completed" /* COMPLETED */,
+        executionTime: Date.now() - toolStartTime
+      };
+      const afterTool = await this.hookManager.executeHooks("after:tool", {
+        executionId,
+        iteration,
+        toolCall,
+        result: toolResult,
+        context: this.executionContext,
+        timestamp: /* @__PURE__ */ new Date()
+      }, {});
+      if (afterTool.modified) {
+        toolResult = { ...toolResult, ...afterTool.modified };
+      }
+      if (toolResult.content) {
+        this._agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, toolResult.content);
+        const autoSpillPlugin = this._agentContext.autoSpillPlugin;
+        if (autoSpillPlugin) {
+          const outputStr = typeof toolResult.content === "string" ? toolResult.content : JSON.stringify(toolResult.content);
+          const outputSize = Buffer.byteLength(outputStr, "utf8");
+          if (autoSpillPlugin.shouldSpill(toolCall.function.name, outputSize)) {
+            const spillKey = await autoSpillPlugin.onToolOutput(
+              toolCall.function.name,
+              toolResult.content
+            );
+            if (spillKey) {
+              toolResult.spilledKey = spillKey;
+              toolResult.content = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
+            }
+          }
+        }
+      }
+      if (this.executionContext) {
+        this.executionContext.metrics.toolCallCount++;
+        this.executionContext.metrics.toolSuccessCount++;
+        this.executionContext.metrics.toolDuration += toolResult.executionTime || 0;
+      }
+      this.emit("tool:complete", { executionId, iteration, toolCall, result: toolResult, timestamp: /* @__PURE__ */ new Date() });
+      return toolResult;
+    } catch (error) {
+      toolCall.state = "failed" /* FAILED */;
+      toolCall.endTime = /* @__PURE__ */ new Date();
+      toolCall.error = error.message;
+      if (this.executionContext) {
+        this.executionContext.metrics.toolFailureCount++;
+      }
+      if (error instanceof ToolTimeoutError) {
+        this.emit("tool:timeout", {
+          executionId,
+          iteration,
+          toolCall,
+          timeout: this._config.toolTimeout ?? 3e4,
+          timestamp: /* @__PURE__ */ new Date()
+        });
+      } else {
+        this.emit("tool:error", { executionId, iteration, toolCall, error, timestamp: /* @__PURE__ */ new Date() });
+      }
+      throw error;
+    }
+  }
+  /**
+   * Check tool permission before execution
+   */
+  async checkToolPermission(toolCall, iteration, executionId) {
+    if (this._permissionManager.isBlocked(toolCall.function.name)) {
+      this.executionContext?.audit("tool_blocked", { reason: "Tool is blocklisted" }, void 0, toolCall.function.name);
+      throw new Error(`Tool "${toolCall.function.name}" is blocked and cannot be executed`);
+    }
+    if (this._permissionManager.isApproved(toolCall.function.name)) {
+      return true;
+    }
+    const checkResult = this._permissionManager.checkPermission(toolCall.function.name);
+    if (!checkResult.needsApproval) {
+      return true;
+    }
+    let parsedArgs = {};
+    try {
+      parsedArgs = JSON.parse(toolCall.function.arguments);
+    } catch {
+    }
+    const context = {
+      toolCall,
+      parsedArgs,
+      config: checkResult.config || {},
+      executionId,
+      iteration,
+      agentType: "agent"
+    };
+    const decision = await this._permissionManager.requestApproval(context);
+    if (decision.approved) {
+      this.executionContext?.audit("tool_permission_approved", {
+        scope: decision.scope,
+        approvedBy: decision.approvedBy
+      }, void 0, toolCall.function.name);
+      return true;
+    }
+    return false;
+  }
+  /**
    * Execute function with timeout
    */
   async executeWithTimeout(fn, timeoutMs) {
@@ -15816,197 +15774,71 @@ var AgenticLoop = class extends EventEmitter {
       });
     });
   }
-  // ============ Shared Helper Methods ============
-  // These methods provide unified logic for both execute() and executeStreaming()
+  // ===== Pause/Resume/Cancel =====
   /**
-   * Build new messages from tool results (assistant response + tool results)
-   */
-  buildNewMessages(previousOutput, toolResults) {
-    const messages = [];
-    for (const item of previousOutput) {
-      if (item.type === "message") {
-        messages.push(item);
-      }
-    }
-    const toolResultContents = toolResults.map((result) => ({
-      type: "tool_result" /* TOOL_RESULT */,
-      tool_use_id: result.tool_use_id,
-      content: result.content,
-      error: result.error
-    }));
-    if (toolResultContents.length > 0) {
-      messages.push({
-        type: "message",
-        role: "user" /* USER */,
-        content: toolResultContents
-      });
-    }
-    return messages;
-  }
-  /**
-   * Append new messages to current context, preserving history
-   * Unified logic for both execute() and executeStreaming()
-   */
-  appendToContext(currentInput, newMessages) {
-    if (Array.isArray(currentInput)) {
-      return [...currentInput, ...newMessages];
-    }
-    return [
-      {
-        type: "message",
-        role: "user" /* USER */,
-        content: [{ type: "input_text" /* INPUT_TEXT */, text: currentInput }]
-      },
-      ...newMessages
-    ];
-  }
-  /**
-   * Apply sliding window to prevent unbounded input growth
-   * Preserves system/developer message at the start if present
-   * IMPORTANT: Ensures tool_use and tool_result pairs are never broken
-   */
-  applySlidingWindow(input, maxMessages = 50) {
-    if (input.length <= maxMessages) {
-      return input;
-    }
-    const firstMessage = input[0];
-    const isSystemMessage = firstMessage?.type === "message" && firstMessage.role === "developer" /* DEVELOPER */;
-    const maxToKeep = isSystemMessage ? maxMessages - 1 : maxMessages;
-    const safeCutIndex = this.findSafeToolBoundary(input, input.length - maxToKeep);
-    const recentMessages = input.slice(safeCutIndex);
-    if (isSystemMessage) {
-      return [firstMessage, ...recentMessages];
-    }
-    return recentMessages;
-  }
-  /**
-   * Find a safe index to cut the message array without breaking tool call/result pairs
-   * A safe boundary is one where all tool_use IDs have matching tool_result IDs
-   */
-  findSafeToolBoundary(input, targetIndex) {
-    let cutIndex = Math.max(0, Math.min(targetIndex, input.length - 1));
-    while (cutIndex < input.length - 1) {
-      if (this.isToolBoundarySafe(input, cutIndex)) {
-        return cutIndex;
-      }
-      cutIndex++;
-    }
-    cutIndex = Math.max(0, targetIndex);
-    while (cutIndex > 0) {
-      if (this.isToolBoundarySafe(input, cutIndex)) {
-        return cutIndex;
-      }
-      cutIndex--;
-    }
-    return Math.max(0, targetIndex);
-  }
-  /**
-   * Check if cutting at this index would leave tool calls/results balanced
-   * Returns true if all tool_use IDs in the slice have matching tool_result IDs
-   */
-  isToolBoundarySafe(input, startIndex) {
-    const slicedMessages = input.slice(startIndex);
-    const toolUseIds = /* @__PURE__ */ new Set();
-    const toolResultIds = /* @__PURE__ */ new Set();
-    for (const item of slicedMessages) {
-      if (item.type !== "message") continue;
-      for (const content of item.content) {
-        if (content.type === "tool_use" /* TOOL_USE */) {
-          toolUseIds.add(content.id);
-        } else if (content.type === "tool_result" /* TOOL_RESULT */) {
-          toolResultIds.add(content.tool_use_id);
-        }
-      }
-    }
-    for (const resultId of toolResultIds) {
-      if (!toolUseIds.has(resultId)) {
-        return false;
-      }
-    }
-    for (const useId of toolUseIds) {
-      if (!toolResultIds.has(useId)) {
-        const lastMessage = slicedMessages[slicedMessages.length - 1];
-        const isLastMessageWithThisToolUse = lastMessage?.type === "message" && lastMessage.role === "assistant" /* ASSISTANT */ && lastMessage.content.some(
-          (c) => c.type === "tool_use" /* TOOL_USE */ && c.id === useId
-        );
-        if (!isLastMessageWithThisToolUse) {
-          return false;
-        }
-      }
-    }
-    return true;
-  }
-  /**
-   * Pause execution (thread-safe with mutex)
+   * Pause execution
    */
   pause(reason) {
-    this.pauseResumeMutex = this.pauseResumeMutex.then(() => {
-      this._doPause(reason);
+    this._pauseResumeMutex = this._pauseResumeMutex.then(() => {
+      if (this._paused) return;
+      this._paused = true;
+      this._pausePromise = new Promise((resolve5) => {
+        this._resumeCallback = resolve5;
+      });
+      if (this.executionContext) {
+        this.executionContext.paused = true;
+        this.executionContext.pauseReason = reason;
+        this.executionContext.audit("execution_paused", { reason });
+      }
+      this.emit("execution:paused", {
+        executionId: this.executionContext?.executionId || "unknown",
+        reason: reason || "Manual pause",
+        timestamp: /* @__PURE__ */ new Date()
+      });
     });
   }
   /**
-   * Internal pause implementation
-   */
-  _doPause(reason) {
-    if (this.paused) return;
-    this.paused = true;
-    this.pausePromise = new Promise((resolve5) => {
-      this.resumeCallback = resolve5;
-    });
-    if (this.context) {
-      this.context.paused = true;
-      this.context.pauseReason = reason;
-      this.context.audit("execution_paused", { reason });
-    }
-    this.emit("execution:paused", {
-      executionId: this.context?.executionId || "unknown",
-      reason: reason || "Manual pause",
-      timestamp: /* @__PURE__ */ new Date()
-    });
-  }
-  /**
-   * Resume execution (thread-safe with mutex)
+   * Resume execution
    */
   resume() {
-    this.pauseResumeMutex = this.pauseResumeMutex.then(() => {
-      this._doResume();
-    });
-  }
-  /**
-   * Internal resume implementation
-   */
-  _doResume() {
-    if (!this.paused) return;
-    this.paused = false;
-    if (this.context) {
-      this.context.paused = false;
-      this.context.pauseReason = void 0;
-      this.context.audit("execution_resumed", {});
-    }
-    if (this.resumeCallback) {
-      this.resumeCallback();
-      this.resumeCallback = null;
-    }
-    this.pausePromise = null;
-    this.emit("execution:resumed", {
-      executionId: this.context?.executionId || "unknown",
-      timestamp: /* @__PURE__ */ new Date()
+    this._pauseResumeMutex = this._pauseResumeMutex.then(() => {
+      if (!this._paused) return;
+      this._paused = false;
+      if (this.executionContext) {
+        this.executionContext.paused = false;
+        this.executionContext.pauseReason = void 0;
+        this.executionContext.audit("execution_resumed", {});
+      }
+      if (this._resumeCallback) {
+        this._resumeCallback();
+        this._resumeCallback = null;
+      }
+      this._pausePromise = null;
+      this.emit("execution:resumed", {
+        executionId: this.executionContext?.executionId || "unknown",
+        timestamp: /* @__PURE__ */ new Date()
+      });
     });
   }
   /**
    * Cancel execution
    */
   cancel(reason) {
-    this.cancelled = true;
-    if (this.context) {
-      this.context.cancelled = true;
-      this.context.cancelReason = reason;
+    this._cancelled = true;
+    if (this.executionContext) {
+      this.executionContext.cancelled = true;
+      this.executionContext.cancelReason = reason;
     }
-    if (this.paused) {
-      this._doResume();
+    if (this._paused) {
+      this._paused = false;
+      if (this._resumeCallback) {
+        this._resumeCallback();
+        this._resumeCallback = null;
+      }
+      this._pausePromise = null;
     }
     this.emit("execution:cancelled", {
-      executionId: this.context?.executionId || "unknown",
+      executionId: this.executionContext?.executionId || "unknown",
       reason: reason || "Manual cancellation",
       timestamp: /* @__PURE__ */ new Date()
     });
@@ -16015,412 +15847,52 @@ var AgenticLoop = class extends EventEmitter {
    * Check if paused and wait
    */
   async checkPause() {
-    if (this.paused && this.pausePromise) {
-      await this.pausePromise;
-    }
-  }
-  /**
-   * Get current execution context
-   */
-  getContext() {
-    return this.context;
-  }
-  /**
-   * Check if currently executing
-   */
-  isRunning() {
-    return this.context !== null && !this.cancelled;
-  }
-  /**
-   * Check if paused
-   */
-  isPaused() {
-    return this.paused;
-  }
-  /**
-   * Check if cancelled
-   */
-  isCancelled() {
-    return this.cancelled;
-  }
-};
-
-// src/domain/interfaces/IDisposable.ts
-function assertNotDestroyed(obj, operation) {
-  if (obj.isDestroyed) {
-    throw new Error(`Cannot ${operation}: instance has been destroyed`);
-  }
-}
-
-// src/core/Agent.ts
-init_Metrics();
-var Agent = class _Agent extends BaseAgent {
-  // ===== Agent-specific State =====
-  agenticLoop;
-  boundListeners = /* @__PURE__ */ new Map();
-  // ===== Static Factory =====
-  /**
-   * Create a new agent
-   *
-   * @example
-   * ```typescript
-   * const agent = Agent.create({
-   *   connector: 'openai',  // or Connector instance
-   *   model: 'gpt-4',
-   *   instructions: 'You are a helpful assistant',
-   *   tools: [myTool]
-   * });
-   * ```
-   */
-  static create(config) {
-    return new _Agent(config);
-  }
-  /**
-   * Resume an agent from a saved session
-   *
-   * @example
-   * ```typescript
-   * const agent = await Agent.resume('session-123', {
-   *   connector: 'openai',
-   *   model: 'gpt-4',
-   *   session: { storage: myStorage }
-   * });
-   * ```
-   */
-  static async resume(sessionId, config) {
-    const agent = new _Agent({
-      ...config,
-      session: {
-        ...config.session,
-        id: sessionId
-      }
-    });
-    await agent.ensureSessionLoaded();
-    return agent;
-  }
-  /**
-   * Create an agent from a stored definition
-   *
-   * Loads agent configuration from storage and creates a new Agent instance.
-   * The connector must be registered at runtime before calling this method.
-   *
-   * @param agentId - Agent identifier to load
-   * @param storage - Storage backend to load from
-   * @param overrides - Optional config overrides
-   * @returns Agent instance, or null if not found
-   *
-   * @example
-   * ```typescript
-   * // First, register the connector
-   * Connector.create({
-   *   name: 'openai',
-   *   vendor: Vendor.OpenAI,
-   *   auth: { type: 'api_key', apiKey: process.env.OPENAI_API_KEY }
-   * });
-   *
-   * // Then load the agent from storage
-   * const storage = new FileAgentDefinitionStorage();
-   * const agent = await Agent.fromStorage('my-assistant', storage);
-   *
-   * if (agent) {
-   *   const response = await agent.run('Hello!');
-   * }
-   * ```
-   */
-  static async fromStorage(agentId, storage, overrides) {
-    const definition = await storage.load(agentId);
-    if (!definition) {
-      return null;
-    }
-    const config = {
-      connector: definition.connector.name,
-      model: definition.connector.model,
-      instructions: definition.systemPrompt,
-      context: {
-        agentId: definition.agentId,
-        systemPrompt: definition.systemPrompt,
-        instructions: definition.instructions,
-        features: definition.features
-      },
-      ...definition.typeConfig,
-      ...overrides
-    };
-    return new _Agent(config);
-  }
-  // ===== Constructor =====
-  constructor(config) {
-    super(config, "Agent");
-    this._logger.debug({ config }, "Agent created");
-    metrics.increment("agent.created", 1, {
-      model: this.model,
-      connector: this.connector.name
-    });
-    if (config.instructions) {
-      this._agentContext.systemPrompt = config.instructions;
-    }
-    this._logger.debug("Using inherited AgentContext from BaseAgent");
-    this._agentContext.tools.on("tool:registered", ({ name }) => {
-      const permission = this._agentContext.tools.getPermission(name);
-      if (permission) {
-        this._permissionManager.setToolConfig(name, permission);
-      }
-    });
-    this.agenticLoop = new AgenticLoop(
-      this._provider,
-      this._agentContext.tools,
-      config.hooks,
-      config.errorHandling
-    );
-    this.setupEventForwarding();
-    this.initializeSession(config.session);
-  }
-  // ===== Abstract Method Implementations =====
-  getAgentType() {
-    return "agent";
-  }
-  // ===== Context Access =====
-  // Note: `context` getter is inherited from BaseAgent (returns _agentContext)
-  /**
-   * Check if context management is enabled.
-   * Always returns true since AgentContext is always created by BaseAgent.
-   */
-  hasContext() {
-    return true;
-  }
-  // getContextState() and restoreContextState() are inherited from BaseAgent
-  // ===== Main API =====
-  /**
-   * Run the agent with input
-   */
-  async run(input) {
-    assertNotDestroyed(this, "run agent");
-    await this.ensureSessionLoaded();
-    const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
-    this._logger.info({
-      inputPreview,
-      toolCount: this._config.tools?.length || 0
-    }, "Agent run started");
-    metrics.increment("agent.run.started", 1, {
-      model: this.model,
-      connector: this.connector.name
-    });
-    const startTime = Date.now();
-    const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
-    this._agentContext.setCurrentInput(userContent);
-    try {
-      const tools = this.getEnabledToolDefinitions();
-      const loopConfig = {
-        model: this.model,
-        input,
-        instructions: this._config.instructions,
-        tools,
-        temperature: this._config.temperature,
-        maxIterations: this._config.maxIterations || 10,
-        vendorOptions: this._config.vendorOptions,
-        hooks: this._config.hooks,
-        historyMode: this._config.historyMode,
-        limits: this._config.limits,
-        errorHandling: this._config.errorHandling,
-        permissionManager: this._permissionManager,
-        agentType: "agent",
-        // Pass AgentContext for unified context management
-        // AgenticLoop will use prepareConversation() and add messages automatically
-        agentContext: this._agentContext
-      };
-      const response = await this.agenticLoop.execute(loopConfig);
-      const duration = Date.now() - startTime;
-      this._logger.info({ duration }, "Agent run completed");
-      metrics.timing("agent.run.duration", duration, {
-        model: this.model,
-        connector: this.connector.name
-      });
-      metrics.increment("agent.run.completed", 1, {
-        model: this.model,
-        connector: this.connector.name,
-        status: "success"
-      });
-      return response;
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      this._logger.error({
-        error: error.message,
-        duration
-      }, "Agent run failed");
-      metrics.increment("agent.run.completed", 1, {
-        model: this.model,
-        connector: this.connector.name,
-        status: "error"
-      });
-      throw error;
-    }
-  }
-  /**
-   * Stream response from the agent
-   */
-  async *stream(input) {
-    assertNotDestroyed(this, "stream from agent");
-    await this.ensureSessionLoaded();
-    const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
-    this._logger.info({
-      inputPreview,
-      toolCount: this._config.tools?.length || 0
-    }, "Agent stream started");
-    metrics.increment("agent.stream.started", 1, {
-      model: this.model,
-      connector: this.connector.name
-    });
-    const startTime = Date.now();
-    const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
-    this._agentContext.setCurrentInput(userContent);
-    try {
-      const tools = this.getEnabledToolDefinitions();
-      const loopConfig = {
-        model: this.model,
-        input,
-        instructions: this._config.instructions,
-        tools,
-        temperature: this._config.temperature,
-        maxIterations: this._config.maxIterations || 10,
-        vendorOptions: this._config.vendorOptions,
-        hooks: this._config.hooks,
-        historyMode: this._config.historyMode,
-        limits: this._config.limits,
-        errorHandling: this._config.errorHandling,
-        permissionManager: this._permissionManager,
-        agentType: "agent",
-        // Pass AgentContext for unified context management
-        // AgenticLoop will use prepareConversation() and add messages automatically
-        agentContext: this._agentContext
-      };
-      for await (const event of this.agenticLoop.executeStreaming(loopConfig)) {
-        yield event;
-      }
-      const duration = Date.now() - startTime;
-      this._logger.info({ duration }, "Agent stream completed");
-      metrics.timing("agent.stream.duration", duration, {
-        model: this.model,
-        connector: this.connector.name
-      });
-      metrics.increment("agent.stream.completed", 1, {
-        model: this.model,
-        connector: this.connector.name,
-        status: "success"
-      });
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      this._logger.error({
-        error: error.message,
-        duration
-      }, "Agent stream failed");
-      metrics.increment("agent.stream.completed", 1, {
-        model: this.model,
-        connector: this.connector.name,
-        status: "error"
-      });
-      throw error;
+    if (this._paused && this._pausePromise) {
+      await this._pausePromise;
     }
   }
   // ===== Tool Management =====
   // Note: addTool, removeTool, listTools, setTools are inherited from BaseAgent
   // ===== Permission Convenience Methods =====
-  /**
-   * Approve a tool for the current session.
-   */
   approveToolForSession(toolName) {
     this._permissionManager.approveForSession(toolName);
   }
-  /**
-   * Revoke a tool's session approval.
-   */
   revokeToolApproval(toolName) {
     this._permissionManager.revoke(toolName);
   }
-  /**
-   * Get list of tools that have been approved for this session.
-   */
   getApprovedTools() {
     return this._permissionManager.getApprovedTools();
   }
-  /**
-   * Check if a tool needs approval before execution.
-   */
   toolNeedsApproval(toolName) {
     return this._permissionManager.checkPermission(toolName).needsApproval;
   }
-  /**
-   * Check if a tool is blocked (cannot execute at all).
-   */
   toolIsBlocked(toolName) {
     return this._permissionManager.isBlocked(toolName);
   }
-  /**
-   * Add a tool to the allowlist (always allowed, no approval needed).
-   */
   allowlistTool(toolName) {
     this._permissionManager.allowlistAdd(toolName);
   }
-  /**
-   * Add a tool to the blocklist (always blocked, cannot execute).
-   */
   blocklistTool(toolName) {
     this._permissionManager.blocklistAdd(toolName);
   }
   // ===== Configuration Methods =====
-  /**
-   * Change the model
-   */
   setModel(model) {
     this.model = model;
     this._config.model = model;
   }
-  /**
-   * Get current temperature
-   */
   getTemperature() {
     return this._config.temperature;
   }
-  /**
-   * Change the temperature
-   */
   setTemperature(temperature) {
     this._config.temperature = temperature;
   }
   // ===== Definition Persistence =====
-  /**
-   * Save the agent's configuration to storage for later instantiation.
-   *
-   * This saves the agent's configuration (model, system prompt, features, etc.)
-   * to persistent storage. The agent can later be recreated using Agent.fromStorage().
-   *
-   * @param storage - Storage backend to save to
-   * @param metadata - Optional metadata to attach
-   *
-   * @example
-   * ```typescript
-   * const agent = Agent.create({
-   *   connector: 'openai',
-   *   model: 'gpt-4',
-   *   instructions: 'You are a helpful assistant',
-   *   context: { agentId: 'my-assistant' }
-   * });
-   *
-   * // Save definition for later use
-   * const storage = new FileAgentDefinitionStorage();
-   * await agent.saveDefinition(storage, {
-   *   description: 'My helpful assistant',
-   *   tags: ['personal', 'general']
-   * });
-   *
-   * // Later, recreate the agent
-   * const restoredAgent = await Agent.fromStorage('my-assistant', storage);
-   * ```
-   */
   async saveDefinition(storage, metadata) {
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const definition = {
       version: 1,
       agentId: this._agentContext.agentId,
-      name: metadata?.description ? this._agentContext.agentId : this._agentContext.agentId,
+      name: this._agentContext.agentId,
       agentType: "agent",
       createdAt: now,
       updatedAt: now,
@@ -16440,65 +15912,49 @@ var Agent = class _Agent extends BaseAgent {
     };
     await storage.save(definition);
   }
-  // ===== Control Methods =====
-  pause(reason) {
-    this.agenticLoop.pause(reason);
-  }
-  resume() {
-    this.agenticLoop.resume();
-  }
-  cancel(reason) {
-    this.agenticLoop.cancel(reason);
-  }
   // ===== Introspection =====
-  getContext() {
-    return this.agenticLoop.getContext();
-  }
-  getMetrics() {
-    return this.agenticLoop.getContext()?.metrics || null;
-  }
-  getSummary() {
-    return this.agenticLoop.getContext()?.getSummary() || null;
-  }
-  getAuditTrail() {
-    return this.agenticLoop.getContext()?.getAuditTrail() || [];
+  getExecutionContext() {
+    return this.executionContext;
   }
   /**
-   * Get circuit breaker metrics for LLM provider
+   * Alias for getExecutionContext() for backward compatibility
    */
+  getContext() {
+    return this.executionContext;
+  }
+  getMetrics() {
+    return this.executionContext?.metrics || null;
+  }
+  getSummary() {
+    return this.executionContext?.getSummary() || null;
+  }
+  getAuditTrail() {
+    return this.executionContext?.getAuditTrail() || [];
+  }
   getProviderCircuitBreakerMetrics() {
     if ("getCircuitBreakerMetrics" in this._provider) {
       return this._provider.getCircuitBreakerMetrics();
     }
     return null;
   }
-  /**
-   * Get circuit breaker states for all tools
-   */
   getToolCircuitBreakerStates() {
     return this._agentContext.tools.getCircuitBreakerStates();
   }
-  /**
-   * Get circuit breaker metrics for a specific tool
-   */
   getToolCircuitBreakerMetrics(toolName) {
     return this._agentContext.tools.getToolCircuitBreakerMetrics(toolName);
   }
-  /**
-   * Manually reset a tool's circuit breaker
-   */
   resetToolCircuitBreaker(toolName) {
     this._agentContext.tools.resetToolCircuitBreaker(toolName);
     this._logger.info({ toolName }, "Tool circuit breaker reset by user");
   }
   isRunning() {
-    return this.agenticLoop.isRunning();
+    return this.executionContext !== null && !this._cancelled;
   }
   isPaused() {
-    return this.agenticLoop.isPaused();
+    return this._paused;
   }
   isCancelled() {
-    return this.agenticLoop.isCancelled();
+    return this._cancelled;
   }
   // ===== Cleanup =====
   destroy() {
@@ -16507,13 +15963,11 @@ var Agent = class _Agent extends BaseAgent {
     }
     this._logger.debug("Agent destroy started");
     try {
-      this.agenticLoop.cancel("Agent destroyed");
+      this.cancel("Agent destroyed");
     } catch {
     }
-    for (const [eventName, handler] of this.boundListeners) {
-      this.agenticLoop.off(eventName, handler);
-    }
-    this.boundListeners.clear();
+    this.executionContext?.cleanup();
+    this.executionContext = null;
     for (const callback of this._cleanupCallbacks) {
       try {
         callback();
@@ -16528,46 +15982,6 @@ var Agent = class _Agent extends BaseAgent {
       connector: this.connector.name
     });
     this._logger.debug("Agent destroyed");
-  }
-  // ===== Private =====
-  setupEventForwarding() {
-    const eventNames = [
-      "execution:start",
-      "execution:complete",
-      "execution:error",
-      "execution:paused",
-      "execution:resumed",
-      "execution:cancelled",
-      "iteration:start",
-      "iteration:complete",
-      "llm:request",
-      "llm:response",
-      "llm:error",
-      "tool:detected",
-      "tool:start",
-      "tool:complete",
-      "tool:error",
-      "tool:timeout",
-      "hook:error"
-    ];
-    const registered = [];
-    try {
-      for (const eventName of eventNames) {
-        const handler = (data) => {
-          if (!this._isDestroyed) {
-            this.emit(eventName, data);
-          }
-        };
-        this.agenticLoop.on(eventName, handler);
-        registered.push([eventName, handler]);
-        this.boundListeners.set(eventName, handler);
-      }
-    } catch (error) {
-      for (const [eventName, handler] of registered) {
-        this.agenticLoop.off(eventName, handler);
-      }
-      throw error;
-    }
   }
 };
 

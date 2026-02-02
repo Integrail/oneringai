@@ -253,7 +253,7 @@ export interface DirectCallOptions {
  * @internal This class is not exported in the public API.
  *
  * Note: TEvents is not constrained to BaseAgentEvents to allow subclasses
- * to define their own event interfaces (e.g., AgenticLoopEvents for Agent).
+ * to define their own event interfaces (e.g., AgentEvents for Agent).
  */
 export abstract class BaseAgent<
   TConfig extends BaseAgentConfig = BaseAgentConfig,

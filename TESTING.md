@@ -42,8 +42,7 @@ tests/
 │   │   ├── GoogleConverter.test.ts      (17 tests)
 │   │   └── shared/
 │   │       └── ToolConversion.test.ts   (10 tests)
-│   ├── agents/                   (30 tests - needs adjustment)
-│   │   ├── AgenticLoop.test.ts          (17 tests)
+│   ├── agents/                   (13 tests)
 │   │   └── ExecutionContext.test.ts     (13 tests)
 │   └── tools/                    (1 test file - needs adjustment)
 │       └── jsonManipulator.test.ts      (12 tests)
@@ -136,17 +135,10 @@ tests/
 - Finish reason mapping
 - Memory management (clearMappings)
 
-#### Agentic Layer Tests (30 tests - framework ready)
-**Status**: Test structure created, needs implementation details
+#### Agentic Layer Tests (13 tests)
+**Status**: ExecutionContext fully tested. Agentic loop logic is now tested via Agent.test.ts.
 
-**AgenticLoop** (17 tests):
-- Basic execution without tools
-- MaxIterations enforcement
-- Tool execution and result passing
-- Tool failure modes (continue vs fail)
-- Configurable timeout
-- Pause/resume mechanics
-- Event emission
+**Note**: AgenticLoop was merged into Agent class. The agentic loop functionality (tool execution, iterations, pause/resume, events, hooks) is now tested through Agent unit tests.
 
 **ExecutionContext** (13 tests):
 - Metrics tracking (tokens, timing, tool stats)

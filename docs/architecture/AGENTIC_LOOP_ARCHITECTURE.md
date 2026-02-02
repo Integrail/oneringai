@@ -1,6 +1,6 @@
 # Agentic Loop Architecture
 
-This document provides a detailed explanation of the Agent and AgenticLoop implementation in `@oneringai/agents`.
+This document provides a detailed explanation of the Agent agentic loop implementation in `@oneringai/agents`.
 
 ## Table of Contents
 
@@ -12,7 +12,7 @@ This document provides a detailed explanation of the Agent and AgenticLoop imple
 6. [Event System](#event-system)
 7. [Hook System](#hook-system)
 8. [Streaming vs Non-Streaming](#streaming-vs-non-streaming)
-9. [Known Issues and Solutions](#known-issues-and-solutions)
+9. [Pause/Resume/Cancel](#pauseresumecancel)
 
 ---
 
@@ -23,37 +23,39 @@ This document provides a detailed explanation of the Agent and AgenticLoop imple
 │                         Agent.create()                          │
 │  - Resolves connector (name → Connector instance)              │
 │  - Creates ITextProvider via createProvider()                  │
-│  - Creates ToolRegistry (implements IToolExecutor)             │
-│  - Creates AgenticLoop with provider + toolRegistry            │
-│  - Sets up event forwarding                                     │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-                              ▼
+│  - Creates AgentContext (with ToolManager inside)              │
+│  - Inherits from BaseAgent                                      │
+│  - Contains all agentic loop logic inline                      │
+└─────────────────────────────────┬───────────────────────────────┘
+                                  │
+                                  ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                       AgenticLoop                               │
+│                         Agent                                    │
+│  - run() / stream() - main execution methods                    │
 │  - Manages iteration cycle (LLM → Tools → LLM → ...)           │
-│  - Manages context (input messages array)                       │
-│  - Executes hooks at lifecycle points                          │
-│  - Emits events throughout execution                           │
-│  - Supports pause/resume/cancel                                │
-└─────────────────────────────┬───────────────────────────────────┘
-                              │
-            ┌─────────────────┼─────────────────┐
-            ▼                 ▼                 ▼
-     ┌──────────┐      ┌──────────┐      ┌─────────────┐
-     │ Provider │      │  Tools   │      │ HookManager │
-     └──────────┘      └──────────┘      └─────────────┘
+│  - Manages context via AgentContext                             │
+│  - Executes hooks at lifecycle points via HookManager           │
+│  - Emits events throughout execution via EventEmitter           │
+│  - Supports pause/resume/cancel                                 │
+└─────────────────────────────────┬───────────────────────────────┘
+                                  │
+            ┌─────────────────────┼─────────────────┐
+            ▼                     ▼                 ▼
+     ┌──────────────┐      ┌─────────────┐   ┌─────────────┐
+     │ ITextProvider│      │ ToolManager │   │ HookManager │
+     └──────────────┘      └─────────────┘   └─────────────┘
 ```
 
 ### Component Responsibilities
 
 | Component | Responsibility |
 |-----------|----------------|
-| **Agent** | Public API, configuration, event forwarding, lifecycle management |
-| **AgenticLoop** | Core iteration logic, context management, hook/event orchestration |
+| **BaseAgent** | Abstract base class with provider creation, destroy lifecycle |
+| **Agent** | Full agentic loop implementation, run/stream, hooks, events |
+| **AgentContext** | Unified facade: ToolManager, WorkingMemory, IdempotencyCache |
 | **ITextProvider** | Vendor-specific LLM communication (OpenAI, Anthropic, Google, etc.) |
-| **ToolRegistry** | Tool registration, lookup, and execution |
-| **ExecutionContext** | Metrics, history, audit trail, resource limits |
+| **ToolManager** | Tool registration, lookup, execution, circuit breakers |
+| **ExecutionContext** | Per-execution metrics, history, audit trail, resource limits |
 | **HookManager** | Hook registration and execution at lifecycle points |
 
 ---
@@ -140,9 +142,9 @@ Iteration 2:
   Output: "The weather in Paris is 72°F"
 ```
 
-### Context Sliding Window (Streaming Only)
+### Context Sliding Window
 
-To prevent unbounded memory growth, streaming has a sliding window:
+To prevent unbounded memory growth, a sliding window is applied:
 
 ```typescript
 const maxInputMessages = config.limits?.maxInputMessages ?? 50;
@@ -163,12 +165,12 @@ if (currentInput.length > maxInputMessages) {
 
 ## Instructions Handling
 
-Instructions (system prompts) are handled through the `instructions` field in `AgenticLoopConfig`.
+Instructions (system prompts) are handled through the `instructions` field in Agent configuration.
 
 ### Flow
 
-1. **Agent.run()** passes `config.instructions` to AgenticLoop
-2. **AgenticLoop.generateWithHooks()** includes instructions in every LLM call
+1. **Agent.run()** passes `config.instructions` to the generate methods
+2. **generateWithHooks()** includes instructions in every LLM call
 3. **Provider** converts instructions to vendor-specific format
 
 ### Provider-Specific Handling
@@ -216,7 +218,7 @@ if (options.instructions) {
 ### Step 1: Extract Tool Calls from Response
 
 ```typescript
-private extractToolCalls(output: OutputItem[], toolDefinitions: Tool[]): ToolCall[] {
+private extractToolCalls(output: OutputItem[]): ToolCall[] {
   const toolCalls: ToolCall[] = [];
 
   for (const item of output) {
@@ -241,12 +243,12 @@ private extractToolCalls(output: OutputItem[], toolDefinitions: Tool[]): ToolCal
 }
 ```
 
-### Step 2: Execute Tools via ToolRegistry
+### Step 2: Execute Tools via ToolManager
 
 ```typescript
-// ToolRegistry.execute()
+// ToolManager.execute()
 async execute(toolName: string, args: any): Promise<any> {
-  const tool = this.tools.get(toolName);
+  const tool = this.get(toolName);
   if (!tool) throw new ToolNotFoundError(toolName);
 
   return await tool.execute(args);
@@ -362,7 +364,7 @@ Each provider converts this to their native format:
 │  5. Return finalResponse                                         │
 │                                                                   │
 │  FINALLY (always runs):                                          │
-│  • context.cleanup() - clear maps/arrays for GC                  │
+│  • executionContext.cleanup() - clear for GC                     │
 │  • hookManager.clear()                                            │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -371,7 +373,7 @@ Each provider converts this to their native format:
 
 ## Event System
 
-Events are emitted via EventEmitter3 and forwarded from AgenticLoop to Agent.
+Events are emitted via EventEmitter3 directly from Agent.
 
 ### Available Events
 
@@ -407,13 +409,17 @@ agent.on('tool:start', ({ toolCall }) => {
 agent.on('tool:complete', ({ toolCall, result }) => {
   console.log(`Tool ${toolCall.function.name} completed:`, result);
 });
+
+agent.on('execution:complete', ({ response, duration }) => {
+  console.log(`Completed in ${duration}ms`);
+});
 ```
 
 ---
 
 ## Hook System
 
-Hooks inject custom logic at lifecycle points.
+Hooks inject custom logic at lifecycle points via HookManager.
 
 ### Available Hooks
 
@@ -455,17 +461,17 @@ const agent = Agent.create({
 
 ## Streaming vs Non-Streaming
 
-The library provides two execution modes that now share unified core logic.
+The library provides two execution modes that share unified core logic.
 
 ### Comparison Table
 
-| Aspect | `execute()` | `executeStreaming()` |
-|--------|-------------|----------------------|
+| Aspect | `run()` | `stream()` |
+|--------|---------|------------|
 | Return type | `Promise<AgentResponse>` | `AsyncIterableIterator<StreamEvent>` |
-| Context building | ✅ Unified via `appendToContext()` | ✅ Unified via `appendToContext()` |
-| Sliding window | ✅ Unified via `applySlidingWindow()` | ✅ Unified via `applySlidingWindow()` |
-| Tool error handling | ✅ Respects `toolFailureMode` | ✅ Respects `toolFailureMode` |
-| History preservation | ✅ Full history preserved | ✅ Full history preserved |
+| Context building | Unified via `appendToContext()` | Unified via `appendToContext()` |
+| Sliding window | Unified via `applySlidingWindow()` | Unified via `applySlidingWindow()` |
+| Tool error handling | Respects `toolFailureMode` | Respects `toolFailureMode` |
+| History preservation | Full history preserved | Full history preserved |
 
 ### Shared Helper Methods
 
@@ -533,79 +539,58 @@ for await (const event of agent.stream('What is the weather?')) {
 
 ---
 
-## Known Issues and Solutions
+## Pause/Resume/Cancel
 
-### ✅ RESOLVED: Context Loss in Non-Streaming Mode
+Agent supports pausing, resuming, and cancelling execution mid-flight.
 
-**Problem:** In `execute()`, `buildInputWithToolResults()` returned only NEW messages, not preserving history.
-
-**Solution (Implemented):** Both modes now use shared `appendToContext()` method:
+### Methods
 
 ```typescript
-const newMessages = this.buildNewMessages(response.output, toolResults);
-currentInput = this.appendToContext(currentInput, newMessages);
+// Pause execution (blocks at next safe point)
+agent.pause(reason?: string): void
+
+// Resume execution
+agent.resume(): void
+
+// Cancel execution entirely
+agent.cancel(reason?: string): void
+
+// Check current state
+agent.isPaused: boolean
+agent.isCancelled: boolean
 ```
 
-### ✅ RESOLVED: Missing Sliding Window in Non-Streaming
+### Pause Points
 
-**Problem:** `execute()` had no `maxInputMessages` protection.
+Execution pauses at safe points:
+- Before each iteration starts
+- Before each tool execution
+- Via `pause:check` hook returning `{ shouldPause: true }`
 
-**Solution (Implemented):** Both modes now use shared `applySlidingWindow()` method:
-
-```typescript
-const maxInputMessages = config.limits?.maxInputMessages ?? 50;
-currentInput = this.applySlidingWindow(currentInput, maxInputMessages);
-```
-
-### ✅ RESOLVED: Inconsistent Tool Error Handling
-
-**Problem:** `executeStreaming()` always threw on tool errors, ignoring `toolFailureMode`.
-
-**Solution (Implemented):** Streaming now respects `toolFailureMode`:
+### Example
 
 ```typescript
-const failureMode = config.errorHandling?.toolFailureMode || 'continue';
-if (failureMode === 'fail') {
-  throw error; // Fail-fast mode
-}
-// Continue mode: Add error result and continue
-toolResults.push({
-  tool_use_id: toolCall.id,
-  content: '',
-  error: (error as Error).message,
-  state: ToolCallState.FAILED,
+const agent = Agent.create({ connector: 'openai', model: 'gpt-4' });
+
+// Listen for pause events
+agent.on('execution:paused', ({ reason }) => {
+  console.log(`Paused: ${reason}`);
 });
-```
 
-### Remaining: Iteration Counter Inconsistency
+// Start execution
+const resultPromise = agent.run('Process these files');
 
-**Problem:** `execute()` starts at 0 and increments at end; `executeStreaming()` increments at start.
+// Pause after 5 seconds
+setTimeout(() => {
+  agent.pause('User requested pause');
+}, 5000);
 
-**Impact:** Minor - iteration numbers differ by 1 between modes.
+// Resume after user confirms
+userConfirmButton.onClick(() => {
+  agent.resume();
+});
 
-**Future Fix:** Standardize to increment at start in both.
-
-### Remaining: No Conversation Persistence
-
-**Problem:** After each `agent.run()` call, context is lost. Cannot continue conversations.
-
-**Future Solution:** Add optional conversation history:
-
-```typescript
-interface AgentConfig {
-  // ... existing
-  preserveHistory?: boolean;
-}
-
-class Agent {
-  private conversationHistory: InputItem[] = [];
-
-  async run(input: string | InputItem[]): Promise<AgentResponse> {
-    if (this.config.preserveHistory) {
-      // Append to history, pass full history to loop
-    }
-  }
-}
+const result = await resultPromise;
 ```
 
 ---
@@ -614,11 +599,14 @@ class Agent {
 
 | File | Purpose |
 |------|---------|
-| `src/core/Agent.ts` | Public Agent API |
-| `src/capabilities/agents/AgenticLoop.ts` | Core iteration logic |
-| `src/capabilities/agents/ToolRegistry.ts` | Tool registration/execution |
+| `src/core/Agent.ts` | Full Agent implementation with agentic loop |
+| `src/core/BaseAgent.ts` | Abstract base class with provider creation |
+| `src/core/AgentContext.ts` | Unified context facade |
+| `src/core/ToolManager.ts` | Tool registration/execution |
 | `src/capabilities/agents/ExecutionContext.ts` | Metrics, history, limits |
 | `src/capabilities/agents/HookManager.ts` | Hook orchestration |
+| `src/capabilities/agents/types/EventTypes.ts` | Event type definitions |
+| `src/capabilities/agents/types/HookTypes.ts` | Hook type definitions |
 | `src/domain/entities/Message.ts` | InputItem, OutputItem types |
 | `src/domain/entities/Content.ts` | Content types |
 | `src/domain/entities/Tool.ts` | ToolFunction, ToolCall types |
@@ -626,6 +614,6 @@ class Agent {
 
 ---
 
-**Version:** 0.2.1
-**Last Updated:** 2025-01-15
-**Changes:** Unified context management between execute() and executeStreaming()
+**Version:** 0.3.0
+**Last Updated:** 2026-02-02
+**Changes:** Merged AgenticLoop into Agent class - all agentic loop logic now lives directly in Agent

@@ -8,7 +8,7 @@
  * - Context-aware tool selection
  * - Usage statistics
  * - Circuit breaker protection for tool execution
- * - Implements IToolExecutor for use with AgenticLoop
+ * - Implements IToolExecutor for use with Agent
  * - Implements IDisposable for proper lifecycle management
  *
  * This is the single source of truth for tool management (replaces ToolRegistry).
@@ -132,7 +132,7 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
   /**
    * Parent AgentContext reference for auto-building ToolContext
    * This ensures tools always have access to agentContext, memory, cache, etc.
-   * even when execute() is called directly (e.g., by AgenticLoop)
+   * even when execute() is called directly (e.g., by Agent)
    */
   private _parentContext: import('./AgentContext.js').AgentContext | null = null;
 
@@ -195,7 +195,7 @@ export class ToolManager extends EventEmitter implements IToolExecutor, IDisposa
    * Called by AgentContext after construction to enable auto-context in execute()
    *
    * This is the KEY to making tools work correctly:
-   * - When AgenticLoop calls ToolManager.execute() directly, we auto-build context
+   * - When Agent calls ToolManager.execute() directly, we auto-build context
    * - When AgentContext.executeTool() is used, it sets explicit _toolContext
    *
    * @param context - The parent AgentContext that owns this ToolManager

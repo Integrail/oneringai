@@ -1,13 +1,13 @@
 /**
- * Hook types for agentic loop execution
+ * Hook types for agent execution
  * Hooks can modify execution flow synchronously or asynchronously
  */
 
-import { AgenticLoopConfig } from '../AgenticLoop.js';
 import { AgentResponse } from '../../../domain/entities/Response.js';
 import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
 import { ToolCall, ToolResult } from '../../../domain/entities/Tool.js';
 import { ExecutionContext } from '../ExecutionContext.js';
+import { ExecutionConfig } from './EventTypes.js';
 
 /**
  * Base hook function type
@@ -25,7 +25,7 @@ export type ModifyingHook<TContext, TModification> = Hook<TContext, TModificatio
 
 export interface BeforeExecutionContext {
   executionId: string;
-  config: AgenticLoopConfig;
+  config: ExecutionConfig;
   timestamp: Date;
 }
 

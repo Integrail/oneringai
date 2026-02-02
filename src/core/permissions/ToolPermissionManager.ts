@@ -413,7 +413,7 @@ export class ToolPermissionManager extends EventEmitter {
    *
    * NOTE: If you want to require explicit approval, you MUST either:
    * 1. Set onApprovalRequired callback in AgentPermissionsConfig
-   * 2. Register an 'approve:tool' hook in the AgenticLoop
+   * 2. Register an 'approve:tool' hook in the Agent
    * 3. Add tools to the blocklist if they should never run
    *
    * This auto-approval behavior preserves backward compatibility with

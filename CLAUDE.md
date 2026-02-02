@@ -190,7 +190,7 @@ src/
 │   ├── types/                  # SharedTypes.ts
 │   └── errors/                 # AIErrors.ts, MCPError.ts
 ├── capabilities/
-│   ├── agents/                 # AgenticLoop.ts, HookManager.ts
+│   ├── agents/                 # ExecutionContext.ts, HookManager.ts, EventTypes.ts
 │   ├── taskAgent/              # TaskAgent, WorkingMemory, PlanExecutor, memoryTools
 │   ├── universalAgent/         # UniversalAgent, ModeManager, metaTools
 │   ├── researchAgent/          # ResearchAgent, IResearchSource, WebSearchSource, FileSearchSource

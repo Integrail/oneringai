@@ -690,7 +690,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
     // IMPORTANT: Set parent context so ToolManager can auto-build ToolContext
     // This ensures tools have access to agentContext, memory, cache, etc.
-    // even when ToolManager.execute() is called directly (e.g., by AgenticLoop)
+    // even when ToolManager.execute() is called directly (e.g., by Agent)
     this._tools.setParentContext(this);
 
     if (config.tools) {
@@ -1095,7 +1095,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   /**
    * Mark current position as protected from compaction.
    * Messages at or after this index cannot be compacted.
-   * Called at the start of each iteration by AgenticLoop.
+   * Called at the start of each iteration by Agent.
    */
   protectFromCompaction(): void {
     this._protectedFromIndex = this._conversation.length;

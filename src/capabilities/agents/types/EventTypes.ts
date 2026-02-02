@@ -1,16 +1,26 @@
 /**
- * Event types for agentic loop execution
+ * Event types for agent execution
  * These events are emitted asynchronously for notifications (UI updates, logging, etc.)
  */
 
-import { AgenticLoopConfig } from '../AgenticLoop.js';
 import { AgentResponse } from '../../../domain/entities/Response.js';
 import { TextGenerateOptions } from '../../../domain/interfaces/ITextProvider.js';
 import { ToolCall, ToolResult } from '../../../domain/entities/Tool.js';
 
+/**
+ * Minimal config type for execution start events.
+ * This captures the essential info without importing full AgentConfig.
+ */
+export interface ExecutionConfig {
+  model: string;
+  instructions?: string;
+  temperature?: number;
+  maxIterations?: number;
+}
+
 export interface ExecutionStartEvent {
   executionId: string;
-  config: AgenticLoopConfig;
+  config: ExecutionConfig;
   timestamp: Date;
 }
 
@@ -179,3 +189,10 @@ export interface AgenticLoopEvents {
 }
 
 export type AgenticLoopEventName = keyof AgenticLoopEvents;
+
+/**
+ * Agent events - alias for AgenticLoopEvents for cleaner API
+ * This is the preferred export name going forward.
+ */
+export type AgentEvents = AgenticLoopEvents;
+export type AgentEventName = AgenticLoopEventName;

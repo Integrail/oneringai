@@ -7,16 +7,20 @@
  */
 
 // Internal implementation
-export { AgenticLoop } from './AgenticLoop.js';
 export { ExecutionContext } from './ExecutionContext.js';
 export { HookManager } from './HookManager.js';
-export type { AgenticLoopConfig } from './AgenticLoop.js';
 export type { HistoryMode, ExecutionMetrics, AuditEntry } from './ExecutionContext.js';
 
 // Event types
 export type {
+  // New canonical names
+  AgentEvents,
+  AgentEventName,
+  ExecutionConfig,
+  // Legacy names (for backward compatibility)
   AgenticLoopEvents,
   AgenticLoopEventName,
+  // Individual event types
   ExecutionStartEvent,
   ExecutionCompleteEvent,
   ToolStartEvent,

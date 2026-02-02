@@ -521,8 +521,14 @@ export { StreamHelpers } from './capabilities/agents/StreamHelpers.js';
 // ============ Hooks & Events (Enterprise) ============
 export { ExecutionContext, HookManager } from './capabilities/agents/index.js';
 export type {
+  // New canonical names
+  AgentEvents,
+  AgentEventName,
+  ExecutionConfig,
+  // Legacy names for backward compatibility
   AgenticLoopEvents,
   AgenticLoopEventName,
+  // Hook types
   HookConfig,
   HookName,
   Hook,
