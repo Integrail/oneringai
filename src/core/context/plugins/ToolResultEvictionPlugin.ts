@@ -34,6 +34,10 @@ import {
   TOOL_RESULT_EVICTION_DEFAULTS,
   DEFAULT_TOOL_RETENTION,
 } from '../../constants.js';
+import { logger as baseLogger, FrameworkLogger } from '../../../infrastructure/observability/Logger.js';
+
+// Plugin-specific logger
+const logger: FrameworkLogger = baseLogger.child({ component: 'ToolResultEvictionPlugin' });
 
 // ============================================================================
 // Types
@@ -180,6 +184,10 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
       toolRetention: { ...DEFAULT_TOOL_RETENTION, ...config.toolRetention },
       keyPrefix: config.keyPrefix ?? 'tool_result',
     };
+
+    logger.debug({
+      config: this.config,
+    }, 'ToolResultEvictionPlugin created');
   }
 
   // ============================================================================
@@ -263,6 +271,18 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
     this.tracked.set(toolUseId, tracked);
     this.totalTrackedSize += sizeBytes;
 
+    logger.debug({
+      toolUseId,
+      toolName,
+      sizeBytes,
+      sizeMeetsMinimum: sizeBytes >= this.config.minSizeToEvict,
+      minSizeToEvict: this.config.minSizeToEvict,
+      currentIteration: this.currentIteration,
+      messageIndex,
+      trackedCount: this.tracked.size,
+      totalTrackedSize: this.totalTrackedSize,
+    }, `Tracking tool result: ${toolName} (${formatBytes(sizeBytes)})`);
+
     this.events.emit('tracked', { toolUseId, toolName, sizeBytes });
   }
 
@@ -272,6 +292,15 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
    */
   onIteration(): void {
     this.currentIteration++;
+
+    logger.debug({
+      currentIteration: this.currentIteration,
+      trackedCount: this.tracked.size,
+      totalTrackedSize: this.totalTrackedSize,
+      maxFullResults: this.config.maxFullResults,
+      maxTotalSizeBytes: this.config.maxTotalSizeBytes,
+    }, `Iteration advanced to ${this.currentIteration}`);
+
     this.events.emit('iteration', { current: this.currentIteration });
   }
 
@@ -294,27 +323,61 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
     const { maxFullResults, maxTotalSizeBytes, maxAgeIterations, minSizeToEvict } =
       this.config;
 
+    const sizePressure = this.totalTrackedSize > maxTotalSizeBytes;
+    const countPressure = this.tracked.size > maxFullResults;
+
     // Trigger 1: Size pressure - total tracked results exceed threshold
-    if (this.totalTrackedSize > maxTotalSizeBytes) {
+    if (sizePressure) {
+      logger.debug({
+        totalTrackedSize: this.totalTrackedSize,
+        maxTotalSizeBytes,
+        trackedCount: this.tracked.size,
+      }, 'shouldEvict: TRUE - size pressure');
       return true;
     }
 
     // Trigger 2: Count pressure - too many results tracked
-    if (this.tracked.size > maxFullResults) {
+    if (countPressure) {
+      logger.debug({
+        trackedCount: this.tracked.size,
+        maxFullResults,
+        totalTrackedSize: this.totalTrackedSize,
+      }, 'shouldEvict: TRUE - count pressure');
       return true;
     }
 
     // Trigger 3: Staleness - any result exceeds age threshold (and meets size minimum)
     for (const r of this.tracked.values()) {
-      if (r.sizeBytes < minSizeToEvict) continue;
+      if (r.sizeBytes < minSizeToEvict) {
+        logger.debug({
+          toolUseId: r.toolUseId,
+          toolName: r.toolName,
+          sizeBytes: r.sizeBytes,
+          minSizeToEvict,
+        }, `shouldEvict: skipping ${r.toolName} - below size minimum`);
+        continue;
+      }
 
       const age = this.currentIteration - r.addedAtIteration;
       const toolMaxAge = this.config.toolRetention[r.toolName] ?? maxAgeIterations;
       if (age >= toolMaxAge) {
+        logger.debug({
+          toolUseId: r.toolUseId,
+          toolName: r.toolName,
+          age,
+          toolMaxAge,
+        }, 'shouldEvict: TRUE - staleness');
         return true;
       }
     }
 
+    logger.debug({
+      trackedCount: this.tracked.size,
+      maxFullResults,
+      totalTrackedSize: this.totalTrackedSize,
+      maxTotalSizeBytes,
+      currentIteration: this.currentIteration,
+    }, 'shouldEvict: FALSE - no triggers');
     return false;
   }
 
@@ -326,10 +389,45 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
     const { maxFullResults, maxTotalSizeBytes, maxAgeIterations, minSizeToEvict } =
       this.config;
 
+    const allTracked = [...this.tracked.values()];
+    const countPressure = this.tracked.size > maxFullResults;
+    const sizePressure = this.totalTrackedSize > maxTotalSizeBytes;
+
+    logger.debug({
+      totalTracked: allTracked.length,
+      countPressure,
+      sizePressure,
+      minSizeToEvict,
+      maxFullResults,
+      maxTotalSizeBytes,
+    }, 'getEvictionCandidates: starting');
+
     // Filter to only evictable results (meet size minimum)
-    const evictable = [...this.tracked.values()].filter(
+    // BUG: This filter ALWAYS applies, even when count/size pressure exists
+    const evictable = allTracked.filter(
       (r) => r.sizeBytes >= minSizeToEvict
     );
+
+    // Log filtered vs total to show the issue
+    const filteredOut = allTracked.filter((r) => r.sizeBytes < minSizeToEvict);
+    logger.debug({
+      evictableCount: evictable.length,
+      filteredOutCount: filteredOut.length,
+      filteredOutTools: filteredOut.map((r) => ({
+        toolName: r.toolName,
+        sizeBytes: r.sizeBytes,
+        sizeMeetsMin: r.sizeBytes >= minSizeToEvict,
+      })),
+    }, `getEvictionCandidates: filtered ${filteredOut.length} results below minSizeToEvict (${minSizeToEvict} bytes)`);
+
+    if (evictable.length === 0) {
+      logger.debug({
+        totalTracked: allTracked.length,
+        minSizeToEvict,
+        allSizes: allTracked.map((r) => ({ tool: r.toolName, size: r.sizeBytes })),
+      }, 'getEvictionCandidates: NO evictable candidates - all below size minimum!');
+      return [];
+    }
 
     // Sort by priority: oldest first, then largest first within same age
     evictable.sort((a, b) => {
@@ -352,10 +450,28 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
       const toolMaxAge = this.config.toolRetention[r.toolName] ?? maxAgeIterations;
       const isStale = age >= toolMaxAge;
 
+      logger.debug({
+        toolUseId: r.toolUseId,
+        toolName: r.toolName,
+        age,
+        toolMaxAge,
+        isStale,
+        projectedCount,
+        maxFullResults,
+        underCountLimit,
+        projectedSize,
+        maxTotalSizeBytes,
+        underSizeLimit,
+      }, `getEvictionCandidates: evaluating ${r.toolName}`);
+
       // Continue evicting if:
       // - Over any limit, OR
       // - This result is stale
       if (!isStale && underSizeLimit && underCountLimit) {
+        logger.debug({
+          toolUseId: r.toolUseId,
+          reason: 'under limits and not stale',
+        }, 'getEvictionCandidates: stopping - under all limits');
         break;
       }
 
@@ -363,6 +479,11 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
       projectedSize -= r.sizeBytes;
       projectedCount--;
     }
+
+    logger.debug({
+      candidateCount: candidates.length,
+      candidates: candidates.map((c) => ({ tool: c.toolName, size: c.sizeBytes })),
+    }, `getEvictionCandidates: returning ${candidates.length} candidates`);
 
     return candidates;
   }
@@ -381,27 +502,41 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
       log: [],
     };
 
+    logger.debug({
+      trackedCount: this.tracked.size,
+      totalTrackedSize: this.totalTrackedSize,
+    }, 'evictOldResults: starting');
+
     if (!this.shouldEvict()) {
+      logger.debug({}, 'evictOldResults: shouldEvict=false, skipping');
       return result;
     }
 
     if (!this.removeToolPairCallback) {
+      logger.warn({}, 'evictOldResults: removeToolPairCallback not set!');
       result.log.push('Cannot evict: removeToolPairCallback not set');
       return result;
     }
 
     const candidates = this.getEvictionCandidates();
     if (candidates.length === 0) {
+      logger.debug({
+        trackedCount: this.tracked.size,
+        minSizeToEvict: this.config.minSizeToEvict,
+      }, 'evictOldResults: NO candidates returned (likely all below size threshold)');
       result.log.push('No candidates for eviction (all below size threshold)');
       return result;
     }
 
+    logger.debug({
+      candidateCount: candidates.length,
+    }, `evictOldResults: proceeding with ${candidates.length} candidates`);
     result.log.push(`Evicting ${candidates.length} tool result pairs`);
 
     for (const candidate of candidates) {
       try {
-        // 1. Store in WorkingMemory raw tier
-        const memoryKey = `${this.config.keyPrefix}:${candidate.toolName}:${candidate.toolUseId}`;
+        // 1. Store in WorkingMemory raw tier (using dots as separators for key validity)
+        const memoryKey = `${this.config.keyPrefix}.${candidate.toolName}.${candidate.toolUseId}`;
         await this.memory.storeRaw(
           memoryKey,
           `Evicted result from ${candidate.toolName} (${formatBytes(candidate.sizeBytes)})`,

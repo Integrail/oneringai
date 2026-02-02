@@ -30,7 +30,11 @@
  */
 
 import { EventEmitter } from 'eventemitter3';
+import { logger as baseLogger, FrameworkLogger } from '../infrastructure/observability/Logger.js';
 import { ToolManager } from './ToolManager.js';
+
+// Context-specific logger
+const logger: FrameworkLogger = baseLogger.child({ component: 'AgentContext' });
 import type { ToolFunction, ToolResult } from '../domain/entities/Tool.js';
 import type { ToolContext } from '../domain/interfaces/IToolContext.js';
 import type { SerializedToolState } from './ToolManager.js';
@@ -794,6 +798,12 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     // ToolResultEvictionPlugin - smart eviction of old tool results (default ON)
     // Requires memory feature to be enabled
     if (this._features.toolResultEviction && this._memory) {
+      logger.debug({
+        toolResultEviction: this._features.toolResultEviction,
+        memoryEnabled: !!this._memory,
+        config: config.toolResultEviction,
+      }, 'Creating ToolResultEvictionPlugin');
+
       this._toolResultEvictionPlugin = new ToolResultEvictionPlugin(this._memory, {
         ...config.toolResultEviction,
       });
@@ -802,6 +812,16 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
         return this.removeToolPair(toolUseId);
       });
       this.registerPlugin(this._toolResultEvictionPlugin);
+
+      logger.debug({
+        pluginName: this._toolResultEvictionPlugin.name,
+        pluginConfig: this._toolResultEvictionPlugin.getConfig(),
+      }, 'ToolResultEvictionPlugin created and registered');
+    } else {
+      logger.debug({
+        toolResultEviction: this._features.toolResultEviction,
+        memoryEnabled: !!this._memory,
+      }, 'ToolResultEvictionPlugin NOT created (feature disabled or no memory)');
     }
 
     // Register feature-aware tools (memory, cache, introspection)
@@ -1126,7 +1146,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     for (const r of results) {
       this._toolCalls.push({
         id: r.tool_use_id,
-        name: (r as any).tool_name || 'unknown',
+        name: r.tool_name || 'unknown',
         args: {},
         result: r.content,
         error: r.error,
@@ -1139,14 +1159,37 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
     // Track tool results for eviction (if plugin enabled)
     if (this._toolResultEvictionPlugin) {
+      logger.debug({
+        resultsCount: results.length,
+        messageIndex: index,
+        pluginTrackedBefore: this._toolResultEvictionPlugin.getTracked().length,
+      }, 'addToolResults: tracking results for eviction');
+
       for (const r of results) {
+        const toolName = r.tool_name || 'unknown';
+        logger.debug({
+          toolUseId: r.tool_use_id,
+          toolName,
+          contentLength: typeof r.content === 'string' ? r.content.length : JSON.stringify(r.content).length,
+        }, `addToolResults: tracking ${toolName}`);
+
         this._toolResultEvictionPlugin.onToolResult(
           r.tool_use_id,
-          (r as any).tool_name || 'unknown',
+          toolName,
           r.content,
           index
         );
       }
+
+      logger.debug({
+        pluginTrackedAfter: this._toolResultEvictionPlugin.getTracked().length,
+        pluginStats: this._toolResultEvictionPlugin.getStats(),
+      }, 'addToolResults: tracking complete');
+    } else {
+      logger.debug({
+        resultsCount: results.length,
+        pluginEnabled: !!this._toolResultEvictionPlugin,
+      }, 'addToolResults: NOT tracking (plugin not enabled)');
     }
 
     return id;
@@ -1217,17 +1260,48 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
     // 2. Advance iteration counter and run tool result eviction (if enabled)
     if (this._toolResultEvictionPlugin) {
+      const statsBefore = this._toolResultEvictionPlugin.getStats();
+      logger.debug({
+        statsBefore,
+        conversationLength: this._conversation.length,
+      }, 'prepare: before tool result eviction');
+
       this._toolResultEvictionPlugin.onIteration();
 
       // Run eviction at iteration boundary (handles age-based eviction)
-      if (this._toolResultEvictionPlugin.shouldEvict()) {
+      const shouldEvict = this._toolResultEvictionPlugin.shouldEvict();
+      logger.debug({
+        shouldEvict,
+        trackedCount: statsBefore.count,
+        config: this._toolResultEvictionPlugin.getConfig(),
+      }, `prepare: shouldEvict=${shouldEvict}`);
+
+      if (shouldEvict) {
         const evictionResult = await this._toolResultEvictionPlugin.evictOldResults();
+        logger.debug({
+          evictionResult: {
+            evicted: evictionResult.evicted,
+            tokensFreed: evictionResult.tokensFreed,
+            memoryKeys: evictionResult.memoryKeys,
+            log: evictionResult.log,
+          },
+        }, `prepare: eviction result - ${evictionResult.evicted} evicted`);
+
         if (evictionResult.evicted > 0) {
           compactionLog.push(
             `Evicted ${evictionResult.evicted} tool results to memory (${evictionResult.tokensFreed} tokens freed)`
           );
         }
       }
+
+      const statsAfter = this._toolResultEvictionPlugin.getStats();
+      logger.debug({
+        statsAfter,
+      }, 'prepare: after tool result eviction');
+    } else {
+      logger.debug({
+        pluginEnabled: false,
+      }, 'prepare: tool result eviction plugin not enabled');
     }
 
     // 3. Build components and calculate DETAILED budget (shows per-component breakdown)

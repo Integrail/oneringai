@@ -1107,6 +1107,7 @@ interface ToolCall {
 }
 interface ToolResult {
     tool_use_id: string;
+    tool_name?: string;
     content: any;
     error?: string;
     executionTime?: number;

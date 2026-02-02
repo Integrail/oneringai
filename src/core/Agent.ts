@@ -714,6 +714,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
             // Continue mode: Add error result and continue
             toolResults.push({
               tool_use_id: toolCall.id,
+              tool_name: toolCall.function.name,
               content: '',
               error: (error as Error).message,
               state: ToolCallState.FAILED,
@@ -1127,6 +1128,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
         const mockResult: ToolResult = {
           tool_use_id: toolCall.id,
+          tool_name: toolCall.function.name,
           content: beforeTool.mockResult || '',
           state: ToolCallState.COMPLETED,
           executionTime: 0,
@@ -1151,6 +1153,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       } catch (error) {
         const toolResult: ToolResult = {
           tool_use_id: toolCall.id,
+          tool_name: toolCall.function.name,
           content: '',
           error: (error as Error).message,
           state: ToolCallState.FAILED,
@@ -1218,6 +1221,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
 
       let toolResult: ToolResult = {
         tool_use_id: toolCall.id,
+        tool_name: toolCall.function.name,
         content: result,
         state: ToolCallState.COMPLETED,
         executionTime: Date.now() - toolStartTime,

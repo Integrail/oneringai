@@ -41,20 +41,25 @@ A comprehensive guide to using all features of the @oneringai/agents library.
     - Tools (instructions_set, instructions_get, instructions_append, instructions_clear)
     - Storage and Persistence
     - Use Cases and Best Practices
-13. [Tools & Function Calling](#tools--function-calling)
-14. [Dynamic Tool Management](#dynamic-tool-management)
-15. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
-16. [Multimodal (Vision)](#multimodal-vision)
-17. [Audio (TTS/STT)](#audio-ttsstt) **NEW**
-18. [Image Generation](#image-generation) **NEW**
-19. [Video Generation](#video-generation) **NEW**
-20. [Web Search](#web-search) **NEW**
-21. [Streaming](#streaming)
-22. [External API Integration](#external-api-integration) **NEW**
-23. [OAuth for External APIs](#oauth-for-external-apis)
-24. [Model Registry](#model-registry)
-25. [Advanced Features](#advanced-features)
-26. [Production Deployment](#production-deployment)
+13. [Tool Result Eviction](#tool-result-eviction) **NEW**
+    - Automatic eviction of old tool results
+    - Configuration and tuning
+    - Per-tool retention settings
+    - Events and monitoring
+14. [Tools & Function Calling](#tools--function-calling)
+15. [Dynamic Tool Management](#dynamic-tool-management)
+16. [MCP (Model Context Protocol)](#mcp-model-context-protocol) **NEW**
+17. [Multimodal (Vision)](#multimodal-vision)
+18. [Audio (TTS/STT)](#audio-ttsstt)
+19. [Image Generation](#image-generation)
+20. [Video Generation](#video-generation)
+21. [Web Search](#web-search)
+22. [Streaming](#streaming)
+23. [External API Integration](#external-api-integration)
+24. [OAuth for External APIs](#oauth-for-external-apis)
+25. [Model Registry](#model-registry)
+26. [Advanced Features](#advanced-features)
+27. [Production Deployment](#production-deployment)
 
 ---
 
@@ -3749,7 +3754,7 @@ import { AgentContext, DEFAULT_FEATURES } from '@oneringai/agents';
 
 // View default feature settings
 console.log(DEFAULT_FEATURES);
-// { memory: true, inContextMemory: false, persistentInstructions: false, history: true, permissions: true, toolOutputTracking: true, autoSpill: true }
+// { memory: true, inContextMemory: false, persistentInstructions: false, history: true, permissions: true, toolOutputTracking: true, autoSpill: true, toolResultEviction: true }
 ```
 
 **Available Features:**
@@ -3763,8 +3768,9 @@ console.log(DEFAULT_FEATURES);
 | `permissions` | `true` | ToolPermissionManager for approval workflows | All tools auto-approved; `ctx.permissions` returns `null` |
 | `toolOutputTracking` | `true` | ToolOutputPlugin tracks recent tool outputs in context for reference | Tool outputs not tracked in context; `ctx.toolOutputPlugin` returns `null` |
 | `autoSpill` | `true` | AutoSpillPlugin auto-spills large tool outputs to WorkingMemory | Large outputs remain in context (may cause overflow); `ctx.autoSpillPlugin` returns `null` |
+| `toolResultEviction` | `true` | ToolResultEvictionPlugin evicts old tool results to WorkingMemory | Old results remain in conversation (may cause overflow); `ctx.toolResultEvictionPlugin` returns `null` |
 
-**Note:** `autoSpill` requires `memory` to be enabled. If you disable `memory`, you must also disable `autoSpill`.
+**Note:** `autoSpill` and `toolResultEviction` both require `memory` to be enabled. If you disable `memory`, you must also disable both `autoSpill` and `toolResultEviction`.
 
 **Usage Examples:**
 
@@ -3772,7 +3778,7 @@ console.log(DEFAULT_FEATURES);
 // 1. Minimal stateless agent (no memory, no history tracking)
 const ctx = AgentContext.create({
   model: 'gpt-4',
-  features: { memory: false, autoSpill: false, history: false },  // autoSpill requires memory
+  features: { memory: false, autoSpill: false, toolResultEviction: false, history: false },  // autoSpill and toolResultEviction require memory
 });
 
 console.log(ctx.memory);                      // null
@@ -3794,7 +3800,7 @@ const agent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    features: { memory: false, autoSpill: false },  // autoSpill requires memory
+    features: { memory: false, autoSpill: false, toolResultEviction: false },  // autoSpill and toolResultEviction require memory
   },
 });
 
@@ -3803,7 +3809,7 @@ const chatAgent = Agent.create({
   connector: 'openai',
   model: 'gpt-4',
   context: {
-    features: { memory: false, autoSpill: false, history: true },  // autoSpill requires memory
+    features: { memory: false, autoSpill: false, toolResultEviction: false, history: true },  // autoSpill and toolResultEviction require memory
   },
 });
 ```
@@ -3818,7 +3824,7 @@ ctx.isFeatureEnabled('history');
 ctx.isFeatureEnabled('permissions');
 
 // Get read-only feature configuration
-ctx.features; // { memory, inContextMemory, persistentInstructions, history, permissions, toolOutputTracking, autoSpill }
+ctx.features; // { memory, inContextMemory, persistentInstructions, history, permissions, toolOutputTracking, autoSpill, toolResultEviction }
 
 // Access nullable components
 ctx.memory;         // WorkingMemory | null
@@ -3847,7 +3853,7 @@ console.log(ctx.tools.has('context_stats'));    // true (always available)
 // With memory disabled - no memory tools registered
 const ctx2 = AgentContext.create({
   model: 'gpt-4',
-  features: { memory: false, autoSpill: false },  // autoSpill requires memory
+  features: { memory: false, autoSpill: false, toolResultEviction: false },  // autoSpill and toolResultEviction require memory
 });
 console.log(ctx2.tools.has('memory_store'));    // false
 console.log(ctx2.tools.has('context_stats'));   // true (always available)
@@ -3860,6 +3866,7 @@ console.log(ctx2.tools.has('context_stats'));   // true (always available)
 - **persistentInstructions=true**: `instructions_set`, `instructions_append`, `instructions_get`, `instructions_clear`
 - **toolOutputTracking=true** (default): Tracks recent tool outputs in context (no additional tools)
 - **autoSpill=true** (default): Auto-spills large outputs to memory (no additional tools, requires memory enabled)
+- **toolResultEviction=true** (default): Automatically evicts old tool results to memory (no additional tools, requires memory enabled)
 
 **Backward Compatibility:**
 
@@ -5998,7 +6005,288 @@ const agent = Agent.create({
 
 ---
 
-## Direct LLM Access (NEW)
+## Tool Result Eviction (NEW)
+
+**Tool Result Eviction** is a context plugin that automatically evicts old tool results from the conversation history to WorkingMemory. This frees up context space for new content while preserving the ability to retrieve evicted results when needed.
+
+### Key Benefits
+
+| Problem | Solution |
+|---------|----------|
+| **Context Overflow** | Old tool results are automatically moved to memory |
+| **Lost Data** | Evicted results remain retrievable via `memory_retrieve` |
+| **Manual Management** | Automatic eviction based on age, size, and count |
+| **Tool Pair Integrity** | Both `tool_use` AND `tool_result` messages are evicted together |
+
+### How It Works
+
+1. **Tracking**: When a tool returns a result, the plugin tracks it with metadata (size, age, tool name)
+2. **Iteration Counting**: Each agent loop iteration advances the counter
+3. **Eviction Triggers**:
+   - **Count**: More than `maxFullResults` results tracked (default: 5)
+   - **Size**: Total tracked size exceeds `maxTotalSizeBytes` (default: 100KB)
+   - **Age**: Results older than `maxAgeIterations` (default: 3)
+4. **Storage**: Evicted results are stored in WorkingMemory's raw tier
+5. **Removal**: Both `tool_use` and `tool_result` messages are removed from conversation
+
+### Quick Setup
+
+Tool Result Eviction is **enabled by default** when memory is enabled:
+
+```typescript
+import { Agent } from '@oneringai/agents';
+
+// Enabled by default
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+});
+
+// Access the plugin
+const plugin = agent.context.toolResultEvictionPlugin;
+console.log(plugin?.getStats());
+// { count: 0, totalSizeBytes: 0, oldestAge: 0, currentIteration: 0, totalEvicted: 0, totalTokensFreed: 0 }
+```
+
+### Configuration
+
+```typescript
+import { Agent } from '@oneringai/agents';
+
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    toolResultEviction: {
+      // Maximum number of tool result pairs to keep in conversation
+      maxFullResults: 5,  // default: 5
+
+      // Maximum age in iterations before eviction
+      maxAgeIterations: 3,  // default: 3
+
+      // Minimum size (bytes) for a result to be eligible for eviction
+      minSizeToEvict: 1024,  // default: 1KB
+
+      // Maximum total size of tracked results before triggering eviction
+      maxTotalSizeBytes: 100 * 1024,  // default: 100KB
+
+      // Per-tool iteration retention overrides
+      toolRetention: {
+        read_file: 10,    // Keep file content longer (often referenced)
+        bash: 8,          // Keep shell output longer
+        grep: 8,          // Keep search results longer
+        web_fetch: 3,     // Short retention (can re-fetch)
+        web_search: 3,    // Short retention
+      },
+
+      // Key prefix for evicted results in memory
+      keyPrefix: 'tool_result',  // default: 'tool_result'
+    },
+  },
+});
+```
+
+### Default Tool Retention
+
+Different tools have different default retention values based on typical usage patterns:
+
+| Tool | Default Retention | Reason |
+|------|-------------------|--------|
+| `read_file` | 10 iterations | Often referenced later |
+| `bash` | 8 iterations | Shell output often needed for debugging |
+| `grep` | 8 iterations | Search results referenced multiple times |
+| `glob` | 6 iterations | File lists useful for planning |
+| `edit_file` | 6 iterations | Edit context important |
+| `memory_retrieve` | 5 iterations | Retrieved data may be re-used |
+| `list_directory` | 5 iterations | Directory listings for navigation |
+| `web_fetch` | 3 iterations | Can re-fetch if needed |
+| `web_search` | 3 iterations | Can re-search if needed |
+| `web_scrape` | 3 iterations | Can re-scrape if needed |
+| (other tools) | 3 iterations | Default retention |
+
+### Evicted Results Storage
+
+Evicted results are stored in WorkingMemory with the key format:
+
+```
+tool_result.{toolName}.{toolUseId}
+```
+
+For example: `tool_result.read_file.call_abc123`
+
+### Retrieving Evicted Results
+
+The agent can retrieve evicted results using the standard memory tools:
+
+```typescript
+// Agent can use memory_retrieve to get evicted results
+// Tool call from LLM:
+{
+  "name": "memory_retrieve",
+  "arguments": {
+    "key": "raw.tool_result.read_file.call_abc123"
+  }
+}
+
+// Or use memory_query to find all evicted results
+{
+  "name": "memory_query",
+  "arguments": {
+    "pattern": "raw.tool_result.*",
+    "includeValues": true
+  }
+}
+```
+
+### Plugin API
+
+```typescript
+const plugin = agent.context.toolResultEvictionPlugin;
+
+// Get statistics
+const stats = plugin.getStats();
+// { count, totalSizeBytes, oldestAge, currentIteration, totalEvicted, totalTokensFreed }
+
+// Get all tracked results
+const tracked = plugin.getTracked();
+// [{ toolUseId, toolName, result, sizeBytes, addedAtIteration, messageIndex, timestamp }, ...]
+
+// Check if a specific result is tracked
+plugin.isTracked('call_abc123');  // true/false
+
+// Get tracked result info
+plugin.getTrackedResult('call_abc123');  // TrackedResult | undefined
+
+// Get current iteration
+plugin.getCurrentIteration();  // number
+
+// Manual eviction (usually automatic)
+const result = await plugin.evictOldResults();
+// { evicted: 2, tokensFreed: 1500, memoryKeys: ['tool_result.read_file.call_xyz', ...], log: [...] }
+```
+
+### Events
+
+```typescript
+const plugin = agent.context.toolResultEvictionPlugin;
+
+// When a result is tracked
+plugin.on('tracked', ({ toolUseId, toolName, sizeBytes }) => {
+  console.log(`Tracked ${toolName} result: ${sizeBytes} bytes`);
+});
+
+// When results are evicted
+plugin.on('evicted', ({ count, tokensFreed, keys }) => {
+  console.log(`Evicted ${count} results, freed ${tokensFreed} tokens`);
+  console.log(`Memory keys: ${keys.join(', ')}`);
+});
+
+// When iteration advances
+plugin.on('iteration', ({ current }) => {
+  console.log(`Iteration ${current}`);
+});
+```
+
+### Disabling Tool Result Eviction
+
+```typescript
+// Disable for a specific agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    features: {
+      toolResultEviction: false,  // Disable
+    },
+  },
+});
+
+// Note: If you disable memory, you must also disable toolResultEviction
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    features: {
+      memory: false,
+      autoSpill: false,
+      toolResultEviction: false,  // Required when memory is disabled
+    },
+  },
+});
+```
+
+### Best Practices
+
+#### 1. Let Defaults Work
+
+The default settings are tuned for typical agentic workflows:
+
+```typescript
+// Usually just use defaults
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  // toolResultEviction is on by default with sensible settings
+});
+```
+
+#### 2. Tune Retention for Your Use Case
+
+```typescript
+// Research agent - keep web content shorter, file content longer
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    toolResultEviction: {
+      toolRetention: {
+        web_fetch: 2,      // Very short for web content
+        web_search: 2,
+        read_file: 15,     // Keep file content much longer
+        grep: 12,
+      },
+    },
+  },
+});
+
+// Coding agent - keep all developer tool output longer
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    toolResultEviction: {
+      maxAgeIterations: 5,  // Keep everything longer
+      toolRetention: {
+        read_file: 20,
+        bash: 15,
+        grep: 15,
+        edit_file: 12,
+      },
+    },
+  },
+});
+```
+
+#### 3. Monitor Eviction
+
+```typescript
+agent.context.toolResultEvictionPlugin?.on('evicted', ({ count, tokensFreed }) => {
+  console.log(`[ToolResultEviction] Evicted ${count} results, freed ${tokensFreed} tokens`);
+});
+```
+
+#### 4. Combine with AutoSpill
+
+Tool Result Eviction and AutoSpill complement each other:
+
+- **AutoSpill**: Immediately spills large outputs (>10KB) to memory with a reference
+- **Tool Result Eviction**: Evicts old tool results after N iterations
+
+Both are enabled by default and work together automatically.
+
+---
+
+## Direct LLM Access
 
 All agent types (Agent, TaskAgent, UniversalAgent, ResearchAgent) inherit `runDirect()` and `streamDirect()` methods from BaseAgent. These methods bypass all context management for simple, stateless LLM calls.
 

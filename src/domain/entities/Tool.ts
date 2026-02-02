@@ -58,6 +58,7 @@ export interface ToolCall {
 
 export interface ToolResult {
   tool_use_id: string;
+  tool_name?: string; // Name of the tool that was executed (for eviction tracking)
   content: any;
   error?: string;
   executionTime?: number; // ms

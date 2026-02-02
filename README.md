@@ -572,8 +572,9 @@ console.log(agent.context.memory);                     // null (disabled)
 | `permissions` | `true` | ToolPermissionManager | (affects tool execution) |
 | `toolOutputTracking` | `true` | ToolOutputPlugin | (tracks recent tool outputs in context) |
 | `autoSpill` | `true` | AutoSpillPlugin | (auto-spills large outputs to memory) |
+| `toolResultEviction` | `true` | ToolResultEvictionPlugin | (evicts old tool results to memory) |
 
-**Note:** `autoSpill` requires `memory` to be enabled. The `autoSpill` feature is particularly useful for research and data-heavy workflows where tool outputs can be large.
+**Note:** `autoSpill` and `toolResultEviction` both require `memory` to be enabled. These features are particularly useful for research and data-heavy workflows where tool outputs can be large.
 
 **AgentContext composes:**
 - **ToolManager** - Tool registration, execution, circuit breakers
@@ -675,7 +676,51 @@ const agent = Agent.create({
 
 **Use cases:** Agent personality/behavior, user preferences, learned rules, tool usage patterns.
 
-### 9. Direct LLM Access (NEW)
+### 9. Tool Result Eviction (NEW)
+
+Automatically evict old tool results from conversation context to working memory, freeing space while preserving retrievability:
+
+```typescript
+import { Agent } from '@oneringai/agents';
+
+// Enabled by default when memory is enabled
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  // toolResultEviction is true by default
+});
+
+// Custom configuration
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  context: {
+    toolResultEviction: {
+      maxFullResults: 5,        // Keep last 5 tool pairs in conversation
+      maxAgeIterations: 3,      // Evict after 3 iterations
+      minSizeToEvict: 1024,     // Only evict results >1KB
+      maxTotalSizeBytes: 100 * 1024,  // 100KB total threshold
+      toolRetention: {          // Per-tool retention overrides
+        read_file: 10,          // Keep file content longer
+        web_fetch: 3,           // Short retention for web content
+      },
+    },
+  },
+});
+```
+
+**Key Features:**
+- 🔄 **Automatic Eviction** - Old/large tool results moved to memory automatically
+- 📊 **Size-Based Triggers** - Evicts when total tracked size exceeds threshold
+- ⏱️ **Age-Based Triggers** - Evicts results older than N iterations
+- 🎯 **Per-Tool Retention** - Configure different retention for different tools
+- 🔗 **Pair Removal** - Removes both tool_use AND tool_result messages together
+- 📁 **Memory Storage** - Evicted results stored in WorkingMemory's raw tier
+- 🔍 **Retrievable** - Agent can retrieve evicted results via `memory_retrieve`
+
+**Evicted results are stored as:** `tool_result.{toolName}.{toolUseId}` (in the `raw.` tier, so full key is `raw.tool_result.{toolName}.{toolUseId}`)
+
+### 10. Direct LLM Access
 
 Bypass all context management for simple, stateless LLM calls:
 
@@ -721,7 +766,7 @@ for await (const event of agent.streamDirect('Tell me a story')) {
 
 **Use cases:** Quick one-off queries, embeddings-like simplicity, testing, hybrid workflows.
 
-### 10. Audio Capabilities (NEW)
+### 11. Audio Capabilities
 
 Text-to-Speech and Speech-to-Text with multiple providers:
 
@@ -770,7 +815,7 @@ const english = await stt.translate(frenchAudio);
 - **TTS**: OpenAI (`tts-1`, `tts-1-hd`, `gpt-4o-mini-tts`), Google (`gemini-tts`)
 - **STT**: OpenAI (`whisper-1`, `gpt-4o-transcribe`), Groq (`whisper-large-v3` - 12x cheaper!)
 
-### 11. Model Registry
+### 12. Model Registry
 
 Complete metadata for 23+ models:
 
@@ -798,7 +843,7 @@ console.log(`Cached: $${cachedCost}`);  // $0.0293 (90% discount)
 - **Anthropic (5)**: Claude 4.5 series, Claude 4.x
 - **Google (7)**: Gemini 3, Gemini 2.5
 
-### 12. Streaming
+### 13. Streaming
 
 Real-time responses:
 
@@ -810,7 +855,7 @@ for await (const text of StreamHelpers.textOnly(agent.stream('Hello'))) {
 }
 ```
 
-### 13. OAuth for External APIs
+### 14. OAuth for External APIs
 
 ```typescript
 import { OAuthManager, FileStorage } from '@oneringai/agents';
@@ -827,7 +872,7 @@ const oauth = new OAuthManager({
 const authUrl = await oauth.startAuthFlow('user123');
 ```
 
-### 14. Developer Tools (NEW)
+### 15. Developer Tools
 
 File system and shell tools for building coding assistants:
 
@@ -869,7 +914,7 @@ await agent.run('Run npm test and report any failures');
 - Timeout protection (default 2 min)
 - Output truncation for large outputs
 
-### 15. External API Integration (NEW)
+### 16. External API Integration
 
 Connect your AI agents to 35+ external services with enterprise-grade resilience:
 
