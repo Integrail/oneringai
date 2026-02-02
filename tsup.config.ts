@@ -17,4 +17,8 @@ export default defineConfig({
   external: [
     'puppeteer', // Optional dependency - don't bundle
   ],
+  // Bundle MCP SDK to avoid subpath import resolution issues in Meteor
+  noExternal: [
+    '@modelcontextprotocol/sdk',
+  ],
 });
