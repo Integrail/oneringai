@@ -157,7 +157,7 @@ export function ImageTab(): React.ReactElement {
       const cost = await window.hosea.multimedia.calculateImageCost(
         selectedModel,
         Number(options.n ?? 1),
-        options.quality !== undefined ? String(options.quality) : undefined
+        String(options.quality ?? 'standard')
       );
       setEstimatedCost(cost);
     } catch {

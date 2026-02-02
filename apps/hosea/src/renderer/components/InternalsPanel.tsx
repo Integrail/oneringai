@@ -94,6 +94,14 @@ interface PersistentInstructions {
   enabled: boolean;
 }
 
+interface TokenBreakdown {
+  total: number;
+  reserved: number;
+  used: number;
+  available: number;
+  components: Array<{ name: string; tokens: number; percent: number }>;
+}
+
 interface PreparedContext {
   available: boolean;
   components: Array<{
@@ -117,6 +125,7 @@ interface InternalsData {
   // New fields
   systemPrompt: string | null;
   persistentInstructions: PersistentInstructions | null;
+  tokenBreakdown: TokenBreakdown | null;
 }
 
 interface InternalsPanelProps {
@@ -143,6 +152,7 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
   const [showContextModal, setShowContextModal] = useState(false);
   const [preparedContext, setPreparedContext] = useState<PreparedContext | null>(null);
   const [isLoadingContext, setIsLoadingContext] = useState(false);
+  const [isCompacting, setIsCompacting] = useState(false);
 
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
@@ -208,6 +218,24 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
     setShowContextModal(true);
     fetchPreparedContext();
   }, [fetchPreparedContext]);
+
+  // Force compaction
+  const handleForceCompact = useCallback(async () => {
+    try {
+      setIsCompacting(true);
+      const result = await window.hosea.internals.forceCompact();
+      if (result.success) {
+        // Refresh data to show updated stats
+        fetchData();
+      } else {
+        console.error('Force compact failed:', result.error);
+      }
+    } catch (error) {
+      console.error('Failed to force compact:', error);
+    } finally {
+      setIsCompacting(false);
+    }
+  }, [fetchData]);
 
   // Fetch on mount and set up auto-refresh
   useEffect(() => {
@@ -379,6 +407,13 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
                       <Badge bg="primary" className="internals-stat__value">{data.context.strategy}</Badge>
                     </div>
                   </div>
+                  {/* Lazy Strategy Warning */}
+                  {data.context.strategy === 'lazy' && data.context.utilizationPercent >= 75 && (
+                    <div className="alert alert-warning small p-2 mt-2 mb-0">
+                      <strong>Lazy Strategy:</strong> Auto-compaction requires 90%+ utilization.
+                      Current: {Math.round(data.context.utilizationPercent)}%
+                    </div>
+                  )}
                   {/* View Full Context Button */}
                   <button
                     className="btn btn-sm btn-outline-primary w-100 mt-3"
@@ -387,9 +422,75 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
                     <Eye size={14} className="me-1" />
                     View Full Context
                   </button>
+                  {/* Force Compact Button - show when utilization is high */}
+                  {data.context.utilizationPercent >= 50 && (
+                    <button
+                      className="btn btn-sm btn-outline-warning w-100 mt-2"
+                      onClick={handleForceCompact}
+                      disabled={isCompacting}
+                    >
+                      {isCompacting ? (
+                        <>
+                          <Spinner animation="border" size="sm" className="me-1" />
+                          Compacting...
+                        </>
+                      ) : (
+                        <>
+                          <Zap size={14} className="me-1" />
+                          Force Compaction
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* Token Breakdown Section */}
+            {data.tokenBreakdown && (
+              <div className="internals-section">
+                <div
+                  className="internals-section__header"
+                  onClick={() => toggleSection('breakdown')}
+                >
+                  {expandedSections.has('breakdown') ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <Layers size={14} />
+                  <span>Token Breakdown</span>
+                  <span className="internals-section__badge">{data.tokenBreakdown.components.length}</span>
+                </div>
+                {expandedSections.has('breakdown') && (
+                  <div className="internals-section__body">
+                    <div className="internals-stats mb-3">
+                      <div className="internals-stat">
+                        <span className="internals-stat__label">Used</span>
+                        <span className="internals-stat__value">{data.tokenBreakdown.used.toLocaleString()}</span>
+                      </div>
+                      <div className="internals-stat">
+                        <span className="internals-stat__label">Reserved</span>
+                        <span className="internals-stat__value">{data.tokenBreakdown.reserved.toLocaleString()}</span>
+                      </div>
+                      <div className="internals-stat">
+                        <span className="internals-stat__label">Available</span>
+                        <span className="internals-stat__value">{data.tokenBreakdown.available.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <div className="token-breakdown-list">
+                      {data.tokenBreakdown.components.map((comp, i) => (
+                        <div key={i} className="token-breakdown-item">
+                          <span className="token-breakdown-item__name">{comp.name}</span>
+                          <div className="token-breakdown-item__bar">
+                            <div style={{ width: `${Math.min(comp.percent, 100)}%` }} />
+                          </div>
+                          <span className="token-breakdown-item__value">
+                            {comp.tokens.toLocaleString()} ({comp.percent.toFixed(1)}%)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* System Prompt Section */}
             {data.systemPrompt && (

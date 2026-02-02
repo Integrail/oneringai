@@ -3424,10 +3424,6 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      */
     private doCompaction;
     /**
-     * Compact history (legacy - calls new compactConversation)
-     */
-    private compactHistory;
-    /**
      * Compact memory
      */
     private compactMemory;
@@ -3447,18 +3443,6 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Estimate tokens for a single InputItem
      */
     private estimateMessageTokens;
-    /**
-     * Estimate total tokens for conversation
-     */
-    private estimateConversationTokens;
-    /**
-     * Estimate system tokens (prompts, instructions, plugins)
-     */
-    private estimateSystemTokens;
-    /**
-     * Calculate budget from token usage
-     */
-    private calculateBudgetFromTokens;
     /**
      * Find tool_use/tool_result pairs in conversation
      * Returns Map<tool_use_id, message_index>

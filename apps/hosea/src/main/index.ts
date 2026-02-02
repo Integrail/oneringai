@@ -249,6 +249,10 @@ async function setupIPC(): Promise<void> {
     return agentService!.getMemoryValue(key);
   });
 
+  ipcMain.handle('internals:force-compact', async () => {
+    return agentService!.forceCompaction();
+  });
+
   // Multimedia - Image Generation
   ipcMain.handle('multimedia:get-available-image-models', async () => {
     return agentService!.getAvailableImageModels();

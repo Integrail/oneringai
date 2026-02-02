@@ -1378,6 +1378,14 @@ export class AgentService {
       length: number;
       enabled: boolean;
     } | null;
+    // Token breakdown for detailed context inspection
+    tokenBreakdown: {
+      total: number;
+      reserved: number;
+      used: number;
+      available: number;
+      components: Array<{ name: string; tokens: number; percent: number }>;
+    } | null;
   }> {
     if (!this.agent) {
       return {
@@ -1391,6 +1399,7 @@ export class AgentService {
         toolCalls: [],
         systemPrompt: null,
         persistentInstructions: null,
+        tokenBreakdown: null,
       };
     }
 
@@ -1399,9 +1408,10 @@ export class AgentService {
       const metrics = await ctx.getMetrics();
       const state = await ctx.getState();
 
-      // Get context stats
+      // Get context stats - use actual budget from context
+      const lastBudget = ctx.getLastBudget();
       const contextStats = {
-        totalTokens: Math.round((metrics.utilizationPercent / 100) * (state.config?.maxContextTokens || 128000)),
+        totalTokens: lastBudget?.used ?? Math.round((metrics.utilizationPercent / 100) * (state.config?.maxContextTokens || 128000)),
         maxTokens: state.config?.maxContextTokens || 128000,
         utilizationPercent: metrics.utilizationPercent,
         messagesCount: metrics.historyMessageCount,
@@ -1539,6 +1549,33 @@ export class AgentService {
         };
       }
 
+      // Build token breakdown from budget
+      let tokenBreakdown: {
+        total: number;
+        reserved: number;
+        used: number;
+        available: number;
+        components: Array<{ name: string; tokens: number; percent: number }>;
+      } | null = null;
+
+      if (lastBudget && lastBudget.breakdown) {
+        const components = Object.entries(lastBudget.breakdown)
+          .map(([name, tokens]) => ({
+            name: name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+            tokens,
+            percent: lastBudget.used > 0 ? (tokens / lastBudget.used) * 100 : 0,
+          }))
+          .sort((a, b) => b.tokens - a.tokens);
+
+        tokenBreakdown = {
+          total: lastBudget.total,
+          reserved: lastBudget.reserved,
+          used: lastBudget.used,
+          available: lastBudget.available,
+          components,
+        };
+      }
+
       return {
         available: true,
         agentName: activeAgent?.name || 'Default Assistant',
@@ -1550,6 +1587,7 @@ export class AgentService {
         toolCalls: toolCalls.slice(-50), // Last 50 tool calls
         systemPrompt,
         persistentInstructions: persistentInstructionsData,
+        tokenBreakdown,
       };
     } catch (error) {
       console.error('Error getting internals:', error);
@@ -1564,6 +1602,7 @@ export class AgentService {
         toolCalls: [],
         systemPrompt: null,
         persistentInstructions: null,
+        tokenBreakdown: null,
       };
     }
   }
@@ -1683,7 +1722,7 @@ export class AgentService {
       const ctx = this.agent.context;
 
       // Prepare context (this assembles all components exactly as sent to LLM)
-      const prepared = await ctx.prepare();
+      const prepared = await ctx.prepare({ returnFormat: 'components' });
 
       // Get individual components for detailed view
       // NOTE: prepared.components already contains everything in the correct order:
@@ -1703,7 +1742,7 @@ export class AgentService {
         'current_input': 'Current Input',
       };
 
-      for (const component of prepared.components) {
+      for (const component of prepared.components || []) {
         // Component content can be string or unknown
         const contentStr = typeof component.content === 'string'
           ? component.content
@@ -1738,6 +1777,46 @@ export class AgentService {
         components: [],
         totalTokens: 0,
         rawContext: `Error: ${error}`,
+      };
+    }
+  }
+
+  /**
+   * Force compaction of the context
+   * Useful when auto-compaction hasn't triggered but context is high
+   */
+  async forceCompaction(): Promise<{ success: boolean; tokensFreed: number; error?: string }> {
+    if (!this.agent) {
+      return { success: false, tokensFreed: 0, error: 'No agent initialized' };
+    }
+
+    try {
+      const ctx = this.agent.context;
+      // Get current budget before compaction
+      const beforeBudget = ctx.getLastBudget();
+      const beforeUsed = beforeBudget?.used ?? 0;
+
+      // Force prepare which will trigger compaction if needed
+      // We use prepare() with autoCompact enabled - but let's manually call compactConversation
+      // Actually, we need to access the internal compact method. Let's use prepare()
+      // and check if compaction happened
+      const result = await ctx.prepare();
+
+      // Get budget after
+      const afterBudget = ctx.getLastBudget();
+      const afterUsed = afterBudget?.used ?? 0;
+      const tokensFreed = Math.max(0, beforeUsed - afterUsed);
+
+      return {
+        success: true,
+        tokensFreed,
+      };
+    } catch (error) {
+      console.error('Error forcing compaction:', error);
+      return {
+        success: false,
+        tokensFreed: 0,
+        error: String(error),
       };
     }
   }

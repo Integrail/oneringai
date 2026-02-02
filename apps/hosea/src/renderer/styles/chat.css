@@ -1070,3 +1070,51 @@
   background-color: var(--color-gray-900);
   color: var(--color-gray-200);
 }
+
+/* Token Breakdown */
+.token-breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.token-breakdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-1) 0;
+  font-size: var(--font-size-xs);
+}
+
+.token-breakdown-item__name {
+  flex: 0 0 140px;
+  color: var(--color-gray-700);
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-breakdown-item__bar {
+  flex: 1;
+  height: 6px;
+  background: var(--color-gray-200);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.token-breakdown-item__bar > div {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light, var(--color-primary)));
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+}
+
+.token-breakdown-item__value {
+  flex: 0 0 110px;
+  text-align: right;
+  color: var(--color-gray-600);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+}

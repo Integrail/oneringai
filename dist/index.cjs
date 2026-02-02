@@ -9421,10 +9421,8 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   async prepare(options) {
     const returnFormat = options?.returnFormat ?? "llm-input";
     this.protectFromCompaction();
-    const conversationTokens = this.estimateConversationTokens();
-    const systemTokens = await this.estimateSystemTokens();
-    const totalUsed = conversationTokens + systemTokens;
-    let budget = this.calculateBudgetFromTokens(totalUsed);
+    let components = await this.buildComponents();
+    let budget = this.calculateBudget(components);
     this._lastBudget = budget;
     if (budget.status === "warning") {
       this.emit("budget:warning", { budget });
@@ -9438,14 +9436,14 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     });
     let compactionLog = [];
     if (needsCompaction) {
-      compactionLog = await this.compactConversation(budget);
-      const newTokens = this.estimateConversationTokens() + systemTokens;
-      budget = this.calculateBudgetFromTokens(newTokens);
+      const compactionResult = await this.compactConversation(budget);
+      compactionLog = compactionResult.log;
+      components = await this.buildComponents();
+      budget = this.calculateBudget(components);
       this._lastBudget = budget;
     }
     this.emit("context:prepared", { budget, compacted: needsCompaction });
     if (returnFormat === "components") {
-      const components = await this.buildComponents();
       return {
         components,
         budget,
@@ -10437,8 +10435,9 @@ Guidelines:
       if (currentBudget.status === "ok") break;
       let freed = 0;
       if (component.name === "conversation_history") {
-        freed = this.compactHistory();
-        if (freed > 0) log.push(`Compacted history: freed ~${freed} tokens`);
+        const result = await this.compactConversation(currentBudget);
+        freed = result.tokensFreed;
+        log.push(...result.log);
       } else if (component.name === "memory_index") {
         freed = await this.compactMemory();
         if (freed > 0) log.push(`Compacted memory: freed ~${freed} tokens`);
@@ -10464,34 +10463,6 @@ Guidelines:
       compacted: true,
       compactionLog: log
     };
-  }
-  /**
-   * Compact history (legacy - calls new compactConversation)
-   */
-  compactHistory() {
-    const preserve = this._config.history.preserveRecent;
-    const before = this._conversation.length;
-    if (before <= preserve) return 0;
-    const toRemove = before - preserve;
-    const removed = [];
-    let tokensFreed = 0;
-    for (let i = 0; i < toRemove && i < this._protectedFromIndex; i++) {
-      const item = this._conversation[i];
-      if (!item) continue;
-      const id = item.id;
-      const metadata = id ? this._messageMetadata.get(id) : null;
-      tokensFreed += metadata?.tokenCount || this.estimateMessageTokens(item);
-      removed.push(item);
-      if (id) {
-        this._messageMetadata.delete(id);
-      }
-    }
-    if (removed.length > 0) {
-      this._conversation = this._conversation.slice(removed.length);
-      this._protectedFromIndex = Math.max(0, this._protectedFromIndex - removed.length);
-      this.emit("history:compacted", { removedCount: removed.length });
-    }
-    return tokensFreed;
   }
   /**
    * Compact memory
@@ -10571,88 +10542,6 @@ Guidelines:
     return 50;
   }
   /**
-   * Estimate total tokens for conversation
-   */
-  estimateConversationTokens() {
-    let total = 0;
-    for (const item of this._conversation) {
-      const id = item.id;
-      const metadata = id ? this._messageMetadata.get(id) : null;
-      if (metadata?.tokenCount) {
-        total += metadata.tokenCount;
-      } else {
-        total += this.estimateMessageTokens(item);
-      }
-    }
-    return total;
-  }
-  /**
-   * Estimate system tokens (prompts, instructions, plugins)
-   */
-  async estimateSystemTokens() {
-    let total = 0;
-    if (this._systemPrompt) {
-      total += this._estimator.estimateTokens(this._systemPrompt);
-    }
-    if (this._instructions) {
-      total += this._estimator.estimateTokens(this._instructions);
-    }
-    const taskTypePrompt = this.getTaskTypePrompt();
-    if (taskTypePrompt) {
-      total += this._estimator.estimateTokens(taskTypePrompt);
-    }
-    const featureInstructions = buildFeatureInstructions(this._features);
-    if (featureInstructions?.content && typeof featureInstructions.content === "string") {
-      total += this._estimator.estimateTokens(featureInstructions.content);
-    }
-    if (this._features.memory && this._memory) {
-      const memoryIndex = await this._memory.formatIndex();
-      if (memoryIndex && !memoryIndex.includes("Memory is empty.")) {
-        total += this._estimator.estimateTokens(memoryIndex);
-      }
-    }
-    for (const plugin of this._plugins.values()) {
-      try {
-        const component = await plugin.getComponent();
-        if (component?.content && typeof component.content === "string") {
-          total += this._estimator.estimateTokens(component.content);
-        }
-      } catch {
-      }
-    }
-    return total;
-  }
-  /**
-   * Calculate budget from token usage
-   */
-  calculateBudgetFromTokens(used) {
-    const total = this._maxContextTokens;
-    const reserved = Math.floor(total * this._config.responseReserve);
-    const available = total - reserved - used;
-    const utilizationRatio = (used + reserved) / total;
-    const utilizationPercent = used / (total - reserved) * 100;
-    let status;
-    if (utilizationRatio >= 0.9) {
-      status = "critical";
-    } else if (utilizationRatio >= 0.75) {
-      status = "warning";
-    } else {
-      status = "ok";
-    }
-    return {
-      total,
-      reserved,
-      used,
-      available,
-      utilizationPercent,
-      status,
-      breakdown: {
-        conversation: this.estimateConversationTokens(),
-        system: used - this.estimateConversationTokens()
-      }
-    };
-  }
-  /**
    * Find tool_use/tool_result pairs in conversation
    * Returns Map<tool_use_id, message_index>
    */
@@ -10690,7 +10579,7 @@ Guidelines:
     const compactableEnd = this._protectedFromIndex;
     if (compactableEnd <= 0) {
       log.push("No compactable messages (all protected)");
-      return log;
+      return { log, tokensFreed: 0 };
     }
     const safeIndices = [];
     for (let i = 0; i < compactableEnd; i++) {
@@ -10711,7 +10600,7 @@ Guidelines:
     }
     if (safeIndices.length === 0) {
       log.push("No safe messages to compact (all involved in tool pairs)");
-      return log;
+      return { log, tokensFreed: 0 };
     }
     const targetRemoval = Math.min(
       Math.floor(safeIndices.length / 2),
@@ -10746,7 +10635,7 @@ Guidelines:
     this._compactionCount++;
     this._totalTokensFreed += tokensFreed;
     this.emit("history:compacted", { removedCount: toRemove.size });
-    return log;
+    return { log, tokensFreed };
   }
   /**
    * Build final InputItem[] for LLM call
