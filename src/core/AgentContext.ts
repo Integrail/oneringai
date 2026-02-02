@@ -1167,17 +1167,29 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
       for (const r of results) {
         const toolName = r.tool_name || 'unknown';
+        const toolArgs = r.tool_args || {};
+
+        // Get describeCall from registered tool (if available)
+        const toolFn = this._tools.get(toolName);
+        const describeCall = toolFn?.describeCall as
+          | ((args: Record<string, unknown>) => string)
+          | undefined;
+
         logger.debug({
           toolUseId: r.tool_use_id,
           toolName,
+          hasArgs: Object.keys(toolArgs).length > 0,
+          hasDescribeCall: !!describeCall,
           contentLength: typeof r.content === 'string' ? r.content.length : JSON.stringify(r.content).length,
         }, `addToolResults: tracking ${toolName}`);
 
         this._toolResultEvictionPlugin.onToolResult(
           r.tool_use_id,
           toolName,
+          toolArgs,
           r.content,
-          index
+          index,
+          describeCall
         );
       }
 

@@ -251,6 +251,35 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements 
     await this.storage.set(key, entry);
 
     this.emit('stored', { key, description, scope: entry.scope });
+
+    // Auto-evict if entry count exceeds limit
+    await this.enforceEntryCountLimit();
+  }
+
+  /**
+   * Enforce the maxIndexEntries limit by evicting excess entries
+   * Only evicts if entry count exceeds the configured limit
+   */
+  private async enforceEntryCountLimit(): Promise<void> {
+    const maxEntries = this.getMaxIndexEntries();
+    if (!maxEntries) return; // No limit configured
+
+    const entries = await this.storage.getAll();
+    const excessCount = entries.length - maxEntries;
+
+    if (excessCount > 0) {
+      const evictedKeys = await this.evict(excessCount, 'lru');
+      if (evictedKeys.length > 0) {
+        // Note: evict() already emits 'evicted' event
+      }
+    }
+  }
+
+  /**
+   * Get the configured max index entries limit
+   */
+  getMaxIndexEntries(): number | undefined {
+    return this.config.maxIndexEntries;
   }
 
   /**
@@ -469,11 +498,13 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements 
 
   /**
    * Get memory index with computed effective priorities
+   * Respects maxIndexEntries limit for context display
    */
   async getIndex(): Promise<MemoryIndex> {
     const entriesWithPriority = await this.getEntriesWithPriority();
     const totalSizeBytes = await this.storage.getTotalSize();
     const limitBytes = this.getLimit();
+    const totalEntryCount = entriesWithPriority.length;
 
     // Sort by: pinned first, then by priority (critical > high > normal > low), then by LRU
     const sortedEntries = [...entriesWithPriority].sort((a, b) => {
@@ -491,7 +522,12 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements 
       return b.entry.lastAccessedAt - a.entry.lastAccessedAt;
     });
 
-    const indexEntries = sortedEntries.map(({ entry, effectivePriority }) => ({
+    // Apply maxIndexEntries limit for context display (keeps highest priority entries)
+    const maxEntries = this.config.maxIndexEntries;
+    const displayEntries = maxEntries ? sortedEntries.slice(0, maxEntries) : sortedEntries;
+    const omittedCount = sortedEntries.length - displayEntries.length;
+
+    const indexEntries = displayEntries.map(({ entry, effectivePriority }) => ({
       key: entry.key,
       description: entry.description,
       size: formatSizeHuman(entry.sizeBytes),
@@ -507,6 +543,8 @@ export class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements 
       limitBytes,
       limitHuman: formatSizeHuman(limitBytes),
       utilizationPercent: (totalSizeBytes / limitBytes) * 100,
+      totalEntryCount,
+      omittedCount,
     };
   }
 

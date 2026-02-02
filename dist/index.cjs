@@ -3961,6 +3961,8 @@ function forPlan(key, description, value, options) {
 var DEFAULT_MEMORY_CONFIG = {
   maxSizeBytes: 25 * 1024 * 1024,
   // 25MB default
+  maxIndexEntries: 30,
+  // Limit index entries to prevent context bloat
   descriptionMaxLength: 150,
   softLimitPercent: 80,
   contextAllocationPercent: 20
@@ -4098,6 +4100,10 @@ function formatMemoryIndex(index) {
       lines.push("Warning: Memory utilization is high. Consider deleting unused entries.");
       lines.push("");
     }
+    if (index.omittedCount > 0) {
+      lines.push(`*${index.omittedCount} additional low-priority entries not shown. Use \`memory_query()\` to see all.*`);
+      lines.push("");
+    }
   }
   lines.push('Use `memory_retrieve("key")` to load full content.');
   lines.push('Use `memory_persist("key")` to keep data after task completion.');
@@ -4211,6 +4217,27 @@ var WorkingMemory = class extends eventemitter3.EventEmitter {
     }
     await this.storage.set(key, entry);
     this.emit("stored", { key, description, scope: entry.scope });
+    await this.enforceEntryCountLimit();
+  }
+  /**
+   * Enforce the maxIndexEntries limit by evicting excess entries
+   * Only evicts if entry count exceeds the configured limit
+   */
+  async enforceEntryCountLimit() {
+    const maxEntries = this.getMaxIndexEntries();
+    if (!maxEntries) return;
+    const entries = await this.storage.getAll();
+    const excessCount = entries.length - maxEntries;
+    if (excessCount > 0) {
+      const evictedKeys = await this.evict(excessCount, "lru");
+      if (evictedKeys.length > 0) ;
+    }
+  }
+  /**
+   * Get the configured max index entries limit
+   */
+  getMaxIndexEntries() {
+    return this.config.maxIndexEntries;
   }
   /**
    * Store a value scoped to specific tasks
@@ -4381,11 +4408,13 @@ var WorkingMemory = class extends eventemitter3.EventEmitter {
   }
   /**
    * Get memory index with computed effective priorities
+   * Respects maxIndexEntries limit for context display
    */
   async getIndex() {
     const entriesWithPriority = await this.getEntriesWithPriority();
     const totalSizeBytes = await this.storage.getTotalSize();
     const limitBytes = this.getLimit();
+    const totalEntryCount = entriesWithPriority.length;
     const sortedEntries = [...entriesWithPriority].sort((a, b) => {
       if (a.entry.pinned && !b.entry.pinned) return -1;
       if (!a.entry.pinned && b.entry.pinned) return 1;
@@ -4393,7 +4422,10 @@ var WorkingMemory = class extends eventemitter3.EventEmitter {
       if (priorityDiff !== 0) return priorityDiff;
       return b.entry.lastAccessedAt - a.entry.lastAccessedAt;
     });
-    const indexEntries = sortedEntries.map(({ entry, effectivePriority }) => ({
+    const maxEntries = this.config.maxIndexEntries;
+    const displayEntries = maxEntries ? sortedEntries.slice(0, maxEntries) : sortedEntries;
+    const omittedCount = sortedEntries.length - displayEntries.length;
+    const indexEntries = displayEntries.map(({ entry, effectivePriority }) => ({
       key: entry.key,
       description: entry.description,
       size: formatSizeHuman(entry.sizeBytes),
@@ -4407,7 +4439,9 @@ var WorkingMemory = class extends eventemitter3.EventEmitter {
       totalSizeHuman: formatSizeHuman(totalSizeBytes),
       limitBytes,
       limitHuman: formatSizeHuman(limitBytes),
-      utilizationPercent: totalSizeBytes / limitBytes * 100
+      utilizationPercent: totalSizeBytes / limitBytes * 100,
+      totalEntryCount,
+      omittedCount
     };
   }
   /**
@@ -8278,16 +8312,27 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
    *
    * @param toolUseId - The tool_use ID linking request/response
    * @param toolName - Name of the executed tool
+   * @param toolArgs - Arguments passed to the tool
    * @param result - The tool result content
    * @param messageIndex - Index of the message in conversation
+   * @param describeCall - Optional describeCall function from the tool
    */
-  onToolResult(toolUseId, toolName, result, messageIndex) {
+  onToolResult(toolUseId, toolName, toolArgs, result, messageIndex, describeCall) {
     const resultStr = typeof result === "string" ? result : JSON.stringify(result);
     const sizeBytes = Buffer.byteLength(resultStr, "utf8");
+    const description = generateResultDescription(
+      toolName,
+      toolArgs,
+      result,
+      sizeBytes,
+      describeCall
+    );
     const tracked = {
       toolUseId,
       toolName,
+      toolArgs,
       result,
+      description,
       sizeBytes,
       addedAtIteration: this.currentIteration,
       messageIndex,
@@ -8298,6 +8343,7 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
     logger2.debug({
       toolUseId,
       toolName,
+      description,
       sizeBytes,
       sizeMeetsMinimum: sizeBytes >= this.config.minSizeToEvict,
       minSizeToEvict: this.config.minSizeToEvict,
@@ -8513,7 +8559,8 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
         const memoryKey = `${this.config.keyPrefix}.${candidate.toolName}.${candidate.toolUseId}`;
         await this.memory.storeRaw(
           memoryKey,
-          `Evicted result from ${candidate.toolName} (${formatBytes2(candidate.sizeBytes)})`,
+          candidate.description,
+          // Use the smart description
           candidate.result
         );
         result.memoryKeys.push(memoryKey);
@@ -8666,6 +8713,70 @@ function formatBytes2(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function generateResultDescription(toolName, args, result, sizeBytes, describeCall) {
+  let baseDesc;
+  if (describeCall) {
+    try {
+      baseDesc = describeCall(args);
+    } catch {
+    }
+  }
+  switch (toolName) {
+    case "web_search": {
+      const query = String(args["query"] || "").slice(0, 40);
+      const count = Array.isArray(result) ? result.length : result?.results?.length ?? "?";
+      return `search: "${query}" \u2192 ${count} results`;
+    }
+    case "bash": {
+      const cmd = (String(args["command"] || "").split("\n")[0] ?? "").slice(0, 50);
+      const ok = !result?.error;
+      return `bash: \`${cmd}\` ${ok ? "\u2713" : "\u2717"}`;
+    }
+    case "read_file": {
+      const path6 = String(args["file_path"] || args["path"] || "");
+      const file = path6.split("/").pop() ?? path6;
+      const offset = args["offset"] ? ` @${args["offset"]}` : "";
+      return `read: ${file.slice(0, 50)}${offset}`;
+    }
+    case "web_fetch":
+    case "web_fetch_js": {
+      const url = String(args["url"] || "");
+      try {
+        const u = new URL(url);
+        return `fetch: ${u.hostname}${u.pathname.slice(0, 30)}`;
+      } catch {
+        return `fetch: ${url.slice(0, 50)}`;
+      }
+    }
+    case "glob": {
+      const pattern = String(args["pattern"] || "").slice(0, 35);
+      const count = Array.isArray(result) ? result.length : "?";
+      return `glob: "${pattern}" \u2192 ${count} files`;
+    }
+    case "grep": {
+      const pattern = String(args["pattern"] || "").slice(0, 30);
+      const count = Array.isArray(result) ? result.length : "?";
+      return `grep: "${pattern}" \u2192 ${count} matches`;
+    }
+    case "edit_file":
+    case "write_file": {
+      const path6 = String(args["file_path"] || args["path"] || "");
+      const file = path6.split("/").pop() || path6;
+      return `${toolName.split("_")[0]}: ${file.slice(0, 55)}`;
+    }
+    default: {
+      if (baseDesc) {
+        return `${toolName}: ${baseDesc.slice(0, 50)}`;
+      }
+      for (const key of ["query", "url", "path", "command", "pattern", "key"]) {
+        if (args[key]) {
+          return `${toolName}: ${key}="${String(args[key]).slice(0, 40)}"`;
+        }
+      }
+      return `${toolName} (${formatBytes2(sizeBytes)})`;
+    }
+  }
 }
 
 // src/capabilities/taskAgent/memoryTools.ts
@@ -9934,16 +10045,23 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       }, "addToolResults: tracking results for eviction");
       for (const r of results) {
         const toolName = r.tool_name || "unknown";
+        const toolArgs = r.tool_args || {};
+        const toolFn = this._tools.get(toolName);
+        const describeCall = toolFn?.describeCall;
         logger3.debug({
           toolUseId: r.tool_use_id,
           toolName,
+          hasArgs: Object.keys(toolArgs).length > 0,
+          hasDescribeCall: !!describeCall,
           contentLength: typeof r.content === "string" ? r.content.length : JSON.stringify(r.content).length
         }, `addToolResults: tracking ${toolName}`);
         this._toolResultEvictionPlugin.onToolResult(
           r.tool_use_id,
           toolName,
+          toolArgs,
           r.content,
-          index
+          index,
+          describeCall
         );
       }
       logger3.debug({
@@ -15897,6 +16015,7 @@ var Agent = class _Agent extends BaseAgent {
             toolResults.push({
               tool_use_id: toolCall.id,
               tool_name: toolCall.function.name,
+              tool_args: parsedArgs,
               content: "",
               error: error.message,
               state: "failed" /* FAILED */
@@ -16206,9 +16325,15 @@ var Agent = class _Agent extends BaseAgent {
       }, {});
       if (beforeTool.skip) {
         this.executionContext?.audit("tool_skipped", { toolCall }, void 0, toolCall.function.name);
+        let parsedArgs = {};
+        try {
+          parsedArgs = JSON.parse(toolCall.function.arguments);
+        } catch {
+        }
         const mockResult = {
           tool_use_id: toolCall.id,
           tool_name: toolCall.function.name,
+          tool_args: parsedArgs,
           content: beforeTool.mockResult || "",
           state: "completed" /* COMPLETED */,
           executionTime: 0
@@ -16226,9 +16351,15 @@ var Agent = class _Agent extends BaseAgent {
         results.push(result);
         this.executionContext?.addToolResult(result);
       } catch (error) {
+        let parsedArgs = {};
+        try {
+          parsedArgs = JSON.parse(toolCall.function.arguments);
+        } catch {
+        }
         const toolResult = {
           tool_use_id: toolCall.id,
           tool_name: toolCall.function.name,
+          tool_args: parsedArgs,
           content: "",
           error: error.message,
           state: "failed" /* FAILED */
@@ -16276,6 +16407,7 @@ var Agent = class _Agent extends BaseAgent {
       let toolResult = {
         tool_use_id: toolCall.id,
         tool_name: toolCall.function.name,
+        tool_args: args,
         content: result,
         state: "completed" /* COMPLETED */,
         executionTime: Date.now() - toolStartTime

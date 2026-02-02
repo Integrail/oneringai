@@ -412,6 +412,10 @@ export interface MemoryIndex {
   limitBytes: number;
   limitHuman: string;             // "1MB"
   utilizationPercent: number;
+  /** Total entry count (before any truncation for display) */
+  totalEntryCount: number;
+  /** Number of entries omitted from display due to maxIndexEntries limit */
+  omittedCount: number;
 }
 
 /**
@@ -420,6 +424,9 @@ export interface MemoryIndex {
 export interface WorkingMemoryConfig {
   /** Max memory size in bytes. If not set, calculated from model context */
   maxSizeBytes?: number;
+
+  /** Max number of entries in the memory index. Excess entries are auto-evicted via LRU. Default: 30 */
+  maxIndexEntries?: number;
 
   /** Max description length */
   descriptionMaxLength: number;
@@ -498,6 +505,7 @@ export function forPlan(
  */
 export const DEFAULT_MEMORY_CONFIG: WorkingMemoryConfig = {
   maxSizeBytes: 25 * 1024 * 1024, // 25MB default
+  maxIndexEntries: 30, // Limit index entries to prevent context bloat
   descriptionMaxLength: 150,
   softLimitPercent: 80,
   contextAllocationPercent: 20,
@@ -708,6 +716,12 @@ export function formatMemoryIndex(index: MemoryIndex): string {
     // Add warning if utilization is high
     if (index.utilizationPercent > 80) {
       lines.push('Warning: Memory utilization is high. Consider deleting unused entries.');
+      lines.push('');
+    }
+
+    // Show omitted entries notice
+    if (index.omittedCount > 0) {
+      lines.push(`*${index.omittedCount} additional low-priority entries not shown. Use \`memory_query()\` to see all.*`);
       lines.push('');
     }
   }

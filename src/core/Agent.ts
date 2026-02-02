@@ -715,6 +715,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
             toolResults.push({
               tool_use_id: toolCall.id,
               tool_name: toolCall.function.name,
+              tool_args: parsedArgs,
               content: '',
               error: (error as Error).message,
               state: ToolCallState.FAILED,
@@ -1126,9 +1127,16 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       if (beforeTool.skip) {
         this.executionContext?.audit('tool_skipped', { toolCall }, undefined, toolCall.function.name);
 
+        // Parse args for tracking
+        let parsedArgs: Record<string, unknown> = {};
+        try {
+          parsedArgs = JSON.parse(toolCall.function.arguments);
+        } catch { /* ignore parse errors */ }
+
         const mockResult: ToolResult = {
           tool_use_id: toolCall.id,
           tool_name: toolCall.function.name,
+          tool_args: parsedArgs,
           content: beforeTool.mockResult || '',
           state: ToolCallState.COMPLETED,
           executionTime: 0,
@@ -1151,9 +1159,16 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         results.push(result);
         this.executionContext?.addToolResult(result);
       } catch (error) {
+        // Parse args for tracking (even on error)
+        let parsedArgs: Record<string, unknown> = {};
+        try {
+          parsedArgs = JSON.parse(toolCall.function.arguments);
+        } catch { /* ignore parse errors */ }
+
         const toolResult: ToolResult = {
           tool_use_id: toolCall.id,
           tool_name: toolCall.function.name,
+          tool_args: parsedArgs,
           content: '',
           error: (error as Error).message,
           state: ToolCallState.FAILED,
@@ -1222,6 +1237,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       let toolResult: ToolResult = {
         tool_use_id: toolCall.id,
         tool_name: toolCall.function.name,
+        tool_args: args,
         content: result,
         state: ToolCallState.COMPLETED,
         executionTime: Date.now() - toolStartTime,

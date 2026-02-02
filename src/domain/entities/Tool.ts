@@ -59,6 +59,7 @@ export interface ToolCall {
 export interface ToolResult {
   tool_use_id: string;
   tool_name?: string; // Name of the tool that was executed (for eviction tracking)
+  tool_args?: Record<string, unknown>; // Arguments passed to the tool (for description generation)
   content: any;
   error?: string;
   executionTime?: number; // ms

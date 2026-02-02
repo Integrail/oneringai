@@ -78,6 +78,7 @@ export interface StoredAgentConfig {
   // Memory settings
   memoryEnabled: boolean;
   maxMemorySizeBytes: number;
+  maxMemoryIndexEntries: number;
   memorySoftLimitPercent: number;
   contextAllocationPercent: number;
   // In-context memory
@@ -286,6 +287,7 @@ export class AgentService {
         maxContextTokens: config.maxContextTokens,
         responseReserve: config.responseReserve,
         maxMemorySizeBytes: config.maxMemorySizeBytes,
+        maxMemoryIndexEntries: config.maxMemoryIndexEntries,
         memorySoftLimitPercent: config.memorySoftLimitPercent,
         contextAllocationPercent: config.contextAllocationPercent,
         maxInContextEntries: config.maxInContextEntries,
@@ -334,6 +336,7 @@ export class AgentService {
       responseReserve: (typeConfig.responseReserve as number) ?? 4096,
       memoryEnabled: features.memory ?? true,
       maxMemorySizeBytes: (typeConfig.maxMemorySizeBytes as number) ?? 25 * 1024 * 1024,
+      maxMemoryIndexEntries: (typeConfig.maxMemoryIndexEntries as number) ?? 30,
       memorySoftLimitPercent: (typeConfig.memorySoftLimitPercent as number) ?? 80,
       contextAllocationPercent: (typeConfig.contextAllocationPercent as number) ?? 10,
       inContextMemoryEnabled: features.inContextMemory ?? false,
@@ -1005,6 +1008,7 @@ export class AgentService {
           memory: agentConfig.memoryEnabled
             ? {
                 maxSizeBytes: agentConfig.maxMemorySizeBytes,
+                maxIndexEntries: agentConfig.maxMemoryIndexEntries,
                 descriptionMaxLength: 150, // Default value
                 softLimitPercent: agentConfig.memorySoftLimitPercent,
                 contextAllocationPercent: agentConfig.contextAllocationPercent,
@@ -1079,6 +1083,7 @@ export class AgentService {
       responseReserve: 4096,
       memoryEnabled: true,
       maxMemorySizeBytes: 25 * 1024 * 1024,
+      maxMemoryIndexEntries: 30,
       memorySoftLimitPercent: 80,
       contextAllocationPercent: 10,
       inContextMemoryEnabled: false,

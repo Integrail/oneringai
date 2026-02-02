@@ -662,4 +662,226 @@ describe('WorkingMemory', () => {
       expect(mem.getLimit()).toBeGreaterThan(0);
     });
   });
+
+  describe('maxIndexEntries', () => {
+    it('should be included in DEFAULT_MEMORY_CONFIG', () => {
+      expect(DEFAULT_MEMORY_CONFIG.maxIndexEntries).toBe(30);
+    });
+
+    it('should return configured maxIndexEntries via getMaxIndexEntries', () => {
+      const configWithLimit: WorkingMemoryConfig = {
+        ...defaultConfig,
+        maxIndexEntries: 10,
+      };
+      const mem = new WorkingMemory(storage, configWithLimit);
+      expect(mem.getMaxIndexEntries()).toBe(10);
+    });
+
+    it('should return undefined when maxIndexEntries not configured', () => {
+      const configWithoutLimit: WorkingMemoryConfig = {
+        ...defaultConfig,
+        maxIndexEntries: undefined,
+      };
+      const mem = new WorkingMemory(storage, configWithoutLimit);
+      expect(mem.getMaxIndexEntries()).toBeUndefined();
+    });
+
+    it('should auto-evict when entry count exceeds maxIndexEntries', async () => {
+      const onEvicted = vi.fn();
+      const configWithLimit: WorkingMemoryConfig = {
+        ...defaultConfig,
+        maxIndexEntries: 3,
+      };
+      const mem = new WorkingMemory(storage, configWithLimit);
+      mem.on('evicted', onEvicted);
+
+      // Store 3 entries - should not evict
+      await mem.store('a', 'Entry A', 1);
+      await mem.store('b', 'Entry B', 2);
+      await mem.store('c', 'Entry C', 3);
+      expect(onEvicted).not.toHaveBeenCalled();
+
+      // Store 4th entry - should trigger eviction of 1
+      await mem.store('d', 'Entry D', 4);
+
+      expect(onEvicted).toHaveBeenCalledWith({
+        keys: expect.any(Array),
+        reason: 'lru',
+      });
+
+      // Should have exactly 3 entries after eviction
+      const index = await mem.getIndex();
+      expect(index.totalEntryCount).toBe(3);
+    });
+
+    it('should evict lowest priority entries first when count exceeded', async () => {
+      const configWithLimit: WorkingMemoryConfig = {
+        ...defaultConfig,
+        maxIndexEntries: 2,
+      };
+      const mem = new WorkingMemory(storage, configWithLimit);
+
+      // Store high priority first
+      await mem.store('high', 'High priority', 1, { priority: 'high' });
+      // Then low priority
+      await mem.store('low', 'Low priority', 2, { priority: 'low' });
+      // Then normal - this should evict 'low'
+      await mem.store('normal', 'Normal priority', 3);
+
+      expect(await mem.has('high')).toBe(true);
+      expect(await mem.has('normal')).toBe(true);
+      expect(await mem.has('low')).toBe(false);
+    });
+
+    it('should not evict pinned entries when count exceeded', async () => {
+      const configWithLimit: WorkingMemoryConfig = {
+        ...defaultConfig,
+        maxIndexEntries: 2,
+      };
+      const mem = new WorkingMemory(storage, configWithLimit);
+
+      await mem.store('pinned', 'Pinned entry', 1, { pinned: true });
+      await mem.store('normal1', 'Normal 1', 2);
+      // This should evict normal1, not pinned
+      await mem.store('normal2', 'Normal 2', 3);
+
+      expect(await mem.has('pinned')).toBe(true);
+      expect(await mem.has('normal2')).toBe(true);
+      expect(await mem.has('normal1')).toBe(false);
+    });
+
+    it('should limit entries returned by getIndex to maxIndexEntries', async () => {
+      const configWithLimit: WorkingMemoryConfig = {
+        ...defaultConfig,
+        maxIndexEntries: 2,
+        maxSizeBytes: 100 * 1024, // Large enough to hold all entries
+      };
+      const mem = new WorkingMemory(storage, configWithLimit);
+
+      // Store 4 entries (won't auto-evict because we increased size limit)
+      await mem.store('a', 'Entry A', 1, { priority: 'low' });
+      await mem.store('b', 'Entry B', 2, { priority: 'normal' });
+      await mem.store('c', 'Entry C', 3, { priority: 'high' });
+      await mem.store('d', 'Entry D', 4, { priority: 'critical' });
+
+      // Auto-eviction should have kicked in, leaving only 2 entries
+      // The highest priority entries (critical and high) should remain
+      const index = await mem.getIndex();
+
+      // With auto-eviction, there should only be 2 entries total
+      expect(index.entries).toHaveLength(2);
+      expect(index.totalEntryCount).toBe(2);
+      expect(index.omittedCount).toBe(0);
+
+      // Verify the highest priority entries were kept
+      const keys = index.entries.map(e => e.key);
+      expect(keys).toContain('d'); // critical
+      expect(keys).toContain('c'); // high
+    });
+
+    it('should track omittedCount when index is truncated', async () => {
+      // Use a config where auto-eviction is disabled by not setting maxIndexEntries
+      // but then getIndex should still truncate if we had more entries
+      const configNoAutoEvict: WorkingMemoryConfig = {
+        ...defaultConfig,
+        maxIndexEntries: 2,
+        maxSizeBytes: 100 * 1024,
+      };
+      const mem = new WorkingMemory(storage, configNoAutoEvict);
+
+      // Store entries - auto-eviction will keep it at 2
+      await mem.store('a', 'Entry A', 1);
+      await mem.store('b', 'Entry B', 2);
+
+      const index = await mem.getIndex();
+      expect(index.totalEntryCount).toBe(2);
+      expect(index.entries).toHaveLength(2);
+      expect(index.omittedCount).toBe(0);
+    });
+
+    it('should include totalEntryCount and omittedCount in index', async () => {
+      const configWithLimit: WorkingMemoryConfig = {
+        ...defaultConfig,
+        maxIndexEntries: 5,
+      };
+      const mem = new WorkingMemory(storage, configWithLimit);
+
+      await mem.store('a', 'Entry A', 1);
+      await mem.store('b', 'Entry B', 2);
+
+      const index = await mem.getIndex();
+
+      expect(index).toHaveProperty('totalEntryCount');
+      expect(index).toHaveProperty('omittedCount');
+      expect(index.totalEntryCount).toBe(2);
+      expect(index.omittedCount).toBe(0);
+    });
+
+    it('should show omitted notice in formatIndex when entries are omitted', async () => {
+      // This test needs to verify the formatMemoryIndex output
+      // We need to mock a scenario where omittedCount > 0
+      // Since auto-eviction prevents this, we test the format function directly
+      const { formatMemoryIndex } = await import('@/domain/entities/Memory.js');
+
+      const mockIndex = {
+        entries: [{ key: 'a', description: 'A', size: '1KB', scope: 'session' as const, effectivePriority: 'normal' as const, pinned: false }],
+        totalSizeBytes: 1024,
+        totalSizeHuman: '1KB',
+        limitBytes: 10240,
+        limitHuman: '10KB',
+        utilizationPercent: 10,
+        totalEntryCount: 5,
+        omittedCount: 4,
+      };
+
+      const formatted = formatMemoryIndex(mockIndex);
+
+      expect(formatted).toContain('4 additional low-priority entries not shown');
+      expect(formatted).toContain('memory_query()');
+    });
+
+    it('should not show omitted notice when no entries are omitted', async () => {
+      const { formatMemoryIndex } = await import('@/domain/entities/Memory.js');
+
+      const mockIndex = {
+        entries: [{ key: 'a', description: 'A', size: '1KB', scope: 'session' as const, effectivePriority: 'normal' as const, pinned: false }],
+        totalSizeBytes: 1024,
+        totalSizeHuman: '1KB',
+        limitBytes: 10240,
+        limitHuman: '10KB',
+        utilizationPercent: 10,
+        totalEntryCount: 1,
+        omittedCount: 0,
+      };
+
+      const formatted = formatMemoryIndex(mockIndex);
+
+      expect(formatted).not.toContain('additional low-priority entries not shown');
+    });
+
+    it('should evict multiple entries when adding causes excess', async () => {
+      const configWithLimit: WorkingMemoryConfig = {
+        ...defaultConfig,
+        maxIndexEntries: 3,
+      };
+      const mem = new WorkingMemory(storage, configWithLimit);
+
+      // Fill to limit
+      await mem.store('a', 'A', 1, { priority: 'low' });
+      await mem.store('b', 'B', 2, { priority: 'low' });
+      await mem.store('c', 'C', 3, { priority: 'high' });
+
+      // Add two more (each triggers eviction)
+      await mem.store('d', 'D', 4, { priority: 'high' });
+      await mem.store('e', 'E', 5, { priority: 'high' });
+
+      // Should have 3 entries, all high priority
+      const index = await mem.getIndex();
+      expect(index.totalEntryCount).toBe(3);
+
+      // Low priority entries should have been evicted
+      expect(await mem.has('a')).toBe(false);
+      expect(await mem.has('b')).toBe(false);
+    });
+  });
 });

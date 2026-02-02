@@ -316,6 +316,10 @@ interface MemoryIndex {
     limitBytes: number;
     limitHuman: string;
     utilizationPercent: number;
+    /** Total entry count (before any truncation for display) */
+    totalEntryCount: number;
+    /** Number of entries omitted from display due to maxIndexEntries limit */
+    omittedCount: number;
 }
 /**
  * Configuration for working memory
@@ -323,6 +327,8 @@ interface MemoryIndex {
 interface WorkingMemoryConfig {
     /** Max memory size in bytes. If not set, calculated from model context */
     maxSizeBytes?: number;
+    /** Max number of entries in the memory index. Excess entries are auto-evicted via LRU. Default: 30 */
+    maxIndexEntries?: number;
     /** Max description length */
     descriptionMaxLength: number;
     /** Percentage at which to warn agent */
@@ -1108,6 +1114,7 @@ interface ToolCall {
 interface ToolResult {
     tool_use_id: string;
     tool_name?: string;
+    tool_args?: Record<string, unknown>;
     content: any;
     error?: string;
     executionTime?: number;
@@ -1821,6 +1828,15 @@ declare class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements
         pinned?: boolean;
     }): Promise<void>;
     /**
+     * Enforce the maxIndexEntries limit by evicting excess entries
+     * Only evicts if entry count exceeds the configured limit
+     */
+    private enforceEntryCountLimit;
+    /**
+     * Get the configured max index entries limit
+     */
+    getMaxIndexEntries(): number | undefined;
+    /**
      * Store a value scoped to specific tasks
      * Convenience method for task-aware memory
      */
@@ -1892,6 +1908,7 @@ declare class WorkingMemory extends EventEmitter<WorkingMemoryEvents> implements
     clear(): Promise<void>;
     /**
      * Get memory index with computed effective priorities
+     * Respects maxIndexEntries limit for context display
      */
     getIndex(): Promise<MemoryIndex>;
     /**
@@ -2584,8 +2601,12 @@ interface TrackedResult {
     toolUseId: string;
     /** Name of the tool that was executed */
     toolName: string;
+    /** Arguments passed to the tool */
+    toolArgs: Record<string, unknown>;
     /** The actual result content */
     result: unknown;
+    /** Human-readable description for memory index */
+    description: string;
     /** Size of the result in bytes */
     sizeBytes: number;
     /** Iteration when this result was added */
@@ -2723,10 +2744,12 @@ declare class ToolResultEvictionPlugin extends BaseContextPlugin {
      *
      * @param toolUseId - The tool_use ID linking request/response
      * @param toolName - Name of the executed tool
+     * @param toolArgs - Arguments passed to the tool
      * @param result - The tool result content
      * @param messageIndex - Index of the message in conversation
+     * @param describeCall - Optional describeCall function from the tool
      */
-    onToolResult(toolUseId: string, toolName: string, result: unknown, messageIndex: number): void;
+    onToolResult(toolUseId: string, toolName: string, toolArgs: Record<string, unknown>, result: unknown, messageIndex: number, describeCall?: (args: Record<string, unknown>) => string): void;
     /**
      * Called at the start of each agent iteration.
      * Advances the iteration counter for age-based eviction.

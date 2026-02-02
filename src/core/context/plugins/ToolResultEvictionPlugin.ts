@@ -51,8 +51,12 @@ export interface TrackedResult {
   toolUseId: string;
   /** Name of the tool that was executed */
   toolName: string;
+  /** Arguments passed to the tool */
+  toolArgs: Record<string, unknown>;
   /** The actual result content */
   result: unknown;
+  /** Human-readable description for memory index */
+  description: string;
   /** Size of the result in bytes */
   sizeBytes: number;
   /** Iteration when this result was added */
@@ -245,23 +249,38 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
    *
    * @param toolUseId - The tool_use ID linking request/response
    * @param toolName - Name of the executed tool
+   * @param toolArgs - Arguments passed to the tool
    * @param result - The tool result content
    * @param messageIndex - Index of the message in conversation
+   * @param describeCall - Optional describeCall function from the tool
    */
   onToolResult(
     toolUseId: string,
     toolName: string,
+    toolArgs: Record<string, unknown>,
     result: unknown,
-    messageIndex: number
+    messageIndex: number,
+    describeCall?: (args: Record<string, unknown>) => string
   ): void {
     // Calculate size
     const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
     const sizeBytes = Buffer.byteLength(resultStr, 'utf8');
 
+    // Generate description for memory index
+    const description = generateResultDescription(
+      toolName,
+      toolArgs,
+      result,
+      sizeBytes,
+      describeCall
+    );
+
     const tracked: TrackedResult = {
       toolUseId,
       toolName,
+      toolArgs,
       result,
+      description,
       sizeBytes,
       addedAtIteration: this.currentIteration,
       messageIndex,
@@ -274,6 +293,7 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
     logger.debug({
       toolUseId,
       toolName,
+      description,
       sizeBytes,
       sizeMeetsMinimum: sizeBytes >= this.config.minSizeToEvict,
       minSizeToEvict: this.config.minSizeToEvict,
@@ -539,7 +559,7 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
         const memoryKey = `${this.config.keyPrefix}.${candidate.toolName}.${candidate.toolUseId}`;
         await this.memory.storeRaw(
           memoryKey,
-          `Evicted result from ${candidate.toolName} (${formatBytes(candidate.sizeBytes)})`,
+          candidate.description,  // Use the smart description
           candidate.result
         );
         result.memoryKeys.push(memoryKey);
@@ -747,4 +767,104 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * Generate a useful description for a tool result.
+ * Uses tool's describeCall if available, otherwise uses built-in switch/case.
+ * The description helps an LLM identify which evicted result to retrieve.
+ *
+ * @param toolName - Name of the tool
+ * @param args - Arguments passed to the tool
+ * @param result - The tool result
+ * @param sizeBytes - Size of the result
+ * @param describeCall - Optional describeCall function from the tool
+ */
+function generateResultDescription(
+  toolName: string,
+  args: Record<string, unknown>,
+  result: unknown,
+  sizeBytes: number,
+  describeCall?: (args: Record<string, unknown>) => string
+): string {
+  // 1. Try tool's describeCall if available (gives args-based description)
+  let baseDesc: string | undefined;
+  if (describeCall) {
+    try {
+      baseDesc = describeCall(args);
+    } catch {
+      // Fall through to built-in
+    }
+  }
+
+  // 2. Built-in descriptions for common tools (include result-specific info)
+  switch (toolName) {
+    case 'web_search': {
+      const query = String(args['query'] || '').slice(0, 40);
+      const count = Array.isArray(result)
+        ? result.length
+        : (result as any)?.results?.length ?? '?';
+      return `search: "${query}" → ${count} results`;
+    }
+
+    case 'bash': {
+      const cmd = (String(args['command'] || '').split('\n')[0] ?? '').slice(0, 50);
+      const ok = !(result as any)?.error;
+      return `bash: \`${cmd}\` ${ok ? '✓' : '✗'}`;
+    }
+
+    case 'read_file': {
+      const path = String(args['file_path'] || args['path'] || '');
+      const file = path.split('/').pop() ?? path;
+      const offset = args['offset'] ? ` @${args['offset']}` : '';
+      return `read: ${file.slice(0, 50)}${offset}`;
+    }
+
+    case 'web_fetch':
+    case 'web_fetch_js': {
+      const url = String(args['url'] || '');
+      try {
+        const u = new URL(url);
+        return `fetch: ${u.hostname}${u.pathname.slice(0, 30)}`;
+      } catch {
+        return `fetch: ${url.slice(0, 50)}`;
+      }
+    }
+
+    case 'glob': {
+      const pattern = String(args['pattern'] || '').slice(0, 35);
+      const count = Array.isArray(result) ? result.length : '?';
+      return `glob: "${pattern}" → ${count} files`;
+    }
+
+    case 'grep': {
+      const pattern = String(args['pattern'] || '').slice(0, 30);
+      const count = Array.isArray(result) ? result.length : '?';
+      return `grep: "${pattern}" → ${count} matches`;
+    }
+
+    case 'edit_file':
+    case 'write_file': {
+      const path = String(args['file_path'] || args['path'] || '');
+      const file = path.split('/').pop() || path;
+      return `${toolName.split('_')[0]}: ${file.slice(0, 55)}`;
+    }
+
+    default: {
+      // 3. If describeCall gave us something, use it
+      if (baseDesc) {
+        return `${toolName}: ${baseDesc.slice(0, 50)}`;
+      }
+
+      // 4. Generic fallback: try common arg keys
+      for (const key of ['query', 'url', 'path', 'command', 'pattern', 'key']) {
+        if (args[key]) {
+          return `${toolName}: ${key}="${String(args[key]).slice(0, 40)}"`;
+        }
+      }
+
+      // 5. Last resort: just size
+      return `${toolName} (${formatBytes(sizeBytes)})`;
+    }
+  }
 }

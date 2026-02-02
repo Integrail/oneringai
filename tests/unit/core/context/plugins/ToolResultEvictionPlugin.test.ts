@@ -85,7 +85,7 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should track tool result', () => {
-      plugin.onToolResult('call_123', 'read_file', 'file content here', 0);
+      plugin.onToolResult('call_123', 'read_file', {}, 'file content here', 0);
 
       expect(plugin.isTracked('call_123')).toBe(true);
       expect(plugin.getTracked().length).toBe(1);
@@ -93,7 +93,7 @@ describe('ToolResultEvictionPlugin', () => {
 
     it('should track result with correct metadata', () => {
       const result = { data: 'test data' };
-      plugin.onToolResult('call_456', 'web_fetch', result, 5);
+      plugin.onToolResult('call_456', 'web_fetch', {}, result, 5);
 
       const tracked = plugin.getTrackedResult('call_456');
       expect(tracked).toBeDefined();
@@ -110,7 +110,7 @@ describe('ToolResultEvictionPlugin', () => {
       const onTracked = vi.fn();
       plugin.on('tracked', onTracked);
 
-      plugin.onToolResult('call_123', 'bash', 'output', 0);
+      plugin.onToolResult('call_123', 'bash', {}, 'output', 0);
 
       expect(onTracked).toHaveBeenCalledWith({
         toolUseId: 'call_123',
@@ -121,7 +121,7 @@ describe('ToolResultEvictionPlugin', () => {
 
     it('should calculate size correctly for strings', () => {
       const content = 'x'.repeat(100);
-      plugin.onToolResult('call_123', 'read_file', content, 0);
+      plugin.onToolResult('call_123', 'read_file', {}, content, 0);
 
       const tracked = plugin.getTrackedResult('call_123');
       expect(tracked?.sizeBytes).toBe(100);
@@ -129,7 +129,7 @@ describe('ToolResultEvictionPlugin', () => {
 
     it('should calculate size correctly for objects', () => {
       const content = { key: 'value', nested: { data: [1, 2, 3] } };
-      plugin.onToolResult('call_123', 'web_fetch', content, 0);
+      plugin.onToolResult('call_123', 'web_fetch', {}, content, 0);
 
       const tracked = plugin.getTrackedResult('call_123');
       const expectedSize = Buffer.byteLength(JSON.stringify(content), 'utf8');
@@ -137,9 +137,9 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should track multiple results', () => {
-      plugin.onToolResult('call_1', 'tool1', 'content1', 0);
-      plugin.onToolResult('call_2', 'tool2', 'content2', 1);
-      plugin.onToolResult('call_3', 'tool3', 'content3', 2);
+      plugin.onToolResult('call_1', 'tool1', {}, 'content1', 0);
+      plugin.onToolResult('call_2', 'tool2', {}, 'content2', 1);
+      plugin.onToolResult('call_3', 'tool3', {}, 'content3', 2);
 
       expect(plugin.getTracked().length).toBe(3);
     });
@@ -185,23 +185,23 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should return true when count exceeds maxFullResults', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(20), 0);
-      plugin.onToolResult('call_2', 'tool', 'x'.repeat(20), 1);
-      plugin.onToolResult('call_3', 'tool', 'x'.repeat(20), 2);
-      plugin.onToolResult('call_4', 'tool', 'x'.repeat(20), 3);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(20), 0);
+      plugin.onToolResult('call_2', 'tool', {}, 'x'.repeat(20), 1);
+      plugin.onToolResult('call_3', 'tool', {}, 'x'.repeat(20), 2);
+      plugin.onToolResult('call_4', 'tool', {}, 'x'.repeat(20), 3);
 
       expect(plugin.shouldEvict()).toBe(true);
     });
 
     it('should return true when total size exceeds maxTotalSizeBytes', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(600), 0);
-      plugin.onToolResult('call_2', 'tool', 'x'.repeat(600), 1);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(600), 0);
+      plugin.onToolResult('call_2', 'tool', {}, 'x'.repeat(600), 1);
 
       expect(plugin.shouldEvict()).toBe(true);
     });
 
     it('should return true when result age exceeds maxAgeIterations', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(20), 0);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(20), 0);
 
       plugin.onIteration(); // iteration 1
       plugin.onIteration(); // iteration 2
@@ -216,7 +216,7 @@ describe('ToolResultEvictionPlugin', () => {
         toolRetention: { long_retention_tool: 10 },
       });
 
-      plugin.onToolResult('call_1', 'long_retention_tool', 'x'.repeat(20), 0);
+      plugin.onToolResult('call_1', 'long_retention_tool', {}, 'x'.repeat(20), 0);
 
       plugin.onIteration(); // iteration 1
       plugin.onIteration(); // iteration 2
@@ -239,7 +239,7 @@ describe('ToolResultEvictionPlugin', () => {
         minSizeToEvict: 100,
       });
 
-      plugin.onToolResult('call_1', 'tool', 'small', 0); // Small result
+      plugin.onToolResult('call_1', 'tool', {}, 'small', 0); // Small result
 
       plugin.onIteration();
       plugin.onIteration();
@@ -266,7 +266,7 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should not evict when no eviction needed', async () => {
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
 
       const result = await plugin.evictOldResults();
 
@@ -275,20 +275,20 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should correctly report shouldEvict when count exceeded', () => {
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
       expect(plugin.shouldEvict()).toBe(false); // 1 <= 2
 
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
       expect(plugin.shouldEvict()).toBe(false); // 2 <= 2
 
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
       expect(plugin.shouldEvict()).toBe(true); // 3 > 2
     });
 
     it('should evict oldest results when count exceeded', async () => {
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       // Verify preconditions
       expect(plugin.getTracked().length).toBe(3);
@@ -303,9 +303,9 @@ describe('ToolResultEvictionPlugin', () => {
 
     it('should store evicted results in memory', async () => {
       const fileContent = { content: 'x'.repeat(2000) }; // Large object
-      plugin.onToolResult('call_1', 'read_file', fileContent, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'read_file', {}, fileContent, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       const result = await plugin.evictOldResults();
 
@@ -321,9 +321,9 @@ describe('ToolResultEvictionPlugin', () => {
       const onEvicted = vi.fn();
       plugin.on('evicted', onEvicted);
 
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       await plugin.evictOldResults();
 
@@ -335,7 +335,7 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should evict stale results based on age', async () => {
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
 
       plugin.onIteration();
       plugin.onIteration();
@@ -353,9 +353,9 @@ describe('ToolResultEvictionPlugin', () => {
       });
       // No setRemoveCallback called
 
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       const result = await plugin.evictOldResults();
 
@@ -364,9 +364,9 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should update stats after eviction', async () => {
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       await plugin.evictOldResults();
 
@@ -383,9 +383,9 @@ describe('ToolResultEvictionPlugin', () => {
       });
       plugin.setRemoveCallback(removeCallback);
 
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       const result = await plugin.evictOldResults();
 
@@ -410,8 +410,8 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should track count and size', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(50), 0);
-      plugin.onToolResult('call_2', 'tool', 'x'.repeat(30), 1);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(50), 0);
+      plugin.onToolResult('call_2', 'tool', {}, 'x'.repeat(30), 1);
 
       const stats = plugin.getStats();
 
@@ -420,9 +420,9 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should calculate oldest age correctly', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(20), 0);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(20), 0);
       plugin.onIteration();
-      plugin.onToolResult('call_2', 'tool', 'x'.repeat(20), 1);
+      plugin.onToolResult('call_2', 'tool', {}, 'x'.repeat(20), 1);
       plugin.onIteration();
       plugin.onIteration();
 
@@ -439,8 +439,8 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should update indices when messages before tracked are removed', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(20), 5);
-      plugin.onToolResult('call_2', 'tool', 'x'.repeat(20), 10);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(20), 5);
+      plugin.onToolResult('call_2', 'tool', {}, 'x'.repeat(20), 10);
 
       // Remove messages at indices 0, 1, 2
       plugin.updateMessageIndices(new Set([0, 1, 2]));
@@ -453,8 +453,8 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should remove tracked result when its message is removed', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(20), 5);
-      plugin.onToolResult('call_2', 'tool', 'x'.repeat(20), 10);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(20), 5);
+      plugin.onToolResult('call_2', 'tool', {}, 'x'.repeat(20), 10);
 
       // Remove message at index 5 (call_1's result)
       plugin.updateMessageIndices(new Set([5]));
@@ -464,8 +464,8 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should update total tracked size when result is removed', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(50), 5);
-      plugin.onToolResult('call_2', 'tool', 'x'.repeat(30), 10);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(50), 5);
+      plugin.onToolResult('call_2', 'tool', {}, 'x'.repeat(30), 10);
 
       const statsBefore = plugin.getStats();
       expect(statsBefore.totalSizeBytes).toBe(80);
@@ -490,7 +490,7 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should return component when results are tracked', async () => {
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
 
       const component = await plugin.getComponent();
 
@@ -507,9 +507,9 @@ describe('ToolResultEvictionPlugin', () => {
       });
       plugin.setRemoveCallback(removeCallback);
 
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       await plugin.evictOldResults();
 
@@ -533,9 +533,9 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should perform eviction during compaction', async () => {
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       const mockEstimator = { estimateTokens: (s: string) => s.length / 4 };
       const tokensSaved = await plugin.compact(1000, mockEstimator);
@@ -550,7 +550,7 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should serialize state correctly', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(20), 0);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(20), 0);
       plugin.onIteration();
       plugin.onIteration();
 
@@ -562,8 +562,8 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should restore state correctly', () => {
-      plugin.onToolResult('call_1', 'tool1', 'content1', 0);
-      plugin.onToolResult('call_2', 'tool2', 'content2', 1);
+      plugin.onToolResult('call_1', 'tool1', {}, 'content1', 0);
+      plugin.onToolResult('call_2', 'tool2', {}, 'content2', 1);
       plugin.onIteration();
       plugin.onIteration();
 
@@ -580,8 +580,8 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should restore total tracked size', () => {
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(50), 0);
-      plugin.onToolResult('call_2', 'tool', 'x'.repeat(30), 1);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(50), 0);
+      plugin.onToolResult('call_2', 'tool', {}, 'x'.repeat(30), 1);
 
       const state = plugin.getState();
 
@@ -601,7 +601,7 @@ describe('ToolResultEvictionPlugin', () => {
   describe('destroy', () => {
     it('should clear all state', () => {
       plugin = new ToolResultEvictionPlugin(memory, { minSizeToEvict: 10 });
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(20), 0);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(20), 0);
       plugin.onIteration();
 
       plugin.destroy();
@@ -618,7 +618,7 @@ describe('ToolResultEvictionPlugin', () => {
       plugin.destroy();
 
       // After destroy, adding a result should not call the listener
-      plugin.onToolResult('call_1', 'tool', 'x'.repeat(20), 0);
+      plugin.onToolResult('call_1', 'tool', {}, 'x'.repeat(20), 0);
       expect(listener).not.toHaveBeenCalled();
     });
   });
@@ -637,11 +637,11 @@ describe('ToolResultEvictionPlugin', () => {
     });
 
     it('should evict oldest results first', async () => {
-      plugin.onToolResult('call_oldest', 'tool', largeContent, 0);
+      plugin.onToolResult('call_oldest', 'tool', {}, largeContent, 0);
       await new Promise((resolve) => setTimeout(resolve, 10));
-      plugin.onToolResult('call_middle', 'tool', largeContent, 1);
+      plugin.onToolResult('call_middle', 'tool', {}, largeContent, 1);
       await new Promise((resolve) => setTimeout(resolve, 10));
-      plugin.onToolResult('call_newest', 'tool', largeContent, 2);
+      plugin.onToolResult('call_newest', 'tool', {}, largeContent, 2);
 
       await plugin.evictOldResults();
 
@@ -654,9 +654,9 @@ describe('ToolResultEvictionPlugin', () => {
     it('should evict larger results first when same age', async () => {
       // All added at same iteration - sizes exceed minSizeToEvict
       // With same addedAtIteration, larger results should be evicted first
-      plugin.onToolResult('call_small', 'tool', 'x'.repeat(500), 0);
-      plugin.onToolResult('call_large', 'tool', 'x'.repeat(2000), 1);
-      plugin.onToolResult('call_medium', 'tool', 'x'.repeat(1000), 2);
+      plugin.onToolResult('call_small', 'tool', {}, 'x'.repeat(500), 0);
+      plugin.onToolResult('call_large', 'tool', {}, 'x'.repeat(2000), 1);
+      plugin.onToolResult('call_medium', 'tool', {}, 'x'.repeat(1000), 2);
 
       await plugin.evictOldResults();
 
@@ -697,9 +697,9 @@ describe('ToolResultEvictionPlugin', () => {
         },
       };
 
-      plugin.onToolResult('call_1', 'api_call', complexResult, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'api_call', {}, complexResult, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       await plugin.evictOldResults();
 
@@ -721,9 +721,9 @@ describe('ToolResultEvictionPlugin', () => {
       });
       plugin.setRemoveCallback(removeCallback);
 
-      plugin.onToolResult('call_1', 'tool', largeContent, 0);
-      plugin.onToolResult('call_2', 'tool', largeContent, 1);
-      plugin.onToolResult('call_3', 'tool', largeContent, 2);
+      plugin.onToolResult('call_1', 'tool', {}, largeContent, 0);
+      plugin.onToolResult('call_2', 'tool', {}, largeContent, 1);
+      plugin.onToolResult('call_3', 'tool', {}, largeContent, 2);
 
       const result = await plugin.evictOldResults();
 

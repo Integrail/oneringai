@@ -139,6 +139,7 @@ interface AgentFormData {
   // Memory settings
   memoryEnabled: boolean;
   maxMemorySizeBytes: number;
+  maxMemoryIndexEntries: number;
   memorySoftLimitPercent: number;
   contextAllocationPercent: number;
   // In-context memory
@@ -175,6 +176,7 @@ const defaultFormData: AgentFormData = {
   // Memory settings
   memoryEnabled: true,
   maxMemorySizeBytes: 25 * 1024 * 1024, // 25MB
+  maxMemoryIndexEntries: 30, // Limit memory index entries in context
   memorySoftLimitPercent: 80,
   contextAllocationPercent: 10,
   // In-context memory
@@ -245,6 +247,7 @@ export function AgentEditorPage(): React.ReactElement {
               responseReserve: existingAgent.responseReserve,
               memoryEnabled: existingAgent.memoryEnabled,
               maxMemorySizeBytes: existingAgent.maxMemorySizeBytes,
+              maxMemoryIndexEntries: existingAgent.maxMemoryIndexEntries ?? 30,
               memorySoftLimitPercent: existingAgent.memorySoftLimitPercent,
               contextAllocationPercent: existingAgent.contextAllocationPercent,
               inContextMemoryEnabled: existingAgent.inContextMemoryEnabled,
@@ -1151,7 +1154,7 @@ export function AgentEditorPage(): React.ReactElement {
                 </Card.Header>
                 <Card.Body>
                   <Row className="g-3">
-                    <Col md={4}>
+                    <Col md={3}>
                       <Form.Group>
                         <Form.Label>
                           Max Size (MB)
@@ -1176,7 +1179,31 @@ export function AgentEditorPage(): React.ReactElement {
                       </Form.Group>
                     </Col>
 
-                    <Col md={4}>
+                    <Col md={3}>
+                      <Form.Group>
+                        <Form.Label>
+                          Max Index Entries
+                          <InfoTooltip
+                            id="max-index-entries-info"
+                            content="Maximum entries shown in memory index. Excess low-priority entries are auto-evicted to prevent context bloat."
+                          />
+                        </Form.Label>
+                        <Form.Control
+                          type="number"
+                          min={10}
+                          max={100}
+                          value={formData.maxMemoryIndexEntries}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              maxMemoryIndexEntries: parseInt(e.target.value) || 30,
+                            })
+                          }
+                        />
+                      </Form.Group>
+                    </Col>
+
+                    <Col md={3}>
                       <Form.Group>
                         <Form.Label>
                           Soft Limit (%)
@@ -1200,7 +1227,7 @@ export function AgentEditorPage(): React.ReactElement {
                       </Form.Group>
                     </Col>
 
-                    <Col md={4}>
+                    <Col md={3}>
                       <Form.Group>
                         <Form.Label>
                           Context Allocation (%)
