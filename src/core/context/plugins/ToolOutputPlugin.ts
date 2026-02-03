@@ -48,10 +48,21 @@ const DEFAULT_CONFIG: Required<ToolOutputPluginConfig> = {
 };
 
 /**
+ * Maximum characters per output when adding (truncates immediately)
+ * ~1000 tokens ≈ 4000 characters
+ */
+const MAX_CHARS_PER_OUTPUT = 4000;
+
+/**
  * Tool output plugin for context management
  *
  * Provides recent tool outputs as a context component.
  * Highest compaction priority - first to be reduced when space is needed.
+ *
+ * @deprecated This plugin duplicates data already in conversation history.
+ * Consider using ToolResultEvictionPlugin instead, which provides smarter
+ * eviction to WorkingMemory. ToolOutputPlugin may be removed in a future version.
+ * To suppress this warning, set { suppressDeprecationWarning: true } in config.
  */
 export class ToolOutputPlugin extends BaseContextPlugin {
   readonly name = 'tool_outputs';
@@ -61,19 +72,43 @@ export class ToolOutputPlugin extends BaseContextPlugin {
   private outputs: ToolOutput[] = [];
   private config: Required<ToolOutputPluginConfig>;
 
-  constructor(config: ToolOutputPluginConfig = {}) {
+  constructor(config: ToolOutputPluginConfig & { suppressDeprecationWarning?: boolean } = {}) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
+
+    // Deprecation warning
+    if (!config.suppressDeprecationWarning) {
+      console.warn(
+        '[DEPRECATION] ToolOutputPlugin is deprecated and will be removed in a future version. ' +
+        'It duplicates data already in conversation history. ' +
+        'Consider using ToolResultEvictionPlugin for smarter eviction to WorkingMemory. ' +
+        'To suppress this warning, pass { suppressDeprecationWarning: true } to the constructor.'
+      );
+    }
   }
 
   /**
    * Add a tool output
+   * Truncates large outputs immediately to prevent context overflow
    */
   addOutput(toolName: string, result: unknown): void {
+    // Stringify the output
+    let outputStr = this.stringifyOutput(result);
+    let truncated = false;
+
+    // Truncate immediately if too large (prevents context overflow)
+    if (outputStr.length > MAX_CHARS_PER_OUTPUT) {
+      const originalLength = outputStr.length;
+      outputStr = outputStr.slice(0, MAX_CHARS_PER_OUTPUT) +
+        `\n\n[Truncated from ${Math.round(originalLength / 1024)}KB - full output in conversation history or memory]`;
+      truncated = true;
+    }
+
     this.outputs.push({
       tool: toolName,
-      output: result,
+      output: outputStr,
       timestamp: Date.now(),
+      truncated,
     });
 
     // Keep buffer at 2x max to avoid frequent trimming

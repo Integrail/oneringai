@@ -5,6 +5,42 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 /**
+ * Task interface for plan display (matches core library Task interface)
+ */
+export interface PlanTask {
+  id: string;
+  name: string;
+  description: string;
+  status: 'pending' | 'blocked' | 'in_progress' | 'waiting_external' | 'completed' | 'failed' | 'skipped' | 'cancelled';
+  dependsOn: string[];
+  validation?: {
+    completionCriteria?: string[];
+  };
+  result?: {
+    success: boolean;
+    output?: unknown;
+    error?: string;
+  };
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+/**
+ * Plan interface for plan display (matches core library Plan interface)
+ */
+export interface Plan {
+  id: string;
+  goal: string;
+  context?: string;
+  tasks: PlanTask[];
+  status: 'pending' | 'running' | 'suspended' | 'completed' | 'failed' | 'cancelled';
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+/**
  * Stream chunk types for IPC communication
  */
 export type StreamChunk =
@@ -13,7 +49,22 @@ export type StreamChunk =
   | { type: 'tool_end'; tool: string; durationMs?: number }
   | { type: 'tool_error'; tool: string; error: string }
   | { type: 'done' }
-  | { type: 'error'; content: string };
+  | { type: 'error'; content: string }
+  // Plan events
+  | { type: 'plan:created'; plan: Plan }
+  | { type: 'plan:awaiting_approval'; plan: Plan }
+  | { type: 'plan:approved'; plan: Plan }
+  | { type: 'plan:analyzing'; goal: string }
+  | { type: 'mode:changed'; from: string; to: string; reason: string }
+  // Task events
+  | { type: 'task:started'; task: PlanTask }
+  | { type: 'task:progress'; task: PlanTask; status: string }
+  | { type: 'task:completed'; task: PlanTask; result: unknown }
+  | { type: 'task:failed'; task: PlanTask; error: string }
+  // Execution events
+  | { type: 'execution:done'; result: { status: string; completedTasks: number; totalTasks: number; failedTasks: number; skippedTasks: number } }
+  | { type: 'execution:paused'; reason: string }
+  | { type: 'needs:approval'; plan: Plan };
 
 // Types for the exposed API
 export interface HoseaAPI {
@@ -32,6 +83,9 @@ export interface HoseaAPI {
     onStreamChunk: (callback: (chunk: StreamChunk) => void) => void;
     onStreamEnd: (callback: () => void) => void;
     removeStreamListeners: () => void;
+    // Plan approval/rejection
+    approvePlan: (planId: string) => Promise<{ success: boolean; error?: string }>;
+    rejectPlan: (planId: string, reason?: string) => Promise<{ success: boolean; error?: string }>;
   };
 
   // Connectors
@@ -442,6 +496,105 @@ export interface HoseaAPI {
     testConnection: (name: string) => Promise<{ success: boolean; error?: string }>;
   };
 
+  // MCP Servers (Model Context Protocol)
+  mcpServer: {
+    /** List all configured MCP servers */
+    list: () => Promise<Array<{
+      name: string;
+      displayName?: string;
+      description?: string;
+      transport: 'stdio' | 'http' | 'https';
+      transportConfig: {
+        command?: string;
+        args?: string[];
+        env?: Record<string, string>;
+        cwd?: string;
+        url?: string;
+        token?: string;
+        headers?: Record<string, string>;
+        timeoutMs?: number;
+      };
+      toolNamespace?: string;
+      status: 'connected' | 'disconnected' | 'error' | 'connecting';
+      lastError?: string;
+      toolCount?: number;
+      availableTools?: string[];
+      createdAt: number;
+      updatedAt: number;
+      lastConnectedAt?: number;
+    }>>;
+    /** Get a specific MCP server configuration */
+    get: (name: string) => Promise<{
+      name: string;
+      displayName?: string;
+      description?: string;
+      transport: 'stdio' | 'http' | 'https';
+      transportConfig: {
+        command?: string;
+        args?: string[];
+        env?: Record<string, string>;
+        cwd?: string;
+        url?: string;
+        token?: string;
+        headers?: Record<string, string>;
+        timeoutMs?: number;
+      };
+      toolNamespace?: string;
+      status: 'connected' | 'disconnected' | 'error' | 'connecting';
+      lastError?: string;
+      toolCount?: number;
+      availableTools?: string[];
+      createdAt: number;
+      updatedAt: number;
+      lastConnectedAt?: number;
+    } | null>;
+    /** Create a new MCP server configuration */
+    create: (config: {
+      name: string;
+      displayName?: string;
+      description?: string;
+      transport: 'stdio' | 'http' | 'https';
+      transportConfig: {
+        command?: string;
+        args?: string[];
+        env?: Record<string, string>;
+        cwd?: string;
+        url?: string;
+        token?: string;
+        headers?: Record<string, string>;
+        timeoutMs?: number;
+      };
+      toolNamespace?: string;
+    }) => Promise<{ success: boolean; error?: string }>;
+    /** Update an existing MCP server configuration */
+    update: (name: string, updates: {
+      displayName?: string;
+      description?: string;
+      transport?: 'stdio' | 'http' | 'https';
+      transportConfig?: {
+        command?: string;
+        args?: string[];
+        env?: Record<string, string>;
+        cwd?: string;
+        url?: string;
+        token?: string;
+        headers?: Record<string, string>;
+        timeoutMs?: number;
+      };
+      toolNamespace?: string;
+    }) => Promise<{ success: boolean; error?: string }>;
+    /** Delete an MCP server configuration */
+    delete: (name: string) => Promise<{ success: boolean; error?: string }>;
+    /** Connect to an MCP server */
+    connect: (name: string) => Promise<{ success: boolean; tools?: string[]; error?: string }>;
+    /** Disconnect from an MCP server */
+    disconnect: (name: string) => Promise<{ success: boolean; error?: string }>;
+    /** Get tools available from an MCP server */
+    getTools: (name: string) => Promise<Array<{ name: string; description?: string }>>;
+    /** Refresh tools list from a connected MCP server */
+    refreshTools: (name: string) => Promise<{ success: boolean; tools?: string[]; error?: string }>;
+  };
+
   // Multimedia - Image, Video, Audio generation
   multimedia: {
     // Image generation
@@ -658,6 +811,8 @@ const api: HoseaAPI = {
       ipcRenderer.removeAllListeners('agent:stream-chunk');
       ipcRenderer.removeAllListeners('agent:stream-end');
     },
+    approvePlan: (planId) => ipcRenderer.invoke('agent:approve-plan', planId),
+    rejectPlan: (planId, reason) => ipcRenderer.invoke('agent:reject-plan', planId, reason),
   },
 
   connector: {
@@ -724,6 +879,18 @@ const api: HoseaAPI = {
     update: (name, updates) => ipcRenderer.invoke('universal-connector:update', name, updates),
     delete: (name) => ipcRenderer.invoke('universal-connector:delete', name),
     testConnection: (name) => ipcRenderer.invoke('universal-connector:test-connection', name),
+  },
+
+  mcpServer: {
+    list: () => ipcRenderer.invoke('mcp-server:list'),
+    get: (name) => ipcRenderer.invoke('mcp-server:get', name),
+    create: (config) => ipcRenderer.invoke('mcp-server:create', config),
+    update: (name, updates) => ipcRenderer.invoke('mcp-server:update', name, updates),
+    delete: (name) => ipcRenderer.invoke('mcp-server:delete', name),
+    connect: (name) => ipcRenderer.invoke('mcp-server:connect', name),
+    disconnect: (name) => ipcRenderer.invoke('mcp-server:disconnect', name),
+    getTools: (name) => ipcRenderer.invoke('mcp-server:get-tools', name),
+    refreshTools: (name) => ipcRenderer.invoke('mcp-server:refresh-tools', name),
   },
 
   multimedia: {

@@ -78,6 +78,8 @@ import { AutoSpillPlugin } from './context/plugins/AutoSpillPlugin.js';
 import type { AutoSpillConfig } from './context/plugins/AutoSpillPlugin.js';
 import { ToolResultEvictionPlugin } from './context/plugins/ToolResultEvictionPlugin.js';
 import type { ToolResultEvictionConfig } from './context/plugins/ToolResultEvictionPlugin.js';
+import { ContextGuardian } from './context/ContextGuardian.js';
+import type { ContextGuardianConfig, GuardianValidation } from './context/ContextGuardian.js';
 
 // Memory & Context introspection tool creators
 // These are registered automatically based on enabled features for ALL agent types
@@ -92,6 +94,11 @@ import {
   createContextStatsTool,
 } from '../capabilities/taskAgent/contextTools.js';
 import { buildFeatureInstructions } from './context/FeatureInstructions.js';
+
+// MCP imports for server integration
+import type { IMCPClient } from '../domain/interfaces/IMCPClient.js';
+import type { MCPServerConfig } from '../domain/entities/MCPConfig.js';
+import { MCPRegistry } from './mcp/MCPRegistry.js';
 
 // ============================================================================
 // Task Types & Priority Profiles
@@ -284,6 +291,37 @@ export const DEFAULT_FEATURES: Required<AgentContextFeatures> = {
 };
 
 // ============================================================================
+// MCP Server Reference
+// ============================================================================
+
+/**
+ * MCP server reference for agent configuration.
+ * Allows agents to connect to MCP servers and use their tools.
+ */
+export interface MCPServerReference {
+  /**
+   * Server reference - either:
+   * - A string name of a server already registered in MCPRegistry
+   * - An inline MCPServerConfig to create a new client
+   */
+  server: string | MCPServerConfig;
+
+  /**
+   * Optional: only register these specific tools from the server.
+   * Tool names should be the original MCP tool names (not namespaced).
+   * If not provided, all tools from the server are registered.
+   */
+  tools?: string[];
+
+  /**
+   * Auto-connect to the server on context creation (default: true).
+   * If false, the server must be connected manually or will attempt
+   * connection on first tool use.
+   */
+  autoConnect?: boolean;
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -453,6 +491,14 @@ export interface AgentContextConfig {
   toolResultEviction?: ToolResultEvictionConfig;
 
   /**
+   * ContextGuardian configuration - mandatory hard limit enforcement before LLM calls.
+   * The guardian validates that prepared input fits within token limits and applies
+   * graceful degradation if needed.
+   * @default { enabled: true }
+   */
+  guardian?: ContextGuardianConfig;
+
+  /**
    * Agent ID - used for persistent storage paths and identification
    * If not provided, will be auto-generated
    */
@@ -481,6 +527,27 @@ export interface AgentContextConfig {
   /** Auto-detect task type from plan (default: true) */
   autoDetectTaskType?: boolean;
 
+  // ===== MCP Server Integration =====
+
+  /**
+   * MCP servers to connect and register tools from.
+   *
+   * Tools from MCP servers are auto-registered with ToolManager during construction
+   * and cleaned up on destroy(). Supports both:
+   * - Named servers (string reference to MCPRegistry)
+   * - Inline server configs (MCPServerConfig object)
+   *
+   * Example:
+   * ```typescript
+   * mcpServers: [
+   *   { server: 'filesystem' },                           // All tools from 'filesystem' server
+   *   { server: 'github', tools: ['create_issue'] },     // Only 'create_issue' tool
+   *   { server: { name: 'inline', transport: 'stdio', transportConfig: {...} } }, // Inline config
+   * ]
+   * ```
+   */
+  mcpServers?: MCPServerReference[];
+
   // ===== Session Persistence =====
 
   /**
@@ -504,7 +571,7 @@ export interface AgentContextConfig {
 /**
  * Default configuration
  */
-const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'toolOutputTracking' | 'autoSpill' | 'toolResultEviction' | 'agentId' | 'storage' | 'sessionId' | 'sessionMetadata'>> & {
+const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'toolOutputTracking' | 'autoSpill' | 'toolResultEviction' | 'guardian' | 'agentId' | 'storage' | 'sessionId' | 'sessionMetadata' | 'mcpServers'>> & {
   history: Required<NonNullable<AgentContextConfig['history']>>;
 } = {
   model: 'gpt-4',
@@ -597,6 +664,11 @@ export interface AgentContextEvents {
   // Budget events
   'budget:warning': { budget: ContextBudget };
   'budget:critical': { budget: ContextBudget };
+  'budget:pre-overflow': { budget: ContextBudget };
+
+  // Guardian events
+  'guardian:validation-failed': { validation: GuardianValidation };
+  'guardian:degradation-applied': { tokensFreed: number; log: string[] };
 
   // Plugin events
   'plugin:registered': { name: string };
@@ -618,6 +690,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private _toolOutputPlugin: ToolOutputPlugin | null = null;
   private _autoSpillPlugin: AutoSpillPlugin | null = null;
   private _toolResultEvictionPlugin: ToolResultEvictionPlugin | null = null;
+  private readonly _guardian: ContextGuardian;
   private readonly _agentId: string;
 
   // ===== Feature Configuration =====
@@ -663,6 +736,21 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private _sessionId: string | null = null;
   private _sessionMetadata: ContextSessionMetadata = {};
 
+  // ===== MCP Server Integration =====
+  /**
+   * MCP clients that were connected during initialization.
+   * These are tracked for cleanup during destroy().
+   */
+  private _mcpClients: IMCPClient[] = [];
+  /**
+   * MCP server references from config (for serialization/deserialization)
+   */
+  private _mcpServerRefs: MCPServerReference[] = [];
+  /**
+   * Flag indicating MCP initialization is pending (async)
+   */
+  private _mcpInitializationPending = false;
+
   // ============================================================================
   // Constructor & Factory
   // ============================================================================
@@ -707,6 +795,9 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     // Create strategy and estimator
     this._strategy = createStrategyFactory(this._config.strategy, {});
     this._estimator = this.createEstimator();
+
+    // Create ContextGuardian - mandatory checkpoint for context validation
+    this._guardian = new ContextGuardian(this._estimator, config.guardian);
 
     // ===== Compose existing managers (conditionally based on features) =====
 
@@ -779,8 +870,12 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     }
 
     // ToolOutputPlugin - tracks recent tool outputs in context (default ON)
+    // Note: This plugin is deprecated but kept for backward compatibility
     if (this._features.toolOutputTracking) {
-      this._toolOutputPlugin = new ToolOutputPlugin(config.toolOutputTracking);
+      this._toolOutputPlugin = new ToolOutputPlugin({
+        ...config.toolOutputTracking,
+        suppressDeprecationWarning: true,  // Suppress warning when used internally
+      });
       this.registerPlugin(this._toolOutputPlugin);
     }
 
@@ -836,6 +931,17 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     this._storage = config.storage ?? null;
     this._sessionMetadata = config.sessionMetadata ?? {};
     this._sessionId = config.sessionId ?? null;
+
+    // MCP server configuration
+    // Note: Actual connection happens asynchronously via initializeMCPServers()
+    this._mcpServerRefs = config.mcpServers ?? [];
+    if (this._mcpServerRefs.length > 0) {
+      this._mcpInitializationPending = true;
+      // Start async initialization (will be awaited in prepare() if still pending)
+      this._initializeMCPServers().catch(err => {
+        logger.error({ error: err }, 'Failed to initialize MCP servers');
+      });
+    }
   }
 
   /**
@@ -843,6 +949,16 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    */
   static create(config: AgentContextConfig = {}): AgentContext {
     return new AgentContext(config);
+  }
+
+  /**
+   * Create a new AgentContext and wait for MCP servers to initialize.
+   * Use this factory method when you need MCP tools to be available immediately.
+   */
+  static async createAsync(config: AgentContextConfig = {}): Promise<AgentContext> {
+    const ctx = new AgentContext(config);
+    await ctx.ensureMCPInitialized();
+    return ctx;
   }
 
   // ============================================================================
@@ -894,6 +1010,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     return this._toolResultEvictionPlugin;
   }
 
+  /** ContextGuardian - mandatory checkpoint for context validation */
+  get guardian(): ContextGuardian {
+    return this._guardian;
+  }
+
   /** Agent ID (auto-generated or from config) */
   get agentId(): string {
     return this._agentId;
@@ -907,6 +1028,52 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   /** Storage backend for session persistence (null if not configured) */
   get storage(): IContextStorage | null {
     return this._storage;
+  }
+
+  /** Connected MCP clients (readonly) */
+  get mcpClients(): readonly IMCPClient[] {
+    return this._mcpClients;
+  }
+
+  /**
+   * Check if MCP initialization is still pending.
+   * If true, call ensureMCPInitialized() to wait for completion.
+   */
+  get mcpInitializationPending(): boolean {
+    return this._mcpInitializationPending;
+  }
+
+  // ============================================================================
+  // MCP Server Management
+  // ============================================================================
+
+  /**
+   * Ensure MCP servers are initialized before proceeding.
+   * Call this if you need MCP tools to be available immediately.
+   */
+  async ensureMCPInitialized(): Promise<void> {
+    if (this._mcpInitializationPending) {
+      await this._initializeMCPServers();
+    }
+  }
+
+  /**
+   * Get MCP client by server name
+   */
+  getMCPClient(name: string): IMCPClient | undefined {
+    return this._mcpClients.find(c => c.name === name);
+  }
+
+  /**
+   * Get all tools available from connected MCP servers
+   */
+  getMCPTools(): Array<{ server: string; tools: string[] }> {
+    return this._mcpClients
+      .filter(c => c.isConnected())
+      .map(c => ({
+        server: c.name,
+        tools: c.tools.map(t => t.name),
+      }));
   }
 
   // ============================================================================
@@ -991,6 +1158,69 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
     // persistentInstructions without an agentId may cause issues
     // (handled separately in constructor, but we could add a warning here if needed)
+  }
+
+  /**
+   * Initialize MCP servers from config.
+   * This is called asynchronously during construction and can be awaited via ensureMCPInitialized().
+   */
+  private async _initializeMCPServers(): Promise<void> {
+    if (this._mcpServerRefs.length === 0) {
+      this._mcpInitializationPending = false;
+      return;
+    }
+
+    for (const ref of this._mcpServerRefs) {
+      try {
+        let client: IMCPClient;
+
+        if (typeof ref.server === 'string') {
+          // Reference to existing server in MCPRegistry
+          if (!MCPRegistry.has(ref.server)) {
+            logger.warn({ server: ref.server }, 'MCP server not found in registry, skipping');
+            continue;
+          }
+          client = MCPRegistry.get(ref.server);
+        } else {
+          // Inline server config - create a new client
+          // Check if it already exists in registry (by name)
+          if (MCPRegistry.has(ref.server.name)) {
+            client = MCPRegistry.get(ref.server.name);
+          } else {
+            // Create and register in MCPRegistry for reuse
+            client = MCPRegistry.create(ref.server);
+          }
+        }
+
+        // Connect if needed and autoConnect is not explicitly disabled
+        if (ref.autoConnect !== false && !client.isConnected()) {
+          logger.debug({ server: client.name }, 'Connecting to MCP server');
+          try {
+            await client.connect();
+          } catch (connectError) {
+            logger.warn(
+              { server: client.name, error: connectError },
+              'Failed to connect to MCP server, tools will not be available'
+            );
+            continue;
+          }
+        }
+
+        // Register tools (selective or all)
+        if (client.isConnected()) {
+          client.registerToolsSelective(this._tools, ref.tools);
+          this._mcpClients.push(client);
+          logger.debug(
+            { server: client.name, toolCount: ref.tools?.length ?? client.tools.length },
+            'Registered MCP tools'
+          );
+        }
+      } catch (error) {
+        logger.warn({ server: ref.server, error }, 'Failed to initialize MCP server');
+      }
+    }
+
+    this._mcpInitializationPending = false;
   }
 
   // ============================================================================
@@ -1117,6 +1347,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
 
   /**
    * Add tool results to conversation.
+   * Includes safety truncation to prevent context overflow.
    *
    * @param results - ToolResult[] from tool execution
    * @returns Message ID of the tool results message
@@ -1124,16 +1355,35 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   addToolResults(results: ToolResult[]): string {
     const id = this.generateId();
 
+    // Safety truncation threshold: 20KB per result (~5K tokens)
+    const MAX_RESULT_CHARS = 20000;
+
     const message: Message = {
       type: 'message',
       id,
       role: MessageRole.USER,  // Tool results go as user message per API spec
-      content: results.map(r => ({
-        type: ContentType.TOOL_RESULT as const,
-        tool_use_id: r.tool_use_id,
-        content: typeof r.content === 'string' ? r.content : JSON.stringify(r.content),
-        error: r.error,
-      })),
+      content: results.map(r => {
+        let content = typeof r.content === 'string' ? r.content : JSON.stringify(r.content);
+
+        // Safety truncation: prevent any single result from being too large
+        if (content.length > MAX_RESULT_CHARS) {
+          const originalSize = content.length;
+          content = content.slice(0, MAX_RESULT_CHARS) +
+            `\n\n[Safety truncated from ${Math.round(originalSize / 1024)}KB - use memory_retrieve if available]`;
+          logger.warn({
+            toolName: r.tool_name,
+            originalSize,
+            truncatedTo: MAX_RESULT_CHARS,
+          }, 'addToolResults: safety truncation applied');
+        }
+
+        return {
+          type: ContentType.TOOL_RESULT as const,
+          tool_use_id: r.tool_use_id,
+          content,
+          error: r.error,
+        };
+      }),
     };
 
     this._conversation.push(message);
@@ -1264,6 +1514,11 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    * ```
    */
   async prepare(options?: PrepareOptions): Promise<PreparedResult> {
+    // 0. Ensure MCP servers are initialized (if any)
+    if (this._mcpInitializationPending) {
+      await this.ensureMCPInitialized();
+    }
+
     const returnFormat = options?.returnFormat ?? 'llm-input';
     let compactionLog: string[] = [];
 
@@ -1358,11 +1613,60 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
     }
 
     // Default: build LLM input
-    const input = await this.buildLLMInput(options?.instructionOverride);
+    let input = await this.buildLLMInput(options?.instructionOverride);
+
+    // 7. MANDATORY: Guardian validation - ensures input fits within limits
+    // This is the final safety checkpoint before LLM call
+    if (this._guardian.enabled) {
+      const availableTokens = this._maxContextTokens - budget.reserved;
+      const validation = this._guardian.validate(input, availableTokens);
+
+      if (!validation.valid) {
+        logger.warn({
+          actualTokens: validation.actualTokens,
+          targetTokens: validation.targetTokens,
+          overageTokens: validation.overageTokens,
+          breakdown: validation.breakdown,
+        }, 'Guardian validation failed - applying graceful degradation');
+
+        // Emit validation failed event
+        this.emit('guardian:validation-failed', { validation });
+
+        // Apply graceful degradation (may throw ContextOverflowError)
+        const degradation = this._guardian.applyGracefulDegradation(input, validation.targetTokens);
+        input = degradation.input;
+        compactionLog.push(...degradation.log);
+
+        // Recalculate budget after degradation
+        const finalValidation = this._guardian.validate(input, availableTokens);
+        budget = {
+          ...budget,
+          used: finalValidation.actualTokens,
+          available: availableTokens - finalValidation.actualTokens,
+          utilizationPercent: (finalValidation.actualTokens / availableTokens) * 100,
+          status: finalValidation.valid ? 'ok' : 'critical',
+          breakdown: finalValidation.breakdown,
+        };
+        this._lastBudget = budget;
+
+        logger.info({
+          finalTokens: finalValidation.actualTokens,
+          tokensFreed: degradation.tokensFreed,
+          degradationSteps: degradation.log.length,
+        }, 'Guardian degradation complete');
+
+        // Emit degradation applied event
+        this.emit('guardian:degradation-applied', {
+          tokensFreed: degradation.tokensFreed,
+          log: degradation.log,
+        });
+      }
+    }
+
     return {
       input,
       budget,
-      compacted: needsCompaction,
+      compacted: needsCompaction || compactionLog.length > 0,
       compactionLog,
     };
   }
@@ -2344,6 +2648,14 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    * Destroy the context and release resources
    */
   destroy(): void {
+    // Unregister MCP tools from ToolManager (but don't destroy the clients -
+    // they may be shared via MCPRegistry)
+    for (const client of this._mcpClients) {
+      client.unregisterTools(this._tools);
+    }
+    this._mcpClients = [];
+    this._mcpServerRefs = [];
+
     // Destroy plugins
     for (const plugin of this._plugins.values()) {
       plugin.destroy?.();

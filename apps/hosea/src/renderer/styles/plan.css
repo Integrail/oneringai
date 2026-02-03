@@ -1,0 +1,760 @@
+/**
+ * Plan Display Styles
+ * BEM naming convention: .plan-display__element--modifier
+ */
+
+/* ============ Fixed Plan Container (in Chat) ============ */
+
+.chat__plan-fixed {
+  flex-shrink: 0;  /* Don't shrink when messages grow */
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+  padding: var(--spacing-4) var(--spacing-6);
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--color-gray-200);
+  background-color: var(--color-white);
+}
+
+/* ============ Plan Display Container ============ */
+
+.plan-display {
+  /* Removed sticky positioning - plan now flows with content */
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  background-color: var(--color-white);
+  margin-bottom: var(--spacing-4);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+}
+
+.plan-display--pending {
+  border-color: var(--color-warning);
+  border-width: 2px;
+}
+
+.plan-display--running {
+  border-color: var(--color-info);
+  border-width: 2px;
+}
+
+.plan-display--completed {
+  border-color: var(--color-success);
+}
+
+.plan-display--failed {
+  border-color: var(--color-danger);
+}
+
+/* Collapsed state - compact summary */
+.plan-display--collapsed .plan-display__content {
+  display: none;
+}
+
+.plan-display--collapsed .plan-display__header {
+  border-bottom: none;
+}
+
+/* Header */
+.plan-display__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-3) var(--spacing-4);
+  background-color: var(--color-gray-50);
+  border-bottom: 1px solid var(--color-gray-200);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color var(--transition-fast);
+}
+
+.plan-display__header:hover {
+  background-color: var(--color-gray-100);
+}
+
+.plan-display__header-left {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.plan-display__header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+/* Mini progress in header (visible when collapsed or running) */
+.plan-display__header-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-600);
+}
+
+.plan-display__header-progress-bar {
+  width: 60px;
+  height: 4px;
+  background-color: var(--color-gray-200);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.plan-display__header-progress-fill {
+  height: 100%;
+  background-color: var(--color-success);
+  transition: width var(--transition-normal);
+}
+
+.plan-display__header-progress-fill--running {
+  background-color: var(--color-info);
+}
+
+.plan-display__current-task {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+  color: var(--color-info);
+  font-style: italic;
+}
+
+.plan-display__icon {
+  color: var(--color-info);
+}
+
+.plan-display__title {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-700);
+}
+
+.plan-display__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-gray-500);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.plan-display__toggle:hover {
+  background-color: var(--color-gray-200);
+  color: var(--color-gray-700);
+}
+
+/* Status Badge */
+.plan-display__status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-full);
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.plan-display__status-badge--pending {
+  background-color: var(--color-warning-light);
+  color: #92400e;
+}
+
+.plan-display__status-badge--running {
+  background-color: var(--color-info-light);
+  color: #1d4ed8;
+}
+
+.plan-display__status-badge--completed {
+  background-color: var(--color-success-light);
+  color: #065f46;
+}
+
+.plan-display__status-badge--failed {
+  background-color: var(--color-danger-light);
+  color: #991b1b;
+}
+
+.plan-display__status-badge--suspended {
+  background-color: var(--color-gray-200);
+  color: var(--color-gray-600);
+}
+
+.plan-display__status-badge--cancelled {
+  background-color: var(--color-gray-200);
+  color: var(--color-gray-600);
+}
+
+/* Content */
+.plan-display__content {
+  padding: var(--spacing-4);
+}
+
+/* Goal */
+.plan-display__goal {
+  margin-bottom: var(--spacing-4);
+  padding-bottom: var(--spacing-3);
+  border-bottom: 1px solid var(--color-gray-100);
+}
+
+.plan-display__goal-label {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: var(--spacing-2);
+}
+
+.plan-display__goal-text {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-800);
+  line-height: var(--line-height-relaxed);
+}
+
+/* Tasks section */
+.plan-display__tasks {
+  margin-top: var(--spacing-4);
+}
+
+.plan-display__tasks-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-3);
+}
+
+.plan-display__tasks-title {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.plan-display__tasks-count {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-400);
+}
+
+.plan-display__tasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+/* ============ Task Item ============ */
+
+.task-item {
+  border-left: 3px solid var(--color-gray-300);
+  border-radius: var(--radius-md);
+  background-color: var(--color-gray-50);
+  overflow: hidden;
+  transition: all var(--transition-fast);
+}
+
+.task-item--pending {
+  border-left-color: var(--color-gray-400);
+}
+
+.task-item--running {
+  border-left-color: var(--color-info);
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.08) 0%, var(--color-gray-50) 100%);
+}
+
+.task-item--completed {
+  border-left-color: var(--color-success);
+}
+
+.task-item--failed {
+  border-left-color: var(--color-danger);
+  background: linear-gradient(90deg, rgba(239, 68, 68, 0.05) 0%, var(--color-gray-50) 100%);
+}
+
+.task-item--blocked {
+  border-left-color: var(--color-warning);
+  opacity: 0.8;
+}
+
+.task-item--skipped {
+  border-left-color: var(--color-gray-400);
+  opacity: 0.7;
+}
+
+.task-item--cancelled {
+  border-left-color: var(--color-gray-400);
+  opacity: 0.6;
+}
+
+.task-item--waiting {
+  border-left-color: var(--color-warning);
+}
+
+.task-item__main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  padding: var(--spacing-3);
+  cursor: pointer;
+}
+
+.task-item__main:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.task-item__status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.task-item__status-icon {
+  color: var(--color-gray-400);
+}
+
+.task-item--completed .task-item__status-icon {
+  color: var(--color-success);
+}
+
+.task-item--running .task-item__status-icon {
+  color: var(--color-info);
+}
+
+.task-item--failed .task-item__status-icon {
+  color: var(--color-danger);
+}
+
+.task-item--blocked .task-item__status-icon {
+  color: var(--color-warning);
+}
+
+.task-item__status-icon--spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.task-item__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-item__header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.task-item__index {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-400);
+  font-weight: var(--font-weight-medium);
+}
+
+.task-item__name {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-gray-800);
+  word-break: break-word;
+}
+
+.task-item__status-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+}
+
+.task-item--completed .task-item__name {
+  color: var(--color-gray-600);
+}
+
+.task-item--failed .task-item__name {
+  color: var(--color-danger);
+}
+
+.task-item__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-1);
+  flex-wrap: wrap;
+}
+
+.task-item__deps {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  flex-wrap: wrap;
+}
+
+.task-item__deps--none {
+  color: var(--color-gray-400);
+  font-style: italic;
+}
+
+.task-item__dep-chip {
+  display: inline-flex;
+  padding: 1px 6px;
+  background-color: var(--color-gray-200);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-600);
+}
+
+.task-item__validation-hint {
+  font-size: var(--font-size-xs);
+  color: var(--color-info);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.task-item__expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--color-gray-400);
+  flex-shrink: 0;
+}
+
+/* Task Details (expanded) */
+.task-item__details {
+  padding: var(--spacing-3) var(--spacing-3) var(--spacing-3) calc(var(--spacing-3) + 20px + var(--spacing-3));
+  border-top: 1px solid var(--color-gray-200);
+  background-color: var(--color-white);
+}
+
+.task-item__description,
+.task-item__criteria,
+.task-item__result {
+  margin-bottom: var(--spacing-3);
+}
+
+.task-item__description:last-child,
+.task-item__criteria:last-child,
+.task-item__result:last-child {
+  margin-bottom: 0;
+}
+
+.task-item__detail-label {
+  display: block;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-500);
+  margin-bottom: var(--spacing-1);
+}
+
+.task-item__detail-value {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-700);
+  line-height: var(--line-height-relaxed);
+}
+
+.task-item__criteria-list {
+  margin: 0;
+  padding-left: var(--spacing-4);
+}
+
+.task-item__criterion {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-600);
+  line-height: var(--line-height-relaxed);
+}
+
+.task-item__result-success {
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-700);
+  font-family: var(--font-family-mono);
+  background-color: var(--color-gray-100);
+  padding: var(--spacing-2);
+  border-radius: var(--radius-sm);
+  display: block;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.task-item__result-error {
+  font-size: var(--font-size-sm);
+  color: var(--color-danger);
+  font-family: var(--font-family-mono);
+  background-color: var(--color-danger-light);
+  padding: var(--spacing-2);
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+/* ============ Plan Progress ============ */
+
+.plan-progress {
+  margin-bottom: var(--spacing-4);
+}
+
+.plan-progress__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.plan-progress__track {
+  flex: 1;
+  height: 8px;
+  background-color: var(--color-gray-200);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  display: flex;
+}
+
+.plan-progress__segment {
+  height: 100%;
+  transition: width var(--transition-normal);
+}
+
+.plan-progress__segment--completed {
+  background-color: var(--color-success);
+}
+
+.plan-progress__segment--failed {
+  background-color: var(--color-danger);
+}
+
+.plan-progress__segment--skipped {
+  background-color: var(--color-warning);
+}
+
+.plan-progress__label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-1);
+  flex-shrink: 0;
+}
+
+.plan-progress__percent {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-gray-700);
+}
+
+.plan-progress__count {
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-500);
+}
+
+.plan-progress__current {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-3);
+  background-color: var(--color-info-light);
+  border-radius: var(--radius-md);
+}
+
+.plan-progress__current-label {
+  font-size: var(--font-size-xs);
+  color: var(--color-info);
+}
+
+.plan-progress__current-task {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: #1d4ed8;
+}
+
+.plan-progress__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-4);
+  margin-top: var(--spacing-2);
+}
+
+.plan-progress__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-gray-600);
+}
+
+.plan-progress__legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+}
+
+.plan-progress__legend-dot--completed {
+  background-color: var(--color-success);
+}
+
+.plan-progress__legend-dot--failed {
+  background-color: var(--color-danger);
+}
+
+.plan-progress__legend-dot--skipped {
+  background-color: var(--color-warning);
+}
+
+/* ============ Plan Actions ============ */
+
+.plan-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.plan-actions__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.plan-actions__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.plan-actions__btn--approve {
+  background-color: var(--color-success);
+  color: var(--color-white);
+}
+
+.plan-actions__btn--approve:hover:not(:disabled) {
+  background-color: #059669;
+}
+
+.plan-actions__btn--reject {
+  background-color: var(--color-danger);
+  color: var(--color-white);
+}
+
+.plan-actions__btn--reject:hover:not(:disabled) {
+  background-color: #dc2626;
+}
+
+.plan-actions__btn--confirm {
+  background-color: var(--color-success);
+  color: var(--color-white);
+  padding: var(--spacing-1);
+}
+
+.plan-actions__btn--confirm:hover:not(:disabled) {
+  background-color: #059669;
+}
+
+.plan-actions__btn--cancel {
+  background-color: var(--color-gray-300);
+  color: var(--color-gray-700);
+  padding: var(--spacing-1);
+}
+
+.plan-actions__btn--cancel:hover:not(:disabled) {
+  background-color: var(--color-gray-400);
+}
+
+.plan-actions__icon {
+  flex-shrink: 0;
+}
+
+.plan-actions__icon--spin {
+  animation: spin 1s linear infinite;
+}
+
+.plan-actions__reject-form {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+
+.plan-actions__reject-input {
+  width: 150px;
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-md);
+  outline: none;
+}
+
+.plan-actions__reject-input:focus {
+  border-color: var(--color-info);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Feedback button and form */
+.plan-actions__btn--feedback {
+  background-color: var(--color-info);
+  color: var(--color-white);
+}
+
+.plan-actions__btn--feedback:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.plan-actions__feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  width: 100%;
+  max-width: 350px;
+}
+
+.plan-actions__feedback-textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: var(--spacing-2);
+  font-size: var(--font-size-xs);
+  font-family: inherit;
+  border: 1px solid var(--color-gray-300);
+  border-radius: var(--radius-md);
+  outline: none;
+  resize: vertical;
+}
+
+.plan-actions__feedback-textarea:focus {
+  border-color: var(--color-info);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.plan-actions__feedback-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-1);
+}
+
+/* Action completed state - collapsed view */
+.plan-display--action-completed {
+  border-color: var(--color-gray-300);
+}
+
+.plan-display--action-completed .plan-display__header {
+  padding: var(--spacing-2) var(--spacing-4);
+}

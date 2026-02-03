@@ -254,3 +254,26 @@ export const DEFAULT_TOOL_RETENTION: Record<string, number> = {
   web_search: 3,
   web_scrape: 3,
 };
+
+// ============ Context Guardian Defaults ============
+
+/**
+ * ContextGuardian configuration - mandatory hard limit enforcement
+ * before LLM calls to prevent context overflow.
+ */
+export const GUARDIAN_DEFAULTS = {
+  /** Enable guardian validation (can be disabled for testing) */
+  ENABLED: true,
+
+  /** Maximum tool result size in tokens before truncation (1KB ≈ 250 tokens) */
+  MAX_TOOL_RESULT_TOKENS: 1000,
+
+  /** Minimum system prompt tokens to preserve during emergency compaction */
+  MIN_SYSTEM_PROMPT_TOKENS: 2000,
+
+  /** Number of most recent messages to always protect */
+  PROTECTED_RECENT_MESSAGES: 4,
+
+  /** Truncation suffix for oversized content */
+  TRUNCATION_SUFFIX: '\n\n[Content truncated by ContextGuardian - original data may be available in memory]',
+} as const;

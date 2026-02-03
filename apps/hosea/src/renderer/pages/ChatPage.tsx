@@ -9,6 +9,8 @@ import { Send, Square, Bot, User, Copy, Share, PanelRightOpen, PanelRightClose }
 import { MarkdownRenderer } from '../components/markdown';
 import { ToolCallDisplay, type ToolCallInfo } from '../components/ToolCallDisplay';
 import { InternalsPanel, INTERNALS_PANEL_DEFAULT_WIDTH } from '../components/InternalsPanel';
+import { PlanDisplay } from '../components/plan';
+import type { Plan, PlanTask } from '../../preload/index';
 
 interface Message {
   id: string;
@@ -47,6 +49,10 @@ export function ChatPage(): React.ReactElement {
   const [showInternals, setShowInternals] = useState(false);
   const [internalsWidth, setInternalsWidth] = useState(INTERNALS_PANEL_DEFAULT_WIDTH);
 
+  // Plan state
+  const [activePlan, setActivePlan] = useState<Plan | null>(null);
+  const [planLoading, setPlanLoading] = useState<'approving' | 'rejecting' | null>(null);
+
   // Check agent status on mount and when returning to this page
   useEffect(() => {
     const checkStatus = async () => {
@@ -62,6 +68,7 @@ export function ChatPage(): React.ReactElement {
   // Set up streaming listeners
   useEffect(() => {
     window.hosea.agent.onStreamChunk((chunk) => {
+
       if (chunk.type === 'text' && chunk.content) {
         setStreamingContent((prev) => prev + chunk.content);
       } else if (chunk.type === 'tool_start') {
@@ -125,6 +132,69 @@ export function ChatPage(): React.ReactElement {
           }
           return msgs;
         });
+      }
+      // Plan events
+      else if (chunk.type === 'plan:created' || chunk.type === 'plan:awaiting_approval' || chunk.type === 'needs:approval') {
+        const plan = (chunk as { plan: Plan }).plan;
+        if (plan) {
+          setActivePlan(plan);
+          setPlanLoading(null);
+        }
+      } else if (chunk.type === 'plan:approved') {
+        setActivePlan((prev) => prev ? { ...prev, status: 'running' } : null);
+        setPlanLoading(null);
+      }
+      // Task events - update plan state
+      else if (chunk.type === 'task:started') {
+        setActivePlan((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            tasks: prev.tasks.map((t) =>
+              t.id === chunk.task.id ? { ...t, status: 'in_progress', startedAt: chunk.task.startedAt } : t
+            ),
+          };
+        });
+      } else if (chunk.type === 'task:completed') {
+        setActivePlan((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            tasks: prev.tasks.map((t) =>
+              t.id === chunk.task.id
+                ? { ...t, status: 'completed', completedAt: chunk.task.completedAt, result: chunk.task.result }
+                : t
+            ),
+          };
+        });
+      } else if (chunk.type === 'task:failed') {
+        setActivePlan((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            tasks: prev.tasks.map((t) =>
+              t.id === chunk.task.id
+                ? { ...t, status: 'failed', result: { success: false, error: chunk.error } }
+                : t
+            ),
+          };
+        });
+      }
+      // Execution events
+      else if (chunk.type === 'execution:done') {
+        setActivePlan((prev) => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            status: chunk.result.status === 'completed' ? 'completed' : 'failed',
+            completedAt: Date.now(),
+          };
+        });
+      } else if (chunk.type === 'mode:changed') {
+        // If returning to interactive mode, we can optionally clear the plan
+        if (chunk.to === 'interactive') {
+          // Keep the plan visible for reference, user can dismiss it
+        }
       }
     });
 
@@ -241,6 +311,113 @@ export function ChatPage(): React.ReactElement {
     });
   };
 
+  // Plan approval/rejection handlers
+  const handleApprovePlan = useCallback(async () => {
+    if (!activePlan) return;
+    setPlanLoading('approving');
+
+    try {
+      // Send approval message to the agent
+      // The agent handles approval via its intent analysis
+      const userMessage: Message = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: 'Yes, proceed with the plan.',
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMessage]);
+
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        isStreaming: true,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      setIsLoading(true);
+      setStreamingContent('');
+      await window.hosea.agent.stream('Yes, proceed with the plan.');
+    } catch (error) {
+      console.error('Failed to approve plan:', error);
+      setPlanLoading(null);
+    }
+  }, [activePlan]);
+
+  const handleRejectPlan = useCallback(async (reason?: string) => {
+    if (!activePlan) return;
+    setPlanLoading('rejecting');
+
+    try {
+      // Send rejection message to the agent
+      const rejectMessage = reason
+        ? `No, please change the plan: ${reason}`
+        : 'No, please change the plan.';
+
+      const userMessage: Message = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: rejectMessage,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMessage]);
+
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        isStreaming: true,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      setIsLoading(true);
+      setStreamingContent('');
+      await window.hosea.agent.stream(rejectMessage);
+    } catch (error) {
+      console.error('Failed to reject plan:', error);
+      setPlanLoading(null);
+    }
+  }, [activePlan]);
+
+  const handleDismissPlan = useCallback(() => {
+    setActivePlan(null);
+  }, []);
+
+  // Handle feedback on the plan - sends feedback to agent for plan modification
+  const handlePlanFeedback = useCallback(async (feedback: string) => {
+    if (!activePlan) return;
+
+    try {
+      // Send feedback as a message to the agent
+      const feedbackMessage = `Feedback on the plan: ${feedback}`;
+
+      const userMessage: Message = {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: feedbackMessage,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, userMessage]);
+
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        isStreaming: true,
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      setIsLoading(true);
+      setStreamingContent('');
+      await window.hosea.agent.stream(feedbackMessage);
+    } catch (error) {
+      console.error('Failed to send plan feedback:', error);
+    }
+  }, [activePlan]);
+
   const renderUserMessage = (message: Message) => (
     <div key={message.id} className="message message--user">
       <div className="message__content">
@@ -337,6 +514,20 @@ export function ChatPage(): React.ReactElement {
         >
           {showInternals ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
         </button>
+
+        {/* Fixed Plan Display - outside scrollable area */}
+        {activePlan && messages.length > 0 && (
+          <div className="chat__plan-fixed">
+            <PlanDisplay
+              plan={activePlan}
+              onApprove={activePlan.status === 'pending' ? handleApprovePlan : undefined}
+              onReject={activePlan.status === 'pending' ? handleRejectPlan : undefined}
+              onFeedback={activePlan.status === 'pending' ? handlePlanFeedback : undefined}
+              isApproving={planLoading === 'approving'}
+              isRejecting={planLoading === 'rejecting'}
+            />
+          </div>
+        )}
 
         <div className={`chat__messages ${messages.length === 0 ? 'chat__messages--empty' : ''}`}>
           {messages.length === 0 ? (

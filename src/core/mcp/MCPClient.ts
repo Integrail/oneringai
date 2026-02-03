@@ -273,12 +273,31 @@ export class MCPClient extends EventEmitter implements IMCPClient, IDisposable {
   }
 
   registerTools(toolManager: ToolManager): void {
+    this.registerToolsSelective(toolManager);
+  }
+
+  /**
+   * Register specific tools with a ToolManager (selective registration)
+   * @param toolManager - ToolManager to register with
+   * @param toolNames - Optional array of tool names to register (original MCP names, not namespaced).
+   *                    If not provided, registers all tools.
+   */
+  registerToolsSelective(toolManager: ToolManager, toolNames?: string[]): void {
     if (this._tools.length === 0) {
       return;
     }
 
+    // Filter tools if specific names provided
+    const toolsToRegister = toolNames
+      ? this._tools.filter(t => toolNames.includes(t.name))
+      : this._tools;
+
+    if (toolsToRegister.length === 0) {
+      return;
+    }
+
     // Convert MCP tools to ToolFunctions
-    const toolFunctions = createMCPToolAdapters(this._tools, this, this.config.toolNamespace);
+    const toolFunctions = createMCPToolAdapters(toolsToRegister, this, this.config.toolNamespace);
 
     // Register each tool with the ToolManager
     for (const toolFn of toolFunctions) {

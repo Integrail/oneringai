@@ -13,6 +13,7 @@ import {
   Key,
   Wrench,
   Palette,
+  Server,
 } from 'lucide-react';
 import { useNavigation, type PageId } from '../../hooks/useNavigation';
 import logoFull from '../../assets/logo-full.svg';
@@ -55,6 +56,7 @@ const navSections: NavSection[] = [
     label: 'Tools',
     items: [
       { id: 'tool-connectors', label: 'Tool Catalog', icon: <Wrench size={20} /> },
+      { id: 'mcp-servers', label: 'MCP Servers', icon: <Server size={20} /> },
     ],
   },
 ];

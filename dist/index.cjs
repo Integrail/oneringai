@@ -6,14 +6,14 @@ var fs16 = require('fs');
 var eventemitter3 = require('eventemitter3');
 var path2 = require('path');
 var os = require('os');
-var OpenAI2 = require('openai');
-var Anthropic = require('@anthropic-ai/sdk');
-var genai = require('@google/genai');
 require('zod/v3');
 var z4mini = require('zod/v4-mini');
 var z = require('zod/v4');
 var process2 = require('process');
 var stream = require('stream');
+var OpenAI2 = require('openai');
+var Anthropic = require('@anthropic-ai/sdk');
+var genai = require('@google/genai');
 var fs15 = require('fs/promises');
 var glob = require('glob');
 var simpleIcons = require('simple-icons');
@@ -48,11 +48,11 @@ var crypto2__namespace = /*#__PURE__*/_interopNamespace(crypto2);
 var fs16__namespace = /*#__PURE__*/_interopNamespace(fs16);
 var path2__namespace = /*#__PURE__*/_interopNamespace(path2);
 var os__namespace = /*#__PURE__*/_interopNamespace(os);
-var OpenAI2__default = /*#__PURE__*/_interopDefault(OpenAI2);
-var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
 var z4mini__namespace = /*#__PURE__*/_interopNamespace(z4mini);
 var z__namespace = /*#__PURE__*/_interopNamespace(z);
 var process2__default = /*#__PURE__*/_interopDefault(process2);
+var OpenAI2__default = /*#__PURE__*/_interopDefault(OpenAI2);
+var Anthropic__default = /*#__PURE__*/_interopDefault(Anthropic);
 var fs15__namespace = /*#__PURE__*/_interopNamespace(fs15);
 var simpleIcons__namespace = /*#__PURE__*/_interopNamespace(simpleIcons);
 var TurndownService__default = /*#__PURE__*/_interopDefault(TurndownService);
@@ -6461,13 +6461,13 @@ var require_core = __commonJS({
     }, warn() {
     }, error() {
     } };
-    function getLogger(logger4) {
-      if (logger4 === false)
+    function getLogger(logger5) {
+      if (logger5 === false)
         return noLogs;
-      if (logger4 === void 0)
+      if (logger5 === void 0)
         return console;
-      if (logger4.log && logger4.warn && logger4.error)
-        return logger4;
+      if (logger5.log && logger5.warn && logger5.error)
+        return logger5;
       throw new Error("logger must implement log, warn and error methods");
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -12286,13 +12286,13 @@ var require_core3 = __commonJS({
     }, warn() {
     }, error() {
     } };
-    function getLogger(logger4) {
-      if (logger4 === false)
+    function getLogger(logger5) {
+      if (logger5 === false)
         return noLogs;
-      if (logger4 === void 0)
+      if (logger5 === void 0)
         return console;
-      if (logger4.log && logger4.warn && logger4.error)
-        return logger4;
+      if (logger5.log && logger5.warn && logger5.error)
+        return logger5;
       throw new Error("logger must implement log, warn and error methods");
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -15667,6 +15667,30 @@ var ParallelTasksError = class _ParallelTasksError extends AIError {
     return this.failures.map((f) => f.taskId);
   }
 };
+var ContextOverflowError = class _ContextOverflowError extends AIError {
+  constructor(message, budget) {
+    super(
+      `Context overflow: ${message}. Actual: ${budget.actualTokens}, Max: ${budget.maxTokens}, Overage: ${budget.overageTokens}`,
+      "CONTEXT_OVERFLOW",
+      413
+    );
+    this.budget = budget;
+    this.name = "ContextOverflowError";
+    Object.setPrototypeOf(this, _ContextOverflowError.prototype);
+  }
+  /**
+   * Get a formatted summary of what was tried
+   */
+  getDegradationSummary() {
+    return this.budget.degradationLog.join("\n");
+  }
+  /**
+   * Get the top token consumers
+   */
+  getTopConsumers(count = 5) {
+    return Object.entries(this.budget.breakdown).map(([component, tokens]) => ({ component, tokens })).sort((a, b) => b.tokens - a.tokens).slice(0, count);
+  }
+};
 
 // src/core/ToolManager.ts
 init_Logger();
@@ -18006,6 +18030,18 @@ var DEFAULT_TOOL_RETENTION = {
   web_fetch: 3,
   web_search: 3,
   web_scrape: 3
+};
+var GUARDIAN_DEFAULTS = {
+  /** Enable guardian validation (can be disabled for testing) */
+  ENABLED: true,
+  /** Maximum tool result size in tokens before truncation (1KB ≈ 250 tokens) */
+  MAX_TOOL_RESULT_TOKENS: 1e3,
+  /** Minimum system prompt tokens to preserve during emergency compaction */
+  MIN_SYSTEM_PROMPT_TOKENS: 2e3,
+  /** Number of most recent messages to always protect */
+  PROTECTED_RECENT_MESSAGES: 4,
+  /** Truncation suffix for oversized content */
+  TRUNCATION_SUFFIX: "\n\n[Content truncated by ContextGuardian - original data may be available in memory]"
 };
 
 // src/core/context/strategies/ProactiveStrategy.ts
@@ -20657,6 +20693,7 @@ var DEFAULT_CONFIG3 = {
   maxTokensPerOutput: 1e3,
   includeTimestamps: false
 };
+var MAX_CHARS_PER_OUTPUT = 4e3;
 var ToolOutputPlugin = class extends BaseContextPlugin {
   name = "tool_outputs";
   priority = 10;
@@ -20667,15 +20704,31 @@ var ToolOutputPlugin = class extends BaseContextPlugin {
   constructor(config = {}) {
     super();
     this.config = { ...DEFAULT_CONFIG3, ...config };
+    if (!config.suppressDeprecationWarning) {
+      console.warn(
+        "[DEPRECATION] ToolOutputPlugin is deprecated and will be removed in a future version. It duplicates data already in conversation history. Consider using ToolResultEvictionPlugin for smarter eviction to WorkingMemory. To suppress this warning, pass { suppressDeprecationWarning: true } to the constructor."
+      );
+    }
   }
   /**
    * Add a tool output
+   * Truncates large outputs immediately to prevent context overflow
    */
   addOutput(toolName, result) {
+    let outputStr = this.stringifyOutput(result);
+    let truncated = false;
+    if (outputStr.length > MAX_CHARS_PER_OUTPUT) {
+      const originalLength = outputStr.length;
+      outputStr = outputStr.slice(0, MAX_CHARS_PER_OUTPUT) + `
+
+[Truncated from ${Math.round(originalLength / 1024)}KB - full output in conversation history or memory]`;
+      truncated = true;
+    }
     this.outputs.push({
       tool: toolName,
-      output: result,
-      timestamp: Date.now()
+      output: outputStr,
+      timestamp: Date.now(),
+      truncated
     });
     if (this.outputs.length > this.config.maxOutputs * 2) {
       this.outputs = this.outputs.slice(-this.config.maxOutputs);
@@ -20776,8 +20829,8 @@ var ToolOutputPlugin = class extends BaseContextPlugin {
   }
 };
 var DEFAULT_CONFIG4 = {
-  sizeThreshold: 10 * 1024,
-  // 10KB
+  sizeThreshold: 5 * 1024,
+  // 5KB - more aggressive to prevent context overflow
   tools: [],
   toolPatterns: [],
   maxTrackedEntries: 100,
@@ -21599,6 +21652,369 @@ function generateResultDescription(toolName, args, result, sizeBytes, describeCa
   }
 }
 
+// src/core/context/ContextGuardian.ts
+init_Logger();
+var logger3 = exports.logger.child({ component: "ContextGuardian" });
+var ContextGuardian = class {
+  _enabled;
+  _maxToolResultTokens;
+  _minSystemPromptTokens;
+  _protectedRecentMessages;
+  _estimator;
+  constructor(estimator, config = {}) {
+    this._estimator = estimator;
+    this._enabled = config.enabled ?? GUARDIAN_DEFAULTS.ENABLED;
+    this._maxToolResultTokens = config.maxToolResultTokens ?? GUARDIAN_DEFAULTS.MAX_TOOL_RESULT_TOKENS;
+    this._minSystemPromptTokens = config.minSystemPromptTokens ?? GUARDIAN_DEFAULTS.MIN_SYSTEM_PROMPT_TOKENS;
+    this._protectedRecentMessages = config.protectedRecentMessages ?? GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES;
+  }
+  /**
+   * Check if guardian is enabled
+   */
+  get enabled() {
+    return this._enabled;
+  }
+  /**
+   * Validate that input fits within token limits
+   *
+   * @param input - The InputItem[] to validate
+   * @param maxTokens - Maximum allowed tokens (after reserving for response)
+   * @returns Validation result with actual counts and breakdown
+   */
+  validate(input, maxTokens) {
+    const breakdown = {
+      system: 0,
+      user: 0,
+      assistant: 0,
+      tool_use: 0,
+      tool_result: 0,
+      other: 0
+    };
+    let actualTokens = 0;
+    for (const item of input) {
+      const tokens = this.estimateInputItemTokens(item);
+      actualTokens += tokens;
+      if (item.type === "message") {
+        const msg = item;
+        if (msg.role === "developer" /* DEVELOPER */) {
+          breakdown.system += tokens;
+        } else if (msg.role === "user" /* USER */) {
+          const hasToolResult = msg.content.some((c) => c.type === "tool_result" /* TOOL_RESULT */);
+          if (hasToolResult) {
+            breakdown.tool_result += tokens;
+          } else {
+            breakdown.user += tokens;
+          }
+        } else if (msg.role === "assistant" /* ASSISTANT */) {
+          const hasToolUse = msg.content.some((c) => c.type === "tool_use" /* TOOL_USE */);
+          if (hasToolUse) {
+            breakdown.tool_use += tokens;
+          } else {
+            breakdown.assistant += tokens;
+          }
+        }
+      } else {
+        breakdown.other += tokens;
+      }
+    }
+    const valid = actualTokens <= maxTokens;
+    const overageTokens = valid ? 0 : actualTokens - maxTokens;
+    logger3.debug({
+      actualTokens,
+      maxTokens,
+      valid,
+      overageTokens,
+      breakdown
+    }, `Guardian validation: ${valid ? "PASS" : "FAIL"}`);
+    return {
+      valid,
+      actualTokens,
+      targetTokens: maxTokens,
+      overageTokens,
+      breakdown
+    };
+  }
+  /**
+   * Apply graceful degradation to reduce input size
+   *
+   * @param input - The InputItem[] to potentially modify
+   * @param targetTokens - Target token count to achieve
+   * @returns Degradation result with potentially modified input
+   */
+  applyGracefulDegradation(input, targetTokens) {
+    const log = [];
+    let tokensFreed = 0;
+    let currentInput = [...input];
+    const initialValidation = this.validate(currentInput, targetTokens);
+    if (initialValidation.valid) {
+      return {
+        input: currentInput,
+        log: ["No degradation needed"],
+        finalTokens: initialValidation.actualTokens,
+        tokensFreed: 0,
+        success: true
+      };
+    }
+    log.push(`Starting graceful degradation: ${initialValidation.actualTokens} tokens, target: ${targetTokens}`);
+    const level1Result = this.truncateToolResults(currentInput, log);
+    currentInput = level1Result.input;
+    tokensFreed += level1Result.tokensFreed;
+    let validation = this.validate(currentInput, targetTokens);
+    if (validation.valid) {
+      log.push(`Level 1 (truncate tool results) successful: ${validation.actualTokens} tokens`);
+      return {
+        input: currentInput,
+        log,
+        finalTokens: validation.actualTokens,
+        tokensFreed,
+        success: true
+      };
+    }
+    const level2Result = this.removeOldestToolPairs(currentInput, validation.overageTokens, log);
+    currentInput = level2Result.input;
+    tokensFreed += level2Result.tokensFreed;
+    validation = this.validate(currentInput, targetTokens);
+    if (validation.valid) {
+      log.push(`Level 2 (remove tool pairs) successful: ${validation.actualTokens} tokens`);
+      return {
+        input: currentInput,
+        log,
+        finalTokens: validation.actualTokens,
+        tokensFreed,
+        success: true
+      };
+    }
+    const level3Result = this.truncateSystemPrompt(currentInput, log);
+    currentInput = level3Result.input;
+    tokensFreed += level3Result.tokensFreed;
+    validation = this.validate(currentInput, targetTokens);
+    if (validation.valid) {
+      log.push(`Level 3 (truncate system prompt) successful: ${validation.actualTokens} tokens`);
+      return {
+        input: currentInput,
+        log,
+        finalTokens: validation.actualTokens,
+        tokensFreed,
+        success: true
+      };
+    }
+    log.push(`All degradation levels exhausted: ${validation.actualTokens} tokens (target: ${targetTokens})`);
+    throw new ContextOverflowError(
+      "All graceful degradation levels exhausted",
+      {
+        actualTokens: validation.actualTokens,
+        maxTokens: targetTokens,
+        overageTokens: validation.overageTokens,
+        breakdown: validation.breakdown,
+        degradationLog: log
+      }
+    );
+  }
+  /**
+   * Emergency compact - more aggressive than graceful degradation
+   * Used when even graceful degradation fails
+   *
+   * @param input - The InputItem[] to compact
+   * @param targetTokens - Target token count
+   * @returns Compacted InputItem[] (may lose significant data)
+   */
+  emergencyCompact(input, targetTokens) {
+    const log = ["EMERGENCY COMPACTION"];
+    let result = [...input];
+    const systemMessages = [];
+    const otherMessages = [];
+    for (const item of result) {
+      if (item.type === "message" && item.role === "developer" /* DEVELOPER */) {
+        systemMessages.push(item);
+      } else {
+        otherMessages.push(item);
+      }
+    }
+    const truncatedSystem = systemMessages.map(
+      (item) => this.truncateMessage(item, this._minSystemPromptTokens)
+    );
+    const protectedMessages = otherMessages.slice(-this._protectedRecentMessages);
+    result = [...truncatedSystem, ...protectedMessages];
+    const validation = this.validate(result, targetTokens);
+    if (!validation.valid) {
+      log.push(`Emergency compaction failed: still at ${validation.actualTokens} tokens`);
+      logger3.error({ validation, log }, "Emergency compaction failed");
+    }
+    return result;
+  }
+  // ============================================================================
+  // Private Helper Methods
+  // ============================================================================
+  /**
+   * Estimate tokens for an InputItem
+   */
+  estimateInputItemTokens(item) {
+    if (item.type !== "message") {
+      return 50;
+    }
+    const msg = item;
+    let total = 4;
+    for (const content of msg.content) {
+      if (content.type === "input_text" /* INPUT_TEXT */ || content.type === "output_text" /* OUTPUT_TEXT */) {
+        total += this._estimator.estimateTokens(content.text || "");
+      } else if (content.type === "tool_use" /* TOOL_USE */) {
+        total += this._estimator.estimateTokens(content.name || "");
+        total += this._estimator.estimateDataTokens(content.input || {});
+      } else if (content.type === "tool_result" /* TOOL_RESULT */) {
+        total += this._estimator.estimateTokens(content.content || "");
+      } else if (content.type === "input_image_url" /* INPUT_IMAGE_URL */) {
+        total += 200;
+      }
+    }
+    return total;
+  }
+  /**
+   * Level 1: Truncate large tool results
+   */
+  truncateToolResults(input, log) {
+    let tokensFreed = 0;
+    const result = [];
+    for (const item of input) {
+      if (item.type !== "message") {
+        result.push(item);
+        continue;
+      }
+      const msg = item;
+      const hasToolResult = msg.content.some((c) => c.type === "tool_result" /* TOOL_RESULT */);
+      if (!hasToolResult) {
+        result.push(item);
+        continue;
+      }
+      const newContent = msg.content.map((c) => {
+        if (c.type !== "tool_result" /* TOOL_RESULT */) return c;
+        const toolResult = c;
+        const content = toolResult.content || "";
+        const currentTokens = this._estimator.estimateTokens(content);
+        if (currentTokens > this._maxToolResultTokens) {
+          const targetChars = this._maxToolResultTokens * 4;
+          const truncated = content.slice(0, targetChars) + GUARDIAN_DEFAULTS.TRUNCATION_SUFFIX;
+          const freed = currentTokens - this._estimator.estimateTokens(truncated);
+          tokensFreed += freed;
+          log.push(`Truncated tool result ${toolResult.tool_use_id}: ${currentTokens} \u2192 ${currentTokens - freed} tokens`);
+          return {
+            ...toolResult,
+            content: truncated
+          };
+        }
+        return c;
+      });
+      result.push({
+        ...msg,
+        content: newContent
+      });
+    }
+    if (tokensFreed > 0) {
+      log.push(`Level 1: Truncated tool results, freed ${tokensFreed} tokens`);
+    }
+    return { input: result, tokensFreed };
+  }
+  /**
+   * Level 2: Remove oldest unprotected tool pairs
+   */
+  removeOldestToolPairs(input, overageTokens, log) {
+    const toolPairs = /* @__PURE__ */ new Map();
+    for (let i = 0; i < input.length; i++) {
+      const item = input[i];
+      if (item?.type !== "message") continue;
+      const msg = item;
+      for (const content of msg.content) {
+        if (content.type === "tool_use" /* TOOL_USE */) {
+          const toolUseId = content.id;
+          if (toolUseId) {
+            toolPairs.set(toolUseId, { useIndex: i, resultIndex: null });
+          }
+        } else if (content.type === "tool_result" /* TOOL_RESULT */) {
+          const toolUseId = content.tool_use_id;
+          const pair = toolPairs.get(toolUseId);
+          if (pair) {
+            pair.resultIndex = i;
+          }
+        }
+      }
+    }
+    const sortedPairs = [...toolPairs.entries()].filter(([, pair]) => pair.resultIndex !== null).sort(([, a], [, b]) => a.useIndex - b.useIndex);
+    const protectedStart = input.length - this._protectedRecentMessages;
+    const indicesToRemove = /* @__PURE__ */ new Set();
+    let tokensFreed = 0;
+    for (const [toolUseId, pair] of sortedPairs) {
+      if (tokensFreed >= overageTokens) break;
+      if (pair.useIndex >= protectedStart || pair.resultIndex !== null && pair.resultIndex >= protectedStart) {
+        continue;
+      }
+      indicesToRemove.add(pair.useIndex);
+      if (pair.resultIndex !== null) {
+        indicesToRemove.add(pair.resultIndex);
+      }
+      const useItem = input[pair.useIndex];
+      const resultItem = pair.resultIndex !== null ? input[pair.resultIndex] : null;
+      if (useItem) tokensFreed += this.estimateInputItemTokens(useItem);
+      if (resultItem) tokensFreed += this.estimateInputItemTokens(resultItem);
+      log.push(`Removing tool pair ${toolUseId}`);
+    }
+    const result = input.filter((_, i) => !indicesToRemove.has(i));
+    if (indicesToRemove.size > 0) {
+      log.push(`Level 2: Removed ${indicesToRemove.size} messages (${sortedPairs.length} tool pairs evaluated), freed ${tokensFreed} tokens`);
+    }
+    return { input: result, tokensFreed };
+  }
+  /**
+   * Level 3: Truncate system prompt
+   */
+  truncateSystemPrompt(input, log) {
+    let tokensFreed = 0;
+    const result = [];
+    for (const item of input) {
+      if (item.type !== "message") {
+        result.push(item);
+        continue;
+      }
+      const msg = item;
+      if (msg.role !== "developer" /* DEVELOPER */) {
+        result.push(item);
+        continue;
+      }
+      const currentTokens = this.estimateInputItemTokens(msg);
+      if (currentTokens > this._minSystemPromptTokens) {
+        const truncated = this.truncateMessage(msg, this._minSystemPromptTokens);
+        const newTokens = this.estimateInputItemTokens(truncated);
+        tokensFreed += currentTokens - newTokens;
+        log.push(`Truncated system prompt: ${currentTokens} \u2192 ${newTokens} tokens`);
+        result.push(truncated);
+      } else {
+        result.push(item);
+      }
+    }
+    if (tokensFreed > 0) {
+      log.push(`Level 3: Truncated system prompt, freed ${tokensFreed} tokens`);
+    }
+    return { input: result, tokensFreed };
+  }
+  /**
+   * Truncate a message to target token count
+   */
+  truncateMessage(msg, targetTokens) {
+    const newContent = msg.content.map((c) => {
+      if (c.type !== "input_text" /* INPUT_TEXT */ && c.type !== "output_text" /* OUTPUT_TEXT */) {
+        return c;
+      }
+      const text = c.text || "";
+      const currentTokens = this._estimator.estimateTokens(text);
+      if (currentTokens > targetTokens) {
+        const targetChars = targetTokens * 4;
+        const truncated = text.slice(0, targetChars) + GUARDIAN_DEFAULTS.TRUNCATION_SUFFIX;
+        return { ...c, text: truncated };
+      }
+      return c;
+    });
+    return { ...msg, content: newContent };
+  }
+};
+
 // src/capabilities/taskAgent/memoryTools.ts
 var memoryStoreDefinition = {
   type: "function",
@@ -22334,9 +22750,5599 @@ function getAllInstructions() {
     toolResultEviction: TOOL_RESULT_EVICTION_INSTRUCTIONS
   };
 }
+function isZ4Schema(s) {
+  const schema = s;
+  return !!schema._zod;
+}
+function safeParse2(schema, data) {
+  if (isZ4Schema(schema)) {
+    const result2 = z4mini__namespace.safeParse(schema, data);
+    return result2;
+  }
+  const v3Schema = schema;
+  const result = v3Schema.safeParse(data);
+  return result;
+}
+function getObjectShape(schema) {
+  if (!schema)
+    return void 0;
+  let rawShape;
+  if (isZ4Schema(schema)) {
+    const v4Schema = schema;
+    rawShape = v4Schema._zod?.def?.shape;
+  } else {
+    const v3Schema = schema;
+    rawShape = v3Schema.shape;
+  }
+  if (!rawShape)
+    return void 0;
+  if (typeof rawShape === "function") {
+    try {
+      return rawShape();
+    } catch {
+      return void 0;
+    }
+  }
+  return rawShape;
+}
+function getLiteralValue(schema) {
+  if (isZ4Schema(schema)) {
+    const v4Schema = schema;
+    const def2 = v4Schema._zod?.def;
+    if (def2) {
+      if (def2.value !== void 0)
+        return def2.value;
+      if (Array.isArray(def2.values) && def2.values.length > 0) {
+        return def2.values[0];
+      }
+    }
+  }
+  const v3Schema = schema;
+  const def = v3Schema._def;
+  if (def) {
+    if (def.value !== void 0)
+      return def.value;
+    if (Array.isArray(def.values) && def.values.length > 0) {
+      return def.values[0];
+    }
+  }
+  const directValue = schema.value;
+  if (directValue !== void 0)
+    return directValue;
+  return void 0;
+}
+var LATEST_PROTOCOL_VERSION = "2025-11-25";
+var SUPPORTED_PROTOCOL_VERSIONS = [LATEST_PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"];
+var RELATED_TASK_META_KEY = "io.modelcontextprotocol/related-task";
+var JSONRPC_VERSION = "2.0";
+var AssertObjectSchema = z__namespace.custom((v) => v !== null && (typeof v === "object" || typeof v === "function"));
+var ProgressTokenSchema = z__namespace.union([z__namespace.string(), z__namespace.number().int()]);
+var CursorSchema = z__namespace.string();
+z__namespace.looseObject({
+  /**
+   * Time in milliseconds to keep task results available after completion.
+   * If null, the task has unlimited lifetime until manually cleaned up.
+   */
+  ttl: z__namespace.union([z__namespace.number(), z__namespace.null()]).optional(),
+  /**
+   * Time in milliseconds to wait between task status requests.
+   */
+  pollInterval: z__namespace.number().optional()
+});
+var TaskMetadataSchema = z__namespace.object({
+  ttl: z__namespace.number().optional()
+});
+var RelatedTaskMetadataSchema = z__namespace.object({
+  taskId: z__namespace.string()
+});
+var RequestMetaSchema = z__namespace.looseObject({
+  /**
+   * If specified, the caller is requesting out-of-band progress notifications for this request (as represented by notifications/progress). The value of this parameter is an opaque token that will be attached to any subsequent notifications. The receiver is not obligated to provide these notifications.
+   */
+  progressToken: ProgressTokenSchema.optional(),
+  /**
+   * If specified, this request is related to the provided task.
+   */
+  [RELATED_TASK_META_KEY]: RelatedTaskMetadataSchema.optional()
+});
+var BaseRequestParamsSchema = z__namespace.object({
+  /**
+   * See [General fields: `_meta`](/specification/draft/basic/index#meta) for notes on `_meta` usage.
+   */
+  _meta: RequestMetaSchema.optional()
+});
+var TaskAugmentedRequestParamsSchema = BaseRequestParamsSchema.extend({
+  /**
+   * If specified, the caller is requesting task-augmented execution for this request.
+   * The request will return a CreateTaskResult immediately, and the actual result can be
+   * retrieved later via tasks/result.
+   *
+   * Task augmentation is subject to capability negotiation - receivers MUST declare support
+   * for task augmentation of specific request types in their capabilities.
+   */
+  task: TaskMetadataSchema.optional()
+});
+var isTaskAugmentedRequestParams = (value) => TaskAugmentedRequestParamsSchema.safeParse(value).success;
+var RequestSchema = z__namespace.object({
+  method: z__namespace.string(),
+  params: BaseRequestParamsSchema.loose().optional()
+});
+var NotificationsParamsSchema = z__namespace.object({
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: RequestMetaSchema.optional()
+});
+var NotificationSchema = z__namespace.object({
+  method: z__namespace.string(),
+  params: NotificationsParamsSchema.loose().optional()
+});
+var ResultSchema = z__namespace.looseObject({
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: RequestMetaSchema.optional()
+});
+var RequestIdSchema = z__namespace.union([z__namespace.string(), z__namespace.number().int()]);
+var JSONRPCRequestSchema = z__namespace.object({
+  jsonrpc: z__namespace.literal(JSONRPC_VERSION),
+  id: RequestIdSchema,
+  ...RequestSchema.shape
+}).strict();
+var isJSONRPCRequest = (value) => JSONRPCRequestSchema.safeParse(value).success;
+var JSONRPCNotificationSchema = z__namespace.object({
+  jsonrpc: z__namespace.literal(JSONRPC_VERSION),
+  ...NotificationSchema.shape
+}).strict();
+var isJSONRPCNotification = (value) => JSONRPCNotificationSchema.safeParse(value).success;
+var JSONRPCResultResponseSchema = z__namespace.object({
+  jsonrpc: z__namespace.literal(JSONRPC_VERSION),
+  id: RequestIdSchema,
+  result: ResultSchema
+}).strict();
+var isJSONRPCResultResponse = (value) => JSONRPCResultResponseSchema.safeParse(value).success;
+var ErrorCode;
+(function(ErrorCode2) {
+  ErrorCode2[ErrorCode2["ConnectionClosed"] = -32e3] = "ConnectionClosed";
+  ErrorCode2[ErrorCode2["RequestTimeout"] = -32001] = "RequestTimeout";
+  ErrorCode2[ErrorCode2["ParseError"] = -32700] = "ParseError";
+  ErrorCode2[ErrorCode2["InvalidRequest"] = -32600] = "InvalidRequest";
+  ErrorCode2[ErrorCode2["MethodNotFound"] = -32601] = "MethodNotFound";
+  ErrorCode2[ErrorCode2["InvalidParams"] = -32602] = "InvalidParams";
+  ErrorCode2[ErrorCode2["InternalError"] = -32603] = "InternalError";
+  ErrorCode2[ErrorCode2["UrlElicitationRequired"] = -32042] = "UrlElicitationRequired";
+})(ErrorCode || (ErrorCode = {}));
+var JSONRPCErrorResponseSchema = z__namespace.object({
+  jsonrpc: z__namespace.literal(JSONRPC_VERSION),
+  id: RequestIdSchema.optional(),
+  error: z__namespace.object({
+    /**
+     * The error type that occurred.
+     */
+    code: z__namespace.number().int(),
+    /**
+     * A short description of the error. The message SHOULD be limited to a concise single sentence.
+     */
+    message: z__namespace.string(),
+    /**
+     * Additional information about the error. The value of this member is defined by the sender (e.g. detailed error information, nested errors etc.).
+     */
+    data: z__namespace.unknown().optional()
+  })
+}).strict();
+var isJSONRPCErrorResponse = (value) => JSONRPCErrorResponseSchema.safeParse(value).success;
+var JSONRPCMessageSchema = z__namespace.union([
+  JSONRPCRequestSchema,
+  JSONRPCNotificationSchema,
+  JSONRPCResultResponseSchema,
+  JSONRPCErrorResponseSchema
+]);
+z__namespace.union([JSONRPCResultResponseSchema, JSONRPCErrorResponseSchema]);
+var EmptyResultSchema = ResultSchema.strict();
+var CancelledNotificationParamsSchema = NotificationsParamsSchema.extend({
+  /**
+   * The ID of the request to cancel.
+   *
+   * This MUST correspond to the ID of a request previously issued in the same direction.
+   */
+  requestId: RequestIdSchema.optional(),
+  /**
+   * An optional string describing the reason for the cancellation. This MAY be logged or presented to the user.
+   */
+  reason: z__namespace.string().optional()
+});
+var CancelledNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/cancelled"),
+  params: CancelledNotificationParamsSchema
+});
+var IconSchema = z__namespace.object({
+  /**
+   * URL or data URI for the icon.
+   */
+  src: z__namespace.string(),
+  /**
+   * Optional MIME type for the icon.
+   */
+  mimeType: z__namespace.string().optional(),
+  /**
+   * Optional array of strings that specify sizes at which the icon can be used.
+   * Each string should be in WxH format (e.g., `"48x48"`, `"96x96"`) or `"any"` for scalable formats like SVG.
+   *
+   * If not provided, the client should assume that the icon can be used at any size.
+   */
+  sizes: z__namespace.array(z__namespace.string()).optional(),
+  /**
+   * Optional specifier for the theme this icon is designed for. `light` indicates
+   * the icon is designed to be used with a light background, and `dark` indicates
+   * the icon is designed to be used with a dark background.
+   *
+   * If not provided, the client should assume the icon can be used with any theme.
+   */
+  theme: z__namespace.enum(["light", "dark"]).optional()
+});
+var IconsSchema = z__namespace.object({
+  /**
+   * Optional set of sized icons that the client can display in a user interface.
+   *
+   * Clients that support rendering icons MUST support at least the following MIME types:
+   * - `image/png` - PNG images (safe, universal compatibility)
+   * - `image/jpeg` (and `image/jpg`) - JPEG images (safe, universal compatibility)
+   *
+   * Clients that support rendering icons SHOULD also support:
+   * - `image/svg+xml` - SVG images (scalable but requires security precautions)
+   * - `image/webp` - WebP images (modern, efficient format)
+   */
+  icons: z__namespace.array(IconSchema).optional()
+});
+var BaseMetadataSchema = z__namespace.object({
+  /** Intended for programmatic or logical use, but used as a display name in past specs or fallback */
+  name: z__namespace.string(),
+  /**
+   * Intended for UI and end-user contexts — optimized to be human-readable and easily understood,
+   * even by those unfamiliar with domain-specific terminology.
+   *
+   * If not provided, the name should be used for display (except for Tool,
+   * where `annotations.title` should be given precedence over using `name`,
+   * if present).
+   */
+  title: z__namespace.string().optional()
+});
+var ImplementationSchema = BaseMetadataSchema.extend({
+  ...BaseMetadataSchema.shape,
+  ...IconsSchema.shape,
+  version: z__namespace.string(),
+  /**
+   * An optional URL of the website for this implementation.
+   */
+  websiteUrl: z__namespace.string().optional(),
+  /**
+   * An optional human-readable description of what this implementation does.
+   *
+   * This can be used by clients or servers to provide context about their purpose
+   * and capabilities. For example, a server might describe the types of resources
+   * or tools it provides, while a client might describe its intended use case.
+   */
+  description: z__namespace.string().optional()
+});
+var FormElicitationCapabilitySchema = z__namespace.intersection(z__namespace.object({
+  applyDefaults: z__namespace.boolean().optional()
+}), z__namespace.record(z__namespace.string(), z__namespace.unknown()));
+var ElicitationCapabilitySchema = z__namespace.preprocess((value) => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    if (Object.keys(value).length === 0) {
+      return { form: {} };
+    }
+  }
+  return value;
+}, z__namespace.intersection(z__namespace.object({
+  form: FormElicitationCapabilitySchema.optional(),
+  url: AssertObjectSchema.optional()
+}), z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()));
+var ClientTasksCapabilitySchema = z__namespace.looseObject({
+  /**
+   * Present if the client supports listing tasks.
+   */
+  list: AssertObjectSchema.optional(),
+  /**
+   * Present if the client supports cancelling tasks.
+   */
+  cancel: AssertObjectSchema.optional(),
+  /**
+   * Capabilities for task creation on specific request types.
+   */
+  requests: z__namespace.looseObject({
+    /**
+     * Task support for sampling requests.
+     */
+    sampling: z__namespace.looseObject({
+      createMessage: AssertObjectSchema.optional()
+    }).optional(),
+    /**
+     * Task support for elicitation requests.
+     */
+    elicitation: z__namespace.looseObject({
+      create: AssertObjectSchema.optional()
+    }).optional()
+  }).optional()
+});
+var ServerTasksCapabilitySchema = z__namespace.looseObject({
+  /**
+   * Present if the server supports listing tasks.
+   */
+  list: AssertObjectSchema.optional(),
+  /**
+   * Present if the server supports cancelling tasks.
+   */
+  cancel: AssertObjectSchema.optional(),
+  /**
+   * Capabilities for task creation on specific request types.
+   */
+  requests: z__namespace.looseObject({
+    /**
+     * Task support for tool requests.
+     */
+    tools: z__namespace.looseObject({
+      call: AssertObjectSchema.optional()
+    }).optional()
+  }).optional()
+});
+var ClientCapabilitiesSchema = z__namespace.object({
+  /**
+   * Experimental, non-standard capabilities that the client supports.
+   */
+  experimental: z__namespace.record(z__namespace.string(), AssertObjectSchema).optional(),
+  /**
+   * Present if the client supports sampling from an LLM.
+   */
+  sampling: z__namespace.object({
+    /**
+     * Present if the client supports context inclusion via includeContext parameter.
+     * If not declared, servers SHOULD only use `includeContext: "none"` (or omit it).
+     */
+    context: AssertObjectSchema.optional(),
+    /**
+     * Present if the client supports tool use via tools and toolChoice parameters.
+     */
+    tools: AssertObjectSchema.optional()
+  }).optional(),
+  /**
+   * Present if the client supports eliciting user input.
+   */
+  elicitation: ElicitationCapabilitySchema.optional(),
+  /**
+   * Present if the client supports listing roots.
+   */
+  roots: z__namespace.object({
+    /**
+     * Whether the client supports issuing notifications for changes to the roots list.
+     */
+    listChanged: z__namespace.boolean().optional()
+  }).optional(),
+  /**
+   * Present if the client supports task creation.
+   */
+  tasks: ClientTasksCapabilitySchema.optional()
+});
+var InitializeRequestParamsSchema = BaseRequestParamsSchema.extend({
+  /**
+   * The latest version of the Model Context Protocol that the client supports. The client MAY decide to support older versions as well.
+   */
+  protocolVersion: z__namespace.string(),
+  capabilities: ClientCapabilitiesSchema,
+  clientInfo: ImplementationSchema
+});
+var InitializeRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("initialize"),
+  params: InitializeRequestParamsSchema
+});
+var ServerCapabilitiesSchema = z__namespace.object({
+  /**
+   * Experimental, non-standard capabilities that the server supports.
+   */
+  experimental: z__namespace.record(z__namespace.string(), AssertObjectSchema).optional(),
+  /**
+   * Present if the server supports sending log messages to the client.
+   */
+  logging: AssertObjectSchema.optional(),
+  /**
+   * Present if the server supports sending completions to the client.
+   */
+  completions: AssertObjectSchema.optional(),
+  /**
+   * Present if the server offers any prompt templates.
+   */
+  prompts: z__namespace.object({
+    /**
+     * Whether this server supports issuing notifications for changes to the prompt list.
+     */
+    listChanged: z__namespace.boolean().optional()
+  }).optional(),
+  /**
+   * Present if the server offers any resources to read.
+   */
+  resources: z__namespace.object({
+    /**
+     * Whether this server supports clients subscribing to resource updates.
+     */
+    subscribe: z__namespace.boolean().optional(),
+    /**
+     * Whether this server supports issuing notifications for changes to the resource list.
+     */
+    listChanged: z__namespace.boolean().optional()
+  }).optional(),
+  /**
+   * Present if the server offers any tools to call.
+   */
+  tools: z__namespace.object({
+    /**
+     * Whether this server supports issuing notifications for changes to the tool list.
+     */
+    listChanged: z__namespace.boolean().optional()
+  }).optional(),
+  /**
+   * Present if the server supports task creation.
+   */
+  tasks: ServerTasksCapabilitySchema.optional()
+});
+var InitializeResultSchema = ResultSchema.extend({
+  /**
+   * The version of the Model Context Protocol that the server wants to use. This may not match the version that the client requested. If the client cannot support this version, it MUST disconnect.
+   */
+  protocolVersion: z__namespace.string(),
+  capabilities: ServerCapabilitiesSchema,
+  serverInfo: ImplementationSchema,
+  /**
+   * Instructions describing how to use the server and its features.
+   *
+   * This can be used by clients to improve the LLM's understanding of available tools, resources, etc. It can be thought of like a "hint" to the model. For example, this information MAY be added to the system prompt.
+   */
+  instructions: z__namespace.string().optional()
+});
+var InitializedNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/initialized"),
+  params: NotificationsParamsSchema.optional()
+});
+var isInitializedNotification = (value) => InitializedNotificationSchema.safeParse(value).success;
+var PingRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("ping"),
+  params: BaseRequestParamsSchema.optional()
+});
+var ProgressSchema = z__namespace.object({
+  /**
+   * The progress thus far. This should increase every time progress is made, even if the total is unknown.
+   */
+  progress: z__namespace.number(),
+  /**
+   * Total number of items to process (or total progress required), if known.
+   */
+  total: z__namespace.optional(z__namespace.number()),
+  /**
+   * An optional message describing the current progress.
+   */
+  message: z__namespace.optional(z__namespace.string())
+});
+var ProgressNotificationParamsSchema = z__namespace.object({
+  ...NotificationsParamsSchema.shape,
+  ...ProgressSchema.shape,
+  /**
+   * The progress token which was given in the initial request, used to associate this notification with the request that is proceeding.
+   */
+  progressToken: ProgressTokenSchema
+});
+var ProgressNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/progress"),
+  params: ProgressNotificationParamsSchema
+});
+var PaginatedRequestParamsSchema = BaseRequestParamsSchema.extend({
+  /**
+   * An opaque token representing the current pagination position.
+   * If provided, the server should return results starting after this cursor.
+   */
+  cursor: CursorSchema.optional()
+});
+var PaginatedRequestSchema = RequestSchema.extend({
+  params: PaginatedRequestParamsSchema.optional()
+});
+var PaginatedResultSchema = ResultSchema.extend({
+  /**
+   * An opaque token representing the pagination position after the last returned result.
+   * If present, there may be more results available.
+   */
+  nextCursor: CursorSchema.optional()
+});
+var TaskStatusSchema = z__namespace.enum(["working", "input_required", "completed", "failed", "cancelled"]);
+var TaskSchema = z__namespace.object({
+  taskId: z__namespace.string(),
+  status: TaskStatusSchema,
+  /**
+   * Time in milliseconds to keep task results available after completion.
+   * If null, the task has unlimited lifetime until manually cleaned up.
+   */
+  ttl: z__namespace.union([z__namespace.number(), z__namespace.null()]),
+  /**
+   * ISO 8601 timestamp when the task was created.
+   */
+  createdAt: z__namespace.string(),
+  /**
+   * ISO 8601 timestamp when the task was last updated.
+   */
+  lastUpdatedAt: z__namespace.string(),
+  pollInterval: z__namespace.optional(z__namespace.number()),
+  /**
+   * Optional diagnostic message for failed tasks or other status information.
+   */
+  statusMessage: z__namespace.optional(z__namespace.string())
+});
+var CreateTaskResultSchema = ResultSchema.extend({
+  task: TaskSchema
+});
+var TaskStatusNotificationParamsSchema = NotificationsParamsSchema.merge(TaskSchema);
+var TaskStatusNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/tasks/status"),
+  params: TaskStatusNotificationParamsSchema
+});
+var GetTaskRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("tasks/get"),
+  params: BaseRequestParamsSchema.extend({
+    taskId: z__namespace.string()
+  })
+});
+var GetTaskResultSchema = ResultSchema.merge(TaskSchema);
+var GetTaskPayloadRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("tasks/result"),
+  params: BaseRequestParamsSchema.extend({
+    taskId: z__namespace.string()
+  })
+});
+ResultSchema.loose();
+var ListTasksRequestSchema = PaginatedRequestSchema.extend({
+  method: z__namespace.literal("tasks/list")
+});
+var ListTasksResultSchema = PaginatedResultSchema.extend({
+  tasks: z__namespace.array(TaskSchema)
+});
+var CancelTaskRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("tasks/cancel"),
+  params: BaseRequestParamsSchema.extend({
+    taskId: z__namespace.string()
+  })
+});
+var CancelTaskResultSchema = ResultSchema.merge(TaskSchema);
+var ResourceContentsSchema = z__namespace.object({
+  /**
+   * The URI of this resource.
+   */
+  uri: z__namespace.string(),
+  /**
+   * The MIME type of this resource, if known.
+   */
+  mimeType: z__namespace.optional(z__namespace.string()),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var TextResourceContentsSchema = ResourceContentsSchema.extend({
+  /**
+   * The text of the item. This must only be set if the item can actually be represented as text (not binary data).
+   */
+  text: z__namespace.string()
+});
+var Base64Schema = z__namespace.string().refine((val) => {
+  try {
+    atob(val);
+    return true;
+  } catch {
+    return false;
+  }
+}, { message: "Invalid Base64 string" });
+var BlobResourceContentsSchema = ResourceContentsSchema.extend({
+  /**
+   * A base64-encoded string representing the binary data of the item.
+   */
+  blob: Base64Schema
+});
+var RoleSchema = z__namespace.enum(["user", "assistant"]);
+var AnnotationsSchema = z__namespace.object({
+  /**
+   * Intended audience(s) for the resource.
+   */
+  audience: z__namespace.array(RoleSchema).optional(),
+  /**
+   * Importance hint for the resource, from 0 (least) to 1 (most).
+   */
+  priority: z__namespace.number().min(0).max(1).optional(),
+  /**
+   * ISO 8601 timestamp for the most recent modification.
+   */
+  lastModified: z__namespace.iso.datetime({ offset: true }).optional()
+});
+var ResourceSchema = z__namespace.object({
+  ...BaseMetadataSchema.shape,
+  ...IconsSchema.shape,
+  /**
+   * The URI of this resource.
+   */
+  uri: z__namespace.string(),
+  /**
+   * A description of what this resource represents.
+   *
+   * This can be used by clients to improve the LLM's understanding of available resources. It can be thought of like a "hint" to the model.
+   */
+  description: z__namespace.optional(z__namespace.string()),
+  /**
+   * The MIME type of this resource, if known.
+   */
+  mimeType: z__namespace.optional(z__namespace.string()),
+  /**
+   * Optional annotations for the client.
+   */
+  annotations: AnnotationsSchema.optional(),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.optional(z__namespace.looseObject({}))
+});
+var ResourceTemplateSchema = z__namespace.object({
+  ...BaseMetadataSchema.shape,
+  ...IconsSchema.shape,
+  /**
+   * A URI template (according to RFC 6570) that can be used to construct resource URIs.
+   */
+  uriTemplate: z__namespace.string(),
+  /**
+   * A description of what this template is for.
+   *
+   * This can be used by clients to improve the LLM's understanding of available resources. It can be thought of like a "hint" to the model.
+   */
+  description: z__namespace.optional(z__namespace.string()),
+  /**
+   * The MIME type for all resources that match this template. This should only be included if all resources matching this template have the same type.
+   */
+  mimeType: z__namespace.optional(z__namespace.string()),
+  /**
+   * Optional annotations for the client.
+   */
+  annotations: AnnotationsSchema.optional(),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.optional(z__namespace.looseObject({}))
+});
+var ListResourcesRequestSchema = PaginatedRequestSchema.extend({
+  method: z__namespace.literal("resources/list")
+});
+var ListResourcesResultSchema = PaginatedResultSchema.extend({
+  resources: z__namespace.array(ResourceSchema)
+});
+var ListResourceTemplatesRequestSchema = PaginatedRequestSchema.extend({
+  method: z__namespace.literal("resources/templates/list")
+});
+var ListResourceTemplatesResultSchema = PaginatedResultSchema.extend({
+  resourceTemplates: z__namespace.array(ResourceTemplateSchema)
+});
+var ResourceRequestParamsSchema = BaseRequestParamsSchema.extend({
+  /**
+   * The URI of the resource to read. The URI can use any protocol; it is up to the server how to interpret it.
+   *
+   * @format uri
+   */
+  uri: z__namespace.string()
+});
+var ReadResourceRequestParamsSchema = ResourceRequestParamsSchema;
+var ReadResourceRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("resources/read"),
+  params: ReadResourceRequestParamsSchema
+});
+var ReadResourceResultSchema = ResultSchema.extend({
+  contents: z__namespace.array(z__namespace.union([TextResourceContentsSchema, BlobResourceContentsSchema]))
+});
+var ResourceListChangedNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/resources/list_changed"),
+  params: NotificationsParamsSchema.optional()
+});
+var SubscribeRequestParamsSchema = ResourceRequestParamsSchema;
+var SubscribeRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("resources/subscribe"),
+  params: SubscribeRequestParamsSchema
+});
+var UnsubscribeRequestParamsSchema = ResourceRequestParamsSchema;
+var UnsubscribeRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("resources/unsubscribe"),
+  params: UnsubscribeRequestParamsSchema
+});
+var ResourceUpdatedNotificationParamsSchema = NotificationsParamsSchema.extend({
+  /**
+   * The URI of the resource that has been updated. This might be a sub-resource of the one that the client actually subscribed to.
+   */
+  uri: z__namespace.string()
+});
+var ResourceUpdatedNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/resources/updated"),
+  params: ResourceUpdatedNotificationParamsSchema
+});
+var PromptArgumentSchema = z__namespace.object({
+  /**
+   * The name of the argument.
+   */
+  name: z__namespace.string(),
+  /**
+   * A human-readable description of the argument.
+   */
+  description: z__namespace.optional(z__namespace.string()),
+  /**
+   * Whether this argument must be provided.
+   */
+  required: z__namespace.optional(z__namespace.boolean())
+});
+var PromptSchema = z__namespace.object({
+  ...BaseMetadataSchema.shape,
+  ...IconsSchema.shape,
+  /**
+   * An optional description of what this prompt provides
+   */
+  description: z__namespace.optional(z__namespace.string()),
+  /**
+   * A list of arguments to use for templating the prompt.
+   */
+  arguments: z__namespace.optional(z__namespace.array(PromptArgumentSchema)),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.optional(z__namespace.looseObject({}))
+});
+var ListPromptsRequestSchema = PaginatedRequestSchema.extend({
+  method: z__namespace.literal("prompts/list")
+});
+var ListPromptsResultSchema = PaginatedResultSchema.extend({
+  prompts: z__namespace.array(PromptSchema)
+});
+var GetPromptRequestParamsSchema = BaseRequestParamsSchema.extend({
+  /**
+   * The name of the prompt or prompt template.
+   */
+  name: z__namespace.string(),
+  /**
+   * Arguments to use for templating the prompt.
+   */
+  arguments: z__namespace.record(z__namespace.string(), z__namespace.string()).optional()
+});
+var GetPromptRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("prompts/get"),
+  params: GetPromptRequestParamsSchema
+});
+var TextContentSchema = z__namespace.object({
+  type: z__namespace.literal("text"),
+  /**
+   * The text content of the message.
+   */
+  text: z__namespace.string(),
+  /**
+   * Optional annotations for the client.
+   */
+  annotations: AnnotationsSchema.optional(),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var ImageContentSchema = z__namespace.object({
+  type: z__namespace.literal("image"),
+  /**
+   * The base64-encoded image data.
+   */
+  data: Base64Schema,
+  /**
+   * The MIME type of the image. Different providers may support different image types.
+   */
+  mimeType: z__namespace.string(),
+  /**
+   * Optional annotations for the client.
+   */
+  annotations: AnnotationsSchema.optional(),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var AudioContentSchema = z__namespace.object({
+  type: z__namespace.literal("audio"),
+  /**
+   * The base64-encoded audio data.
+   */
+  data: Base64Schema,
+  /**
+   * The MIME type of the audio. Different providers may support different audio types.
+   */
+  mimeType: z__namespace.string(),
+  /**
+   * Optional annotations for the client.
+   */
+  annotations: AnnotationsSchema.optional(),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var ToolUseContentSchema = z__namespace.object({
+  type: z__namespace.literal("tool_use"),
+  /**
+   * The name of the tool to invoke.
+   * Must match a tool name from the request's tools array.
+   */
+  name: z__namespace.string(),
+  /**
+   * Unique identifier for this tool call.
+   * Used to correlate with ToolResultContent in subsequent messages.
+   */
+  id: z__namespace.string(),
+  /**
+   * Arguments to pass to the tool.
+   * Must conform to the tool's inputSchema.
+   */
+  input: z__namespace.record(z__namespace.string(), z__namespace.unknown()),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var EmbeddedResourceSchema = z__namespace.object({
+  type: z__namespace.literal("resource"),
+  resource: z__namespace.union([TextResourceContentsSchema, BlobResourceContentsSchema]),
+  /**
+   * Optional annotations for the client.
+   */
+  annotations: AnnotationsSchema.optional(),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var ResourceLinkSchema = ResourceSchema.extend({
+  type: z__namespace.literal("resource_link")
+});
+var ContentBlockSchema = z__namespace.union([
+  TextContentSchema,
+  ImageContentSchema,
+  AudioContentSchema,
+  ResourceLinkSchema,
+  EmbeddedResourceSchema
+]);
+var PromptMessageSchema = z__namespace.object({
+  role: RoleSchema,
+  content: ContentBlockSchema
+});
+var GetPromptResultSchema = ResultSchema.extend({
+  /**
+   * An optional description for the prompt.
+   */
+  description: z__namespace.string().optional(),
+  messages: z__namespace.array(PromptMessageSchema)
+});
+var PromptListChangedNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/prompts/list_changed"),
+  params: NotificationsParamsSchema.optional()
+});
+var ToolAnnotationsSchema = z__namespace.object({
+  /**
+   * A human-readable title for the tool.
+   */
+  title: z__namespace.string().optional(),
+  /**
+   * If true, the tool does not modify its environment.
+   *
+   * Default: false
+   */
+  readOnlyHint: z__namespace.boolean().optional(),
+  /**
+   * If true, the tool may perform destructive updates to its environment.
+   * If false, the tool performs only additive updates.
+   *
+   * (This property is meaningful only when `readOnlyHint == false`)
+   *
+   * Default: true
+   */
+  destructiveHint: z__namespace.boolean().optional(),
+  /**
+   * If true, calling the tool repeatedly with the same arguments
+   * will have no additional effect on the its environment.
+   *
+   * (This property is meaningful only when `readOnlyHint == false`)
+   *
+   * Default: false
+   */
+  idempotentHint: z__namespace.boolean().optional(),
+  /**
+   * If true, this tool may interact with an "open world" of external
+   * entities. If false, the tool's domain of interaction is closed.
+   * For example, the world of a web search tool is open, whereas that
+   * of a memory tool is not.
+   *
+   * Default: true
+   */
+  openWorldHint: z__namespace.boolean().optional()
+});
+var ToolExecutionSchema = z__namespace.object({
+  /**
+   * Indicates the tool's preference for task-augmented execution.
+   * - "required": Clients MUST invoke the tool as a task
+   * - "optional": Clients MAY invoke the tool as a task or normal request
+   * - "forbidden": Clients MUST NOT attempt to invoke the tool as a task
+   *
+   * If not present, defaults to "forbidden".
+   */
+  taskSupport: z__namespace.enum(["required", "optional", "forbidden"]).optional()
+});
+var ToolSchema = z__namespace.object({
+  ...BaseMetadataSchema.shape,
+  ...IconsSchema.shape,
+  /**
+   * A human-readable description of the tool.
+   */
+  description: z__namespace.string().optional(),
+  /**
+   * A JSON Schema 2020-12 object defining the expected parameters for the tool.
+   * Must have type: 'object' at the root level per MCP spec.
+   */
+  inputSchema: z__namespace.object({
+    type: z__namespace.literal("object"),
+    properties: z__namespace.record(z__namespace.string(), AssertObjectSchema).optional(),
+    required: z__namespace.array(z__namespace.string()).optional()
+  }).catchall(z__namespace.unknown()),
+  /**
+   * An optional JSON Schema 2020-12 object defining the structure of the tool's output
+   * returned in the structuredContent field of a CallToolResult.
+   * Must have type: 'object' at the root level per MCP spec.
+   */
+  outputSchema: z__namespace.object({
+    type: z__namespace.literal("object"),
+    properties: z__namespace.record(z__namespace.string(), AssertObjectSchema).optional(),
+    required: z__namespace.array(z__namespace.string()).optional()
+  }).catchall(z__namespace.unknown()).optional(),
+  /**
+   * Optional additional tool information.
+   */
+  annotations: ToolAnnotationsSchema.optional(),
+  /**
+   * Execution-related properties for this tool.
+   */
+  execution: ToolExecutionSchema.optional(),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var ListToolsRequestSchema = PaginatedRequestSchema.extend({
+  method: z__namespace.literal("tools/list")
+});
+var ListToolsResultSchema = PaginatedResultSchema.extend({
+  tools: z__namespace.array(ToolSchema)
+});
+var CallToolResultSchema = ResultSchema.extend({
+  /**
+   * A list of content objects that represent the result of the tool call.
+   *
+   * If the Tool does not define an outputSchema, this field MUST be present in the result.
+   * For backwards compatibility, this field is always present, but it may be empty.
+   */
+  content: z__namespace.array(ContentBlockSchema).default([]),
+  /**
+   * An object containing structured tool output.
+   *
+   * If the Tool defines an outputSchema, this field MUST be present in the result, and contain a JSON object that matches the schema.
+   */
+  structuredContent: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional(),
+  /**
+   * Whether the tool call ended in an error.
+   *
+   * If not set, this is assumed to be false (the call was successful).
+   *
+   * Any errors that originate from the tool SHOULD be reported inside the result
+   * object, with `isError` set to true, _not_ as an MCP protocol-level error
+   * response. Otherwise, the LLM would not be able to see that an error occurred
+   * and self-correct.
+   *
+   * However, any errors in _finding_ the tool, an error indicating that the
+   * server does not support tool calls, or any other exceptional conditions,
+   * should be reported as an MCP error response.
+   */
+  isError: z__namespace.boolean().optional()
+});
+CallToolResultSchema.or(ResultSchema.extend({
+  toolResult: z__namespace.unknown()
+}));
+var CallToolRequestParamsSchema = TaskAugmentedRequestParamsSchema.extend({
+  /**
+   * The name of the tool to call.
+   */
+  name: z__namespace.string(),
+  /**
+   * Arguments to pass to the tool.
+   */
+  arguments: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var CallToolRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("tools/call"),
+  params: CallToolRequestParamsSchema
+});
+var ToolListChangedNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/tools/list_changed"),
+  params: NotificationsParamsSchema.optional()
+});
+var ListChangedOptionsBaseSchema = z__namespace.object({
+  /**
+   * If true, the list will be refreshed automatically when a list changed notification is received.
+   * The callback will be called with the updated list.
+   *
+   * If false, the callback will be called with null items, allowing manual refresh.
+   *
+   * @default true
+   */
+  autoRefresh: z__namespace.boolean().default(true),
+  /**
+   * Debounce time in milliseconds for list changed notification processing.
+   *
+   * Multiple notifications received within this timeframe will only trigger one refresh.
+   * Set to 0 to disable debouncing.
+   *
+   * @default 300
+   */
+  debounceMs: z__namespace.number().int().nonnegative().default(300)
+});
+var LoggingLevelSchema = z__namespace.enum(["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"]);
+var SetLevelRequestParamsSchema = BaseRequestParamsSchema.extend({
+  /**
+   * The level of logging that the client wants to receive from the server. The server should send all logs at this level and higher (i.e., more severe) to the client as notifications/logging/message.
+   */
+  level: LoggingLevelSchema
+});
+var SetLevelRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("logging/setLevel"),
+  params: SetLevelRequestParamsSchema
+});
+var LoggingMessageNotificationParamsSchema = NotificationsParamsSchema.extend({
+  /**
+   * The severity of this log message.
+   */
+  level: LoggingLevelSchema,
+  /**
+   * An optional name of the logger issuing this message.
+   */
+  logger: z__namespace.string().optional(),
+  /**
+   * The data to be logged, such as a string message or an object. Any JSON serializable type is allowed here.
+   */
+  data: z__namespace.unknown()
+});
+var LoggingMessageNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/message"),
+  params: LoggingMessageNotificationParamsSchema
+});
+var ModelHintSchema = z__namespace.object({
+  /**
+   * A hint for a model name.
+   */
+  name: z__namespace.string().optional()
+});
+var ModelPreferencesSchema = z__namespace.object({
+  /**
+   * Optional hints to use for model selection.
+   */
+  hints: z__namespace.array(ModelHintSchema).optional(),
+  /**
+   * How much to prioritize cost when selecting a model.
+   */
+  costPriority: z__namespace.number().min(0).max(1).optional(),
+  /**
+   * How much to prioritize sampling speed (latency) when selecting a model.
+   */
+  speedPriority: z__namespace.number().min(0).max(1).optional(),
+  /**
+   * How much to prioritize intelligence and capabilities when selecting a model.
+   */
+  intelligencePriority: z__namespace.number().min(0).max(1).optional()
+});
+var ToolChoiceSchema = z__namespace.object({
+  /**
+   * Controls when tools are used:
+   * - "auto": Model decides whether to use tools (default)
+   * - "required": Model MUST use at least one tool before completing
+   * - "none": Model MUST NOT use any tools
+   */
+  mode: z__namespace.enum(["auto", "required", "none"]).optional()
+});
+var ToolResultContentSchema = z__namespace.object({
+  type: z__namespace.literal("tool_result"),
+  toolUseId: z__namespace.string().describe("The unique identifier for the corresponding tool call."),
+  content: z__namespace.array(ContentBlockSchema).default([]),
+  structuredContent: z__namespace.object({}).loose().optional(),
+  isError: z__namespace.boolean().optional(),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var SamplingContentSchema = z__namespace.discriminatedUnion("type", [TextContentSchema, ImageContentSchema, AudioContentSchema]);
+var SamplingMessageContentBlockSchema = z__namespace.discriminatedUnion("type", [
+  TextContentSchema,
+  ImageContentSchema,
+  AudioContentSchema,
+  ToolUseContentSchema,
+  ToolResultContentSchema
+]);
+var SamplingMessageSchema = z__namespace.object({
+  role: RoleSchema,
+  content: z__namespace.union([SamplingMessageContentBlockSchema, z__namespace.array(SamplingMessageContentBlockSchema)]),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var CreateMessageRequestParamsSchema = TaskAugmentedRequestParamsSchema.extend({
+  messages: z__namespace.array(SamplingMessageSchema),
+  /**
+   * The server's preferences for which model to select. The client MAY modify or omit this request.
+   */
+  modelPreferences: ModelPreferencesSchema.optional(),
+  /**
+   * An optional system prompt the server wants to use for sampling. The client MAY modify or omit this prompt.
+   */
+  systemPrompt: z__namespace.string().optional(),
+  /**
+   * A request to include context from one or more MCP servers (including the caller), to be attached to the prompt.
+   * The client MAY ignore this request.
+   *
+   * Default is "none". Values "thisServer" and "allServers" are soft-deprecated. Servers SHOULD only use these values if the client
+   * declares ClientCapabilities.sampling.context. These values may be removed in future spec releases.
+   */
+  includeContext: z__namespace.enum(["none", "thisServer", "allServers"]).optional(),
+  temperature: z__namespace.number().optional(),
+  /**
+   * The requested maximum number of tokens to sample (to prevent runaway completions).
+   *
+   * The client MAY choose to sample fewer tokens than the requested maximum.
+   */
+  maxTokens: z__namespace.number().int(),
+  stopSequences: z__namespace.array(z__namespace.string()).optional(),
+  /**
+   * Optional metadata to pass through to the LLM provider. The format of this metadata is provider-specific.
+   */
+  metadata: AssertObjectSchema.optional(),
+  /**
+   * Tools that the model may use during generation.
+   * The client MUST return an error if this field is provided but ClientCapabilities.sampling.tools is not declared.
+   */
+  tools: z__namespace.array(ToolSchema).optional(),
+  /**
+   * Controls how the model uses tools.
+   * The client MUST return an error if this field is provided but ClientCapabilities.sampling.tools is not declared.
+   * Default is `{ mode: "auto" }`.
+   */
+  toolChoice: ToolChoiceSchema.optional()
+});
+var CreateMessageRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("sampling/createMessage"),
+  params: CreateMessageRequestParamsSchema
+});
+var CreateMessageResultSchema = ResultSchema.extend({
+  /**
+   * The name of the model that generated the message.
+   */
+  model: z__namespace.string(),
+  /**
+   * The reason why sampling stopped, if known.
+   *
+   * Standard values:
+   * - "endTurn": Natural end of the assistant's turn
+   * - "stopSequence": A stop sequence was encountered
+   * - "maxTokens": Maximum token limit was reached
+   *
+   * This field is an open string to allow for provider-specific stop reasons.
+   */
+  stopReason: z__namespace.optional(z__namespace.enum(["endTurn", "stopSequence", "maxTokens"]).or(z__namespace.string())),
+  role: RoleSchema,
+  /**
+   * Response content. Single content block (text, image, or audio).
+   */
+  content: SamplingContentSchema
+});
+var CreateMessageResultWithToolsSchema = ResultSchema.extend({
+  /**
+   * The name of the model that generated the message.
+   */
+  model: z__namespace.string(),
+  /**
+   * The reason why sampling stopped, if known.
+   *
+   * Standard values:
+   * - "endTurn": Natural end of the assistant's turn
+   * - "stopSequence": A stop sequence was encountered
+   * - "maxTokens": Maximum token limit was reached
+   * - "toolUse": The model wants to use one or more tools
+   *
+   * This field is an open string to allow for provider-specific stop reasons.
+   */
+  stopReason: z__namespace.optional(z__namespace.enum(["endTurn", "stopSequence", "maxTokens", "toolUse"]).or(z__namespace.string())),
+  role: RoleSchema,
+  /**
+   * Response content. May be a single block or array. May include ToolUseContent if stopReason is "toolUse".
+   */
+  content: z__namespace.union([SamplingMessageContentBlockSchema, z__namespace.array(SamplingMessageContentBlockSchema)])
+});
+var BooleanSchemaSchema = z__namespace.object({
+  type: z__namespace.literal("boolean"),
+  title: z__namespace.string().optional(),
+  description: z__namespace.string().optional(),
+  default: z__namespace.boolean().optional()
+});
+var StringSchemaSchema = z__namespace.object({
+  type: z__namespace.literal("string"),
+  title: z__namespace.string().optional(),
+  description: z__namespace.string().optional(),
+  minLength: z__namespace.number().optional(),
+  maxLength: z__namespace.number().optional(),
+  format: z__namespace.enum(["email", "uri", "date", "date-time"]).optional(),
+  default: z__namespace.string().optional()
+});
+var NumberSchemaSchema = z__namespace.object({
+  type: z__namespace.enum(["number", "integer"]),
+  title: z__namespace.string().optional(),
+  description: z__namespace.string().optional(),
+  minimum: z__namespace.number().optional(),
+  maximum: z__namespace.number().optional(),
+  default: z__namespace.number().optional()
+});
+var UntitledSingleSelectEnumSchemaSchema = z__namespace.object({
+  type: z__namespace.literal("string"),
+  title: z__namespace.string().optional(),
+  description: z__namespace.string().optional(),
+  enum: z__namespace.array(z__namespace.string()),
+  default: z__namespace.string().optional()
+});
+var TitledSingleSelectEnumSchemaSchema = z__namespace.object({
+  type: z__namespace.literal("string"),
+  title: z__namespace.string().optional(),
+  description: z__namespace.string().optional(),
+  oneOf: z__namespace.array(z__namespace.object({
+    const: z__namespace.string(),
+    title: z__namespace.string()
+  })),
+  default: z__namespace.string().optional()
+});
+var LegacyTitledEnumSchemaSchema = z__namespace.object({
+  type: z__namespace.literal("string"),
+  title: z__namespace.string().optional(),
+  description: z__namespace.string().optional(),
+  enum: z__namespace.array(z__namespace.string()),
+  enumNames: z__namespace.array(z__namespace.string()).optional(),
+  default: z__namespace.string().optional()
+});
+var SingleSelectEnumSchemaSchema = z__namespace.union([UntitledSingleSelectEnumSchemaSchema, TitledSingleSelectEnumSchemaSchema]);
+var UntitledMultiSelectEnumSchemaSchema = z__namespace.object({
+  type: z__namespace.literal("array"),
+  title: z__namespace.string().optional(),
+  description: z__namespace.string().optional(),
+  minItems: z__namespace.number().optional(),
+  maxItems: z__namespace.number().optional(),
+  items: z__namespace.object({
+    type: z__namespace.literal("string"),
+    enum: z__namespace.array(z__namespace.string())
+  }),
+  default: z__namespace.array(z__namespace.string()).optional()
+});
+var TitledMultiSelectEnumSchemaSchema = z__namespace.object({
+  type: z__namespace.literal("array"),
+  title: z__namespace.string().optional(),
+  description: z__namespace.string().optional(),
+  minItems: z__namespace.number().optional(),
+  maxItems: z__namespace.number().optional(),
+  items: z__namespace.object({
+    anyOf: z__namespace.array(z__namespace.object({
+      const: z__namespace.string(),
+      title: z__namespace.string()
+    }))
+  }),
+  default: z__namespace.array(z__namespace.string()).optional()
+});
+var MultiSelectEnumSchemaSchema = z__namespace.union([UntitledMultiSelectEnumSchemaSchema, TitledMultiSelectEnumSchemaSchema]);
+var EnumSchemaSchema = z__namespace.union([LegacyTitledEnumSchemaSchema, SingleSelectEnumSchemaSchema, MultiSelectEnumSchemaSchema]);
+var PrimitiveSchemaDefinitionSchema = z__namespace.union([EnumSchemaSchema, BooleanSchemaSchema, StringSchemaSchema, NumberSchemaSchema]);
+var ElicitRequestFormParamsSchema = TaskAugmentedRequestParamsSchema.extend({
+  /**
+   * The elicitation mode.
+   *
+   * Optional for backward compatibility. Clients MUST treat missing mode as "form".
+   */
+  mode: z__namespace.literal("form").optional(),
+  /**
+   * The message to present to the user describing what information is being requested.
+   */
+  message: z__namespace.string(),
+  /**
+   * A restricted subset of JSON Schema.
+   * Only top-level properties are allowed, without nesting.
+   */
+  requestedSchema: z__namespace.object({
+    type: z__namespace.literal("object"),
+    properties: z__namespace.record(z__namespace.string(), PrimitiveSchemaDefinitionSchema),
+    required: z__namespace.array(z__namespace.string()).optional()
+  })
+});
+var ElicitRequestURLParamsSchema = TaskAugmentedRequestParamsSchema.extend({
+  /**
+   * The elicitation mode.
+   */
+  mode: z__namespace.literal("url"),
+  /**
+   * The message to present to the user explaining why the interaction is needed.
+   */
+  message: z__namespace.string(),
+  /**
+   * The ID of the elicitation, which must be unique within the context of the server.
+   * The client MUST treat this ID as an opaque value.
+   */
+  elicitationId: z__namespace.string(),
+  /**
+   * The URL that the user should navigate to.
+   */
+  url: z__namespace.string().url()
+});
+var ElicitRequestParamsSchema = z__namespace.union([ElicitRequestFormParamsSchema, ElicitRequestURLParamsSchema]);
+var ElicitRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("elicitation/create"),
+  params: ElicitRequestParamsSchema
+});
+var ElicitationCompleteNotificationParamsSchema = NotificationsParamsSchema.extend({
+  /**
+   * The ID of the elicitation that completed.
+   */
+  elicitationId: z__namespace.string()
+});
+var ElicitationCompleteNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/elicitation/complete"),
+  params: ElicitationCompleteNotificationParamsSchema
+});
+var ElicitResultSchema = ResultSchema.extend({
+  /**
+   * The user action in response to the elicitation.
+   * - "accept": User submitted the form/confirmed the action
+   * - "decline": User explicitly decline the action
+   * - "cancel": User dismissed without making an explicit choice
+   */
+  action: z__namespace.enum(["accept", "decline", "cancel"]),
+  /**
+   * The submitted form data, only present when action is "accept".
+   * Contains values matching the requested schema.
+   * Per MCP spec, content is "typically omitted" for decline/cancel actions.
+   * We normalize null to undefined for leniency while maintaining type compatibility.
+   */
+  content: z__namespace.preprocess((val) => val === null ? void 0 : val, z__namespace.record(z__namespace.string(), z__namespace.union([z__namespace.string(), z__namespace.number(), z__namespace.boolean(), z__namespace.array(z__namespace.string())])).optional())
+});
+var ResourceTemplateReferenceSchema = z__namespace.object({
+  type: z__namespace.literal("ref/resource"),
+  /**
+   * The URI or URI template of the resource.
+   */
+  uri: z__namespace.string()
+});
+var PromptReferenceSchema = z__namespace.object({
+  type: z__namespace.literal("ref/prompt"),
+  /**
+   * The name of the prompt or prompt template
+   */
+  name: z__namespace.string()
+});
+var CompleteRequestParamsSchema = BaseRequestParamsSchema.extend({
+  ref: z__namespace.union([PromptReferenceSchema, ResourceTemplateReferenceSchema]),
+  /**
+   * The argument's information
+   */
+  argument: z__namespace.object({
+    /**
+     * The name of the argument
+     */
+    name: z__namespace.string(),
+    /**
+     * The value of the argument to use for completion matching.
+     */
+    value: z__namespace.string()
+  }),
+  context: z__namespace.object({
+    /**
+     * Previously-resolved variables in a URI template or prompt.
+     */
+    arguments: z__namespace.record(z__namespace.string(), z__namespace.string()).optional()
+  }).optional()
+});
+var CompleteRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("completion/complete"),
+  params: CompleteRequestParamsSchema
+});
+var CompleteResultSchema = ResultSchema.extend({
+  completion: z__namespace.looseObject({
+    /**
+     * An array of completion values. Must not exceed 100 items.
+     */
+    values: z__namespace.array(z__namespace.string()).max(100),
+    /**
+     * The total number of completion options available. This can exceed the number of values actually sent in the response.
+     */
+    total: z__namespace.optional(z__namespace.number().int()),
+    /**
+     * Indicates whether there are additional completion options beyond those provided in the current response, even if the exact total is unknown.
+     */
+    hasMore: z__namespace.optional(z__namespace.boolean())
+  })
+});
+var RootSchema = z__namespace.object({
+  /**
+   * The URI identifying the root. This *must* start with file:// for now.
+   */
+  uri: z__namespace.string().startsWith("file://"),
+  /**
+   * An optional name for the root.
+   */
+  name: z__namespace.string().optional(),
+  /**
+   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
+   * for notes on _meta usage.
+   */
+  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
+});
+var ListRootsRequestSchema = RequestSchema.extend({
+  method: z__namespace.literal("roots/list"),
+  params: BaseRequestParamsSchema.optional()
+});
+var ListRootsResultSchema = ResultSchema.extend({
+  roots: z__namespace.array(RootSchema)
+});
+var RootsListChangedNotificationSchema = NotificationSchema.extend({
+  method: z__namespace.literal("notifications/roots/list_changed"),
+  params: NotificationsParamsSchema.optional()
+});
+z__namespace.union([
+  PingRequestSchema,
+  InitializeRequestSchema,
+  CompleteRequestSchema,
+  SetLevelRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ReadResourceRequestSchema,
+  SubscribeRequestSchema,
+  UnsubscribeRequestSchema,
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+  GetTaskRequestSchema,
+  GetTaskPayloadRequestSchema,
+  ListTasksRequestSchema,
+  CancelTaskRequestSchema
+]);
+z__namespace.union([
+  CancelledNotificationSchema,
+  ProgressNotificationSchema,
+  InitializedNotificationSchema,
+  RootsListChangedNotificationSchema,
+  TaskStatusNotificationSchema
+]);
+z__namespace.union([
+  EmptyResultSchema,
+  CreateMessageResultSchema,
+  CreateMessageResultWithToolsSchema,
+  ElicitResultSchema,
+  ListRootsResultSchema,
+  GetTaskResultSchema,
+  ListTasksResultSchema,
+  CreateTaskResultSchema
+]);
+z__namespace.union([
+  PingRequestSchema,
+  CreateMessageRequestSchema,
+  ElicitRequestSchema,
+  ListRootsRequestSchema,
+  GetTaskRequestSchema,
+  GetTaskPayloadRequestSchema,
+  ListTasksRequestSchema,
+  CancelTaskRequestSchema
+]);
+z__namespace.union([
+  CancelledNotificationSchema,
+  ProgressNotificationSchema,
+  LoggingMessageNotificationSchema,
+  ResourceUpdatedNotificationSchema,
+  ResourceListChangedNotificationSchema,
+  ToolListChangedNotificationSchema,
+  PromptListChangedNotificationSchema,
+  TaskStatusNotificationSchema,
+  ElicitationCompleteNotificationSchema
+]);
+z__namespace.union([
+  EmptyResultSchema,
+  InitializeResultSchema,
+  CompleteResultSchema,
+  GetPromptResultSchema,
+  ListPromptsResultSchema,
+  ListResourcesResultSchema,
+  ListResourceTemplatesResultSchema,
+  ReadResourceResultSchema,
+  CallToolResultSchema,
+  ListToolsResultSchema,
+  GetTaskResultSchema,
+  ListTasksResultSchema,
+  CreateTaskResultSchema
+]);
+var McpError = class _McpError extends Error {
+  constructor(code, message, data) {
+    super(`MCP error ${code}: ${message}`);
+    this.code = code;
+    this.data = data;
+    this.name = "McpError";
+  }
+  /**
+   * Factory method to create the appropriate error type based on the error code and data
+   */
+  static fromError(code, message, data) {
+    if (code === ErrorCode.UrlElicitationRequired && data) {
+      const errorData = data;
+      if (errorData.elicitations) {
+        return new UrlElicitationRequiredError(errorData.elicitations, message);
+      }
+    }
+    return new _McpError(code, message, data);
+  }
+};
+var UrlElicitationRequiredError = class extends McpError {
+  constructor(elicitations, message = `URL elicitation${elicitations.length > 1 ? "s" : ""} required`) {
+    super(ErrorCode.UrlElicitationRequired, message, {
+      elicitations
+    });
+  }
+  get elicitations() {
+    return this.data?.elicitations ?? [];
+  }
+};
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
+function isTerminal(status) {
+  return status === "completed" || status === "failed" || status === "cancelled";
+}
+
+// node_modules/zod-to-json-schema/dist/esm/parsers/string.js
+new Set("ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvxyz0123456789");
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
+function getMethodLiteral(schema) {
+  const shape = getObjectShape(schema);
+  const methodSchema = shape?.method;
+  if (!methodSchema) {
+    throw new Error("Schema is missing a method literal");
+  }
+  const value = getLiteralValue(methodSchema);
+  if (typeof value !== "string") {
+    throw new Error("Schema method literal must be a string");
+  }
+  return value;
+}
+function parseWithCompat(schema, data) {
+  const result = safeParse2(schema, data);
+  if (!result.success) {
+    throw result.error;
+  }
+  return result.data;
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
+var DEFAULT_REQUEST_TIMEOUT_MSEC = 6e4;
+var Protocol = class {
+  constructor(_options) {
+    this._options = _options;
+    this._requestMessageId = 0;
+    this._requestHandlers = /* @__PURE__ */ new Map();
+    this._requestHandlerAbortControllers = /* @__PURE__ */ new Map();
+    this._notificationHandlers = /* @__PURE__ */ new Map();
+    this._responseHandlers = /* @__PURE__ */ new Map();
+    this._progressHandlers = /* @__PURE__ */ new Map();
+    this._timeoutInfo = /* @__PURE__ */ new Map();
+    this._pendingDebouncedNotifications = /* @__PURE__ */ new Set();
+    this._taskProgressTokens = /* @__PURE__ */ new Map();
+    this._requestResolvers = /* @__PURE__ */ new Map();
+    this.setNotificationHandler(CancelledNotificationSchema, (notification) => {
+      this._oncancel(notification);
+    });
+    this.setNotificationHandler(ProgressNotificationSchema, (notification) => {
+      this._onprogress(notification);
+    });
+    this.setRequestHandler(
+      PingRequestSchema,
+      // Automatic pong by default.
+      (_request) => ({})
+    );
+    this._taskStore = _options?.taskStore;
+    this._taskMessageQueue = _options?.taskMessageQueue;
+    if (this._taskStore) {
+      this.setRequestHandler(GetTaskRequestSchema, async (request, extra) => {
+        const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+        if (!task) {
+          throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
+        }
+        return {
+          ...task
+        };
+      });
+      this.setRequestHandler(GetTaskPayloadRequestSchema, async (request, extra) => {
+        const handleTaskResult = async () => {
+          const taskId = request.params.taskId;
+          if (this._taskMessageQueue) {
+            let queuedMessage;
+            while (queuedMessage = await this._taskMessageQueue.dequeue(taskId, extra.sessionId)) {
+              if (queuedMessage.type === "response" || queuedMessage.type === "error") {
+                const message = queuedMessage.message;
+                const requestId = message.id;
+                const resolver = this._requestResolvers.get(requestId);
+                if (resolver) {
+                  this._requestResolvers.delete(requestId);
+                  if (queuedMessage.type === "response") {
+                    resolver(message);
+                  } else {
+                    const errorMessage = message;
+                    const error = new McpError(errorMessage.error.code, errorMessage.error.message, errorMessage.error.data);
+                    resolver(error);
+                  }
+                } else {
+                  const messageType = queuedMessage.type === "response" ? "Response" : "Error";
+                  this._onerror(new Error(`${messageType} handler missing for request ${requestId}`));
+                }
+                continue;
+              }
+              await this._transport?.send(queuedMessage.message, { relatedRequestId: extra.requestId });
+            }
+          }
+          const task = await this._taskStore.getTask(taskId, extra.sessionId);
+          if (!task) {
+            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${taskId}`);
+          }
+          if (!isTerminal(task.status)) {
+            await this._waitForTaskUpdate(taskId, extra.signal);
+            return await handleTaskResult();
+          }
+          if (isTerminal(task.status)) {
+            const result = await this._taskStore.getTaskResult(taskId, extra.sessionId);
+            this._clearTaskQueue(taskId);
+            return {
+              ...result,
+              _meta: {
+                ...result._meta,
+                [RELATED_TASK_META_KEY]: {
+                  taskId
+                }
+              }
+            };
+          }
+          return await handleTaskResult();
+        };
+        return await handleTaskResult();
+      });
+      this.setRequestHandler(ListTasksRequestSchema, async (request, extra) => {
+        try {
+          const { tasks, nextCursor } = await this._taskStore.listTasks(request.params?.cursor, extra.sessionId);
+          return {
+            tasks,
+            nextCursor,
+            _meta: {}
+          };
+        } catch (error) {
+          throw new McpError(ErrorCode.InvalidParams, `Failed to list tasks: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      });
+      this.setRequestHandler(CancelTaskRequestSchema, async (request, extra) => {
+        try {
+          const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+          if (!task) {
+            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${request.params.taskId}`);
+          }
+          if (isTerminal(task.status)) {
+            throw new McpError(ErrorCode.InvalidParams, `Cannot cancel task in terminal status: ${task.status}`);
+          }
+          await this._taskStore.updateTaskStatus(request.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
+          this._clearTaskQueue(request.params.taskId);
+          const cancelledTask = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
+          if (!cancelledTask) {
+            throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request.params.taskId}`);
+          }
+          return {
+            _meta: {},
+            ...cancelledTask
+          };
+        } catch (error) {
+          if (error instanceof McpError) {
+            throw error;
+          }
+          throw new McpError(ErrorCode.InvalidRequest, `Failed to cancel task: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      });
+    }
+  }
+  async _oncancel(notification) {
+    if (!notification.params.requestId) {
+      return;
+    }
+    const controller = this._requestHandlerAbortControllers.get(notification.params.requestId);
+    controller?.abort(notification.params.reason);
+  }
+  _setupTimeout(messageId, timeout, maxTotalTimeout, onTimeout, resetTimeoutOnProgress = false) {
+    this._timeoutInfo.set(messageId, {
+      timeoutId: setTimeout(onTimeout, timeout),
+      startTime: Date.now(),
+      timeout,
+      maxTotalTimeout,
+      resetTimeoutOnProgress,
+      onTimeout
+    });
+  }
+  _resetTimeout(messageId) {
+    const info = this._timeoutInfo.get(messageId);
+    if (!info)
+      return false;
+    const totalElapsed = Date.now() - info.startTime;
+    if (info.maxTotalTimeout && totalElapsed >= info.maxTotalTimeout) {
+      this._timeoutInfo.delete(messageId);
+      throw McpError.fromError(ErrorCode.RequestTimeout, "Maximum total timeout exceeded", {
+        maxTotalTimeout: info.maxTotalTimeout,
+        totalElapsed
+      });
+    }
+    clearTimeout(info.timeoutId);
+    info.timeoutId = setTimeout(info.onTimeout, info.timeout);
+    return true;
+  }
+  _cleanupTimeout(messageId) {
+    const info = this._timeoutInfo.get(messageId);
+    if (info) {
+      clearTimeout(info.timeoutId);
+      this._timeoutInfo.delete(messageId);
+    }
+  }
+  /**
+   * Attaches to the given transport, starts it, and starts listening for messages.
+   *
+   * The Protocol object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
+   */
+  async connect(transport) {
+    this._transport = transport;
+    const _onclose = this.transport?.onclose;
+    this._transport.onclose = () => {
+      _onclose?.();
+      this._onclose();
+    };
+    const _onerror = this.transport?.onerror;
+    this._transport.onerror = (error) => {
+      _onerror?.(error);
+      this._onerror(error);
+    };
+    const _onmessage = this._transport?.onmessage;
+    this._transport.onmessage = (message, extra) => {
+      _onmessage?.(message, extra);
+      if (isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message)) {
+        this._onresponse(message);
+      } else if (isJSONRPCRequest(message)) {
+        this._onrequest(message, extra);
+      } else if (isJSONRPCNotification(message)) {
+        this._onnotification(message);
+      } else {
+        this._onerror(new Error(`Unknown message type: ${JSON.stringify(message)}`));
+      }
+    };
+    await this._transport.start();
+  }
+  _onclose() {
+    const responseHandlers = this._responseHandlers;
+    this._responseHandlers = /* @__PURE__ */ new Map();
+    this._progressHandlers.clear();
+    this._taskProgressTokens.clear();
+    this._pendingDebouncedNotifications.clear();
+    const error = McpError.fromError(ErrorCode.ConnectionClosed, "Connection closed");
+    this._transport = void 0;
+    this.onclose?.();
+    for (const handler of responseHandlers.values()) {
+      handler(error);
+    }
+  }
+  _onerror(error) {
+    this.onerror?.(error);
+  }
+  _onnotification(notification) {
+    const handler = this._notificationHandlers.get(notification.method) ?? this.fallbackNotificationHandler;
+    if (handler === void 0) {
+      return;
+    }
+    Promise.resolve().then(() => handler(notification)).catch((error) => this._onerror(new Error(`Uncaught error in notification handler: ${error}`)));
+  }
+  _onrequest(request, extra) {
+    const handler = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
+    const capturedTransport = this._transport;
+    const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
+    if (handler === void 0) {
+      const errorResponse = {
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: ErrorCode.MethodNotFound,
+          message: "Method not found"
+        }
+      };
+      if (relatedTaskId && this._taskMessageQueue) {
+        this._enqueueTaskMessage(relatedTaskId, {
+          type: "error",
+          message: errorResponse,
+          timestamp: Date.now()
+        }, capturedTransport?.sessionId).catch((error) => this._onerror(new Error(`Failed to enqueue error response: ${error}`)));
+      } else {
+        capturedTransport?.send(errorResponse).catch((error) => this._onerror(new Error(`Failed to send an error response: ${error}`)));
+      }
+      return;
+    }
+    const abortController = new AbortController();
+    this._requestHandlerAbortControllers.set(request.id, abortController);
+    const taskCreationParams = isTaskAugmentedRequestParams(request.params) ? request.params.task : void 0;
+    const taskStore = this._taskStore ? this.requestTaskStore(request, capturedTransport?.sessionId) : void 0;
+    const fullExtra = {
+      signal: abortController.signal,
+      sessionId: capturedTransport?.sessionId,
+      _meta: request.params?._meta,
+      sendNotification: async (notification) => {
+        const notificationOptions = { relatedRequestId: request.id };
+        if (relatedTaskId) {
+          notificationOptions.relatedTask = { taskId: relatedTaskId };
+        }
+        await this.notification(notification, notificationOptions);
+      },
+      sendRequest: async (r, resultSchema, options) => {
+        const requestOptions = { ...options, relatedRequestId: request.id };
+        if (relatedTaskId && !requestOptions.relatedTask) {
+          requestOptions.relatedTask = { taskId: relatedTaskId };
+        }
+        const effectiveTaskId = requestOptions.relatedTask?.taskId ?? relatedTaskId;
+        if (effectiveTaskId && taskStore) {
+          await taskStore.updateTaskStatus(effectiveTaskId, "input_required");
+        }
+        return await this.request(r, resultSchema, requestOptions);
+      },
+      authInfo: extra?.authInfo,
+      requestId: request.id,
+      requestInfo: extra?.requestInfo,
+      taskId: relatedTaskId,
+      taskStore,
+      taskRequestedTtl: taskCreationParams?.ttl,
+      closeSSEStream: extra?.closeSSEStream,
+      closeStandaloneSSEStream: extra?.closeStandaloneSSEStream
+    };
+    Promise.resolve().then(() => {
+      if (taskCreationParams) {
+        this.assertTaskHandlerCapability(request.method);
+      }
+    }).then(() => handler(request, fullExtra)).then(async (result) => {
+      if (abortController.signal.aborted) {
+        return;
+      }
+      const response = {
+        result,
+        jsonrpc: "2.0",
+        id: request.id
+      };
+      if (relatedTaskId && this._taskMessageQueue) {
+        await this._enqueueTaskMessage(relatedTaskId, {
+          type: "response",
+          message: response,
+          timestamp: Date.now()
+        }, capturedTransport?.sessionId);
+      } else {
+        await capturedTransport?.send(response);
+      }
+    }, async (error) => {
+      if (abortController.signal.aborted) {
+        return;
+      }
+      const errorResponse = {
+        jsonrpc: "2.0",
+        id: request.id,
+        error: {
+          code: Number.isSafeInteger(error["code"]) ? error["code"] : ErrorCode.InternalError,
+          message: error.message ?? "Internal error",
+          ...error["data"] !== void 0 && { data: error["data"] }
+        }
+      };
+      if (relatedTaskId && this._taskMessageQueue) {
+        await this._enqueueTaskMessage(relatedTaskId, {
+          type: "error",
+          message: errorResponse,
+          timestamp: Date.now()
+        }, capturedTransport?.sessionId);
+      } else {
+        await capturedTransport?.send(errorResponse);
+      }
+    }).catch((error) => this._onerror(new Error(`Failed to send response: ${error}`))).finally(() => {
+      this._requestHandlerAbortControllers.delete(request.id);
+    });
+  }
+  _onprogress(notification) {
+    const { progressToken, ...params } = notification.params;
+    const messageId = Number(progressToken);
+    const handler = this._progressHandlers.get(messageId);
+    if (!handler) {
+      this._onerror(new Error(`Received a progress notification for an unknown token: ${JSON.stringify(notification)}`));
+      return;
+    }
+    const responseHandler = this._responseHandlers.get(messageId);
+    const timeoutInfo = this._timeoutInfo.get(messageId);
+    if (timeoutInfo && responseHandler && timeoutInfo.resetTimeoutOnProgress) {
+      try {
+        this._resetTimeout(messageId);
+      } catch (error) {
+        this._responseHandlers.delete(messageId);
+        this._progressHandlers.delete(messageId);
+        this._cleanupTimeout(messageId);
+        responseHandler(error);
+        return;
+      }
+    }
+    handler(params);
+  }
+  _onresponse(response) {
+    const messageId = Number(response.id);
+    const resolver = this._requestResolvers.get(messageId);
+    if (resolver) {
+      this._requestResolvers.delete(messageId);
+      if (isJSONRPCResultResponse(response)) {
+        resolver(response);
+      } else {
+        const error = new McpError(response.error.code, response.error.message, response.error.data);
+        resolver(error);
+      }
+      return;
+    }
+    const handler = this._responseHandlers.get(messageId);
+    if (handler === void 0) {
+      this._onerror(new Error(`Received a response for an unknown message ID: ${JSON.stringify(response)}`));
+      return;
+    }
+    this._responseHandlers.delete(messageId);
+    this._cleanupTimeout(messageId);
+    let isTaskResponse = false;
+    if (isJSONRPCResultResponse(response) && response.result && typeof response.result === "object") {
+      const result = response.result;
+      if (result.task && typeof result.task === "object") {
+        const task = result.task;
+        if (typeof task.taskId === "string") {
+          isTaskResponse = true;
+          this._taskProgressTokens.set(task.taskId, messageId);
+        }
+      }
+    }
+    if (!isTaskResponse) {
+      this._progressHandlers.delete(messageId);
+    }
+    if (isJSONRPCResultResponse(response)) {
+      handler(response);
+    } else {
+      const error = McpError.fromError(response.error.code, response.error.message, response.error.data);
+      handler(error);
+    }
+  }
+  get transport() {
+    return this._transport;
+  }
+  /**
+   * Closes the connection.
+   */
+  async close() {
+    await this._transport?.close();
+  }
+  /**
+   * Sends a request and returns an AsyncGenerator that yields response messages.
+   * The generator is guaranteed to end with either a 'result' or 'error' message.
+   *
+   * @example
+   * ```typescript
+   * const stream = protocol.requestStream(request, resultSchema, options);
+   * for await (const message of stream) {
+   *   switch (message.type) {
+   *     case 'taskCreated':
+   *       console.log('Task created:', message.task.taskId);
+   *       break;
+   *     case 'taskStatus':
+   *       console.log('Task status:', message.task.status);
+   *       break;
+   *     case 'result':
+   *       console.log('Final result:', message.result);
+   *       break;
+   *     case 'error':
+   *       console.error('Error:', message.error);
+   *       break;
+   *   }
+   * }
+   * ```
+   *
+   * @experimental Use `client.experimental.tasks.requestStream()` to access this method.
+   */
+  async *requestStream(request, resultSchema, options) {
+    const { task } = options ?? {};
+    if (!task) {
+      try {
+        const result = await this.request(request, resultSchema, options);
+        yield { type: "result", result };
+      } catch (error) {
+        yield {
+          type: "error",
+          error: error instanceof McpError ? error : new McpError(ErrorCode.InternalError, String(error))
+        };
+      }
+      return;
+    }
+    let taskId;
+    try {
+      const createResult = await this.request(request, CreateTaskResultSchema, options);
+      if (createResult.task) {
+        taskId = createResult.task.taskId;
+        yield { type: "taskCreated", task: createResult.task };
+      } else {
+        throw new McpError(ErrorCode.InternalError, "Task creation did not return a task");
+      }
+      while (true) {
+        const task2 = await this.getTask({ taskId }, options);
+        yield { type: "taskStatus", task: task2 };
+        if (isTerminal(task2.status)) {
+          if (task2.status === "completed") {
+            const result = await this.getTaskResult({ taskId }, resultSchema, options);
+            yield { type: "result", result };
+          } else if (task2.status === "failed") {
+            yield {
+              type: "error",
+              error: new McpError(ErrorCode.InternalError, `Task ${taskId} failed`)
+            };
+          } else if (task2.status === "cancelled") {
+            yield {
+              type: "error",
+              error: new McpError(ErrorCode.InternalError, `Task ${taskId} was cancelled`)
+            };
+          }
+          return;
+        }
+        if (task2.status === "input_required") {
+          const result = await this.getTaskResult({ taskId }, resultSchema, options);
+          yield { type: "result", result };
+          return;
+        }
+        const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
+        await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
+        options?.signal?.throwIfAborted();
+      }
+    } catch (error) {
+      yield {
+        type: "error",
+        error: error instanceof McpError ? error : new McpError(ErrorCode.InternalError, String(error))
+      };
+    }
+  }
+  /**
+   * Sends a request and waits for a response.
+   *
+   * Do not use this method to emit notifications! Use notification() instead.
+   */
+  request(request, resultSchema, options) {
+    const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
+    return new Promise((resolve5, reject) => {
+      const earlyReject = (error) => {
+        reject(error);
+      };
+      if (!this._transport) {
+        earlyReject(new Error("Not connected"));
+        return;
+      }
+      if (this._options?.enforceStrictCapabilities === true) {
+        try {
+          this.assertCapabilityForMethod(request.method);
+          if (task) {
+            this.assertTaskCapability(request.method);
+          }
+        } catch (e) {
+          earlyReject(e);
+          return;
+        }
+      }
+      options?.signal?.throwIfAborted();
+      const messageId = this._requestMessageId++;
+      const jsonrpcRequest = {
+        ...request,
+        jsonrpc: "2.0",
+        id: messageId
+      };
+      if (options?.onprogress) {
+        this._progressHandlers.set(messageId, options.onprogress);
+        jsonrpcRequest.params = {
+          ...request.params,
+          _meta: {
+            ...request.params?._meta || {},
+            progressToken: messageId
+          }
+        };
+      }
+      if (task) {
+        jsonrpcRequest.params = {
+          ...jsonrpcRequest.params,
+          task
+        };
+      }
+      if (relatedTask) {
+        jsonrpcRequest.params = {
+          ...jsonrpcRequest.params,
+          _meta: {
+            ...jsonrpcRequest.params?._meta || {},
+            [RELATED_TASK_META_KEY]: relatedTask
+          }
+        };
+      }
+      const cancel = (reason) => {
+        this._responseHandlers.delete(messageId);
+        this._progressHandlers.delete(messageId);
+        this._cleanupTimeout(messageId);
+        this._transport?.send({
+          jsonrpc: "2.0",
+          method: "notifications/cancelled",
+          params: {
+            requestId: messageId,
+            reason: String(reason)
+          }
+        }, { relatedRequestId, resumptionToken, onresumptiontoken }).catch((error2) => this._onerror(new Error(`Failed to send cancellation: ${error2}`)));
+        const error = reason instanceof McpError ? reason : new McpError(ErrorCode.RequestTimeout, String(reason));
+        reject(error);
+      };
+      this._responseHandlers.set(messageId, (response) => {
+        if (options?.signal?.aborted) {
+          return;
+        }
+        if (response instanceof Error) {
+          return reject(response);
+        }
+        try {
+          const parseResult = safeParse2(resultSchema, response.result);
+          if (!parseResult.success) {
+            reject(parseResult.error);
+          } else {
+            resolve5(parseResult.data);
+          }
+        } catch (error) {
+          reject(error);
+        }
+      });
+      options?.signal?.addEventListener("abort", () => {
+        cancel(options?.signal?.reason);
+      });
+      const timeout = options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MSEC;
+      const timeoutHandler = () => cancel(McpError.fromError(ErrorCode.RequestTimeout, "Request timed out", { timeout }));
+      this._setupTimeout(messageId, timeout, options?.maxTotalTimeout, timeoutHandler, options?.resetTimeoutOnProgress ?? false);
+      const relatedTaskId = relatedTask?.taskId;
+      if (relatedTaskId) {
+        const responseResolver = (response) => {
+          const handler = this._responseHandlers.get(messageId);
+          if (handler) {
+            handler(response);
+          } else {
+            this._onerror(new Error(`Response handler missing for side-channeled request ${messageId}`));
+          }
+        };
+        this._requestResolvers.set(messageId, responseResolver);
+        this._enqueueTaskMessage(relatedTaskId, {
+          type: "request",
+          message: jsonrpcRequest,
+          timestamp: Date.now()
+        }).catch((error) => {
+          this._cleanupTimeout(messageId);
+          reject(error);
+        });
+      } else {
+        this._transport.send(jsonrpcRequest, { relatedRequestId, resumptionToken, onresumptiontoken }).catch((error) => {
+          this._cleanupTimeout(messageId);
+          reject(error);
+        });
+      }
+    });
+  }
+  /**
+   * Gets the current status of a task.
+   *
+   * @experimental Use `client.experimental.tasks.getTask()` to access this method.
+   */
+  async getTask(params, options) {
+    return this.request({ method: "tasks/get", params }, GetTaskResultSchema, options);
+  }
+  /**
+   * Retrieves the result of a completed task.
+   *
+   * @experimental Use `client.experimental.tasks.getTaskResult()` to access this method.
+   */
+  async getTaskResult(params, resultSchema, options) {
+    return this.request({ method: "tasks/result", params }, resultSchema, options);
+  }
+  /**
+   * Lists tasks, optionally starting from a pagination cursor.
+   *
+   * @experimental Use `client.experimental.tasks.listTasks()` to access this method.
+   */
+  async listTasks(params, options) {
+    return this.request({ method: "tasks/list", params }, ListTasksResultSchema, options);
+  }
+  /**
+   * Cancels a specific task.
+   *
+   * @experimental Use `client.experimental.tasks.cancelTask()` to access this method.
+   */
+  async cancelTask(params, options) {
+    return this.request({ method: "tasks/cancel", params }, CancelTaskResultSchema, options);
+  }
+  /**
+   * Emits a notification, which is a one-way message that does not expect a response.
+   */
+  async notification(notification, options) {
+    if (!this._transport) {
+      throw new Error("Not connected");
+    }
+    this.assertNotificationCapability(notification.method);
+    const relatedTaskId = options?.relatedTask?.taskId;
+    if (relatedTaskId) {
+      const jsonrpcNotification2 = {
+        ...notification,
+        jsonrpc: "2.0",
+        params: {
+          ...notification.params,
+          _meta: {
+            ...notification.params?._meta || {},
+            [RELATED_TASK_META_KEY]: options.relatedTask
+          }
+        }
+      };
+      await this._enqueueTaskMessage(relatedTaskId, {
+        type: "notification",
+        message: jsonrpcNotification2,
+        timestamp: Date.now()
+      });
+      return;
+    }
+    const debouncedMethods = this._options?.debouncedNotificationMethods ?? [];
+    const canDebounce = debouncedMethods.includes(notification.method) && !notification.params && !options?.relatedRequestId && !options?.relatedTask;
+    if (canDebounce) {
+      if (this._pendingDebouncedNotifications.has(notification.method)) {
+        return;
+      }
+      this._pendingDebouncedNotifications.add(notification.method);
+      Promise.resolve().then(() => {
+        this._pendingDebouncedNotifications.delete(notification.method);
+        if (!this._transport) {
+          return;
+        }
+        let jsonrpcNotification2 = {
+          ...notification,
+          jsonrpc: "2.0"
+        };
+        if (options?.relatedTask) {
+          jsonrpcNotification2 = {
+            ...jsonrpcNotification2,
+            params: {
+              ...jsonrpcNotification2.params,
+              _meta: {
+                ...jsonrpcNotification2.params?._meta || {},
+                [RELATED_TASK_META_KEY]: options.relatedTask
+              }
+            }
+          };
+        }
+        this._transport?.send(jsonrpcNotification2, options).catch((error) => this._onerror(error));
+      });
+      return;
+    }
+    let jsonrpcNotification = {
+      ...notification,
+      jsonrpc: "2.0"
+    };
+    if (options?.relatedTask) {
+      jsonrpcNotification = {
+        ...jsonrpcNotification,
+        params: {
+          ...jsonrpcNotification.params,
+          _meta: {
+            ...jsonrpcNotification.params?._meta || {},
+            [RELATED_TASK_META_KEY]: options.relatedTask
+          }
+        }
+      };
+    }
+    await this._transport.send(jsonrpcNotification, options);
+  }
+  /**
+   * Registers a handler to invoke when this protocol object receives a request with the given method.
+   *
+   * Note that this will replace any previous request handler for the same method.
+   */
+  setRequestHandler(requestSchema, handler) {
+    const method = getMethodLiteral(requestSchema);
+    this.assertRequestHandlerCapability(method);
+    this._requestHandlers.set(method, (request, extra) => {
+      const parsed = parseWithCompat(requestSchema, request);
+      return Promise.resolve(handler(parsed, extra));
+    });
+  }
+  /**
+   * Removes the request handler for the given method.
+   */
+  removeRequestHandler(method) {
+    this._requestHandlers.delete(method);
+  }
+  /**
+   * Asserts that a request handler has not already been set for the given method, in preparation for a new one being automatically installed.
+   */
+  assertCanSetRequestHandler(method) {
+    if (this._requestHandlers.has(method)) {
+      throw new Error(`A request handler for ${method} already exists, which would be overridden`);
+    }
+  }
+  /**
+   * Registers a handler to invoke when this protocol object receives a notification with the given method.
+   *
+   * Note that this will replace any previous notification handler for the same method.
+   */
+  setNotificationHandler(notificationSchema, handler) {
+    const method = getMethodLiteral(notificationSchema);
+    this._notificationHandlers.set(method, (notification) => {
+      const parsed = parseWithCompat(notificationSchema, notification);
+      return Promise.resolve(handler(parsed));
+    });
+  }
+  /**
+   * Removes the notification handler for the given method.
+   */
+  removeNotificationHandler(method) {
+    this._notificationHandlers.delete(method);
+  }
+  /**
+   * Cleans up the progress handler associated with a task.
+   * This should be called when a task reaches a terminal status.
+   */
+  _cleanupTaskProgressHandler(taskId) {
+    const progressToken = this._taskProgressTokens.get(taskId);
+    if (progressToken !== void 0) {
+      this._progressHandlers.delete(progressToken);
+      this._taskProgressTokens.delete(taskId);
+    }
+  }
+  /**
+   * Enqueues a task-related message for side-channel delivery via tasks/result.
+   * @param taskId The task ID to associate the message with
+   * @param message The message to enqueue
+   * @param sessionId Optional session ID for binding the operation to a specific session
+   * @throws Error if taskStore is not configured or if enqueue fails (e.g., queue overflow)
+   *
+   * Note: If enqueue fails, it's the TaskMessageQueue implementation's responsibility to handle
+   * the error appropriately (e.g., by failing the task, logging, etc.). The Protocol layer
+   * simply propagates the error.
+   */
+  async _enqueueTaskMessage(taskId, message, sessionId) {
+    if (!this._taskStore || !this._taskMessageQueue) {
+      throw new Error("Cannot enqueue task message: taskStore and taskMessageQueue are not configured");
+    }
+    const maxQueueSize = this._options?.maxTaskQueueSize;
+    await this._taskMessageQueue.enqueue(taskId, message, sessionId, maxQueueSize);
+  }
+  /**
+   * Clears the message queue for a task and rejects any pending request resolvers.
+   * @param taskId The task ID whose queue should be cleared
+   * @param sessionId Optional session ID for binding the operation to a specific session
+   */
+  async _clearTaskQueue(taskId, sessionId) {
+    if (this._taskMessageQueue) {
+      const messages = await this._taskMessageQueue.dequeueAll(taskId, sessionId);
+      for (const message of messages) {
+        if (message.type === "request" && isJSONRPCRequest(message.message)) {
+          const requestId = message.message.id;
+          const resolver = this._requestResolvers.get(requestId);
+          if (resolver) {
+            resolver(new McpError(ErrorCode.InternalError, "Task cancelled or completed"));
+            this._requestResolvers.delete(requestId);
+          } else {
+            this._onerror(new Error(`Resolver missing for request ${requestId} during task ${taskId} cleanup`));
+          }
+        }
+      }
+    }
+  }
+  /**
+   * Waits for a task update (new messages or status change) with abort signal support.
+   * Uses polling to check for updates at the task's configured poll interval.
+   * @param taskId The task ID to wait for
+   * @param signal Abort signal to cancel the wait
+   * @returns Promise that resolves when an update occurs or rejects if aborted
+   */
+  async _waitForTaskUpdate(taskId, signal) {
+    let interval = this._options?.defaultTaskPollInterval ?? 1e3;
+    try {
+      const task = await this._taskStore?.getTask(taskId);
+      if (task?.pollInterval) {
+        interval = task.pollInterval;
+      }
+    } catch {
+    }
+    return new Promise((resolve5, reject) => {
+      if (signal.aborted) {
+        reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
+        return;
+      }
+      const timeoutId = setTimeout(resolve5, interval);
+      signal.addEventListener("abort", () => {
+        clearTimeout(timeoutId);
+        reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
+      }, { once: true });
+    });
+  }
+  requestTaskStore(request, sessionId) {
+    const taskStore = this._taskStore;
+    if (!taskStore) {
+      throw new Error("No task store configured");
+    }
+    return {
+      createTask: async (taskParams) => {
+        if (!request) {
+          throw new Error("No request provided");
+        }
+        return await taskStore.createTask(taskParams, request.id, {
+          method: request.method,
+          params: request.params
+        }, sessionId);
+      },
+      getTask: async (taskId) => {
+        const task = await taskStore.getTask(taskId, sessionId);
+        if (!task) {
+          throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
+        }
+        return task;
+      },
+      storeTaskResult: async (taskId, status, result) => {
+        await taskStore.storeTaskResult(taskId, status, result, sessionId);
+        const task = await taskStore.getTask(taskId, sessionId);
+        if (task) {
+          const notification = TaskStatusNotificationSchema.parse({
+            method: "notifications/tasks/status",
+            params: task
+          });
+          await this.notification(notification);
+          if (isTerminal(task.status)) {
+            this._cleanupTaskProgressHandler(taskId);
+          }
+        }
+      },
+      getTaskResult: (taskId) => {
+        return taskStore.getTaskResult(taskId, sessionId);
+      },
+      updateTaskStatus: async (taskId, status, statusMessage) => {
+        const task = await taskStore.getTask(taskId, sessionId);
+        if (!task) {
+          throw new McpError(ErrorCode.InvalidParams, `Task "${taskId}" not found - it may have been cleaned up`);
+        }
+        if (isTerminal(task.status)) {
+          throw new McpError(ErrorCode.InvalidParams, `Cannot update task "${taskId}" from terminal status "${task.status}" to "${status}". Terminal states (completed, failed, cancelled) cannot transition to other states.`);
+        }
+        await taskStore.updateTaskStatus(taskId, status, statusMessage, sessionId);
+        const updatedTask = await taskStore.getTask(taskId, sessionId);
+        if (updatedTask) {
+          const notification = TaskStatusNotificationSchema.parse({
+            method: "notifications/tasks/status",
+            params: updatedTask
+          });
+          await this.notification(notification);
+          if (isTerminal(updatedTask.status)) {
+            this._cleanupTaskProgressHandler(taskId);
+          }
+        }
+      },
+      listTasks: (cursor) => {
+        return taskStore.listTasks(cursor, sessionId);
+      }
+    };
+  }
+};
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+function mergeCapabilities(base, additional) {
+  const result = { ...base };
+  for (const key in additional) {
+    const k = key;
+    const addValue = additional[k];
+    if (addValue === void 0)
+      continue;
+    const baseValue = result[k];
+    if (isPlainObject(baseValue) && isPlainObject(addValue)) {
+      result[k] = { ...baseValue, ...addValue };
+    } else {
+      result[k] = addValue;
+    }
+  }
+  return result;
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
+var import_ajv = __toESM(require_ajv());
+var import_ajv_formats = __toESM(require_dist());
+function createDefaultAjvInstance() {
+  const ajv = new import_ajv.default({
+    strict: false,
+    validateFormats: true,
+    validateSchema: false,
+    allErrors: true
+  });
+  const addFormats = import_ajv_formats.default;
+  addFormats(ajv);
+  return ajv;
+}
+var AjvJsonSchemaValidator = class {
+  /**
+   * Create an AJV validator
+   *
+   * @param ajv - Optional pre-configured AJV instance. If not provided, a default instance will be created.
+   *
+   * @example
+   * ```typescript
+   * // Use default configuration (recommended for most cases)
+   * import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
+   * const validator = new AjvJsonSchemaValidator();
+   *
+   * // Or provide custom AJV instance for advanced configuration
+   * import { Ajv } from 'ajv';
+   * import addFormats from 'ajv-formats';
+   *
+   * const ajv = new Ajv({ validateFormats: true });
+   * addFormats(ajv);
+   * const validator = new AjvJsonSchemaValidator(ajv);
+   * ```
+   */
+  constructor(ajv) {
+    this._ajv = ajv ?? createDefaultAjvInstance();
+  }
+  /**
+   * Create a validator for the given JSON Schema
+   *
+   * The validator is compiled once and can be reused multiple times.
+   * If the schema has an $id, it will be cached by AJV automatically.
+   *
+   * @param schema - Standard JSON Schema object
+   * @returns A validator function that validates input data
+   */
+  getValidator(schema) {
+    const ajvValidator = "$id" in schema && typeof schema.$id === "string" ? this._ajv.getSchema(schema.$id) ?? this._ajv.compile(schema) : this._ajv.compile(schema);
+    return (input) => {
+      const valid = ajvValidator(input);
+      if (valid) {
+        return {
+          valid: true,
+          data: input,
+          errorMessage: void 0
+        };
+      } else {
+        return {
+          valid: false,
+          data: void 0,
+          errorMessage: this._ajv.errorsText(ajvValidator.errors)
+        };
+      }
+    };
+  }
+};
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/client.js
+var ExperimentalClientTasks = class {
+  constructor(_client) {
+    this._client = _client;
+  }
+  /**
+   * Calls a tool and returns an AsyncGenerator that yields response messages.
+   * The generator is guaranteed to end with either a 'result' or 'error' message.
+   *
+   * This method provides streaming access to tool execution, allowing you to
+   * observe intermediate task status updates for long-running tool calls.
+   * Automatically validates structured output if the tool has an outputSchema.
+   *
+   * @example
+   * ```typescript
+   * const stream = client.experimental.tasks.callToolStream({ name: 'myTool', arguments: {} });
+   * for await (const message of stream) {
+   *   switch (message.type) {
+   *     case 'taskCreated':
+   *       console.log('Tool execution started:', message.task.taskId);
+   *       break;
+   *     case 'taskStatus':
+   *       console.log('Tool status:', message.task.status);
+   *       break;
+   *     case 'result':
+   *       console.log('Tool result:', message.result);
+   *       break;
+   *     case 'error':
+   *       console.error('Tool error:', message.error);
+   *       break;
+   *   }
+   * }
+   * ```
+   *
+   * @param params - Tool call parameters (name and arguments)
+   * @param resultSchema - Zod schema for validating the result (defaults to CallToolResultSchema)
+   * @param options - Optional request options (timeout, signal, task creation params, etc.)
+   * @returns AsyncGenerator that yields ResponseMessage objects
+   *
+   * @experimental
+   */
+  async *callToolStream(params, resultSchema = CallToolResultSchema, options) {
+    const clientInternal = this._client;
+    const optionsWithTask = {
+      ...options,
+      // We check if the tool is known to be a task during auto-configuration, but assume
+      // the caller knows what they're doing if they pass this explicitly
+      task: options?.task ?? (clientInternal.isToolTask(params.name) ? {} : void 0)
+    };
+    const stream = clientInternal.requestStream({ method: "tools/call", params }, resultSchema, optionsWithTask);
+    const validator = clientInternal.getToolOutputValidator(params.name);
+    for await (const message of stream) {
+      if (message.type === "result" && validator) {
+        const result = message.result;
+        if (!result.structuredContent && !result.isError) {
+          yield {
+            type: "error",
+            error: new McpError(ErrorCode.InvalidRequest, `Tool ${params.name} has an output schema but did not return structured content`)
+          };
+          return;
+        }
+        if (result.structuredContent) {
+          try {
+            const validationResult = validator(result.structuredContent);
+            if (!validationResult.valid) {
+              yield {
+                type: "error",
+                error: new McpError(ErrorCode.InvalidParams, `Structured content does not match the tool's output schema: ${validationResult.errorMessage}`)
+              };
+              return;
+            }
+          } catch (error) {
+            if (error instanceof McpError) {
+              yield { type: "error", error };
+              return;
+            }
+            yield {
+              type: "error",
+              error: new McpError(ErrorCode.InvalidParams, `Failed to validate structured content: ${error instanceof Error ? error.message : String(error)}`)
+            };
+            return;
+          }
+        }
+      }
+      yield message;
+    }
+  }
+  /**
+   * Gets the current status of a task.
+   *
+   * @param taskId - The task identifier
+   * @param options - Optional request options
+   * @returns The task status
+   *
+   * @experimental
+   */
+  async getTask(taskId, options) {
+    return this._client.getTask({ taskId }, options);
+  }
+  /**
+   * Retrieves the result of a completed task.
+   *
+   * @param taskId - The task identifier
+   * @param resultSchema - Zod schema for validating the result
+   * @param options - Optional request options
+   * @returns The task result
+   *
+   * @experimental
+   */
+  async getTaskResult(taskId, resultSchema, options) {
+    return this._client.getTaskResult({ taskId }, resultSchema, options);
+  }
+  /**
+   * Lists tasks with optional pagination.
+   *
+   * @param cursor - Optional pagination cursor
+   * @param options - Optional request options
+   * @returns List of tasks with optional next cursor
+   *
+   * @experimental
+   */
+  async listTasks(cursor, options) {
+    return this._client.listTasks(cursor ? { cursor } : void 0, options);
+  }
+  /**
+   * Cancels a running task.
+   *
+   * @param taskId - The task identifier
+   * @param options - Optional request options
+   *
+   * @experimental
+   */
+  async cancelTask(taskId, options) {
+    return this._client.cancelTask({ taskId }, options);
+  }
+  /**
+   * Sends a request and returns an AsyncGenerator that yields response messages.
+   * The generator is guaranteed to end with either a 'result' or 'error' message.
+   *
+   * This method provides streaming access to request processing, allowing you to
+   * observe intermediate task status updates for task-augmented requests.
+   *
+   * @param request - The request to send
+   * @param resultSchema - Zod schema for validating the result
+   * @param options - Optional request options (timeout, signal, task creation params, etc.)
+   * @returns AsyncGenerator that yields ResponseMessage objects
+   *
+   * @experimental
+   */
+  requestStream(request, resultSchema, options) {
+    return this._client.requestStream(request, resultSchema, options);
+  }
+};
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
+function assertToolsCallTaskCapability(requests, method, entityName) {
+  if (!requests) {
+    throw new Error(`${entityName} does not support task creation (required for ${method})`);
+  }
+  switch (method) {
+    case "tools/call":
+      if (!requests.tools?.call) {
+        throw new Error(`${entityName} does not support task creation for tools/call (required for ${method})`);
+      }
+      break;
+  }
+}
+function assertClientRequestTaskCapability(requests, method, entityName) {
+  if (!requests) {
+    throw new Error(`${entityName} does not support task creation (required for ${method})`);
+  }
+  switch (method) {
+    case "sampling/createMessage":
+      if (!requests.sampling?.createMessage) {
+        throw new Error(`${entityName} does not support task creation for sampling/createMessage (required for ${method})`);
+      }
+      break;
+    case "elicitation/create":
+      if (!requests.elicitation?.create) {
+        throw new Error(`${entityName} does not support task creation for elicitation/create (required for ${method})`);
+      }
+      break;
+  }
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js
+function applyElicitationDefaults(schema, data) {
+  if (!schema || data === null || typeof data !== "object")
+    return;
+  if (schema.type === "object" && schema.properties && typeof schema.properties === "object") {
+    const obj = data;
+    const props = schema.properties;
+    for (const key of Object.keys(props)) {
+      const propSchema = props[key];
+      if (obj[key] === void 0 && Object.prototype.hasOwnProperty.call(propSchema, "default")) {
+        obj[key] = propSchema.default;
+      }
+      if (obj[key] !== void 0) {
+        applyElicitationDefaults(propSchema, obj[key]);
+      }
+    }
+  }
+  if (Array.isArray(schema.anyOf)) {
+    for (const sub of schema.anyOf) {
+      if (typeof sub !== "boolean") {
+        applyElicitationDefaults(sub, data);
+      }
+    }
+  }
+  if (Array.isArray(schema.oneOf)) {
+    for (const sub of schema.oneOf) {
+      if (typeof sub !== "boolean") {
+        applyElicitationDefaults(sub, data);
+      }
+    }
+  }
+}
+function getSupportedElicitationModes(capabilities) {
+  if (!capabilities) {
+    return { supportsFormMode: false, supportsUrlMode: false };
+  }
+  const hasFormCapability = capabilities.form !== void 0;
+  const hasUrlCapability = capabilities.url !== void 0;
+  const supportsFormMode = hasFormCapability || !hasFormCapability && !hasUrlCapability;
+  const supportsUrlMode = hasUrlCapability;
+  return { supportsFormMode, supportsUrlMode };
+}
+var Client = class extends Protocol {
+  /**
+   * Initializes this client with the given name and version information.
+   */
+  constructor(_clientInfo, options) {
+    super(options);
+    this._clientInfo = _clientInfo;
+    this._cachedToolOutputValidators = /* @__PURE__ */ new Map();
+    this._cachedKnownTaskTools = /* @__PURE__ */ new Set();
+    this._cachedRequiredTaskTools = /* @__PURE__ */ new Set();
+    this._listChangedDebounceTimers = /* @__PURE__ */ new Map();
+    this._capabilities = options?.capabilities ?? {};
+    this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
+    if (options?.listChanged) {
+      this._pendingListChangedConfig = options.listChanged;
+    }
+  }
+  /**
+   * Set up handlers for list changed notifications based on config and server capabilities.
+   * This should only be called after initialization when server capabilities are known.
+   * Handlers are silently skipped if the server doesn't advertise the corresponding listChanged capability.
+   * @internal
+   */
+  _setupListChangedHandlers(config) {
+    if (config.tools && this._serverCapabilities?.tools?.listChanged) {
+      this._setupListChangedHandler("tools", ToolListChangedNotificationSchema, config.tools, async () => {
+        const result = await this.listTools();
+        return result.tools;
+      });
+    }
+    if (config.prompts && this._serverCapabilities?.prompts?.listChanged) {
+      this._setupListChangedHandler("prompts", PromptListChangedNotificationSchema, config.prompts, async () => {
+        const result = await this.listPrompts();
+        return result.prompts;
+      });
+    }
+    if (config.resources && this._serverCapabilities?.resources?.listChanged) {
+      this._setupListChangedHandler("resources", ResourceListChangedNotificationSchema, config.resources, async () => {
+        const result = await this.listResources();
+        return result.resources;
+      });
+    }
+  }
+  /**
+   * Access experimental features.
+   *
+   * WARNING: These APIs are experimental and may change without notice.
+   *
+   * @experimental
+   */
+  get experimental() {
+    if (!this._experimental) {
+      this._experimental = {
+        tasks: new ExperimentalClientTasks(this)
+      };
+    }
+    return this._experimental;
+  }
+  /**
+   * Registers new capabilities. This can only be called before connecting to a transport.
+   *
+   * The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
+   */
+  registerCapabilities(capabilities) {
+    if (this.transport) {
+      throw new Error("Cannot register capabilities after connecting to transport");
+    }
+    this._capabilities = mergeCapabilities(this._capabilities, capabilities);
+  }
+  /**
+   * Override request handler registration to enforce client-side validation for elicitation.
+   */
+  setRequestHandler(requestSchema, handler) {
+    const shape = getObjectShape(requestSchema);
+    const methodSchema = shape?.method;
+    if (!methodSchema) {
+      throw new Error("Schema is missing a method literal");
+    }
+    let methodValue;
+    if (isZ4Schema(methodSchema)) {
+      const v4Schema = methodSchema;
+      const v4Def = v4Schema._zod?.def;
+      methodValue = v4Def?.value ?? v4Schema.value;
+    } else {
+      const v3Schema = methodSchema;
+      const legacyDef = v3Schema._def;
+      methodValue = legacyDef?.value ?? v3Schema.value;
+    }
+    if (typeof methodValue !== "string") {
+      throw new Error("Schema method literal must be a string");
+    }
+    const method = methodValue;
+    if (method === "elicitation/create") {
+      const wrappedHandler = async (request, extra) => {
+        const validatedRequest = safeParse2(ElicitRequestSchema, request);
+        if (!validatedRequest.success) {
+          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation request: ${errorMessage}`);
+        }
+        const { params } = validatedRequest.data;
+        params.mode = params.mode ?? "form";
+        const { supportsFormMode, supportsUrlMode } = getSupportedElicitationModes(this._capabilities.elicitation);
+        if (params.mode === "form" && !supportsFormMode) {
+          throw new McpError(ErrorCode.InvalidParams, "Client does not support form-mode elicitation requests");
+        }
+        if (params.mode === "url" && !supportsUrlMode) {
+          throw new McpError(ErrorCode.InvalidParams, "Client does not support URL-mode elicitation requests");
+        }
+        const result = await Promise.resolve(handler(request, extra));
+        if (params.task) {
+          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
+          if (!taskValidationResult.success) {
+            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+          }
+          return taskValidationResult.data;
+        }
+        const validationResult = safeParse2(ElicitResultSchema, result);
+        if (!validationResult.success) {
+          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation result: ${errorMessage}`);
+        }
+        const validatedResult = validationResult.data;
+        const requestedSchema = params.mode === "form" ? params.requestedSchema : void 0;
+        if (params.mode === "form" && validatedResult.action === "accept" && validatedResult.content && requestedSchema) {
+          if (this._capabilities.elicitation?.form?.applyDefaults) {
+            try {
+              applyElicitationDefaults(requestedSchema, validatedResult.content);
+            } catch {
+            }
+          }
+        }
+        return validatedResult;
+      };
+      return super.setRequestHandler(requestSchema, wrappedHandler);
+    }
+    if (method === "sampling/createMessage") {
+      const wrappedHandler = async (request, extra) => {
+        const validatedRequest = safeParse2(CreateMessageRequestSchema, request);
+        if (!validatedRequest.success) {
+          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid sampling request: ${errorMessage}`);
+        }
+        const { params } = validatedRequest.data;
+        const result = await Promise.resolve(handler(request, extra));
+        if (params.task) {
+          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
+          if (!taskValidationResult.success) {
+            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
+            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
+          }
+          return taskValidationResult.data;
+        }
+        const hasTools = params.tools || params.toolChoice;
+        const resultSchema = hasTools ? CreateMessageResultWithToolsSchema : CreateMessageResultSchema;
+        const validationResult = safeParse2(resultSchema, result);
+        if (!validationResult.success) {
+          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
+          throw new McpError(ErrorCode.InvalidParams, `Invalid sampling result: ${errorMessage}`);
+        }
+        return validationResult.data;
+      };
+      return super.setRequestHandler(requestSchema, wrappedHandler);
+    }
+    return super.setRequestHandler(requestSchema, handler);
+  }
+  assertCapability(capability, method) {
+    if (!this._serverCapabilities?.[capability]) {
+      throw new Error(`Server does not support ${capability} (required for ${method})`);
+    }
+  }
+  async connect(transport, options) {
+    await super.connect(transport);
+    if (transport.sessionId !== void 0) {
+      return;
+    }
+    try {
+      const result = await this.request({
+        method: "initialize",
+        params: {
+          protocolVersion: LATEST_PROTOCOL_VERSION,
+          capabilities: this._capabilities,
+          clientInfo: this._clientInfo
+        }
+      }, InitializeResultSchema, options);
+      if (result === void 0) {
+        throw new Error(`Server sent invalid initialize result: ${result}`);
+      }
+      if (!SUPPORTED_PROTOCOL_VERSIONS.includes(result.protocolVersion)) {
+        throw new Error(`Server's protocol version is not supported: ${result.protocolVersion}`);
+      }
+      this._serverCapabilities = result.capabilities;
+      this._serverVersion = result.serverInfo;
+      if (transport.setProtocolVersion) {
+        transport.setProtocolVersion(result.protocolVersion);
+      }
+      this._instructions = result.instructions;
+      await this.notification({
+        method: "notifications/initialized"
+      });
+      if (this._pendingListChangedConfig) {
+        this._setupListChangedHandlers(this._pendingListChangedConfig);
+        this._pendingListChangedConfig = void 0;
+      }
+    } catch (error) {
+      void this.close();
+      throw error;
+    }
+  }
+  /**
+   * After initialization has completed, this will be populated with the server's reported capabilities.
+   */
+  getServerCapabilities() {
+    return this._serverCapabilities;
+  }
+  /**
+   * After initialization has completed, this will be populated with information about the server's name and version.
+   */
+  getServerVersion() {
+    return this._serverVersion;
+  }
+  /**
+   * After initialization has completed, this may be populated with information about the server's instructions.
+   */
+  getInstructions() {
+    return this._instructions;
+  }
+  assertCapabilityForMethod(method) {
+    switch (method) {
+      case "logging/setLevel":
+        if (!this._serverCapabilities?.logging) {
+          throw new Error(`Server does not support logging (required for ${method})`);
+        }
+        break;
+      case "prompts/get":
+      case "prompts/list":
+        if (!this._serverCapabilities?.prompts) {
+          throw new Error(`Server does not support prompts (required for ${method})`);
+        }
+        break;
+      case "resources/list":
+      case "resources/templates/list":
+      case "resources/read":
+      case "resources/subscribe":
+      case "resources/unsubscribe":
+        if (!this._serverCapabilities?.resources) {
+          throw new Error(`Server does not support resources (required for ${method})`);
+        }
+        if (method === "resources/subscribe" && !this._serverCapabilities.resources.subscribe) {
+          throw new Error(`Server does not support resource subscriptions (required for ${method})`);
+        }
+        break;
+      case "tools/call":
+      case "tools/list":
+        if (!this._serverCapabilities?.tools) {
+          throw new Error(`Server does not support tools (required for ${method})`);
+        }
+        break;
+      case "completion/complete":
+        if (!this._serverCapabilities?.completions) {
+          throw new Error(`Server does not support completions (required for ${method})`);
+        }
+        break;
+    }
+  }
+  assertNotificationCapability(method) {
+    switch (method) {
+      case "notifications/roots/list_changed":
+        if (!this._capabilities.roots?.listChanged) {
+          throw new Error(`Client does not support roots list changed notifications (required for ${method})`);
+        }
+        break;
+    }
+  }
+  assertRequestHandlerCapability(method) {
+    if (!this._capabilities) {
+      return;
+    }
+    switch (method) {
+      case "sampling/createMessage":
+        if (!this._capabilities.sampling) {
+          throw new Error(`Client does not support sampling capability (required for ${method})`);
+        }
+        break;
+      case "elicitation/create":
+        if (!this._capabilities.elicitation) {
+          throw new Error(`Client does not support elicitation capability (required for ${method})`);
+        }
+        break;
+      case "roots/list":
+        if (!this._capabilities.roots) {
+          throw new Error(`Client does not support roots capability (required for ${method})`);
+        }
+        break;
+      case "tasks/get":
+      case "tasks/list":
+      case "tasks/result":
+      case "tasks/cancel":
+        if (!this._capabilities.tasks) {
+          throw new Error(`Client does not support tasks capability (required for ${method})`);
+        }
+        break;
+    }
+  }
+  assertTaskCapability(method) {
+    assertToolsCallTaskCapability(this._serverCapabilities?.tasks?.requests, method, "Server");
+  }
+  assertTaskHandlerCapability(method) {
+    if (!this._capabilities) {
+      return;
+    }
+    assertClientRequestTaskCapability(this._capabilities.tasks?.requests, method, "Client");
+  }
+  async ping(options) {
+    return this.request({ method: "ping" }, EmptyResultSchema, options);
+  }
+  async complete(params, options) {
+    return this.request({ method: "completion/complete", params }, CompleteResultSchema, options);
+  }
+  async setLoggingLevel(level, options) {
+    return this.request({ method: "logging/setLevel", params: { level } }, EmptyResultSchema, options);
+  }
+  async getPrompt(params, options) {
+    return this.request({ method: "prompts/get", params }, GetPromptResultSchema, options);
+  }
+  async listPrompts(params, options) {
+    return this.request({ method: "prompts/list", params }, ListPromptsResultSchema, options);
+  }
+  async listResources(params, options) {
+    return this.request({ method: "resources/list", params }, ListResourcesResultSchema, options);
+  }
+  async listResourceTemplates(params, options) {
+    return this.request({ method: "resources/templates/list", params }, ListResourceTemplatesResultSchema, options);
+  }
+  async readResource(params, options) {
+    return this.request({ method: "resources/read", params }, ReadResourceResultSchema, options);
+  }
+  async subscribeResource(params, options) {
+    return this.request({ method: "resources/subscribe", params }, EmptyResultSchema, options);
+  }
+  async unsubscribeResource(params, options) {
+    return this.request({ method: "resources/unsubscribe", params }, EmptyResultSchema, options);
+  }
+  /**
+   * Calls a tool and waits for the result. Automatically validates structured output if the tool has an outputSchema.
+   *
+   * For task-based execution with streaming behavior, use client.experimental.tasks.callToolStream() instead.
+   */
+  async callTool(params, resultSchema = CallToolResultSchema, options) {
+    if (this.isToolTaskRequired(params.name)) {
+      throw new McpError(ErrorCode.InvalidRequest, `Tool "${params.name}" requires task-based execution. Use client.experimental.tasks.callToolStream() instead.`);
+    }
+    const result = await this.request({ method: "tools/call", params }, resultSchema, options);
+    const validator = this.getToolOutputValidator(params.name);
+    if (validator) {
+      if (!result.structuredContent && !result.isError) {
+        throw new McpError(ErrorCode.InvalidRequest, `Tool ${params.name} has an output schema but did not return structured content`);
+      }
+      if (result.structuredContent) {
+        try {
+          const validationResult = validator(result.structuredContent);
+          if (!validationResult.valid) {
+            throw new McpError(ErrorCode.InvalidParams, `Structured content does not match the tool's output schema: ${validationResult.errorMessage}`);
+          }
+        } catch (error) {
+          if (error instanceof McpError) {
+            throw error;
+          }
+          throw new McpError(ErrorCode.InvalidParams, `Failed to validate structured content: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+    }
+    return result;
+  }
+  isToolTask(toolName) {
+    if (!this._serverCapabilities?.tasks?.requests?.tools?.call) {
+      return false;
+    }
+    return this._cachedKnownTaskTools.has(toolName);
+  }
+  /**
+   * Check if a tool requires task-based execution.
+   * Unlike isToolTask which includes 'optional' tools, this only checks for 'required'.
+   */
+  isToolTaskRequired(toolName) {
+    return this._cachedRequiredTaskTools.has(toolName);
+  }
+  /**
+   * Cache validators for tool output schemas.
+   * Called after listTools() to pre-compile validators for better performance.
+   */
+  cacheToolMetadata(tools) {
+    this._cachedToolOutputValidators.clear();
+    this._cachedKnownTaskTools.clear();
+    this._cachedRequiredTaskTools.clear();
+    for (const tool of tools) {
+      if (tool.outputSchema) {
+        const toolValidator = this._jsonSchemaValidator.getValidator(tool.outputSchema);
+        this._cachedToolOutputValidators.set(tool.name, toolValidator);
+      }
+      const taskSupport = tool.execution?.taskSupport;
+      if (taskSupport === "required" || taskSupport === "optional") {
+        this._cachedKnownTaskTools.add(tool.name);
+      }
+      if (taskSupport === "required") {
+        this._cachedRequiredTaskTools.add(tool.name);
+      }
+    }
+  }
+  /**
+   * Get cached validator for a tool
+   */
+  getToolOutputValidator(toolName) {
+    return this._cachedToolOutputValidators.get(toolName);
+  }
+  async listTools(params, options) {
+    const result = await this.request({ method: "tools/list", params }, ListToolsResultSchema, options);
+    this.cacheToolMetadata(result.tools);
+    return result;
+  }
+  /**
+   * Set up a single list changed handler.
+   * @internal
+   */
+  _setupListChangedHandler(listType, notificationSchema, options, fetcher) {
+    const parseResult = ListChangedOptionsBaseSchema.safeParse(options);
+    if (!parseResult.success) {
+      throw new Error(`Invalid ${listType} listChanged options: ${parseResult.error.message}`);
+    }
+    if (typeof options.onChanged !== "function") {
+      throw new Error(`Invalid ${listType} listChanged options: onChanged must be a function`);
+    }
+    const { autoRefresh, debounceMs } = parseResult.data;
+    const { onChanged } = options;
+    const refresh = async () => {
+      if (!autoRefresh) {
+        onChanged(null, null);
+        return;
+      }
+      try {
+        const items = await fetcher();
+        onChanged(null, items);
+      } catch (e) {
+        const error = e instanceof Error ? e : new Error(String(e));
+        onChanged(error, null);
+      }
+    };
+    const handler = () => {
+      if (debounceMs) {
+        const existingTimer = this._listChangedDebounceTimers.get(listType);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
+        const timer = setTimeout(refresh, debounceMs);
+        this._listChangedDebounceTimers.set(listType, timer);
+      } else {
+        refresh();
+      }
+    };
+    this.setNotificationHandler(notificationSchema, handler);
+  }
+  async sendRootsListChanged() {
+    return this.notification({ method: "notifications/roots/list_changed" });
+  }
+};
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js
+var import_cross_spawn = __toESM(require_cross_spawn());
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
+var ReadBuffer = class {
+  append(chunk) {
+    this._buffer = this._buffer ? Buffer.concat([this._buffer, chunk]) : chunk;
+  }
+  readMessage() {
+    if (!this._buffer) {
+      return null;
+    }
+    const index = this._buffer.indexOf("\n");
+    if (index === -1) {
+      return null;
+    }
+    const line = this._buffer.toString("utf8", 0, index).replace(/\r$/, "");
+    this._buffer = this._buffer.subarray(index + 1);
+    return deserializeMessage(line);
+  }
+  clear() {
+    this._buffer = void 0;
+  }
+};
+function deserializeMessage(line) {
+  return JSONRPCMessageSchema.parse(JSON.parse(line));
+}
+function serializeMessage(message) {
+  return JSON.stringify(message) + "\n";
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js
+var DEFAULT_INHERITED_ENV_VARS = process2__default.default.platform === "win32" ? [
+  "APPDATA",
+  "HOMEDRIVE",
+  "HOMEPATH",
+  "LOCALAPPDATA",
+  "PATH",
+  "PROCESSOR_ARCHITECTURE",
+  "SYSTEMDRIVE",
+  "SYSTEMROOT",
+  "TEMP",
+  "USERNAME",
+  "USERPROFILE",
+  "PROGRAMFILES"
+] : (
+  /* list inspired by the default env inheritance of sudo */
+  ["HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"]
+);
+function getDefaultEnvironment() {
+  const env = {};
+  for (const key of DEFAULT_INHERITED_ENV_VARS) {
+    const value = process2__default.default.env[key];
+    if (value === void 0) {
+      continue;
+    }
+    if (value.startsWith("()")) {
+      continue;
+    }
+    env[key] = value;
+  }
+  return env;
+}
+var StdioClientTransport = class {
+  constructor(server) {
+    this._readBuffer = new ReadBuffer();
+    this._stderrStream = null;
+    this._serverParams = server;
+    if (server.stderr === "pipe" || server.stderr === "overlapped") {
+      this._stderrStream = new stream.PassThrough();
+    }
+  }
+  /**
+   * Starts the server process and prepares to communicate with it.
+   */
+  async start() {
+    if (this._process) {
+      throw new Error("StdioClientTransport already started! If using Client class, note that connect() calls start() automatically.");
+    }
+    return new Promise((resolve5, reject) => {
+      this._process = (0, import_cross_spawn.default)(this._serverParams.command, this._serverParams.args ?? [], {
+        // merge default env with server env because mcp server needs some env vars
+        env: {
+          ...getDefaultEnvironment(),
+          ...this._serverParams.env
+        },
+        stdio: ["pipe", "pipe", this._serverParams.stderr ?? "inherit"],
+        shell: false,
+        windowsHide: process2__default.default.platform === "win32" && isElectron(),
+        cwd: this._serverParams.cwd
+      });
+      this._process.on("error", (error) => {
+        reject(error);
+        this.onerror?.(error);
+      });
+      this._process.on("spawn", () => {
+        resolve5();
+      });
+      this._process.on("close", (_code) => {
+        this._process = void 0;
+        this.onclose?.();
+      });
+      this._process.stdin?.on("error", (error) => {
+        this.onerror?.(error);
+      });
+      this._process.stdout?.on("data", (chunk) => {
+        this._readBuffer.append(chunk);
+        this.processReadBuffer();
+      });
+      this._process.stdout?.on("error", (error) => {
+        this.onerror?.(error);
+      });
+      if (this._stderrStream && this._process.stderr) {
+        this._process.stderr.pipe(this._stderrStream);
+      }
+    });
+  }
+  /**
+   * The stderr stream of the child process, if `StdioServerParameters.stderr` was set to "pipe" or "overlapped".
+   *
+   * If stderr piping was requested, a PassThrough stream is returned _immediately_, allowing callers to
+   * attach listeners before the start method is invoked. This prevents loss of any early
+   * error output emitted by the child process.
+   */
+  get stderr() {
+    if (this._stderrStream) {
+      return this._stderrStream;
+    }
+    return this._process?.stderr ?? null;
+  }
+  /**
+   * The child process pid spawned by this transport.
+   *
+   * This is only available after the transport has been started.
+   */
+  get pid() {
+    return this._process?.pid ?? null;
+  }
+  processReadBuffer() {
+    while (true) {
+      try {
+        const message = this._readBuffer.readMessage();
+        if (message === null) {
+          break;
+        }
+        this.onmessage?.(message);
+      } catch (error) {
+        this.onerror?.(error);
+      }
+    }
+  }
+  async close() {
+    if (this._process) {
+      const processToClose = this._process;
+      this._process = void 0;
+      const closePromise = new Promise((resolve5) => {
+        processToClose.once("close", () => {
+          resolve5();
+        });
+      });
+      try {
+        processToClose.stdin?.end();
+      } catch {
+      }
+      await Promise.race([closePromise, new Promise((resolve5) => setTimeout(resolve5, 2e3).unref())]);
+      if (processToClose.exitCode === null) {
+        try {
+          processToClose.kill("SIGTERM");
+        } catch {
+        }
+        await Promise.race([closePromise, new Promise((resolve5) => setTimeout(resolve5, 2e3).unref())]);
+      }
+      if (processToClose.exitCode === null) {
+        try {
+          processToClose.kill("SIGKILL");
+        } catch {
+        }
+      }
+    }
+    this._readBuffer.clear();
+  }
+  send(message) {
+    return new Promise((resolve5) => {
+      if (!this._process?.stdin) {
+        throw new Error("Not connected");
+      }
+      const json = serializeMessage(message);
+      if (this._process.stdin.write(json)) {
+        resolve5();
+      } else {
+        this._process.stdin.once("drain", resolve5);
+      }
+    });
+  }
+};
+function isElectron() {
+  return "type" in process2__default.default;
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/transport.js
+function normalizeHeaders(headers) {
+  if (!headers)
+    return {};
+  if (headers instanceof Headers) {
+    return Object.fromEntries(headers.entries());
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers);
+  }
+  return { ...headers };
+}
+function createFetchWithInit(baseFetch = fetch, baseInit) {
+  if (!baseInit) {
+    return baseFetch;
+  }
+  return async (url2, init) => {
+    const mergedInit = {
+      ...baseInit,
+      ...init,
+      // Headers need special handling - merge instead of replace
+      headers: init?.headers ? { ...normalizeHeaders(baseInit.headers), ...normalizeHeaders(init.headers) } : baseInit.headers
+    };
+    return baseFetch(url2, mergedInit);
+  };
+}
+
+// node_modules/pkce-challenge/dist/index.node.js
+var crypto4;
+crypto4 = globalThis.crypto?.webcrypto ?? // Node.js [18-16] REPL
+globalThis.crypto ?? // Node.js >18
+import('crypto').then((m) => m.webcrypto);
+async function getRandomValues(size) {
+  return (await crypto4).getRandomValues(new Uint8Array(size));
+}
+async function random(size) {
+  const mask = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
+  const evenDistCutoff = Math.pow(2, 8) - Math.pow(2, 8) % mask.length;
+  let result = "";
+  while (result.length < size) {
+    const randomBytes3 = await getRandomValues(size - result.length);
+    for (const randomByte of randomBytes3) {
+      if (randomByte < evenDistCutoff) {
+        result += mask[randomByte % mask.length];
+      }
+    }
+  }
+  return result;
+}
+async function generateVerifier(length) {
+  return await random(length);
+}
+async function generateChallenge(code_verifier) {
+  const buffer = await (await crypto4).subtle.digest("SHA-256", new TextEncoder().encode(code_verifier));
+  return btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\//g, "_").replace(/\+/g, "-").replace(/=/g, "");
+}
+async function pkceChallenge(length) {
+  if (!length)
+    length = 43;
+  if (length < 43 || length > 128) {
+    throw `Expected a length between 43 and 128. Received ${length}.`;
+  }
+  const verifier = await generateVerifier(length);
+  const challenge = await generateChallenge(verifier);
+  return {
+    code_verifier: verifier,
+    code_challenge: challenge
+  };
+}
+var SafeUrlSchema = z__namespace.url().superRefine((val, ctx) => {
+  if (!URL.canParse(val)) {
+    ctx.addIssue({
+      code: z__namespace.ZodIssueCode.custom,
+      message: "URL must be parseable",
+      fatal: true
+    });
+    return z__namespace.NEVER;
+  }
+}).refine((url2) => {
+  const u = new URL(url2);
+  return u.protocol !== "javascript:" && u.protocol !== "data:" && u.protocol !== "vbscript:";
+}, { message: "URL cannot use javascript:, data:, or vbscript: scheme" });
+var OAuthProtectedResourceMetadataSchema = z__namespace.looseObject({
+  resource: z__namespace.string().url(),
+  authorization_servers: z__namespace.array(SafeUrlSchema).optional(),
+  jwks_uri: z__namespace.string().url().optional(),
+  scopes_supported: z__namespace.array(z__namespace.string()).optional(),
+  bearer_methods_supported: z__namespace.array(z__namespace.string()).optional(),
+  resource_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  resource_name: z__namespace.string().optional(),
+  resource_documentation: z__namespace.string().optional(),
+  resource_policy_uri: z__namespace.string().url().optional(),
+  resource_tos_uri: z__namespace.string().url().optional(),
+  tls_client_certificate_bound_access_tokens: z__namespace.boolean().optional(),
+  authorization_details_types_supported: z__namespace.array(z__namespace.string()).optional(),
+  dpop_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  dpop_bound_access_tokens_required: z__namespace.boolean().optional()
+});
+var OAuthMetadataSchema = z__namespace.looseObject({
+  issuer: z__namespace.string(),
+  authorization_endpoint: SafeUrlSchema,
+  token_endpoint: SafeUrlSchema,
+  registration_endpoint: SafeUrlSchema.optional(),
+  scopes_supported: z__namespace.array(z__namespace.string()).optional(),
+  response_types_supported: z__namespace.array(z__namespace.string()),
+  response_modes_supported: z__namespace.array(z__namespace.string()).optional(),
+  grant_types_supported: z__namespace.array(z__namespace.string()).optional(),
+  token_endpoint_auth_methods_supported: z__namespace.array(z__namespace.string()).optional(),
+  token_endpoint_auth_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  service_documentation: SafeUrlSchema.optional(),
+  revocation_endpoint: SafeUrlSchema.optional(),
+  revocation_endpoint_auth_methods_supported: z__namespace.array(z__namespace.string()).optional(),
+  revocation_endpoint_auth_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  introspection_endpoint: z__namespace.string().optional(),
+  introspection_endpoint_auth_methods_supported: z__namespace.array(z__namespace.string()).optional(),
+  introspection_endpoint_auth_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  code_challenge_methods_supported: z__namespace.array(z__namespace.string()).optional(),
+  client_id_metadata_document_supported: z__namespace.boolean().optional()
+});
+var OpenIdProviderMetadataSchema = z__namespace.looseObject({
+  issuer: z__namespace.string(),
+  authorization_endpoint: SafeUrlSchema,
+  token_endpoint: SafeUrlSchema,
+  userinfo_endpoint: SafeUrlSchema.optional(),
+  jwks_uri: SafeUrlSchema,
+  registration_endpoint: SafeUrlSchema.optional(),
+  scopes_supported: z__namespace.array(z__namespace.string()).optional(),
+  response_types_supported: z__namespace.array(z__namespace.string()),
+  response_modes_supported: z__namespace.array(z__namespace.string()).optional(),
+  grant_types_supported: z__namespace.array(z__namespace.string()).optional(),
+  acr_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  subject_types_supported: z__namespace.array(z__namespace.string()),
+  id_token_signing_alg_values_supported: z__namespace.array(z__namespace.string()),
+  id_token_encryption_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  id_token_encryption_enc_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  userinfo_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  userinfo_encryption_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  userinfo_encryption_enc_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  request_object_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  request_object_encryption_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  request_object_encryption_enc_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  token_endpoint_auth_methods_supported: z__namespace.array(z__namespace.string()).optional(),
+  token_endpoint_auth_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  display_values_supported: z__namespace.array(z__namespace.string()).optional(),
+  claim_types_supported: z__namespace.array(z__namespace.string()).optional(),
+  claims_supported: z__namespace.array(z__namespace.string()).optional(),
+  service_documentation: z__namespace.string().optional(),
+  claims_locales_supported: z__namespace.array(z__namespace.string()).optional(),
+  ui_locales_supported: z__namespace.array(z__namespace.string()).optional(),
+  claims_parameter_supported: z__namespace.boolean().optional(),
+  request_parameter_supported: z__namespace.boolean().optional(),
+  request_uri_parameter_supported: z__namespace.boolean().optional(),
+  require_request_uri_registration: z__namespace.boolean().optional(),
+  op_policy_uri: SafeUrlSchema.optional(),
+  op_tos_uri: SafeUrlSchema.optional(),
+  client_id_metadata_document_supported: z__namespace.boolean().optional()
+});
+var OpenIdProviderDiscoveryMetadataSchema = z__namespace.object({
+  ...OpenIdProviderMetadataSchema.shape,
+  ...OAuthMetadataSchema.pick({
+    code_challenge_methods_supported: true
+  }).shape
+});
+var OAuthTokensSchema = z__namespace.object({
+  access_token: z__namespace.string(),
+  id_token: z__namespace.string().optional(),
+  // Optional for OAuth 2.1, but necessary in OpenID Connect
+  token_type: z__namespace.string(),
+  expires_in: z__namespace.coerce.number().optional(),
+  scope: z__namespace.string().optional(),
+  refresh_token: z__namespace.string().optional()
+}).strip();
+var OAuthErrorResponseSchema = z__namespace.object({
+  error: z__namespace.string(),
+  error_description: z__namespace.string().optional(),
+  error_uri: z__namespace.string().optional()
+});
+var OptionalSafeUrlSchema = SafeUrlSchema.optional().or(z__namespace.literal("").transform(() => void 0));
+var OAuthClientMetadataSchema = z__namespace.object({
+  redirect_uris: z__namespace.array(SafeUrlSchema),
+  token_endpoint_auth_method: z__namespace.string().optional(),
+  grant_types: z__namespace.array(z__namespace.string()).optional(),
+  response_types: z__namespace.array(z__namespace.string()).optional(),
+  client_name: z__namespace.string().optional(),
+  client_uri: SafeUrlSchema.optional(),
+  logo_uri: OptionalSafeUrlSchema,
+  scope: z__namespace.string().optional(),
+  contacts: z__namespace.array(z__namespace.string()).optional(),
+  tos_uri: OptionalSafeUrlSchema,
+  policy_uri: z__namespace.string().optional(),
+  jwks_uri: SafeUrlSchema.optional(),
+  jwks: z__namespace.any().optional(),
+  software_id: z__namespace.string().optional(),
+  software_version: z__namespace.string().optional(),
+  software_statement: z__namespace.string().optional()
+}).strip();
+var OAuthClientInformationSchema = z__namespace.object({
+  client_id: z__namespace.string(),
+  client_secret: z__namespace.string().optional(),
+  client_id_issued_at: z__namespace.number().optional(),
+  client_secret_expires_at: z__namespace.number().optional()
+}).strip();
+var OAuthClientInformationFullSchema = OAuthClientMetadataSchema.merge(OAuthClientInformationSchema);
+z__namespace.object({
+  error: z__namespace.string(),
+  error_description: z__namespace.string().optional()
+}).strip();
+z__namespace.object({
+  token: z__namespace.string(),
+  token_type_hint: z__namespace.string().optional()
+}).strip();
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/auth-utils.js
+function resourceUrlFromServerUrl(url2) {
+  const resourceURL = typeof url2 === "string" ? new URL(url2) : new URL(url2.href);
+  resourceURL.hash = "";
+  return resourceURL;
+}
+function checkResourceAllowed({ requestedResource, configuredResource }) {
+  const requested = typeof requestedResource === "string" ? new URL(requestedResource) : new URL(requestedResource.href);
+  const configured = typeof configuredResource === "string" ? new URL(configuredResource) : new URL(configuredResource.href);
+  if (requested.origin !== configured.origin) {
+    return false;
+  }
+  if (requested.pathname.length < configured.pathname.length) {
+    return false;
+  }
+  const requestedPath = requested.pathname.endsWith("/") ? requested.pathname : requested.pathname + "/";
+  const configuredPath = configured.pathname.endsWith("/") ? configured.pathname : configured.pathname + "/";
+  return requestedPath.startsWith(configuredPath);
+}
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/server/auth/errors.js
+var OAuthError = class extends Error {
+  constructor(message, errorUri) {
+    super(message);
+    this.errorUri = errorUri;
+    this.name = this.constructor.name;
+  }
+  /**
+   * Converts the error to a standard OAuth error response object
+   */
+  toResponseObject() {
+    const response = {
+      error: this.errorCode,
+      error_description: this.message
+    };
+    if (this.errorUri) {
+      response.error_uri = this.errorUri;
+    }
+    return response;
+  }
+  get errorCode() {
+    return this.constructor.errorCode;
+  }
+};
+var InvalidRequestError = class extends OAuthError {
+};
+InvalidRequestError.errorCode = "invalid_request";
+var InvalidClientError = class extends OAuthError {
+};
+InvalidClientError.errorCode = "invalid_client";
+var InvalidGrantError = class extends OAuthError {
+};
+InvalidGrantError.errorCode = "invalid_grant";
+var UnauthorizedClientError = class extends OAuthError {
+};
+UnauthorizedClientError.errorCode = "unauthorized_client";
+var UnsupportedGrantTypeError = class extends OAuthError {
+};
+UnsupportedGrantTypeError.errorCode = "unsupported_grant_type";
+var InvalidScopeError = class extends OAuthError {
+};
+InvalidScopeError.errorCode = "invalid_scope";
+var AccessDeniedError = class extends OAuthError {
+};
+AccessDeniedError.errorCode = "access_denied";
+var ServerError = class extends OAuthError {
+};
+ServerError.errorCode = "server_error";
+var TemporarilyUnavailableError = class extends OAuthError {
+};
+TemporarilyUnavailableError.errorCode = "temporarily_unavailable";
+var UnsupportedResponseTypeError = class extends OAuthError {
+};
+UnsupportedResponseTypeError.errorCode = "unsupported_response_type";
+var UnsupportedTokenTypeError = class extends OAuthError {
+};
+UnsupportedTokenTypeError.errorCode = "unsupported_token_type";
+var InvalidTokenError = class extends OAuthError {
+};
+InvalidTokenError.errorCode = "invalid_token";
+var MethodNotAllowedError = class extends OAuthError {
+};
+MethodNotAllowedError.errorCode = "method_not_allowed";
+var TooManyRequestsError = class extends OAuthError {
+};
+TooManyRequestsError.errorCode = "too_many_requests";
+var InvalidClientMetadataError = class extends OAuthError {
+};
+InvalidClientMetadataError.errorCode = "invalid_client_metadata";
+var InsufficientScopeError = class extends OAuthError {
+};
+InsufficientScopeError.errorCode = "insufficient_scope";
+var InvalidTargetError = class extends OAuthError {
+};
+InvalidTargetError.errorCode = "invalid_target";
+var OAUTH_ERRORS = {
+  [InvalidRequestError.errorCode]: InvalidRequestError,
+  [InvalidClientError.errorCode]: InvalidClientError,
+  [InvalidGrantError.errorCode]: InvalidGrantError,
+  [UnauthorizedClientError.errorCode]: UnauthorizedClientError,
+  [UnsupportedGrantTypeError.errorCode]: UnsupportedGrantTypeError,
+  [InvalidScopeError.errorCode]: InvalidScopeError,
+  [AccessDeniedError.errorCode]: AccessDeniedError,
+  [ServerError.errorCode]: ServerError,
+  [TemporarilyUnavailableError.errorCode]: TemporarilyUnavailableError,
+  [UnsupportedResponseTypeError.errorCode]: UnsupportedResponseTypeError,
+  [UnsupportedTokenTypeError.errorCode]: UnsupportedTokenTypeError,
+  [InvalidTokenError.errorCode]: InvalidTokenError,
+  [MethodNotAllowedError.errorCode]: MethodNotAllowedError,
+  [TooManyRequestsError.errorCode]: TooManyRequestsError,
+  [InvalidClientMetadataError.errorCode]: InvalidClientMetadataError,
+  [InsufficientScopeError.errorCode]: InsufficientScopeError,
+  [InvalidTargetError.errorCode]: InvalidTargetError
+};
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/client/auth.js
+var UnauthorizedError = class extends Error {
+  constructor(message) {
+    super(message ?? "Unauthorized");
+  }
+};
+function isClientAuthMethod(method) {
+  return ["client_secret_basic", "client_secret_post", "none"].includes(method);
+}
+var AUTHORIZATION_CODE_RESPONSE_TYPE = "code";
+var AUTHORIZATION_CODE_CHALLENGE_METHOD = "S256";
+function selectClientAuthMethod(clientInformation, supportedMethods) {
+  const hasClientSecret = clientInformation.client_secret !== void 0;
+  if (supportedMethods.length === 0) {
+    return hasClientSecret ? "client_secret_post" : "none";
+  }
+  if ("token_endpoint_auth_method" in clientInformation && clientInformation.token_endpoint_auth_method && isClientAuthMethod(clientInformation.token_endpoint_auth_method) && supportedMethods.includes(clientInformation.token_endpoint_auth_method)) {
+    return clientInformation.token_endpoint_auth_method;
+  }
+  if (hasClientSecret && supportedMethods.includes("client_secret_basic")) {
+    return "client_secret_basic";
+  }
+  if (hasClientSecret && supportedMethods.includes("client_secret_post")) {
+    return "client_secret_post";
+  }
+  if (supportedMethods.includes("none")) {
+    return "none";
+  }
+  return hasClientSecret ? "client_secret_post" : "none";
+}
+function applyClientAuthentication(method, clientInformation, headers, params) {
+  const { client_id, client_secret } = clientInformation;
+  switch (method) {
+    case "client_secret_basic":
+      applyBasicAuth(client_id, client_secret, headers);
+      return;
+    case "client_secret_post":
+      applyPostAuth(client_id, client_secret, params);
+      return;
+    case "none":
+      applyPublicAuth(client_id, params);
+      return;
+    default:
+      throw new Error(`Unsupported client authentication method: ${method}`);
+  }
+}
+function applyBasicAuth(clientId, clientSecret, headers) {
+  if (!clientSecret) {
+    throw new Error("client_secret_basic authentication requires a client_secret");
+  }
+  const credentials = btoa(`${clientId}:${clientSecret}`);
+  headers.set("Authorization", `Basic ${credentials}`);
+}
+function applyPostAuth(clientId, clientSecret, params) {
+  params.set("client_id", clientId);
+  if (clientSecret) {
+    params.set("client_secret", clientSecret);
+  }
+}
+function applyPublicAuth(clientId, params) {
+  params.set("client_id", clientId);
+}
+async function parseErrorResponse(input) {
+  const statusCode = input instanceof Response ? input.status : void 0;
+  const body = input instanceof Response ? await input.text() : input;
+  try {
+    const result = OAuthErrorResponseSchema.parse(JSON.parse(body));
+    const { error, error_description, error_uri } = result;
+    const errorClass = OAUTH_ERRORS[error] || ServerError;
+    return new errorClass(error_description || "", error_uri);
+  } catch (error) {
+    const errorMessage = `${statusCode ? `HTTP ${statusCode}: ` : ""}Invalid OAuth error response: ${error}. Raw body: ${body}`;
+    return new ServerError(errorMessage);
+  }
+}
+async function auth(provider, options) {
+  try {
+    return await authInternal(provider, options);
+  } catch (error) {
+    if (error instanceof InvalidClientError || error instanceof UnauthorizedClientError) {
+      await provider.invalidateCredentials?.("all");
+      return await authInternal(provider, options);
+    } else if (error instanceof InvalidGrantError) {
+      await provider.invalidateCredentials?.("tokens");
+      return await authInternal(provider, options);
+    }
+    throw error;
+  }
+}
+async function authInternal(provider, { serverUrl, authorizationCode, scope, resourceMetadataUrl, fetchFn }) {
+  let resourceMetadata;
+  let authorizationServerUrl;
+  try {
+    resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, { resourceMetadataUrl }, fetchFn);
+    if (resourceMetadata.authorization_servers && resourceMetadata.authorization_servers.length > 0) {
+      authorizationServerUrl = resourceMetadata.authorization_servers[0];
+    }
+  } catch {
+  }
+  if (!authorizationServerUrl) {
+    authorizationServerUrl = new URL("/", serverUrl);
+  }
+  const resource = await selectResourceURL(serverUrl, provider, resourceMetadata);
+  const metadata = await discoverAuthorizationServerMetadata(authorizationServerUrl, {
+    fetchFn
+  });
+  let clientInformation = await Promise.resolve(provider.clientInformation());
+  if (!clientInformation) {
+    if (authorizationCode !== void 0) {
+      throw new Error("Existing OAuth client information is required when exchanging an authorization code");
+    }
+    const supportsUrlBasedClientId = metadata?.client_id_metadata_document_supported === true;
+    const clientMetadataUrl = provider.clientMetadataUrl;
+    if (clientMetadataUrl && !isHttpsUrl(clientMetadataUrl)) {
+      throw new InvalidClientMetadataError(`clientMetadataUrl must be a valid HTTPS URL with a non-root pathname, got: ${clientMetadataUrl}`);
+    }
+    const shouldUseUrlBasedClientId = supportsUrlBasedClientId && clientMetadataUrl;
+    if (shouldUseUrlBasedClientId) {
+      clientInformation = {
+        client_id: clientMetadataUrl
+      };
+      await provider.saveClientInformation?.(clientInformation);
+    } else {
+      if (!provider.saveClientInformation) {
+        throw new Error("OAuth client information must be saveable for dynamic registration");
+      }
+      const fullInformation = await registerClient(authorizationServerUrl, {
+        metadata,
+        clientMetadata: provider.clientMetadata,
+        fetchFn
+      });
+      await provider.saveClientInformation(fullInformation);
+      clientInformation = fullInformation;
+    }
+  }
+  const nonInteractiveFlow = !provider.redirectUrl;
+  if (authorizationCode !== void 0 || nonInteractiveFlow) {
+    const tokens2 = await fetchToken(provider, authorizationServerUrl, {
+      metadata,
+      resource,
+      authorizationCode,
+      fetchFn
+    });
+    await provider.saveTokens(tokens2);
+    return "AUTHORIZED";
+  }
+  const tokens = await provider.tokens();
+  if (tokens?.refresh_token) {
+    try {
+      const newTokens = await refreshAuthorization(authorizationServerUrl, {
+        metadata,
+        clientInformation,
+        refreshToken: tokens.refresh_token,
+        resource,
+        addClientAuthentication: provider.addClientAuthentication,
+        fetchFn
+      });
+      await provider.saveTokens(newTokens);
+      return "AUTHORIZED";
+    } catch (error) {
+      if (!(error instanceof OAuthError) || error instanceof ServerError) ; else {
+        throw error;
+      }
+    }
+  }
+  const state = provider.state ? await provider.state() : void 0;
+  const { authorizationUrl, codeVerifier } = await startAuthorization(authorizationServerUrl, {
+    metadata,
+    clientInformation,
+    state,
+    redirectUrl: provider.redirectUrl,
+    scope: scope || resourceMetadata?.scopes_supported?.join(" ") || provider.clientMetadata.scope,
+    resource
+  });
+  await provider.saveCodeVerifier(codeVerifier);
+  await provider.redirectToAuthorization(authorizationUrl);
+  return "REDIRECT";
+}
+function isHttpsUrl(value) {
+  if (!value)
+    return false;
+  try {
+    const url2 = new URL(value);
+    return url2.protocol === "https:" && url2.pathname !== "/";
+  } catch {
+    return false;
+  }
+}
+async function selectResourceURL(serverUrl, provider, resourceMetadata) {
+  const defaultResource = resourceUrlFromServerUrl(serverUrl);
+  if (provider.validateResourceURL) {
+    return await provider.validateResourceURL(defaultResource, resourceMetadata?.resource);
+  }
+  if (!resourceMetadata) {
+    return void 0;
+  }
+  if (!checkResourceAllowed({ requestedResource: defaultResource, configuredResource: resourceMetadata.resource })) {
+    throw new Error(`Protected resource ${resourceMetadata.resource} does not match expected ${defaultResource} (or origin)`);
+  }
+  return new URL(resourceMetadata.resource);
+}
+function extractWWWAuthenticateParams(res) {
+  const authenticateHeader = res.headers.get("WWW-Authenticate");
+  if (!authenticateHeader) {
+    return {};
+  }
+  const [type, scheme] = authenticateHeader.split(" ");
+  if (type.toLowerCase() !== "bearer" || !scheme) {
+    return {};
+  }
+  const resourceMetadataMatch = extractFieldFromWwwAuth(res, "resource_metadata") || void 0;
+  let resourceMetadataUrl;
+  if (resourceMetadataMatch) {
+    try {
+      resourceMetadataUrl = new URL(resourceMetadataMatch);
+    } catch {
+    }
+  }
+  const scope = extractFieldFromWwwAuth(res, "scope") || void 0;
+  const error = extractFieldFromWwwAuth(res, "error") || void 0;
+  return {
+    resourceMetadataUrl,
+    scope,
+    error
+  };
+}
+function extractFieldFromWwwAuth(response, fieldName) {
+  const wwwAuthHeader = response.headers.get("WWW-Authenticate");
+  if (!wwwAuthHeader) {
+    return null;
+  }
+  const pattern = new RegExp(`${fieldName}=(?:"([^"]+)"|([^\\s,]+))`);
+  const match = wwwAuthHeader.match(pattern);
+  if (match) {
+    return match[1] || match[2];
+  }
+  return null;
+}
+async function discoverOAuthProtectedResourceMetadata(serverUrl, opts, fetchFn = fetch) {
+  const response = await discoverMetadataWithFallback(serverUrl, "oauth-protected-resource", fetchFn, {
+    protocolVersion: opts?.protocolVersion,
+    metadataUrl: opts?.resourceMetadataUrl
+  });
+  if (!response || response.status === 404) {
+    await response?.body?.cancel();
+    throw new Error(`Resource server does not implement OAuth 2.0 Protected Resource Metadata.`);
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`HTTP ${response.status} trying to load well-known OAuth protected resource metadata.`);
+  }
+  return OAuthProtectedResourceMetadataSchema.parse(await response.json());
+}
+async function fetchWithCorsRetry(url2, headers, fetchFn = fetch) {
+  try {
+    return await fetchFn(url2, { headers });
+  } catch (error) {
+    if (error instanceof TypeError) {
+      if (headers) {
+        return fetchWithCorsRetry(url2, void 0, fetchFn);
+      } else {
+        return void 0;
+      }
+    }
+    throw error;
+  }
+}
+function buildWellKnownPath(wellKnownPrefix, pathname = "", options = {}) {
+  if (pathname.endsWith("/")) {
+    pathname = pathname.slice(0, -1);
+  }
+  return options.prependPathname ? `${pathname}/.well-known/${wellKnownPrefix}` : `/.well-known/${wellKnownPrefix}${pathname}`;
+}
+async function tryMetadataDiscovery(url2, protocolVersion, fetchFn = fetch) {
+  const headers = {
+    "MCP-Protocol-Version": protocolVersion
+  };
+  return await fetchWithCorsRetry(url2, headers, fetchFn);
+}
+function shouldAttemptFallback(response, pathname) {
+  return !response || response.status >= 400 && response.status < 500 && pathname !== "/";
+}
+async function discoverMetadataWithFallback(serverUrl, wellKnownType, fetchFn, opts) {
+  const issuer = new URL(serverUrl);
+  const protocolVersion = opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION;
+  let url2;
+  if (opts?.metadataUrl) {
+    url2 = new URL(opts.metadataUrl);
+  } else {
+    const wellKnownPath = buildWellKnownPath(wellKnownType, issuer.pathname);
+    url2 = new URL(wellKnownPath, opts?.metadataServerUrl ?? issuer);
+    url2.search = issuer.search;
+  }
+  let response = await tryMetadataDiscovery(url2, protocolVersion, fetchFn);
+  if (!opts?.metadataUrl && shouldAttemptFallback(response, issuer.pathname)) {
+    const rootUrl = new URL(`/.well-known/${wellKnownType}`, issuer);
+    response = await tryMetadataDiscovery(rootUrl, protocolVersion, fetchFn);
+  }
+  return response;
+}
+function buildDiscoveryUrls(authorizationServerUrl) {
+  const url2 = typeof authorizationServerUrl === "string" ? new URL(authorizationServerUrl) : authorizationServerUrl;
+  const hasPath = url2.pathname !== "/";
+  const urlsToTry = [];
+  if (!hasPath) {
+    urlsToTry.push({
+      url: new URL("/.well-known/oauth-authorization-server", url2.origin),
+      type: "oauth"
+    });
+    urlsToTry.push({
+      url: new URL(`/.well-known/openid-configuration`, url2.origin),
+      type: "oidc"
+    });
+    return urlsToTry;
+  }
+  let pathname = url2.pathname;
+  if (pathname.endsWith("/")) {
+    pathname = pathname.slice(0, -1);
+  }
+  urlsToTry.push({
+    url: new URL(`/.well-known/oauth-authorization-server${pathname}`, url2.origin),
+    type: "oauth"
+  });
+  urlsToTry.push({
+    url: new URL(`/.well-known/openid-configuration${pathname}`, url2.origin),
+    type: "oidc"
+  });
+  urlsToTry.push({
+    url: new URL(`${pathname}/.well-known/openid-configuration`, url2.origin),
+    type: "oidc"
+  });
+  return urlsToTry;
+}
+async function discoverAuthorizationServerMetadata(authorizationServerUrl, { fetchFn = fetch, protocolVersion = LATEST_PROTOCOL_VERSION } = {}) {
+  const headers = {
+    "MCP-Protocol-Version": protocolVersion,
+    Accept: "application/json"
+  };
+  const urlsToTry = buildDiscoveryUrls(authorizationServerUrl);
+  for (const { url: endpointUrl, type } of urlsToTry) {
+    const response = await fetchWithCorsRetry(endpointUrl, headers, fetchFn);
+    if (!response) {
+      continue;
+    }
+    if (!response.ok) {
+      await response.body?.cancel();
+      if (response.status >= 400 && response.status < 500) {
+        continue;
+      }
+      throw new Error(`HTTP ${response.status} trying to load ${type === "oauth" ? "OAuth" : "OpenID provider"} metadata from ${endpointUrl}`);
+    }
+    if (type === "oauth") {
+      return OAuthMetadataSchema.parse(await response.json());
+    } else {
+      return OpenIdProviderDiscoveryMetadataSchema.parse(await response.json());
+    }
+  }
+  return void 0;
+}
+async function startAuthorization(authorizationServerUrl, { metadata, clientInformation, redirectUrl, scope, state, resource }) {
+  let authorizationUrl;
+  if (metadata) {
+    authorizationUrl = new URL(metadata.authorization_endpoint);
+    if (!metadata.response_types_supported.includes(AUTHORIZATION_CODE_RESPONSE_TYPE)) {
+      throw new Error(`Incompatible auth server: does not support response type ${AUTHORIZATION_CODE_RESPONSE_TYPE}`);
+    }
+    if (metadata.code_challenge_methods_supported && !metadata.code_challenge_methods_supported.includes(AUTHORIZATION_CODE_CHALLENGE_METHOD)) {
+      throw new Error(`Incompatible auth server: does not support code challenge method ${AUTHORIZATION_CODE_CHALLENGE_METHOD}`);
+    }
+  } else {
+    authorizationUrl = new URL("/authorize", authorizationServerUrl);
+  }
+  const challenge = await pkceChallenge();
+  const codeVerifier = challenge.code_verifier;
+  const codeChallenge = challenge.code_challenge;
+  authorizationUrl.searchParams.set("response_type", AUTHORIZATION_CODE_RESPONSE_TYPE);
+  authorizationUrl.searchParams.set("client_id", clientInformation.client_id);
+  authorizationUrl.searchParams.set("code_challenge", codeChallenge);
+  authorizationUrl.searchParams.set("code_challenge_method", AUTHORIZATION_CODE_CHALLENGE_METHOD);
+  authorizationUrl.searchParams.set("redirect_uri", String(redirectUrl));
+  if (state) {
+    authorizationUrl.searchParams.set("state", state);
+  }
+  if (scope) {
+    authorizationUrl.searchParams.set("scope", scope);
+  }
+  if (scope?.includes("offline_access")) {
+    authorizationUrl.searchParams.append("prompt", "consent");
+  }
+  if (resource) {
+    authorizationUrl.searchParams.set("resource", resource.href);
+  }
+  return { authorizationUrl, codeVerifier };
+}
+function prepareAuthorizationCodeRequest(authorizationCode, codeVerifier, redirectUri) {
+  return new URLSearchParams({
+    grant_type: "authorization_code",
+    code: authorizationCode,
+    code_verifier: codeVerifier,
+    redirect_uri: String(redirectUri)
+  });
+}
+async function executeTokenRequest(authorizationServerUrl, { metadata, tokenRequestParams, clientInformation, addClientAuthentication, resource, fetchFn }) {
+  const tokenUrl = metadata?.token_endpoint ? new URL(metadata.token_endpoint) : new URL("/token", authorizationServerUrl);
+  const headers = new Headers({
+    "Content-Type": "application/x-www-form-urlencoded",
+    Accept: "application/json"
+  });
+  if (resource) {
+    tokenRequestParams.set("resource", resource.href);
+  }
+  if (addClientAuthentication) {
+    await addClientAuthentication(headers, tokenRequestParams, tokenUrl, metadata);
+  } else if (clientInformation) {
+    const supportedMethods = metadata?.token_endpoint_auth_methods_supported ?? [];
+    const authMethod = selectClientAuthMethod(clientInformation, supportedMethods);
+    applyClientAuthentication(authMethod, clientInformation, headers, tokenRequestParams);
+  }
+  const response = await (fetchFn ?? fetch)(tokenUrl, {
+    method: "POST",
+    headers,
+    body: tokenRequestParams
+  });
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+  return OAuthTokensSchema.parse(await response.json());
+}
+async function refreshAuthorization(authorizationServerUrl, { metadata, clientInformation, refreshToken, resource, addClientAuthentication, fetchFn }) {
+  const tokenRequestParams = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: refreshToken
+  });
+  const tokens = await executeTokenRequest(authorizationServerUrl, {
+    metadata,
+    tokenRequestParams,
+    clientInformation,
+    addClientAuthentication,
+    resource,
+    fetchFn
+  });
+  return { refresh_token: refreshToken, ...tokens };
+}
+async function fetchToken(provider, authorizationServerUrl, { metadata, resource, authorizationCode, fetchFn } = {}) {
+  const scope = provider.clientMetadata.scope;
+  let tokenRequestParams;
+  if (provider.prepareTokenRequest) {
+    tokenRequestParams = await provider.prepareTokenRequest(scope);
+  }
+  if (!tokenRequestParams) {
+    if (!authorizationCode) {
+      throw new Error("Either provider.prepareTokenRequest() or authorizationCode is required");
+    }
+    if (!provider.redirectUrl) {
+      throw new Error("redirectUrl is required for authorization_code flow");
+    }
+    const codeVerifier = await provider.codeVerifier();
+    tokenRequestParams = prepareAuthorizationCodeRequest(authorizationCode, codeVerifier, provider.redirectUrl);
+  }
+  const clientInformation = await provider.clientInformation();
+  return executeTokenRequest(authorizationServerUrl, {
+    metadata,
+    tokenRequestParams,
+    clientInformation: clientInformation ?? void 0,
+    addClientAuthentication: provider.addClientAuthentication,
+    resource,
+    fetchFn
+  });
+}
+async function registerClient(authorizationServerUrl, { metadata, clientMetadata, fetchFn }) {
+  let registrationUrl;
+  if (metadata) {
+    if (!metadata.registration_endpoint) {
+      throw new Error("Incompatible auth server: does not support dynamic client registration");
+    }
+    registrationUrl = new URL(metadata.registration_endpoint);
+  } else {
+    registrationUrl = new URL("/register", authorizationServerUrl);
+  }
+  const response = await (fetchFn ?? fetch)(registrationUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(clientMetadata)
+  });
+  if (!response.ok) {
+    throw await parseErrorResponse(response);
+  }
+  return OAuthClientInformationFullSchema.parse(await response.json());
+}
+
+// node_modules/eventsource-parser/dist/index.js
+var ParseError = class extends Error {
+  constructor(message, options) {
+    super(message), this.name = "ParseError", this.type = options.type, this.field = options.field, this.value = options.value, this.line = options.line;
+  }
+};
+function noop(_arg) {
+}
+function createParser(callbacks) {
+  if (typeof callbacks == "function")
+    throw new TypeError(
+      "`callbacks` must be an object, got a function instead. Did you mean `{onEvent: fn}`?"
+    );
+  const { onEvent = noop, onError = noop, onRetry = noop, onComment } = callbacks;
+  let incompleteLine = "", isFirstChunk = true, id, data = "", eventType = "";
+  function feed(newChunk) {
+    const chunk = isFirstChunk ? newChunk.replace(/^\xEF\xBB\xBF/, "") : newChunk, [complete, incomplete] = splitLines(`${incompleteLine}${chunk}`);
+    for (const line of complete)
+      parseLine(line);
+    incompleteLine = incomplete, isFirstChunk = false;
+  }
+  function parseLine(line) {
+    if (line === "") {
+      dispatchEvent();
+      return;
+    }
+    if (line.startsWith(":")) {
+      onComment && onComment(line.slice(line.startsWith(": ") ? 2 : 1));
+      return;
+    }
+    const fieldSeparatorIndex = line.indexOf(":");
+    if (fieldSeparatorIndex !== -1) {
+      const field = line.slice(0, fieldSeparatorIndex), offset = line[fieldSeparatorIndex + 1] === " " ? 2 : 1, value = line.slice(fieldSeparatorIndex + offset);
+      processField(field, value, line);
+      return;
+    }
+    processField(line, "", line);
+  }
+  function processField(field, value, line) {
+    switch (field) {
+      case "event":
+        eventType = value;
+        break;
+      case "data":
+        data = `${data}${value}
+`;
+        break;
+      case "id":
+        id = value.includes("\0") ? void 0 : value;
+        break;
+      case "retry":
+        /^\d+$/.test(value) ? onRetry(parseInt(value, 10)) : onError(
+          new ParseError(`Invalid \`retry\` value: "${value}"`, {
+            type: "invalid-retry",
+            value,
+            line
+          })
+        );
+        break;
+      default:
+        onError(
+          new ParseError(
+            `Unknown field "${field.length > 20 ? `${field.slice(0, 20)}\u2026` : field}"`,
+            { type: "unknown-field", field, value, line }
+          )
+        );
+        break;
+    }
+  }
+  function dispatchEvent() {
+    data.length > 0 && onEvent({
+      id,
+      event: eventType || void 0,
+      // If the data buffer's last character is a U+000A LINE FEED (LF) character,
+      // then remove the last character from the data buffer.
+      data: data.endsWith(`
+`) ? data.slice(0, -1) : data
+    }), id = void 0, data = "", eventType = "";
+  }
+  function reset(options = {}) {
+    incompleteLine && options.consume && parseLine(incompleteLine), isFirstChunk = true, id = void 0, data = "", eventType = "", incompleteLine = "";
+  }
+  return { feed, reset };
+}
+function splitLines(chunk) {
+  const lines = [];
+  let incompleteLine = "", searchIndex = 0;
+  for (; searchIndex < chunk.length; ) {
+    const crIndex = chunk.indexOf("\r", searchIndex), lfIndex = chunk.indexOf(`
+`, searchIndex);
+    let lineEnd = -1;
+    if (crIndex !== -1 && lfIndex !== -1 ? lineEnd = Math.min(crIndex, lfIndex) : crIndex !== -1 ? crIndex === chunk.length - 1 ? lineEnd = -1 : lineEnd = crIndex : lfIndex !== -1 && (lineEnd = lfIndex), lineEnd === -1) {
+      incompleteLine = chunk.slice(searchIndex);
+      break;
+    } else {
+      const line = chunk.slice(searchIndex, lineEnd);
+      lines.push(line), searchIndex = lineEnd + 1, chunk[searchIndex - 1] === "\r" && chunk[searchIndex] === `
+` && searchIndex++;
+    }
+  }
+  return [lines, incompleteLine];
+}
+
+// node_modules/eventsource-parser/dist/stream.js
+var EventSourceParserStream = class extends TransformStream {
+  constructor({ onError, onRetry, onComment } = {}) {
+    let parser;
+    super({
+      start(controller) {
+        parser = createParser({
+          onEvent: (event) => {
+            controller.enqueue(event);
+          },
+          onError(error) {
+            onError === "terminate" ? controller.error(error) : typeof onError == "function" && onError(error);
+          },
+          onRetry,
+          onComment
+        });
+      },
+      transform(chunk) {
+        parser.feed(chunk);
+      }
+    });
+  }
+};
+
+// node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js
+var DEFAULT_STREAMABLE_HTTP_RECONNECTION_OPTIONS = {
+  initialReconnectionDelay: 1e3,
+  maxReconnectionDelay: 3e4,
+  reconnectionDelayGrowFactor: 1.5,
+  maxRetries: 2
+};
+var StreamableHTTPError = class extends Error {
+  constructor(code, message) {
+    super(`Streamable HTTP error: ${message}`);
+    this.code = code;
+  }
+};
+var StreamableHTTPClientTransport = class {
+  constructor(url2, opts) {
+    this._hasCompletedAuthFlow = false;
+    this._url = url2;
+    this._resourceMetadataUrl = void 0;
+    this._scope = void 0;
+    this._requestInit = opts?.requestInit;
+    this._authProvider = opts?.authProvider;
+    this._fetch = opts?.fetch;
+    this._fetchWithInit = createFetchWithInit(opts?.fetch, opts?.requestInit);
+    this._sessionId = opts?.sessionId;
+    this._reconnectionOptions = opts?.reconnectionOptions ?? DEFAULT_STREAMABLE_HTTP_RECONNECTION_OPTIONS;
+  }
+  async _authThenStart() {
+    if (!this._authProvider) {
+      throw new UnauthorizedError("No auth provider");
+    }
+    let result;
+    try {
+      result = await auth(this._authProvider, {
+        serverUrl: this._url,
+        resourceMetadataUrl: this._resourceMetadataUrl,
+        scope: this._scope,
+        fetchFn: this._fetchWithInit
+      });
+    } catch (error) {
+      this.onerror?.(error);
+      throw error;
+    }
+    if (result !== "AUTHORIZED") {
+      throw new UnauthorizedError();
+    }
+    return await this._startOrAuthSse({ resumptionToken: void 0 });
+  }
+  async _commonHeaders() {
+    const headers = {};
+    if (this._authProvider) {
+      const tokens = await this._authProvider.tokens();
+      if (tokens) {
+        headers["Authorization"] = `Bearer ${tokens.access_token}`;
+      }
+    }
+    if (this._sessionId) {
+      headers["mcp-session-id"] = this._sessionId;
+    }
+    if (this._protocolVersion) {
+      headers["mcp-protocol-version"] = this._protocolVersion;
+    }
+    const extraHeaders = normalizeHeaders(this._requestInit?.headers);
+    return new Headers({
+      ...headers,
+      ...extraHeaders
+    });
+  }
+  async _startOrAuthSse(options) {
+    const { resumptionToken } = options;
+    try {
+      const headers = await this._commonHeaders();
+      headers.set("Accept", "text/event-stream");
+      if (resumptionToken) {
+        headers.set("last-event-id", resumptionToken);
+      }
+      const response = await (this._fetch ?? fetch)(this._url, {
+        method: "GET",
+        headers,
+        signal: this._abortController?.signal
+      });
+      if (!response.ok) {
+        await response.body?.cancel();
+        if (response.status === 401 && this._authProvider) {
+          return await this._authThenStart();
+        }
+        if (response.status === 405) {
+          return;
+        }
+        throw new StreamableHTTPError(response.status, `Failed to open SSE stream: ${response.statusText}`);
+      }
+      this._handleSseStream(response.body, options, true);
+    } catch (error) {
+      this.onerror?.(error);
+      throw error;
+    }
+  }
+  /**
+   * Calculates the next reconnection delay using  backoff algorithm
+   *
+   * @param attempt Current reconnection attempt count for the specific stream
+   * @returns Time to wait in milliseconds before next reconnection attempt
+   */
+  _getNextReconnectionDelay(attempt) {
+    if (this._serverRetryMs !== void 0) {
+      return this._serverRetryMs;
+    }
+    const initialDelay = this._reconnectionOptions.initialReconnectionDelay;
+    const growFactor = this._reconnectionOptions.reconnectionDelayGrowFactor;
+    const maxDelay = this._reconnectionOptions.maxReconnectionDelay;
+    return Math.min(initialDelay * Math.pow(growFactor, attempt), maxDelay);
+  }
+  /**
+   * Schedule a reconnection attempt using server-provided retry interval or backoff
+   *
+   * @param lastEventId The ID of the last received event for resumability
+   * @param attemptCount Current reconnection attempt count for this specific stream
+   */
+  _scheduleReconnection(options, attemptCount = 0) {
+    const maxRetries = this._reconnectionOptions.maxRetries;
+    if (attemptCount >= maxRetries) {
+      this.onerror?.(new Error(`Maximum reconnection attempts (${maxRetries}) exceeded.`));
+      return;
+    }
+    const delay = this._getNextReconnectionDelay(attemptCount);
+    this._reconnectionTimeout = setTimeout(() => {
+      this._startOrAuthSse(options).catch((error) => {
+        this.onerror?.(new Error(`Failed to reconnect SSE stream: ${error instanceof Error ? error.message : String(error)}`));
+        this._scheduleReconnection(options, attemptCount + 1);
+      });
+    }, delay);
+  }
+  _handleSseStream(stream, options, isReconnectable) {
+    if (!stream) {
+      return;
+    }
+    const { onresumptiontoken, replayMessageId } = options;
+    let lastEventId;
+    let hasPrimingEvent = false;
+    let receivedResponse = false;
+    const processStream = async () => {
+      try {
+        const reader = stream.pipeThrough(new TextDecoderStream()).pipeThrough(new EventSourceParserStream({
+          onRetry: (retryMs) => {
+            this._serverRetryMs = retryMs;
+          }
+        })).getReader();
+        while (true) {
+          const { value: event, done } = await reader.read();
+          if (done) {
+            break;
+          }
+          if (event.id) {
+            lastEventId = event.id;
+            hasPrimingEvent = true;
+            onresumptiontoken?.(event.id);
+          }
+          if (!event.data) {
+            continue;
+          }
+          if (!event.event || event.event === "message") {
+            try {
+              const message = JSONRPCMessageSchema.parse(JSON.parse(event.data));
+              if (isJSONRPCResultResponse(message)) {
+                receivedResponse = true;
+                if (replayMessageId !== void 0) {
+                  message.id = replayMessageId;
+                }
+              }
+              this.onmessage?.(message);
+            } catch (error) {
+              this.onerror?.(error);
+            }
+          }
+        }
+        const canResume = isReconnectable || hasPrimingEvent;
+        const needsReconnect = canResume && !receivedResponse;
+        if (needsReconnect && this._abortController && !this._abortController.signal.aborted) {
+          this._scheduleReconnection({
+            resumptionToken: lastEventId,
+            onresumptiontoken,
+            replayMessageId
+          }, 0);
+        }
+      } catch (error) {
+        this.onerror?.(new Error(`SSE stream disconnected: ${error}`));
+        const canResume = isReconnectable || hasPrimingEvent;
+        const needsReconnect = canResume && !receivedResponse;
+        if (needsReconnect && this._abortController && !this._abortController.signal.aborted) {
+          try {
+            this._scheduleReconnection({
+              resumptionToken: lastEventId,
+              onresumptiontoken,
+              replayMessageId
+            }, 0);
+          } catch (error2) {
+            this.onerror?.(new Error(`Failed to reconnect: ${error2 instanceof Error ? error2.message : String(error2)}`));
+          }
+        }
+      }
+    };
+    processStream();
+  }
+  async start() {
+    if (this._abortController) {
+      throw new Error("StreamableHTTPClientTransport already started! If using Client class, note that connect() calls start() automatically.");
+    }
+    this._abortController = new AbortController();
+  }
+  /**
+   * Call this method after the user has finished authorizing via their user agent and is redirected back to the MCP client application. This will exchange the authorization code for an access token, enabling the next connection attempt to successfully auth.
+   */
+  async finishAuth(authorizationCode) {
+    if (!this._authProvider) {
+      throw new UnauthorizedError("No auth provider");
+    }
+    const result = await auth(this._authProvider, {
+      serverUrl: this._url,
+      authorizationCode,
+      resourceMetadataUrl: this._resourceMetadataUrl,
+      scope: this._scope,
+      fetchFn: this._fetchWithInit
+    });
+    if (result !== "AUTHORIZED") {
+      throw new UnauthorizedError("Failed to authorize");
+    }
+  }
+  async close() {
+    if (this._reconnectionTimeout) {
+      clearTimeout(this._reconnectionTimeout);
+      this._reconnectionTimeout = void 0;
+    }
+    this._abortController?.abort();
+    this.onclose?.();
+  }
+  async send(message, options) {
+    try {
+      const { resumptionToken, onresumptiontoken } = options || {};
+      if (resumptionToken) {
+        this._startOrAuthSse({ resumptionToken, replayMessageId: isJSONRPCRequest(message) ? message.id : void 0 }).catch((err) => this.onerror?.(err));
+        return;
+      }
+      const headers = await this._commonHeaders();
+      headers.set("content-type", "application/json");
+      headers.set("accept", "application/json, text/event-stream");
+      const init = {
+        ...this._requestInit,
+        method: "POST",
+        headers,
+        body: JSON.stringify(message),
+        signal: this._abortController?.signal
+      };
+      const response = await (this._fetch ?? fetch)(this._url, init);
+      const sessionId = response.headers.get("mcp-session-id");
+      if (sessionId) {
+        this._sessionId = sessionId;
+      }
+      if (!response.ok) {
+        const text = await response.text().catch(() => null);
+        if (response.status === 401 && this._authProvider) {
+          if (this._hasCompletedAuthFlow) {
+            throw new StreamableHTTPError(401, "Server returned 401 after successful authentication");
+          }
+          const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
+          this._resourceMetadataUrl = resourceMetadataUrl;
+          this._scope = scope;
+          const result = await auth(this._authProvider, {
+            serverUrl: this._url,
+            resourceMetadataUrl: this._resourceMetadataUrl,
+            scope: this._scope,
+            fetchFn: this._fetchWithInit
+          });
+          if (result !== "AUTHORIZED") {
+            throw new UnauthorizedError();
+          }
+          this._hasCompletedAuthFlow = true;
+          return this.send(message);
+        }
+        if (response.status === 403 && this._authProvider) {
+          const { resourceMetadataUrl, scope, error } = extractWWWAuthenticateParams(response);
+          if (error === "insufficient_scope") {
+            const wwwAuthHeader = response.headers.get("WWW-Authenticate");
+            if (this._lastUpscopingHeader === wwwAuthHeader) {
+              throw new StreamableHTTPError(403, "Server returned 403 after trying upscoping");
+            }
+            if (scope) {
+              this._scope = scope;
+            }
+            if (resourceMetadataUrl) {
+              this._resourceMetadataUrl = resourceMetadataUrl;
+            }
+            this._lastUpscopingHeader = wwwAuthHeader ?? void 0;
+            const result = await auth(this._authProvider, {
+              serverUrl: this._url,
+              resourceMetadataUrl: this._resourceMetadataUrl,
+              scope: this._scope,
+              fetchFn: this._fetch
+            });
+            if (result !== "AUTHORIZED") {
+              throw new UnauthorizedError();
+            }
+            return this.send(message);
+          }
+        }
+        throw new StreamableHTTPError(response.status, `Error POSTing to endpoint: ${text}`);
+      }
+      this._hasCompletedAuthFlow = false;
+      this._lastUpscopingHeader = void 0;
+      if (response.status === 202) {
+        await response.body?.cancel();
+        if (isInitializedNotification(message)) {
+          this._startOrAuthSse({ resumptionToken: void 0 }).catch((err) => this.onerror?.(err));
+        }
+        return;
+      }
+      const messages = Array.isArray(message) ? message : [message];
+      const hasRequests = messages.filter((msg) => "method" in msg && "id" in msg && msg.id !== void 0).length > 0;
+      const contentType = response.headers.get("content-type");
+      if (hasRequests) {
+        if (contentType?.includes("text/event-stream")) {
+          this._handleSseStream(response.body, { onresumptiontoken }, false);
+        } else if (contentType?.includes("application/json")) {
+          const data = await response.json();
+          const responseMessages = Array.isArray(data) ? data.map((msg) => JSONRPCMessageSchema.parse(msg)) : [JSONRPCMessageSchema.parse(data)];
+          for (const msg of responseMessages) {
+            this.onmessage?.(msg);
+          }
+        } else {
+          await response.body?.cancel();
+          throw new StreamableHTTPError(-1, `Unexpected content type: ${contentType}`);
+        }
+      } else {
+        await response.body?.cancel();
+      }
+    } catch (error) {
+      this.onerror?.(error);
+      throw error;
+    }
+  }
+  get sessionId() {
+    return this._sessionId;
+  }
+  /**
+   * Terminates the current session by sending a DELETE request to the server.
+   *
+   * Clients that no longer need a particular session
+   * (e.g., because the user is leaving the client application) SHOULD send an
+   * HTTP DELETE to the MCP endpoint with the Mcp-Session-Id header to explicitly
+   * terminate the session.
+   *
+   * The server MAY respond with HTTP 405 Method Not Allowed, indicating that
+   * the server does not allow clients to terminate sessions.
+   */
+  async terminateSession() {
+    if (!this._sessionId) {
+      return;
+    }
+    try {
+      const headers = await this._commonHeaders();
+      const init = {
+        ...this._requestInit,
+        method: "DELETE",
+        headers,
+        signal: this._abortController?.signal
+      };
+      const response = await (this._fetch ?? fetch)(this._url, init);
+      await response.body?.cancel();
+      if (!response.ok && response.status !== 405) {
+        throw new StreamableHTTPError(response.status, `Failed to terminate session: ${response.statusText}`);
+      }
+      this._sessionId = void 0;
+    } catch (error) {
+      this.onerror?.(error);
+      throw error;
+    }
+  }
+  setProtocolVersion(version) {
+    this._protocolVersion = version;
+  }
+  get protocolVersion() {
+    return this._protocolVersion;
+  }
+  /**
+   * Resume an SSE stream from a previous event ID.
+   * Opens a GET SSE connection with Last-Event-ID header to replay missed events.
+   *
+   * @param lastEventId The event ID to resume from
+   * @param options Optional callback to receive new resumption tokens
+   */
+  async resumeStream(lastEventId, options) {
+    await this._startOrAuthSse({
+      resumptionToken: lastEventId,
+      onresumptiontoken: options?.onresumptiontoken
+    });
+  }
+};
+
+// src/domain/errors/MCPError.ts
+var MCPError = class extends Error {
+  constructor(message, serverName, cause) {
+    super(message);
+    this.serverName = serverName;
+    this.cause = cause;
+    this.name = "MCPError";
+    if (cause) {
+      this.stack = `${this.stack}
+Caused by: ${cause.stack}`;
+    }
+  }
+};
+var MCPConnectionError = class extends MCPError {
+  constructor(message, serverName, cause) {
+    super(message, serverName, cause);
+    this.name = "MCPConnectionError";
+  }
+};
+var MCPTimeoutError = class extends MCPError {
+  constructor(message, timeoutMs, serverName, cause) {
+    super(message, serverName, cause);
+    this.timeoutMs = timeoutMs;
+    this.name = "MCPTimeoutError";
+  }
+};
+var MCPProtocolError = class extends MCPError {
+  constructor(message, serverName, cause) {
+    super(message, serverName, cause);
+    this.name = "MCPProtocolError";
+  }
+};
+var MCPToolError = class extends MCPError {
+  constructor(message, toolName, serverName, cause) {
+    super(message, serverName, cause);
+    this.toolName = toolName;
+    this.name = "MCPToolError";
+  }
+};
+var MCPResourceError = class extends MCPError {
+  constructor(message, resourceUri, serverName, cause) {
+    super(message, serverName, cause);
+    this.resourceUri = resourceUri;
+    this.name = "MCPResourceError";
+  }
+};
+
+// src/domain/entities/MCPConfig.ts
+function applyServerDefaults(config, defaults) {
+  return {
+    name: config.name,
+    displayName: config.displayName,
+    description: config.description,
+    transport: config.transport,
+    transportConfig: config.transportConfig,
+    autoConnect: config.autoConnect ?? defaults?.autoConnect ?? false,
+    autoReconnect: config.autoReconnect ?? defaults?.autoReconnect ?? true,
+    reconnectIntervalMs: config.reconnectIntervalMs ?? defaults?.reconnectIntervalMs ?? 5e3,
+    maxReconnectAttempts: config.maxReconnectAttempts ?? defaults?.maxReconnectAttempts ?? 10,
+    requestTimeoutMs: config.requestTimeoutMs ?? defaults?.requestTimeoutMs ?? 3e4,
+    healthCheckIntervalMs: config.healthCheckIntervalMs ?? defaults?.healthCheckIntervalMs ?? 6e4,
+    toolNamespace: config.toolNamespace ?? `mcp:${config.name}`,
+    permissions: config.permissions
+  };
+}
+
+// src/infrastructure/mcp/adapters/MCPToolAdapter.ts
+function createMCPToolAdapter(tool, client, namespace) {
+  const fullName = `${namespace}:${tool.name}`;
+  return {
+    definition: {
+      type: "function",
+      function: {
+        name: fullName,
+        description: tool.description || `MCP tool '${tool.name}' from server '${client.name}'`,
+        parameters: tool.inputSchema
+      }
+    },
+    async execute(args) {
+      try {
+        const result = await client.callTool(tool.name, args);
+        if (result.content?.length === 1 && result.content[0]?.type === "text") {
+          return result.content[0].text ?? "";
+        }
+        return result;
+      } catch (error) {
+        if (error instanceof MCPToolError) {
+          throw error;
+        }
+        throw new MCPToolError(
+          `Failed to execute MCP tool '${tool.name}'`,
+          tool.name,
+          client.name,
+          error
+        );
+      }
+    },
+    describeCall(args) {
+      const commonKeys = [
+        "file_path",
+        "path",
+        "uri",
+        "url",
+        "query",
+        "message",
+        "name",
+        "id",
+        "key"
+      ];
+      for (const key of commonKeys) {
+        if (key in args && typeof args[key] === "string") {
+          return args[key];
+        }
+      }
+      for (const value of Object.values(args)) {
+        if (typeof value === "string" && value.length > 0) {
+          return value.length > 60 ? `${value.substring(0, 60)}...` : value;
+        }
+      }
+      return tool.name;
+    }
+  };
+}
+function createMCPToolAdapters(tools, client, namespace) {
+  return tools.map((tool) => createMCPToolAdapter(tool, client, namespace));
+}
+
+// src/core/mcp/MCPClient.ts
+var MCPClient = class extends eventemitter3.EventEmitter {
+  name;
+  config;
+  client = null;
+  transport = null;
+  _state = "disconnected";
+  _capabilities;
+  _tools = [];
+  reconnectAttempts = 0;
+  reconnectTimer;
+  healthCheckTimer;
+  subscribedResources = /* @__PURE__ */ new Set();
+  registeredToolNames = /* @__PURE__ */ new Set();
+  _isDestroyed = false;
+  constructor(config, defaults) {
+    super();
+    this.name = config.name;
+    this.config = applyServerDefaults(config, defaults);
+  }
+  // Getters
+  get state() {
+    return this._state;
+  }
+  get capabilities() {
+    return this._capabilities;
+  }
+  get tools() {
+    return this._tools;
+  }
+  // Lifecycle methods
+  async connect() {
+    if (this._state === "connected" || this._state === "connecting") {
+      return;
+    }
+    this._state = "connecting";
+    this.emit("connecting");
+    try {
+      this.transport = this.createTransport();
+      this.client = new Client(
+        {
+          name: "@oneringai/agents",
+          version: "0.2.0"
+        },
+        {
+          capabilities: {
+            // Request all capabilities (empty object means we support all)
+          }
+        }
+      );
+      await this.client.connect(this.transport);
+      this._capabilities = {};
+      this._state = "connected";
+      this.reconnectAttempts = 0;
+      await this.refreshTools();
+      this.emit("connected");
+      this.startHealthCheck();
+    } catch (error) {
+      this.stopHealthCheck();
+      if (this.client) {
+        try {
+          await this.client.close();
+        } catch {
+        }
+        this.client = null;
+      }
+      this.transport = null;
+      this._tools = [];
+      this._capabilities = void 0;
+      this._state = "failed";
+      const mcpError = new MCPConnectionError(
+        `Failed to connect to MCP server '${this.name}'`,
+        this.name,
+        error
+      );
+      this.emit("failed", mcpError);
+      this.emit("error", mcpError);
+      if (this.config.autoReconnect) {
+        this.scheduleReconnect();
+      } else {
+        throw mcpError;
+      }
+    }
+  }
+  async disconnect() {
+    this.stopHealthCheck();
+    this.stopReconnect();
+    if (this.client && this.transport) {
+      try {
+        await this.client.close();
+      } catch (error) {
+      }
+    }
+    this.client = null;
+    this.transport = null;
+    this._state = "disconnected";
+    this._tools = [];
+    this.emit("disconnected");
+  }
+  async reconnect() {
+    await this.disconnect();
+    await this.connect();
+  }
+  isConnected() {
+    return this._state === "connected";
+  }
+  async ping() {
+    if (!this.client || !this.isConnected()) {
+      return false;
+    }
+    try {
+      await this.client.ping();
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+  // Tool methods
+  async listTools() {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request({ method: "tools/list" }, ListToolsResultSchema);
+      this._tools = response.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema
+      }));
+      return this._tools;
+    } catch (error) {
+      throw new MCPError(`Failed to list tools from server '${this.name}'`, this.name, error);
+    }
+  }
+  async callTool(name, args) {
+    this.ensureConnected();
+    this.emit("tool:called", name, args);
+    try {
+      const response = await this.client.request(
+        {
+          method: "tools/call",
+          params: {
+            name,
+            arguments: args
+          }
+        },
+        CallToolResultSchema
+      );
+      const result = {
+        content: response.content.map((item) => ({
+          type: item.type,
+          text: "text" in item ? item.text : void 0,
+          data: "data" in item ? item.data : void 0,
+          mimeType: "mimeType" in item ? item.mimeType : void 0,
+          uri: "uri" in item ? item.uri : void 0
+        })),
+        isError: response.isError
+      };
+      this.emit("tool:result", name, result);
+      if (result.isError) {
+        const errorText = result.content.find((c) => c.type === "text")?.text || "Unknown error";
+        throw new MCPToolError(errorText, name, this.name);
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof MCPToolError) {
+        throw error;
+      }
+      throw new MCPToolError(
+        `Failed to call tool '${name}' on server '${this.name}'`,
+        name,
+        this.name,
+        error
+      );
+    }
+  }
+  registerTools(toolManager) {
+    this.registerToolsSelective(toolManager);
+  }
+  /**
+   * Register specific tools with a ToolManager (selective registration)
+   * @param toolManager - ToolManager to register with
+   * @param toolNames - Optional array of tool names to register (original MCP names, not namespaced).
+   *                    If not provided, registers all tools.
+   */
+  registerToolsSelective(toolManager, toolNames) {
+    if (this._tools.length === 0) {
+      return;
+    }
+    const toolsToRegister = toolNames ? this._tools.filter((t) => toolNames.includes(t.name)) : this._tools;
+    if (toolsToRegister.length === 0) {
+      return;
+    }
+    const toolFunctions = createMCPToolAdapters(toolsToRegister, this, this.config.toolNamespace);
+    for (const toolFn of toolFunctions) {
+      const toolName = toolFn.definition.function.name;
+      toolManager.register(toolFn, {
+        namespace: this.config.toolNamespace,
+        enabled: true,
+        permission: this.config.permissions ? {
+          scope: this.config.permissions.defaultScope,
+          riskLevel: this.config.permissions.defaultRiskLevel
+        } : void 0
+      });
+      this.registeredToolNames.add(toolName);
+    }
+  }
+  unregisterTools(toolManager) {
+    for (const toolName of this.registeredToolNames) {
+      toolManager.unregister(toolName);
+    }
+    this.registeredToolNames.clear();
+  }
+  // Resource methods
+  async listResources() {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request({ method: "resources/list" }, ListResourcesResultSchema);
+      return response.resources.map((resource) => ({
+        uri: resource.uri,
+        name: resource.name,
+        description: resource.description,
+        mimeType: resource.mimeType
+      }));
+    } catch (error) {
+      throw new MCPError(
+        `Failed to list resources from server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  async readResource(uri) {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request(
+        {
+          method: "resources/read",
+          params: { uri }
+        },
+        ReadResourceResultSchema
+      );
+      const content = response.contents?.[0];
+      if (!content) {
+        throw new MCPError(`No content returned for resource '${uri}'`, this.name);
+      }
+      return {
+        uri: content.uri,
+        mimeType: content.mimeType,
+        text: "text" in content ? content.text : void 0,
+        blob: "blob" in content ? content.blob : void 0
+      };
+    } catch (error) {
+      throw new MCPError(
+        `Failed to read resource '${uri}' from server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  async subscribeResource(uri) {
+    this.ensureConnected();
+    if (!this._capabilities?.resources?.subscribe) {
+      throw new MCPError(`Server '${this.name}' does not support resource subscriptions`, this.name);
+    }
+    try {
+      await this.client.request(
+        {
+          method: "resources/subscribe",
+          params: { uri }
+        },
+        {}
+        // No specific schema for subscription acknowledgment
+      );
+      this.subscribedResources.add(uri);
+    } catch (error) {
+      throw new MCPError(
+        `Failed to subscribe to resource '${uri}' on server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  async unsubscribeResource(uri) {
+    this.ensureConnected();
+    try {
+      await this.client.request(
+        {
+          method: "resources/unsubscribe",
+          params: { uri }
+        },
+        {}
+        // No specific schema for unsubscribe acknowledgment
+      );
+      this.subscribedResources.delete(uri);
+    } catch (error) {
+      throw new MCPError(
+        `Failed to unsubscribe from resource '${uri}' on server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  // Prompt methods
+  async listPrompts() {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request({ method: "prompts/list" }, ListPromptsResultSchema);
+      return response.prompts.map((prompt) => ({
+        name: prompt.name,
+        description: prompt.description,
+        arguments: prompt.arguments
+      }));
+    } catch (error) {
+      throw new MCPError(`Failed to list prompts from server '${this.name}'`, this.name, error);
+    }
+  }
+  async getPrompt(name, args) {
+    this.ensureConnected();
+    try {
+      const response = await this.client.request(
+        {
+          method: "prompts/get",
+          params: {
+            name,
+            arguments: args
+          }
+        },
+        GetPromptResultSchema
+      );
+      return {
+        description: response.description,
+        messages: response.messages.map((msg) => ({
+          role: msg.role,
+          content: {
+            type: msg.content.type,
+            text: "text" in msg.content ? msg.content.text : void 0,
+            data: "data" in msg.content ? msg.content.data : void 0,
+            mimeType: "mimeType" in msg.content ? msg.content.mimeType : void 0,
+            uri: "uri" in msg.content ? msg.content.uri : void 0
+          }
+        }))
+      };
+    } catch (error) {
+      throw new MCPError(
+        `Failed to get prompt '${name}' from server '${this.name}'`,
+        this.name,
+        error
+      );
+    }
+  }
+  // State management
+  getState() {
+    return {
+      name: this.name,
+      state: this._state,
+      capabilities: this._capabilities,
+      subscribedResources: Array.from(this.subscribedResources),
+      lastConnectedAt: this._state === "connected" ? Date.now() : void 0,
+      connectionAttempts: this.reconnectAttempts
+    };
+  }
+  loadState(state) {
+    this.subscribedResources = new Set(state.subscribedResources);
+    this.reconnectAttempts = state.connectionAttempts;
+  }
+  /**
+   * Check if the MCPClient instance has been destroyed
+   */
+  get isDestroyed() {
+    return this._isDestroyed;
+  }
+  destroy() {
+    if (this._isDestroyed) return;
+    this._isDestroyed = true;
+    this.stopHealthCheck();
+    this.stopReconnect();
+    if (this.client) {
+      this.client.close().catch(() => {
+      });
+      this.client = null;
+    }
+    this.transport = null;
+    this._tools = [];
+    this._capabilities = void 0;
+    this._state = "disconnected";
+    this.subscribedResources.clear();
+    this.registeredToolNames.clear();
+    this.removeAllListeners();
+  }
+  // Private helper methods
+  createTransport() {
+    const { transport, transportConfig } = this.config;
+    if (transport === "stdio") {
+      const stdioConfig = transportConfig;
+      return new StdioClientTransport({
+        command: stdioConfig.command,
+        args: stdioConfig.args,
+        env: stdioConfig.env
+      });
+    }
+    if (transport === "http" || transport === "https") {
+      const httpConfig = transportConfig;
+      const headers = { ...httpConfig.headers };
+      if (httpConfig.token) {
+        headers["Authorization"] = `Bearer ${httpConfig.token}`;
+      }
+      return new StreamableHTTPClientTransport(new URL(httpConfig.url), {
+        sessionId: httpConfig.sessionId,
+        requestInit: {
+          headers,
+          ...httpConfig.timeoutMs && { signal: AbortSignal.timeout(httpConfig.timeoutMs) }
+        },
+        reconnectionOptions: httpConfig.reconnection ? {
+          maxReconnectionDelay: httpConfig.reconnection.maxReconnectionDelay ?? 3e4,
+          initialReconnectionDelay: httpConfig.reconnection.initialReconnectionDelay ?? 1e3,
+          reconnectionDelayGrowFactor: httpConfig.reconnection.reconnectionDelayGrowFactor ?? 1.5,
+          maxRetries: httpConfig.reconnection.maxRetries ?? 2
+        } : void 0
+      });
+    }
+    throw new MCPError(`Transport '${transport}' not supported`, this.name);
+  }
+  ensureConnected() {
+    if (!this.client || !this.isConnected()) {
+      throw new MCPConnectionError(`MCP server '${this.name}' is not connected`, this.name);
+    }
+  }
+  async refreshTools() {
+    try {
+      await this.listTools();
+    } catch (error) {
+      this.emit("error", error);
+    }
+  }
+  startHealthCheck() {
+    if (this.config.healthCheckIntervalMs <= 0) {
+      return;
+    }
+    this.healthCheckTimer = setInterval(async () => {
+      const alive = await this.ping();
+      if (!alive && this._state === "connected") {
+        this.emit("error", new MCPConnectionError(`Health check failed for server '${this.name}'`, this.name));
+        if (this.config.autoReconnect) {
+          await this.reconnect();
+        }
+      }
+    }, this.config.healthCheckIntervalMs);
+  }
+  stopHealthCheck() {
+    if (this.healthCheckTimer) {
+      clearInterval(this.healthCheckTimer);
+      this.healthCheckTimer = void 0;
+    }
+  }
+  scheduleReconnect() {
+    if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
+      this.emit("error", new MCPConnectionError(`Max reconnect attempts reached for server '${this.name}'`, this.name));
+      return;
+    }
+    this.reconnectAttempts++;
+    this._state = "reconnecting";
+    this.emit("reconnecting", this.reconnectAttempts);
+    const delay = this.config.reconnectIntervalMs * Math.pow(2, this.reconnectAttempts - 1);
+    this.reconnectTimer = setTimeout(async () => {
+      try {
+        await this.connect();
+      } catch (error) {
+      }
+    }, delay);
+  }
+  stopReconnect() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = void 0;
+    }
+  }
+};
+var MCPRegistry = class {
+  static clients = /* @__PURE__ */ new Map();
+  /**
+   * Create and register an MCP client
+   */
+  static create(config, defaults) {
+    if (this.clients.has(config.name)) {
+      throw new MCPError(`MCP server '${config.name}' is already registered`);
+    }
+    const client = new MCPClient(config, defaults);
+    this.clients.set(config.name, client);
+    return client;
+  }
+  /**
+   * Get a registered MCP client
+   */
+  static get(name) {
+    const client = this.clients.get(name);
+    if (!client) {
+      throw new MCPError(`MCP server '${name}' not found in registry`);
+    }
+    return client;
+  }
+  /**
+   * Check if an MCP client is registered
+   */
+  static has(name) {
+    return this.clients.has(name);
+  }
+  /**
+   * List all registered MCP client names
+   */
+  static list() {
+    return Array.from(this.clients.keys());
+  }
+  /**
+   * Get info about a registered MCP client
+   */
+  static getInfo(name) {
+    const client = this.get(name);
+    return {
+      name: client.name,
+      state: client.state,
+      connected: client.isConnected(),
+      toolCount: client.tools.length
+    };
+  }
+  /**
+   * Get info about all registered MCP clients
+   */
+  static getAllInfo() {
+    return Array.from(this.clients.keys()).map((name) => this.getInfo(name));
+  }
+  /**
+   * Create multiple clients from MCP configuration
+   */
+  static createFromConfig(config) {
+    const clients = [];
+    for (const serverConfig of config.servers) {
+      const client = this.create(serverConfig, config.defaults);
+      clients.push(client);
+    }
+    return clients;
+  }
+  /**
+   * Load MCP configuration from file and create clients
+   */
+  static async loadFromConfigFile(path6) {
+    try {
+      const configPath = path2.resolve(path6);
+      const content = await fs16.promises.readFile(configPath, "utf-8");
+      const config = JSON.parse(content);
+      if (!config.mcp) {
+        throw new MCPError("Configuration file does not contain MCP section");
+      }
+      const interpolatedConfig = this.interpolateEnvVars(config.mcp);
+      return this.createFromConfig(interpolatedConfig);
+    } catch (error) {
+      if (error instanceof MCPError) {
+        throw error;
+      }
+      throw new MCPError(`Failed to load MCP configuration from '${path6}'`, void 0, error);
+    }
+  }
+  /**
+   * Connect all servers with autoConnect enabled
+   */
+  static async connectAll() {
+    const connectPromises = [];
+    for (const client of this.clients.values()) {
+      if (!client.isConnected()) {
+        connectPromises.push(client.connect());
+      }
+    }
+    await Promise.all(connectPromises);
+  }
+  /**
+   * Disconnect all servers
+   */
+  static async disconnectAll() {
+    const disconnectPromises = [];
+    for (const client of this.clients.values()) {
+      if (client.isConnected()) {
+        disconnectPromises.push(client.disconnect());
+      }
+    }
+    await Promise.all(disconnectPromises);
+  }
+  /**
+   * Remove and destroy a specific client from the registry
+   * @param name - Name of the MCP server to remove
+   * @returns true if the server was found and removed, false otherwise
+   */
+  static remove(name) {
+    const client = this.clients.get(name);
+    if (!client) {
+      return false;
+    }
+    client.destroy();
+    this.clients.delete(name);
+    return true;
+  }
+  /**
+   * Destroy all clients and clear registry
+   */
+  static destroyAll() {
+    for (const client of this.clients.values()) {
+      client.destroy();
+    }
+    this.clients.clear();
+  }
+  /**
+   * Clear the registry (for testing)
+   */
+  static clear() {
+    this.destroyAll();
+  }
+  /**
+   * Interpolate environment variables in configuration
+   * Replaces ${ENV_VAR} with process.env.ENV_VAR
+   */
+  static interpolateEnvVars(config) {
+    const jsonString = JSON.stringify(config);
+    const interpolated = jsonString.replace(/\$\{([^}]+)\}/g, (_match, envVar) => {
+      const value = process.env[envVar];
+      if (value === void 0) {
+        throw new MCPError(`Environment variable '${envVar}' is not set`);
+      }
+      return value;
+    });
+    return JSON.parse(interpolated);
+  }
+};
 
 // src/core/AgentContext.ts
-var logger3 = exports.logger.child({ component: "AgentContext" });
+var logger4 = exports.logger.child({ component: "AgentContext" });
 var PRIORITY_PROFILES = {
   research: {
     memory_index: 3,
@@ -22444,6 +28450,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   _toolOutputPlugin = null;
   _autoSpillPlugin = null;
   _toolResultEvictionPlugin = null;
+  _guardian;
   _agentId;
   // ===== Feature Configuration =====
   _features;
@@ -22480,6 +28487,20 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   _storage = null;
   _sessionId = null;
   _sessionMetadata = {};
+  // ===== MCP Server Integration =====
+  /**
+   * MCP clients that were connected during initialization.
+   * These are tracked for cleanup during destroy().
+   */
+  _mcpClients = [];
+  /**
+   * MCP server references from config (for serialization/deserialization)
+   */
+  _mcpServerRefs = [];
+  /**
+   * Flag indicating MCP initialization is pending (async)
+   */
+  _mcpInitializationPending = false;
   // ============================================================================
   // Constructor & Factory
   // ============================================================================
@@ -22502,6 +28523,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     this._maxContextTokens = config.maxContextTokens ?? getModelInfo(config.model ?? "gpt-4")?.features.input.tokens ?? 128e3;
     this._strategy = createStrategy(this._config.strategy, {});
     this._estimator = this.createEstimator();
+    this._guardian = new ContextGuardian(this._estimator, config.guardian);
     this._tools = new ToolManager();
     this._tools.setParentContext(this);
     if (config.tools) {
@@ -22552,7 +28574,11 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       }
     }
     if (this._features.toolOutputTracking) {
-      this._toolOutputPlugin = new ToolOutputPlugin(config.toolOutputTracking);
+      this._toolOutputPlugin = new ToolOutputPlugin({
+        ...config.toolOutputTracking,
+        suppressDeprecationWarning: true
+        // Suppress warning when used internally
+      });
       this.registerPlugin(this._toolOutputPlugin);
     }
     if (this._features.autoSpill && this._memory) {
@@ -22566,7 +28592,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
       this.registerPlugin(this._autoSpillPlugin);
     }
     if (this._features.toolResultEviction && this._memory) {
-      logger3.debug({
+      logger4.debug({
         toolResultEviction: this._features.toolResultEviction,
         memoryEnabled: !!this._memory,
         config: config.toolResultEviction
@@ -22578,12 +28604,12 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         return this.removeToolPair(toolUseId);
       });
       this.registerPlugin(this._toolResultEvictionPlugin);
-      logger3.debug({
+      logger4.debug({
         pluginName: this._toolResultEvictionPlugin.name,
         pluginConfig: this._toolResultEvictionPlugin.getConfig()
       }, "ToolResultEvictionPlugin created and registered");
     } else {
-      logger3.debug({
+      logger4.debug({
         toolResultEviction: this._features.toolResultEviction,
         memoryEnabled: !!this._memory
       }, "ToolResultEvictionPlugin NOT created (feature disabled or no memory)");
@@ -22594,12 +28620,28 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     this._storage = config.storage ?? null;
     this._sessionMetadata = config.sessionMetadata ?? {};
     this._sessionId = config.sessionId ?? null;
+    this._mcpServerRefs = config.mcpServers ?? [];
+    if (this._mcpServerRefs.length > 0) {
+      this._mcpInitializationPending = true;
+      this._initializeMCPServers().catch((err) => {
+        logger4.error({ error: err }, "Failed to initialize MCP servers");
+      });
+    }
   }
   /**
    * Create a new AgentContext
    */
   static create(config = {}) {
     return new _AgentContext(config);
+  }
+  /**
+   * Create a new AgentContext and wait for MCP servers to initialize.
+   * Use this factory method when you need MCP tools to be available immediately.
+   */
+  static async createAsync(config = {}) {
+    const ctx = new _AgentContext(config);
+    await ctx.ensureMCPInitialized();
+    return ctx;
   }
   // ============================================================================
   // Public Accessors (expose composed managers for direct access)
@@ -22640,6 +28682,10 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   get toolResultEvictionPlugin() {
     return this._toolResultEvictionPlugin;
   }
+  /** ContextGuardian - mandatory checkpoint for context validation */
+  get guardian() {
+    return this._guardian;
+  }
   /** Agent ID (auto-generated or from config) */
   get agentId() {
     return this._agentId;
@@ -22651,6 +28697,44 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   /** Storage backend for session persistence (null if not configured) */
   get storage() {
     return this._storage;
+  }
+  /** Connected MCP clients (readonly) */
+  get mcpClients() {
+    return this._mcpClients;
+  }
+  /**
+   * Check if MCP initialization is still pending.
+   * If true, call ensureMCPInitialized() to wait for completion.
+   */
+  get mcpInitializationPending() {
+    return this._mcpInitializationPending;
+  }
+  // ============================================================================
+  // MCP Server Management
+  // ============================================================================
+  /**
+   * Ensure MCP servers are initialized before proceeding.
+   * Call this if you need MCP tools to be available immediately.
+   */
+  async ensureMCPInitialized() {
+    if (this._mcpInitializationPending) {
+      await this._initializeMCPServers();
+    }
+  }
+  /**
+   * Get MCP client by server name
+   */
+  getMCPClient(name) {
+    return this._mcpClients.find((c) => c.name === name);
+  }
+  /**
+   * Get all tools available from connected MCP servers
+   */
+  getMCPTools() {
+    return this._mcpClients.filter((c) => c.isConnected()).map((c) => ({
+      server: c.name,
+      tools: c.tools.map((t) => t.name)
+    }));
   }
   // ============================================================================
   // Feature Configuration
@@ -22717,6 +28801,57 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         "AgentContext: inContextMemory enabled without memory feature. In-context data will not be backed by WorkingMemory for persistence or large data spilling."
       );
     }
+  }
+  /**
+   * Initialize MCP servers from config.
+   * This is called asynchronously during construction and can be awaited via ensureMCPInitialized().
+   */
+  async _initializeMCPServers() {
+    if (this._mcpServerRefs.length === 0) {
+      this._mcpInitializationPending = false;
+      return;
+    }
+    for (const ref of this._mcpServerRefs) {
+      try {
+        let client;
+        if (typeof ref.server === "string") {
+          if (!MCPRegistry.has(ref.server)) {
+            logger4.warn({ server: ref.server }, "MCP server not found in registry, skipping");
+            continue;
+          }
+          client = MCPRegistry.get(ref.server);
+        } else {
+          if (MCPRegistry.has(ref.server.name)) {
+            client = MCPRegistry.get(ref.server.name);
+          } else {
+            client = MCPRegistry.create(ref.server);
+          }
+        }
+        if (ref.autoConnect !== false && !client.isConnected()) {
+          logger4.debug({ server: client.name }, "Connecting to MCP server");
+          try {
+            await client.connect();
+          } catch (connectError) {
+            logger4.warn(
+              { server: client.name, error: connectError },
+              "Failed to connect to MCP server, tools will not be available"
+            );
+            continue;
+          }
+        }
+        if (client.isConnected()) {
+          client.registerToolsSelective(this._tools, ref.tools);
+          this._mcpClients.push(client);
+          logger4.debug(
+            { server: client.name, toolCount: ref.tools?.length ?? client.tools.length },
+            "Registered MCP tools"
+          );
+        }
+      } catch (error) {
+        logger4.warn({ server: ref.server, error }, "Failed to initialize MCP server");
+      }
+    }
+    this._mcpInitializationPending = false;
   }
   // ============================================================================
   // Core Context (Built-in)
@@ -22822,23 +28957,39 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
   }
   /**
    * Add tool results to conversation.
+   * Includes safety truncation to prevent context overflow.
    *
    * @param results - ToolResult[] from tool execution
    * @returns Message ID of the tool results message
    */
   addToolResults(results) {
     const id = this.generateId();
+    const MAX_RESULT_CHARS = 2e4;
     const message = {
       type: "message",
       id,
       role: "user" /* USER */,
       // Tool results go as user message per API spec
-      content: results.map((r) => ({
-        type: "tool_result" /* TOOL_RESULT */,
-        tool_use_id: r.tool_use_id,
-        content: typeof r.content === "string" ? r.content : JSON.stringify(r.content),
-        error: r.error
-      }))
+      content: results.map((r) => {
+        let content = typeof r.content === "string" ? r.content : JSON.stringify(r.content);
+        if (content.length > MAX_RESULT_CHARS) {
+          const originalSize = content.length;
+          content = content.slice(0, MAX_RESULT_CHARS) + `
+
+[Safety truncated from ${Math.round(originalSize / 1024)}KB - use memory_retrieve if available]`;
+          logger4.warn({
+            toolName: r.tool_name,
+            originalSize,
+            truncatedTo: MAX_RESULT_CHARS
+          }, "addToolResults: safety truncation applied");
+        }
+        return {
+          type: "tool_result" /* TOOL_RESULT */,
+          tool_use_id: r.tool_use_id,
+          content,
+          error: r.error
+        };
+      })
     };
     this._conversation.push(message);
     this._messageMetadata.set(id, {
@@ -22858,7 +29009,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
     const index = this._conversation.length - 1;
     this.emit("message:added", { item: message, index });
     if (this._toolResultEvictionPlugin) {
-      logger3.debug({
+      logger4.debug({
         resultsCount: results.length,
         messageIndex: index,
         pluginTrackedBefore: this._toolResultEvictionPlugin.getTracked().length
@@ -22868,7 +29019,7 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         const toolArgs = r.tool_args || {};
         const toolFn = this._tools.get(toolName);
         const describeCall = toolFn?.describeCall;
-        logger3.debug({
+        logger4.debug({
           toolUseId: r.tool_use_id,
           toolName,
           hasArgs: Object.keys(toolArgs).length > 0,
@@ -22884,12 +29035,12 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
           describeCall
         );
       }
-      logger3.debug({
+      logger4.debug({
         pluginTrackedAfter: this._toolResultEvictionPlugin.getTracked().length,
         pluginStats: this._toolResultEvictionPlugin.getStats()
       }, "addToolResults: tracking complete");
     } else {
-      logger3.debug({
+      logger4.debug({
         resultsCount: results.length,
         pluginEnabled: !!this._toolResultEvictionPlugin
       }, "addToolResults: NOT tracking (plugin not enabled)");
@@ -22949,25 +29100,28 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * ```
    */
   async prepare(options) {
+    if (this._mcpInitializationPending) {
+      await this.ensureMCPInitialized();
+    }
     const returnFormat = options?.returnFormat ?? "llm-input";
     let compactionLog = [];
     this.protectFromCompaction();
     if (this._toolResultEvictionPlugin) {
       const statsBefore = this._toolResultEvictionPlugin.getStats();
-      logger3.debug({
+      logger4.debug({
         statsBefore,
         conversationLength: this._conversation.length
       }, "prepare: before tool result eviction");
       this._toolResultEvictionPlugin.onIteration();
       const shouldEvict = this._toolResultEvictionPlugin.shouldEvict();
-      logger3.debug({
+      logger4.debug({
         shouldEvict,
         trackedCount: statsBefore.count,
         config: this._toolResultEvictionPlugin.getConfig()
       }, `prepare: shouldEvict=${shouldEvict}`);
       if (shouldEvict) {
         const evictionResult = await this._toolResultEvictionPlugin.evictOldResults();
-        logger3.debug({
+        logger4.debug({
           evictionResult: {
             evicted: evictionResult.evicted,
             tokensFreed: evictionResult.tokensFreed,
@@ -22982,11 +29136,11 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         }
       }
       const statsAfter = this._toolResultEvictionPlugin.getStats();
-      logger3.debug({
+      logger4.debug({
         statsAfter
       }, "prepare: after tool result eviction");
     } else {
-      logger3.debug({
+      logger4.debug({
         pluginEnabled: false
       }, "prepare: tool result eviction plugin not enabled");
     }
@@ -23019,11 +29173,46 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
         compactionLog
       };
     }
-    const input = await this.buildLLMInput(options?.instructionOverride);
+    let input = await this.buildLLMInput(options?.instructionOverride);
+    if (this._guardian.enabled) {
+      const availableTokens = this._maxContextTokens - budget.reserved;
+      const validation = this._guardian.validate(input, availableTokens);
+      if (!validation.valid) {
+        logger4.warn({
+          actualTokens: validation.actualTokens,
+          targetTokens: validation.targetTokens,
+          overageTokens: validation.overageTokens,
+          breakdown: validation.breakdown
+        }, "Guardian validation failed - applying graceful degradation");
+        this.emit("guardian:validation-failed", { validation });
+        const degradation = this._guardian.applyGracefulDegradation(input, validation.targetTokens);
+        input = degradation.input;
+        compactionLog.push(...degradation.log);
+        const finalValidation = this._guardian.validate(input, availableTokens);
+        budget = {
+          ...budget,
+          used: finalValidation.actualTokens,
+          available: availableTokens - finalValidation.actualTokens,
+          utilizationPercent: finalValidation.actualTokens / availableTokens * 100,
+          status: finalValidation.valid ? "ok" : "critical",
+          breakdown: finalValidation.breakdown
+        };
+        this._lastBudget = budget;
+        logger4.info({
+          finalTokens: finalValidation.actualTokens,
+          tokensFreed: degradation.tokensFreed,
+          degradationSteps: degradation.log.length
+        }, "Guardian degradation complete");
+        this.emit("guardian:degradation-applied", {
+          tokensFreed: degradation.tokensFreed,
+          log: degradation.log
+        });
+      }
+    }
     return {
       input,
       budget,
-      compacted: needsCompaction,
+      compacted: needsCompaction || compactionLog.length > 0,
       compactionLog
     };
   }
@@ -23813,6 +30002,11 @@ var AgentContext = class _AgentContext extends eventemitter3.EventEmitter {
    * Destroy the context and release resources
    */
   destroy() {
+    for (const client of this._mcpClients) {
+      client.unregisterTools(this._tools);
+    }
+    this._mcpClients = [];
+    this._mcpServerRefs = [];
     for (const plugin of this._plugins.values()) {
       plugin.destroy?.();
     }
@@ -29244,22 +35438,24 @@ var Agent = class _Agent extends BaseAgent {
         toolResult = { ...toolResult, ...afterTool.modified };
       }
       if (toolResult.content) {
-        this._agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, toolResult.content);
+        let finalContent = toolResult.content;
         const autoSpillPlugin = this._agentContext.autoSpillPlugin;
         if (autoSpillPlugin) {
-          const outputStr = typeof toolResult.content === "string" ? toolResult.content : JSON.stringify(toolResult.content);
+          const outputStr = typeof finalContent === "string" ? finalContent : JSON.stringify(finalContent);
           const outputSize = Buffer.byteLength(outputStr, "utf8");
           if (autoSpillPlugin.shouldSpill(toolCall.function.name, outputSize)) {
             const spillKey = await autoSpillPlugin.onToolOutput(
               toolCall.function.name,
-              toolResult.content
+              finalContent
             );
             if (spillKey) {
               toolResult.spilledKey = spillKey;
-              toolResult.content = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
+              finalContent = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
+              toolResult.content = finalContent;
             }
           }
         }
+        this._agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, finalContent);
       }
       if (this.executionContext) {
         this.executionContext.metrics.toolCallCount++;
@@ -29696,5569 +35892,6 @@ function getMemoryTools() {
     }
   }
 });
-function isZ4Schema(s) {
-  const schema = s;
-  return !!schema._zod;
-}
-function safeParse2(schema, data) {
-  if (isZ4Schema(schema)) {
-    const result2 = z4mini__namespace.safeParse(schema, data);
-    return result2;
-  }
-  const v3Schema = schema;
-  const result = v3Schema.safeParse(data);
-  return result;
-}
-function getObjectShape(schema) {
-  if (!schema)
-    return void 0;
-  let rawShape;
-  if (isZ4Schema(schema)) {
-    const v4Schema = schema;
-    rawShape = v4Schema._zod?.def?.shape;
-  } else {
-    const v3Schema = schema;
-    rawShape = v3Schema.shape;
-  }
-  if (!rawShape)
-    return void 0;
-  if (typeof rawShape === "function") {
-    try {
-      return rawShape();
-    } catch {
-      return void 0;
-    }
-  }
-  return rawShape;
-}
-function getLiteralValue(schema) {
-  if (isZ4Schema(schema)) {
-    const v4Schema = schema;
-    const def2 = v4Schema._zod?.def;
-    if (def2) {
-      if (def2.value !== void 0)
-        return def2.value;
-      if (Array.isArray(def2.values) && def2.values.length > 0) {
-        return def2.values[0];
-      }
-    }
-  }
-  const v3Schema = schema;
-  const def = v3Schema._def;
-  if (def) {
-    if (def.value !== void 0)
-      return def.value;
-    if (Array.isArray(def.values) && def.values.length > 0) {
-      return def.values[0];
-    }
-  }
-  const directValue = schema.value;
-  if (directValue !== void 0)
-    return directValue;
-  return void 0;
-}
-var LATEST_PROTOCOL_VERSION = "2025-11-25";
-var SUPPORTED_PROTOCOL_VERSIONS = [LATEST_PROTOCOL_VERSION, "2025-06-18", "2025-03-26", "2024-11-05", "2024-10-07"];
-var RELATED_TASK_META_KEY = "io.modelcontextprotocol/related-task";
-var JSONRPC_VERSION = "2.0";
-var AssertObjectSchema = z__namespace.custom((v) => v !== null && (typeof v === "object" || typeof v === "function"));
-var ProgressTokenSchema = z__namespace.union([z__namespace.string(), z__namespace.number().int()]);
-var CursorSchema = z__namespace.string();
-z__namespace.looseObject({
-  /**
-   * Time in milliseconds to keep task results available after completion.
-   * If null, the task has unlimited lifetime until manually cleaned up.
-   */
-  ttl: z__namespace.union([z__namespace.number(), z__namespace.null()]).optional(),
-  /**
-   * Time in milliseconds to wait between task status requests.
-   */
-  pollInterval: z__namespace.number().optional()
-});
-var TaskMetadataSchema = z__namespace.object({
-  ttl: z__namespace.number().optional()
-});
-var RelatedTaskMetadataSchema = z__namespace.object({
-  taskId: z__namespace.string()
-});
-var RequestMetaSchema = z__namespace.looseObject({
-  /**
-   * If specified, the caller is requesting out-of-band progress notifications for this request (as represented by notifications/progress). The value of this parameter is an opaque token that will be attached to any subsequent notifications. The receiver is not obligated to provide these notifications.
-   */
-  progressToken: ProgressTokenSchema.optional(),
-  /**
-   * If specified, this request is related to the provided task.
-   */
-  [RELATED_TASK_META_KEY]: RelatedTaskMetadataSchema.optional()
-});
-var BaseRequestParamsSchema = z__namespace.object({
-  /**
-   * See [General fields: `_meta`](/specification/draft/basic/index#meta) for notes on `_meta` usage.
-   */
-  _meta: RequestMetaSchema.optional()
-});
-var TaskAugmentedRequestParamsSchema = BaseRequestParamsSchema.extend({
-  /**
-   * If specified, the caller is requesting task-augmented execution for this request.
-   * The request will return a CreateTaskResult immediately, and the actual result can be
-   * retrieved later via tasks/result.
-   *
-   * Task augmentation is subject to capability negotiation - receivers MUST declare support
-   * for task augmentation of specific request types in their capabilities.
-   */
-  task: TaskMetadataSchema.optional()
-});
-var isTaskAugmentedRequestParams = (value) => TaskAugmentedRequestParamsSchema.safeParse(value).success;
-var RequestSchema = z__namespace.object({
-  method: z__namespace.string(),
-  params: BaseRequestParamsSchema.loose().optional()
-});
-var NotificationsParamsSchema = z__namespace.object({
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: RequestMetaSchema.optional()
-});
-var NotificationSchema = z__namespace.object({
-  method: z__namespace.string(),
-  params: NotificationsParamsSchema.loose().optional()
-});
-var ResultSchema = z__namespace.looseObject({
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: RequestMetaSchema.optional()
-});
-var RequestIdSchema = z__namespace.union([z__namespace.string(), z__namespace.number().int()]);
-var JSONRPCRequestSchema = z__namespace.object({
-  jsonrpc: z__namespace.literal(JSONRPC_VERSION),
-  id: RequestIdSchema,
-  ...RequestSchema.shape
-}).strict();
-var isJSONRPCRequest = (value) => JSONRPCRequestSchema.safeParse(value).success;
-var JSONRPCNotificationSchema = z__namespace.object({
-  jsonrpc: z__namespace.literal(JSONRPC_VERSION),
-  ...NotificationSchema.shape
-}).strict();
-var isJSONRPCNotification = (value) => JSONRPCNotificationSchema.safeParse(value).success;
-var JSONRPCResultResponseSchema = z__namespace.object({
-  jsonrpc: z__namespace.literal(JSONRPC_VERSION),
-  id: RequestIdSchema,
-  result: ResultSchema
-}).strict();
-var isJSONRPCResultResponse = (value) => JSONRPCResultResponseSchema.safeParse(value).success;
-var ErrorCode;
-(function(ErrorCode2) {
-  ErrorCode2[ErrorCode2["ConnectionClosed"] = -32e3] = "ConnectionClosed";
-  ErrorCode2[ErrorCode2["RequestTimeout"] = -32001] = "RequestTimeout";
-  ErrorCode2[ErrorCode2["ParseError"] = -32700] = "ParseError";
-  ErrorCode2[ErrorCode2["InvalidRequest"] = -32600] = "InvalidRequest";
-  ErrorCode2[ErrorCode2["MethodNotFound"] = -32601] = "MethodNotFound";
-  ErrorCode2[ErrorCode2["InvalidParams"] = -32602] = "InvalidParams";
-  ErrorCode2[ErrorCode2["InternalError"] = -32603] = "InternalError";
-  ErrorCode2[ErrorCode2["UrlElicitationRequired"] = -32042] = "UrlElicitationRequired";
-})(ErrorCode || (ErrorCode = {}));
-var JSONRPCErrorResponseSchema = z__namespace.object({
-  jsonrpc: z__namespace.literal(JSONRPC_VERSION),
-  id: RequestIdSchema.optional(),
-  error: z__namespace.object({
-    /**
-     * The error type that occurred.
-     */
-    code: z__namespace.number().int(),
-    /**
-     * A short description of the error. The message SHOULD be limited to a concise single sentence.
-     */
-    message: z__namespace.string(),
-    /**
-     * Additional information about the error. The value of this member is defined by the sender (e.g. detailed error information, nested errors etc.).
-     */
-    data: z__namespace.unknown().optional()
-  })
-}).strict();
-var isJSONRPCErrorResponse = (value) => JSONRPCErrorResponseSchema.safeParse(value).success;
-var JSONRPCMessageSchema = z__namespace.union([
-  JSONRPCRequestSchema,
-  JSONRPCNotificationSchema,
-  JSONRPCResultResponseSchema,
-  JSONRPCErrorResponseSchema
-]);
-z__namespace.union([JSONRPCResultResponseSchema, JSONRPCErrorResponseSchema]);
-var EmptyResultSchema = ResultSchema.strict();
-var CancelledNotificationParamsSchema = NotificationsParamsSchema.extend({
-  /**
-   * The ID of the request to cancel.
-   *
-   * This MUST correspond to the ID of a request previously issued in the same direction.
-   */
-  requestId: RequestIdSchema.optional(),
-  /**
-   * An optional string describing the reason for the cancellation. This MAY be logged or presented to the user.
-   */
-  reason: z__namespace.string().optional()
-});
-var CancelledNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/cancelled"),
-  params: CancelledNotificationParamsSchema
-});
-var IconSchema = z__namespace.object({
-  /**
-   * URL or data URI for the icon.
-   */
-  src: z__namespace.string(),
-  /**
-   * Optional MIME type for the icon.
-   */
-  mimeType: z__namespace.string().optional(),
-  /**
-   * Optional array of strings that specify sizes at which the icon can be used.
-   * Each string should be in WxH format (e.g., `"48x48"`, `"96x96"`) or `"any"` for scalable formats like SVG.
-   *
-   * If not provided, the client should assume that the icon can be used at any size.
-   */
-  sizes: z__namespace.array(z__namespace.string()).optional(),
-  /**
-   * Optional specifier for the theme this icon is designed for. `light` indicates
-   * the icon is designed to be used with a light background, and `dark` indicates
-   * the icon is designed to be used with a dark background.
-   *
-   * If not provided, the client should assume the icon can be used with any theme.
-   */
-  theme: z__namespace.enum(["light", "dark"]).optional()
-});
-var IconsSchema = z__namespace.object({
-  /**
-   * Optional set of sized icons that the client can display in a user interface.
-   *
-   * Clients that support rendering icons MUST support at least the following MIME types:
-   * - `image/png` - PNG images (safe, universal compatibility)
-   * - `image/jpeg` (and `image/jpg`) - JPEG images (safe, universal compatibility)
-   *
-   * Clients that support rendering icons SHOULD also support:
-   * - `image/svg+xml` - SVG images (scalable but requires security precautions)
-   * - `image/webp` - WebP images (modern, efficient format)
-   */
-  icons: z__namespace.array(IconSchema).optional()
-});
-var BaseMetadataSchema = z__namespace.object({
-  /** Intended for programmatic or logical use, but used as a display name in past specs or fallback */
-  name: z__namespace.string(),
-  /**
-   * Intended for UI and end-user contexts — optimized to be human-readable and easily understood,
-   * even by those unfamiliar with domain-specific terminology.
-   *
-   * If not provided, the name should be used for display (except for Tool,
-   * where `annotations.title` should be given precedence over using `name`,
-   * if present).
-   */
-  title: z__namespace.string().optional()
-});
-var ImplementationSchema = BaseMetadataSchema.extend({
-  ...BaseMetadataSchema.shape,
-  ...IconsSchema.shape,
-  version: z__namespace.string(),
-  /**
-   * An optional URL of the website for this implementation.
-   */
-  websiteUrl: z__namespace.string().optional(),
-  /**
-   * An optional human-readable description of what this implementation does.
-   *
-   * This can be used by clients or servers to provide context about their purpose
-   * and capabilities. For example, a server might describe the types of resources
-   * or tools it provides, while a client might describe its intended use case.
-   */
-  description: z__namespace.string().optional()
-});
-var FormElicitationCapabilitySchema = z__namespace.intersection(z__namespace.object({
-  applyDefaults: z__namespace.boolean().optional()
-}), z__namespace.record(z__namespace.string(), z__namespace.unknown()));
-var ElicitationCapabilitySchema = z__namespace.preprocess((value) => {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    if (Object.keys(value).length === 0) {
-      return { form: {} };
-    }
-  }
-  return value;
-}, z__namespace.intersection(z__namespace.object({
-  form: FormElicitationCapabilitySchema.optional(),
-  url: AssertObjectSchema.optional()
-}), z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()));
-var ClientTasksCapabilitySchema = z__namespace.looseObject({
-  /**
-   * Present if the client supports listing tasks.
-   */
-  list: AssertObjectSchema.optional(),
-  /**
-   * Present if the client supports cancelling tasks.
-   */
-  cancel: AssertObjectSchema.optional(),
-  /**
-   * Capabilities for task creation on specific request types.
-   */
-  requests: z__namespace.looseObject({
-    /**
-     * Task support for sampling requests.
-     */
-    sampling: z__namespace.looseObject({
-      createMessage: AssertObjectSchema.optional()
-    }).optional(),
-    /**
-     * Task support for elicitation requests.
-     */
-    elicitation: z__namespace.looseObject({
-      create: AssertObjectSchema.optional()
-    }).optional()
-  }).optional()
-});
-var ServerTasksCapabilitySchema = z__namespace.looseObject({
-  /**
-   * Present if the server supports listing tasks.
-   */
-  list: AssertObjectSchema.optional(),
-  /**
-   * Present if the server supports cancelling tasks.
-   */
-  cancel: AssertObjectSchema.optional(),
-  /**
-   * Capabilities for task creation on specific request types.
-   */
-  requests: z__namespace.looseObject({
-    /**
-     * Task support for tool requests.
-     */
-    tools: z__namespace.looseObject({
-      call: AssertObjectSchema.optional()
-    }).optional()
-  }).optional()
-});
-var ClientCapabilitiesSchema = z__namespace.object({
-  /**
-   * Experimental, non-standard capabilities that the client supports.
-   */
-  experimental: z__namespace.record(z__namespace.string(), AssertObjectSchema).optional(),
-  /**
-   * Present if the client supports sampling from an LLM.
-   */
-  sampling: z__namespace.object({
-    /**
-     * Present if the client supports context inclusion via includeContext parameter.
-     * If not declared, servers SHOULD only use `includeContext: "none"` (or omit it).
-     */
-    context: AssertObjectSchema.optional(),
-    /**
-     * Present if the client supports tool use via tools and toolChoice parameters.
-     */
-    tools: AssertObjectSchema.optional()
-  }).optional(),
-  /**
-   * Present if the client supports eliciting user input.
-   */
-  elicitation: ElicitationCapabilitySchema.optional(),
-  /**
-   * Present if the client supports listing roots.
-   */
-  roots: z__namespace.object({
-    /**
-     * Whether the client supports issuing notifications for changes to the roots list.
-     */
-    listChanged: z__namespace.boolean().optional()
-  }).optional(),
-  /**
-   * Present if the client supports task creation.
-   */
-  tasks: ClientTasksCapabilitySchema.optional()
-});
-var InitializeRequestParamsSchema = BaseRequestParamsSchema.extend({
-  /**
-   * The latest version of the Model Context Protocol that the client supports. The client MAY decide to support older versions as well.
-   */
-  protocolVersion: z__namespace.string(),
-  capabilities: ClientCapabilitiesSchema,
-  clientInfo: ImplementationSchema
-});
-var InitializeRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("initialize"),
-  params: InitializeRequestParamsSchema
-});
-var ServerCapabilitiesSchema = z__namespace.object({
-  /**
-   * Experimental, non-standard capabilities that the server supports.
-   */
-  experimental: z__namespace.record(z__namespace.string(), AssertObjectSchema).optional(),
-  /**
-   * Present if the server supports sending log messages to the client.
-   */
-  logging: AssertObjectSchema.optional(),
-  /**
-   * Present if the server supports sending completions to the client.
-   */
-  completions: AssertObjectSchema.optional(),
-  /**
-   * Present if the server offers any prompt templates.
-   */
-  prompts: z__namespace.object({
-    /**
-     * Whether this server supports issuing notifications for changes to the prompt list.
-     */
-    listChanged: z__namespace.boolean().optional()
-  }).optional(),
-  /**
-   * Present if the server offers any resources to read.
-   */
-  resources: z__namespace.object({
-    /**
-     * Whether this server supports clients subscribing to resource updates.
-     */
-    subscribe: z__namespace.boolean().optional(),
-    /**
-     * Whether this server supports issuing notifications for changes to the resource list.
-     */
-    listChanged: z__namespace.boolean().optional()
-  }).optional(),
-  /**
-   * Present if the server offers any tools to call.
-   */
-  tools: z__namespace.object({
-    /**
-     * Whether this server supports issuing notifications for changes to the tool list.
-     */
-    listChanged: z__namespace.boolean().optional()
-  }).optional(),
-  /**
-   * Present if the server supports task creation.
-   */
-  tasks: ServerTasksCapabilitySchema.optional()
-});
-var InitializeResultSchema = ResultSchema.extend({
-  /**
-   * The version of the Model Context Protocol that the server wants to use. This may not match the version that the client requested. If the client cannot support this version, it MUST disconnect.
-   */
-  protocolVersion: z__namespace.string(),
-  capabilities: ServerCapabilitiesSchema,
-  serverInfo: ImplementationSchema,
-  /**
-   * Instructions describing how to use the server and its features.
-   *
-   * This can be used by clients to improve the LLM's understanding of available tools, resources, etc. It can be thought of like a "hint" to the model. For example, this information MAY be added to the system prompt.
-   */
-  instructions: z__namespace.string().optional()
-});
-var InitializedNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/initialized"),
-  params: NotificationsParamsSchema.optional()
-});
-var isInitializedNotification = (value) => InitializedNotificationSchema.safeParse(value).success;
-var PingRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("ping"),
-  params: BaseRequestParamsSchema.optional()
-});
-var ProgressSchema = z__namespace.object({
-  /**
-   * The progress thus far. This should increase every time progress is made, even if the total is unknown.
-   */
-  progress: z__namespace.number(),
-  /**
-   * Total number of items to process (or total progress required), if known.
-   */
-  total: z__namespace.optional(z__namespace.number()),
-  /**
-   * An optional message describing the current progress.
-   */
-  message: z__namespace.optional(z__namespace.string())
-});
-var ProgressNotificationParamsSchema = z__namespace.object({
-  ...NotificationsParamsSchema.shape,
-  ...ProgressSchema.shape,
-  /**
-   * The progress token which was given in the initial request, used to associate this notification with the request that is proceeding.
-   */
-  progressToken: ProgressTokenSchema
-});
-var ProgressNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/progress"),
-  params: ProgressNotificationParamsSchema
-});
-var PaginatedRequestParamsSchema = BaseRequestParamsSchema.extend({
-  /**
-   * An opaque token representing the current pagination position.
-   * If provided, the server should return results starting after this cursor.
-   */
-  cursor: CursorSchema.optional()
-});
-var PaginatedRequestSchema = RequestSchema.extend({
-  params: PaginatedRequestParamsSchema.optional()
-});
-var PaginatedResultSchema = ResultSchema.extend({
-  /**
-   * An opaque token representing the pagination position after the last returned result.
-   * If present, there may be more results available.
-   */
-  nextCursor: CursorSchema.optional()
-});
-var TaskStatusSchema = z__namespace.enum(["working", "input_required", "completed", "failed", "cancelled"]);
-var TaskSchema = z__namespace.object({
-  taskId: z__namespace.string(),
-  status: TaskStatusSchema,
-  /**
-   * Time in milliseconds to keep task results available after completion.
-   * If null, the task has unlimited lifetime until manually cleaned up.
-   */
-  ttl: z__namespace.union([z__namespace.number(), z__namespace.null()]),
-  /**
-   * ISO 8601 timestamp when the task was created.
-   */
-  createdAt: z__namespace.string(),
-  /**
-   * ISO 8601 timestamp when the task was last updated.
-   */
-  lastUpdatedAt: z__namespace.string(),
-  pollInterval: z__namespace.optional(z__namespace.number()),
-  /**
-   * Optional diagnostic message for failed tasks or other status information.
-   */
-  statusMessage: z__namespace.optional(z__namespace.string())
-});
-var CreateTaskResultSchema = ResultSchema.extend({
-  task: TaskSchema
-});
-var TaskStatusNotificationParamsSchema = NotificationsParamsSchema.merge(TaskSchema);
-var TaskStatusNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/tasks/status"),
-  params: TaskStatusNotificationParamsSchema
-});
-var GetTaskRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("tasks/get"),
-  params: BaseRequestParamsSchema.extend({
-    taskId: z__namespace.string()
-  })
-});
-var GetTaskResultSchema = ResultSchema.merge(TaskSchema);
-var GetTaskPayloadRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("tasks/result"),
-  params: BaseRequestParamsSchema.extend({
-    taskId: z__namespace.string()
-  })
-});
-ResultSchema.loose();
-var ListTasksRequestSchema = PaginatedRequestSchema.extend({
-  method: z__namespace.literal("tasks/list")
-});
-var ListTasksResultSchema = PaginatedResultSchema.extend({
-  tasks: z__namespace.array(TaskSchema)
-});
-var CancelTaskRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("tasks/cancel"),
-  params: BaseRequestParamsSchema.extend({
-    taskId: z__namespace.string()
-  })
-});
-var CancelTaskResultSchema = ResultSchema.merge(TaskSchema);
-var ResourceContentsSchema = z__namespace.object({
-  /**
-   * The URI of this resource.
-   */
-  uri: z__namespace.string(),
-  /**
-   * The MIME type of this resource, if known.
-   */
-  mimeType: z__namespace.optional(z__namespace.string()),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var TextResourceContentsSchema = ResourceContentsSchema.extend({
-  /**
-   * The text of the item. This must only be set if the item can actually be represented as text (not binary data).
-   */
-  text: z__namespace.string()
-});
-var Base64Schema = z__namespace.string().refine((val) => {
-  try {
-    atob(val);
-    return true;
-  } catch {
-    return false;
-  }
-}, { message: "Invalid Base64 string" });
-var BlobResourceContentsSchema = ResourceContentsSchema.extend({
-  /**
-   * A base64-encoded string representing the binary data of the item.
-   */
-  blob: Base64Schema
-});
-var RoleSchema = z__namespace.enum(["user", "assistant"]);
-var AnnotationsSchema = z__namespace.object({
-  /**
-   * Intended audience(s) for the resource.
-   */
-  audience: z__namespace.array(RoleSchema).optional(),
-  /**
-   * Importance hint for the resource, from 0 (least) to 1 (most).
-   */
-  priority: z__namespace.number().min(0).max(1).optional(),
-  /**
-   * ISO 8601 timestamp for the most recent modification.
-   */
-  lastModified: z__namespace.iso.datetime({ offset: true }).optional()
-});
-var ResourceSchema = z__namespace.object({
-  ...BaseMetadataSchema.shape,
-  ...IconsSchema.shape,
-  /**
-   * The URI of this resource.
-   */
-  uri: z__namespace.string(),
-  /**
-   * A description of what this resource represents.
-   *
-   * This can be used by clients to improve the LLM's understanding of available resources. It can be thought of like a "hint" to the model.
-   */
-  description: z__namespace.optional(z__namespace.string()),
-  /**
-   * The MIME type of this resource, if known.
-   */
-  mimeType: z__namespace.optional(z__namespace.string()),
-  /**
-   * Optional annotations for the client.
-   */
-  annotations: AnnotationsSchema.optional(),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.optional(z__namespace.looseObject({}))
-});
-var ResourceTemplateSchema = z__namespace.object({
-  ...BaseMetadataSchema.shape,
-  ...IconsSchema.shape,
-  /**
-   * A URI template (according to RFC 6570) that can be used to construct resource URIs.
-   */
-  uriTemplate: z__namespace.string(),
-  /**
-   * A description of what this template is for.
-   *
-   * This can be used by clients to improve the LLM's understanding of available resources. It can be thought of like a "hint" to the model.
-   */
-  description: z__namespace.optional(z__namespace.string()),
-  /**
-   * The MIME type for all resources that match this template. This should only be included if all resources matching this template have the same type.
-   */
-  mimeType: z__namespace.optional(z__namespace.string()),
-  /**
-   * Optional annotations for the client.
-   */
-  annotations: AnnotationsSchema.optional(),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.optional(z__namespace.looseObject({}))
-});
-var ListResourcesRequestSchema = PaginatedRequestSchema.extend({
-  method: z__namespace.literal("resources/list")
-});
-var ListResourcesResultSchema = PaginatedResultSchema.extend({
-  resources: z__namespace.array(ResourceSchema)
-});
-var ListResourceTemplatesRequestSchema = PaginatedRequestSchema.extend({
-  method: z__namespace.literal("resources/templates/list")
-});
-var ListResourceTemplatesResultSchema = PaginatedResultSchema.extend({
-  resourceTemplates: z__namespace.array(ResourceTemplateSchema)
-});
-var ResourceRequestParamsSchema = BaseRequestParamsSchema.extend({
-  /**
-   * The URI of the resource to read. The URI can use any protocol; it is up to the server how to interpret it.
-   *
-   * @format uri
-   */
-  uri: z__namespace.string()
-});
-var ReadResourceRequestParamsSchema = ResourceRequestParamsSchema;
-var ReadResourceRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("resources/read"),
-  params: ReadResourceRequestParamsSchema
-});
-var ReadResourceResultSchema = ResultSchema.extend({
-  contents: z__namespace.array(z__namespace.union([TextResourceContentsSchema, BlobResourceContentsSchema]))
-});
-var ResourceListChangedNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/resources/list_changed"),
-  params: NotificationsParamsSchema.optional()
-});
-var SubscribeRequestParamsSchema = ResourceRequestParamsSchema;
-var SubscribeRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("resources/subscribe"),
-  params: SubscribeRequestParamsSchema
-});
-var UnsubscribeRequestParamsSchema = ResourceRequestParamsSchema;
-var UnsubscribeRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("resources/unsubscribe"),
-  params: UnsubscribeRequestParamsSchema
-});
-var ResourceUpdatedNotificationParamsSchema = NotificationsParamsSchema.extend({
-  /**
-   * The URI of the resource that has been updated. This might be a sub-resource of the one that the client actually subscribed to.
-   */
-  uri: z__namespace.string()
-});
-var ResourceUpdatedNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/resources/updated"),
-  params: ResourceUpdatedNotificationParamsSchema
-});
-var PromptArgumentSchema = z__namespace.object({
-  /**
-   * The name of the argument.
-   */
-  name: z__namespace.string(),
-  /**
-   * A human-readable description of the argument.
-   */
-  description: z__namespace.optional(z__namespace.string()),
-  /**
-   * Whether this argument must be provided.
-   */
-  required: z__namespace.optional(z__namespace.boolean())
-});
-var PromptSchema = z__namespace.object({
-  ...BaseMetadataSchema.shape,
-  ...IconsSchema.shape,
-  /**
-   * An optional description of what this prompt provides
-   */
-  description: z__namespace.optional(z__namespace.string()),
-  /**
-   * A list of arguments to use for templating the prompt.
-   */
-  arguments: z__namespace.optional(z__namespace.array(PromptArgumentSchema)),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.optional(z__namespace.looseObject({}))
-});
-var ListPromptsRequestSchema = PaginatedRequestSchema.extend({
-  method: z__namespace.literal("prompts/list")
-});
-var ListPromptsResultSchema = PaginatedResultSchema.extend({
-  prompts: z__namespace.array(PromptSchema)
-});
-var GetPromptRequestParamsSchema = BaseRequestParamsSchema.extend({
-  /**
-   * The name of the prompt or prompt template.
-   */
-  name: z__namespace.string(),
-  /**
-   * Arguments to use for templating the prompt.
-   */
-  arguments: z__namespace.record(z__namespace.string(), z__namespace.string()).optional()
-});
-var GetPromptRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("prompts/get"),
-  params: GetPromptRequestParamsSchema
-});
-var TextContentSchema = z__namespace.object({
-  type: z__namespace.literal("text"),
-  /**
-   * The text content of the message.
-   */
-  text: z__namespace.string(),
-  /**
-   * Optional annotations for the client.
-   */
-  annotations: AnnotationsSchema.optional(),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var ImageContentSchema = z__namespace.object({
-  type: z__namespace.literal("image"),
-  /**
-   * The base64-encoded image data.
-   */
-  data: Base64Schema,
-  /**
-   * The MIME type of the image. Different providers may support different image types.
-   */
-  mimeType: z__namespace.string(),
-  /**
-   * Optional annotations for the client.
-   */
-  annotations: AnnotationsSchema.optional(),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var AudioContentSchema = z__namespace.object({
-  type: z__namespace.literal("audio"),
-  /**
-   * The base64-encoded audio data.
-   */
-  data: Base64Schema,
-  /**
-   * The MIME type of the audio. Different providers may support different audio types.
-   */
-  mimeType: z__namespace.string(),
-  /**
-   * Optional annotations for the client.
-   */
-  annotations: AnnotationsSchema.optional(),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var ToolUseContentSchema = z__namespace.object({
-  type: z__namespace.literal("tool_use"),
-  /**
-   * The name of the tool to invoke.
-   * Must match a tool name from the request's tools array.
-   */
-  name: z__namespace.string(),
-  /**
-   * Unique identifier for this tool call.
-   * Used to correlate with ToolResultContent in subsequent messages.
-   */
-  id: z__namespace.string(),
-  /**
-   * Arguments to pass to the tool.
-   * Must conform to the tool's inputSchema.
-   */
-  input: z__namespace.record(z__namespace.string(), z__namespace.unknown()),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var EmbeddedResourceSchema = z__namespace.object({
-  type: z__namespace.literal("resource"),
-  resource: z__namespace.union([TextResourceContentsSchema, BlobResourceContentsSchema]),
-  /**
-   * Optional annotations for the client.
-   */
-  annotations: AnnotationsSchema.optional(),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var ResourceLinkSchema = ResourceSchema.extend({
-  type: z__namespace.literal("resource_link")
-});
-var ContentBlockSchema = z__namespace.union([
-  TextContentSchema,
-  ImageContentSchema,
-  AudioContentSchema,
-  ResourceLinkSchema,
-  EmbeddedResourceSchema
-]);
-var PromptMessageSchema = z__namespace.object({
-  role: RoleSchema,
-  content: ContentBlockSchema
-});
-var GetPromptResultSchema = ResultSchema.extend({
-  /**
-   * An optional description for the prompt.
-   */
-  description: z__namespace.string().optional(),
-  messages: z__namespace.array(PromptMessageSchema)
-});
-var PromptListChangedNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/prompts/list_changed"),
-  params: NotificationsParamsSchema.optional()
-});
-var ToolAnnotationsSchema = z__namespace.object({
-  /**
-   * A human-readable title for the tool.
-   */
-  title: z__namespace.string().optional(),
-  /**
-   * If true, the tool does not modify its environment.
-   *
-   * Default: false
-   */
-  readOnlyHint: z__namespace.boolean().optional(),
-  /**
-   * If true, the tool may perform destructive updates to its environment.
-   * If false, the tool performs only additive updates.
-   *
-   * (This property is meaningful only when `readOnlyHint == false`)
-   *
-   * Default: true
-   */
-  destructiveHint: z__namespace.boolean().optional(),
-  /**
-   * If true, calling the tool repeatedly with the same arguments
-   * will have no additional effect on the its environment.
-   *
-   * (This property is meaningful only when `readOnlyHint == false`)
-   *
-   * Default: false
-   */
-  idempotentHint: z__namespace.boolean().optional(),
-  /**
-   * If true, this tool may interact with an "open world" of external
-   * entities. If false, the tool's domain of interaction is closed.
-   * For example, the world of a web search tool is open, whereas that
-   * of a memory tool is not.
-   *
-   * Default: true
-   */
-  openWorldHint: z__namespace.boolean().optional()
-});
-var ToolExecutionSchema = z__namespace.object({
-  /**
-   * Indicates the tool's preference for task-augmented execution.
-   * - "required": Clients MUST invoke the tool as a task
-   * - "optional": Clients MAY invoke the tool as a task or normal request
-   * - "forbidden": Clients MUST NOT attempt to invoke the tool as a task
-   *
-   * If not present, defaults to "forbidden".
-   */
-  taskSupport: z__namespace.enum(["required", "optional", "forbidden"]).optional()
-});
-var ToolSchema = z__namespace.object({
-  ...BaseMetadataSchema.shape,
-  ...IconsSchema.shape,
-  /**
-   * A human-readable description of the tool.
-   */
-  description: z__namespace.string().optional(),
-  /**
-   * A JSON Schema 2020-12 object defining the expected parameters for the tool.
-   * Must have type: 'object' at the root level per MCP spec.
-   */
-  inputSchema: z__namespace.object({
-    type: z__namespace.literal("object"),
-    properties: z__namespace.record(z__namespace.string(), AssertObjectSchema).optional(),
-    required: z__namespace.array(z__namespace.string()).optional()
-  }).catchall(z__namespace.unknown()),
-  /**
-   * An optional JSON Schema 2020-12 object defining the structure of the tool's output
-   * returned in the structuredContent field of a CallToolResult.
-   * Must have type: 'object' at the root level per MCP spec.
-   */
-  outputSchema: z__namespace.object({
-    type: z__namespace.literal("object"),
-    properties: z__namespace.record(z__namespace.string(), AssertObjectSchema).optional(),
-    required: z__namespace.array(z__namespace.string()).optional()
-  }).catchall(z__namespace.unknown()).optional(),
-  /**
-   * Optional additional tool information.
-   */
-  annotations: ToolAnnotationsSchema.optional(),
-  /**
-   * Execution-related properties for this tool.
-   */
-  execution: ToolExecutionSchema.optional(),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var ListToolsRequestSchema = PaginatedRequestSchema.extend({
-  method: z__namespace.literal("tools/list")
-});
-var ListToolsResultSchema = PaginatedResultSchema.extend({
-  tools: z__namespace.array(ToolSchema)
-});
-var CallToolResultSchema = ResultSchema.extend({
-  /**
-   * A list of content objects that represent the result of the tool call.
-   *
-   * If the Tool does not define an outputSchema, this field MUST be present in the result.
-   * For backwards compatibility, this field is always present, but it may be empty.
-   */
-  content: z__namespace.array(ContentBlockSchema).default([]),
-  /**
-   * An object containing structured tool output.
-   *
-   * If the Tool defines an outputSchema, this field MUST be present in the result, and contain a JSON object that matches the schema.
-   */
-  structuredContent: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional(),
-  /**
-   * Whether the tool call ended in an error.
-   *
-   * If not set, this is assumed to be false (the call was successful).
-   *
-   * Any errors that originate from the tool SHOULD be reported inside the result
-   * object, with `isError` set to true, _not_ as an MCP protocol-level error
-   * response. Otherwise, the LLM would not be able to see that an error occurred
-   * and self-correct.
-   *
-   * However, any errors in _finding_ the tool, an error indicating that the
-   * server does not support tool calls, or any other exceptional conditions,
-   * should be reported as an MCP error response.
-   */
-  isError: z__namespace.boolean().optional()
-});
-CallToolResultSchema.or(ResultSchema.extend({
-  toolResult: z__namespace.unknown()
-}));
-var CallToolRequestParamsSchema = TaskAugmentedRequestParamsSchema.extend({
-  /**
-   * The name of the tool to call.
-   */
-  name: z__namespace.string(),
-  /**
-   * Arguments to pass to the tool.
-   */
-  arguments: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var CallToolRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("tools/call"),
-  params: CallToolRequestParamsSchema
-});
-var ToolListChangedNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/tools/list_changed"),
-  params: NotificationsParamsSchema.optional()
-});
-var ListChangedOptionsBaseSchema = z__namespace.object({
-  /**
-   * If true, the list will be refreshed automatically when a list changed notification is received.
-   * The callback will be called with the updated list.
-   *
-   * If false, the callback will be called with null items, allowing manual refresh.
-   *
-   * @default true
-   */
-  autoRefresh: z__namespace.boolean().default(true),
-  /**
-   * Debounce time in milliseconds for list changed notification processing.
-   *
-   * Multiple notifications received within this timeframe will only trigger one refresh.
-   * Set to 0 to disable debouncing.
-   *
-   * @default 300
-   */
-  debounceMs: z__namespace.number().int().nonnegative().default(300)
-});
-var LoggingLevelSchema = z__namespace.enum(["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"]);
-var SetLevelRequestParamsSchema = BaseRequestParamsSchema.extend({
-  /**
-   * The level of logging that the client wants to receive from the server. The server should send all logs at this level and higher (i.e., more severe) to the client as notifications/logging/message.
-   */
-  level: LoggingLevelSchema
-});
-var SetLevelRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("logging/setLevel"),
-  params: SetLevelRequestParamsSchema
-});
-var LoggingMessageNotificationParamsSchema = NotificationsParamsSchema.extend({
-  /**
-   * The severity of this log message.
-   */
-  level: LoggingLevelSchema,
-  /**
-   * An optional name of the logger issuing this message.
-   */
-  logger: z__namespace.string().optional(),
-  /**
-   * The data to be logged, such as a string message or an object. Any JSON serializable type is allowed here.
-   */
-  data: z__namespace.unknown()
-});
-var LoggingMessageNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/message"),
-  params: LoggingMessageNotificationParamsSchema
-});
-var ModelHintSchema = z__namespace.object({
-  /**
-   * A hint for a model name.
-   */
-  name: z__namespace.string().optional()
-});
-var ModelPreferencesSchema = z__namespace.object({
-  /**
-   * Optional hints to use for model selection.
-   */
-  hints: z__namespace.array(ModelHintSchema).optional(),
-  /**
-   * How much to prioritize cost when selecting a model.
-   */
-  costPriority: z__namespace.number().min(0).max(1).optional(),
-  /**
-   * How much to prioritize sampling speed (latency) when selecting a model.
-   */
-  speedPriority: z__namespace.number().min(0).max(1).optional(),
-  /**
-   * How much to prioritize intelligence and capabilities when selecting a model.
-   */
-  intelligencePriority: z__namespace.number().min(0).max(1).optional()
-});
-var ToolChoiceSchema = z__namespace.object({
-  /**
-   * Controls when tools are used:
-   * - "auto": Model decides whether to use tools (default)
-   * - "required": Model MUST use at least one tool before completing
-   * - "none": Model MUST NOT use any tools
-   */
-  mode: z__namespace.enum(["auto", "required", "none"]).optional()
-});
-var ToolResultContentSchema = z__namespace.object({
-  type: z__namespace.literal("tool_result"),
-  toolUseId: z__namespace.string().describe("The unique identifier for the corresponding tool call."),
-  content: z__namespace.array(ContentBlockSchema).default([]),
-  structuredContent: z__namespace.object({}).loose().optional(),
-  isError: z__namespace.boolean().optional(),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var SamplingContentSchema = z__namespace.discriminatedUnion("type", [TextContentSchema, ImageContentSchema, AudioContentSchema]);
-var SamplingMessageContentBlockSchema = z__namespace.discriminatedUnion("type", [
-  TextContentSchema,
-  ImageContentSchema,
-  AudioContentSchema,
-  ToolUseContentSchema,
-  ToolResultContentSchema
-]);
-var SamplingMessageSchema = z__namespace.object({
-  role: RoleSchema,
-  content: z__namespace.union([SamplingMessageContentBlockSchema, z__namespace.array(SamplingMessageContentBlockSchema)]),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var CreateMessageRequestParamsSchema = TaskAugmentedRequestParamsSchema.extend({
-  messages: z__namespace.array(SamplingMessageSchema),
-  /**
-   * The server's preferences for which model to select. The client MAY modify or omit this request.
-   */
-  modelPreferences: ModelPreferencesSchema.optional(),
-  /**
-   * An optional system prompt the server wants to use for sampling. The client MAY modify or omit this prompt.
-   */
-  systemPrompt: z__namespace.string().optional(),
-  /**
-   * A request to include context from one or more MCP servers (including the caller), to be attached to the prompt.
-   * The client MAY ignore this request.
-   *
-   * Default is "none". Values "thisServer" and "allServers" are soft-deprecated. Servers SHOULD only use these values if the client
-   * declares ClientCapabilities.sampling.context. These values may be removed in future spec releases.
-   */
-  includeContext: z__namespace.enum(["none", "thisServer", "allServers"]).optional(),
-  temperature: z__namespace.number().optional(),
-  /**
-   * The requested maximum number of tokens to sample (to prevent runaway completions).
-   *
-   * The client MAY choose to sample fewer tokens than the requested maximum.
-   */
-  maxTokens: z__namespace.number().int(),
-  stopSequences: z__namespace.array(z__namespace.string()).optional(),
-  /**
-   * Optional metadata to pass through to the LLM provider. The format of this metadata is provider-specific.
-   */
-  metadata: AssertObjectSchema.optional(),
-  /**
-   * Tools that the model may use during generation.
-   * The client MUST return an error if this field is provided but ClientCapabilities.sampling.tools is not declared.
-   */
-  tools: z__namespace.array(ToolSchema).optional(),
-  /**
-   * Controls how the model uses tools.
-   * The client MUST return an error if this field is provided but ClientCapabilities.sampling.tools is not declared.
-   * Default is `{ mode: "auto" }`.
-   */
-  toolChoice: ToolChoiceSchema.optional()
-});
-var CreateMessageRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("sampling/createMessage"),
-  params: CreateMessageRequestParamsSchema
-});
-var CreateMessageResultSchema = ResultSchema.extend({
-  /**
-   * The name of the model that generated the message.
-   */
-  model: z__namespace.string(),
-  /**
-   * The reason why sampling stopped, if known.
-   *
-   * Standard values:
-   * - "endTurn": Natural end of the assistant's turn
-   * - "stopSequence": A stop sequence was encountered
-   * - "maxTokens": Maximum token limit was reached
-   *
-   * This field is an open string to allow for provider-specific stop reasons.
-   */
-  stopReason: z__namespace.optional(z__namespace.enum(["endTurn", "stopSequence", "maxTokens"]).or(z__namespace.string())),
-  role: RoleSchema,
-  /**
-   * Response content. Single content block (text, image, or audio).
-   */
-  content: SamplingContentSchema
-});
-var CreateMessageResultWithToolsSchema = ResultSchema.extend({
-  /**
-   * The name of the model that generated the message.
-   */
-  model: z__namespace.string(),
-  /**
-   * The reason why sampling stopped, if known.
-   *
-   * Standard values:
-   * - "endTurn": Natural end of the assistant's turn
-   * - "stopSequence": A stop sequence was encountered
-   * - "maxTokens": Maximum token limit was reached
-   * - "toolUse": The model wants to use one or more tools
-   *
-   * This field is an open string to allow for provider-specific stop reasons.
-   */
-  stopReason: z__namespace.optional(z__namespace.enum(["endTurn", "stopSequence", "maxTokens", "toolUse"]).or(z__namespace.string())),
-  role: RoleSchema,
-  /**
-   * Response content. May be a single block or array. May include ToolUseContent if stopReason is "toolUse".
-   */
-  content: z__namespace.union([SamplingMessageContentBlockSchema, z__namespace.array(SamplingMessageContentBlockSchema)])
-});
-var BooleanSchemaSchema = z__namespace.object({
-  type: z__namespace.literal("boolean"),
-  title: z__namespace.string().optional(),
-  description: z__namespace.string().optional(),
-  default: z__namespace.boolean().optional()
-});
-var StringSchemaSchema = z__namespace.object({
-  type: z__namespace.literal("string"),
-  title: z__namespace.string().optional(),
-  description: z__namespace.string().optional(),
-  minLength: z__namespace.number().optional(),
-  maxLength: z__namespace.number().optional(),
-  format: z__namespace.enum(["email", "uri", "date", "date-time"]).optional(),
-  default: z__namespace.string().optional()
-});
-var NumberSchemaSchema = z__namespace.object({
-  type: z__namespace.enum(["number", "integer"]),
-  title: z__namespace.string().optional(),
-  description: z__namespace.string().optional(),
-  minimum: z__namespace.number().optional(),
-  maximum: z__namespace.number().optional(),
-  default: z__namespace.number().optional()
-});
-var UntitledSingleSelectEnumSchemaSchema = z__namespace.object({
-  type: z__namespace.literal("string"),
-  title: z__namespace.string().optional(),
-  description: z__namespace.string().optional(),
-  enum: z__namespace.array(z__namespace.string()),
-  default: z__namespace.string().optional()
-});
-var TitledSingleSelectEnumSchemaSchema = z__namespace.object({
-  type: z__namespace.literal("string"),
-  title: z__namespace.string().optional(),
-  description: z__namespace.string().optional(),
-  oneOf: z__namespace.array(z__namespace.object({
-    const: z__namespace.string(),
-    title: z__namespace.string()
-  })),
-  default: z__namespace.string().optional()
-});
-var LegacyTitledEnumSchemaSchema = z__namespace.object({
-  type: z__namespace.literal("string"),
-  title: z__namespace.string().optional(),
-  description: z__namespace.string().optional(),
-  enum: z__namespace.array(z__namespace.string()),
-  enumNames: z__namespace.array(z__namespace.string()).optional(),
-  default: z__namespace.string().optional()
-});
-var SingleSelectEnumSchemaSchema = z__namespace.union([UntitledSingleSelectEnumSchemaSchema, TitledSingleSelectEnumSchemaSchema]);
-var UntitledMultiSelectEnumSchemaSchema = z__namespace.object({
-  type: z__namespace.literal("array"),
-  title: z__namespace.string().optional(),
-  description: z__namespace.string().optional(),
-  minItems: z__namespace.number().optional(),
-  maxItems: z__namespace.number().optional(),
-  items: z__namespace.object({
-    type: z__namespace.literal("string"),
-    enum: z__namespace.array(z__namespace.string())
-  }),
-  default: z__namespace.array(z__namespace.string()).optional()
-});
-var TitledMultiSelectEnumSchemaSchema = z__namespace.object({
-  type: z__namespace.literal("array"),
-  title: z__namespace.string().optional(),
-  description: z__namespace.string().optional(),
-  minItems: z__namespace.number().optional(),
-  maxItems: z__namespace.number().optional(),
-  items: z__namespace.object({
-    anyOf: z__namespace.array(z__namespace.object({
-      const: z__namespace.string(),
-      title: z__namespace.string()
-    }))
-  }),
-  default: z__namespace.array(z__namespace.string()).optional()
-});
-var MultiSelectEnumSchemaSchema = z__namespace.union([UntitledMultiSelectEnumSchemaSchema, TitledMultiSelectEnumSchemaSchema]);
-var EnumSchemaSchema = z__namespace.union([LegacyTitledEnumSchemaSchema, SingleSelectEnumSchemaSchema, MultiSelectEnumSchemaSchema]);
-var PrimitiveSchemaDefinitionSchema = z__namespace.union([EnumSchemaSchema, BooleanSchemaSchema, StringSchemaSchema, NumberSchemaSchema]);
-var ElicitRequestFormParamsSchema = TaskAugmentedRequestParamsSchema.extend({
-  /**
-   * The elicitation mode.
-   *
-   * Optional for backward compatibility. Clients MUST treat missing mode as "form".
-   */
-  mode: z__namespace.literal("form").optional(),
-  /**
-   * The message to present to the user describing what information is being requested.
-   */
-  message: z__namespace.string(),
-  /**
-   * A restricted subset of JSON Schema.
-   * Only top-level properties are allowed, without nesting.
-   */
-  requestedSchema: z__namespace.object({
-    type: z__namespace.literal("object"),
-    properties: z__namespace.record(z__namespace.string(), PrimitiveSchemaDefinitionSchema),
-    required: z__namespace.array(z__namespace.string()).optional()
-  })
-});
-var ElicitRequestURLParamsSchema = TaskAugmentedRequestParamsSchema.extend({
-  /**
-   * The elicitation mode.
-   */
-  mode: z__namespace.literal("url"),
-  /**
-   * The message to present to the user explaining why the interaction is needed.
-   */
-  message: z__namespace.string(),
-  /**
-   * The ID of the elicitation, which must be unique within the context of the server.
-   * The client MUST treat this ID as an opaque value.
-   */
-  elicitationId: z__namespace.string(),
-  /**
-   * The URL that the user should navigate to.
-   */
-  url: z__namespace.string().url()
-});
-var ElicitRequestParamsSchema = z__namespace.union([ElicitRequestFormParamsSchema, ElicitRequestURLParamsSchema]);
-var ElicitRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("elicitation/create"),
-  params: ElicitRequestParamsSchema
-});
-var ElicitationCompleteNotificationParamsSchema = NotificationsParamsSchema.extend({
-  /**
-   * The ID of the elicitation that completed.
-   */
-  elicitationId: z__namespace.string()
-});
-var ElicitationCompleteNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/elicitation/complete"),
-  params: ElicitationCompleteNotificationParamsSchema
-});
-var ElicitResultSchema = ResultSchema.extend({
-  /**
-   * The user action in response to the elicitation.
-   * - "accept": User submitted the form/confirmed the action
-   * - "decline": User explicitly decline the action
-   * - "cancel": User dismissed without making an explicit choice
-   */
-  action: z__namespace.enum(["accept", "decline", "cancel"]),
-  /**
-   * The submitted form data, only present when action is "accept".
-   * Contains values matching the requested schema.
-   * Per MCP spec, content is "typically omitted" for decline/cancel actions.
-   * We normalize null to undefined for leniency while maintaining type compatibility.
-   */
-  content: z__namespace.preprocess((val) => val === null ? void 0 : val, z__namespace.record(z__namespace.string(), z__namespace.union([z__namespace.string(), z__namespace.number(), z__namespace.boolean(), z__namespace.array(z__namespace.string())])).optional())
-});
-var ResourceTemplateReferenceSchema = z__namespace.object({
-  type: z__namespace.literal("ref/resource"),
-  /**
-   * The URI or URI template of the resource.
-   */
-  uri: z__namespace.string()
-});
-var PromptReferenceSchema = z__namespace.object({
-  type: z__namespace.literal("ref/prompt"),
-  /**
-   * The name of the prompt or prompt template
-   */
-  name: z__namespace.string()
-});
-var CompleteRequestParamsSchema = BaseRequestParamsSchema.extend({
-  ref: z__namespace.union([PromptReferenceSchema, ResourceTemplateReferenceSchema]),
-  /**
-   * The argument's information
-   */
-  argument: z__namespace.object({
-    /**
-     * The name of the argument
-     */
-    name: z__namespace.string(),
-    /**
-     * The value of the argument to use for completion matching.
-     */
-    value: z__namespace.string()
-  }),
-  context: z__namespace.object({
-    /**
-     * Previously-resolved variables in a URI template or prompt.
-     */
-    arguments: z__namespace.record(z__namespace.string(), z__namespace.string()).optional()
-  }).optional()
-});
-var CompleteRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("completion/complete"),
-  params: CompleteRequestParamsSchema
-});
-var CompleteResultSchema = ResultSchema.extend({
-  completion: z__namespace.looseObject({
-    /**
-     * An array of completion values. Must not exceed 100 items.
-     */
-    values: z__namespace.array(z__namespace.string()).max(100),
-    /**
-     * The total number of completion options available. This can exceed the number of values actually sent in the response.
-     */
-    total: z__namespace.optional(z__namespace.number().int()),
-    /**
-     * Indicates whether there are additional completion options beyond those provided in the current response, even if the exact total is unknown.
-     */
-    hasMore: z__namespace.optional(z__namespace.boolean())
-  })
-});
-var RootSchema = z__namespace.object({
-  /**
-   * The URI identifying the root. This *must* start with file:// for now.
-   */
-  uri: z__namespace.string().startsWith("file://"),
-  /**
-   * An optional name for the root.
-   */
-  name: z__namespace.string().optional(),
-  /**
-   * See [MCP specification](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/47339c03c143bb4ec01a26e721a1b8fe66634ebe/docs/specification/draft/basic/index.mdx#general-fields)
-   * for notes on _meta usage.
-   */
-  _meta: z__namespace.record(z__namespace.string(), z__namespace.unknown()).optional()
-});
-var ListRootsRequestSchema = RequestSchema.extend({
-  method: z__namespace.literal("roots/list"),
-  params: BaseRequestParamsSchema.optional()
-});
-var ListRootsResultSchema = ResultSchema.extend({
-  roots: z__namespace.array(RootSchema)
-});
-var RootsListChangedNotificationSchema = NotificationSchema.extend({
-  method: z__namespace.literal("notifications/roots/list_changed"),
-  params: NotificationsParamsSchema.optional()
-});
-z__namespace.union([
-  PingRequestSchema,
-  InitializeRequestSchema,
-  CompleteRequestSchema,
-  SetLevelRequestSchema,
-  GetPromptRequestSchema,
-  ListPromptsRequestSchema,
-  ListResourcesRequestSchema,
-  ListResourceTemplatesRequestSchema,
-  ReadResourceRequestSchema,
-  SubscribeRequestSchema,
-  UnsubscribeRequestSchema,
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  GetTaskRequestSchema,
-  GetTaskPayloadRequestSchema,
-  ListTasksRequestSchema,
-  CancelTaskRequestSchema
-]);
-z__namespace.union([
-  CancelledNotificationSchema,
-  ProgressNotificationSchema,
-  InitializedNotificationSchema,
-  RootsListChangedNotificationSchema,
-  TaskStatusNotificationSchema
-]);
-z__namespace.union([
-  EmptyResultSchema,
-  CreateMessageResultSchema,
-  CreateMessageResultWithToolsSchema,
-  ElicitResultSchema,
-  ListRootsResultSchema,
-  GetTaskResultSchema,
-  ListTasksResultSchema,
-  CreateTaskResultSchema
-]);
-z__namespace.union([
-  PingRequestSchema,
-  CreateMessageRequestSchema,
-  ElicitRequestSchema,
-  ListRootsRequestSchema,
-  GetTaskRequestSchema,
-  GetTaskPayloadRequestSchema,
-  ListTasksRequestSchema,
-  CancelTaskRequestSchema
-]);
-z__namespace.union([
-  CancelledNotificationSchema,
-  ProgressNotificationSchema,
-  LoggingMessageNotificationSchema,
-  ResourceUpdatedNotificationSchema,
-  ResourceListChangedNotificationSchema,
-  ToolListChangedNotificationSchema,
-  PromptListChangedNotificationSchema,
-  TaskStatusNotificationSchema,
-  ElicitationCompleteNotificationSchema
-]);
-z__namespace.union([
-  EmptyResultSchema,
-  InitializeResultSchema,
-  CompleteResultSchema,
-  GetPromptResultSchema,
-  ListPromptsResultSchema,
-  ListResourcesResultSchema,
-  ListResourceTemplatesResultSchema,
-  ReadResourceResultSchema,
-  CallToolResultSchema,
-  ListToolsResultSchema,
-  GetTaskResultSchema,
-  ListTasksResultSchema,
-  CreateTaskResultSchema
-]);
-var McpError = class _McpError extends Error {
-  constructor(code, message, data) {
-    super(`MCP error ${code}: ${message}`);
-    this.code = code;
-    this.data = data;
-    this.name = "McpError";
-  }
-  /**
-   * Factory method to create the appropriate error type based on the error code and data
-   */
-  static fromError(code, message, data) {
-    if (code === ErrorCode.UrlElicitationRequired && data) {
-      const errorData = data;
-      if (errorData.elicitations) {
-        return new UrlElicitationRequiredError(errorData.elicitations, message);
-      }
-    }
-    return new _McpError(code, message, data);
-  }
-};
-var UrlElicitationRequiredError = class extends McpError {
-  constructor(elicitations, message = `URL elicitation${elicitations.length > 1 ? "s" : ""} required`) {
-    super(ErrorCode.UrlElicitationRequired, message, {
-      elicitations
-    });
-  }
-  get elicitations() {
-    return this.data?.elicitations ?? [];
-  }
-};
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/interfaces.js
-function isTerminal(status) {
-  return status === "completed" || status === "failed" || status === "cancelled";
-}
-
-// node_modules/zod-to-json-schema/dist/esm/parsers/string.js
-new Set("ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvxyz0123456789");
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-json-schema-compat.js
-function getMethodLiteral(schema) {
-  const shape = getObjectShape(schema);
-  const methodSchema = shape?.method;
-  if (!methodSchema) {
-    throw new Error("Schema is missing a method literal");
-  }
-  const value = getLiteralValue(methodSchema);
-  if (typeof value !== "string") {
-    throw new Error("Schema method literal must be a string");
-  }
-  return value;
-}
-function parseWithCompat(schema, data) {
-  const result = safeParse2(schema, data);
-  if (!result.success) {
-    throw result.error;
-  }
-  return result.data;
-}
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/protocol.js
-var DEFAULT_REQUEST_TIMEOUT_MSEC = 6e4;
-var Protocol = class {
-  constructor(_options) {
-    this._options = _options;
-    this._requestMessageId = 0;
-    this._requestHandlers = /* @__PURE__ */ new Map();
-    this._requestHandlerAbortControllers = /* @__PURE__ */ new Map();
-    this._notificationHandlers = /* @__PURE__ */ new Map();
-    this._responseHandlers = /* @__PURE__ */ new Map();
-    this._progressHandlers = /* @__PURE__ */ new Map();
-    this._timeoutInfo = /* @__PURE__ */ new Map();
-    this._pendingDebouncedNotifications = /* @__PURE__ */ new Set();
-    this._taskProgressTokens = /* @__PURE__ */ new Map();
-    this._requestResolvers = /* @__PURE__ */ new Map();
-    this.setNotificationHandler(CancelledNotificationSchema, (notification) => {
-      this._oncancel(notification);
-    });
-    this.setNotificationHandler(ProgressNotificationSchema, (notification) => {
-      this._onprogress(notification);
-    });
-    this.setRequestHandler(
-      PingRequestSchema,
-      // Automatic pong by default.
-      (_request) => ({})
-    );
-    this._taskStore = _options?.taskStore;
-    this._taskMessageQueue = _options?.taskMessageQueue;
-    if (this._taskStore) {
-      this.setRequestHandler(GetTaskRequestSchema, async (request, extra) => {
-        const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
-        if (!task) {
-          throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
-        }
-        return {
-          ...task
-        };
-      });
-      this.setRequestHandler(GetTaskPayloadRequestSchema, async (request, extra) => {
-        const handleTaskResult = async () => {
-          const taskId = request.params.taskId;
-          if (this._taskMessageQueue) {
-            let queuedMessage;
-            while (queuedMessage = await this._taskMessageQueue.dequeue(taskId, extra.sessionId)) {
-              if (queuedMessage.type === "response" || queuedMessage.type === "error") {
-                const message = queuedMessage.message;
-                const requestId = message.id;
-                const resolver = this._requestResolvers.get(requestId);
-                if (resolver) {
-                  this._requestResolvers.delete(requestId);
-                  if (queuedMessage.type === "response") {
-                    resolver(message);
-                  } else {
-                    const errorMessage = message;
-                    const error = new McpError(errorMessage.error.code, errorMessage.error.message, errorMessage.error.data);
-                    resolver(error);
-                  }
-                } else {
-                  const messageType = queuedMessage.type === "response" ? "Response" : "Error";
-                  this._onerror(new Error(`${messageType} handler missing for request ${requestId}`));
-                }
-                continue;
-              }
-              await this._transport?.send(queuedMessage.message, { relatedRequestId: extra.requestId });
-            }
-          }
-          const task = await this._taskStore.getTask(taskId, extra.sessionId);
-          if (!task) {
-            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${taskId}`);
-          }
-          if (!isTerminal(task.status)) {
-            await this._waitForTaskUpdate(taskId, extra.signal);
-            return await handleTaskResult();
-          }
-          if (isTerminal(task.status)) {
-            const result = await this._taskStore.getTaskResult(taskId, extra.sessionId);
-            this._clearTaskQueue(taskId);
-            return {
-              ...result,
-              _meta: {
-                ...result._meta,
-                [RELATED_TASK_META_KEY]: {
-                  taskId
-                }
-              }
-            };
-          }
-          return await handleTaskResult();
-        };
-        return await handleTaskResult();
-      });
-      this.setRequestHandler(ListTasksRequestSchema, async (request, extra) => {
-        try {
-          const { tasks, nextCursor } = await this._taskStore.listTasks(request.params?.cursor, extra.sessionId);
-          return {
-            tasks,
-            nextCursor,
-            _meta: {}
-          };
-        } catch (error) {
-          throw new McpError(ErrorCode.InvalidParams, `Failed to list tasks: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      });
-      this.setRequestHandler(CancelTaskRequestSchema, async (request, extra) => {
-        try {
-          const task = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
-          if (!task) {
-            throw new McpError(ErrorCode.InvalidParams, `Task not found: ${request.params.taskId}`);
-          }
-          if (isTerminal(task.status)) {
-            throw new McpError(ErrorCode.InvalidParams, `Cannot cancel task in terminal status: ${task.status}`);
-          }
-          await this._taskStore.updateTaskStatus(request.params.taskId, "cancelled", "Client cancelled task execution.", extra.sessionId);
-          this._clearTaskQueue(request.params.taskId);
-          const cancelledTask = await this._taskStore.getTask(request.params.taskId, extra.sessionId);
-          if (!cancelledTask) {
-            throw new McpError(ErrorCode.InvalidParams, `Task not found after cancellation: ${request.params.taskId}`);
-          }
-          return {
-            _meta: {},
-            ...cancelledTask
-          };
-        } catch (error) {
-          if (error instanceof McpError) {
-            throw error;
-          }
-          throw new McpError(ErrorCode.InvalidRequest, `Failed to cancel task: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      });
-    }
-  }
-  async _oncancel(notification) {
-    if (!notification.params.requestId) {
-      return;
-    }
-    const controller = this._requestHandlerAbortControllers.get(notification.params.requestId);
-    controller?.abort(notification.params.reason);
-  }
-  _setupTimeout(messageId, timeout, maxTotalTimeout, onTimeout, resetTimeoutOnProgress = false) {
-    this._timeoutInfo.set(messageId, {
-      timeoutId: setTimeout(onTimeout, timeout),
-      startTime: Date.now(),
-      timeout,
-      maxTotalTimeout,
-      resetTimeoutOnProgress,
-      onTimeout
-    });
-  }
-  _resetTimeout(messageId) {
-    const info = this._timeoutInfo.get(messageId);
-    if (!info)
-      return false;
-    const totalElapsed = Date.now() - info.startTime;
-    if (info.maxTotalTimeout && totalElapsed >= info.maxTotalTimeout) {
-      this._timeoutInfo.delete(messageId);
-      throw McpError.fromError(ErrorCode.RequestTimeout, "Maximum total timeout exceeded", {
-        maxTotalTimeout: info.maxTotalTimeout,
-        totalElapsed
-      });
-    }
-    clearTimeout(info.timeoutId);
-    info.timeoutId = setTimeout(info.onTimeout, info.timeout);
-    return true;
-  }
-  _cleanupTimeout(messageId) {
-    const info = this._timeoutInfo.get(messageId);
-    if (info) {
-      clearTimeout(info.timeoutId);
-      this._timeoutInfo.delete(messageId);
-    }
-  }
-  /**
-   * Attaches to the given transport, starts it, and starts listening for messages.
-   *
-   * The Protocol object assumes ownership of the Transport, replacing any callbacks that have already been set, and expects that it is the only user of the Transport instance going forward.
-   */
-  async connect(transport) {
-    this._transport = transport;
-    const _onclose = this.transport?.onclose;
-    this._transport.onclose = () => {
-      _onclose?.();
-      this._onclose();
-    };
-    const _onerror = this.transport?.onerror;
-    this._transport.onerror = (error) => {
-      _onerror?.(error);
-      this._onerror(error);
-    };
-    const _onmessage = this._transport?.onmessage;
-    this._transport.onmessage = (message, extra) => {
-      _onmessage?.(message, extra);
-      if (isJSONRPCResultResponse(message) || isJSONRPCErrorResponse(message)) {
-        this._onresponse(message);
-      } else if (isJSONRPCRequest(message)) {
-        this._onrequest(message, extra);
-      } else if (isJSONRPCNotification(message)) {
-        this._onnotification(message);
-      } else {
-        this._onerror(new Error(`Unknown message type: ${JSON.stringify(message)}`));
-      }
-    };
-    await this._transport.start();
-  }
-  _onclose() {
-    const responseHandlers = this._responseHandlers;
-    this._responseHandlers = /* @__PURE__ */ new Map();
-    this._progressHandlers.clear();
-    this._taskProgressTokens.clear();
-    this._pendingDebouncedNotifications.clear();
-    const error = McpError.fromError(ErrorCode.ConnectionClosed, "Connection closed");
-    this._transport = void 0;
-    this.onclose?.();
-    for (const handler of responseHandlers.values()) {
-      handler(error);
-    }
-  }
-  _onerror(error) {
-    this.onerror?.(error);
-  }
-  _onnotification(notification) {
-    const handler = this._notificationHandlers.get(notification.method) ?? this.fallbackNotificationHandler;
-    if (handler === void 0) {
-      return;
-    }
-    Promise.resolve().then(() => handler(notification)).catch((error) => this._onerror(new Error(`Uncaught error in notification handler: ${error}`)));
-  }
-  _onrequest(request, extra) {
-    const handler = this._requestHandlers.get(request.method) ?? this.fallbackRequestHandler;
-    const capturedTransport = this._transport;
-    const relatedTaskId = request.params?._meta?.[RELATED_TASK_META_KEY]?.taskId;
-    if (handler === void 0) {
-      const errorResponse = {
-        jsonrpc: "2.0",
-        id: request.id,
-        error: {
-          code: ErrorCode.MethodNotFound,
-          message: "Method not found"
-        }
-      };
-      if (relatedTaskId && this._taskMessageQueue) {
-        this._enqueueTaskMessage(relatedTaskId, {
-          type: "error",
-          message: errorResponse,
-          timestamp: Date.now()
-        }, capturedTransport?.sessionId).catch((error) => this._onerror(new Error(`Failed to enqueue error response: ${error}`)));
-      } else {
-        capturedTransport?.send(errorResponse).catch((error) => this._onerror(new Error(`Failed to send an error response: ${error}`)));
-      }
-      return;
-    }
-    const abortController = new AbortController();
-    this._requestHandlerAbortControllers.set(request.id, abortController);
-    const taskCreationParams = isTaskAugmentedRequestParams(request.params) ? request.params.task : void 0;
-    const taskStore = this._taskStore ? this.requestTaskStore(request, capturedTransport?.sessionId) : void 0;
-    const fullExtra = {
-      signal: abortController.signal,
-      sessionId: capturedTransport?.sessionId,
-      _meta: request.params?._meta,
-      sendNotification: async (notification) => {
-        const notificationOptions = { relatedRequestId: request.id };
-        if (relatedTaskId) {
-          notificationOptions.relatedTask = { taskId: relatedTaskId };
-        }
-        await this.notification(notification, notificationOptions);
-      },
-      sendRequest: async (r, resultSchema, options) => {
-        const requestOptions = { ...options, relatedRequestId: request.id };
-        if (relatedTaskId && !requestOptions.relatedTask) {
-          requestOptions.relatedTask = { taskId: relatedTaskId };
-        }
-        const effectiveTaskId = requestOptions.relatedTask?.taskId ?? relatedTaskId;
-        if (effectiveTaskId && taskStore) {
-          await taskStore.updateTaskStatus(effectiveTaskId, "input_required");
-        }
-        return await this.request(r, resultSchema, requestOptions);
-      },
-      authInfo: extra?.authInfo,
-      requestId: request.id,
-      requestInfo: extra?.requestInfo,
-      taskId: relatedTaskId,
-      taskStore,
-      taskRequestedTtl: taskCreationParams?.ttl,
-      closeSSEStream: extra?.closeSSEStream,
-      closeStandaloneSSEStream: extra?.closeStandaloneSSEStream
-    };
-    Promise.resolve().then(() => {
-      if (taskCreationParams) {
-        this.assertTaskHandlerCapability(request.method);
-      }
-    }).then(() => handler(request, fullExtra)).then(async (result) => {
-      if (abortController.signal.aborted) {
-        return;
-      }
-      const response = {
-        result,
-        jsonrpc: "2.0",
-        id: request.id
-      };
-      if (relatedTaskId && this._taskMessageQueue) {
-        await this._enqueueTaskMessage(relatedTaskId, {
-          type: "response",
-          message: response,
-          timestamp: Date.now()
-        }, capturedTransport?.sessionId);
-      } else {
-        await capturedTransport?.send(response);
-      }
-    }, async (error) => {
-      if (abortController.signal.aborted) {
-        return;
-      }
-      const errorResponse = {
-        jsonrpc: "2.0",
-        id: request.id,
-        error: {
-          code: Number.isSafeInteger(error["code"]) ? error["code"] : ErrorCode.InternalError,
-          message: error.message ?? "Internal error",
-          ...error["data"] !== void 0 && { data: error["data"] }
-        }
-      };
-      if (relatedTaskId && this._taskMessageQueue) {
-        await this._enqueueTaskMessage(relatedTaskId, {
-          type: "error",
-          message: errorResponse,
-          timestamp: Date.now()
-        }, capturedTransport?.sessionId);
-      } else {
-        await capturedTransport?.send(errorResponse);
-      }
-    }).catch((error) => this._onerror(new Error(`Failed to send response: ${error}`))).finally(() => {
-      this._requestHandlerAbortControllers.delete(request.id);
-    });
-  }
-  _onprogress(notification) {
-    const { progressToken, ...params } = notification.params;
-    const messageId = Number(progressToken);
-    const handler = this._progressHandlers.get(messageId);
-    if (!handler) {
-      this._onerror(new Error(`Received a progress notification for an unknown token: ${JSON.stringify(notification)}`));
-      return;
-    }
-    const responseHandler = this._responseHandlers.get(messageId);
-    const timeoutInfo = this._timeoutInfo.get(messageId);
-    if (timeoutInfo && responseHandler && timeoutInfo.resetTimeoutOnProgress) {
-      try {
-        this._resetTimeout(messageId);
-      } catch (error) {
-        this._responseHandlers.delete(messageId);
-        this._progressHandlers.delete(messageId);
-        this._cleanupTimeout(messageId);
-        responseHandler(error);
-        return;
-      }
-    }
-    handler(params);
-  }
-  _onresponse(response) {
-    const messageId = Number(response.id);
-    const resolver = this._requestResolvers.get(messageId);
-    if (resolver) {
-      this._requestResolvers.delete(messageId);
-      if (isJSONRPCResultResponse(response)) {
-        resolver(response);
-      } else {
-        const error = new McpError(response.error.code, response.error.message, response.error.data);
-        resolver(error);
-      }
-      return;
-    }
-    const handler = this._responseHandlers.get(messageId);
-    if (handler === void 0) {
-      this._onerror(new Error(`Received a response for an unknown message ID: ${JSON.stringify(response)}`));
-      return;
-    }
-    this._responseHandlers.delete(messageId);
-    this._cleanupTimeout(messageId);
-    let isTaskResponse = false;
-    if (isJSONRPCResultResponse(response) && response.result && typeof response.result === "object") {
-      const result = response.result;
-      if (result.task && typeof result.task === "object") {
-        const task = result.task;
-        if (typeof task.taskId === "string") {
-          isTaskResponse = true;
-          this._taskProgressTokens.set(task.taskId, messageId);
-        }
-      }
-    }
-    if (!isTaskResponse) {
-      this._progressHandlers.delete(messageId);
-    }
-    if (isJSONRPCResultResponse(response)) {
-      handler(response);
-    } else {
-      const error = McpError.fromError(response.error.code, response.error.message, response.error.data);
-      handler(error);
-    }
-  }
-  get transport() {
-    return this._transport;
-  }
-  /**
-   * Closes the connection.
-   */
-  async close() {
-    await this._transport?.close();
-  }
-  /**
-   * Sends a request and returns an AsyncGenerator that yields response messages.
-   * The generator is guaranteed to end with either a 'result' or 'error' message.
-   *
-   * @example
-   * ```typescript
-   * const stream = protocol.requestStream(request, resultSchema, options);
-   * for await (const message of stream) {
-   *   switch (message.type) {
-   *     case 'taskCreated':
-   *       console.log('Task created:', message.task.taskId);
-   *       break;
-   *     case 'taskStatus':
-   *       console.log('Task status:', message.task.status);
-   *       break;
-   *     case 'result':
-   *       console.log('Final result:', message.result);
-   *       break;
-   *     case 'error':
-   *       console.error('Error:', message.error);
-   *       break;
-   *   }
-   * }
-   * ```
-   *
-   * @experimental Use `client.experimental.tasks.requestStream()` to access this method.
-   */
-  async *requestStream(request, resultSchema, options) {
-    const { task } = options ?? {};
-    if (!task) {
-      try {
-        const result = await this.request(request, resultSchema, options);
-        yield { type: "result", result };
-      } catch (error) {
-        yield {
-          type: "error",
-          error: error instanceof McpError ? error : new McpError(ErrorCode.InternalError, String(error))
-        };
-      }
-      return;
-    }
-    let taskId;
-    try {
-      const createResult = await this.request(request, CreateTaskResultSchema, options);
-      if (createResult.task) {
-        taskId = createResult.task.taskId;
-        yield { type: "taskCreated", task: createResult.task };
-      } else {
-        throw new McpError(ErrorCode.InternalError, "Task creation did not return a task");
-      }
-      while (true) {
-        const task2 = await this.getTask({ taskId }, options);
-        yield { type: "taskStatus", task: task2 };
-        if (isTerminal(task2.status)) {
-          if (task2.status === "completed") {
-            const result = await this.getTaskResult({ taskId }, resultSchema, options);
-            yield { type: "result", result };
-          } else if (task2.status === "failed") {
-            yield {
-              type: "error",
-              error: new McpError(ErrorCode.InternalError, `Task ${taskId} failed`)
-            };
-          } else if (task2.status === "cancelled") {
-            yield {
-              type: "error",
-              error: new McpError(ErrorCode.InternalError, `Task ${taskId} was cancelled`)
-            };
-          }
-          return;
-        }
-        if (task2.status === "input_required") {
-          const result = await this.getTaskResult({ taskId }, resultSchema, options);
-          yield { type: "result", result };
-          return;
-        }
-        const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve5) => setTimeout(resolve5, pollInterval));
-        options?.signal?.throwIfAborted();
-      }
-    } catch (error) {
-      yield {
-        type: "error",
-        error: error instanceof McpError ? error : new McpError(ErrorCode.InternalError, String(error))
-      };
-    }
-  }
-  /**
-   * Sends a request and waits for a response.
-   *
-   * Do not use this method to emit notifications! Use notification() instead.
-   */
-  request(request, resultSchema, options) {
-    const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve5, reject) => {
-      const earlyReject = (error) => {
-        reject(error);
-      };
-      if (!this._transport) {
-        earlyReject(new Error("Not connected"));
-        return;
-      }
-      if (this._options?.enforceStrictCapabilities === true) {
-        try {
-          this.assertCapabilityForMethod(request.method);
-          if (task) {
-            this.assertTaskCapability(request.method);
-          }
-        } catch (e) {
-          earlyReject(e);
-          return;
-        }
-      }
-      options?.signal?.throwIfAborted();
-      const messageId = this._requestMessageId++;
-      const jsonrpcRequest = {
-        ...request,
-        jsonrpc: "2.0",
-        id: messageId
-      };
-      if (options?.onprogress) {
-        this._progressHandlers.set(messageId, options.onprogress);
-        jsonrpcRequest.params = {
-          ...request.params,
-          _meta: {
-            ...request.params?._meta || {},
-            progressToken: messageId
-          }
-        };
-      }
-      if (task) {
-        jsonrpcRequest.params = {
-          ...jsonrpcRequest.params,
-          task
-        };
-      }
-      if (relatedTask) {
-        jsonrpcRequest.params = {
-          ...jsonrpcRequest.params,
-          _meta: {
-            ...jsonrpcRequest.params?._meta || {},
-            [RELATED_TASK_META_KEY]: relatedTask
-          }
-        };
-      }
-      const cancel = (reason) => {
-        this._responseHandlers.delete(messageId);
-        this._progressHandlers.delete(messageId);
-        this._cleanupTimeout(messageId);
-        this._transport?.send({
-          jsonrpc: "2.0",
-          method: "notifications/cancelled",
-          params: {
-            requestId: messageId,
-            reason: String(reason)
-          }
-        }, { relatedRequestId, resumptionToken, onresumptiontoken }).catch((error2) => this._onerror(new Error(`Failed to send cancellation: ${error2}`)));
-        const error = reason instanceof McpError ? reason : new McpError(ErrorCode.RequestTimeout, String(reason));
-        reject(error);
-      };
-      this._responseHandlers.set(messageId, (response) => {
-        if (options?.signal?.aborted) {
-          return;
-        }
-        if (response instanceof Error) {
-          return reject(response);
-        }
-        try {
-          const parseResult = safeParse2(resultSchema, response.result);
-          if (!parseResult.success) {
-            reject(parseResult.error);
-          } else {
-            resolve5(parseResult.data);
-          }
-        } catch (error) {
-          reject(error);
-        }
-      });
-      options?.signal?.addEventListener("abort", () => {
-        cancel(options?.signal?.reason);
-      });
-      const timeout = options?.timeout ?? DEFAULT_REQUEST_TIMEOUT_MSEC;
-      const timeoutHandler = () => cancel(McpError.fromError(ErrorCode.RequestTimeout, "Request timed out", { timeout }));
-      this._setupTimeout(messageId, timeout, options?.maxTotalTimeout, timeoutHandler, options?.resetTimeoutOnProgress ?? false);
-      const relatedTaskId = relatedTask?.taskId;
-      if (relatedTaskId) {
-        const responseResolver = (response) => {
-          const handler = this._responseHandlers.get(messageId);
-          if (handler) {
-            handler(response);
-          } else {
-            this._onerror(new Error(`Response handler missing for side-channeled request ${messageId}`));
-          }
-        };
-        this._requestResolvers.set(messageId, responseResolver);
-        this._enqueueTaskMessage(relatedTaskId, {
-          type: "request",
-          message: jsonrpcRequest,
-          timestamp: Date.now()
-        }).catch((error) => {
-          this._cleanupTimeout(messageId);
-          reject(error);
-        });
-      } else {
-        this._transport.send(jsonrpcRequest, { relatedRequestId, resumptionToken, onresumptiontoken }).catch((error) => {
-          this._cleanupTimeout(messageId);
-          reject(error);
-        });
-      }
-    });
-  }
-  /**
-   * Gets the current status of a task.
-   *
-   * @experimental Use `client.experimental.tasks.getTask()` to access this method.
-   */
-  async getTask(params, options) {
-    return this.request({ method: "tasks/get", params }, GetTaskResultSchema, options);
-  }
-  /**
-   * Retrieves the result of a completed task.
-   *
-   * @experimental Use `client.experimental.tasks.getTaskResult()` to access this method.
-   */
-  async getTaskResult(params, resultSchema, options) {
-    return this.request({ method: "tasks/result", params }, resultSchema, options);
-  }
-  /**
-   * Lists tasks, optionally starting from a pagination cursor.
-   *
-   * @experimental Use `client.experimental.tasks.listTasks()` to access this method.
-   */
-  async listTasks(params, options) {
-    return this.request({ method: "tasks/list", params }, ListTasksResultSchema, options);
-  }
-  /**
-   * Cancels a specific task.
-   *
-   * @experimental Use `client.experimental.tasks.cancelTask()` to access this method.
-   */
-  async cancelTask(params, options) {
-    return this.request({ method: "tasks/cancel", params }, CancelTaskResultSchema, options);
-  }
-  /**
-   * Emits a notification, which is a one-way message that does not expect a response.
-   */
-  async notification(notification, options) {
-    if (!this._transport) {
-      throw new Error("Not connected");
-    }
-    this.assertNotificationCapability(notification.method);
-    const relatedTaskId = options?.relatedTask?.taskId;
-    if (relatedTaskId) {
-      const jsonrpcNotification2 = {
-        ...notification,
-        jsonrpc: "2.0",
-        params: {
-          ...notification.params,
-          _meta: {
-            ...notification.params?._meta || {},
-            [RELATED_TASK_META_KEY]: options.relatedTask
-          }
-        }
-      };
-      await this._enqueueTaskMessage(relatedTaskId, {
-        type: "notification",
-        message: jsonrpcNotification2,
-        timestamp: Date.now()
-      });
-      return;
-    }
-    const debouncedMethods = this._options?.debouncedNotificationMethods ?? [];
-    const canDebounce = debouncedMethods.includes(notification.method) && !notification.params && !options?.relatedRequestId && !options?.relatedTask;
-    if (canDebounce) {
-      if (this._pendingDebouncedNotifications.has(notification.method)) {
-        return;
-      }
-      this._pendingDebouncedNotifications.add(notification.method);
-      Promise.resolve().then(() => {
-        this._pendingDebouncedNotifications.delete(notification.method);
-        if (!this._transport) {
-          return;
-        }
-        let jsonrpcNotification2 = {
-          ...notification,
-          jsonrpc: "2.0"
-        };
-        if (options?.relatedTask) {
-          jsonrpcNotification2 = {
-            ...jsonrpcNotification2,
-            params: {
-              ...jsonrpcNotification2.params,
-              _meta: {
-                ...jsonrpcNotification2.params?._meta || {},
-                [RELATED_TASK_META_KEY]: options.relatedTask
-              }
-            }
-          };
-        }
-        this._transport?.send(jsonrpcNotification2, options).catch((error) => this._onerror(error));
-      });
-      return;
-    }
-    let jsonrpcNotification = {
-      ...notification,
-      jsonrpc: "2.0"
-    };
-    if (options?.relatedTask) {
-      jsonrpcNotification = {
-        ...jsonrpcNotification,
-        params: {
-          ...jsonrpcNotification.params,
-          _meta: {
-            ...jsonrpcNotification.params?._meta || {},
-            [RELATED_TASK_META_KEY]: options.relatedTask
-          }
-        }
-      };
-    }
-    await this._transport.send(jsonrpcNotification, options);
-  }
-  /**
-   * Registers a handler to invoke when this protocol object receives a request with the given method.
-   *
-   * Note that this will replace any previous request handler for the same method.
-   */
-  setRequestHandler(requestSchema, handler) {
-    const method = getMethodLiteral(requestSchema);
-    this.assertRequestHandlerCapability(method);
-    this._requestHandlers.set(method, (request, extra) => {
-      const parsed = parseWithCompat(requestSchema, request);
-      return Promise.resolve(handler(parsed, extra));
-    });
-  }
-  /**
-   * Removes the request handler for the given method.
-   */
-  removeRequestHandler(method) {
-    this._requestHandlers.delete(method);
-  }
-  /**
-   * Asserts that a request handler has not already been set for the given method, in preparation for a new one being automatically installed.
-   */
-  assertCanSetRequestHandler(method) {
-    if (this._requestHandlers.has(method)) {
-      throw new Error(`A request handler for ${method} already exists, which would be overridden`);
-    }
-  }
-  /**
-   * Registers a handler to invoke when this protocol object receives a notification with the given method.
-   *
-   * Note that this will replace any previous notification handler for the same method.
-   */
-  setNotificationHandler(notificationSchema, handler) {
-    const method = getMethodLiteral(notificationSchema);
-    this._notificationHandlers.set(method, (notification) => {
-      const parsed = parseWithCompat(notificationSchema, notification);
-      return Promise.resolve(handler(parsed));
-    });
-  }
-  /**
-   * Removes the notification handler for the given method.
-   */
-  removeNotificationHandler(method) {
-    this._notificationHandlers.delete(method);
-  }
-  /**
-   * Cleans up the progress handler associated with a task.
-   * This should be called when a task reaches a terminal status.
-   */
-  _cleanupTaskProgressHandler(taskId) {
-    const progressToken = this._taskProgressTokens.get(taskId);
-    if (progressToken !== void 0) {
-      this._progressHandlers.delete(progressToken);
-      this._taskProgressTokens.delete(taskId);
-    }
-  }
-  /**
-   * Enqueues a task-related message for side-channel delivery via tasks/result.
-   * @param taskId The task ID to associate the message with
-   * @param message The message to enqueue
-   * @param sessionId Optional session ID for binding the operation to a specific session
-   * @throws Error if taskStore is not configured or if enqueue fails (e.g., queue overflow)
-   *
-   * Note: If enqueue fails, it's the TaskMessageQueue implementation's responsibility to handle
-   * the error appropriately (e.g., by failing the task, logging, etc.). The Protocol layer
-   * simply propagates the error.
-   */
-  async _enqueueTaskMessage(taskId, message, sessionId) {
-    if (!this._taskStore || !this._taskMessageQueue) {
-      throw new Error("Cannot enqueue task message: taskStore and taskMessageQueue are not configured");
-    }
-    const maxQueueSize = this._options?.maxTaskQueueSize;
-    await this._taskMessageQueue.enqueue(taskId, message, sessionId, maxQueueSize);
-  }
-  /**
-   * Clears the message queue for a task and rejects any pending request resolvers.
-   * @param taskId The task ID whose queue should be cleared
-   * @param sessionId Optional session ID for binding the operation to a specific session
-   */
-  async _clearTaskQueue(taskId, sessionId) {
-    if (this._taskMessageQueue) {
-      const messages = await this._taskMessageQueue.dequeueAll(taskId, sessionId);
-      for (const message of messages) {
-        if (message.type === "request" && isJSONRPCRequest(message.message)) {
-          const requestId = message.message.id;
-          const resolver = this._requestResolvers.get(requestId);
-          if (resolver) {
-            resolver(new McpError(ErrorCode.InternalError, "Task cancelled or completed"));
-            this._requestResolvers.delete(requestId);
-          } else {
-            this._onerror(new Error(`Resolver missing for request ${requestId} during task ${taskId} cleanup`));
-          }
-        }
-      }
-    }
-  }
-  /**
-   * Waits for a task update (new messages or status change) with abort signal support.
-   * Uses polling to check for updates at the task's configured poll interval.
-   * @param taskId The task ID to wait for
-   * @param signal Abort signal to cancel the wait
-   * @returns Promise that resolves when an update occurs or rejects if aborted
-   */
-  async _waitForTaskUpdate(taskId, signal) {
-    let interval = this._options?.defaultTaskPollInterval ?? 1e3;
-    try {
-      const task = await this._taskStore?.getTask(taskId);
-      if (task?.pollInterval) {
-        interval = task.pollInterval;
-      }
-    } catch {
-    }
-    return new Promise((resolve5, reject) => {
-      if (signal.aborted) {
-        reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
-        return;
-      }
-      const timeoutId = setTimeout(resolve5, interval);
-      signal.addEventListener("abort", () => {
-        clearTimeout(timeoutId);
-        reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
-      }, { once: true });
-    });
-  }
-  requestTaskStore(request, sessionId) {
-    const taskStore = this._taskStore;
-    if (!taskStore) {
-      throw new Error("No task store configured");
-    }
-    return {
-      createTask: async (taskParams) => {
-        if (!request) {
-          throw new Error("No request provided");
-        }
-        return await taskStore.createTask(taskParams, request.id, {
-          method: request.method,
-          params: request.params
-        }, sessionId);
-      },
-      getTask: async (taskId) => {
-        const task = await taskStore.getTask(taskId, sessionId);
-        if (!task) {
-          throw new McpError(ErrorCode.InvalidParams, "Failed to retrieve task: Task not found");
-        }
-        return task;
-      },
-      storeTaskResult: async (taskId, status, result) => {
-        await taskStore.storeTaskResult(taskId, status, result, sessionId);
-        const task = await taskStore.getTask(taskId, sessionId);
-        if (task) {
-          const notification = TaskStatusNotificationSchema.parse({
-            method: "notifications/tasks/status",
-            params: task
-          });
-          await this.notification(notification);
-          if (isTerminal(task.status)) {
-            this._cleanupTaskProgressHandler(taskId);
-          }
-        }
-      },
-      getTaskResult: (taskId) => {
-        return taskStore.getTaskResult(taskId, sessionId);
-      },
-      updateTaskStatus: async (taskId, status, statusMessage) => {
-        const task = await taskStore.getTask(taskId, sessionId);
-        if (!task) {
-          throw new McpError(ErrorCode.InvalidParams, `Task "${taskId}" not found - it may have been cleaned up`);
-        }
-        if (isTerminal(task.status)) {
-          throw new McpError(ErrorCode.InvalidParams, `Cannot update task "${taskId}" from terminal status "${task.status}" to "${status}". Terminal states (completed, failed, cancelled) cannot transition to other states.`);
-        }
-        await taskStore.updateTaskStatus(taskId, status, statusMessage, sessionId);
-        const updatedTask = await taskStore.getTask(taskId, sessionId);
-        if (updatedTask) {
-          const notification = TaskStatusNotificationSchema.parse({
-            method: "notifications/tasks/status",
-            params: updatedTask
-          });
-          await this.notification(notification);
-          if (isTerminal(updatedTask.status)) {
-            this._cleanupTaskProgressHandler(taskId);
-          }
-        }
-      },
-      listTasks: (cursor) => {
-        return taskStore.listTasks(cursor, sessionId);
-      }
-    };
-  }
-};
-function isPlainObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-function mergeCapabilities(base, additional) {
-  const result = { ...base };
-  for (const key in additional) {
-    const k = key;
-    const addValue = additional[k];
-    if (addValue === void 0)
-      continue;
-    const baseValue = result[k];
-    if (isPlainObject(baseValue) && isPlainObject(addValue)) {
-      result[k] = { ...baseValue, ...addValue };
-    } else {
-      result[k] = addValue;
-    }
-  }
-  return result;
-}
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/validation/ajv-provider.js
-var import_ajv = __toESM(require_ajv());
-var import_ajv_formats = __toESM(require_dist());
-function createDefaultAjvInstance() {
-  const ajv = new import_ajv.default({
-    strict: false,
-    validateFormats: true,
-    validateSchema: false,
-    allErrors: true
-  });
-  const addFormats = import_ajv_formats.default;
-  addFormats(ajv);
-  return ajv;
-}
-var AjvJsonSchemaValidator = class {
-  /**
-   * Create an AJV validator
-   *
-   * @param ajv - Optional pre-configured AJV instance. If not provided, a default instance will be created.
-   *
-   * @example
-   * ```typescript
-   * // Use default configuration (recommended for most cases)
-   * import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv';
-   * const validator = new AjvJsonSchemaValidator();
-   *
-   * // Or provide custom AJV instance for advanced configuration
-   * import { Ajv } from 'ajv';
-   * import addFormats from 'ajv-formats';
-   *
-   * const ajv = new Ajv({ validateFormats: true });
-   * addFormats(ajv);
-   * const validator = new AjvJsonSchemaValidator(ajv);
-   * ```
-   */
-  constructor(ajv) {
-    this._ajv = ajv ?? createDefaultAjvInstance();
-  }
-  /**
-   * Create a validator for the given JSON Schema
-   *
-   * The validator is compiled once and can be reused multiple times.
-   * If the schema has an $id, it will be cached by AJV automatically.
-   *
-   * @param schema - Standard JSON Schema object
-   * @returns A validator function that validates input data
-   */
-  getValidator(schema) {
-    const ajvValidator = "$id" in schema && typeof schema.$id === "string" ? this._ajv.getSchema(schema.$id) ?? this._ajv.compile(schema) : this._ajv.compile(schema);
-    return (input) => {
-      const valid = ajvValidator(input);
-      if (valid) {
-        return {
-          valid: true,
-          data: input,
-          errorMessage: void 0
-        };
-      } else {
-        return {
-          valid: false,
-          data: void 0,
-          errorMessage: this._ajv.errorsText(ajvValidator.errors)
-        };
-      }
-    };
-  }
-};
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/client.js
-var ExperimentalClientTasks = class {
-  constructor(_client) {
-    this._client = _client;
-  }
-  /**
-   * Calls a tool and returns an AsyncGenerator that yields response messages.
-   * The generator is guaranteed to end with either a 'result' or 'error' message.
-   *
-   * This method provides streaming access to tool execution, allowing you to
-   * observe intermediate task status updates for long-running tool calls.
-   * Automatically validates structured output if the tool has an outputSchema.
-   *
-   * @example
-   * ```typescript
-   * const stream = client.experimental.tasks.callToolStream({ name: 'myTool', arguments: {} });
-   * for await (const message of stream) {
-   *   switch (message.type) {
-   *     case 'taskCreated':
-   *       console.log('Tool execution started:', message.task.taskId);
-   *       break;
-   *     case 'taskStatus':
-   *       console.log('Tool status:', message.task.status);
-   *       break;
-   *     case 'result':
-   *       console.log('Tool result:', message.result);
-   *       break;
-   *     case 'error':
-   *       console.error('Tool error:', message.error);
-   *       break;
-   *   }
-   * }
-   * ```
-   *
-   * @param params - Tool call parameters (name and arguments)
-   * @param resultSchema - Zod schema for validating the result (defaults to CallToolResultSchema)
-   * @param options - Optional request options (timeout, signal, task creation params, etc.)
-   * @returns AsyncGenerator that yields ResponseMessage objects
-   *
-   * @experimental
-   */
-  async *callToolStream(params, resultSchema = CallToolResultSchema, options) {
-    const clientInternal = this._client;
-    const optionsWithTask = {
-      ...options,
-      // We check if the tool is known to be a task during auto-configuration, but assume
-      // the caller knows what they're doing if they pass this explicitly
-      task: options?.task ?? (clientInternal.isToolTask(params.name) ? {} : void 0)
-    };
-    const stream = clientInternal.requestStream({ method: "tools/call", params }, resultSchema, optionsWithTask);
-    const validator = clientInternal.getToolOutputValidator(params.name);
-    for await (const message of stream) {
-      if (message.type === "result" && validator) {
-        const result = message.result;
-        if (!result.structuredContent && !result.isError) {
-          yield {
-            type: "error",
-            error: new McpError(ErrorCode.InvalidRequest, `Tool ${params.name} has an output schema but did not return structured content`)
-          };
-          return;
-        }
-        if (result.structuredContent) {
-          try {
-            const validationResult = validator(result.structuredContent);
-            if (!validationResult.valid) {
-              yield {
-                type: "error",
-                error: new McpError(ErrorCode.InvalidParams, `Structured content does not match the tool's output schema: ${validationResult.errorMessage}`)
-              };
-              return;
-            }
-          } catch (error) {
-            if (error instanceof McpError) {
-              yield { type: "error", error };
-              return;
-            }
-            yield {
-              type: "error",
-              error: new McpError(ErrorCode.InvalidParams, `Failed to validate structured content: ${error instanceof Error ? error.message : String(error)}`)
-            };
-            return;
-          }
-        }
-      }
-      yield message;
-    }
-  }
-  /**
-   * Gets the current status of a task.
-   *
-   * @param taskId - The task identifier
-   * @param options - Optional request options
-   * @returns The task status
-   *
-   * @experimental
-   */
-  async getTask(taskId, options) {
-    return this._client.getTask({ taskId }, options);
-  }
-  /**
-   * Retrieves the result of a completed task.
-   *
-   * @param taskId - The task identifier
-   * @param resultSchema - Zod schema for validating the result
-   * @param options - Optional request options
-   * @returns The task result
-   *
-   * @experimental
-   */
-  async getTaskResult(taskId, resultSchema, options) {
-    return this._client.getTaskResult({ taskId }, resultSchema, options);
-  }
-  /**
-   * Lists tasks with optional pagination.
-   *
-   * @param cursor - Optional pagination cursor
-   * @param options - Optional request options
-   * @returns List of tasks with optional next cursor
-   *
-   * @experimental
-   */
-  async listTasks(cursor, options) {
-    return this._client.listTasks(cursor ? { cursor } : void 0, options);
-  }
-  /**
-   * Cancels a running task.
-   *
-   * @param taskId - The task identifier
-   * @param options - Optional request options
-   *
-   * @experimental
-   */
-  async cancelTask(taskId, options) {
-    return this._client.cancelTask({ taskId }, options);
-  }
-  /**
-   * Sends a request and returns an AsyncGenerator that yields response messages.
-   * The generator is guaranteed to end with either a 'result' or 'error' message.
-   *
-   * This method provides streaming access to request processing, allowing you to
-   * observe intermediate task status updates for task-augmented requests.
-   *
-   * @param request - The request to send
-   * @param resultSchema - Zod schema for validating the result
-   * @param options - Optional request options (timeout, signal, task creation params, etc.)
-   * @returns AsyncGenerator that yields ResponseMessage objects
-   *
-   * @experimental
-   */
-  requestStream(request, resultSchema, options) {
-    return this._client.requestStream(request, resultSchema, options);
-  }
-};
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/experimental/tasks/helpers.js
-function assertToolsCallTaskCapability(requests, method, entityName) {
-  if (!requests) {
-    throw new Error(`${entityName} does not support task creation (required for ${method})`);
-  }
-  switch (method) {
-    case "tools/call":
-      if (!requests.tools?.call) {
-        throw new Error(`${entityName} does not support task creation for tools/call (required for ${method})`);
-      }
-      break;
-  }
-}
-function assertClientRequestTaskCapability(requests, method, entityName) {
-  if (!requests) {
-    throw new Error(`${entityName} does not support task creation (required for ${method})`);
-  }
-  switch (method) {
-    case "sampling/createMessage":
-      if (!requests.sampling?.createMessage) {
-        throw new Error(`${entityName} does not support task creation for sampling/createMessage (required for ${method})`);
-      }
-      break;
-    case "elicitation/create":
-      if (!requests.elicitation?.create) {
-        throw new Error(`${entityName} does not support task creation for elicitation/create (required for ${method})`);
-      }
-      break;
-  }
-}
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/client/index.js
-function applyElicitationDefaults(schema, data) {
-  if (!schema || data === null || typeof data !== "object")
-    return;
-  if (schema.type === "object" && schema.properties && typeof schema.properties === "object") {
-    const obj = data;
-    const props = schema.properties;
-    for (const key of Object.keys(props)) {
-      const propSchema = props[key];
-      if (obj[key] === void 0 && Object.prototype.hasOwnProperty.call(propSchema, "default")) {
-        obj[key] = propSchema.default;
-      }
-      if (obj[key] !== void 0) {
-        applyElicitationDefaults(propSchema, obj[key]);
-      }
-    }
-  }
-  if (Array.isArray(schema.anyOf)) {
-    for (const sub of schema.anyOf) {
-      if (typeof sub !== "boolean") {
-        applyElicitationDefaults(sub, data);
-      }
-    }
-  }
-  if (Array.isArray(schema.oneOf)) {
-    for (const sub of schema.oneOf) {
-      if (typeof sub !== "boolean") {
-        applyElicitationDefaults(sub, data);
-      }
-    }
-  }
-}
-function getSupportedElicitationModes(capabilities) {
-  if (!capabilities) {
-    return { supportsFormMode: false, supportsUrlMode: false };
-  }
-  const hasFormCapability = capabilities.form !== void 0;
-  const hasUrlCapability = capabilities.url !== void 0;
-  const supportsFormMode = hasFormCapability || !hasFormCapability && !hasUrlCapability;
-  const supportsUrlMode = hasUrlCapability;
-  return { supportsFormMode, supportsUrlMode };
-}
-var Client = class extends Protocol {
-  /**
-   * Initializes this client with the given name and version information.
-   */
-  constructor(_clientInfo, options) {
-    super(options);
-    this._clientInfo = _clientInfo;
-    this._cachedToolOutputValidators = /* @__PURE__ */ new Map();
-    this._cachedKnownTaskTools = /* @__PURE__ */ new Set();
-    this._cachedRequiredTaskTools = /* @__PURE__ */ new Set();
-    this._listChangedDebounceTimers = /* @__PURE__ */ new Map();
-    this._capabilities = options?.capabilities ?? {};
-    this._jsonSchemaValidator = options?.jsonSchemaValidator ?? new AjvJsonSchemaValidator();
-    if (options?.listChanged) {
-      this._pendingListChangedConfig = options.listChanged;
-    }
-  }
-  /**
-   * Set up handlers for list changed notifications based on config and server capabilities.
-   * This should only be called after initialization when server capabilities are known.
-   * Handlers are silently skipped if the server doesn't advertise the corresponding listChanged capability.
-   * @internal
-   */
-  _setupListChangedHandlers(config) {
-    if (config.tools && this._serverCapabilities?.tools?.listChanged) {
-      this._setupListChangedHandler("tools", ToolListChangedNotificationSchema, config.tools, async () => {
-        const result = await this.listTools();
-        return result.tools;
-      });
-    }
-    if (config.prompts && this._serverCapabilities?.prompts?.listChanged) {
-      this._setupListChangedHandler("prompts", PromptListChangedNotificationSchema, config.prompts, async () => {
-        const result = await this.listPrompts();
-        return result.prompts;
-      });
-    }
-    if (config.resources && this._serverCapabilities?.resources?.listChanged) {
-      this._setupListChangedHandler("resources", ResourceListChangedNotificationSchema, config.resources, async () => {
-        const result = await this.listResources();
-        return result.resources;
-      });
-    }
-  }
-  /**
-   * Access experimental features.
-   *
-   * WARNING: These APIs are experimental and may change without notice.
-   *
-   * @experimental
-   */
-  get experimental() {
-    if (!this._experimental) {
-      this._experimental = {
-        tasks: new ExperimentalClientTasks(this)
-      };
-    }
-    return this._experimental;
-  }
-  /**
-   * Registers new capabilities. This can only be called before connecting to a transport.
-   *
-   * The new capabilities will be merged with any existing capabilities previously given (e.g., at initialization).
-   */
-  registerCapabilities(capabilities) {
-    if (this.transport) {
-      throw new Error("Cannot register capabilities after connecting to transport");
-    }
-    this._capabilities = mergeCapabilities(this._capabilities, capabilities);
-  }
-  /**
-   * Override request handler registration to enforce client-side validation for elicitation.
-   */
-  setRequestHandler(requestSchema, handler) {
-    const shape = getObjectShape(requestSchema);
-    const methodSchema = shape?.method;
-    if (!methodSchema) {
-      throw new Error("Schema is missing a method literal");
-    }
-    let methodValue;
-    if (isZ4Schema(methodSchema)) {
-      const v4Schema = methodSchema;
-      const v4Def = v4Schema._zod?.def;
-      methodValue = v4Def?.value ?? v4Schema.value;
-    } else {
-      const v3Schema = methodSchema;
-      const legacyDef = v3Schema._def;
-      methodValue = legacyDef?.value ?? v3Schema.value;
-    }
-    if (typeof methodValue !== "string") {
-      throw new Error("Schema method literal must be a string");
-    }
-    const method = methodValue;
-    if (method === "elicitation/create") {
-      const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(ElicitRequestSchema, request);
-        if (!validatedRequest.success) {
-          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation request: ${errorMessage}`);
-        }
-        const { params } = validatedRequest.data;
-        params.mode = params.mode ?? "form";
-        const { supportsFormMode, supportsUrlMode } = getSupportedElicitationModes(this._capabilities.elicitation);
-        if (params.mode === "form" && !supportsFormMode) {
-          throw new McpError(ErrorCode.InvalidParams, "Client does not support form-mode elicitation requests");
-        }
-        if (params.mode === "url" && !supportsUrlMode) {
-          throw new McpError(ErrorCode.InvalidParams, "Client does not support URL-mode elicitation requests");
-        }
-        const result = await Promise.resolve(handler(request, extra));
-        if (params.task) {
-          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
-          if (!taskValidationResult.success) {
-            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
-          }
-          return taskValidationResult.data;
-        }
-        const validationResult = safeParse2(ElicitResultSchema, result);
-        if (!validationResult.success) {
-          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid elicitation result: ${errorMessage}`);
-        }
-        const validatedResult = validationResult.data;
-        const requestedSchema = params.mode === "form" ? params.requestedSchema : void 0;
-        if (params.mode === "form" && validatedResult.action === "accept" && validatedResult.content && requestedSchema) {
-          if (this._capabilities.elicitation?.form?.applyDefaults) {
-            try {
-              applyElicitationDefaults(requestedSchema, validatedResult.content);
-            } catch {
-            }
-          }
-        }
-        return validatedResult;
-      };
-      return super.setRequestHandler(requestSchema, wrappedHandler);
-    }
-    if (method === "sampling/createMessage") {
-      const wrappedHandler = async (request, extra) => {
-        const validatedRequest = safeParse2(CreateMessageRequestSchema, request);
-        if (!validatedRequest.success) {
-          const errorMessage = validatedRequest.error instanceof Error ? validatedRequest.error.message : String(validatedRequest.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid sampling request: ${errorMessage}`);
-        }
-        const { params } = validatedRequest.data;
-        const result = await Promise.resolve(handler(request, extra));
-        if (params.task) {
-          const taskValidationResult = safeParse2(CreateTaskResultSchema, result);
-          if (!taskValidationResult.success) {
-            const errorMessage = taskValidationResult.error instanceof Error ? taskValidationResult.error.message : String(taskValidationResult.error);
-            throw new McpError(ErrorCode.InvalidParams, `Invalid task creation result: ${errorMessage}`);
-          }
-          return taskValidationResult.data;
-        }
-        const hasTools = params.tools || params.toolChoice;
-        const resultSchema = hasTools ? CreateMessageResultWithToolsSchema : CreateMessageResultSchema;
-        const validationResult = safeParse2(resultSchema, result);
-        if (!validationResult.success) {
-          const errorMessage = validationResult.error instanceof Error ? validationResult.error.message : String(validationResult.error);
-          throw new McpError(ErrorCode.InvalidParams, `Invalid sampling result: ${errorMessage}`);
-        }
-        return validationResult.data;
-      };
-      return super.setRequestHandler(requestSchema, wrappedHandler);
-    }
-    return super.setRequestHandler(requestSchema, handler);
-  }
-  assertCapability(capability, method) {
-    if (!this._serverCapabilities?.[capability]) {
-      throw new Error(`Server does not support ${capability} (required for ${method})`);
-    }
-  }
-  async connect(transport, options) {
-    await super.connect(transport);
-    if (transport.sessionId !== void 0) {
-      return;
-    }
-    try {
-      const result = await this.request({
-        method: "initialize",
-        params: {
-          protocolVersion: LATEST_PROTOCOL_VERSION,
-          capabilities: this._capabilities,
-          clientInfo: this._clientInfo
-        }
-      }, InitializeResultSchema, options);
-      if (result === void 0) {
-        throw new Error(`Server sent invalid initialize result: ${result}`);
-      }
-      if (!SUPPORTED_PROTOCOL_VERSIONS.includes(result.protocolVersion)) {
-        throw new Error(`Server's protocol version is not supported: ${result.protocolVersion}`);
-      }
-      this._serverCapabilities = result.capabilities;
-      this._serverVersion = result.serverInfo;
-      if (transport.setProtocolVersion) {
-        transport.setProtocolVersion(result.protocolVersion);
-      }
-      this._instructions = result.instructions;
-      await this.notification({
-        method: "notifications/initialized"
-      });
-      if (this._pendingListChangedConfig) {
-        this._setupListChangedHandlers(this._pendingListChangedConfig);
-        this._pendingListChangedConfig = void 0;
-      }
-    } catch (error) {
-      void this.close();
-      throw error;
-    }
-  }
-  /**
-   * After initialization has completed, this will be populated with the server's reported capabilities.
-   */
-  getServerCapabilities() {
-    return this._serverCapabilities;
-  }
-  /**
-   * After initialization has completed, this will be populated with information about the server's name and version.
-   */
-  getServerVersion() {
-    return this._serverVersion;
-  }
-  /**
-   * After initialization has completed, this may be populated with information about the server's instructions.
-   */
-  getInstructions() {
-    return this._instructions;
-  }
-  assertCapabilityForMethod(method) {
-    switch (method) {
-      case "logging/setLevel":
-        if (!this._serverCapabilities?.logging) {
-          throw new Error(`Server does not support logging (required for ${method})`);
-        }
-        break;
-      case "prompts/get":
-      case "prompts/list":
-        if (!this._serverCapabilities?.prompts) {
-          throw new Error(`Server does not support prompts (required for ${method})`);
-        }
-        break;
-      case "resources/list":
-      case "resources/templates/list":
-      case "resources/read":
-      case "resources/subscribe":
-      case "resources/unsubscribe":
-        if (!this._serverCapabilities?.resources) {
-          throw new Error(`Server does not support resources (required for ${method})`);
-        }
-        if (method === "resources/subscribe" && !this._serverCapabilities.resources.subscribe) {
-          throw new Error(`Server does not support resource subscriptions (required for ${method})`);
-        }
-        break;
-      case "tools/call":
-      case "tools/list":
-        if (!this._serverCapabilities?.tools) {
-          throw new Error(`Server does not support tools (required for ${method})`);
-        }
-        break;
-      case "completion/complete":
-        if (!this._serverCapabilities?.completions) {
-          throw new Error(`Server does not support completions (required for ${method})`);
-        }
-        break;
-    }
-  }
-  assertNotificationCapability(method) {
-    switch (method) {
-      case "notifications/roots/list_changed":
-        if (!this._capabilities.roots?.listChanged) {
-          throw new Error(`Client does not support roots list changed notifications (required for ${method})`);
-        }
-        break;
-    }
-  }
-  assertRequestHandlerCapability(method) {
-    if (!this._capabilities) {
-      return;
-    }
-    switch (method) {
-      case "sampling/createMessage":
-        if (!this._capabilities.sampling) {
-          throw new Error(`Client does not support sampling capability (required for ${method})`);
-        }
-        break;
-      case "elicitation/create":
-        if (!this._capabilities.elicitation) {
-          throw new Error(`Client does not support elicitation capability (required for ${method})`);
-        }
-        break;
-      case "roots/list":
-        if (!this._capabilities.roots) {
-          throw new Error(`Client does not support roots capability (required for ${method})`);
-        }
-        break;
-      case "tasks/get":
-      case "tasks/list":
-      case "tasks/result":
-      case "tasks/cancel":
-        if (!this._capabilities.tasks) {
-          throw new Error(`Client does not support tasks capability (required for ${method})`);
-        }
-        break;
-    }
-  }
-  assertTaskCapability(method) {
-    assertToolsCallTaskCapability(this._serverCapabilities?.tasks?.requests, method, "Server");
-  }
-  assertTaskHandlerCapability(method) {
-    if (!this._capabilities) {
-      return;
-    }
-    assertClientRequestTaskCapability(this._capabilities.tasks?.requests, method, "Client");
-  }
-  async ping(options) {
-    return this.request({ method: "ping" }, EmptyResultSchema, options);
-  }
-  async complete(params, options) {
-    return this.request({ method: "completion/complete", params }, CompleteResultSchema, options);
-  }
-  async setLoggingLevel(level, options) {
-    return this.request({ method: "logging/setLevel", params: { level } }, EmptyResultSchema, options);
-  }
-  async getPrompt(params, options) {
-    return this.request({ method: "prompts/get", params }, GetPromptResultSchema, options);
-  }
-  async listPrompts(params, options) {
-    return this.request({ method: "prompts/list", params }, ListPromptsResultSchema, options);
-  }
-  async listResources(params, options) {
-    return this.request({ method: "resources/list", params }, ListResourcesResultSchema, options);
-  }
-  async listResourceTemplates(params, options) {
-    return this.request({ method: "resources/templates/list", params }, ListResourceTemplatesResultSchema, options);
-  }
-  async readResource(params, options) {
-    return this.request({ method: "resources/read", params }, ReadResourceResultSchema, options);
-  }
-  async subscribeResource(params, options) {
-    return this.request({ method: "resources/subscribe", params }, EmptyResultSchema, options);
-  }
-  async unsubscribeResource(params, options) {
-    return this.request({ method: "resources/unsubscribe", params }, EmptyResultSchema, options);
-  }
-  /**
-   * Calls a tool and waits for the result. Automatically validates structured output if the tool has an outputSchema.
-   *
-   * For task-based execution with streaming behavior, use client.experimental.tasks.callToolStream() instead.
-   */
-  async callTool(params, resultSchema = CallToolResultSchema, options) {
-    if (this.isToolTaskRequired(params.name)) {
-      throw new McpError(ErrorCode.InvalidRequest, `Tool "${params.name}" requires task-based execution. Use client.experimental.tasks.callToolStream() instead.`);
-    }
-    const result = await this.request({ method: "tools/call", params }, resultSchema, options);
-    const validator = this.getToolOutputValidator(params.name);
-    if (validator) {
-      if (!result.structuredContent && !result.isError) {
-        throw new McpError(ErrorCode.InvalidRequest, `Tool ${params.name} has an output schema but did not return structured content`);
-      }
-      if (result.structuredContent) {
-        try {
-          const validationResult = validator(result.structuredContent);
-          if (!validationResult.valid) {
-            throw new McpError(ErrorCode.InvalidParams, `Structured content does not match the tool's output schema: ${validationResult.errorMessage}`);
-          }
-        } catch (error) {
-          if (error instanceof McpError) {
-            throw error;
-          }
-          throw new McpError(ErrorCode.InvalidParams, `Failed to validate structured content: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-    }
-    return result;
-  }
-  isToolTask(toolName) {
-    if (!this._serverCapabilities?.tasks?.requests?.tools?.call) {
-      return false;
-    }
-    return this._cachedKnownTaskTools.has(toolName);
-  }
-  /**
-   * Check if a tool requires task-based execution.
-   * Unlike isToolTask which includes 'optional' tools, this only checks for 'required'.
-   */
-  isToolTaskRequired(toolName) {
-    return this._cachedRequiredTaskTools.has(toolName);
-  }
-  /**
-   * Cache validators for tool output schemas.
-   * Called after listTools() to pre-compile validators for better performance.
-   */
-  cacheToolMetadata(tools) {
-    this._cachedToolOutputValidators.clear();
-    this._cachedKnownTaskTools.clear();
-    this._cachedRequiredTaskTools.clear();
-    for (const tool of tools) {
-      if (tool.outputSchema) {
-        const toolValidator = this._jsonSchemaValidator.getValidator(tool.outputSchema);
-        this._cachedToolOutputValidators.set(tool.name, toolValidator);
-      }
-      const taskSupport = tool.execution?.taskSupport;
-      if (taskSupport === "required" || taskSupport === "optional") {
-        this._cachedKnownTaskTools.add(tool.name);
-      }
-      if (taskSupport === "required") {
-        this._cachedRequiredTaskTools.add(tool.name);
-      }
-    }
-  }
-  /**
-   * Get cached validator for a tool
-   */
-  getToolOutputValidator(toolName) {
-    return this._cachedToolOutputValidators.get(toolName);
-  }
-  async listTools(params, options) {
-    const result = await this.request({ method: "tools/list", params }, ListToolsResultSchema, options);
-    this.cacheToolMetadata(result.tools);
-    return result;
-  }
-  /**
-   * Set up a single list changed handler.
-   * @internal
-   */
-  _setupListChangedHandler(listType, notificationSchema, options, fetcher) {
-    const parseResult = ListChangedOptionsBaseSchema.safeParse(options);
-    if (!parseResult.success) {
-      throw new Error(`Invalid ${listType} listChanged options: ${parseResult.error.message}`);
-    }
-    if (typeof options.onChanged !== "function") {
-      throw new Error(`Invalid ${listType} listChanged options: onChanged must be a function`);
-    }
-    const { autoRefresh, debounceMs } = parseResult.data;
-    const { onChanged } = options;
-    const refresh = async () => {
-      if (!autoRefresh) {
-        onChanged(null, null);
-        return;
-      }
-      try {
-        const items = await fetcher();
-        onChanged(null, items);
-      } catch (e) {
-        const error = e instanceof Error ? e : new Error(String(e));
-        onChanged(error, null);
-      }
-    };
-    const handler = () => {
-      if (debounceMs) {
-        const existingTimer = this._listChangedDebounceTimers.get(listType);
-        if (existingTimer) {
-          clearTimeout(existingTimer);
-        }
-        const timer = setTimeout(refresh, debounceMs);
-        this._listChangedDebounceTimers.set(listType, timer);
-      } else {
-        refresh();
-      }
-    };
-    this.setNotificationHandler(notificationSchema, handler);
-  }
-  async sendRootsListChanged() {
-    return this.notification({ method: "notifications/roots/list_changed" });
-  }
-};
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js
-var import_cross_spawn = __toESM(require_cross_spawn());
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/stdio.js
-var ReadBuffer = class {
-  append(chunk) {
-    this._buffer = this._buffer ? Buffer.concat([this._buffer, chunk]) : chunk;
-  }
-  readMessage() {
-    if (!this._buffer) {
-      return null;
-    }
-    const index = this._buffer.indexOf("\n");
-    if (index === -1) {
-      return null;
-    }
-    const line = this._buffer.toString("utf8", 0, index).replace(/\r$/, "");
-    this._buffer = this._buffer.subarray(index + 1);
-    return deserializeMessage(line);
-  }
-  clear() {
-    this._buffer = void 0;
-  }
-};
-function deserializeMessage(line) {
-  return JSONRPCMessageSchema.parse(JSON.parse(line));
-}
-function serializeMessage(message) {
-  return JSON.stringify(message) + "\n";
-}
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/client/stdio.js
-var DEFAULT_INHERITED_ENV_VARS = process2__default.default.platform === "win32" ? [
-  "APPDATA",
-  "HOMEDRIVE",
-  "HOMEPATH",
-  "LOCALAPPDATA",
-  "PATH",
-  "PROCESSOR_ARCHITECTURE",
-  "SYSTEMDRIVE",
-  "SYSTEMROOT",
-  "TEMP",
-  "USERNAME",
-  "USERPROFILE",
-  "PROGRAMFILES"
-] : (
-  /* list inspired by the default env inheritance of sudo */
-  ["HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"]
-);
-function getDefaultEnvironment() {
-  const env = {};
-  for (const key of DEFAULT_INHERITED_ENV_VARS) {
-    const value = process2__default.default.env[key];
-    if (value === void 0) {
-      continue;
-    }
-    if (value.startsWith("()")) {
-      continue;
-    }
-    env[key] = value;
-  }
-  return env;
-}
-var StdioClientTransport = class {
-  constructor(server) {
-    this._readBuffer = new ReadBuffer();
-    this._stderrStream = null;
-    this._serverParams = server;
-    if (server.stderr === "pipe" || server.stderr === "overlapped") {
-      this._stderrStream = new stream.PassThrough();
-    }
-  }
-  /**
-   * Starts the server process and prepares to communicate with it.
-   */
-  async start() {
-    if (this._process) {
-      throw new Error("StdioClientTransport already started! If using Client class, note that connect() calls start() automatically.");
-    }
-    return new Promise((resolve5, reject) => {
-      this._process = (0, import_cross_spawn.default)(this._serverParams.command, this._serverParams.args ?? [], {
-        // merge default env with server env because mcp server needs some env vars
-        env: {
-          ...getDefaultEnvironment(),
-          ...this._serverParams.env
-        },
-        stdio: ["pipe", "pipe", this._serverParams.stderr ?? "inherit"],
-        shell: false,
-        windowsHide: process2__default.default.platform === "win32" && isElectron(),
-        cwd: this._serverParams.cwd
-      });
-      this._process.on("error", (error) => {
-        reject(error);
-        this.onerror?.(error);
-      });
-      this._process.on("spawn", () => {
-        resolve5();
-      });
-      this._process.on("close", (_code) => {
-        this._process = void 0;
-        this.onclose?.();
-      });
-      this._process.stdin?.on("error", (error) => {
-        this.onerror?.(error);
-      });
-      this._process.stdout?.on("data", (chunk) => {
-        this._readBuffer.append(chunk);
-        this.processReadBuffer();
-      });
-      this._process.stdout?.on("error", (error) => {
-        this.onerror?.(error);
-      });
-      if (this._stderrStream && this._process.stderr) {
-        this._process.stderr.pipe(this._stderrStream);
-      }
-    });
-  }
-  /**
-   * The stderr stream of the child process, if `StdioServerParameters.stderr` was set to "pipe" or "overlapped".
-   *
-   * If stderr piping was requested, a PassThrough stream is returned _immediately_, allowing callers to
-   * attach listeners before the start method is invoked. This prevents loss of any early
-   * error output emitted by the child process.
-   */
-  get stderr() {
-    if (this._stderrStream) {
-      return this._stderrStream;
-    }
-    return this._process?.stderr ?? null;
-  }
-  /**
-   * The child process pid spawned by this transport.
-   *
-   * This is only available after the transport has been started.
-   */
-  get pid() {
-    return this._process?.pid ?? null;
-  }
-  processReadBuffer() {
-    while (true) {
-      try {
-        const message = this._readBuffer.readMessage();
-        if (message === null) {
-          break;
-        }
-        this.onmessage?.(message);
-      } catch (error) {
-        this.onerror?.(error);
-      }
-    }
-  }
-  async close() {
-    if (this._process) {
-      const processToClose = this._process;
-      this._process = void 0;
-      const closePromise = new Promise((resolve5) => {
-        processToClose.once("close", () => {
-          resolve5();
-        });
-      });
-      try {
-        processToClose.stdin?.end();
-      } catch {
-      }
-      await Promise.race([closePromise, new Promise((resolve5) => setTimeout(resolve5, 2e3).unref())]);
-      if (processToClose.exitCode === null) {
-        try {
-          processToClose.kill("SIGTERM");
-        } catch {
-        }
-        await Promise.race([closePromise, new Promise((resolve5) => setTimeout(resolve5, 2e3).unref())]);
-      }
-      if (processToClose.exitCode === null) {
-        try {
-          processToClose.kill("SIGKILL");
-        } catch {
-        }
-      }
-    }
-    this._readBuffer.clear();
-  }
-  send(message) {
-    return new Promise((resolve5) => {
-      if (!this._process?.stdin) {
-        throw new Error("Not connected");
-      }
-      const json = serializeMessage(message);
-      if (this._process.stdin.write(json)) {
-        resolve5();
-      } else {
-        this._process.stdin.once("drain", resolve5);
-      }
-    });
-  }
-};
-function isElectron() {
-  return "type" in process2__default.default;
-}
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/transport.js
-function normalizeHeaders(headers) {
-  if (!headers)
-    return {};
-  if (headers instanceof Headers) {
-    return Object.fromEntries(headers.entries());
-  }
-  if (Array.isArray(headers)) {
-    return Object.fromEntries(headers);
-  }
-  return { ...headers };
-}
-function createFetchWithInit(baseFetch = fetch, baseInit) {
-  if (!baseInit) {
-    return baseFetch;
-  }
-  return async (url2, init) => {
-    const mergedInit = {
-      ...baseInit,
-      ...init,
-      // Headers need special handling - merge instead of replace
-      headers: init?.headers ? { ...normalizeHeaders(baseInit.headers), ...normalizeHeaders(init.headers) } : baseInit.headers
-    };
-    return baseFetch(url2, mergedInit);
-  };
-}
-
-// node_modules/pkce-challenge/dist/index.node.js
-var crypto4;
-crypto4 = globalThis.crypto?.webcrypto ?? // Node.js [18-16] REPL
-globalThis.crypto ?? // Node.js >18
-import('crypto').then((m) => m.webcrypto);
-async function getRandomValues(size) {
-  return (await crypto4).getRandomValues(new Uint8Array(size));
-}
-async function random(size) {
-  const mask = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
-  const evenDistCutoff = Math.pow(2, 8) - Math.pow(2, 8) % mask.length;
-  let result = "";
-  while (result.length < size) {
-    const randomBytes3 = await getRandomValues(size - result.length);
-    for (const randomByte of randomBytes3) {
-      if (randomByte < evenDistCutoff) {
-        result += mask[randomByte % mask.length];
-      }
-    }
-  }
-  return result;
-}
-async function generateVerifier(length) {
-  return await random(length);
-}
-async function generateChallenge(code_verifier) {
-  const buffer = await (await crypto4).subtle.digest("SHA-256", new TextEncoder().encode(code_verifier));
-  return btoa(String.fromCharCode(...new Uint8Array(buffer))).replace(/\//g, "_").replace(/\+/g, "-").replace(/=/g, "");
-}
-async function pkceChallenge(length) {
-  if (!length)
-    length = 43;
-  if (length < 43 || length > 128) {
-    throw `Expected a length between 43 and 128. Received ${length}.`;
-  }
-  const verifier = await generateVerifier(length);
-  const challenge = await generateChallenge(verifier);
-  return {
-    code_verifier: verifier,
-    code_challenge: challenge
-  };
-}
-var SafeUrlSchema = z__namespace.url().superRefine((val, ctx) => {
-  if (!URL.canParse(val)) {
-    ctx.addIssue({
-      code: z__namespace.ZodIssueCode.custom,
-      message: "URL must be parseable",
-      fatal: true
-    });
-    return z__namespace.NEVER;
-  }
-}).refine((url2) => {
-  const u = new URL(url2);
-  return u.protocol !== "javascript:" && u.protocol !== "data:" && u.protocol !== "vbscript:";
-}, { message: "URL cannot use javascript:, data:, or vbscript: scheme" });
-var OAuthProtectedResourceMetadataSchema = z__namespace.looseObject({
-  resource: z__namespace.string().url(),
-  authorization_servers: z__namespace.array(SafeUrlSchema).optional(),
-  jwks_uri: z__namespace.string().url().optional(),
-  scopes_supported: z__namespace.array(z__namespace.string()).optional(),
-  bearer_methods_supported: z__namespace.array(z__namespace.string()).optional(),
-  resource_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  resource_name: z__namespace.string().optional(),
-  resource_documentation: z__namespace.string().optional(),
-  resource_policy_uri: z__namespace.string().url().optional(),
-  resource_tos_uri: z__namespace.string().url().optional(),
-  tls_client_certificate_bound_access_tokens: z__namespace.boolean().optional(),
-  authorization_details_types_supported: z__namespace.array(z__namespace.string()).optional(),
-  dpop_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  dpop_bound_access_tokens_required: z__namespace.boolean().optional()
-});
-var OAuthMetadataSchema = z__namespace.looseObject({
-  issuer: z__namespace.string(),
-  authorization_endpoint: SafeUrlSchema,
-  token_endpoint: SafeUrlSchema,
-  registration_endpoint: SafeUrlSchema.optional(),
-  scopes_supported: z__namespace.array(z__namespace.string()).optional(),
-  response_types_supported: z__namespace.array(z__namespace.string()),
-  response_modes_supported: z__namespace.array(z__namespace.string()).optional(),
-  grant_types_supported: z__namespace.array(z__namespace.string()).optional(),
-  token_endpoint_auth_methods_supported: z__namespace.array(z__namespace.string()).optional(),
-  token_endpoint_auth_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  service_documentation: SafeUrlSchema.optional(),
-  revocation_endpoint: SafeUrlSchema.optional(),
-  revocation_endpoint_auth_methods_supported: z__namespace.array(z__namespace.string()).optional(),
-  revocation_endpoint_auth_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  introspection_endpoint: z__namespace.string().optional(),
-  introspection_endpoint_auth_methods_supported: z__namespace.array(z__namespace.string()).optional(),
-  introspection_endpoint_auth_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  code_challenge_methods_supported: z__namespace.array(z__namespace.string()).optional(),
-  client_id_metadata_document_supported: z__namespace.boolean().optional()
-});
-var OpenIdProviderMetadataSchema = z__namespace.looseObject({
-  issuer: z__namespace.string(),
-  authorization_endpoint: SafeUrlSchema,
-  token_endpoint: SafeUrlSchema,
-  userinfo_endpoint: SafeUrlSchema.optional(),
-  jwks_uri: SafeUrlSchema,
-  registration_endpoint: SafeUrlSchema.optional(),
-  scopes_supported: z__namespace.array(z__namespace.string()).optional(),
-  response_types_supported: z__namespace.array(z__namespace.string()),
-  response_modes_supported: z__namespace.array(z__namespace.string()).optional(),
-  grant_types_supported: z__namespace.array(z__namespace.string()).optional(),
-  acr_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  subject_types_supported: z__namespace.array(z__namespace.string()),
-  id_token_signing_alg_values_supported: z__namespace.array(z__namespace.string()),
-  id_token_encryption_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  id_token_encryption_enc_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  userinfo_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  userinfo_encryption_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  userinfo_encryption_enc_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  request_object_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  request_object_encryption_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  request_object_encryption_enc_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  token_endpoint_auth_methods_supported: z__namespace.array(z__namespace.string()).optional(),
-  token_endpoint_auth_signing_alg_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  display_values_supported: z__namespace.array(z__namespace.string()).optional(),
-  claim_types_supported: z__namespace.array(z__namespace.string()).optional(),
-  claims_supported: z__namespace.array(z__namespace.string()).optional(),
-  service_documentation: z__namespace.string().optional(),
-  claims_locales_supported: z__namespace.array(z__namespace.string()).optional(),
-  ui_locales_supported: z__namespace.array(z__namespace.string()).optional(),
-  claims_parameter_supported: z__namespace.boolean().optional(),
-  request_parameter_supported: z__namespace.boolean().optional(),
-  request_uri_parameter_supported: z__namespace.boolean().optional(),
-  require_request_uri_registration: z__namespace.boolean().optional(),
-  op_policy_uri: SafeUrlSchema.optional(),
-  op_tos_uri: SafeUrlSchema.optional(),
-  client_id_metadata_document_supported: z__namespace.boolean().optional()
-});
-var OpenIdProviderDiscoveryMetadataSchema = z__namespace.object({
-  ...OpenIdProviderMetadataSchema.shape,
-  ...OAuthMetadataSchema.pick({
-    code_challenge_methods_supported: true
-  }).shape
-});
-var OAuthTokensSchema = z__namespace.object({
-  access_token: z__namespace.string(),
-  id_token: z__namespace.string().optional(),
-  // Optional for OAuth 2.1, but necessary in OpenID Connect
-  token_type: z__namespace.string(),
-  expires_in: z__namespace.coerce.number().optional(),
-  scope: z__namespace.string().optional(),
-  refresh_token: z__namespace.string().optional()
-}).strip();
-var OAuthErrorResponseSchema = z__namespace.object({
-  error: z__namespace.string(),
-  error_description: z__namespace.string().optional(),
-  error_uri: z__namespace.string().optional()
-});
-var OptionalSafeUrlSchema = SafeUrlSchema.optional().or(z__namespace.literal("").transform(() => void 0));
-var OAuthClientMetadataSchema = z__namespace.object({
-  redirect_uris: z__namespace.array(SafeUrlSchema),
-  token_endpoint_auth_method: z__namespace.string().optional(),
-  grant_types: z__namespace.array(z__namespace.string()).optional(),
-  response_types: z__namespace.array(z__namespace.string()).optional(),
-  client_name: z__namespace.string().optional(),
-  client_uri: SafeUrlSchema.optional(),
-  logo_uri: OptionalSafeUrlSchema,
-  scope: z__namespace.string().optional(),
-  contacts: z__namespace.array(z__namespace.string()).optional(),
-  tos_uri: OptionalSafeUrlSchema,
-  policy_uri: z__namespace.string().optional(),
-  jwks_uri: SafeUrlSchema.optional(),
-  jwks: z__namespace.any().optional(),
-  software_id: z__namespace.string().optional(),
-  software_version: z__namespace.string().optional(),
-  software_statement: z__namespace.string().optional()
-}).strip();
-var OAuthClientInformationSchema = z__namespace.object({
-  client_id: z__namespace.string(),
-  client_secret: z__namespace.string().optional(),
-  client_id_issued_at: z__namespace.number().optional(),
-  client_secret_expires_at: z__namespace.number().optional()
-}).strip();
-var OAuthClientInformationFullSchema = OAuthClientMetadataSchema.merge(OAuthClientInformationSchema);
-z__namespace.object({
-  error: z__namespace.string(),
-  error_description: z__namespace.string().optional()
-}).strip();
-z__namespace.object({
-  token: z__namespace.string(),
-  token_type_hint: z__namespace.string().optional()
-}).strip();
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/shared/auth-utils.js
-function resourceUrlFromServerUrl(url2) {
-  const resourceURL = typeof url2 === "string" ? new URL(url2) : new URL(url2.href);
-  resourceURL.hash = "";
-  return resourceURL;
-}
-function checkResourceAllowed({ requestedResource, configuredResource }) {
-  const requested = typeof requestedResource === "string" ? new URL(requestedResource) : new URL(requestedResource.href);
-  const configured = typeof configuredResource === "string" ? new URL(configuredResource) : new URL(configuredResource.href);
-  if (requested.origin !== configured.origin) {
-    return false;
-  }
-  if (requested.pathname.length < configured.pathname.length) {
-    return false;
-  }
-  const requestedPath = requested.pathname.endsWith("/") ? requested.pathname : requested.pathname + "/";
-  const configuredPath = configured.pathname.endsWith("/") ? configured.pathname : configured.pathname + "/";
-  return requestedPath.startsWith(configuredPath);
-}
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/server/auth/errors.js
-var OAuthError = class extends Error {
-  constructor(message, errorUri) {
-    super(message);
-    this.errorUri = errorUri;
-    this.name = this.constructor.name;
-  }
-  /**
-   * Converts the error to a standard OAuth error response object
-   */
-  toResponseObject() {
-    const response = {
-      error: this.errorCode,
-      error_description: this.message
-    };
-    if (this.errorUri) {
-      response.error_uri = this.errorUri;
-    }
-    return response;
-  }
-  get errorCode() {
-    return this.constructor.errorCode;
-  }
-};
-var InvalidRequestError = class extends OAuthError {
-};
-InvalidRequestError.errorCode = "invalid_request";
-var InvalidClientError = class extends OAuthError {
-};
-InvalidClientError.errorCode = "invalid_client";
-var InvalidGrantError = class extends OAuthError {
-};
-InvalidGrantError.errorCode = "invalid_grant";
-var UnauthorizedClientError = class extends OAuthError {
-};
-UnauthorizedClientError.errorCode = "unauthorized_client";
-var UnsupportedGrantTypeError = class extends OAuthError {
-};
-UnsupportedGrantTypeError.errorCode = "unsupported_grant_type";
-var InvalidScopeError = class extends OAuthError {
-};
-InvalidScopeError.errorCode = "invalid_scope";
-var AccessDeniedError = class extends OAuthError {
-};
-AccessDeniedError.errorCode = "access_denied";
-var ServerError = class extends OAuthError {
-};
-ServerError.errorCode = "server_error";
-var TemporarilyUnavailableError = class extends OAuthError {
-};
-TemporarilyUnavailableError.errorCode = "temporarily_unavailable";
-var UnsupportedResponseTypeError = class extends OAuthError {
-};
-UnsupportedResponseTypeError.errorCode = "unsupported_response_type";
-var UnsupportedTokenTypeError = class extends OAuthError {
-};
-UnsupportedTokenTypeError.errorCode = "unsupported_token_type";
-var InvalidTokenError = class extends OAuthError {
-};
-InvalidTokenError.errorCode = "invalid_token";
-var MethodNotAllowedError = class extends OAuthError {
-};
-MethodNotAllowedError.errorCode = "method_not_allowed";
-var TooManyRequestsError = class extends OAuthError {
-};
-TooManyRequestsError.errorCode = "too_many_requests";
-var InvalidClientMetadataError = class extends OAuthError {
-};
-InvalidClientMetadataError.errorCode = "invalid_client_metadata";
-var InsufficientScopeError = class extends OAuthError {
-};
-InsufficientScopeError.errorCode = "insufficient_scope";
-var InvalidTargetError = class extends OAuthError {
-};
-InvalidTargetError.errorCode = "invalid_target";
-var OAUTH_ERRORS = {
-  [InvalidRequestError.errorCode]: InvalidRequestError,
-  [InvalidClientError.errorCode]: InvalidClientError,
-  [InvalidGrantError.errorCode]: InvalidGrantError,
-  [UnauthorizedClientError.errorCode]: UnauthorizedClientError,
-  [UnsupportedGrantTypeError.errorCode]: UnsupportedGrantTypeError,
-  [InvalidScopeError.errorCode]: InvalidScopeError,
-  [AccessDeniedError.errorCode]: AccessDeniedError,
-  [ServerError.errorCode]: ServerError,
-  [TemporarilyUnavailableError.errorCode]: TemporarilyUnavailableError,
-  [UnsupportedResponseTypeError.errorCode]: UnsupportedResponseTypeError,
-  [UnsupportedTokenTypeError.errorCode]: UnsupportedTokenTypeError,
-  [InvalidTokenError.errorCode]: InvalidTokenError,
-  [MethodNotAllowedError.errorCode]: MethodNotAllowedError,
-  [TooManyRequestsError.errorCode]: TooManyRequestsError,
-  [InvalidClientMetadataError.errorCode]: InvalidClientMetadataError,
-  [InsufficientScopeError.errorCode]: InsufficientScopeError,
-  [InvalidTargetError.errorCode]: InvalidTargetError
-};
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/client/auth.js
-var UnauthorizedError = class extends Error {
-  constructor(message) {
-    super(message ?? "Unauthorized");
-  }
-};
-function isClientAuthMethod(method) {
-  return ["client_secret_basic", "client_secret_post", "none"].includes(method);
-}
-var AUTHORIZATION_CODE_RESPONSE_TYPE = "code";
-var AUTHORIZATION_CODE_CHALLENGE_METHOD = "S256";
-function selectClientAuthMethod(clientInformation, supportedMethods) {
-  const hasClientSecret = clientInformation.client_secret !== void 0;
-  if (supportedMethods.length === 0) {
-    return hasClientSecret ? "client_secret_post" : "none";
-  }
-  if ("token_endpoint_auth_method" in clientInformation && clientInformation.token_endpoint_auth_method && isClientAuthMethod(clientInformation.token_endpoint_auth_method) && supportedMethods.includes(clientInformation.token_endpoint_auth_method)) {
-    return clientInformation.token_endpoint_auth_method;
-  }
-  if (hasClientSecret && supportedMethods.includes("client_secret_basic")) {
-    return "client_secret_basic";
-  }
-  if (hasClientSecret && supportedMethods.includes("client_secret_post")) {
-    return "client_secret_post";
-  }
-  if (supportedMethods.includes("none")) {
-    return "none";
-  }
-  return hasClientSecret ? "client_secret_post" : "none";
-}
-function applyClientAuthentication(method, clientInformation, headers, params) {
-  const { client_id, client_secret } = clientInformation;
-  switch (method) {
-    case "client_secret_basic":
-      applyBasicAuth(client_id, client_secret, headers);
-      return;
-    case "client_secret_post":
-      applyPostAuth(client_id, client_secret, params);
-      return;
-    case "none":
-      applyPublicAuth(client_id, params);
-      return;
-    default:
-      throw new Error(`Unsupported client authentication method: ${method}`);
-  }
-}
-function applyBasicAuth(clientId, clientSecret, headers) {
-  if (!clientSecret) {
-    throw new Error("client_secret_basic authentication requires a client_secret");
-  }
-  const credentials = btoa(`${clientId}:${clientSecret}`);
-  headers.set("Authorization", `Basic ${credentials}`);
-}
-function applyPostAuth(clientId, clientSecret, params) {
-  params.set("client_id", clientId);
-  if (clientSecret) {
-    params.set("client_secret", clientSecret);
-  }
-}
-function applyPublicAuth(clientId, params) {
-  params.set("client_id", clientId);
-}
-async function parseErrorResponse(input) {
-  const statusCode = input instanceof Response ? input.status : void 0;
-  const body = input instanceof Response ? await input.text() : input;
-  try {
-    const result = OAuthErrorResponseSchema.parse(JSON.parse(body));
-    const { error, error_description, error_uri } = result;
-    const errorClass = OAUTH_ERRORS[error] || ServerError;
-    return new errorClass(error_description || "", error_uri);
-  } catch (error) {
-    const errorMessage = `${statusCode ? `HTTP ${statusCode}: ` : ""}Invalid OAuth error response: ${error}. Raw body: ${body}`;
-    return new ServerError(errorMessage);
-  }
-}
-async function auth(provider, options) {
-  try {
-    return await authInternal(provider, options);
-  } catch (error) {
-    if (error instanceof InvalidClientError || error instanceof UnauthorizedClientError) {
-      await provider.invalidateCredentials?.("all");
-      return await authInternal(provider, options);
-    } else if (error instanceof InvalidGrantError) {
-      await provider.invalidateCredentials?.("tokens");
-      return await authInternal(provider, options);
-    }
-    throw error;
-  }
-}
-async function authInternal(provider, { serverUrl, authorizationCode, scope, resourceMetadataUrl, fetchFn }) {
-  let resourceMetadata;
-  let authorizationServerUrl;
-  try {
-    resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, { resourceMetadataUrl }, fetchFn);
-    if (resourceMetadata.authorization_servers && resourceMetadata.authorization_servers.length > 0) {
-      authorizationServerUrl = resourceMetadata.authorization_servers[0];
-    }
-  } catch {
-  }
-  if (!authorizationServerUrl) {
-    authorizationServerUrl = new URL("/", serverUrl);
-  }
-  const resource = await selectResourceURL(serverUrl, provider, resourceMetadata);
-  const metadata = await discoverAuthorizationServerMetadata(authorizationServerUrl, {
-    fetchFn
-  });
-  let clientInformation = await Promise.resolve(provider.clientInformation());
-  if (!clientInformation) {
-    if (authorizationCode !== void 0) {
-      throw new Error("Existing OAuth client information is required when exchanging an authorization code");
-    }
-    const supportsUrlBasedClientId = metadata?.client_id_metadata_document_supported === true;
-    const clientMetadataUrl = provider.clientMetadataUrl;
-    if (clientMetadataUrl && !isHttpsUrl(clientMetadataUrl)) {
-      throw new InvalidClientMetadataError(`clientMetadataUrl must be a valid HTTPS URL with a non-root pathname, got: ${clientMetadataUrl}`);
-    }
-    const shouldUseUrlBasedClientId = supportsUrlBasedClientId && clientMetadataUrl;
-    if (shouldUseUrlBasedClientId) {
-      clientInformation = {
-        client_id: clientMetadataUrl
-      };
-      await provider.saveClientInformation?.(clientInformation);
-    } else {
-      if (!provider.saveClientInformation) {
-        throw new Error("OAuth client information must be saveable for dynamic registration");
-      }
-      const fullInformation = await registerClient(authorizationServerUrl, {
-        metadata,
-        clientMetadata: provider.clientMetadata,
-        fetchFn
-      });
-      await provider.saveClientInformation(fullInformation);
-      clientInformation = fullInformation;
-    }
-  }
-  const nonInteractiveFlow = !provider.redirectUrl;
-  if (authorizationCode !== void 0 || nonInteractiveFlow) {
-    const tokens2 = await fetchToken(provider, authorizationServerUrl, {
-      metadata,
-      resource,
-      authorizationCode,
-      fetchFn
-    });
-    await provider.saveTokens(tokens2);
-    return "AUTHORIZED";
-  }
-  const tokens = await provider.tokens();
-  if (tokens?.refresh_token) {
-    try {
-      const newTokens = await refreshAuthorization(authorizationServerUrl, {
-        metadata,
-        clientInformation,
-        refreshToken: tokens.refresh_token,
-        resource,
-        addClientAuthentication: provider.addClientAuthentication,
-        fetchFn
-      });
-      await provider.saveTokens(newTokens);
-      return "AUTHORIZED";
-    } catch (error) {
-      if (!(error instanceof OAuthError) || error instanceof ServerError) ; else {
-        throw error;
-      }
-    }
-  }
-  const state = provider.state ? await provider.state() : void 0;
-  const { authorizationUrl, codeVerifier } = await startAuthorization(authorizationServerUrl, {
-    metadata,
-    clientInformation,
-    state,
-    redirectUrl: provider.redirectUrl,
-    scope: scope || resourceMetadata?.scopes_supported?.join(" ") || provider.clientMetadata.scope,
-    resource
-  });
-  await provider.saveCodeVerifier(codeVerifier);
-  await provider.redirectToAuthorization(authorizationUrl);
-  return "REDIRECT";
-}
-function isHttpsUrl(value) {
-  if (!value)
-    return false;
-  try {
-    const url2 = new URL(value);
-    return url2.protocol === "https:" && url2.pathname !== "/";
-  } catch {
-    return false;
-  }
-}
-async function selectResourceURL(serverUrl, provider, resourceMetadata) {
-  const defaultResource = resourceUrlFromServerUrl(serverUrl);
-  if (provider.validateResourceURL) {
-    return await provider.validateResourceURL(defaultResource, resourceMetadata?.resource);
-  }
-  if (!resourceMetadata) {
-    return void 0;
-  }
-  if (!checkResourceAllowed({ requestedResource: defaultResource, configuredResource: resourceMetadata.resource })) {
-    throw new Error(`Protected resource ${resourceMetadata.resource} does not match expected ${defaultResource} (or origin)`);
-  }
-  return new URL(resourceMetadata.resource);
-}
-function extractWWWAuthenticateParams(res) {
-  const authenticateHeader = res.headers.get("WWW-Authenticate");
-  if (!authenticateHeader) {
-    return {};
-  }
-  const [type, scheme] = authenticateHeader.split(" ");
-  if (type.toLowerCase() !== "bearer" || !scheme) {
-    return {};
-  }
-  const resourceMetadataMatch = extractFieldFromWwwAuth(res, "resource_metadata") || void 0;
-  let resourceMetadataUrl;
-  if (resourceMetadataMatch) {
-    try {
-      resourceMetadataUrl = new URL(resourceMetadataMatch);
-    } catch {
-    }
-  }
-  const scope = extractFieldFromWwwAuth(res, "scope") || void 0;
-  const error = extractFieldFromWwwAuth(res, "error") || void 0;
-  return {
-    resourceMetadataUrl,
-    scope,
-    error
-  };
-}
-function extractFieldFromWwwAuth(response, fieldName) {
-  const wwwAuthHeader = response.headers.get("WWW-Authenticate");
-  if (!wwwAuthHeader) {
-    return null;
-  }
-  const pattern = new RegExp(`${fieldName}=(?:"([^"]+)"|([^\\s,]+))`);
-  const match = wwwAuthHeader.match(pattern);
-  if (match) {
-    return match[1] || match[2];
-  }
-  return null;
-}
-async function discoverOAuthProtectedResourceMetadata(serverUrl, opts, fetchFn = fetch) {
-  const response = await discoverMetadataWithFallback(serverUrl, "oauth-protected-resource", fetchFn, {
-    protocolVersion: opts?.protocolVersion,
-    metadataUrl: opts?.resourceMetadataUrl
-  });
-  if (!response || response.status === 404) {
-    await response?.body?.cancel();
-    throw new Error(`Resource server does not implement OAuth 2.0 Protected Resource Metadata.`);
-  }
-  if (!response.ok) {
-    await response.body?.cancel();
-    throw new Error(`HTTP ${response.status} trying to load well-known OAuth protected resource metadata.`);
-  }
-  return OAuthProtectedResourceMetadataSchema.parse(await response.json());
-}
-async function fetchWithCorsRetry(url2, headers, fetchFn = fetch) {
-  try {
-    return await fetchFn(url2, { headers });
-  } catch (error) {
-    if (error instanceof TypeError) {
-      if (headers) {
-        return fetchWithCorsRetry(url2, void 0, fetchFn);
-      } else {
-        return void 0;
-      }
-    }
-    throw error;
-  }
-}
-function buildWellKnownPath(wellKnownPrefix, pathname = "", options = {}) {
-  if (pathname.endsWith("/")) {
-    pathname = pathname.slice(0, -1);
-  }
-  return options.prependPathname ? `${pathname}/.well-known/${wellKnownPrefix}` : `/.well-known/${wellKnownPrefix}${pathname}`;
-}
-async function tryMetadataDiscovery(url2, protocolVersion, fetchFn = fetch) {
-  const headers = {
-    "MCP-Protocol-Version": protocolVersion
-  };
-  return await fetchWithCorsRetry(url2, headers, fetchFn);
-}
-function shouldAttemptFallback(response, pathname) {
-  return !response || response.status >= 400 && response.status < 500 && pathname !== "/";
-}
-async function discoverMetadataWithFallback(serverUrl, wellKnownType, fetchFn, opts) {
-  const issuer = new URL(serverUrl);
-  const protocolVersion = opts?.protocolVersion ?? LATEST_PROTOCOL_VERSION;
-  let url2;
-  if (opts?.metadataUrl) {
-    url2 = new URL(opts.metadataUrl);
-  } else {
-    const wellKnownPath = buildWellKnownPath(wellKnownType, issuer.pathname);
-    url2 = new URL(wellKnownPath, opts?.metadataServerUrl ?? issuer);
-    url2.search = issuer.search;
-  }
-  let response = await tryMetadataDiscovery(url2, protocolVersion, fetchFn);
-  if (!opts?.metadataUrl && shouldAttemptFallback(response, issuer.pathname)) {
-    const rootUrl = new URL(`/.well-known/${wellKnownType}`, issuer);
-    response = await tryMetadataDiscovery(rootUrl, protocolVersion, fetchFn);
-  }
-  return response;
-}
-function buildDiscoveryUrls(authorizationServerUrl) {
-  const url2 = typeof authorizationServerUrl === "string" ? new URL(authorizationServerUrl) : authorizationServerUrl;
-  const hasPath = url2.pathname !== "/";
-  const urlsToTry = [];
-  if (!hasPath) {
-    urlsToTry.push({
-      url: new URL("/.well-known/oauth-authorization-server", url2.origin),
-      type: "oauth"
-    });
-    urlsToTry.push({
-      url: new URL(`/.well-known/openid-configuration`, url2.origin),
-      type: "oidc"
-    });
-    return urlsToTry;
-  }
-  let pathname = url2.pathname;
-  if (pathname.endsWith("/")) {
-    pathname = pathname.slice(0, -1);
-  }
-  urlsToTry.push({
-    url: new URL(`/.well-known/oauth-authorization-server${pathname}`, url2.origin),
-    type: "oauth"
-  });
-  urlsToTry.push({
-    url: new URL(`/.well-known/openid-configuration${pathname}`, url2.origin),
-    type: "oidc"
-  });
-  urlsToTry.push({
-    url: new URL(`${pathname}/.well-known/openid-configuration`, url2.origin),
-    type: "oidc"
-  });
-  return urlsToTry;
-}
-async function discoverAuthorizationServerMetadata(authorizationServerUrl, { fetchFn = fetch, protocolVersion = LATEST_PROTOCOL_VERSION } = {}) {
-  const headers = {
-    "MCP-Protocol-Version": protocolVersion,
-    Accept: "application/json"
-  };
-  const urlsToTry = buildDiscoveryUrls(authorizationServerUrl);
-  for (const { url: endpointUrl, type } of urlsToTry) {
-    const response = await fetchWithCorsRetry(endpointUrl, headers, fetchFn);
-    if (!response) {
-      continue;
-    }
-    if (!response.ok) {
-      await response.body?.cancel();
-      if (response.status >= 400 && response.status < 500) {
-        continue;
-      }
-      throw new Error(`HTTP ${response.status} trying to load ${type === "oauth" ? "OAuth" : "OpenID provider"} metadata from ${endpointUrl}`);
-    }
-    if (type === "oauth") {
-      return OAuthMetadataSchema.parse(await response.json());
-    } else {
-      return OpenIdProviderDiscoveryMetadataSchema.parse(await response.json());
-    }
-  }
-  return void 0;
-}
-async function startAuthorization(authorizationServerUrl, { metadata, clientInformation, redirectUrl, scope, state, resource }) {
-  let authorizationUrl;
-  if (metadata) {
-    authorizationUrl = new URL(metadata.authorization_endpoint);
-    if (!metadata.response_types_supported.includes(AUTHORIZATION_CODE_RESPONSE_TYPE)) {
-      throw new Error(`Incompatible auth server: does not support response type ${AUTHORIZATION_CODE_RESPONSE_TYPE}`);
-    }
-    if (metadata.code_challenge_methods_supported && !metadata.code_challenge_methods_supported.includes(AUTHORIZATION_CODE_CHALLENGE_METHOD)) {
-      throw new Error(`Incompatible auth server: does not support code challenge method ${AUTHORIZATION_CODE_CHALLENGE_METHOD}`);
-    }
-  } else {
-    authorizationUrl = new URL("/authorize", authorizationServerUrl);
-  }
-  const challenge = await pkceChallenge();
-  const codeVerifier = challenge.code_verifier;
-  const codeChallenge = challenge.code_challenge;
-  authorizationUrl.searchParams.set("response_type", AUTHORIZATION_CODE_RESPONSE_TYPE);
-  authorizationUrl.searchParams.set("client_id", clientInformation.client_id);
-  authorizationUrl.searchParams.set("code_challenge", codeChallenge);
-  authorizationUrl.searchParams.set("code_challenge_method", AUTHORIZATION_CODE_CHALLENGE_METHOD);
-  authorizationUrl.searchParams.set("redirect_uri", String(redirectUrl));
-  if (state) {
-    authorizationUrl.searchParams.set("state", state);
-  }
-  if (scope) {
-    authorizationUrl.searchParams.set("scope", scope);
-  }
-  if (scope?.includes("offline_access")) {
-    authorizationUrl.searchParams.append("prompt", "consent");
-  }
-  if (resource) {
-    authorizationUrl.searchParams.set("resource", resource.href);
-  }
-  return { authorizationUrl, codeVerifier };
-}
-function prepareAuthorizationCodeRequest(authorizationCode, codeVerifier, redirectUri) {
-  return new URLSearchParams({
-    grant_type: "authorization_code",
-    code: authorizationCode,
-    code_verifier: codeVerifier,
-    redirect_uri: String(redirectUri)
-  });
-}
-async function executeTokenRequest(authorizationServerUrl, { metadata, tokenRequestParams, clientInformation, addClientAuthentication, resource, fetchFn }) {
-  const tokenUrl = metadata?.token_endpoint ? new URL(metadata.token_endpoint) : new URL("/token", authorizationServerUrl);
-  const headers = new Headers({
-    "Content-Type": "application/x-www-form-urlencoded",
-    Accept: "application/json"
-  });
-  if (resource) {
-    tokenRequestParams.set("resource", resource.href);
-  }
-  if (addClientAuthentication) {
-    await addClientAuthentication(headers, tokenRequestParams, tokenUrl, metadata);
-  } else if (clientInformation) {
-    const supportedMethods = metadata?.token_endpoint_auth_methods_supported ?? [];
-    const authMethod = selectClientAuthMethod(clientInformation, supportedMethods);
-    applyClientAuthentication(authMethod, clientInformation, headers, tokenRequestParams);
-  }
-  const response = await (fetchFn ?? fetch)(tokenUrl, {
-    method: "POST",
-    headers,
-    body: tokenRequestParams
-  });
-  if (!response.ok) {
-    throw await parseErrorResponse(response);
-  }
-  return OAuthTokensSchema.parse(await response.json());
-}
-async function refreshAuthorization(authorizationServerUrl, { metadata, clientInformation, refreshToken, resource, addClientAuthentication, fetchFn }) {
-  const tokenRequestParams = new URLSearchParams({
-    grant_type: "refresh_token",
-    refresh_token: refreshToken
-  });
-  const tokens = await executeTokenRequest(authorizationServerUrl, {
-    metadata,
-    tokenRequestParams,
-    clientInformation,
-    addClientAuthentication,
-    resource,
-    fetchFn
-  });
-  return { refresh_token: refreshToken, ...tokens };
-}
-async function fetchToken(provider, authorizationServerUrl, { metadata, resource, authorizationCode, fetchFn } = {}) {
-  const scope = provider.clientMetadata.scope;
-  let tokenRequestParams;
-  if (provider.prepareTokenRequest) {
-    tokenRequestParams = await provider.prepareTokenRequest(scope);
-  }
-  if (!tokenRequestParams) {
-    if (!authorizationCode) {
-      throw new Error("Either provider.prepareTokenRequest() or authorizationCode is required");
-    }
-    if (!provider.redirectUrl) {
-      throw new Error("redirectUrl is required for authorization_code flow");
-    }
-    const codeVerifier = await provider.codeVerifier();
-    tokenRequestParams = prepareAuthorizationCodeRequest(authorizationCode, codeVerifier, provider.redirectUrl);
-  }
-  const clientInformation = await provider.clientInformation();
-  return executeTokenRequest(authorizationServerUrl, {
-    metadata,
-    tokenRequestParams,
-    clientInformation: clientInformation ?? void 0,
-    addClientAuthentication: provider.addClientAuthentication,
-    resource,
-    fetchFn
-  });
-}
-async function registerClient(authorizationServerUrl, { metadata, clientMetadata, fetchFn }) {
-  let registrationUrl;
-  if (metadata) {
-    if (!metadata.registration_endpoint) {
-      throw new Error("Incompatible auth server: does not support dynamic client registration");
-    }
-    registrationUrl = new URL(metadata.registration_endpoint);
-  } else {
-    registrationUrl = new URL("/register", authorizationServerUrl);
-  }
-  const response = await (fetchFn ?? fetch)(registrationUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(clientMetadata)
-  });
-  if (!response.ok) {
-    throw await parseErrorResponse(response);
-  }
-  return OAuthClientInformationFullSchema.parse(await response.json());
-}
-
-// node_modules/eventsource-parser/dist/index.js
-var ParseError = class extends Error {
-  constructor(message, options) {
-    super(message), this.name = "ParseError", this.type = options.type, this.field = options.field, this.value = options.value, this.line = options.line;
-  }
-};
-function noop(_arg) {
-}
-function createParser(callbacks) {
-  if (typeof callbacks == "function")
-    throw new TypeError(
-      "`callbacks` must be an object, got a function instead. Did you mean `{onEvent: fn}`?"
-    );
-  const { onEvent = noop, onError = noop, onRetry = noop, onComment } = callbacks;
-  let incompleteLine = "", isFirstChunk = true, id, data = "", eventType = "";
-  function feed(newChunk) {
-    const chunk = isFirstChunk ? newChunk.replace(/^\xEF\xBB\xBF/, "") : newChunk, [complete, incomplete] = splitLines(`${incompleteLine}${chunk}`);
-    for (const line of complete)
-      parseLine(line);
-    incompleteLine = incomplete, isFirstChunk = false;
-  }
-  function parseLine(line) {
-    if (line === "") {
-      dispatchEvent();
-      return;
-    }
-    if (line.startsWith(":")) {
-      onComment && onComment(line.slice(line.startsWith(": ") ? 2 : 1));
-      return;
-    }
-    const fieldSeparatorIndex = line.indexOf(":");
-    if (fieldSeparatorIndex !== -1) {
-      const field = line.slice(0, fieldSeparatorIndex), offset = line[fieldSeparatorIndex + 1] === " " ? 2 : 1, value = line.slice(fieldSeparatorIndex + offset);
-      processField(field, value, line);
-      return;
-    }
-    processField(line, "", line);
-  }
-  function processField(field, value, line) {
-    switch (field) {
-      case "event":
-        eventType = value;
-        break;
-      case "data":
-        data = `${data}${value}
-`;
-        break;
-      case "id":
-        id = value.includes("\0") ? void 0 : value;
-        break;
-      case "retry":
-        /^\d+$/.test(value) ? onRetry(parseInt(value, 10)) : onError(
-          new ParseError(`Invalid \`retry\` value: "${value}"`, {
-            type: "invalid-retry",
-            value,
-            line
-          })
-        );
-        break;
-      default:
-        onError(
-          new ParseError(
-            `Unknown field "${field.length > 20 ? `${field.slice(0, 20)}\u2026` : field}"`,
-            { type: "unknown-field", field, value, line }
-          )
-        );
-        break;
-    }
-  }
-  function dispatchEvent() {
-    data.length > 0 && onEvent({
-      id,
-      event: eventType || void 0,
-      // If the data buffer's last character is a U+000A LINE FEED (LF) character,
-      // then remove the last character from the data buffer.
-      data: data.endsWith(`
-`) ? data.slice(0, -1) : data
-    }), id = void 0, data = "", eventType = "";
-  }
-  function reset(options = {}) {
-    incompleteLine && options.consume && parseLine(incompleteLine), isFirstChunk = true, id = void 0, data = "", eventType = "", incompleteLine = "";
-  }
-  return { feed, reset };
-}
-function splitLines(chunk) {
-  const lines = [];
-  let incompleteLine = "", searchIndex = 0;
-  for (; searchIndex < chunk.length; ) {
-    const crIndex = chunk.indexOf("\r", searchIndex), lfIndex = chunk.indexOf(`
-`, searchIndex);
-    let lineEnd = -1;
-    if (crIndex !== -1 && lfIndex !== -1 ? lineEnd = Math.min(crIndex, lfIndex) : crIndex !== -1 ? crIndex === chunk.length - 1 ? lineEnd = -1 : lineEnd = crIndex : lfIndex !== -1 && (lineEnd = lfIndex), lineEnd === -1) {
-      incompleteLine = chunk.slice(searchIndex);
-      break;
-    } else {
-      const line = chunk.slice(searchIndex, lineEnd);
-      lines.push(line), searchIndex = lineEnd + 1, chunk[searchIndex - 1] === "\r" && chunk[searchIndex] === `
-` && searchIndex++;
-    }
-  }
-  return [lines, incompleteLine];
-}
-
-// node_modules/eventsource-parser/dist/stream.js
-var EventSourceParserStream = class extends TransformStream {
-  constructor({ onError, onRetry, onComment } = {}) {
-    let parser;
-    super({
-      start(controller) {
-        parser = createParser({
-          onEvent: (event) => {
-            controller.enqueue(event);
-          },
-          onError(error) {
-            onError === "terminate" ? controller.error(error) : typeof onError == "function" && onError(error);
-          },
-          onRetry,
-          onComment
-        });
-      },
-      transform(chunk) {
-        parser.feed(chunk);
-      }
-    });
-  }
-};
-
-// node_modules/@modelcontextprotocol/sdk/dist/esm/client/streamableHttp.js
-var DEFAULT_STREAMABLE_HTTP_RECONNECTION_OPTIONS = {
-  initialReconnectionDelay: 1e3,
-  maxReconnectionDelay: 3e4,
-  reconnectionDelayGrowFactor: 1.5,
-  maxRetries: 2
-};
-var StreamableHTTPError = class extends Error {
-  constructor(code, message) {
-    super(`Streamable HTTP error: ${message}`);
-    this.code = code;
-  }
-};
-var StreamableHTTPClientTransport = class {
-  constructor(url2, opts) {
-    this._hasCompletedAuthFlow = false;
-    this._url = url2;
-    this._resourceMetadataUrl = void 0;
-    this._scope = void 0;
-    this._requestInit = opts?.requestInit;
-    this._authProvider = opts?.authProvider;
-    this._fetch = opts?.fetch;
-    this._fetchWithInit = createFetchWithInit(opts?.fetch, opts?.requestInit);
-    this._sessionId = opts?.sessionId;
-    this._reconnectionOptions = opts?.reconnectionOptions ?? DEFAULT_STREAMABLE_HTTP_RECONNECTION_OPTIONS;
-  }
-  async _authThenStart() {
-    if (!this._authProvider) {
-      throw new UnauthorizedError("No auth provider");
-    }
-    let result;
-    try {
-      result = await auth(this._authProvider, {
-        serverUrl: this._url,
-        resourceMetadataUrl: this._resourceMetadataUrl,
-        scope: this._scope,
-        fetchFn: this._fetchWithInit
-      });
-    } catch (error) {
-      this.onerror?.(error);
-      throw error;
-    }
-    if (result !== "AUTHORIZED") {
-      throw new UnauthorizedError();
-    }
-    return await this._startOrAuthSse({ resumptionToken: void 0 });
-  }
-  async _commonHeaders() {
-    const headers = {};
-    if (this._authProvider) {
-      const tokens = await this._authProvider.tokens();
-      if (tokens) {
-        headers["Authorization"] = `Bearer ${tokens.access_token}`;
-      }
-    }
-    if (this._sessionId) {
-      headers["mcp-session-id"] = this._sessionId;
-    }
-    if (this._protocolVersion) {
-      headers["mcp-protocol-version"] = this._protocolVersion;
-    }
-    const extraHeaders = normalizeHeaders(this._requestInit?.headers);
-    return new Headers({
-      ...headers,
-      ...extraHeaders
-    });
-  }
-  async _startOrAuthSse(options) {
-    const { resumptionToken } = options;
-    try {
-      const headers = await this._commonHeaders();
-      headers.set("Accept", "text/event-stream");
-      if (resumptionToken) {
-        headers.set("last-event-id", resumptionToken);
-      }
-      const response = await (this._fetch ?? fetch)(this._url, {
-        method: "GET",
-        headers,
-        signal: this._abortController?.signal
-      });
-      if (!response.ok) {
-        await response.body?.cancel();
-        if (response.status === 401 && this._authProvider) {
-          return await this._authThenStart();
-        }
-        if (response.status === 405) {
-          return;
-        }
-        throw new StreamableHTTPError(response.status, `Failed to open SSE stream: ${response.statusText}`);
-      }
-      this._handleSseStream(response.body, options, true);
-    } catch (error) {
-      this.onerror?.(error);
-      throw error;
-    }
-  }
-  /**
-   * Calculates the next reconnection delay using  backoff algorithm
-   *
-   * @param attempt Current reconnection attempt count for the specific stream
-   * @returns Time to wait in milliseconds before next reconnection attempt
-   */
-  _getNextReconnectionDelay(attempt) {
-    if (this._serverRetryMs !== void 0) {
-      return this._serverRetryMs;
-    }
-    const initialDelay = this._reconnectionOptions.initialReconnectionDelay;
-    const growFactor = this._reconnectionOptions.reconnectionDelayGrowFactor;
-    const maxDelay = this._reconnectionOptions.maxReconnectionDelay;
-    return Math.min(initialDelay * Math.pow(growFactor, attempt), maxDelay);
-  }
-  /**
-   * Schedule a reconnection attempt using server-provided retry interval or backoff
-   *
-   * @param lastEventId The ID of the last received event for resumability
-   * @param attemptCount Current reconnection attempt count for this specific stream
-   */
-  _scheduleReconnection(options, attemptCount = 0) {
-    const maxRetries = this._reconnectionOptions.maxRetries;
-    if (attemptCount >= maxRetries) {
-      this.onerror?.(new Error(`Maximum reconnection attempts (${maxRetries}) exceeded.`));
-      return;
-    }
-    const delay = this._getNextReconnectionDelay(attemptCount);
-    this._reconnectionTimeout = setTimeout(() => {
-      this._startOrAuthSse(options).catch((error) => {
-        this.onerror?.(new Error(`Failed to reconnect SSE stream: ${error instanceof Error ? error.message : String(error)}`));
-        this._scheduleReconnection(options, attemptCount + 1);
-      });
-    }, delay);
-  }
-  _handleSseStream(stream, options, isReconnectable) {
-    if (!stream) {
-      return;
-    }
-    const { onresumptiontoken, replayMessageId } = options;
-    let lastEventId;
-    let hasPrimingEvent = false;
-    let receivedResponse = false;
-    const processStream = async () => {
-      try {
-        const reader = stream.pipeThrough(new TextDecoderStream()).pipeThrough(new EventSourceParserStream({
-          onRetry: (retryMs) => {
-            this._serverRetryMs = retryMs;
-          }
-        })).getReader();
-        while (true) {
-          const { value: event, done } = await reader.read();
-          if (done) {
-            break;
-          }
-          if (event.id) {
-            lastEventId = event.id;
-            hasPrimingEvent = true;
-            onresumptiontoken?.(event.id);
-          }
-          if (!event.data) {
-            continue;
-          }
-          if (!event.event || event.event === "message") {
-            try {
-              const message = JSONRPCMessageSchema.parse(JSON.parse(event.data));
-              if (isJSONRPCResultResponse(message)) {
-                receivedResponse = true;
-                if (replayMessageId !== void 0) {
-                  message.id = replayMessageId;
-                }
-              }
-              this.onmessage?.(message);
-            } catch (error) {
-              this.onerror?.(error);
-            }
-          }
-        }
-        const canResume = isReconnectable || hasPrimingEvent;
-        const needsReconnect = canResume && !receivedResponse;
-        if (needsReconnect && this._abortController && !this._abortController.signal.aborted) {
-          this._scheduleReconnection({
-            resumptionToken: lastEventId,
-            onresumptiontoken,
-            replayMessageId
-          }, 0);
-        }
-      } catch (error) {
-        this.onerror?.(new Error(`SSE stream disconnected: ${error}`));
-        const canResume = isReconnectable || hasPrimingEvent;
-        const needsReconnect = canResume && !receivedResponse;
-        if (needsReconnect && this._abortController && !this._abortController.signal.aborted) {
-          try {
-            this._scheduleReconnection({
-              resumptionToken: lastEventId,
-              onresumptiontoken,
-              replayMessageId
-            }, 0);
-          } catch (error2) {
-            this.onerror?.(new Error(`Failed to reconnect: ${error2 instanceof Error ? error2.message : String(error2)}`));
-          }
-        }
-      }
-    };
-    processStream();
-  }
-  async start() {
-    if (this._abortController) {
-      throw new Error("StreamableHTTPClientTransport already started! If using Client class, note that connect() calls start() automatically.");
-    }
-    this._abortController = new AbortController();
-  }
-  /**
-   * Call this method after the user has finished authorizing via their user agent and is redirected back to the MCP client application. This will exchange the authorization code for an access token, enabling the next connection attempt to successfully auth.
-   */
-  async finishAuth(authorizationCode) {
-    if (!this._authProvider) {
-      throw new UnauthorizedError("No auth provider");
-    }
-    const result = await auth(this._authProvider, {
-      serverUrl: this._url,
-      authorizationCode,
-      resourceMetadataUrl: this._resourceMetadataUrl,
-      scope: this._scope,
-      fetchFn: this._fetchWithInit
-    });
-    if (result !== "AUTHORIZED") {
-      throw new UnauthorizedError("Failed to authorize");
-    }
-  }
-  async close() {
-    if (this._reconnectionTimeout) {
-      clearTimeout(this._reconnectionTimeout);
-      this._reconnectionTimeout = void 0;
-    }
-    this._abortController?.abort();
-    this.onclose?.();
-  }
-  async send(message, options) {
-    try {
-      const { resumptionToken, onresumptiontoken } = options || {};
-      if (resumptionToken) {
-        this._startOrAuthSse({ resumptionToken, replayMessageId: isJSONRPCRequest(message) ? message.id : void 0 }).catch((err) => this.onerror?.(err));
-        return;
-      }
-      const headers = await this._commonHeaders();
-      headers.set("content-type", "application/json");
-      headers.set("accept", "application/json, text/event-stream");
-      const init = {
-        ...this._requestInit,
-        method: "POST",
-        headers,
-        body: JSON.stringify(message),
-        signal: this._abortController?.signal
-      };
-      const response = await (this._fetch ?? fetch)(this._url, init);
-      const sessionId = response.headers.get("mcp-session-id");
-      if (sessionId) {
-        this._sessionId = sessionId;
-      }
-      if (!response.ok) {
-        const text = await response.text().catch(() => null);
-        if (response.status === 401 && this._authProvider) {
-          if (this._hasCompletedAuthFlow) {
-            throw new StreamableHTTPError(401, "Server returned 401 after successful authentication");
-          }
-          const { resourceMetadataUrl, scope } = extractWWWAuthenticateParams(response);
-          this._resourceMetadataUrl = resourceMetadataUrl;
-          this._scope = scope;
-          const result = await auth(this._authProvider, {
-            serverUrl: this._url,
-            resourceMetadataUrl: this._resourceMetadataUrl,
-            scope: this._scope,
-            fetchFn: this._fetchWithInit
-          });
-          if (result !== "AUTHORIZED") {
-            throw new UnauthorizedError();
-          }
-          this._hasCompletedAuthFlow = true;
-          return this.send(message);
-        }
-        if (response.status === 403 && this._authProvider) {
-          const { resourceMetadataUrl, scope, error } = extractWWWAuthenticateParams(response);
-          if (error === "insufficient_scope") {
-            const wwwAuthHeader = response.headers.get("WWW-Authenticate");
-            if (this._lastUpscopingHeader === wwwAuthHeader) {
-              throw new StreamableHTTPError(403, "Server returned 403 after trying upscoping");
-            }
-            if (scope) {
-              this._scope = scope;
-            }
-            if (resourceMetadataUrl) {
-              this._resourceMetadataUrl = resourceMetadataUrl;
-            }
-            this._lastUpscopingHeader = wwwAuthHeader ?? void 0;
-            const result = await auth(this._authProvider, {
-              serverUrl: this._url,
-              resourceMetadataUrl: this._resourceMetadataUrl,
-              scope: this._scope,
-              fetchFn: this._fetch
-            });
-            if (result !== "AUTHORIZED") {
-              throw new UnauthorizedError();
-            }
-            return this.send(message);
-          }
-        }
-        throw new StreamableHTTPError(response.status, `Error POSTing to endpoint: ${text}`);
-      }
-      this._hasCompletedAuthFlow = false;
-      this._lastUpscopingHeader = void 0;
-      if (response.status === 202) {
-        await response.body?.cancel();
-        if (isInitializedNotification(message)) {
-          this._startOrAuthSse({ resumptionToken: void 0 }).catch((err) => this.onerror?.(err));
-        }
-        return;
-      }
-      const messages = Array.isArray(message) ? message : [message];
-      const hasRequests = messages.filter((msg) => "method" in msg && "id" in msg && msg.id !== void 0).length > 0;
-      const contentType = response.headers.get("content-type");
-      if (hasRequests) {
-        if (contentType?.includes("text/event-stream")) {
-          this._handleSseStream(response.body, { onresumptiontoken }, false);
-        } else if (contentType?.includes("application/json")) {
-          const data = await response.json();
-          const responseMessages = Array.isArray(data) ? data.map((msg) => JSONRPCMessageSchema.parse(msg)) : [JSONRPCMessageSchema.parse(data)];
-          for (const msg of responseMessages) {
-            this.onmessage?.(msg);
-          }
-        } else {
-          await response.body?.cancel();
-          throw new StreamableHTTPError(-1, `Unexpected content type: ${contentType}`);
-        }
-      } else {
-        await response.body?.cancel();
-      }
-    } catch (error) {
-      this.onerror?.(error);
-      throw error;
-    }
-  }
-  get sessionId() {
-    return this._sessionId;
-  }
-  /**
-   * Terminates the current session by sending a DELETE request to the server.
-   *
-   * Clients that no longer need a particular session
-   * (e.g., because the user is leaving the client application) SHOULD send an
-   * HTTP DELETE to the MCP endpoint with the Mcp-Session-Id header to explicitly
-   * terminate the session.
-   *
-   * The server MAY respond with HTTP 405 Method Not Allowed, indicating that
-   * the server does not allow clients to terminate sessions.
-   */
-  async terminateSession() {
-    if (!this._sessionId) {
-      return;
-    }
-    try {
-      const headers = await this._commonHeaders();
-      const init = {
-        ...this._requestInit,
-        method: "DELETE",
-        headers,
-        signal: this._abortController?.signal
-      };
-      const response = await (this._fetch ?? fetch)(this._url, init);
-      await response.body?.cancel();
-      if (!response.ok && response.status !== 405) {
-        throw new StreamableHTTPError(response.status, `Failed to terminate session: ${response.statusText}`);
-      }
-      this._sessionId = void 0;
-    } catch (error) {
-      this.onerror?.(error);
-      throw error;
-    }
-  }
-  setProtocolVersion(version) {
-    this._protocolVersion = version;
-  }
-  get protocolVersion() {
-    return this._protocolVersion;
-  }
-  /**
-   * Resume an SSE stream from a previous event ID.
-   * Opens a GET SSE connection with Last-Event-ID header to replay missed events.
-   *
-   * @param lastEventId The event ID to resume from
-   * @param options Optional callback to receive new resumption tokens
-   */
-  async resumeStream(lastEventId, options) {
-    await this._startOrAuthSse({
-      resumptionToken: lastEventId,
-      onresumptiontoken: options?.onresumptiontoken
-    });
-  }
-};
-
-// src/domain/errors/MCPError.ts
-var MCPError = class extends Error {
-  constructor(message, serverName, cause) {
-    super(message);
-    this.serverName = serverName;
-    this.cause = cause;
-    this.name = "MCPError";
-    if (cause) {
-      this.stack = `${this.stack}
-Caused by: ${cause.stack}`;
-    }
-  }
-};
-var MCPConnectionError = class extends MCPError {
-  constructor(message, serverName, cause) {
-    super(message, serverName, cause);
-    this.name = "MCPConnectionError";
-  }
-};
-var MCPTimeoutError = class extends MCPError {
-  constructor(message, timeoutMs, serverName, cause) {
-    super(message, serverName, cause);
-    this.timeoutMs = timeoutMs;
-    this.name = "MCPTimeoutError";
-  }
-};
-var MCPProtocolError = class extends MCPError {
-  constructor(message, serverName, cause) {
-    super(message, serverName, cause);
-    this.name = "MCPProtocolError";
-  }
-};
-var MCPToolError = class extends MCPError {
-  constructor(message, toolName, serverName, cause) {
-    super(message, serverName, cause);
-    this.toolName = toolName;
-    this.name = "MCPToolError";
-  }
-};
-var MCPResourceError = class extends MCPError {
-  constructor(message, resourceUri, serverName, cause) {
-    super(message, serverName, cause);
-    this.resourceUri = resourceUri;
-    this.name = "MCPResourceError";
-  }
-};
-
-// src/domain/entities/MCPConfig.ts
-function applyServerDefaults(config, defaults) {
-  return {
-    name: config.name,
-    displayName: config.displayName,
-    description: config.description,
-    transport: config.transport,
-    transportConfig: config.transportConfig,
-    autoConnect: config.autoConnect ?? defaults?.autoConnect ?? false,
-    autoReconnect: config.autoReconnect ?? defaults?.autoReconnect ?? true,
-    reconnectIntervalMs: config.reconnectIntervalMs ?? defaults?.reconnectIntervalMs ?? 5e3,
-    maxReconnectAttempts: config.maxReconnectAttempts ?? defaults?.maxReconnectAttempts ?? 10,
-    requestTimeoutMs: config.requestTimeoutMs ?? defaults?.requestTimeoutMs ?? 3e4,
-    healthCheckIntervalMs: config.healthCheckIntervalMs ?? defaults?.healthCheckIntervalMs ?? 6e4,
-    toolNamespace: config.toolNamespace ?? `mcp:${config.name}`,
-    permissions: config.permissions
-  };
-}
-
-// src/infrastructure/mcp/adapters/MCPToolAdapter.ts
-function createMCPToolAdapter(tool, client, namespace) {
-  const fullName = `${namespace}:${tool.name}`;
-  return {
-    definition: {
-      type: "function",
-      function: {
-        name: fullName,
-        description: tool.description || `MCP tool '${tool.name}' from server '${client.name}'`,
-        parameters: tool.inputSchema
-      }
-    },
-    async execute(args) {
-      try {
-        const result = await client.callTool(tool.name, args);
-        if (result.content?.length === 1 && result.content[0]?.type === "text") {
-          return result.content[0].text ?? "";
-        }
-        return result;
-      } catch (error) {
-        if (error instanceof MCPToolError) {
-          throw error;
-        }
-        throw new MCPToolError(
-          `Failed to execute MCP tool '${tool.name}'`,
-          tool.name,
-          client.name,
-          error
-        );
-      }
-    },
-    describeCall(args) {
-      const commonKeys = [
-        "file_path",
-        "path",
-        "uri",
-        "url",
-        "query",
-        "message",
-        "name",
-        "id",
-        "key"
-      ];
-      for (const key of commonKeys) {
-        if (key in args && typeof args[key] === "string") {
-          return args[key];
-        }
-      }
-      for (const value of Object.values(args)) {
-        if (typeof value === "string" && value.length > 0) {
-          return value.length > 60 ? `${value.substring(0, 60)}...` : value;
-        }
-      }
-      return tool.name;
-    }
-  };
-}
-function createMCPToolAdapters(tools, client, namespace) {
-  return tools.map((tool) => createMCPToolAdapter(tool, client, namespace));
-}
-
-// src/core/mcp/MCPClient.ts
-var MCPClient = class extends eventemitter3.EventEmitter {
-  name;
-  config;
-  client = null;
-  transport = null;
-  _state = "disconnected";
-  _capabilities;
-  _tools = [];
-  reconnectAttempts = 0;
-  reconnectTimer;
-  healthCheckTimer;
-  subscribedResources = /* @__PURE__ */ new Set();
-  registeredToolNames = /* @__PURE__ */ new Set();
-  _isDestroyed = false;
-  constructor(config, defaults) {
-    super();
-    this.name = config.name;
-    this.config = applyServerDefaults(config, defaults);
-  }
-  // Getters
-  get state() {
-    return this._state;
-  }
-  get capabilities() {
-    return this._capabilities;
-  }
-  get tools() {
-    return this._tools;
-  }
-  // Lifecycle methods
-  async connect() {
-    if (this._state === "connected" || this._state === "connecting") {
-      return;
-    }
-    this._state = "connecting";
-    this.emit("connecting");
-    try {
-      this.transport = this.createTransport();
-      this.client = new Client(
-        {
-          name: "@oneringai/agents",
-          version: "0.2.0"
-        },
-        {
-          capabilities: {
-            // Request all capabilities (empty object means we support all)
-          }
-        }
-      );
-      await this.client.connect(this.transport);
-      this._capabilities = {};
-      this._state = "connected";
-      this.reconnectAttempts = 0;
-      await this.refreshTools();
-      this.emit("connected");
-      this.startHealthCheck();
-    } catch (error) {
-      this.stopHealthCheck();
-      if (this.client) {
-        try {
-          await this.client.close();
-        } catch {
-        }
-        this.client = null;
-      }
-      this.transport = null;
-      this._tools = [];
-      this._capabilities = void 0;
-      this._state = "failed";
-      const mcpError = new MCPConnectionError(
-        `Failed to connect to MCP server '${this.name}'`,
-        this.name,
-        error
-      );
-      this.emit("failed", mcpError);
-      this.emit("error", mcpError);
-      if (this.config.autoReconnect) {
-        this.scheduleReconnect();
-      } else {
-        throw mcpError;
-      }
-    }
-  }
-  async disconnect() {
-    this.stopHealthCheck();
-    this.stopReconnect();
-    if (this.client && this.transport) {
-      try {
-        await this.client.close();
-      } catch (error) {
-      }
-    }
-    this.client = null;
-    this.transport = null;
-    this._state = "disconnected";
-    this._tools = [];
-    this.emit("disconnected");
-  }
-  async reconnect() {
-    await this.disconnect();
-    await this.connect();
-  }
-  isConnected() {
-    return this._state === "connected";
-  }
-  async ping() {
-    if (!this.client || !this.isConnected()) {
-      return false;
-    }
-    try {
-      await this.client.ping();
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
-  // Tool methods
-  async listTools() {
-    this.ensureConnected();
-    try {
-      const response = await this.client.request({ method: "tools/list" }, ListToolsResultSchema);
-      this._tools = response.tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema
-      }));
-      return this._tools;
-    } catch (error) {
-      throw new MCPError(`Failed to list tools from server '${this.name}'`, this.name, error);
-    }
-  }
-  async callTool(name, args) {
-    this.ensureConnected();
-    this.emit("tool:called", name, args);
-    try {
-      const response = await this.client.request(
-        {
-          method: "tools/call",
-          params: {
-            name,
-            arguments: args
-          }
-        },
-        CallToolResultSchema
-      );
-      const result = {
-        content: response.content.map((item) => ({
-          type: item.type,
-          text: "text" in item ? item.text : void 0,
-          data: "data" in item ? item.data : void 0,
-          mimeType: "mimeType" in item ? item.mimeType : void 0,
-          uri: "uri" in item ? item.uri : void 0
-        })),
-        isError: response.isError
-      };
-      this.emit("tool:result", name, result);
-      if (result.isError) {
-        const errorText = result.content.find((c) => c.type === "text")?.text || "Unknown error";
-        throw new MCPToolError(errorText, name, this.name);
-      }
-      return result;
-    } catch (error) {
-      if (error instanceof MCPToolError) {
-        throw error;
-      }
-      throw new MCPToolError(
-        `Failed to call tool '${name}' on server '${this.name}'`,
-        name,
-        this.name,
-        error
-      );
-    }
-  }
-  registerTools(toolManager) {
-    if (this._tools.length === 0) {
-      return;
-    }
-    const toolFunctions = createMCPToolAdapters(this._tools, this, this.config.toolNamespace);
-    for (const toolFn of toolFunctions) {
-      const toolName = toolFn.definition.function.name;
-      toolManager.register(toolFn, {
-        namespace: this.config.toolNamespace,
-        enabled: true,
-        permission: this.config.permissions ? {
-          scope: this.config.permissions.defaultScope,
-          riskLevel: this.config.permissions.defaultRiskLevel
-        } : void 0
-      });
-      this.registeredToolNames.add(toolName);
-    }
-  }
-  unregisterTools(toolManager) {
-    for (const toolName of this.registeredToolNames) {
-      toolManager.unregister(toolName);
-    }
-    this.registeredToolNames.clear();
-  }
-  // Resource methods
-  async listResources() {
-    this.ensureConnected();
-    try {
-      const response = await this.client.request({ method: "resources/list" }, ListResourcesResultSchema);
-      return response.resources.map((resource) => ({
-        uri: resource.uri,
-        name: resource.name,
-        description: resource.description,
-        mimeType: resource.mimeType
-      }));
-    } catch (error) {
-      throw new MCPError(
-        `Failed to list resources from server '${this.name}'`,
-        this.name,
-        error
-      );
-    }
-  }
-  async readResource(uri) {
-    this.ensureConnected();
-    try {
-      const response = await this.client.request(
-        {
-          method: "resources/read",
-          params: { uri }
-        },
-        ReadResourceResultSchema
-      );
-      const content = response.contents?.[0];
-      if (!content) {
-        throw new MCPError(`No content returned for resource '${uri}'`, this.name);
-      }
-      return {
-        uri: content.uri,
-        mimeType: content.mimeType,
-        text: "text" in content ? content.text : void 0,
-        blob: "blob" in content ? content.blob : void 0
-      };
-    } catch (error) {
-      throw new MCPError(
-        `Failed to read resource '${uri}' from server '${this.name}'`,
-        this.name,
-        error
-      );
-    }
-  }
-  async subscribeResource(uri) {
-    this.ensureConnected();
-    if (!this._capabilities?.resources?.subscribe) {
-      throw new MCPError(`Server '${this.name}' does not support resource subscriptions`, this.name);
-    }
-    try {
-      await this.client.request(
-        {
-          method: "resources/subscribe",
-          params: { uri }
-        },
-        {}
-        // No specific schema for subscription acknowledgment
-      );
-      this.subscribedResources.add(uri);
-    } catch (error) {
-      throw new MCPError(
-        `Failed to subscribe to resource '${uri}' on server '${this.name}'`,
-        this.name,
-        error
-      );
-    }
-  }
-  async unsubscribeResource(uri) {
-    this.ensureConnected();
-    try {
-      await this.client.request(
-        {
-          method: "resources/unsubscribe",
-          params: { uri }
-        },
-        {}
-        // No specific schema for unsubscribe acknowledgment
-      );
-      this.subscribedResources.delete(uri);
-    } catch (error) {
-      throw new MCPError(
-        `Failed to unsubscribe from resource '${uri}' on server '${this.name}'`,
-        this.name,
-        error
-      );
-    }
-  }
-  // Prompt methods
-  async listPrompts() {
-    this.ensureConnected();
-    try {
-      const response = await this.client.request({ method: "prompts/list" }, ListPromptsResultSchema);
-      return response.prompts.map((prompt) => ({
-        name: prompt.name,
-        description: prompt.description,
-        arguments: prompt.arguments
-      }));
-    } catch (error) {
-      throw new MCPError(`Failed to list prompts from server '${this.name}'`, this.name, error);
-    }
-  }
-  async getPrompt(name, args) {
-    this.ensureConnected();
-    try {
-      const response = await this.client.request(
-        {
-          method: "prompts/get",
-          params: {
-            name,
-            arguments: args
-          }
-        },
-        GetPromptResultSchema
-      );
-      return {
-        description: response.description,
-        messages: response.messages.map((msg) => ({
-          role: msg.role,
-          content: {
-            type: msg.content.type,
-            text: "text" in msg.content ? msg.content.text : void 0,
-            data: "data" in msg.content ? msg.content.data : void 0,
-            mimeType: "mimeType" in msg.content ? msg.content.mimeType : void 0,
-            uri: "uri" in msg.content ? msg.content.uri : void 0
-          }
-        }))
-      };
-    } catch (error) {
-      throw new MCPError(
-        `Failed to get prompt '${name}' from server '${this.name}'`,
-        this.name,
-        error
-      );
-    }
-  }
-  // State management
-  getState() {
-    return {
-      name: this.name,
-      state: this._state,
-      capabilities: this._capabilities,
-      subscribedResources: Array.from(this.subscribedResources),
-      lastConnectedAt: this._state === "connected" ? Date.now() : void 0,
-      connectionAttempts: this.reconnectAttempts
-    };
-  }
-  loadState(state) {
-    this.subscribedResources = new Set(state.subscribedResources);
-    this.reconnectAttempts = state.connectionAttempts;
-  }
-  /**
-   * Check if the MCPClient instance has been destroyed
-   */
-  get isDestroyed() {
-    return this._isDestroyed;
-  }
-  destroy() {
-    if (this._isDestroyed) return;
-    this._isDestroyed = true;
-    this.stopHealthCheck();
-    this.stopReconnect();
-    if (this.client) {
-      this.client.close().catch(() => {
-      });
-      this.client = null;
-    }
-    this.transport = null;
-    this._tools = [];
-    this._capabilities = void 0;
-    this._state = "disconnected";
-    this.subscribedResources.clear();
-    this.registeredToolNames.clear();
-    this.removeAllListeners();
-  }
-  // Private helper methods
-  createTransport() {
-    const { transport, transportConfig } = this.config;
-    if (transport === "stdio") {
-      const stdioConfig = transportConfig;
-      return new StdioClientTransport({
-        command: stdioConfig.command,
-        args: stdioConfig.args,
-        env: stdioConfig.env
-      });
-    }
-    if (transport === "http" || transport === "https") {
-      const httpConfig = transportConfig;
-      const headers = { ...httpConfig.headers };
-      if (httpConfig.token) {
-        headers["Authorization"] = `Bearer ${httpConfig.token}`;
-      }
-      return new StreamableHTTPClientTransport(new URL(httpConfig.url), {
-        sessionId: httpConfig.sessionId,
-        requestInit: {
-          headers,
-          ...httpConfig.timeoutMs && { signal: AbortSignal.timeout(httpConfig.timeoutMs) }
-        },
-        reconnectionOptions: httpConfig.reconnection ? {
-          maxReconnectionDelay: httpConfig.reconnection.maxReconnectionDelay ?? 3e4,
-          initialReconnectionDelay: httpConfig.reconnection.initialReconnectionDelay ?? 1e3,
-          reconnectionDelayGrowFactor: httpConfig.reconnection.reconnectionDelayGrowFactor ?? 1.5,
-          maxRetries: httpConfig.reconnection.maxRetries ?? 2
-        } : void 0
-      });
-    }
-    throw new MCPError(`Transport '${transport}' not supported`, this.name);
-  }
-  ensureConnected() {
-    if (!this.client || !this.isConnected()) {
-      throw new MCPConnectionError(`MCP server '${this.name}' is not connected`, this.name);
-    }
-  }
-  async refreshTools() {
-    try {
-      await this.listTools();
-    } catch (error) {
-      this.emit("error", error);
-    }
-  }
-  startHealthCheck() {
-    if (this.config.healthCheckIntervalMs <= 0) {
-      return;
-    }
-    this.healthCheckTimer = setInterval(async () => {
-      const alive = await this.ping();
-      if (!alive && this._state === "connected") {
-        this.emit("error", new MCPConnectionError(`Health check failed for server '${this.name}'`, this.name));
-        if (this.config.autoReconnect) {
-          await this.reconnect();
-        }
-      }
-    }, this.config.healthCheckIntervalMs);
-  }
-  stopHealthCheck() {
-    if (this.healthCheckTimer) {
-      clearInterval(this.healthCheckTimer);
-      this.healthCheckTimer = void 0;
-    }
-  }
-  scheduleReconnect() {
-    if (this.reconnectAttempts >= this.config.maxReconnectAttempts) {
-      this.emit("error", new MCPConnectionError(`Max reconnect attempts reached for server '${this.name}'`, this.name));
-      return;
-    }
-    this.reconnectAttempts++;
-    this._state = "reconnecting";
-    this.emit("reconnecting", this.reconnectAttempts);
-    const delay = this.config.reconnectIntervalMs * Math.pow(2, this.reconnectAttempts - 1);
-    this.reconnectTimer = setTimeout(async () => {
-      try {
-        await this.connect();
-      } catch (error) {
-      }
-    }, delay);
-  }
-  stopReconnect() {
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = void 0;
-    }
-  }
-};
-var MCPRegistry = class {
-  static clients = /* @__PURE__ */ new Map();
-  /**
-   * Create and register an MCP client
-   */
-  static create(config, defaults) {
-    if (this.clients.has(config.name)) {
-      throw new MCPError(`MCP server '${config.name}' is already registered`);
-    }
-    const client = new MCPClient(config, defaults);
-    this.clients.set(config.name, client);
-    return client;
-  }
-  /**
-   * Get a registered MCP client
-   */
-  static get(name) {
-    const client = this.clients.get(name);
-    if (!client) {
-      throw new MCPError(`MCP server '${name}' not found in registry`);
-    }
-    return client;
-  }
-  /**
-   * Check if an MCP client is registered
-   */
-  static has(name) {
-    return this.clients.has(name);
-  }
-  /**
-   * List all registered MCP client names
-   */
-  static list() {
-    return Array.from(this.clients.keys());
-  }
-  /**
-   * Get info about a registered MCP client
-   */
-  static getInfo(name) {
-    const client = this.get(name);
-    return {
-      name: client.name,
-      state: client.state,
-      connected: client.isConnected(),
-      toolCount: client.tools.length
-    };
-  }
-  /**
-   * Get info about all registered MCP clients
-   */
-  static getAllInfo() {
-    return Array.from(this.clients.keys()).map((name) => this.getInfo(name));
-  }
-  /**
-   * Create multiple clients from MCP configuration
-   */
-  static createFromConfig(config) {
-    const clients = [];
-    for (const serverConfig of config.servers) {
-      const client = this.create(serverConfig, config.defaults);
-      clients.push(client);
-    }
-    return clients;
-  }
-  /**
-   * Load MCP configuration from file and create clients
-   */
-  static async loadFromConfigFile(path6) {
-    try {
-      const configPath = path2.resolve(path6);
-      const content = await fs16.promises.readFile(configPath, "utf-8");
-      const config = JSON.parse(content);
-      if (!config.mcp) {
-        throw new MCPError("Configuration file does not contain MCP section");
-      }
-      const interpolatedConfig = this.interpolateEnvVars(config.mcp);
-      return this.createFromConfig(interpolatedConfig);
-    } catch (error) {
-      if (error instanceof MCPError) {
-        throw error;
-      }
-      throw new MCPError(`Failed to load MCP configuration from '${path6}'`, void 0, error);
-    }
-  }
-  /**
-   * Connect all servers with autoConnect enabled
-   */
-  static async connectAll() {
-    const connectPromises = [];
-    for (const client of this.clients.values()) {
-      if (!client.isConnected()) {
-        connectPromises.push(client.connect());
-      }
-    }
-    await Promise.all(connectPromises);
-  }
-  /**
-   * Disconnect all servers
-   */
-  static async disconnectAll() {
-    const disconnectPromises = [];
-    for (const client of this.clients.values()) {
-      if (client.isConnected()) {
-        disconnectPromises.push(client.disconnect());
-      }
-    }
-    await Promise.all(disconnectPromises);
-  }
-  /**
-   * Destroy all clients and clear registry
-   */
-  static destroyAll() {
-    for (const client of this.clients.values()) {
-      client.destroy();
-    }
-    this.clients.clear();
-  }
-  /**
-   * Clear the registry (for testing)
-   */
-  static clear() {
-    this.destroyAll();
-  }
-  /**
-   * Interpolate environment variables in configuration
-   * Replaces ${ENV_VAR} with process.env.ENV_VAR
-   */
-  static interpolateEnvVars(config) {
-    const jsonString = JSON.stringify(config);
-    const interpolated = jsonString.replace(/\$\{([^}]+)\}/g, (_match, envVar) => {
-      const value = process.env[envVar];
-      if (value === void 0) {
-        throw new MCPError(`Environment variable '${envVar}' is not set`);
-      }
-      return value;
-    });
-    return JSON.parse(interpolated);
-  }
-};
 
 // src/core/TextToSpeech.ts
 init_Connector();
@@ -51207,6 +51840,13 @@ async function executeWithEnvVar(args, numResults) {
 // src/tools/web/webScrape.ts
 init_Logger();
 var scrapeLogger = exports.logger.child({ component: "webScrape" });
+function stripBase64DataUris(content) {
+  if (!content) return content;
+  let cleaned = content.replace(/!\[[^\]]*\]\(data:[^)]+\)/g, "[image removed]");
+  cleaned = cleaned.replace(/url\(['"]?data:[^)]+['"]?\)/gi, "url([data-uri-removed])");
+  cleaned = cleaned.replace(/data:(?:image|font|application)\/[^;]+;base64,[A-Za-z0-9+/=]{100,}/g, "[base64-data-removed]");
+  return cleaned;
+}
 var SCRAPE_SERVICE_TYPES = ["zenrows", "jina-reader", "firecrawl", "scrapingbee"];
 var DEFAULT_MIN_QUALITY = 50;
 var webScrape = {
@@ -51341,15 +51981,16 @@ async function tryNative(args, startTime, attemptedMethods) {
       url: args.url,
       timeout: args.timeout || 1e4
     });
+    const cleanContent = stripBase64DataUris(result.content);
     return {
       success: result.success,
       url: args.url,
       finalUrl: args.url,
       method: "native",
       title: result.title,
-      content: result.content,
+      content: cleanContent,
       // Note: raw HTML not available with native method (returns markdown instead)
-      markdown: args.includeMarkdown ? result.content : void 0,
+      markdown: args.includeMarkdown ? cleanContent : void 0,
       qualityScore: result.qualityScore,
       durationMs: Date.now() - startTime,
       attemptedMethods,
@@ -51377,15 +52018,16 @@ async function tryJS(args, startTime, attemptedMethods) {
       timeout: args.timeout || 15e3,
       waitForSelector: args.waitForSelector
     });
+    const cleanContent = stripBase64DataUris(result.content);
     return {
       success: result.success,
       url: args.url,
       finalUrl: args.url,
       method: "js",
       title: result.title,
-      content: result.content,
+      content: cleanContent,
       // Note: raw HTML not available with JS method (returns markdown instead)
-      markdown: args.includeMarkdown ? result.content : void 0,
+      markdown: args.includeMarkdown ? cleanContent : void 0,
       qualityScore: result.success ? 80 : 0,
       durationMs: Date.now() - startTime,
       attemptedMethods,
@@ -51417,15 +52059,18 @@ async function tryAPI(connectorName, args, startTime, attemptedMethods) {
       includeLinks: args.includeLinks
     };
     const result = await provider.scrape(args.url, options);
+    const cleanContent = stripBase64DataUris(result.result?.content || "");
+    const cleanMarkdown = result.result?.markdown ? stripBase64DataUris(result.result.markdown) : void 0;
     return {
       success: result.success,
       url: args.url,
       finalUrl: result.finalUrl,
       method: result.provider,
       title: result.result?.title || "",
-      content: result.result?.content || "",
+      content: cleanContent,
       html: result.result?.html,
-      markdown: result.result?.markdown,
+      // Keep raw HTML as-is (only used if explicitly requested)
+      markdown: cleanMarkdown,
       metadata: result.result?.metadata,
       links: result.result?.links,
       qualityScore: result.success ? 90 : 0,
@@ -53605,6 +54250,8 @@ exports.CheckpointManager = CheckpointManager;
 exports.ConnectorConfigStore = ConnectorConfigStore;
 exports.ConnectorTools = ConnectorTools;
 exports.ContentType = ContentType;
+exports.ContextGuardian = ContextGuardian;
+exports.ContextOverflowError = ContextOverflowError;
 exports.DEFAULT_ALLOWLIST = DEFAULT_ALLOWLIST;
 exports.DEFAULT_CHECKPOINT_STRATEGY = DEFAULT_CHECKPOINT_STRATEGY;
 exports.DEFAULT_CONTEXT_CONFIG = DEFAULT_CONTEXT_CONFIG;

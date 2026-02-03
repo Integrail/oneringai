@@ -89,6 +89,14 @@ export interface IMCPClient extends EventEmitter {
   registerTools(toolManager: ToolManager): void;
 
   /**
+   * Register specific tools with a ToolManager (selective registration)
+   * @param toolManager - ToolManager to register with
+   * @param toolNames - Optional array of tool names to register (original MCP names, not namespaced).
+   *                    If not provided, registers all tools.
+   */
+  registerToolsSelective(toolManager: ToolManager, toolNames?: string[]): void;
+
+  /**
    * Unregister all tools from a ToolManager
    */
   unregisterTools(toolManager: ToolManager): void;

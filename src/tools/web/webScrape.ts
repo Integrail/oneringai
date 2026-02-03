@@ -20,6 +20,25 @@ import { logger } from '../../infrastructure/observability/Logger.js';
 
 const scrapeLogger = logger.child({ component: 'webScrape' });
 
+/**
+ * Strip base64 data URIs from content to prevent context overflow
+ * Removes inline images, fonts, and other embedded data
+ */
+function stripBase64DataUris(content: string): string {
+  if (!content) return content;
+
+  // Strip markdown images with base64 data URIs: ![alt](data:...)
+  let cleaned = content.replace(/!\[[^\]]*\]\(data:[^)]+\)/g, '[image removed]');
+
+  // Strip CSS url() with data URIs
+  cleaned = cleaned.replace(/url\(['"]?data:[^)]+['"]?\)/gi, 'url([data-uri-removed])');
+
+  // Strip raw base64 data URIs in other contexts
+  cleaned = cleaned.replace(/data:(?:image|font|application)\/[^;]+;base64,[A-Za-z0-9+/=]{100,}/g, '[base64-data-removed]');
+
+  return cleaned;
+}
+
 // ============ Internal Configuration (NOT exposed to LLM) ============
 
 /**
@@ -244,15 +263,18 @@ async function tryNative(
       timeout: args.timeout || 10000,
     });
 
+    // Strip base64 data URIs to prevent context overflow
+    const cleanContent = stripBase64DataUris(result.content);
+
     return {
       success: result.success,
       url: args.url,
       finalUrl: args.url,
       method: 'native',
       title: result.title,
-      content: result.content,
+      content: cleanContent,
       // Note: raw HTML not available with native method (returns markdown instead)
-      markdown: args.includeMarkdown ? result.content : undefined,
+      markdown: args.includeMarkdown ? cleanContent : undefined,
       qualityScore: result.qualityScore,
       durationMs: Date.now() - startTime,
       attemptedMethods,
@@ -287,15 +309,18 @@ async function tryJS(
       waitForSelector: args.waitForSelector,
     });
 
+    // Strip base64 data URIs to prevent context overflow
+    const cleanContent = stripBase64DataUris(result.content);
+
     return {
       success: result.success,
       url: args.url,
       finalUrl: args.url,
       method: 'js',
       title: result.title,
-      content: result.content,
+      content: cleanContent,
       // Note: raw HTML not available with JS method (returns markdown instead)
-      markdown: args.includeMarkdown ? result.content : undefined,
+      markdown: args.includeMarkdown ? cleanContent : undefined,
       qualityScore: result.success ? 80 : 0,
       durationMs: Date.now() - startTime,
       attemptedMethods,
@@ -337,15 +362,19 @@ async function tryAPI(
 
     const result: ScrapeResponse = await provider.scrape(args.url, options);
 
+    // Strip base64 data URIs to prevent context overflow
+    const cleanContent = stripBase64DataUris(result.result?.content || '');
+    const cleanMarkdown = result.result?.markdown ? stripBase64DataUris(result.result.markdown) : undefined;
+
     return {
       success: result.success,
       url: args.url,
       finalUrl: result.finalUrl,
       method: result.provider,
       title: result.result?.title || '',
-      content: result.result?.content || '',
-      html: result.result?.html,
-      markdown: result.result?.markdown,
+      content: cleanContent,
+      html: result.result?.html, // Keep raw HTML as-is (only used if explicitly requested)
+      markdown: cleanMarkdown,
       metadata: result.result?.metadata,
       links: result.result?.links,
       qualityScore: result.success ? 90 : 0,

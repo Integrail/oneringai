@@ -100,6 +100,14 @@ async function setupIPC(): Promise<void> {
     return agentService!.getStatus();
   });
 
+  ipcMain.handle('agent:approve-plan', async (_event, planId: string) => {
+    return agentService!.approvePlan(planId);
+  });
+
+  ipcMain.handle('agent:reject-plan', async (_event, planId: string, reason?: string) => {
+    return agentService!.rejectPlan(planId, reason);
+  });
+
   // Connector operations
   ipcMain.handle('connector:list', async () => {
     return agentService!.listConnectors();
@@ -257,6 +265,43 @@ async function setupIPC(): Promise<void> {
 
   ipcMain.handle('universal-connector:test-connection', async (_event, name: string) => {
     return agentService!.testUniversalConnection(name);
+  });
+
+  // MCP Server operations
+  ipcMain.handle('mcp-server:list', async () => {
+    return agentService!.listMCPServers();
+  });
+
+  ipcMain.handle('mcp-server:get', async (_event, name: string) => {
+    return agentService!.getMCPServer(name);
+  });
+
+  ipcMain.handle('mcp-server:create', async (_event, config: unknown) => {
+    return agentService!.createMCPServer(config as any);
+  });
+
+  ipcMain.handle('mcp-server:update', async (_event, name: string, updates: unknown) => {
+    return agentService!.updateMCPServer(name, updates as any);
+  });
+
+  ipcMain.handle('mcp-server:delete', async (_event, name: string) => {
+    return agentService!.deleteMCPServer(name);
+  });
+
+  ipcMain.handle('mcp-server:connect', async (_event, name: string) => {
+    return agentService!.connectMCPServer(name);
+  });
+
+  ipcMain.handle('mcp-server:disconnect', async (_event, name: string) => {
+    return agentService!.disconnectMCPServer(name);
+  });
+
+  ipcMain.handle('mcp-server:get-tools', async (_event, name: string) => {
+    return agentService!.getMCPServerTools(name);
+  });
+
+  ipcMain.handle('mcp-server:refresh-tools', async (_event, name: string) => {
+    return agentService!.refreshMCPServerTools(name);
   });
 
   // Config operations

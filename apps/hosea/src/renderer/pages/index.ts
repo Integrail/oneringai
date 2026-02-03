@@ -7,6 +7,7 @@ export { UniversalConnectorsPage } from './UniversalConnectorsPage';
 export { ConnectorCatalogPage } from './ConnectorCatalogPage';
 export { ConnectorCreatePage } from './ConnectorCreatePage';
 export { ToolConnectorsPage } from './ToolConnectorsPage';
+export { MCPServersPage } from './MCPServersPage';
 export { MultimediaStudioPage } from './MultimediaStudioPage';
 export { InternalsPage } from './InternalsPage';
 export { SettingsPage } from './SettingsPage';

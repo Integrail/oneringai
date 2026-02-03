@@ -12,6 +12,8 @@
 @import './internals.css';
 @import './multimedia.css';
 @import './connectors.css';
+@import './plan.css';
+@import './mcp.css';
 
 /* Base Reset */
 *,

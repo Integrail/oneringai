@@ -14,6 +14,7 @@ export type PageId =
   | 'connector-catalog'
   | 'connector-create'
   | 'tool-connectors'
+  | 'mcp-servers'
   | 'multimedia-studio'
   | 'internals'
   | 'settings';

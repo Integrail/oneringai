@@ -1,4 +1,4 @@
-import { I as IProvider } from './IProvider-BP49c93d.cjs';
+import { I as IProvider } from './IProvider-BP49c93d.js';
 import { EventEmitter } from 'eventemitter3';
 
 /**
@@ -2349,6 +2349,11 @@ interface ToolOutputPluginConfig {
  *
  * Provides recent tool outputs as a context component.
  * Highest compaction priority - first to be reduced when space is needed.
+ *
+ * @deprecated This plugin duplicates data already in conversation history.
+ * Consider using ToolResultEvictionPlugin instead, which provides smarter
+ * eviction to WorkingMemory. ToolOutputPlugin may be removed in a future version.
+ * To suppress this warning, set { suppressDeprecationWarning: true } in config.
  */
 declare class ToolOutputPlugin extends BaseContextPlugin {
     readonly name = "tool_outputs";
@@ -2356,9 +2361,12 @@ declare class ToolOutputPlugin extends BaseContextPlugin {
     readonly compactable = true;
     private outputs;
     private config;
-    constructor(config?: ToolOutputPluginConfig);
+    constructor(config?: ToolOutputPluginConfig & {
+        suppressDeprecationWarning?: boolean;
+    });
     /**
      * Add a tool output
+     * Truncates large outputs immediately to prevent context overflow
      */
     addOutput(toolName: string, result: unknown): void;
     /**
@@ -2424,7 +2432,7 @@ interface SpilledEntry {
  * Auto-spill configuration
  */
 interface AutoSpillConfig {
-    /** Minimum size (bytes) to trigger auto-spill. Default: 10KB */
+    /** Minimum size (bytes) to trigger auto-spill. Default: 5KB */
     sizeThreshold?: number;
     /** Tools to auto-spill. If not provided, uses toolPatterns or spills all large outputs */
     tools?: string[];
@@ -2815,6 +2823,486 @@ declare class ToolResultEvictionPlugin extends BaseContextPlugin {
 }
 
 /**
+ * ContextGuardian - Mandatory checkpoint for context validation before LLM calls
+ *
+ * This class provides the final safety net to ensure context never exceeds
+ * the model's limits. It validates the prepared input and applies graceful
+ * degradation if needed, ensuring the LLM call will succeed.
+ *
+ * Graceful Degradation Levels (applied in order):
+ * 1. Remove ToolOutputPlugin entries (if present)
+ * 2. Truncate tool results to maxToolResultTokens each
+ * 3. Remove oldest N unprotected tool pairs
+ * 4. Truncate system prompt to minSystemPromptTokens
+ * 5. Throw ContextOverflowError with detailed budget
+ *
+ * @example
+ * ```typescript
+ * const guardian = new ContextGuardian({ maxContextTokens: 128000 });
+ *
+ * // In AgentContext.prepare():
+ * const input = await this.buildLLMInput();
+ * const validation = guardian.validate(input, maxTokens);
+ *
+ * if (!validation.valid) {
+ *   const { input: safeInput, log } = guardian.applyGracefulDegradation(input, validation.targetTokens);
+ *   return { input: safeInput, ... };
+ * }
+ * ```
+ */
+
+/**
+ * Result of guardian validation
+ */
+interface GuardianValidation {
+    /** Whether the input fits within limits */
+    valid: boolean;
+    /** Actual token count of input */
+    actualTokens: number;
+    /** Target token limit (maxTokens - reserved) */
+    targetTokens: number;
+    /** How many tokens over the limit (0 if valid) */
+    overageTokens: number;
+    /** Token breakdown by message type */
+    breakdown: Record<string, number>;
+}
+/**
+ * Result of graceful degradation
+ */
+interface DegradationResult {
+    /** The potentially modified input */
+    input: InputItem[];
+    /** Log of actions taken */
+    log: string[];
+    /** Final token count after degradation */
+    finalTokens: number;
+    /** Tokens freed during degradation */
+    tokensFreed: number;
+    /** Whether degradation was successful (fits within limits) */
+    success: boolean;
+}
+/**
+ * Configuration for ContextGuardian
+ */
+interface ContextGuardianConfig {
+    /** Enable guardian validation (default: true) */
+    enabled?: boolean;
+    /** Maximum tool result size in tokens before truncation */
+    maxToolResultTokens?: number;
+    /** Minimum system prompt tokens to preserve */
+    minSystemPromptTokens?: number;
+    /** Number of recent messages to always protect from compaction */
+    protectedRecentMessages?: number;
+}
+/**
+ * ContextGuardian - Ensures context never exceeds model limits
+ */
+declare class ContextGuardian {
+    private readonly _enabled;
+    private readonly _maxToolResultTokens;
+    private readonly _minSystemPromptTokens;
+    private readonly _protectedRecentMessages;
+    private readonly _estimator;
+    constructor(estimator: ITokenEstimator, config?: ContextGuardianConfig);
+    /**
+     * Check if guardian is enabled
+     */
+    get enabled(): boolean;
+    /**
+     * Validate that input fits within token limits
+     *
+     * @param input - The InputItem[] to validate
+     * @param maxTokens - Maximum allowed tokens (after reserving for response)
+     * @returns Validation result with actual counts and breakdown
+     */
+    validate(input: InputItem[], maxTokens: number): GuardianValidation;
+    /**
+     * Apply graceful degradation to reduce input size
+     *
+     * @param input - The InputItem[] to potentially modify
+     * @param targetTokens - Target token count to achieve
+     * @returns Degradation result with potentially modified input
+     */
+    applyGracefulDegradation(input: InputItem[], targetTokens: number): DegradationResult;
+    /**
+     * Emergency compact - more aggressive than graceful degradation
+     * Used when even graceful degradation fails
+     *
+     * @param input - The InputItem[] to compact
+     * @param targetTokens - Target token count
+     * @returns Compacted InputItem[] (may lose significant data)
+     */
+    emergencyCompact(input: InputItem[], targetTokens: number): InputItem[];
+    /**
+     * Estimate tokens for an InputItem
+     */
+    private estimateInputItemTokens;
+    /**
+     * Level 1: Truncate large tool results
+     */
+    private truncateToolResults;
+    /**
+     * Level 2: Remove oldest unprotected tool pairs
+     */
+    private removeOldestToolPairs;
+    /**
+     * Level 3: Truncate system prompt
+     */
+    private truncateSystemPrompt;
+    /**
+     * Truncate a message to target token count
+     */
+    private truncateMessage;
+}
+
+/**
+ * MCP Domain Types
+ *
+ * Core types for MCP tools, resources, and prompts.
+ * These are simplified wrappers around the SDK types.
+ */
+/**
+ * MCP Tool definition
+ */
+interface MCPTool {
+    /** Tool name */
+    name: string;
+    /** Tool description */
+    description?: string;
+    /** JSON Schema for tool input */
+    inputSchema: {
+        type: 'object';
+        properties?: Record<string, unknown>;
+        required?: string[];
+        [key: string]: unknown;
+    };
+}
+/**
+ * MCP Tool call result
+ */
+interface MCPToolResult {
+    /** Result content */
+    content: Array<{
+        type: 'text' | 'image' | 'resource';
+        text?: string;
+        data?: string;
+        mimeType?: string;
+        uri?: string;
+    }>;
+    /** Whether the tool call resulted in an error */
+    isError?: boolean;
+}
+/**
+ * MCP Resource definition
+ */
+interface MCPResource {
+    /** Resource URI */
+    uri: string;
+    /** Resource name */
+    name: string;
+    /** Resource description */
+    description?: string;
+    /** MIME type */
+    mimeType?: string;
+}
+/**
+ * MCP Resource content
+ */
+interface MCPResourceContent {
+    /** Resource URI */
+    uri: string;
+    /** MIME type */
+    mimeType?: string;
+    /** Text content */
+    text?: string;
+    /** Binary content (base64) */
+    blob?: string;
+}
+/**
+ * MCP Prompt definition
+ */
+interface MCPPrompt {
+    /** Prompt name */
+    name: string;
+    /** Prompt description */
+    description?: string;
+    /** Prompt arguments schema */
+    arguments?: Array<{
+        name: string;
+        description?: string;
+        required?: boolean;
+    }>;
+}
+/**
+ * MCP Prompt result
+ */
+interface MCPPromptResult {
+    /** Prompt description */
+    description?: string;
+    /** Prompt messages */
+    messages: Array<{
+        role: 'user' | 'assistant';
+        content: {
+            type: 'text' | 'image' | 'resource';
+            text?: string;
+            data?: string;
+            mimeType?: string;
+            uri?: string;
+        };
+    }>;
+}
+/**
+ * MCP Server capabilities
+ */
+interface MCPServerCapabilities {
+    /** Tools capability */
+    tools?: Record<string, unknown>;
+    /** Resources capability */
+    resources?: {
+        subscribe?: boolean;
+        listChanged?: boolean;
+    };
+    /** Prompts capability */
+    prompts?: {
+        listChanged?: boolean;
+    };
+    /** Logging capability */
+    logging?: Record<string, unknown>;
+}
+/**
+ * MCP Client state (for serialization)
+ */
+interface MCPClientState {
+    /** Server name */
+    name: string;
+    /** Connection state */
+    state: 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
+    /** Server capabilities */
+    capabilities?: MCPServerCapabilities;
+    /** Subscribed resource URIs */
+    subscribedResources: string[];
+    /** Last connected timestamp */
+    lastConnectedAt?: number;
+    /** Connection attempt count */
+    connectionAttempts: number;
+}
+
+/**
+ * MCP Client Interface
+ *
+ * High-level interface for MCP client operations.
+ * This wraps the @modelcontextprotocol/sdk Client class.
+ */
+
+/**
+ * MCP Client connection states
+ */
+type MCPClientConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting' | 'failed';
+/**
+ * MCP Client interface
+ */
+interface IMCPClient extends EventEmitter {
+    /** Server name */
+    readonly name: string;
+    /** Current connection state */
+    readonly state: MCPClientConnectionState;
+    /** Server capabilities (available after connection) */
+    readonly capabilities?: MCPServerCapabilities;
+    /** Currently available tools */
+    readonly tools: MCPTool[];
+    /**
+     * Connect to the MCP server
+     */
+    connect(): Promise<void>;
+    /**
+     * Disconnect from the MCP server
+     */
+    disconnect(): Promise<void>;
+    /**
+     * Reconnect to the MCP server
+     */
+    reconnect(): Promise<void>;
+    /**
+     * Check if connected
+     */
+    isConnected(): boolean;
+    /**
+     * Ping the server to check health
+     */
+    ping(): Promise<boolean>;
+    /**
+     * List available tools from the server
+     */
+    listTools(): Promise<MCPTool[]>;
+    /**
+     * Call a tool on the server
+     */
+    callTool(name: string, args: Record<string, unknown>): Promise<MCPToolResult>;
+    /**
+     * Register all tools with a ToolManager
+     */
+    registerTools(toolManager: ToolManager): void;
+    /**
+     * Register specific tools with a ToolManager (selective registration)
+     * @param toolManager - ToolManager to register with
+     * @param toolNames - Optional array of tool names to register (original MCP names, not namespaced).
+     *                    If not provided, registers all tools.
+     */
+    registerToolsSelective(toolManager: ToolManager, toolNames?: string[]): void;
+    /**
+     * Unregister all tools from a ToolManager
+     */
+    unregisterTools(toolManager: ToolManager): void;
+    /**
+     * List available resources from the server
+     */
+    listResources(): Promise<MCPResource[]>;
+    /**
+     * Read a resource from the server
+     */
+    readResource(uri: string): Promise<MCPResourceContent>;
+    /**
+     * Subscribe to resource updates
+     */
+    subscribeResource(uri: string): Promise<void>;
+    /**
+     * Unsubscribe from resource updates
+     */
+    unsubscribeResource(uri: string): Promise<void>;
+    /**
+     * List available prompts from the server
+     */
+    listPrompts(): Promise<MCPPrompt[]>;
+    /**
+     * Get a prompt from the server
+     */
+    getPrompt(name: string, args?: Record<string, unknown>): Promise<MCPPromptResult>;
+    /**
+     * Get current state for serialization
+     */
+    getState(): MCPClientState;
+    /**
+     * Load state from serialization
+     */
+    loadState(state: MCPClientState): void;
+    /**
+     * Destroy the client and clean up resources
+     */
+    destroy(): void;
+}
+
+/**
+ * MCP Configuration Types
+ *
+ * Defines configuration structures for MCP servers and global library configuration.
+ */
+/**
+ * Transport type for MCP communication
+ */
+type MCPTransportType = 'stdio' | 'http' | 'https';
+/**
+ * Stdio transport configuration
+ */
+interface StdioTransportConfig {
+    /** Command to execute (e.g., 'npx', 'node') */
+    command: string;
+    /** Command arguments */
+    args?: string[];
+    /** Environment variables */
+    env?: Record<string, string>;
+    /** Working directory for the process */
+    cwd?: string;
+}
+/**
+ * HTTP/HTTPS transport configuration (StreamableHTTP)
+ */
+interface HTTPTransportConfig {
+    /** HTTP(S) endpoint URL */
+    url: string;
+    /** Authentication token (supports ${ENV_VAR} interpolation) */
+    token?: string;
+    /** Additional HTTP headers */
+    headers?: Record<string, string>;
+    /** Request timeout in milliseconds */
+    timeoutMs?: number;
+    /** Session ID for reconnection */
+    sessionId?: string;
+    /** Reconnection options */
+    reconnection?: {
+        /** Max reconnection delay in ms (default: 30000) */
+        maxReconnectionDelay?: number;
+        /** Initial reconnection delay in ms (default: 1000) */
+        initialReconnectionDelay?: number;
+        /** Reconnection delay growth factor (default: 1.5) */
+        reconnectionDelayGrowFactor?: number;
+        /** Max retry attempts (default: 2) */
+        maxRetries?: number;
+    };
+}
+/**
+ * Transport configuration union type
+ */
+type TransportConfig = StdioTransportConfig | HTTPTransportConfig;
+/**
+ * MCP server configuration
+ */
+interface MCPServerConfig {
+    /** Unique identifier for the server */
+    name: string;
+    /** Human-readable display name */
+    displayName?: string;
+    /** Server description */
+    description?: string;
+    /** Transport type */
+    transport: MCPTransportType;
+    /** Transport-specific configuration */
+    transportConfig: TransportConfig;
+    /** Auto-connect on startup (default: false) */
+    autoConnect?: boolean;
+    /** Auto-reconnect on failure (default: true) */
+    autoReconnect?: boolean;
+    /** Reconnect interval in milliseconds (default: 5000) */
+    reconnectIntervalMs?: number;
+    /** Maximum reconnect attempts (default: 10) */
+    maxReconnectAttempts?: number;
+    /** Request timeout in milliseconds (default: 30000) */
+    requestTimeoutMs?: number;
+    /** Health check interval in milliseconds (default: 60000) */
+    healthCheckIntervalMs?: number;
+    /** Tool namespace prefix (default: 'mcp:{name}') */
+    toolNamespace?: string;
+    /** Permission configuration for tools from this server */
+    permissions?: {
+        /** Default permission scope */
+        defaultScope?: 'once' | 'session' | 'always' | 'never';
+        /** Default risk level */
+        defaultRiskLevel?: 'low' | 'medium' | 'high' | 'critical';
+    };
+}
+/**
+ * MCP global configuration
+ */
+interface MCPConfiguration {
+    /** List of MCP servers */
+    servers: MCPServerConfig[];
+    /** Default settings for all servers */
+    defaults?: {
+        /** Default auto-connect (default: false) */
+        autoConnect?: boolean;
+        /** Default auto-reconnect (default: true) */
+        autoReconnect?: boolean;
+        /** Default reconnect interval in milliseconds (default: 5000) */
+        reconnectIntervalMs?: number;
+        /** Default maximum reconnect attempts (default: 10) */
+        maxReconnectAttempts?: number;
+        /** Default request timeout in milliseconds (default: 30000) */
+        requestTimeoutMs?: number;
+        /** Default health check interval in milliseconds (default: 60000) */
+        healthCheckIntervalMs?: number;
+    };
+}
+
+/**
  * AgentContext - The "Swiss Army Knife" for Agent State Management
  *
  * Unified facade that composes all context-related managers:
@@ -2925,6 +3413,30 @@ interface AgentContextFeatures {
  * - toolResultEviction: true (NEW - moves old results to memory)
  */
 declare const DEFAULT_FEATURES: Required<AgentContextFeatures>;
+/**
+ * MCP server reference for agent configuration.
+ * Allows agents to connect to MCP servers and use their tools.
+ */
+interface MCPServerReference {
+    /**
+     * Server reference - either:
+     * - A string name of a server already registered in MCPRegistry
+     * - An inline MCPServerConfig to create a new client
+     */
+    server: string | MCPServerConfig;
+    /**
+     * Optional: only register these specific tools from the server.
+     * Tool names should be the original MCP tool names (not namespaced).
+     * If not provided, all tools from the server are registered.
+     */
+    tools?: string[];
+    /**
+     * Auto-connect to the server on context creation (default: true).
+     * If false, the server must be connected manually or will attempt
+     * connection on first tool use.
+     */
+    autoConnect?: boolean;
+}
 /**
  * History message - LEGACY FORMAT
  * @deprecated Use InputItem from Message.ts instead.
@@ -3069,6 +3581,13 @@ interface AgentContextConfig {
      */
     toolResultEviction?: ToolResultEvictionConfig;
     /**
+     * ContextGuardian configuration - mandatory hard limit enforcement before LLM calls.
+     * The guardian validates that prepared input fits within token limits and applies
+     * graceful degradation if needed.
+     * @default { enabled: true }
+     */
+    guardian?: ContextGuardianConfig;
+    /**
      * Agent ID - used for persistent storage paths and identification
      * If not provided, will be auto-generated
      */
@@ -3090,6 +3609,24 @@ interface AgentContextConfig {
     taskType?: TaskType;
     /** Auto-detect task type from plan (default: true) */
     autoDetectTaskType?: boolean;
+    /**
+     * MCP servers to connect and register tools from.
+     *
+     * Tools from MCP servers are auto-registered with ToolManager during construction
+     * and cleaned up on destroy(). Supports both:
+     * - Named servers (string reference to MCPRegistry)
+     * - Inline server configs (MCPServerConfig object)
+     *
+     * Example:
+     * ```typescript
+     * mcpServers: [
+     *   { server: 'filesystem' },                           // All tools from 'filesystem' server
+     *   { server: 'github', tools: ['create_issue'] },     // Only 'create_issue' tool
+     *   { server: { name: 'inline', transport: 'stdio', transportConfig: {...} } }, // Inline config
+     * ]
+     * ```
+     */
+    mcpServers?: MCPServerReference[];
     /**
      * Storage backend for session persistence.
      * If provided, enables save()/load() methods.
@@ -3199,6 +3736,16 @@ interface AgentContextEvents {
     'budget:critical': {
         budget: ContextBudget;
     };
+    'budget:pre-overflow': {
+        budget: ContextBudget;
+    };
+    'guardian:validation-failed': {
+        validation: GuardianValidation;
+    };
+    'guardian:degradation-applied': {
+        tokensFreed: number;
+        log: string[];
+    };
     'plugin:registered': {
         name: string;
     };
@@ -3216,6 +3763,7 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     private _toolOutputPlugin;
     private _autoSpillPlugin;
     private _toolResultEvictionPlugin;
+    private readonly _guardian;
     private readonly _agentId;
     private readonly _features;
     private _systemPrompt;
@@ -3244,11 +3792,29 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     private _storage;
     private _sessionId;
     private _sessionMetadata;
+    /**
+     * MCP clients that were connected during initialization.
+     * These are tracked for cleanup during destroy().
+     */
+    private _mcpClients;
+    /**
+     * MCP server references from config (for serialization/deserialization)
+     */
+    private _mcpServerRefs;
+    /**
+     * Flag indicating MCP initialization is pending (async)
+     */
+    private _mcpInitializationPending;
     private constructor();
     /**
      * Create a new AgentContext
      */
     static create(config?: AgentContextConfig): AgentContext;
+    /**
+     * Create a new AgentContext and wait for MCP servers to initialize.
+     * Use this factory method when you need MCP tools to be available immediately.
+     */
+    static createAsync(config?: AgentContextConfig): Promise<AgentContext>;
     /** Tool manager - register, enable/disable, execute tools */
     get tools(): ToolManager;
     /** Working memory - store/retrieve agent state (null if memory feature disabled) */
@@ -3267,12 +3833,37 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     get autoSpillPlugin(): AutoSpillPlugin | null;
     /** ToolResultEvictionPlugin (null if toolResultEviction feature disabled or memory disabled) */
     get toolResultEvictionPlugin(): ToolResultEvictionPlugin | null;
+    /** ContextGuardian - mandatory checkpoint for context validation */
+    get guardian(): ContextGuardian;
     /** Agent ID (auto-generated or from config) */
     get agentId(): string;
     /** Current session ID (null if no session loaded/saved) */
     get sessionId(): string | null;
     /** Storage backend for session persistence (null if not configured) */
     get storage(): IContextStorage | null;
+    /** Connected MCP clients (readonly) */
+    get mcpClients(): readonly IMCPClient[];
+    /**
+     * Check if MCP initialization is still pending.
+     * If true, call ensureMCPInitialized() to wait for completion.
+     */
+    get mcpInitializationPending(): boolean;
+    /**
+     * Ensure MCP servers are initialized before proceeding.
+     * Call this if you need MCP tools to be available immediately.
+     */
+    ensureMCPInitialized(): Promise<void>;
+    /**
+     * Get MCP client by server name
+     */
+    getMCPClient(name: string): IMCPClient | undefined;
+    /**
+     * Get all tools available from connected MCP servers
+     */
+    getMCPTools(): Array<{
+        server: string;
+        tools: string[];
+    }>;
     /**
      * Get the resolved feature configuration
      */
@@ -3301,6 +3892,11 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Called during construction after feature resolution
      */
     private validateFeatures;
+    /**
+     * Initialize MCP servers from config.
+     * This is called asynchronously during construction and can be awaited via ensureMCPInitialized().
+     */
+    private _initializeMCPServers;
     /** Get/set system prompt */
     get systemPrompt(): string;
     set systemPrompt(value: string);
@@ -3333,6 +3929,7 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     addAssistantResponse(output: OutputItem[]): string[];
     /**
      * Add tool results to conversation.
+     * Includes safety truncation to prevent context overflow.
      *
      * @param results - ToolResult[] from tool execution
      * @returns Message ID of the tool results message
@@ -5027,4 +5624,4 @@ declare class HookManager {
     getDisabledHooks(): string[];
 }
 
-export { type InContextMemoryConfig as $, type AgentPermissionsConfig as A, BaseContextPlugin as B, type ContextSessionMetadata as C, type ContextManagerConfig as D, ExecutionContext as E, type FunctionToolDefinition as F, type IContextCompactor as G, type HookConfig as H, type IContextStorage as I, type TokenContentType as J, type IPersistentInstructionsStorage as K, type LLMResponse as L, type MemoryEntry as M, type StoredContextSession as N, type ContextStorageListOptions as O, type ContextSessionSummary as P, type TokenUsage as Q, type ToolCall as R, type SerializedAgentContextState as S, type ToolFunction as T, StreamEventType as U, CircuitBreaker as V, WorkingMemory as W, type TextGenerateOptions as X, type ModelCapabilities as Y, type ToolPermissionConfig$1 as Z, MessageRole as _, ToolManager as a, isTerminalMemoryStatus as a$, InContextMemoryPlugin as a0, type PersistentInstructionsConfig as a1, PersistentInstructionsPlugin as a2, DEFAULT_FEATURES as a3, type AgentContextEvents as a4, type AgentContextMetrics as a5, type HistoryMessage as a6, type ToolCallRecord as a7, type PrepareOptions as a8, type PreparedResult as a9, type PermissionManagerEvent as aA, APPROVAL_STATE_VERSION as aB, DEFAULT_PERMISSION_CONFIG as aC, DEFAULT_ALLOWLIST as aD, type DefaultAllowlistedTool as aE, CONTEXT_SESSION_FORMAT_VERSION as aF, type WorkingMemoryEvents as aG, type EvictionStrategy as aH, type IdempotencyCacheConfig as aI, type CacheStats as aJ, DEFAULT_IDEMPOTENCY_CONFIG as aK, type PreparedContext as aL, DEFAULT_CONTEXT_CONFIG as aM, type MemoryEntryInput as aN, type MemoryIndex as aO, type MemoryIndexEntry as aP, type MemoryPriority as aQ, type TaskAwareScope as aR, type SimpleScope as aS, type TaskStatusForMemory as aT, DEFAULT_MEMORY_CONFIG as aU, forTasks as aV, forPlan as aW, scopeEquals as aX, scopeMatches as aY, isSimpleScope as aZ, isTaskAwareScope as a_, ToolOutputPlugin as aa, AutoSpillPlugin as ab, ToolResultEvictionPlugin as ac, type ToolOutputPluginConfig as ad, type ToolOutput as ae, type SpilledEntry as af, type ToolResultEvictionConfig as ag, type TrackedResult as ah, type EvictionResult as ai, type ToolOptions as aj, type ToolCondition as ak, type ToolSelectionContext as al, type ToolRegistration as am, type ToolMetadata as an, type ToolManagerStats as ao, type SerializedToolState as ap, type ToolManagerEvent as aq, type PermissionScope as ar, type RiskLevel as as, type ToolPermissionConfig as at, type ApprovalCacheEntry as au, type SerializedApprovalState as av, type SerializedApprovalEntry as aw, type PermissionCheckResult as ax, type ApprovalDecision as ay, type PermissionCheckContext as az, AgentContext as b, type InContextPriority as b$, calculateEntrySize as b0, MEMORY_PRIORITY_VALUES as b1, type ToolContext as b2, type WorkingMemoryAccess as b3, ContentType as b4, type Content as b5, type InputTextContent as b6, type InputImageContent as b7, type OutputTextContent as b8, type ToolUseContent as b9, isOutputTextDelta as bA, isToolCallStart as bB, isToolCallArgumentsDelta as bC, isToolCallArgumentsDone as bD, isResponseComplete as bE, isErrorEvent as bF, HookManager as bG, type AgentEventName as bH, type ExecutionConfig as bI, type AgenticLoopEvents as bJ, type AgenticLoopEventName as bK, type HookName as bL, type Hook as bM, type ModifyingHook as bN, type BeforeToolContext as bO, type AfterToolContext as bP, type ApproveToolContext as bQ, type ToolModification as bR, type ApprovalResult as bS, type IToolExecutor as bT, type IAsyncDisposable as bU, assertNotDestroyed as bV, CircuitOpenError as bW, type CircuitBreakerConfig as bX, type CircuitBreakerEvents as bY, DEFAULT_CIRCUIT_BREAKER_CONFIG as bZ, type InContextEntry as b_, type ToolResultContent as ba, type Message as bb, type OutputItem as bc, type CompactionItem as bd, type ReasoningItem as be, ToolCallState as bf, defaultDescribeCall as bg, getToolCallDescription as bh, type Tool as bi, type BuiltInTool as bj, type ToolResult as bk, type ToolExecutionContext as bl, type JSONSchema as bm, type ResponseCreatedEvent as bn, type ResponseInProgressEvent as bo, type OutputTextDeltaEvent as bp, type OutputTextDoneEvent as bq, type ToolCallStartEvent as br, type ToolCallArgumentsDeltaEvent as bs, type ToolCallArgumentsDoneEvent as bt, type ToolExecutionStartEvent as bu, type ToolExecutionDoneEvent as bv, type IterationCompleteEvent$1 as bw, type ResponseCompleteEvent as bx, type ErrorEvent as by, isStreamEvent as bz, type AgentContextConfig as c, type SerializedInContextMemoryState as c0, type SerializedPersistentInstructionsState as c1, type ExecutionStartEvent as c2, type ExecutionCompleteEvent as c3, type ToolStartEvent as c4, type ToolCompleteEvent as c5, type LLMRequestEvent as c6, type LLMResponseEvent as c7, ToolPermissionManager as d, type ITextProvider as e, type InputItem as f, type StreamEvent as g, type AgentContextFeatures as h, type HistoryMode as i, type AgentEvents as j, type IDisposable as k, type AgentResponse as l, type ExecutionMetrics as m, type AuditEntry as n, type CircuitState as o, type CircuitBreakerMetrics as p, type IContextComponent as q, type IMemoryStorage as r, type MemoryScope as s, type ITokenEstimator as t, type StaleEntryInfo as u, IdempotencyCache as v, type WorkingMemoryConfig as w, type AutoSpillConfig as x, type IContextStrategy as y, type ContextBudget as z };
+export { type IPersistentInstructionsStorage as $, type AgentPermissionsConfig as A, type MCPPromptResult as B, type ContextSessionMetadata as C, type MCPClientState as D, ExecutionContext as E, type FunctionToolDefinition as F, type IMemoryStorage as G, type HookConfig as H, type IContextStorage as I, type MemoryEntry as J, type MemoryScope as K, type LLMResponse as L, type MCPServerConfig as M, BaseContextPlugin as N, type ITokenEstimator as O, type StaleEntryInfo as P, IdempotencyCache as Q, type WorkingMemoryConfig as R, type SerializedAgentContextState as S, type ToolFunction as T, type AutoSpillConfig as U, type IContextStrategy as V, WorkingMemory as W, type ContextBudget as X, type ContextManagerConfig as Y, type IContextCompactor as Z, type TokenContentType as _, ToolManager as a, DEFAULT_IDEMPOTENCY_CONFIG as a$, type StoredContextSession as a0, type ContextStorageListOptions as a1, type ContextSessionSummary as a2, type TokenUsage as a3, type ToolCall as a4, StreamEventType as a5, CircuitBreaker as a6, type TextGenerateOptions as a7, type ModelCapabilities as a8, type ToolPermissionConfig$1 as a9, type ToolOptions as aA, type ToolCondition as aB, type ToolSelectionContext as aC, type ToolRegistration as aD, type ToolMetadata as aE, type ToolManagerStats as aF, type SerializedToolState as aG, type ToolManagerEvent as aH, type PermissionScope as aI, type RiskLevel as aJ, type ToolPermissionConfig as aK, type ApprovalCacheEntry as aL, type SerializedApprovalState as aM, type SerializedApprovalEntry as aN, type PermissionCheckResult as aO, type ApprovalDecision as aP, type PermissionCheckContext as aQ, type PermissionManagerEvent as aR, APPROVAL_STATE_VERSION as aS, DEFAULT_PERMISSION_CONFIG as aT, DEFAULT_ALLOWLIST as aU, type DefaultAllowlistedTool as aV, CONTEXT_SESSION_FORMAT_VERSION as aW, type WorkingMemoryEvents as aX, type EvictionStrategy as aY, type IdempotencyCacheConfig as aZ, type CacheStats as a_, MessageRole as aa, type InContextMemoryConfig as ab, InContextMemoryPlugin as ac, type PersistentInstructionsConfig as ad, PersistentInstructionsPlugin as ae, DEFAULT_FEATURES as af, type AgentContextEvents as ag, type AgentContextMetrics as ah, type HistoryMessage as ai, type ToolCallRecord as aj, type PrepareOptions as ak, type PreparedResult as al, type MCPServerReference as am, ToolOutputPlugin as an, AutoSpillPlugin as ao, ToolResultEvictionPlugin as ap, type ToolOutputPluginConfig as aq, type ToolOutput as ar, type SpilledEntry as as, type ToolResultEvictionConfig as at, type TrackedResult as au, type EvictionResult as av, ContextGuardian as aw, type ContextGuardianConfig as ax, type GuardianValidation as ay, type DegradationResult as az, AgentContext as b, type AgenticLoopEventName as b$, type PreparedContext as b0, DEFAULT_CONTEXT_CONFIG as b1, type MemoryEntryInput as b2, type MemoryIndex as b3, type MemoryIndexEntry as b4, type MemoryPriority as b5, type TaskAwareScope as b6, type SimpleScope as b7, type TaskStatusForMemory as b8, DEFAULT_MEMORY_CONFIG as b9, type BuiltInTool as bA, type ToolResult as bB, type ToolExecutionContext as bC, type JSONSchema as bD, type ResponseCreatedEvent as bE, type ResponseInProgressEvent as bF, type OutputTextDeltaEvent as bG, type OutputTextDoneEvent as bH, type ToolCallStartEvent as bI, type ToolCallArgumentsDeltaEvent as bJ, type ToolCallArgumentsDoneEvent as bK, type ToolExecutionStartEvent as bL, type ToolExecutionDoneEvent as bM, type IterationCompleteEvent$1 as bN, type ResponseCompleteEvent as bO, type ErrorEvent as bP, isStreamEvent as bQ, isOutputTextDelta as bR, isToolCallStart as bS, isToolCallArgumentsDelta as bT, isToolCallArgumentsDone as bU, isResponseComplete as bV, isErrorEvent as bW, HookManager as bX, type AgentEventName as bY, type ExecutionConfig as bZ, type AgenticLoopEvents as b_, forTasks as ba, forPlan as bb, scopeEquals as bc, scopeMatches as bd, isSimpleScope as be, isTaskAwareScope as bf, isTerminalMemoryStatus as bg, calculateEntrySize as bh, MEMORY_PRIORITY_VALUES as bi, type ToolContext as bj, type WorkingMemoryAccess as bk, ContentType as bl, type Content as bm, type InputTextContent as bn, type InputImageContent as bo, type OutputTextContent as bp, type ToolUseContent as bq, type ToolResultContent as br, type Message as bs, type OutputItem as bt, type CompactionItem as bu, type ReasoningItem as bv, ToolCallState as bw, defaultDescribeCall as bx, getToolCallDescription as by, type Tool as bz, type AgentContextConfig as c, type HookName as c0, type Hook as c1, type ModifyingHook as c2, type BeforeToolContext as c3, type AfterToolContext as c4, type ApproveToolContext as c5, type ToolModification as c6, type ApprovalResult as c7, type IToolExecutor as c8, type IAsyncDisposable as c9, assertNotDestroyed as ca, CircuitOpenError as cb, type CircuitBreakerConfig as cc, type CircuitBreakerEvents as cd, DEFAULT_CIRCUIT_BREAKER_CONFIG as ce, type MCPTransportType as cf, type StdioTransportConfig as cg, type HTTPTransportConfig as ch, type TransportConfig as ci, type InContextEntry as cj, type InContextPriority as ck, type SerializedInContextMemoryState as cl, type SerializedPersistentInstructionsState as cm, type ExecutionStartEvent as cn, type ExecutionCompleteEvent as co, type ToolStartEvent as cp, type ToolCompleteEvent as cq, type LLMRequestEvent as cr, type LLMResponseEvent as cs, ToolPermissionManager as d, type ITextProvider as e, type InputItem as f, type StreamEvent as g, type AgentContextFeatures as h, type HistoryMode as i, type AgentEvents as j, type IDisposable as k, type AgentResponse as l, type ExecutionMetrics as m, type AuditEntry as n, type CircuitState as o, type CircuitBreakerMetrics as p, type IContextComponent as q, type IMCPClient as r, type MCPConfiguration as s, type MCPClientConnectionState as t, type MCPServerCapabilities as u, type MCPTool as v, type MCPToolResult as w, type MCPResource as x, type MCPResourceContent as y, type MCPPrompt as z };

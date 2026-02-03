@@ -40,7 +40,7 @@ export interface SpilledEntry {
  * Auto-spill configuration
  */
 export interface AutoSpillConfig {
-  /** Minimum size (bytes) to trigger auto-spill. Default: 10KB */
+  /** Minimum size (bytes) to trigger auto-spill. Default: 5KB */
   sizeThreshold?: number;
   /** Tools to auto-spill. If not provided, uses toolPatterns or spills all large outputs */
   tools?: string[];
@@ -55,7 +55,7 @@ export interface AutoSpillConfig {
 }
 
 const DEFAULT_CONFIG: Required<AutoSpillConfig> = {
-  sizeThreshold: 10 * 1024, // 10KB
+  sizeThreshold: 5 * 1024, // 5KB - more aggressive to prevent context overflow
   tools: [],
   toolPatterns: [],
   maxTrackedEntries: 100,

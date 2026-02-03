@@ -43,6 +43,7 @@ export type {
   SerializedAgentContextState,
   PrepareOptions,
   PreparedResult,
+  MCPServerReference,
 } from './AgentContext.js';
 
 // Feature-aware tool factory
@@ -100,6 +101,7 @@ export {
   TOKEN_ESTIMATION,
   TOOL_RESULT_EVICTION_DEFAULTS,
   DEFAULT_TOOL_RETENTION,
+  GUARDIAN_DEFAULTS,
 } from './constants.js';
 
 // Global configuration

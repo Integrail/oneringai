@@ -39,6 +39,10 @@ import {
   getVendorLogo,
   getVendorAuthTemplate,
   createConnectorFromTemplate,
+  // MCP
+  MCPRegistry,
+  type MCPServerConfig,
+  type IMCPClient,
   type VendorInfo,
   type VendorTemplate,
   type VendorLogo,
@@ -111,6 +115,8 @@ export interface StoredAgentConfig {
   permissionsEnabled: boolean;
   // Selected tools
   tools: string[];
+  // MCP servers (optional)
+  mcpServers?: AgentMCPServerRef[];
   // Metadata
   createdAt: number;
   updatedAt: number;
@@ -178,6 +184,71 @@ export interface CreateUniversalConnectorInput {
   baseURL?: string;
 }
 
+// ============ MCP Server Types ============
+
+/**
+ * Stored MCP Server Configuration
+ */
+export interface StoredMCPServerConfig {
+  /** Unique server name (used as registry key) */
+  name: string;
+  /** User-friendly display name */
+  displayName?: string;
+  /** Server description */
+  description?: string;
+  /** Transport type */
+  transport: 'stdio' | 'http' | 'https';
+  /** Transport-specific configuration */
+  transportConfig: {
+    // Stdio transport
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    cwd?: string;
+    // HTTP transport
+    url?: string;
+    token?: string;
+    headers?: Record<string, string>;
+    timeoutMs?: number;
+  };
+  /** Tool namespace prefix (default: 'mcp:{name}') */
+  toolNamespace?: string;
+  /** Connection status */
+  status: 'connected' | 'disconnected' | 'error' | 'connecting';
+  /** Last error message if status is 'error' */
+  lastError?: string;
+  /** Number of tools available (when connected) */
+  toolCount?: number;
+  /** List of available tools (when connected) */
+  availableTools?: string[];
+  /** Timestamps */
+  createdAt: number;
+  updatedAt: number;
+  lastConnectedAt?: number;
+}
+
+/**
+ * MCP server reference for agent configuration
+ */
+export interface AgentMCPServerRef {
+  /** Server name (references StoredMCPServerConfig.name) */
+  serverName: string;
+  /** Optional: only use these tools from the server (if not specified, all tools are used) */
+  selectedTools?: string[];
+}
+
+/**
+ * Input for creating an MCP server configuration
+ */
+export interface CreateMCPServerInput {
+  name: string;
+  displayName?: string;
+  description?: string;
+  transport: 'stdio' | 'http' | 'https';
+  transportConfig: StoredMCPServerConfig['transportConfig'];
+  toolNamespace?: string;
+}
+
 interface HoseaConfig {
   activeConnector: string | null;
   activeModel: string | null;
@@ -190,6 +261,42 @@ interface HoseaConfig {
 }
 
 /**
+ * Task interface for plan display
+ */
+export interface PlanTask {
+  id: string;
+  name: string;
+  description: string;
+  status: 'pending' | 'blocked' | 'in_progress' | 'waiting_external' | 'completed' | 'failed' | 'skipped' | 'cancelled';
+  dependsOn: string[];
+  validation?: {
+    completionCriteria?: string[];
+  };
+  result?: {
+    success: boolean;
+    output?: unknown;
+    error?: string;
+  };
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+/**
+ * Plan interface for plan display
+ */
+export interface Plan {
+  id: string;
+  goal: string;
+  context?: string;
+  tasks: PlanTask[];
+  status: 'pending' | 'running' | 'suspended' | 'completed' | 'failed' | 'cancelled';
+  createdAt: number;
+  startedAt?: number;
+  completedAt?: number;
+}
+
+/**
  * Stream chunk types for IPC communication
  */
 export type StreamChunk =
@@ -198,7 +305,22 @@ export type StreamChunk =
   | { type: 'tool_end'; tool: string; durationMs?: number }
   | { type: 'tool_error'; tool: string; error: string }
   | { type: 'done' }
-  | { type: 'error'; content: string };
+  | { type: 'error'; content: string }
+  // Plan events
+  | { type: 'plan:created'; plan: Plan }
+  | { type: 'plan:awaiting_approval'; plan: Plan }
+  | { type: 'plan:approved'; plan: Plan }
+  | { type: 'plan:analyzing'; goal: string }
+  | { type: 'mode:changed'; from: string; to: string; reason: string }
+  // Task events
+  | { type: 'task:started'; task: PlanTask }
+  | { type: 'task:progress'; task: PlanTask; status: string }
+  | { type: 'task:completed'; task: PlanTask; result: unknown }
+  | { type: 'task:failed'; task: PlanTask; error: string }
+  // Execution events
+  | { type: 'execution:done'; result: { status: string; completedTasks: number; totalTasks: number; failedTasks: number; skippedTasks: number } }
+  | { type: 'execution:paused'; reason: string }
+  | { type: 'needs:approval'; plan: Plan };
 
 /**
  * HOSEA UI Capabilities System Prompt
@@ -309,6 +431,8 @@ export class AgentService {
   private agentDefinitionStorage: IAgentDefinitionStorage;
   // Active video generation jobs (jobId -> { connectorName, videoGen })
   private activeVideoJobs: Map<string, { connectorName: string; videoGen: VideoGeneration }> = new Map();
+  // MCP servers storage
+  private mcpServers: Map<string, StoredMCPServerConfig> = new Map();
 
   // ============ Conversion Helpers ============
 
@@ -448,6 +572,7 @@ export class AgentService {
     await this.loadUniversalConnectors();
     await this.migrateAPIConnectorsToUniversal();
     await this.loadAgents();
+    await this.loadMCPServers();
     this.initializeLogLevel();
   }
 
@@ -465,7 +590,7 @@ export class AgentService {
   }
 
   private async ensureDirectories(): Promise<void> {
-    const dirs = ['connectors', 'api-connectors', 'universal-connectors', 'agents', 'sessions', 'logs'];
+    const dirs = ['connectors', 'api-connectors', 'universal-connectors', 'agents', 'sessions', 'logs', 'mcp-servers'];
     for (const dir of dirs) {
       const path = join(this.dataDir, dir);
       if (!existsSync(path)) {
@@ -662,12 +787,37 @@ export class AgentService {
       return;
     }
 
+    // Track when we're in plan creation mode to suppress text output
+    // (since we show structured PlanDisplay instead of plain text)
+    let suppressText = false;
+
     try {
       for await (const event of this.agent.stream(message)) {
         const e = event as UniversalEvent;
 
+        // Detect plan mode transitions to control text suppression
+        if (e.type === 'plan:analyzing' || e.type === 'plan:created') {
+          suppressText = true;
+        } else if (e.type === 'plan:approved' || e.type === 'mode:changed') {
+          // Resume text when plan is approved or mode changes
+          const modeEvent = e as any;
+          if (e.type === 'mode:changed' && modeEvent.to === 'executing') {
+            // Keep suppressing during execution - task events will show progress
+          } else if (e.type === 'mode:changed' && modeEvent.to === 'interactive') {
+            suppressText = false;
+          } else if (e.type === 'plan:approved') {
+            // Suppress during execution, resume when we get results
+          }
+        } else if (e.type === 'execution:done') {
+          // Resume text after execution completes
+          suppressText = false;
+        }
+
         if (e.type === 'text:delta') {
-          yield { type: 'text', content: e.delta };
+          // Only forward text if we're not in plan mode
+          if (!suppressText) {
+            yield { type: 'text', content: e.delta };
+          }
         } else if (e.type === 'tool:start') {
           // Get tool description using describeCall or defaultDescribeCall
           const args = (e.args || {}) as Record<string, unknown>;
@@ -706,9 +856,107 @@ export class AgentService {
         } else if (e.type === 'error') {
           yield { type: 'error', content: e.error };
         }
+        // Plan events from UniversalAgent
+        else if (e.type === 'plan:created') {
+          yield { type: 'plan:created', plan: this.serializePlan((e as any).plan) };
+        } else if (e.type === 'plan:awaiting_approval') {
+          yield { type: 'plan:awaiting_approval', plan: this.serializePlan((e as any).plan) };
+        } else if (e.type === 'plan:approved') {
+          yield { type: 'plan:approved', plan: this.serializePlan((e as any).plan) };
+        } else if (e.type === 'plan:analyzing') {
+          yield { type: 'plan:analyzing', goal: (e as any).goal };
+        } else if (e.type === 'mode:changed') {
+          yield { type: 'mode:changed', from: (e as any).from, to: (e as any).to, reason: (e as any).reason };
+        } else if (e.type === 'needs:approval') {
+          yield { type: 'needs:approval', plan: this.serializePlan((e as any).plan) };
+        }
+        // Task events
+        else if (e.type === 'task:started') {
+          yield { type: 'task:started', task: this.serializeTask((e as any).task) };
+        } else if (e.type === 'task:progress') {
+          yield { type: 'task:progress', task: this.serializeTask((e as any).task), status: (e as any).status };
+        } else if (e.type === 'task:completed') {
+          yield { type: 'task:completed', task: this.serializeTask((e as any).task), result: (e as any).result };
+        } else if (e.type === 'task:failed') {
+          yield { type: 'task:failed', task: this.serializeTask((e as any).task), error: (e as any).error };
+        }
+        // Execution events
+        else if (e.type === 'execution:done') {
+          yield { type: 'execution:done', result: (e as any).result };
+        } else if (e.type === 'execution:paused') {
+          yield { type: 'execution:paused', reason: (e as any).reason };
+        }
       }
     } catch (error) {
       yield { type: 'error', content: String(error) };
+    }
+  }
+
+  /**
+   * Serialize a Plan for IPC transfer
+   */
+  private serializePlan(plan: any): Plan {
+    return {
+      id: plan.id,
+      goal: plan.goal,
+      context: plan.context,
+      tasks: plan.tasks?.map((t: any) => this.serializeTask(t)) || [],
+      status: plan.status,
+      createdAt: plan.createdAt,
+      startedAt: plan.startedAt,
+      completedAt: plan.completedAt,
+    };
+  }
+
+  /**
+   * Serialize a Task for IPC transfer
+   */
+  private serializeTask(task: any): PlanTask {
+    return {
+      id: task.id,
+      name: task.name,
+      description: task.description,
+      status: task.status,
+      dependsOn: task.dependsOn || [],
+      validation: task.validation ? {
+        completionCriteria: task.validation.completionCriteria,
+      } : undefined,
+      result: task.result,
+      createdAt: task.createdAt,
+      startedAt: task.startedAt,
+      completedAt: task.completedAt,
+    };
+  }
+
+  /**
+   * Approve the current pending plan
+   */
+  async approvePlan(_planId: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.agent) {
+      return { success: false, error: 'Agent not initialized' };
+    }
+    // UniversalAgent accepts approval via stream - send approval message
+    // This will be picked up by the agent's intent analysis as an approval
+    try {
+      // Return success - the actual approval happens via stream when user sends approval message
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Reject the current pending plan
+   */
+  async rejectPlan(_planId: string, _reason?: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.agent) {
+      return { success: false, error: 'Agent not initialized' };
+    }
+    try {
+      // Return success - the actual rejection happens via stream when user sends rejection message
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
     }
   }
 
@@ -1242,6 +1490,316 @@ export class AgentService {
         config.lastTestedAt = Date.now();
         this.universalConnectors.set(name, config);
       }
+      return { success: false, error: String(error) };
+    }
+  }
+
+  // ============ MCP Server Management ============
+
+  /**
+   * Load MCP server configurations from storage
+   */
+  private async loadMCPServers(): Promise<void> {
+    const mcpServersDir = join(this.dataDir, 'mcp-servers');
+    if (!existsSync(mcpServersDir)) return;
+
+    try {
+      const files = await readdir(mcpServersDir);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          const content = await readFile(join(mcpServersDir, file), 'utf-8');
+          const config = JSON.parse(content) as StoredMCPServerConfig;
+          // Reset status to disconnected on load (will need to reconnect)
+          config.status = 'disconnected';
+          this.mcpServers.set(config.name, config);
+        }
+      }
+    } catch (error) {
+      console.warn('Error loading MCP servers:', error);
+    }
+  }
+
+  /**
+   * Save MCP server configuration to storage
+   */
+  private async saveMCPServer(config: StoredMCPServerConfig): Promise<void> {
+    const filePath = join(this.dataDir, 'mcp-servers', `${config.name}.json`);
+    await writeFile(filePath, JSON.stringify(config, null, 2));
+  }
+
+  /**
+   * Delete MCP server configuration from storage
+   */
+  private async deleteMCPServerFile(name: string): Promise<void> {
+    const filePath = join(this.dataDir, 'mcp-servers', `${name}.json`);
+    if (existsSync(filePath)) {
+      const { unlink } = await import('node:fs/promises');
+      await unlink(filePath);
+    }
+  }
+
+  /**
+   * List all configured MCP servers
+   */
+  listMCPServers(): StoredMCPServerConfig[] {
+    return Array.from(this.mcpServers.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  /**
+   * Get a specific MCP server configuration
+   */
+  getMCPServer(name: string): StoredMCPServerConfig | null {
+    return this.mcpServers.get(name) || null;
+  }
+
+  /**
+   * Create a new MCP server configuration
+   */
+  async createMCPServer(input: CreateMCPServerInput): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Check if name already exists
+      if (this.mcpServers.has(input.name)) {
+        return { success: false, error: `MCP server "${input.name}" already exists` };
+      }
+
+      const now = Date.now();
+      const config: StoredMCPServerConfig = {
+        name: input.name,
+        displayName: input.displayName,
+        description: input.description,
+        transport: input.transport,
+        transportConfig: input.transportConfig,
+        toolNamespace: input.toolNamespace ?? `mcp:${input.name}`,
+        status: 'disconnected',
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      this.mcpServers.set(config.name, config);
+      await this.saveMCPServer(config);
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Update an existing MCP server configuration
+   */
+  async updateMCPServer(name: string, updates: Partial<Omit<StoredMCPServerConfig, 'name' | 'createdAt'>>): Promise<{ success: boolean; error?: string }> {
+    try {
+      const config = this.mcpServers.get(name);
+      if (!config) {
+        return { success: false, error: `MCP server "${name}" not found` };
+      }
+
+      // If changing transport config, disconnect first
+      if (updates.transport || updates.transportConfig) {
+        await this.disconnectMCPServer(name);
+      }
+
+      // Apply updates
+      const updatedConfig: StoredMCPServerConfig = {
+        ...config,
+        ...updates,
+        name: config.name, // Prevent name change
+        createdAt: config.createdAt, // Prevent createdAt change
+        updatedAt: Date.now(),
+      };
+
+      this.mcpServers.set(name, updatedConfig);
+      await this.saveMCPServer(updatedConfig);
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Delete an MCP server configuration
+   */
+  async deleteMCPServer(name: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.mcpServers.has(name)) {
+        return { success: false, error: `MCP server "${name}" not found` };
+      }
+
+      // Disconnect if connected
+      await this.disconnectMCPServer(name);
+
+      // Remove from registry if registered
+      if (MCPRegistry.has(name)) {
+        MCPRegistry.remove(name);
+      }
+
+      this.mcpServers.delete(name);
+      await this.deleteMCPServerFile(name);
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Connect to an MCP server
+   */
+  async connectMCPServer(name: string): Promise<{ success: boolean; tools?: string[]; error?: string }> {
+    try {
+      const config = this.mcpServers.get(name);
+      if (!config) {
+        return { success: false, error: `MCP server "${name}" not found` };
+      }
+
+      // Update status to connecting
+      config.status = 'connecting';
+      this.mcpServers.set(name, config);
+
+      // Build MCPServerConfig for the library
+      const mcpConfig: MCPServerConfig = {
+        name: config.name,
+        displayName: config.displayName,
+        description: config.description,
+        transport: config.transport,
+        transportConfig: config.transport === 'stdio'
+          ? {
+              command: config.transportConfig.command!,
+              args: config.transportConfig.args,
+              env: config.transportConfig.env,
+              cwd: config.transportConfig.cwd,
+            }
+          : {
+              url: config.transportConfig.url!,
+              token: config.transportConfig.token,
+              headers: config.transportConfig.headers,
+              timeoutMs: config.transportConfig.timeoutMs,
+            },
+        toolNamespace: config.toolNamespace,
+      };
+
+      // Create or get client from registry
+      let client: IMCPClient;
+      if (MCPRegistry.has(name)) {
+        client = MCPRegistry.get(name);
+        if (!client.isConnected()) {
+          await client.connect();
+        }
+      } else {
+        client = MCPRegistry.create(mcpConfig);
+        await client.connect();
+      }
+
+      // Get available tools
+      const tools = client.tools.map(t => t.name);
+
+      // Update config with connection info
+      config.status = 'connected';
+      config.toolCount = tools.length;
+      config.availableTools = tools;
+      config.lastConnectedAt = Date.now();
+      config.lastError = undefined;
+      config.updatedAt = Date.now();
+      this.mcpServers.set(name, config);
+      await this.saveMCPServer(config);
+
+      return { success: true, tools };
+    } catch (error) {
+      const config = this.mcpServers.get(name);
+      if (config) {
+        config.status = 'error';
+        config.lastError = String(error);
+        config.updatedAt = Date.now();
+        this.mcpServers.set(name, config);
+        await this.saveMCPServer(config);
+      }
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Disconnect from an MCP server
+   */
+  async disconnectMCPServer(name: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const config = this.mcpServers.get(name);
+      if (!config) {
+        return { success: false, error: `MCP server "${name}" not found` };
+      }
+
+      // Disconnect if in registry
+      if (MCPRegistry.has(name)) {
+        const client = MCPRegistry.get(name);
+        if (client.isConnected()) {
+          await client.disconnect();
+        }
+      }
+
+      // Update status
+      config.status = 'disconnected';
+      config.toolCount = undefined;
+      config.availableTools = undefined;
+      config.updatedAt = Date.now();
+      this.mcpServers.set(name, config);
+      await this.saveMCPServer(config);
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Get tools available from an MCP server
+   * Returns empty array if not connected
+   */
+  getMCPServerTools(name: string): Array<{ name: string; description?: string }> {
+    if (!MCPRegistry.has(name)) {
+      return [];
+    }
+
+    const client = MCPRegistry.get(name);
+    if (!client.isConnected()) {
+      return [];
+    }
+
+    return client.tools.map(t => ({
+      name: t.name,
+      description: t.description,
+    }));
+  }
+
+  /**
+   * Refresh tools list from a connected MCP server
+   */
+  async refreshMCPServerTools(name: string): Promise<{ success: boolean; tools?: string[]; error?: string }> {
+    try {
+      if (!MCPRegistry.has(name)) {
+        return { success: false, error: `MCP server "${name}" not in registry` };
+      }
+
+      const client = MCPRegistry.get(name);
+      if (!client.isConnected()) {
+        return { success: false, error: `MCP server "${name}" not connected` };
+      }
+
+      // Refresh tools list
+      await client.listTools();
+      const tools = client.tools.map(t => t.name);
+
+      // Update stored config
+      const config = this.mcpServers.get(name);
+      if (config) {
+        config.toolCount = tools.length;
+        config.availableTools = tools;
+        config.updatedAt = Date.now();
+        this.mcpServers.set(name, config);
+        await this.saveMCPServer(config);
+      }
+
+      return { success: true, tools };
+    } catch (error) {
       return { success: false, error: String(error) };
     }
   }

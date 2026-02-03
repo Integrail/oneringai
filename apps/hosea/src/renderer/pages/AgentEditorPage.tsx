@@ -16,7 +16,7 @@ import {
   Alert,
   Collapse,
 } from 'react-bootstrap';
-import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle, ChevronDown, ChevronRight, Server, Wrench, RefreshCw } from 'lucide-react';
 import { PageHeader } from '../components/layout';
 import { useNavigation } from '../hooks/useNavigation';
 
@@ -118,6 +118,26 @@ interface APIConnector {
   serviceType: string;
 }
 
+interface MCPServerInfo {
+  name: string;
+  displayName?: string;
+  description?: string;
+  transport: string;
+  status: 'connected' | 'disconnected' | 'error' | 'connecting';
+  toolCount?: number;
+  availableTools?: string[];
+}
+
+interface MCPTool {
+  name: string;
+  description?: string;
+}
+
+interface AgentMCPServerRef {
+  serverName: string;
+  selectedTools?: string[];
+}
+
 interface ModelInfo {
   id: string;
   name: string;
@@ -160,6 +180,8 @@ interface AgentFormData {
   permissionsEnabled: boolean;
   // Selected tools
   tools: string[];
+  // MCP servers
+  mcpServers: AgentMCPServerRef[];
 }
 
 const defaultFormData: AgentFormData = {
@@ -197,6 +219,8 @@ const defaultFormData: AgentFormData = {
   permissionsEnabled: true,
   // Tools
   tools: [],
+  // MCP servers
+  mcpServers: [],
 };
 
 export function AgentEditorPage(): React.ReactElement {
@@ -214,22 +238,27 @@ export function AgentEditorPage(): React.ReactElement {
   >([]);
   const [availableTools, setAvailableTools] = useState<ToolInfo[]>([]);
   const [apiConnectors, setAPIConnectors] = useState<APIConnector[]>([]);
+  const [mcpServers, setMCPServers] = useState<MCPServerInfo[]>([]);
+  const [mcpServerTools, setMCPServerTools] = useState<Record<string, MCPTool[]>>({});
+  const [loadingMCPTools, setLoadingMCPTools] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Load data on mount
   useEffect(() => {
     async function loadData() {
       try {
-        const [connectorsList, models, tools, apiConns] = await Promise.all([
+        const [connectorsList, models, tools, apiConns, mcpServersList] = await Promise.all([
           window.hosea.connector.list(),
           window.hosea.model.list(),
           window.hosea.tool.registry(),
           window.hosea.apiConnector.list(),
+          window.hosea.mcpServer.list(),
         ]);
         setConnectors(connectorsList);
         setModelsByVendor(models);
         setAvailableTools(tools);
         setAPIConnectors(apiConns);
+        setMCPServers(mcpServersList);
 
         // Load existing agent data if in edit mode
         if (isEditMode && agentId) {
@@ -262,6 +291,7 @@ export function AgentEditorPage(): React.ReactElement {
               cacheMaxEntries: existingAgent.cacheMaxEntries,
               permissionsEnabled: existingAgent.permissionsEnabled,
               tools: existingAgent.tools,
+              mcpServers: existingAgent.mcpServers || [],
             });
           }
         }
@@ -482,6 +512,102 @@ export function AgentEditorPage(): React.ReactElement {
     }));
   };
 
+  // MCP Server handlers
+  const isMCPServerSelected = (serverName: string): boolean => {
+    return formData.mcpServers.some((s) => s.serverName === serverName);
+  };
+
+  const getMCPServerRef = (serverName: string): AgentMCPServerRef | undefined => {
+    return formData.mcpServers.find((s) => s.serverName === serverName);
+  };
+
+  const toggleMCPServer = (serverName: string) => {
+    setFormData((prev) => {
+      const isSelected = prev.mcpServers.some((s) => s.serverName === serverName);
+      if (isSelected) {
+        return {
+          ...prev,
+          mcpServers: prev.mcpServers.filter((s) => s.serverName !== serverName),
+        };
+      } else {
+        return {
+          ...prev,
+          mcpServers: [...prev.mcpServers, { serverName }],
+        };
+      }
+    });
+  };
+
+  const loadMCPServerTools = async (serverName: string) => {
+    if (mcpServerTools[serverName]) return; // Already loaded
+
+    setLoadingMCPTools(serverName);
+    try {
+      const tools = await window.hosea.mcpServer.getTools(serverName);
+      setMCPServerTools((prev) => ({
+        ...prev,
+        [serverName]: tools,
+      }));
+    } catch (error) {
+      console.error(`Failed to load tools for ${serverName}:`, error);
+    } finally {
+      setLoadingMCPTools(null);
+    }
+  };
+
+  const toggleMCPServerTool = (serverName: string, toolName: string) => {
+    setFormData((prev) => {
+      const serverRef = prev.mcpServers.find((s) => s.serverName === serverName);
+      if (!serverRef) return prev;
+
+      const selectedTools = serverRef.selectedTools || [];
+      const isSelected = selectedTools.includes(toolName);
+
+      const newSelectedTools = isSelected
+        ? selectedTools.filter((t) => t !== toolName)
+        : [...selectedTools, toolName];
+
+      // If all tools are selected or none selected, remove the selectedTools array (use all)
+      const serverTools = mcpServerTools[serverName] || [];
+      const useAll = newSelectedTools.length === 0 || newSelectedTools.length === serverTools.length;
+
+      return {
+        ...prev,
+        mcpServers: prev.mcpServers.map((s) =>
+          s.serverName === serverName
+            ? { ...s, selectedTools: useAll ? undefined : newSelectedTools }
+            : s
+        ),
+      };
+    });
+  };
+
+  const isMCPToolSelected = (serverName: string, toolName: string): boolean => {
+    const serverRef = formData.mcpServers.find((s) => s.serverName === serverName);
+    if (!serverRef) return false;
+    // If no selectedTools specified, all tools are selected
+    if (!serverRef.selectedTools) return true;
+    return serverRef.selectedTools.includes(toolName);
+  };
+
+  const selectAllMCPServerTools = (serverName: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      mcpServers: prev.mcpServers.map((s) =>
+        s.serverName === serverName ? { ...s, selectedTools: undefined } : s
+      ),
+    }));
+  };
+
+  const deselectAllMCPServerTools = (serverName: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      mcpServers: prev.mcpServers.map((s) =>
+        s.serverName === serverName ? { ...s, selectedTools: [] } : s
+      ),
+    }));
+  };
+
   const InfoTooltip = ({
     id,
     content,
@@ -548,6 +674,14 @@ export function AgentEditorPage(): React.ReactElement {
           </Nav.Item>
           <Nav.Item>
             <Nav.Link eventKey="tools">Tools</Nav.Link>
+          </Nav.Item>
+          <Nav.Item>
+            <Nav.Link eventKey="mcp">
+              MCP Servers
+              {formData.mcpServers.length > 0 && (
+                <Badge bg="primary" className="ms-2">{formData.mcpServers.length}</Badge>
+              )}
+            </Nav.Link>
           </Nav.Item>
           <Nav.Item>
             <Nav.Link eventKey="context">Context</Nav.Link>
@@ -954,6 +1088,196 @@ export function AgentEditorPage(): React.ReactElement {
                   </div>
                 </Collapse>
               </Card>
+            )}
+          </div>
+        )}
+
+        {/* MCP Servers Tab */}
+        {activeTab === 'mcp' && (
+          <div>
+            <p className="text-muted mb-3">
+              Add MCP (Model Context Protocol) servers to extend your agent with external tools.
+              You can attach entire servers or select specific tools.
+            </p>
+
+            {mcpServers.length === 0 ? (
+              <Card className="text-center py-5">
+                <Card.Body>
+                  <Server size={48} className="text-muted mb-3" />
+                  <h5>No MCP Servers Configured</h5>
+                  <p className="text-muted mb-3">
+                    Configure MCP servers in the Tools &gt; MCP Servers section to use them with your agents.
+                  </p>
+                  <Button
+                    variant="outline-primary"
+                    onClick={() => navigate('mcp-servers')}
+                  >
+                    <Server size={16} className="me-2" />
+                    Go to MCP Servers
+                  </Button>
+                </Card.Body>
+              </Card>
+            ) : (
+              <Row className="g-3">
+                {mcpServers.map((server) => {
+                  const isSelected = isMCPServerSelected(server.name);
+                  const serverRef = getMCPServerRef(server.name);
+                  const tools = mcpServerTools[server.name] || [];
+                  const isExpanded = expandedSections[`mcp-${server.name}`];
+                  const isLoadingTools = loadingMCPTools === server.name;
+
+                  return (
+                    <Col key={server.name} xs={12}>
+                      <Card className={isSelected ? 'border-primary' : ''}>
+                        <Card.Header className="d-flex align-items-center">
+                          <Form.Check
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleMCPServer(server.name)}
+                            className="me-3"
+                          />
+                          <div
+                            className="d-flex align-items-center flex-grow-1"
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => {
+                              toggleSection(`mcp-${server.name}`);
+                              if (!mcpServerTools[server.name]) {
+                                loadMCPServerTools(server.name);
+                              }
+                            }}
+                          >
+                            {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                            <Server size={18} className="ms-2 me-2 text-primary" />
+                            <div>
+                              <strong>{server.displayName || server.name}</strong>
+                              <Badge
+                                bg={server.status === 'connected' ? 'success' : server.status === 'error' ? 'danger' : 'secondary'}
+                                className="ms-2"
+                              >
+                                {server.status}
+                              </Badge>
+                              {server.toolCount !== undefined && (
+                                <Badge bg="info" className="ms-1">
+                                  {server.toolCount} tools
+                                </Badge>
+                              )}
+                              {isSelected && serverRef?.selectedTools && (
+                                <Badge bg="primary" className="ms-1">
+                                  {serverRef.selectedTools.length} selected
+                                </Badge>
+                              )}
+                            </div>
+                          </div>
+                        </Card.Header>
+
+                        <Collapse in={isExpanded}>
+                          <div>
+                            <Card.Body>
+                              {server.description && (
+                                <p className="text-muted small mb-3">{server.description}</p>
+                              )}
+
+                              {server.status !== 'connected' ? (
+                                <Alert variant="warning" className="mb-0">
+                                  <AlertCircle size={16} className="me-2" />
+                                  Server is not connected. Connect it in the MCP Servers page to see available tools.
+                                </Alert>
+                              ) : isLoadingTools ? (
+                                <div className="text-center py-3">
+                                  <RefreshCw size={20} className="animate-spin text-primary" />
+                                  <p className="text-muted small mt-2 mb-0">Loading tools...</p>
+                                </div>
+                              ) : tools.length === 0 ? (
+                                <Alert variant="info" className="mb-0">
+                                  No tools available from this server.
+                                </Alert>
+                              ) : (
+                                <>
+                                  <div className="d-flex justify-content-between align-items-center mb-2">
+                                    <small className="text-muted">
+                                      <Wrench size={14} className="me-1" />
+                                      {tools.length} tool{tools.length !== 1 ? 's' : ''} available
+                                    </small>
+                                    {isSelected && (
+                                      <div>
+                                        <Button
+                                          variant="link"
+                                          size="sm"
+                                          className="p-0 me-3"
+                                          onClick={() => selectAllMCPServerTools(server.name)}
+                                        >
+                                          Select All
+                                        </Button>
+                                        <Button
+                                          variant="link"
+                                          size="sm"
+                                          className="p-0"
+                                          onClick={() => deselectAllMCPServerTools(server.name)}
+                                        >
+                                          Deselect All
+                                        </Button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <Row className="g-2">
+                                    {tools.map((tool) => {
+                                      const isToolSelected = isSelected && isMCPToolSelected(server.name, tool.name);
+                                      return (
+                                        <Col key={tool.name} md={6} lg={4}>
+                                          <Card
+                                            className={`h-100 ${isToolSelected ? 'border-primary' : ''}`}
+                                            style={{
+                                              cursor: isSelected ? 'pointer' : 'default',
+                                              opacity: isSelected ? 1 : 0.6,
+                                            }}
+                                            onClick={() => {
+                                              if (isSelected) {
+                                                toggleMCPServerTool(server.name, tool.name);
+                                              }
+                                            }}
+                                          >
+                                            <Card.Body className="py-2 px-3">
+                                              <div className="d-flex align-items-start">
+                                                <Form.Check
+                                                  type="checkbox"
+                                                  checked={isToolSelected}
+                                                  disabled={!isSelected}
+                                                  onChange={() => {
+                                                    if (isSelected) {
+                                                      toggleMCPServerTool(server.name, tool.name);
+                                                    }
+                                                  }}
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  className="me-2"
+                                                />
+                                                <div className="flex-grow-1 overflow-hidden">
+                                                  <div className="d-flex align-items-center">
+                                                    <code className="text-truncate small">{tool.name}</code>
+                                                  </div>
+                                                  {tool.description && (
+                                                    <small className="text-muted d-block text-truncate">
+                                                      {tool.description}
+                                                    </small>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </Card.Body>
+                                          </Card>
+                                        </Col>
+                                      );
+                                    })}
+                                  </Row>
+                                </>
+                              )}
+                            </Card.Body>
+                          </div>
+                        </Collapse>
+                      </Card>
+                    </Col>
+                  );
+                })}
+              </Row>
             )}
           </div>
         )}

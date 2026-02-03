@@ -43,6 +43,7 @@ export type {
   DirectCallOptions,
   PrepareOptions,
   PreparedResult,
+  MCPServerReference,
 } from './core/index.js';
 
 // Feature-aware tool factory
@@ -72,6 +73,14 @@ export type {
   TrackedResult,
   EvictionResult,
 } from './core/index.js';
+
+// Context Guardian (mandatory hard limit enforcement)
+export { ContextGuardian } from './core/context/ContextGuardian.js';
+export type {
+  ContextGuardianConfig,
+  GuardianValidation,
+  DegradationResult,
+} from './core/context/ContextGuardian.js';
 
 // Audio Capabilities
 export { TextToSpeech, SpeechToText } from './core/index.js';
@@ -571,8 +580,10 @@ export {
   TaskTimeoutError,
   TaskValidationError,
   ParallelTasksError,
+  // Context management errors
+  ContextOverflowError,
 } from './domain/errors/AIErrors.js';
-export type { TaskFailure } from './domain/errors/AIErrors.js';
+export type { TaskFailure, ContextOverflowBudget } from './domain/errors/AIErrors.js';
 
 // ============ Interfaces (for extensibility) ============
 export type { IProvider, ProviderCapabilities } from './domain/interfaces/IProvider.js';

@@ -270,3 +270,53 @@ export class ParallelTasksError extends AIError {
     return this.failures.map((f) => f.taskId);
   }
 }
+
+// ============ Context Management Errors ============
+
+/**
+ * Detailed budget information for context overflow diagnosis
+ */
+export interface ContextOverflowBudget {
+  actualTokens: number;
+  maxTokens: number;
+  overageTokens: number;
+  breakdown: Record<string, number>;
+  degradationLog: string[];
+}
+
+/**
+ * Error thrown when context cannot be reduced to fit within limits
+ * after all graceful degradation levels have been exhausted.
+ */
+export class ContextOverflowError extends AIError {
+  constructor(
+    message: string,
+    /** Detailed budget information for debugging */
+    public readonly budget: ContextOverflowBudget
+  ) {
+    super(
+      `Context overflow: ${message}. Actual: ${budget.actualTokens}, Max: ${budget.maxTokens}, Overage: ${budget.overageTokens}`,
+      'CONTEXT_OVERFLOW',
+      413
+    );
+    this.name = 'ContextOverflowError';
+    Object.setPrototypeOf(this, ContextOverflowError.prototype);
+  }
+
+  /**
+   * Get a formatted summary of what was tried
+   */
+  getDegradationSummary(): string {
+    return this.budget.degradationLog.join('\n');
+  }
+
+  /**
+   * Get the top token consumers
+   */
+  getTopConsumers(count = 5): Array<{ component: string; tokens: number }> {
+    return Object.entries(this.budget.breakdown)
+      .map(([component, tokens]) => ({ component, tokens }))
+      .sort((a, b) => b.tokens - a.tokens)
+      .slice(0, count);
+  }
+}

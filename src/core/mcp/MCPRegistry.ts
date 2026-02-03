@@ -157,6 +157,21 @@ export class MCPRegistry {
   }
 
   /**
+   * Remove and destroy a specific client from the registry
+   * @param name - Name of the MCP server to remove
+   * @returns true if the server was found and removed, false otherwise
+   */
+  static remove(name: string): boolean {
+    const client = this.clients.get(name);
+    if (!client) {
+      return false;
+    }
+    client.destroy();
+    this.clients.delete(name);
+    return true;
+  }
+
+  /**
    * Destroy all clients and clear registry
    */
   static destroyAll(): void {

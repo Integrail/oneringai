@@ -1259,29 +1259,34 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       }
 
       // AutoSpill & ToolOutput Plugin Integration
+      // CRITICAL: AutoSpill MUST run BEFORE ToolOutputPlugin.addOutput()
+      // so that large outputs are replaced with pointers before being tracked
       if (toolResult.content) {
-        // Track in tool output plugin (if enabled)
-        this._agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, toolResult.content);
+        let finalContent = toolResult.content;
 
-        // Auto-spill large outputs to memory (if enabled)
+        // Auto-spill large outputs to memory FIRST (if enabled)
         const autoSpillPlugin = this._agentContext.autoSpillPlugin;
         if (autoSpillPlugin) {
-          const outputStr = typeof toolResult.content === 'string'
-            ? toolResult.content
-            : JSON.stringify(toolResult.content);
+          const outputStr = typeof finalContent === 'string'
+            ? finalContent
+            : JSON.stringify(finalContent);
           const outputSize = Buffer.byteLength(outputStr, 'utf8');
 
           if (autoSpillPlugin.shouldSpill(toolCall.function.name, outputSize)) {
             const spillKey = await autoSpillPlugin.onToolOutput(
               toolCall.function.name,
-              toolResult.content
+              finalContent
             );
             if (spillKey) {
               (toolResult as ToolResult & { spilledKey?: string }).spilledKey = spillKey;
-              toolResult.content = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
+              finalContent = `[Large output (${Math.round(outputSize / 1024)}KB) spilled to memory: ${spillKey}. Use memory_retrieve to access.]`;
+              toolResult.content = finalContent;
             }
           }
         }
+
+        // THEN track in tool output plugin (gets spill pointer if applicable)
+        this._agentContext.toolOutputPlugin?.addOutput(toolCall.function.name, finalContent);
       }
 
       // Update metrics
