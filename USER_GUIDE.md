@@ -1,7 +1,7 @@
 # @oneringai/agents - Complete User Guide
 
 **Version:** 0.2.0
-**Last Updated:** 2026-02-01
+**Last Updated:** 2026-02-03
 
 A comprehensive guide to using all features of the @oneringai/agents library.
 
@@ -56,10 +56,14 @@ A comprehensive guide to using all features of the @oneringai/agents library.
 21. [Web Search](#web-search)
 22. [Streaming](#streaming)
 23. [External API Integration](#external-api-integration)
-24. [OAuth for External APIs](#oauth-for-external-apis)
-25. [Model Registry](#model-registry)
-26. [Advanced Features](#advanced-features)
-27. [Production Deployment](#production-deployment)
+24. [Vendor Templates](#vendor-templates) **NEW**
+    - Quick Setup for 43+ Services
+    - Authentication Methods
+    - Complete Vendor Reference
+25. [OAuth for External APIs](#oauth-for-external-apis)
+26. [Model Registry](#model-registry)
+27. [Advanced Features](#advanced-features)
+28. [Production Deployment](#production-deployment)
 
 ---
 
@@ -9845,6 +9849,394 @@ await agent.run(`
   Check if there are any critical issues in owner/repo,
   and if so, post a summary to the #alerts Slack channel.
 `);
+```
+
+---
+
+## Vendor Templates
+
+Quickly set up connectors for 43+ services with pre-configured authentication templates. No need to look up URLs, headers, or scopes - just provide your credentials!
+
+### Quick Start
+
+```typescript
+import {
+  createConnectorFromTemplate,
+  listVendors,
+  getVendorTemplate,
+  ConnectorTools
+} from '@oneringai/agents';
+
+// Create GitHub connector with Personal Access Token
+const connector = createConnectorFromTemplate(
+  'my-github',           // Connector name
+  'github',              // Vendor ID
+  'pat',                 // Auth method
+  { apiKey: process.env.GITHUB_TOKEN! }
+);
+
+// Get tools for the connector
+const tools = ConnectorTools.for('my-github');
+
+// Use with agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools,
+});
+
+await agent.run('List my GitHub repositories');
+```
+
+### Discovering Available Vendors
+
+```typescript
+import { listVendors, getVendorTemplate, getVendorInfo } from '@oneringai/agents';
+
+// List all available vendors
+const vendors = listVendors();
+console.log(vendors.length);  // 43
+
+// Get specific vendor info
+const github = getVendorInfo('github');
+console.log(github);
+// {
+//   id: 'github',
+//   name: 'GitHub',
+//   category: 'development',
+//   docsURL: 'https://docs.github.com/en/rest',
+//   credentialsSetupURL: 'https://github.com/settings/developers',
+//   authMethods: [
+//     { id: 'pat', name: 'Personal Access Token', type: 'api_key', ... },
+//     { id: 'oauth-user', name: 'OAuth App (User Authorization)', type: 'oauth', ... },
+//     { id: 'github-app', name: 'GitHub App (Installation Token)', type: 'oauth', ... }
+//   ]
+// }
+
+// Filter by category
+import { listVendorsByCategory, listVendorsByAuthType } from '@oneringai/agents';
+
+const devVendors = listVendorsByCategory('development');
+// [github, gitlab, bitbucket, jira, linear, asana, trello]
+
+const apiKeyVendors = listVendorsByAuthType('api_key');
+// All vendors that support API key authentication
+```
+
+### Vendor Logos
+
+Access vendor logos for use in UIs. Logos come from the Simple Icons library where available, with branded placeholders for others:
+
+```typescript
+import {
+  getVendorLogo,
+  getVendorLogoSvg,
+  getVendorColor,
+  hasVendorLogo,
+  listVendorsWithLogos,
+  getAllVendorLogos
+} from '@oneringai/agents';
+
+// Check if logo is available
+if (hasVendorLogo('github')) {
+  const logo = getVendorLogo('github');
+  console.log(logo.svg);           // Full SVG content
+  console.log(logo.hex);           // Brand color: "181717"
+  console.log(logo.isPlaceholder); // false (has official icon)
+}
+
+// Get just the SVG content
+const svg = getVendorLogoSvg('slack');
+
+// Get SVG with custom color
+const whiteSvg = getVendorLogoSvg('github', 'FFFFFF');
+
+// Get brand color
+const stripeColor = getVendorColor('stripe');  // "635BFF"
+
+// List all vendors with logos
+const vendorsWithLogos = listVendorsWithLogos();  // 43 vendors
+
+// Get all logos at once
+const allLogos = getAllVendorLogos();  // Map<vendorId, VendorLogo>
+```
+
+**VendorLogo Interface:**
+```typescript
+interface VendorLogo {
+  vendorId: string;          // e.g., 'github'
+  svg: string;               // Full SVG content
+  hex: string;               // Brand color (without #)
+  isPlaceholder: boolean;    // true if using generated placeholder
+  simpleIconsSlug?: string;  // Simple Icons slug if available
+}
+```
+
+### Authentication Methods
+
+Each vendor template includes one or more authentication methods:
+
+#### API Key
+
+Simple token-based authentication:
+
+```typescript
+// GitHub Personal Access Token
+createConnectorFromTemplate('my-github', 'github', 'pat', {
+  apiKey: process.env.GITHUB_TOKEN!
+});
+
+// Slack Bot Token
+createConnectorFromTemplate('my-slack', 'slack', 'bot-token', {
+  apiKey: process.env.SLACK_BOT_TOKEN!
+});
+
+// Stripe Secret Key
+createConnectorFromTemplate('my-stripe', 'stripe', 'api-key', {
+  apiKey: process.env.STRIPE_SECRET_KEY!
+});
+```
+
+#### OAuth (User Authorization)
+
+For apps where users grant permissions:
+
+```typescript
+// GitHub OAuth App
+createConnectorFromTemplate('my-github-oauth', 'github', 'oauth-user', {
+  clientId: process.env.GITHUB_CLIENT_ID!,
+  clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+  redirectUri: 'https://myapp.com/callback',
+  scope: 'repo read:user'  // Optional - uses template defaults
+});
+
+// Google Workspace OAuth
+createConnectorFromTemplate('my-google', 'google-workspace', 'oauth-user', {
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  redirectUri: 'https://myapp.com/google/callback',
+});
+```
+
+#### Service Account (JWT Bearer)
+
+For server-to-server authentication:
+
+```typescript
+// Google Service Account
+createConnectorFromTemplate('my-gcp', 'gcp', 'service-account', {
+  clientId: process.env.GOOGLE_SERVICE_CLIENT_ID!,
+  privateKey: process.env.GOOGLE_SERVICE_PRIVATE_KEY!,
+  scope: 'https://www.googleapis.com/auth/cloud-platform'
+});
+
+// Salesforce JWT Bearer
+createConnectorFromTemplate('my-salesforce', 'salesforce', 'jwt-bearer', {
+  clientId: process.env.SF_CLIENT_ID!,
+  privateKey: process.env.SF_PRIVATE_KEY!,
+  username: process.env.SF_USERNAME!
+});
+```
+
+#### Client Credentials
+
+For app-level authentication:
+
+```typescript
+// Microsoft 365 App-Only
+createConnectorFromTemplate('my-m365', 'microsoft-365', 'client-credentials', {
+  clientId: process.env.AZURE_CLIENT_ID!,
+  clientSecret: process.env.AZURE_CLIENT_SECRET!,
+  tenantId: process.env.AZURE_TENANT_ID!
+});
+
+// PayPal
+createConnectorFromTemplate('my-paypal', 'paypal', 'oauth-client-credentials', {
+  clientId: process.env.PAYPAL_CLIENT_ID!,
+  clientSecret: process.env.PAYPAL_CLIENT_SECRET!
+});
+```
+
+### Getting Credentials Setup URLs
+
+Each vendor template includes the URL where you create credentials:
+
+```typescript
+import { getCredentialsSetupURL, getDocsURL } from '@oneringai/agents';
+
+// Get where to create credentials
+const setupUrl = getCredentialsSetupURL('github');
+// 'https://github.com/settings/developers'
+
+// Get API documentation
+const docsUrl = getDocsURL('github');
+// 'https://docs.github.com/en/rest'
+```
+
+### Configuration Options
+
+Override defaults when creating connectors:
+
+```typescript
+createConnectorFromTemplate(
+  'my-github',
+  'github',
+  'pat',
+  { apiKey: process.env.GITHUB_TOKEN! },
+  {
+    // Override baseURL (e.g., for GitHub Enterprise)
+    baseURL: 'https://github.mycompany.com/api/v3',
+
+    // Add description
+    description: 'GitHub connector for CI/CD automation',
+
+    // Set display name
+    displayName: 'GitHub (Production)',
+
+    // Configure timeout
+    timeout: 30000,
+
+    // Enable logging
+    logging: true,
+  }
+);
+```
+
+### Complete Vendor Reference
+
+#### Communication (4 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| Slack | `slack` | `bot-token`, `oauth-user` | [api.slack.com/apps](https://api.slack.com/apps) |
+| Discord | `discord` | `bot-token`, `oauth-user` | [discord.com/developers](https://discord.com/developers/applications) |
+| Telegram | `telegram` | `bot-token` | [t.me/BotFather](https://t.me/BotFather) |
+| Microsoft Teams | `microsoft-teams` | `oauth-user`, `client-credentials` | [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps) |
+
+#### Development (7 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| GitHub | `github` | `pat`, `oauth-user`, `github-app` | [github.com/settings/developers](https://github.com/settings/developers) |
+| GitLab | `gitlab` | `pat`, `oauth-user` | [gitlab.com/-/profile/personal_access_tokens](https://gitlab.com/-/profile/personal_access_tokens) |
+| Bitbucket | `bitbucket` | `app-password`, `oauth-user` | [bitbucket.org/account/settings/app-passwords](https://bitbucket.org/account/settings/app-passwords/) |
+| Jira | `jira` | `api-token`, `oauth-3lo` | [id.atlassian.com/manage-profile/security/api-tokens](https://id.atlassian.com/manage-profile/security/api-tokens) |
+| Linear | `linear` | `api-key`, `oauth-user` | [linear.app/settings/api](https://linear.app/settings/api) |
+| Asana | `asana` | `pat`, `oauth-user` | [app.asana.com/0/developer-console](https://app.asana.com/0/developer-console) |
+| Trello | `trello` | `api-key`, `oauth-user` | [trello.com/power-ups/admin](https://trello.com/power-ups/admin) |
+
+#### Productivity (5 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| Notion | `notion` | `internal-token`, `oauth-user` | [notion.so/my-integrations](https://www.notion.so/my-integrations) |
+| Airtable | `airtable` | `pat`, `oauth-user` | [airtable.com/create/tokens](https://airtable.com/create/tokens) |
+| Google Workspace | `google-workspace` | `oauth-user`, `service-account` | [GCP Console](https://console.cloud.google.com/apis/credentials) |
+| Microsoft 365 | `microsoft-365` | `oauth-user`, `client-credentials` | [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps) |
+| Confluence | `confluence` | `api-token`, `oauth-3lo` | [Atlassian API Tokens](https://id.atlassian.com/manage-profile/security/api-tokens) |
+
+#### CRM (3 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| Salesforce | `salesforce` | `oauth-user`, `jwt-bearer` | [Salesforce Connected Apps](https://login.salesforce.com/lightning/setup/ConnectedApplication) |
+| HubSpot | `hubspot` | `api-key`, `oauth-user` | [developers.hubspot.com](https://developers.hubspot.com/get-started) |
+| Pipedrive | `pipedrive` | `api-token`, `oauth-user` | [app.pipedrive.com/settings/api](https://app.pipedrive.com/settings/api) |
+
+#### Payments (2 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| Stripe | `stripe` | `api-key`, `oauth-connect` | [dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys) |
+| PayPal | `paypal` | `oauth-client-credentials` | [developer.paypal.com/dashboard](https://developer.paypal.com/dashboard/applications) |
+
+#### Cloud (3 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| AWS | `aws` | `access-key` | [AWS IAM Console](https://console.aws.amazon.com/iam/home#/security_credentials) |
+| GCP | `gcp` | `service-account` | [GCP Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts) |
+| Azure | `azure` | `client-credentials` | [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps) |
+
+#### Storage (4 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| Dropbox | `dropbox` | `oauth-user` | [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps) |
+| Box | `box` | `oauth-user`, `client-credentials` | [developer.box.com/console](https://developer.box.com/console) |
+| Google Drive | `google-drive` | `oauth-user`, `service-account` | [GCP Console](https://console.cloud.google.com/apis/credentials) |
+| OneDrive | `onedrive` | `oauth-user` | [Azure Portal](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps) |
+
+#### Email (3 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| SendGrid | `sendgrid` | `api-key` | [app.sendgrid.com/settings/api_keys](https://app.sendgrid.com/settings/api_keys) |
+| Mailchimp | `mailchimp` | `api-key`, `oauth-user` | [admin.mailchimp.com/account/api](https://admin.mailchimp.com/account/api/) |
+| Postmark | `postmark` | `server-token`, `account-token` | [account.postmarkapp.com/api_tokens](https://account.postmarkapp.com/api_tokens) |
+
+#### Monitoring (3 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| Datadog | `datadog` | `api-key` | [app.datadoghq.com/organization-settings/api-keys](https://app.datadoghq.com/organization-settings/api-keys) |
+| PagerDuty | `pagerduty` | `api-key`, `oauth-user` | [PagerDuty API Keys](https://support.pagerduty.com/main/docs/api-access-keys) |
+| Sentry | `sentry` | `auth-token`, `oauth-user` | [sentry.io/settings/account/api/auth-tokens](https://sentry.io/settings/account/api/auth-tokens/) |
+
+#### Search (4 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| Serper | `serper` | `api-key` | [serper.dev/api-key](https://serper.dev/api-key) |
+| Brave Search | `brave-search` | `api-key` | [brave.com/search/api](https://brave.com/search/api/) |
+| Tavily | `tavily` | `api-key` | [tavily.com/#api](https://tavily.com/#api) |
+| RapidAPI Search | `rapidapi-search` | `api-key` | [rapidapi.com/developer/dashboard](https://rapidapi.com/developer/dashboard) |
+
+#### Scrape (1 vendor)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| ZenRows | `zenrows` | `api-key` | [zenrows.com/register](https://www.zenrows.com/register) |
+
+#### Other (4 vendors)
+
+| Vendor | ID | Auth Methods | Credentials URL |
+|--------|-----|-------------|-----------------|
+| Twilio | `twilio` | `api-key`, `api-key-sid` | [Twilio Console](https://console.twilio.com/us1/account/keys-credentials/api-keys) |
+| Zendesk | `zendesk` | `api-token`, `oauth-user` | [Zendesk API Tokens](https://support.zendesk.com/hc/en-us/articles/4408889192858) |
+| Intercom | `intercom` | `access-token`, `oauth-user` | [developers.intercom.com](https://developers.intercom.com/docs/build-an-integration) |
+| Shopify | `shopify` | `access-token`, `oauth-user` | [partners.shopify.com](https://partners.shopify.com/) |
+
+### Template vs Manual Configuration
+
+**Use templates when:**
+- Setting up a well-known service
+- You want sensible defaults for headers, URLs, and scopes
+- You want the credentials setup URL handy
+
+**Use manual Connector.create() when:**
+- Connecting to a custom API not in the template list
+- You need complete control over configuration
+- The service has non-standard authentication
+
+```typescript
+// Template approach (recommended for supported vendors)
+createConnectorFromTemplate('my-github', 'github', 'pat', {
+  apiKey: process.env.GITHUB_TOKEN!
+});
+
+// Manual approach (for custom/unsupported APIs)
+Connector.create({
+  name: 'my-custom-api',
+  serviceType: 'custom',
+  auth: {
+    type: 'api_key',
+    apiKey: process.env.CUSTOM_API_KEY!,
+    headerName: 'X-Custom-Auth',
+    headerPrefix: '',
+  },
+  baseURL: 'https://api.custom-service.com/v1',
+});
 ```
 
 ---

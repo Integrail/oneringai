@@ -9,6 +9,7 @@
  * Service category type
  */
 export type ServiceCategory =
+  | 'major-vendors'
   | 'communication'
   | 'development'
   | 'productivity'
@@ -47,6 +48,30 @@ export interface ServiceDefinition {
  * This is the SINGLE SOURCE OF TRUTH - all other exports derive from this
  */
 export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
+  // ============ Major Vendors ============
+  {
+    id: 'microsoft',
+    name: 'Microsoft',
+    category: 'major-vendors',
+    urlPattern: /graph\.microsoft\.com|login\.microsoftonline\.com/i,
+    baseURL: 'https://graph.microsoft.com/v1.0',
+    docsURL: 'https://learn.microsoft.com/en-us/graph/',
+    commonScopes: ['User.Read', 'Files.ReadWrite', 'Mail.Read', 'Calendars.ReadWrite'],
+  },
+  {
+    id: 'google',
+    name: 'Google',
+    category: 'major-vendors',
+    urlPattern: /googleapis\.com|accounts\.google\.com/i,
+    baseURL: 'https://www.googleapis.com',
+    docsURL: 'https://developers.google.com/',
+    commonScopes: [
+      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/gmail.readonly',
+    ],
+  },
+
   // ============ Communication ============
   {
     id: 'slack',
@@ -65,15 +90,6 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     baseURL: 'https://discord.com/api/v10',
     docsURL: 'https://discord.com/developers/docs',
     commonScopes: ['bot', 'messages.read'],
-  },
-  {
-    id: 'microsoft-teams',
-    name: 'Microsoft Teams',
-    category: 'communication',
-    urlPattern: /teams\.microsoft\.com|graph\.microsoft\.com.*teams/i,
-    baseURL: 'https://graph.microsoft.com/v1.0',
-    docsURL: 'https://learn.microsoft.com/en-us/graph/teams-concept-overview',
-    commonScopes: ['ChannelMessage.Send', 'Team.ReadBasic.All'],
   },
   {
     id: 'telegram',
@@ -167,27 +183,6 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     commonScopes: ['data.records:read', 'data.records:write'],
   },
   {
-    id: 'google-workspace',
-    name: 'Google Workspace',
-    category: 'productivity',
-    urlPattern: /googleapis\.com.*(drive|docs|sheets|calendar)/i,
-    baseURL: 'https://www.googleapis.com',
-    docsURL: 'https://developers.google.com/workspace',
-    commonScopes: [
-      'https://www.googleapis.com/auth/drive',
-      'https://www.googleapis.com/auth/calendar',
-    ],
-  },
-  {
-    id: 'microsoft-365',
-    name: 'Microsoft 365',
-    category: 'productivity',
-    urlPattern: /graph\.microsoft\.com/i,
-    baseURL: 'https://graph.microsoft.com/v1.0',
-    docsURL: 'https://learn.microsoft.com/en-us/graph/',
-    commonScopes: ['User.Read', 'Files.ReadWrite', 'Mail.Read'],
-  },
-  {
     id: 'confluence',
     name: 'Confluence',
     category: 'productivity',
@@ -252,22 +247,6 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     baseURL: 'https://aws.amazon.com',
     docsURL: 'https://docs.aws.amazon.com/',
   },
-  {
-    id: 'gcp',
-    name: 'Google Cloud Platform',
-    category: 'cloud',
-    urlPattern: /googleapis\.com/i,
-    baseURL: 'https://www.googleapis.com',
-    docsURL: 'https://cloud.google.com/apis/docs/',
-  },
-  {
-    id: 'azure',
-    name: 'Microsoft Azure',
-    category: 'cloud',
-    urlPattern: /azure\.com|microsoft\.com.*azure/i,
-    baseURL: 'https://management.azure.com',
-    docsURL: 'https://learn.microsoft.com/en-us/azure/',
-  },
 
   // ============ Storage ============
   {
@@ -286,24 +265,6 @@ export const SERVICE_DEFINITIONS: readonly ServiceDefinition[] = [
     urlPattern: /api\.box\.com/i,
     baseURL: 'https://api.box.com/2.0',
     docsURL: 'https://developer.box.com/reference/',
-  },
-  {
-    id: 'google-drive',
-    name: 'Google Drive',
-    category: 'storage',
-    urlPattern: /googleapis\.com.*drive/i,
-    baseURL: 'https://www.googleapis.com/drive/v3',
-    docsURL: 'https://developers.google.com/drive/api',
-    commonScopes: ['https://www.googleapis.com/auth/drive'],
-  },
-  {
-    id: 'onedrive',
-    name: 'OneDrive',
-    category: 'storage',
-    urlPattern: /graph\.microsoft\.com.*drive/i,
-    baseURL: 'https://graph.microsoft.com/v1.0/me/drive',
-    docsURL: 'https://learn.microsoft.com/en-us/onedrive/developer/',
-    commonScopes: ['Files.ReadWrite'],
   },
 
   // ============ Email ============

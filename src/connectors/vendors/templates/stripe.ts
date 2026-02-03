@@ -1,0 +1,45 @@
+/**
+ * Stripe Vendor Template
+ */
+import type { VendorTemplate } from '../types.js';
+
+export const stripeTemplate: VendorTemplate = {
+  id: 'stripe',
+  name: 'Stripe',
+  serviceType: 'stripe',
+  baseURL: 'https://api.stripe.com/v1',
+  docsURL: 'https://stripe.com/docs/api',
+  credentialsSetupURL: 'https://dashboard.stripe.com/apikeys',
+  category: 'payments',
+
+  authTemplates: [
+    {
+      id: 'api-key',
+      name: 'Secret API Key',
+      type: 'api_key',
+      description: 'Secret API key for server-side requests. Get from Dashboard > Developers > API keys',
+      requiredFields: ['apiKey'],
+      defaults: {
+        type: 'api_key',
+        headerName: 'Authorization',
+        headerPrefix: 'Bearer',
+      },
+    },
+    {
+      id: 'oauth-connect',
+      name: 'OAuth (Stripe Connect)',
+      type: 'oauth',
+      flow: 'authorization_code',
+      description: 'Stripe Connect for marketplace platforms. Requires Connect setup in dashboard',
+      requiredFields: ['clientId', 'clientSecret', 'redirectUri'],
+      optionalFields: ['scope'],
+      defaults: {
+        type: 'oauth',
+        flow: 'authorization_code',
+        authorizationUrl: 'https://connect.stripe.com/oauth/authorize',
+        tokenUrl: 'https://connect.stripe.com/oauth/token',
+      },
+      scopes: ['read_write'],
+    },
+  ],
+};

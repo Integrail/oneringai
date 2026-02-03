@@ -685,6 +685,48 @@ export type {
   FileConnectorStorageConfig,
 } from './connectors/index.js';
 
+// ============ Vendor Templates (Pre-configured auth for 40+ services) ============
+export {
+  // Helpers
+  createConnectorFromTemplate,
+  getConnectorTools,
+  getVendorTemplate,
+  getVendorAuthTemplate,
+  getAllVendorTemplates,
+  listVendorIds,
+  listVendors,
+  listVendorsByCategory,
+  listVendorsByAuthType,
+  getVendorInfo,
+  getCredentialsSetupURL,
+  getDocsURL,
+  buildAuthConfig,
+  // All templates array
+  allVendorTemplates,
+  // Logo utilities
+  getVendorLogo,
+  getVendorLogoSvg,
+  getVendorColor,
+  getVendorLogoCdnUrl,
+  hasVendorLogo,
+  getAllVendorLogos,
+  listVendorsWithLogos,
+  VENDOR_ICON_MAP,
+  SIMPLE_ICONS_CDN,
+} from './connectors/index.js';
+
+export type {
+  VendorTemplate,
+  AuthTemplate,
+  AuthTemplateField,
+  VendorRegistryEntry,
+  TemplateCredentials,
+  CreateConnectorOptions,
+  VendorInfo,
+  VendorLogo,
+  SimpleIcon,
+} from './connectors/index.js';
+
 // ============ Resilience & Observability (Phase 3) ============
 export { CircuitBreaker, CircuitOpenError } from './infrastructure/resilience/index.js';
 export type {

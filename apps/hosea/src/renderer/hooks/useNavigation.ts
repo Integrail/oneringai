@@ -10,6 +10,9 @@ export type PageId =
   | 'agent-editor'
   | 'llm-connectors'
   | 'api-connectors'
+  | 'universal-connectors'
+  | 'connector-catalog'
+  | 'connector-create'
   | 'tool-connectors'
   | 'multimedia-studio'
   | 'internals'
@@ -19,6 +22,8 @@ export interface NavigationState {
   currentPage: PageId;
   params: Record<string, string>;
   history: PageId[];
+  /** Arbitrary data that can be passed between pages */
+  data?: Record<string, unknown>;
 }
 
 export interface NavigationContextValue {
@@ -26,12 +31,15 @@ export interface NavigationContextValue {
   navigate: (page: PageId, params?: Record<string, string>) => void;
   goBack: () => void;
   canGoBack: boolean;
+  /** Set arbitrary data to pass to the next page */
+  setData: (data: Record<string, unknown>) => void;
 }
 
 const initialState: NavigationState = {
   currentPage: 'chat',
   params: {},
   history: [],
+  data: {},
 };
 
 export const NavigationContext = createContext<NavigationContextValue | null>(null);
@@ -44,6 +52,7 @@ export function useNavigationState(): NavigationContextValue {
       currentPage: page,
       params,
       history: [...prev.history, prev.currentPage],
+      data: prev.data, // Preserve data when navigating
     }));
   }, []);
 
@@ -56,8 +65,16 @@ export function useNavigationState(): NavigationContextValue {
         currentPage: previousPage,
         params: {},
         history: newHistory,
+        data: prev.data,
       };
     });
+  }, []);
+
+  const setData = useCallback((data: Record<string, unknown>) => {
+    setState((prev) => ({
+      ...prev,
+      data,
+    }));
   }, []);
 
   const canGoBack = state.history.length > 0;
@@ -67,6 +84,7 @@ export function useNavigationState(): NavigationContextValue {
     navigate,
     goBack,
     canGoBack,
+    setData,
   };
 }
 

@@ -11,6 +11,9 @@ import {
   AgentEditorPage,
   LLMConnectorsPage,
   APIConnectorsPage,
+  UniversalConnectorsPage,
+  ConnectorCatalogPage,
+  ConnectorCreatePage,
   ToolConnectorsPage,
   MultimediaStudioPage,
   InternalsPage,
@@ -131,6 +134,12 @@ function AppContent(): React.ReactElement {
         return <LLMConnectorsPage />;
       case 'api-connectors':
         return <APIConnectorsPage />;
+      case 'universal-connectors':
+        return <UniversalConnectorsPage />;
+      case 'connector-catalog':
+        return <ConnectorCatalogPage />;
+      case 'connector-create':
+        return <ConnectorCreatePage />;
       case 'tool-connectors':
         return <ToolConnectorsPage />;
       case 'multimedia-studio':

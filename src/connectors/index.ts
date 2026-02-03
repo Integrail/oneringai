@@ -49,3 +49,46 @@ export type {
   StoredConnectorConfig,
   FileConnectorStorageConfig,
 } from './storage/index.js';
+
+// ============ Vendor Templates ============
+// Pre-configured auth templates for 40+ common services
+export {
+  // Helpers
+  createConnectorFromTemplate,
+  getConnectorTools,
+  getVendorTemplate,
+  getVendorAuthTemplate,
+  getAllVendorTemplates,
+  listVendorIds,
+  listVendors,
+  listVendorsByCategory,
+  listVendorsByAuthType,
+  getVendorInfo,
+  getCredentialsSetupURL,
+  getDocsURL,
+  buildAuthConfig,
+  // All templates array
+  allVendorTemplates,
+  // Logo utilities
+  getVendorLogo,
+  getVendorLogoSvg,
+  getVendorColor,
+  getVendorLogoCdnUrl,
+  hasVendorLogo,
+  getAllVendorLogos,
+  listVendorsWithLogos,
+  VENDOR_ICON_MAP,
+  SIMPLE_ICONS_CDN,
+} from './vendors/index.js';
+
+export type {
+  VendorTemplate,
+  AuthTemplate,
+  AuthTemplateField,
+  VendorRegistryEntry,
+  TemplateCredentials,
+  CreateConnectorOptions,
+  VendorInfo,
+  VendorLogo,
+  SimpleIcon,
+} from './vendors/index.js';

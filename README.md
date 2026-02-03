@@ -29,6 +29,7 @@
 - 👁️ **Vision Support** - Analyze images with AI across all providers
 - 📋 **Clipboard Integration** - Paste screenshots directly (like Claude Code!)
 - 🔐 **OAuth 2.0** - Full OAuth support for external APIs with encrypted token storage
+- 📦 **Vendor Templates** - NEW: Pre-configured auth templates for 43+ services (GitHub, Slack, Stripe, etc.)
 - 🔄 **Streaming** - Real-time responses with event streams
 - 📝 **TypeScript** - Full type safety and IntelliSense support
 
@@ -973,6 +974,86 @@ const metrics = connector.getMetrics();
 console.log(`Success rate: ${metrics.successCount / metrics.requestCount * 100}%`);
 ```
 
+#### Vendor Templates (NEW)
+
+Quickly set up connectors for 43+ services with pre-configured authentication templates:
+
+```typescript
+import {
+  createConnectorFromTemplate,
+  listVendors,
+  getVendorTemplate,
+  ConnectorTools
+} from '@oneringai/agents';
+
+// List all available vendors
+const vendors = listVendors();
+// [{ id: 'github', name: 'GitHub', authMethods: ['pat', 'oauth-user', 'github-app'], ... }]
+
+// Create connector from template (just provide credentials!)
+const connector = createConnectorFromTemplate(
+  'my-github',           // Connector name
+  'github',              // Vendor ID
+  'pat',                 // Auth method
+  { apiKey: process.env.GITHUB_TOKEN! }
+);
+
+// Get tools for the connector
+const tools = ConnectorTools.for('my-github');
+
+// Use with agent
+const agent = Agent.create({
+  connector: 'openai',
+  model: 'gpt-4',
+  tools,
+});
+
+await agent.run('List my GitHub repositories');
+```
+
+**Supported Categories (43 vendors):**
+| Category | Vendors |
+|----------|---------|
+| Communication | Slack, Discord, Telegram, Microsoft Teams |
+| Development | GitHub, GitLab, Bitbucket, Jira, Linear, Asana, Trello |
+| Productivity | Notion, Airtable, Google Workspace, Microsoft 365, Confluence |
+| CRM | Salesforce, HubSpot, Pipedrive |
+| Payments | Stripe, PayPal |
+| Cloud | AWS, GCP, Azure |
+| Storage | Dropbox, Box, Google Drive, OneDrive |
+| Email | SendGrid, Mailchimp, Postmark |
+| Monitoring | Datadog, PagerDuty, Sentry |
+| Search | Serper, Brave, Tavily, RapidAPI |
+| Scrape | ZenRows |
+| Other | Twilio, Zendesk, Intercom, Shopify |
+
+Each vendor includes:
+- **Credentials setup URL** - Direct link to where you create API keys
+- **Multiple auth methods** - API keys, OAuth, service accounts
+- **Pre-configured URLs** - Authorization, token endpoints pre-filled
+- **Common scopes** - Recommended scopes for each auth method
+
+See the [User Guide](./USER_GUIDE.md#vendor-templates) for complete vendor reference.
+
+**Vendor Logos:**
+```typescript
+import { getVendorLogo, getVendorLogoSvg, getVendorColor } from '@oneringai/agents';
+
+// Get logo with metadata
+const logo = getVendorLogo('github');
+if (logo) {
+  console.log(logo.svg);           // SVG content
+  console.log(logo.hex);           // Brand color: "181717"
+  console.log(logo.isPlaceholder); // false (has official icon)
+}
+
+// Get just the SVG (with optional color override)
+const svg = getVendorLogoSvg('slack', 'FFFFFF');  // White icon
+
+// Get brand color
+const color = getVendorColor('stripe');  // "635BFF"
+```
+
 #### Tool Discovery with ToolRegistry
 
 For UIs or tool inventory, use `ToolRegistry` to get all available tools:
@@ -1149,7 +1230,7 @@ MIT License - See [LICENSE](./LICENSE) file.
 ---
 
 **Version:** 0.2.0
-**Last Updated:** 2026-02-01
+**Last Updated:** 2026-02-03
 
 For detailed documentation on all features, see the **[Complete User Guide](./USER_GUIDE.md)**.
 

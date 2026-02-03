@@ -319,6 +319,129 @@ export interface HoseaAPI {
     delete: (name: string) => Promise<{ success: boolean; error?: string }>;
   };
 
+  // Universal Connectors (vendor templates)
+  universalConnector: {
+    // Vendor template access (read-only from library)
+    listVendors: () => Promise<Array<{
+      id: string;
+      name: string;
+      category: string;
+      docsURL?: string;
+      credentialsSetupURL?: string;
+      authMethods: Array<{
+        id: string;
+        name: string;
+        type: string;
+        description: string;
+        requiredFields: string[];
+      }>;
+    }>>;
+    getVendor: (vendorId: string) => Promise<{
+      id: string;
+      name: string;
+      category: string;
+      docsURL?: string;
+      credentialsSetupURL?: string;
+      authMethods: Array<{
+        id: string;
+        name: string;
+        type: string;
+        description: string;
+        requiredFields: string[];
+      }>;
+    } | null>;
+    getVendorTemplate: (vendorId: string) => Promise<{
+      id: string;
+      name: string;
+      serviceType: string;
+      baseURL: string;
+      docsURL?: string;
+      credentialsSetupURL?: string;
+      authTemplates: Array<{
+        id: string;
+        name: string;
+        type: 'api_key' | 'oauth';
+        flow?: 'authorization_code' | 'client_credentials' | 'jwt_bearer';
+        description: string;
+        requiredFields: string[];
+        optionalFields?: string[];
+        scopes?: string[];
+      }>;
+      category: string;
+      notes?: string;
+    } | null>;
+    getVendorLogo: (vendorId: string) => Promise<{
+      vendorId: string;
+      svg: string;
+      hex: string;
+      isPlaceholder: boolean;
+      simpleIconsSlug?: string;
+    } | null>;
+    getCategories: () => Promise<string[]>;
+    listVendorsByCategory: (category: string) => Promise<Array<{
+      id: string;
+      name: string;
+      category: string;
+      docsURL?: string;
+      credentialsSetupURL?: string;
+      authMethods: Array<{
+        id: string;
+        name: string;
+        type: string;
+        description: string;
+        requiredFields: string[];
+      }>;
+    }>>;
+
+    // Connector CRUD operations
+    list: () => Promise<Array<{
+      name: string;
+      vendorId: string;
+      vendorName: string;
+      authMethodId: string;
+      authMethodName: string;
+      credentials: Record<string, string>;
+      displayName?: string;
+      baseURL?: string;
+      createdAt: number;
+      updatedAt: number;
+      lastTestedAt?: number;
+      status: 'active' | 'error' | 'untested';
+      legacyServiceType?: string;
+    }>>;
+    get: (name: string) => Promise<{
+      name: string;
+      vendorId: string;
+      vendorName: string;
+      authMethodId: string;
+      authMethodName: string;
+      credentials: Record<string, string>;
+      displayName?: string;
+      baseURL?: string;
+      createdAt: number;
+      updatedAt: number;
+      lastTestedAt?: number;
+      status: 'active' | 'error' | 'untested';
+      legacyServiceType?: string;
+    } | null>;
+    create: (config: {
+      name: string;
+      vendorId: string;
+      authMethodId: string;
+      credentials: Record<string, string>;
+      displayName?: string;
+      baseURL?: string;
+    }) => Promise<{ success: boolean; error?: string }>;
+    update: (name: string, updates: {
+      credentials?: Record<string, string>;
+      displayName?: string;
+      baseURL?: string;
+      status?: 'active' | 'error' | 'untested';
+    }) => Promise<{ success: boolean; error?: string }>;
+    delete: (name: string) => Promise<{ success: boolean; error?: string }>;
+    testConnection: (name: string) => Promise<{ success: boolean; error?: string }>;
+  };
+
   // Multimedia - Image, Video, Audio generation
   multimedia: {
     // Image generation
@@ -584,6 +707,23 @@ const api: HoseaAPI = {
     add: (config) => ipcRenderer.invoke('api-connector:add', config),
     update: (name, updates) => ipcRenderer.invoke('api-connector:update', name, updates),
     delete: (name) => ipcRenderer.invoke('api-connector:delete', name),
+  },
+
+  universalConnector: {
+    // Vendor template access
+    listVendors: () => ipcRenderer.invoke('universal-connector:list-vendors'),
+    getVendor: (vendorId) => ipcRenderer.invoke('universal-connector:get-vendor', vendorId),
+    getVendorTemplate: (vendorId) => ipcRenderer.invoke('universal-connector:get-vendor-template', vendorId),
+    getVendorLogo: (vendorId) => ipcRenderer.invoke('universal-connector:get-vendor-logo', vendorId),
+    getCategories: () => ipcRenderer.invoke('universal-connector:get-categories'),
+    listVendorsByCategory: (category) => ipcRenderer.invoke('universal-connector:list-vendors-by-category', category),
+    // Connector CRUD
+    list: () => ipcRenderer.invoke('universal-connector:list'),
+    get: (name) => ipcRenderer.invoke('universal-connector:get', name),
+    create: (config) => ipcRenderer.invoke('universal-connector:create', config),
+    update: (name, updates) => ipcRenderer.invoke('universal-connector:update', name, updates),
+    delete: (name) => ipcRenderer.invoke('universal-connector:delete', name),
+    testConnection: (name) => ipcRenderer.invoke('universal-connector:test-connection', name),
   },
 
   multimedia: {

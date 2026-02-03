@@ -30,8 +30,10 @@
   ],
   "scripts": {
     "generate:tools": "tsx scripts/generate-tool-registry.ts",
-    "build": "npm run generate:tools && tsup",
-    "dev": "npm run generate:tools && tsup --watch",
+    "generate:vendors": "tsx scripts/generate-vendor-registry.ts",
+    "generate": "npm run generate:tools && npm run generate:vendors",
+    "build": "npm run generate && tsup",
+    "dev": "npm run generate && tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
@@ -99,6 +101,7 @@
     "jsdom": "^27.0.1",
     "openai": "^6.16.0",
     "readline-async": "^0.1.0",
+    "simple-icons": "^16.7.0",
     "turndown": "^7.2.2",
     "zod": "^4.3.6"
   },

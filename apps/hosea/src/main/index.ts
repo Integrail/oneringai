@@ -210,6 +210,55 @@ async function setupIPC(): Promise<void> {
     return agentService!.deleteAPIConnector(name);
   });
 
+  // Universal Connector operations (vendor templates)
+  ipcMain.handle('universal-connector:list-vendors', async () => {
+    return agentService!.listVendorTemplates();
+  });
+
+  ipcMain.handle('universal-connector:get-vendor', async (_event, vendorId: string) => {
+    return agentService!.getVendorTemplateById(vendorId) || null;
+  });
+
+  ipcMain.handle('universal-connector:get-vendor-template', async (_event, vendorId: string) => {
+    return agentService!.getFullVendorTemplate(vendorId) || null;
+  });
+
+  ipcMain.handle('universal-connector:get-vendor-logo', async (_event, vendorId: string) => {
+    return agentService!.getVendorLogoById(vendorId) || null;
+  });
+
+  ipcMain.handle('universal-connector:get-categories', async () => {
+    return agentService!.getVendorCategories();
+  });
+
+  ipcMain.handle('universal-connector:list-vendors-by-category', async (_event, category: string) => {
+    return agentService!.getVendorsByCategory(category);
+  });
+
+  ipcMain.handle('universal-connector:list', async () => {
+    return agentService!.listUniversalConnectors();
+  });
+
+  ipcMain.handle('universal-connector:get', async (_event, name: string) => {
+    return agentService!.getUniversalConnector(name);
+  });
+
+  ipcMain.handle('universal-connector:create', async (_event, config: unknown) => {
+    return agentService!.createUniversalConnector(config as any);
+  });
+
+  ipcMain.handle('universal-connector:update', async (_event, name: string, updates: unknown) => {
+    return agentService!.updateUniversalConnector(name, updates as any);
+  });
+
+  ipcMain.handle('universal-connector:delete', async (_event, name: string) => {
+    return agentService!.deleteUniversalConnector(name);
+  });
+
+  ipcMain.handle('universal-connector:test-connection', async (_event, name: string) => {
+    return agentService!.testUniversalConnection(name);
+  });
+
   // Config operations
   ipcMain.handle('config:get', async () => {
     return agentService!.getConfig();

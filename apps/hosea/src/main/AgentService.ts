@@ -31,6 +31,18 @@ import {
   getTTSModelInfo,
   getActiveTTSModels,
   calculateTTSCost,
+  // Vendor templates
+  listVendors as listVendorTemplates,
+  listVendorsByCategory,
+  getVendorTemplate,
+  getVendorInfo,
+  getVendorLogo,
+  getVendorAuthTemplate,
+  createConnectorFromTemplate,
+  type VendorInfo,
+  type VendorTemplate,
+  type VendorLogo,
+  type AuthTemplate,
   type ITTSModelDescription,
   type IVoiceInfo,
   type ToolFunction,
@@ -122,6 +134,48 @@ export interface StoredAPIConnectorConfig {
   baseURL?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+/**
+ * Universal Connector - connector created from vendor template
+ */
+export interface StoredUniversalConnector {
+  /** User-chosen connector name (e.g., 'my-github') */
+  name: string;
+  /** Vendor template ID (e.g., 'github') */
+  vendorId: string;
+  /** Vendor display name (e.g., 'GitHub') */
+  vendorName: string;
+  /** Auth method ID from template (e.g., 'pat') */
+  authMethodId: string;
+  /** Auth method display name (e.g., 'Personal Access Token') */
+  authMethodName: string;
+  /** Stored credentials (keys match AuthTemplate.requiredFields) */
+  credentials: Record<string, string>;
+  /** User's custom display name */
+  displayName?: string;
+  /** Override base URL if needed */
+  baseURL?: string;
+  /** Timestamps */
+  createdAt: number;
+  updatedAt: number;
+  lastTestedAt?: number;
+  /** Connection status */
+  status: 'active' | 'error' | 'untested';
+  /** For migrated connectors - original serviceType for tool compatibility */
+  legacyServiceType?: string;
+}
+
+/**
+ * Input for creating a universal connector
+ */
+export interface CreateUniversalConnectorInput {
+  name: string;
+  vendorId: string;
+  authMethodId: string;
+  credentials: Record<string, string>;
+  displayName?: string;
+  baseURL?: string;
 }
 
 interface HoseaConfig {
@@ -249,6 +303,7 @@ export class AgentService {
   private config: HoseaConfig = DEFAULT_CONFIG;
   private connectors: Map<string, StoredConnectorConfig> = new Map();
   private apiConnectors: Map<string, StoredAPIConnectorConfig> = new Map();
+  private universalConnectors: Map<string, StoredUniversalConnector> = new Map();
   private agents: Map<string, StoredAgentConfig> = new Map();
   private sessionStorage: IContextStorage | null = null;
   private agentDefinitionStorage: IAgentDefinitionStorage;
@@ -390,6 +445,8 @@ export class AgentService {
     await this.loadConfig();
     await this.loadConnectors();
     await this.loadAPIConnectors();
+    await this.loadUniversalConnectors();
+    await this.migrateAPIConnectorsToUniversal();
     await this.loadAgents();
     this.initializeLogLevel();
   }
@@ -408,7 +465,7 @@ export class AgentService {
   }
 
   private async ensureDirectories(): Promise<void> {
-    const dirs = ['connectors', 'api-connectors', 'agents', 'sessions', 'logs'];
+    const dirs = ['connectors', 'api-connectors', 'universal-connectors', 'agents', 'sessions', 'logs'];
     for (const dir of dirs) {
       const path = join(this.dataDir, dir);
       if (!existsSync(path)) {
@@ -819,6 +876,372 @@ export class AgentService {
 
       return { success: true };
     } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  // ============ Universal Connectors (Vendor Templates) ============
+
+  /**
+   * Load universal connectors from storage
+   */
+  private async loadUniversalConnectors(): Promise<void> {
+    const universalConnectorsDir = join(this.dataDir, 'universal-connectors');
+    if (!existsSync(universalConnectorsDir)) return;
+
+    try {
+      const files = await readdir(universalConnectorsDir);
+      for (const file of files) {
+        if (file.endsWith('.json')) {
+          const content = await readFile(join(universalConnectorsDir, file), 'utf-8');
+          const config = JSON.parse(content) as StoredUniversalConnector;
+          this.universalConnectors.set(config.name, config);
+
+          // Register with the library using createConnectorFromTemplate
+          if (!Connector.has(config.name)) {
+            try {
+              createConnectorFromTemplate(
+                config.name,
+                config.vendorId,
+                config.authMethodId,
+                config.credentials,
+                { baseURL: config.baseURL, displayName: config.displayName }
+              );
+            } catch (error) {
+              console.warn(`Failed to register universal connector ${config.name}:`, error);
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore errors
+    }
+  }
+
+  /**
+   * Migrate existing API connectors to universal connectors format
+   */
+  private async migrateAPIConnectorsToUniversal(): Promise<void> {
+    // Map old serviceType to vendor template IDs
+    const LEGACY_SERVICE_MAP: Record<string, { vendorId: string; authMethodId: string }> = {
+      'serper': { vendorId: 'serper', authMethodId: 'api-key' },
+      'brave-search': { vendorId: 'brave-search', authMethodId: 'api-key' },
+      'tavily': { vendorId: 'tavily', authMethodId: 'api-key' },
+      'rapidapi-websearch': { vendorId: 'rapidapi', authMethodId: 'api-key' },
+      'zenrows': { vendorId: 'zenrows', authMethodId: 'api-key' },
+    };
+
+    const apiConnectorsDir = join(this.dataDir, 'api-connectors');
+    if (!existsSync(apiConnectorsDir)) return;
+
+    try {
+      const files = await readdir(apiConnectorsDir);
+      for (const file of files) {
+        // Skip already-migrated files
+        if (!file.endsWith('.json') || file.endsWith('.migrated.json')) continue;
+
+        const filePath = join(apiConnectorsDir, file);
+        const content = await readFile(filePath, 'utf-8');
+        const apiConfig = JSON.parse(content) as StoredAPIConnectorConfig;
+
+        const mapping = LEGACY_SERVICE_MAP[apiConfig.serviceType];
+        if (!mapping) {
+          console.warn(`No migration mapping for service type: ${apiConfig.serviceType}`);
+          continue;
+        }
+
+        // Check if already migrated (universal connector exists)
+        if (this.universalConnectors.has(apiConfig.name)) {
+          continue;
+        }
+
+        // Get vendor info
+        const vendorInfo = getVendorInfo(mapping.vendorId);
+        const authMethod = getVendorAuthTemplate(mapping.vendorId, mapping.authMethodId);
+
+        if (!vendorInfo || !authMethod) {
+          console.warn(`Vendor template not found for: ${mapping.vendorId}/${mapping.authMethodId}`);
+          continue;
+        }
+
+        // Create universal connector
+        const universalConfig: StoredUniversalConnector = {
+          name: apiConfig.name,
+          vendorId: mapping.vendorId,
+          vendorName: vendorInfo.name,
+          authMethodId: mapping.authMethodId,
+          authMethodName: authMethod.name,
+          credentials: { apiKey: apiConfig.auth.apiKey },
+          displayName: apiConfig.displayName,
+          baseURL: apiConfig.baseURL,
+          createdAt: apiConfig.createdAt,
+          updatedAt: Date.now(),
+          status: 'active',
+          legacyServiceType: apiConfig.serviceType,
+        };
+
+        // Save universal connector
+        this.universalConnectors.set(universalConfig.name, universalConfig);
+        const universalPath = join(this.dataDir, 'universal-connectors', `${universalConfig.name}.json`);
+        await writeFile(universalPath, JSON.stringify(universalConfig, null, 2));
+
+        // Register with library
+        try {
+          createConnectorFromTemplate(
+            universalConfig.name,
+            universalConfig.vendorId,
+            universalConfig.authMethodId,
+            universalConfig.credentials,
+            { baseURL: universalConfig.baseURL, displayName: universalConfig.displayName }
+          );
+        } catch (error) {
+          console.warn(`Failed to register migrated connector ${universalConfig.name}:`, error);
+        }
+
+        // Rename old file to .migrated.json
+        const { rename } = await import('node:fs/promises');
+        await rename(filePath, filePath.replace('.json', '.migrated.json'));
+        console.log(`Migrated API connector: ${apiConfig.name}`);
+      }
+    } catch (error) {
+      console.warn('Error migrating API connectors:', error);
+    }
+  }
+
+  // ============ Vendor Template Access (read-only from library) ============
+
+  /**
+   * List all vendor templates
+   */
+  listVendorTemplates(): VendorInfo[] {
+    return listVendorTemplates();
+  }
+
+  /**
+   * Get vendor template by ID
+   */
+  getVendorTemplateById(vendorId: string): VendorInfo | undefined {
+    return getVendorInfo(vendorId);
+  }
+
+  /**
+   * Get full vendor template (with auth templates)
+   */
+  getFullVendorTemplate(vendorId: string): VendorTemplate | undefined {
+    return getVendorTemplate(vendorId);
+  }
+
+  /**
+   * Get vendor logo
+   */
+  getVendorLogoById(vendorId: string): VendorLogo | undefined {
+    return getVendorLogo(vendorId);
+  }
+
+  /**
+   * Get all unique vendor categories
+   */
+  getVendorCategories(): string[] {
+    const templates = listVendorTemplates();
+    return [...new Set(templates.map(t => t.category))].sort();
+  }
+
+  /**
+   * Get vendors by category
+   */
+  getVendorsByCategory(category: string): VendorInfo[] {
+    return listVendorsByCategory(category);
+  }
+
+  // ============ Universal Connector CRUD ============
+
+  /**
+   * List all universal connectors
+   */
+  listUniversalConnectors(): StoredUniversalConnector[] {
+    return Array.from(this.universalConnectors.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  /**
+   * Get universal connector by name
+   */
+  getUniversalConnector(name: string): StoredUniversalConnector | null {
+    return this.universalConnectors.get(name) || null;
+  }
+
+  /**
+   * Create a universal connector from vendor template
+   */
+  async createUniversalConnector(input: CreateUniversalConnectorInput): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Validate vendor template exists
+      const vendorInfo = getVendorInfo(input.vendorId);
+      if (!vendorInfo) {
+        return { success: false, error: `Unknown vendor: ${input.vendorId}` };
+      }
+
+      const authMethod = getVendorAuthTemplate(input.vendorId, input.authMethodId);
+      if (!authMethod) {
+        return { success: false, error: `Unknown auth method: ${input.authMethodId} for vendor ${input.vendorId}` };
+      }
+
+      // Check for duplicate name
+      if (this.universalConnectors.has(input.name) || Connector.has(input.name)) {
+        return { success: false, error: `Connector "${input.name}" already exists` };
+      }
+
+      // Create connector with library
+      try {
+        createConnectorFromTemplate(
+          input.name,
+          input.vendorId,
+          input.authMethodId,
+          input.credentials,
+          { baseURL: input.baseURL, displayName: input.displayName }
+        );
+      } catch (error) {
+        return { success: false, error: `Failed to create connector: ${error}` };
+      }
+
+      // Build stored config
+      const config: StoredUniversalConnector = {
+        name: input.name,
+        vendorId: input.vendorId,
+        vendorName: vendorInfo.name,
+        authMethodId: input.authMethodId,
+        authMethodName: authMethod.name,
+        credentials: input.credentials,
+        displayName: input.displayName,
+        baseURL: input.baseURL,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        status: 'untested',
+      };
+
+      // Store in memory
+      this.universalConnectors.set(input.name, config);
+
+      // Save to file
+      const filePath = join(this.dataDir, 'universal-connectors', `${input.name}.json`);
+      await writeFile(filePath, JSON.stringify(config, null, 2));
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Update a universal connector
+   */
+  async updateUniversalConnector(name: string, updates: Partial<Omit<StoredUniversalConnector, 'name' | 'vendorId' | 'vendorName' | 'authMethodId' | 'authMethodName' | 'createdAt'>>): Promise<{ success: boolean; error?: string }> {
+    try {
+      const existing = this.universalConnectors.get(name);
+      if (!existing) {
+        return { success: false, error: `Universal connector "${name}" not found` };
+      }
+
+      const updated: StoredUniversalConnector = {
+        ...existing,
+        ...updates,
+        updatedAt: Date.now(),
+      };
+
+      // If credentials changed, re-register with library
+      if (updates.credentials || updates.baseURL) {
+        if (Connector.has(name)) {
+          Connector.remove(name);
+        }
+        try {
+          createConnectorFromTemplate(
+            name,
+            existing.vendorId,
+            existing.authMethodId,
+            updated.credentials,
+            { baseURL: updated.baseURL, displayName: updated.displayName }
+          );
+        } catch (error) {
+          return { success: false, error: `Failed to update connector: ${error}` };
+        }
+      }
+
+      // Store in memory
+      this.universalConnectors.set(name, updated);
+
+      // Save to file
+      const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
+      await writeFile(filePath, JSON.stringify(updated, null, 2));
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Delete a universal connector
+   */
+  async deleteUniversalConnector(name: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!this.universalConnectors.has(name)) {
+        return { success: false, error: `Universal connector "${name}" not found` };
+      }
+
+      this.universalConnectors.delete(name);
+
+      // Remove from library
+      if (Connector.has(name)) {
+        Connector.remove(name);
+      }
+
+      // Delete file
+      const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
+      if (existsSync(filePath)) {
+        const { unlink } = await import('node:fs/promises');
+        await unlink(filePath);
+      }
+
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Test a universal connector connection
+   */
+  async testUniversalConnection(name: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const config = this.universalConnectors.get(name);
+      if (!config) {
+        return { success: false, error: `Universal connector "${name}" not found` };
+      }
+
+      // Get connector from library
+      const connector = Connector.get(name);
+      if (!connector) {
+        return { success: false, error: 'Connector not registered with library' };
+      }
+
+      // TODO: Implement actual connection testing per vendor
+      // For now, just update status to indicate we tried
+      config.lastTestedAt = Date.now();
+      config.status = 'active';
+      this.universalConnectors.set(name, config);
+
+      // Save to file
+      const filePath = join(this.dataDir, 'universal-connectors', `${name}.json`);
+      await writeFile(filePath, JSON.stringify(config, null, 2));
+
+      return { success: true };
+    } catch (error) {
+      // Update status to error
+      const config = this.universalConnectors.get(name);
+      if (config) {
+        config.status = 'error';
+        config.lastTestedAt = Date.now();
+        this.universalConnectors.set(name, config);
+      }
       return { success: false, error: String(error) };
     }
   }

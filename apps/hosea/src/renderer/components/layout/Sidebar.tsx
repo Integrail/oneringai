@@ -48,7 +48,7 @@ const navSections: NavSection[] = [
     label: 'Connectors',
     items: [
       { id: 'llm-connectors', label: 'LLM Providers', icon: <Brain size={20} /> },
-      { id: 'api-connectors', label: 'API Services', icon: <Key size={20} /> },
+      { id: 'universal-connectors', label: 'Universal Connectors', icon: <Key size={20} /> },
     ],
   },
   {

@@ -16,6 +16,7 @@ var process2 = require('process');
 var stream = require('stream');
 var fs15 = require('fs/promises');
 var glob = require('glob');
+var simpleIcons = require('simple-icons');
 var child_process = require('child_process');
 var util = require('util');
 var cheerio = require('cheerio');
@@ -53,6 +54,7 @@ var z4mini__namespace = /*#__PURE__*/_interopNamespace(z4mini);
 var z__namespace = /*#__PURE__*/_interopNamespace(z);
 var process2__default = /*#__PURE__*/_interopDefault(process2);
 var fs15__namespace = /*#__PURE__*/_interopNamespace(fs15);
+var simpleIcons__namespace = /*#__PURE__*/_interopNamespace(simpleIcons);
 var TurndownService__default = /*#__PURE__*/_interopDefault(TurndownService);
 var vm__namespace = /*#__PURE__*/_interopNamespace(vm);
 
@@ -45182,6 +45184,29 @@ var ProviderErrorMapper = class {
 
 // src/domain/entities/Services.ts
 var SERVICE_DEFINITIONS = [
+  // ============ Major Vendors ============
+  {
+    id: "microsoft",
+    name: "Microsoft",
+    category: "major-vendors",
+    urlPattern: /graph\.microsoft\.com|login\.microsoftonline\.com/i,
+    baseURL: "https://graph.microsoft.com/v1.0",
+    docsURL: "https://learn.microsoft.com/en-us/graph/",
+    commonScopes: ["User.Read", "Files.ReadWrite", "Mail.Read", "Calendars.ReadWrite"]
+  },
+  {
+    id: "google",
+    name: "Google",
+    category: "major-vendors",
+    urlPattern: /googleapis\.com|accounts\.google\.com/i,
+    baseURL: "https://www.googleapis.com",
+    docsURL: "https://developers.google.com/",
+    commonScopes: [
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/calendar",
+      "https://www.googleapis.com/auth/gmail.readonly"
+    ]
+  },
   // ============ Communication ============
   {
     id: "slack",
@@ -45200,15 +45225,6 @@ var SERVICE_DEFINITIONS = [
     baseURL: "https://discord.com/api/v10",
     docsURL: "https://discord.com/developers/docs",
     commonScopes: ["bot", "messages.read"]
-  },
-  {
-    id: "microsoft-teams",
-    name: "Microsoft Teams",
-    category: "communication",
-    urlPattern: /teams\.microsoft\.com|graph\.microsoft\.com.*teams/i,
-    baseURL: "https://graph.microsoft.com/v1.0",
-    docsURL: "https://learn.microsoft.com/en-us/graph/teams-concept-overview",
-    commonScopes: ["ChannelMessage.Send", "Team.ReadBasic.All"]
   },
   {
     id: "telegram",
@@ -45300,27 +45316,6 @@ var SERVICE_DEFINITIONS = [
     commonScopes: ["data.records:read", "data.records:write"]
   },
   {
-    id: "google-workspace",
-    name: "Google Workspace",
-    category: "productivity",
-    urlPattern: /googleapis\.com.*(drive|docs|sheets|calendar)/i,
-    baseURL: "https://www.googleapis.com",
-    docsURL: "https://developers.google.com/workspace",
-    commonScopes: [
-      "https://www.googleapis.com/auth/drive",
-      "https://www.googleapis.com/auth/calendar"
-    ]
-  },
-  {
-    id: "microsoft-365",
-    name: "Microsoft 365",
-    category: "productivity",
-    urlPattern: /graph\.microsoft\.com/i,
-    baseURL: "https://graph.microsoft.com/v1.0",
-    docsURL: "https://learn.microsoft.com/en-us/graph/",
-    commonScopes: ["User.Read", "Files.ReadWrite", "Mail.Read"]
-  },
-  {
     id: "confluence",
     name: "Confluence",
     category: "productivity",
@@ -45382,22 +45377,6 @@ var SERVICE_DEFINITIONS = [
     baseURL: "https://aws.amazon.com",
     docsURL: "https://docs.aws.amazon.com/"
   },
-  {
-    id: "gcp",
-    name: "Google Cloud Platform",
-    category: "cloud",
-    urlPattern: /googleapis\.com/i,
-    baseURL: "https://www.googleapis.com",
-    docsURL: "https://cloud.google.com/apis/docs/"
-  },
-  {
-    id: "azure",
-    name: "Microsoft Azure",
-    category: "cloud",
-    urlPattern: /azure\.com|microsoft\.com.*azure/i,
-    baseURL: "https://management.azure.com",
-    docsURL: "https://learn.microsoft.com/en-us/azure/"
-  },
   // ============ Storage ============
   {
     id: "dropbox",
@@ -45415,24 +45394,6 @@ var SERVICE_DEFINITIONS = [
     urlPattern: /api\.box\.com/i,
     baseURL: "https://api.box.com/2.0",
     docsURL: "https://developer.box.com/reference/"
-  },
-  {
-    id: "google-drive",
-    name: "Google Drive",
-    category: "storage",
-    urlPattern: /googleapis\.com.*drive/i,
-    baseURL: "https://www.googleapis.com/drive/v3",
-    docsURL: "https://developers.google.com/drive/api",
-    commonScopes: ["https://www.googleapis.com/auth/drive"]
-  },
-  {
-    id: "onedrive",
-    name: "OneDrive",
-    category: "storage",
-    urlPattern: /graph\.microsoft\.com.*drive/i,
-    baseURL: "https://graph.microsoft.com/v1.0/me/drive",
-    docsURL: "https://learn.microsoft.com/en-us/onedrive/developer/",
-    commonScopes: ["Files.ReadWrite"]
   },
   // ============ Email ============
   {
@@ -46590,6 +46551,1835 @@ var FileConnectorStorage = class {
     await fs15__namespace.chmod(this.indexPath, 384);
   }
 };
+
+// src/connectors/vendors/helpers.ts
+init_Connector();
+var vendorRegistry = null;
+function initVendorRegistry(templates) {
+  vendorRegistry = new Map(templates.map((t) => [t.id, t]));
+}
+function getVendorTemplate(vendorId) {
+  if (!vendorRegistry) {
+    throw new Error(
+      "Vendor registry not initialized. Make sure to import from @oneringai/agents which auto-registers templates."
+    );
+  }
+  return vendorRegistry.get(vendorId);
+}
+function getAllVendorTemplates() {
+  if (!vendorRegistry) {
+    throw new Error(
+      "Vendor registry not initialized. Make sure to import from @oneringai/agents which auto-registers templates."
+    );
+  }
+  return Array.from(vendorRegistry.values());
+}
+function getVendorAuthTemplate(vendorId, authId) {
+  const template = getVendorTemplate(vendorId);
+  if (!template) return void 0;
+  return template.authTemplates.find((a) => a.id === authId);
+}
+function listVendorIds() {
+  if (!vendorRegistry) {
+    throw new Error(
+      "Vendor registry not initialized. Make sure to import from @oneringai/agents which auto-registers templates."
+    );
+  }
+  return Array.from(vendorRegistry.keys());
+}
+function buildAuthConfig(authTemplate, credentials) {
+  const defaults = authTemplate.defaults;
+  if (authTemplate.type === "api_key") {
+    if (!credentials.apiKey) {
+      throw new Error("API key is required for api_key auth");
+    }
+    return {
+      type: "api_key",
+      apiKey: credentials.apiKey,
+      headerName: defaults.headerName ?? "Authorization",
+      headerPrefix: defaults.headerPrefix ?? "Bearer"
+    };
+  }
+  if (!authTemplate.flow) {
+    throw new Error(`OAuth flow not specified in auth template: ${authTemplate.id}`);
+  }
+  const oauthDefaults = defaults;
+  const oauthConfig = {
+    type: "oauth",
+    flow: authTemplate.flow,
+    clientId: credentials.clientId ?? "",
+    clientSecret: credentials.clientSecret,
+    tokenUrl: oauthDefaults.tokenUrl ?? "",
+    authorizationUrl: oauthDefaults.authorizationUrl,
+    redirectUri: credentials.redirectUri,
+    scope: credentials.scope ?? authTemplate.scopes?.join(" "),
+    usePKCE: oauthDefaults.usePKCE,
+    privateKey: credentials.privateKey,
+    privateKeyPath: credentials.privateKeyPath,
+    audience: credentials.audience ?? oauthDefaults.audience,
+    subject: credentials.subject ?? oauthDefaults.subject
+  };
+  if (oauthConfig.tokenUrl && credentials.tenantId) {
+    oauthConfig.tokenUrl = oauthConfig.tokenUrl.replace("{tenantId}", credentials.tenantId);
+  }
+  if (oauthConfig.authorizationUrl && credentials.tenantId) {
+    oauthConfig.authorizationUrl = oauthConfig.authorizationUrl.replace(
+      "{tenantId}",
+      credentials.tenantId
+    );
+  }
+  if (oauthConfig.tokenUrl && credentials.installationId) {
+    oauthConfig.tokenUrl = oauthConfig.tokenUrl.replace(
+      "{installationId}",
+      credentials.installationId
+    );
+  }
+  const configAsUnknown = oauthConfig;
+  Object.keys(configAsUnknown).forEach((key) => {
+    if (configAsUnknown[key] === void 0) {
+      delete configAsUnknown[key];
+    }
+  });
+  return oauthConfig;
+}
+function validateCredentials(authTemplate, credentials) {
+  const missing = [];
+  for (const field of authTemplate.requiredFields) {
+    if (!credentials[field]) {
+      missing.push(field);
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required credentials for ${authTemplate.name}: ${missing.join(", ")}`
+    );
+  }
+}
+function createConnectorFromTemplate(name, vendorId, authTemplateId, credentials, options) {
+  const template = getVendorTemplate(vendorId);
+  if (!template) {
+    const available = listVendorIds().slice(0, 10).join(", ");
+    throw new Error(
+      `Unknown vendor: ${vendorId}. Available vendors include: ${available}...`
+    );
+  }
+  const authTemplate = template.authTemplates.find((a) => a.id === authTemplateId);
+  if (!authTemplate) {
+    const available = template.authTemplates.map((a) => a.id).join(", ");
+    throw new Error(
+      `Unknown auth method '${authTemplateId}' for vendor '${vendorId}'. Available: ${available}`
+    );
+  }
+  validateCredentials(authTemplate, credentials);
+  const auth2 = buildAuthConfig(authTemplate, credentials);
+  const config = {
+    name,
+    serviceType: template.serviceType,
+    baseURL: options?.baseURL ?? template.baseURL,
+    auth: auth2,
+    displayName: options?.displayName ?? `${template.name} (${authTemplate.name})`,
+    description: options?.description ?? `${template.name} API connector using ${authTemplate.name}`,
+    documentation: template.docsURL
+  };
+  if (options?.timeout !== void 0) {
+    config.timeout = options.timeout;
+  }
+  if (options?.logging) {
+    config.logging = { enabled: true };
+  }
+  return exports.Connector.create(config);
+}
+function getConnectorTools(connectorName) {
+  return ConnectorTools.for(connectorName);
+}
+function getVendorInfo(vendorId) {
+  const template = getVendorTemplate(vendorId);
+  if (!template) return void 0;
+  return {
+    id: template.id,
+    name: template.name,
+    category: template.category,
+    docsURL: template.docsURL,
+    credentialsSetupURL: template.credentialsSetupURL,
+    authMethods: template.authTemplates.map((a) => ({
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      description: a.description,
+      requiredFields: a.requiredFields
+    }))
+  };
+}
+function listVendors() {
+  return getAllVendorTemplates().map((t) => ({
+    id: t.id,
+    name: t.name,
+    category: t.category,
+    docsURL: t.docsURL,
+    credentialsSetupURL: t.credentialsSetupURL,
+    authMethods: t.authTemplates.map((a) => ({
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      description: a.description,
+      requiredFields: a.requiredFields
+    }))
+  }));
+}
+function listVendorsByCategory(category) {
+  return listVendors().filter((v) => v.category === category);
+}
+function listVendorsByAuthType(authType) {
+  return listVendors().filter(
+    (v) => v.authMethods.some((a) => a.type === authType)
+  );
+}
+function getCredentialsSetupURL(vendorId) {
+  const template = getVendorTemplate(vendorId);
+  return template?.credentialsSetupURL;
+}
+function getDocsURL(vendorId) {
+  const template = getVendorTemplate(vendorId);
+  return template?.docsURL;
+}
+
+// src/connectors/vendors/templates/microsoft.ts
+var microsoftTemplate = {
+  id: "microsoft",
+  name: "Microsoft",
+  serviceType: "microsoft",
+  baseURL: "https://graph.microsoft.com/v1.0",
+  docsURL: "https://learn.microsoft.com/en-us/graph/",
+  credentialsSetupURL: "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+  category: "major-vendors",
+  notes: "Unified access to Microsoft 365, Teams, OneDrive, Outlook, Calendar via Microsoft Graph API",
+  authTemplates: [
+    {
+      id: "oauth-user",
+      name: "OAuth (Delegated Permissions)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "User signs in with Microsoft account. Best for accessing user data (mail, calendar, files)",
+      requiredFields: ["clientId", "clientSecret", "redirectUri", "tenantId"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize",
+        tokenUrl: "https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token"
+      },
+      scopes: [
+        "User.Read",
+        "Mail.Read",
+        "Mail.Send",
+        "Files.ReadWrite",
+        "Calendars.ReadWrite",
+        "ChannelMessage.Send",
+        "Team.ReadBasic.All",
+        "Chat.ReadWrite",
+        "offline_access"
+      ]
+    },
+    {
+      id: "client-credentials",
+      name: "App-Only (Client Credentials)",
+      type: "oauth",
+      flow: "client_credentials",
+      description: "App authenticates as itself - requires admin consent. Best for automation and background tasks",
+      requiredFields: ["clientId", "clientSecret", "tenantId"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "client_credentials",
+        tokenUrl: "https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token"
+      },
+      scopes: ["https://graph.microsoft.com/.default"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/google.ts
+var googleTemplate = {
+  id: "google",
+  name: "Google",
+  serviceType: "google",
+  baseURL: "https://www.googleapis.com",
+  docsURL: "https://developers.google.com/",
+  credentialsSetupURL: "https://console.cloud.google.com/apis/credentials",
+  category: "major-vendors",
+  notes: "Unified access to Google Workspace (Drive, Docs, Sheets, Calendar), Gmail, and Cloud APIs",
+  authTemplates: [
+    {
+      id: "oauth-user",
+      name: "OAuth (User Consent)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "User logs in with Google account. Best for accessing user data (Drive, Gmail, Calendar)",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+        tokenUrl: "https://oauth2.googleapis.com/token"
+      },
+      scopes: [
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/documents"
+      ]
+    },
+    {
+      id: "service-account",
+      name: "Service Account (JWT Bearer)",
+      type: "oauth",
+      flow: "jwt_bearer",
+      description: "Server-to-server auth without user. Download JSON key from GCP Console. Can impersonate users with domain-wide delegation",
+      requiredFields: ["clientId", "privateKey"],
+      optionalFields: ["scope", "subject"],
+      defaults: {
+        type: "oauth",
+        flow: "jwt_bearer",
+        tokenUrl: "https://oauth2.googleapis.com/token",
+        audience: "https://oauth2.googleapis.com/token"
+      },
+      scopes: [
+        "https://www.googleapis.com/auth/cloud-platform",
+        "https://www.googleapis.com/auth/drive"
+      ]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/slack.ts
+var slackTemplate = {
+  id: "slack",
+  name: "Slack",
+  serviceType: "slack",
+  baseURL: "https://slack.com/api",
+  docsURL: "https://api.slack.com/methods",
+  credentialsSetupURL: "https://api.slack.com/apps",
+  category: "communication",
+  authTemplates: [
+    {
+      id: "bot-token",
+      name: "Bot Token",
+      type: "api_key",
+      description: "Internal workspace bot - get from OAuth & Permissions page of your Slack app",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Token)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "Distributed app - users authorize via Slack OAuth",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope", "userScope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://slack.com/oauth/v2/authorize",
+        tokenUrl: "https://slack.com/api/oauth.v2.access"
+      },
+      scopes: ["chat:write", "channels:read", "users:read", "im:write", "groups:read"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/discord.ts
+var discordTemplate = {
+  id: "discord",
+  name: "Discord",
+  serviceType: "discord",
+  baseURL: "https://discord.com/api/v10",
+  docsURL: "https://discord.com/developers/docs",
+  credentialsSetupURL: "https://discord.com/developers/applications",
+  category: "communication",
+  authTemplates: [
+    {
+      id: "bot-token",
+      name: "Bot Token",
+      type: "api_key",
+      description: "Bot token for Discord bots - get from Bot section of your application",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bot"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Token)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth2 for user authorization - users grant permissions to your app",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://discord.com/api/oauth2/authorize",
+        tokenUrl: "https://discord.com/api/oauth2/token"
+      },
+      scopes: ["identify", "guilds", "guilds.members.read", "messages.read"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/telegram.ts
+var telegramTemplate = {
+  id: "telegram",
+  name: "Telegram",
+  serviceType: "telegram",
+  baseURL: "https://api.telegram.org",
+  docsURL: "https://core.telegram.org/bots/api",
+  credentialsSetupURL: "https://t.me/BotFather",
+  category: "communication",
+  notes: "Telegram Bot API requires token to be part of URL path: /bot<token>/method",
+  authTemplates: [
+    {
+      id: "bot-token",
+      name: "Bot Token",
+      type: "api_key",
+      description: "Bot token from @BotFather - used in URL path, not header",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: ""
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/github.ts
+var githubTemplate = {
+  id: "github",
+  name: "GitHub",
+  serviceType: "github",
+  baseURL: "https://api.github.com",
+  docsURL: "https://docs.github.com/en/rest",
+  credentialsSetupURL: "https://github.com/settings/developers",
+  category: "development",
+  authTemplates: [
+    {
+      id: "pat",
+      name: "Personal Access Token",
+      type: "api_key",
+      description: "Simple token for personal use, scripts, or single-user apps. Create at Settings > Developer settings > Personal access tokens",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth App (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "User logs in via GitHub and grants permissions to your app",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://github.com/login/oauth/authorize",
+        tokenUrl: "https://github.com/login/oauth/access_token"
+      },
+      scopes: ["repo", "read:user", "read:org", "workflow", "gist"]
+    },
+    {
+      id: "github-app",
+      name: "GitHub App (Installation Token)",
+      type: "oauth",
+      flow: "jwt_bearer",
+      description: "App authenticates as itself for org-wide automation. Requires App ID, private key, and installation ID",
+      requiredFields: ["appId", "privateKey", "installationId"],
+      defaults: {
+        type: "oauth",
+        flow: "jwt_bearer",
+        tokenUrl: "https://api.github.com/app/installations/{installationId}/access_tokens"
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/gitlab.ts
+var gitlabTemplate = {
+  id: "gitlab",
+  name: "GitLab",
+  serviceType: "gitlab",
+  baseURL: "https://gitlab.com/api/v4",
+  docsURL: "https://docs.gitlab.com/ee/api/",
+  credentialsSetupURL: "https://gitlab.com/-/profile/personal_access_tokens",
+  category: "development",
+  notes: "For self-hosted GitLab, replace baseURL with your instance URL",
+  authTemplates: [
+    {
+      id: "pat",
+      name: "Personal Access Token",
+      type: "api_key",
+      description: "Personal access token for API access. Create at User Settings > Access Tokens",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "PRIVATE-TOKEN",
+        headerPrefix: ""
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth2 application for user authorization",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://gitlab.com/oauth/authorize",
+        tokenUrl: "https://gitlab.com/oauth/token"
+      },
+      scopes: ["api", "read_user", "read_repository", "write_repository"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/atlassian.ts
+var jiraTemplate = {
+  id: "jira",
+  name: "Jira",
+  serviceType: "jira",
+  baseURL: "https://your-domain.atlassian.net/rest/api/3",
+  docsURL: "https://developer.atlassian.com/cloud/jira/platform/rest/v3/",
+  credentialsSetupURL: "https://id.atlassian.com/manage-profile/security/api-tokens",
+  category: "development",
+  notes: 'Replace "your-domain" in baseURL with your Atlassian domain',
+  authTemplates: [
+    {
+      id: "api-token",
+      name: "API Token",
+      type: "api_key",
+      description: "API token with email for Basic Auth. Create at Atlassian Account > Security > API tokens",
+      requiredFields: ["apiKey", "username"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Basic"
+      }
+    },
+    {
+      id: "oauth-3lo",
+      name: "OAuth 2.0 (3LO)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "Three-legged OAuth for user authorization. Create app at developer.atlassian.com",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://auth.atlassian.com/authorize",
+        tokenUrl: "https://auth.atlassian.com/oauth/token"
+      },
+      scopes: ["read:jira-work", "write:jira-work", "read:jira-user"]
+    }
+  ]
+};
+var confluenceTemplate = {
+  id: "confluence",
+  name: "Confluence",
+  serviceType: "confluence",
+  baseURL: "https://your-domain.atlassian.net/wiki/rest/api",
+  docsURL: "https://developer.atlassian.com/cloud/confluence/rest/",
+  credentialsSetupURL: "https://id.atlassian.com/manage-profile/security/api-tokens",
+  category: "productivity",
+  notes: 'Replace "your-domain" in baseURL with your Atlassian domain',
+  authTemplates: [
+    {
+      id: "api-token",
+      name: "API Token",
+      type: "api_key",
+      description: "API token with email for Basic Auth. Create at Atlassian Account > Security > API tokens",
+      requiredFields: ["apiKey", "username"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Basic"
+      }
+    },
+    {
+      id: "oauth-3lo",
+      name: "OAuth 2.0 (3LO)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "Three-legged OAuth for user authorization",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://auth.atlassian.com/authorize",
+        tokenUrl: "https://auth.atlassian.com/oauth/token"
+      },
+      scopes: ["read:confluence-content.all", "write:confluence-content", "read:confluence-space.summary"]
+    }
+  ]
+};
+var bitbucketTemplate = {
+  id: "bitbucket",
+  name: "Bitbucket",
+  serviceType: "bitbucket",
+  baseURL: "https://api.bitbucket.org/2.0",
+  docsURL: "https://developer.atlassian.com/cloud/bitbucket/rest/",
+  credentialsSetupURL: "https://bitbucket.org/account/settings/app-passwords/",
+  category: "development",
+  authTemplates: [
+    {
+      id: "app-password",
+      name: "App Password",
+      type: "api_key",
+      description: "App password with username for Basic Auth. Create at Personal Settings > App passwords",
+      requiredFields: ["apiKey", "username"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Basic"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth Consumer",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth consumer for user authorization. Create at Workspace Settings > OAuth consumers",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://bitbucket.org/site/oauth2/authorize",
+        tokenUrl: "https://bitbucket.org/site/oauth2/access_token"
+      },
+      scopes: ["repository", "pullrequest", "account"]
+    }
+  ]
+};
+var trelloTemplate = {
+  id: "trello",
+  name: "Trello",
+  serviceType: "trello",
+  baseURL: "https://api.trello.com/1",
+  docsURL: "https://developer.atlassian.com/cloud/trello/rest/",
+  credentialsSetupURL: "https://trello.com/power-ups/admin",
+  category: "development",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API Key + Token",
+      type: "api_key",
+      description: "API key and token pair. Get key at trello.com/app-key, generate token from there",
+      requiredFields: ["apiKey"],
+      optionalFields: ["applicationKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: 'OAuth oauth_consumer_key="{apiKey}", oauth_token='
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth 1.0a",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth 1.0a for user authorization (legacy)",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://trello.com/1/authorize",
+        tokenUrl: "https://trello.com/1/OAuthGetAccessToken"
+      },
+      scopes: ["read", "write", "account"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/linear.ts
+var linearTemplate = {
+  id: "linear",
+  name: "Linear",
+  serviceType: "linear",
+  baseURL: "https://api.linear.app/graphql",
+  docsURL: "https://developers.linear.app/docs",
+  credentialsSetupURL: "https://linear.app/settings/api",
+  category: "development",
+  notes: "Linear uses GraphQL API. All requests go to the /graphql endpoint",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "Personal API Key",
+      type: "api_key",
+      description: "Personal API key for full access. Create at Settings > API",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: ""
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth application for user authorization. Create at Settings > API > OAuth applications",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://linear.app/oauth/authorize",
+        tokenUrl: "https://api.linear.app/oauth/token"
+      },
+      scopes: ["read", "write", "issues:create", "comments:create"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/asana.ts
+var asanaTemplate = {
+  id: "asana",
+  name: "Asana",
+  serviceType: "asana",
+  baseURL: "https://app.asana.com/api/1.0",
+  docsURL: "https://developers.asana.com/docs",
+  credentialsSetupURL: "https://app.asana.com/0/developer-console",
+  category: "development",
+  authTemplates: [
+    {
+      id: "pat",
+      name: "Personal Access Token",
+      type: "api_key",
+      description: "Personal access token for API access. Create at My Profile Settings > Apps > Developer Apps",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth application for user authorization. Create at developer console",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://app.asana.com/-/oauth_authorize",
+        tokenUrl: "https://app.asana.com/-/oauth_token"
+      },
+      scopes: ["default"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/notion.ts
+var notionTemplate = {
+  id: "notion",
+  name: "Notion",
+  serviceType: "notion",
+  baseURL: "https://api.notion.com/v1",
+  docsURL: "https://developers.notion.com/reference",
+  credentialsSetupURL: "https://www.notion.so/my-integrations",
+  category: "productivity",
+  authTemplates: [
+    {
+      id: "internal-token",
+      name: "Internal Integration Token",
+      type: "api_key",
+      description: "Internal integration token for workspace access. Create at notion.so/my-integrations",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "Public Integration (OAuth)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "Public integration for multi-workspace access",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://api.notion.com/v1/oauth/authorize",
+        tokenUrl: "https://api.notion.com/v1/oauth/token"
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/airtable.ts
+var airtableTemplate = {
+  id: "airtable",
+  name: "Airtable",
+  serviceType: "airtable",
+  baseURL: "https://api.airtable.com/v0",
+  docsURL: "https://airtable.com/developers/web/api",
+  credentialsSetupURL: "https://airtable.com/create/tokens",
+  category: "productivity",
+  authTemplates: [
+    {
+      id: "pat",
+      name: "Personal Access Token",
+      type: "api_key",
+      description: "Personal access token with scoped permissions. Create at airtable.com/create/tokens",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth integration for multi-user access. Register at airtable.com/create/oauth",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://airtable.com/oauth2/v1/authorize",
+        tokenUrl: "https://airtable.com/oauth2/v1/token",
+        usePKCE: true
+      },
+      scopes: ["data.records:read", "data.records:write", "schema.bases:read"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/salesforce.ts
+var salesforceTemplate = {
+  id: "salesforce",
+  name: "Salesforce",
+  serviceType: "salesforce",
+  baseURL: "https://login.salesforce.com/services/data/v59.0",
+  docsURL: "https://developer.salesforce.com/docs/apis",
+  credentialsSetupURL: "https://login.salesforce.com/lightning/setup/ConnectedApplication/home",
+  category: "crm",
+  notes: "After OAuth, baseURL changes to instance URL (e.g., yourinstance.salesforce.com)",
+  authTemplates: [
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "User logs in via Salesforce. Create Connected App in Setup",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://login.salesforce.com/services/oauth2/authorize",
+        tokenUrl: "https://login.salesforce.com/services/oauth2/token"
+      },
+      scopes: ["api", "refresh_token", "offline_access"]
+    },
+    {
+      id: "jwt-bearer",
+      name: "JWT Bearer (Server-to-Server)",
+      type: "oauth",
+      flow: "jwt_bearer",
+      description: "Automated server integration - requires certificate setup in Connected App",
+      requiredFields: ["clientId", "privateKey", "username"],
+      defaults: {
+        type: "oauth",
+        flow: "jwt_bearer",
+        tokenUrl: "https://login.salesforce.com/services/oauth2/token",
+        audience: "https://login.salesforce.com"
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/hubspot.ts
+var hubspotTemplate = {
+  id: "hubspot",
+  name: "HubSpot",
+  serviceType: "hubspot",
+  baseURL: "https://api.hubapi.com",
+  docsURL: "https://developers.hubspot.com/docs/api",
+  credentialsSetupURL: "https://developers.hubspot.com/get-started",
+  category: "crm",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "Private App Token",
+      type: "api_key",
+      description: "Private app access token. Create at Settings > Integrations > Private Apps",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "Public app OAuth for multi-portal access. Create app at developers.hubspot.com",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://app.hubspot.com/oauth/authorize",
+        tokenUrl: "https://api.hubapi.com/oauth/v1/token"
+      },
+      scopes: ["crm.objects.contacts.read", "crm.objects.contacts.write", "crm.objects.companies.read"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/pipedrive.ts
+var pipedriveTemplate = {
+  id: "pipedrive",
+  name: "Pipedrive",
+  serviceType: "pipedrive",
+  baseURL: "https://api.pipedrive.com/v1",
+  docsURL: "https://developers.pipedrive.com/docs/api/v1",
+  credentialsSetupURL: "https://app.pipedrive.com/settings/api",
+  category: "crm",
+  authTemplates: [
+    {
+      id: "api-token",
+      name: "API Token",
+      type: "api_key",
+      description: "Personal API token. Find at Settings > Personal preferences > API",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (App Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth app for marketplace distribution. Create at developers.pipedrive.com",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://oauth.pipedrive.com/oauth/authorize",
+        tokenUrl: "https://oauth.pipedrive.com/oauth/token"
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/stripe.ts
+var stripeTemplate = {
+  id: "stripe",
+  name: "Stripe",
+  serviceType: "stripe",
+  baseURL: "https://api.stripe.com/v1",
+  docsURL: "https://stripe.com/docs/api",
+  credentialsSetupURL: "https://dashboard.stripe.com/apikeys",
+  category: "payments",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "Secret API Key",
+      type: "api_key",
+      description: "Secret API key for server-side requests. Get from Dashboard > Developers > API keys",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-connect",
+      name: "OAuth (Stripe Connect)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "Stripe Connect for marketplace platforms. Requires Connect setup in dashboard",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://connect.stripe.com/oauth/authorize",
+        tokenUrl: "https://connect.stripe.com/oauth/token"
+      },
+      scopes: ["read_write"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/paypal.ts
+var paypalTemplate = {
+  id: "paypal",
+  name: "PayPal",
+  serviceType: "paypal",
+  baseURL: "https://api-m.paypal.com/v2",
+  docsURL: "https://developer.paypal.com/docs/api/",
+  credentialsSetupURL: "https://developer.paypal.com/dashboard/applications",
+  category: "payments",
+  notes: "Use sandbox URL (api-m.sandbox.paypal.com) for testing",
+  authTemplates: [
+    {
+      id: "oauth-client-credentials",
+      name: "OAuth (Client Credentials)",
+      type: "oauth",
+      flow: "client_credentials",
+      description: "App-level authentication. Create REST API app at developer.paypal.com",
+      requiredFields: ["clientId", "clientSecret"],
+      defaults: {
+        type: "oauth",
+        flow: "client_credentials",
+        tokenUrl: "https://api-m.paypal.com/v1/oauth2/token"
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/aws.ts
+var awsTemplate = {
+  id: "aws",
+  name: "Amazon Web Services",
+  serviceType: "aws",
+  baseURL: "https://aws.amazon.com",
+  docsURL: "https://docs.aws.amazon.com/",
+  credentialsSetupURL: "https://console.aws.amazon.com/iam/home#/security_credentials",
+  category: "cloud",
+  notes: "AWS uses signature-based auth. baseURL varies by service (e.g., s3.amazonaws.com)",
+  authTemplates: [
+    {
+      id: "access-key",
+      name: "Access Key",
+      type: "api_key",
+      description: "IAM access key pair. Create at IAM > Users > Security credentials or root Security credentials",
+      requiredFields: ["accessKeyId", "secretAccessKey"],
+      optionalFields: ["region"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "AWS4-HMAC-SHA256"
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/dropbox.ts
+var dropboxTemplate = {
+  id: "dropbox",
+  name: "Dropbox",
+  serviceType: "dropbox",
+  baseURL: "https://api.dropboxapi.com/2",
+  docsURL: "https://www.dropbox.com/developers/documentation",
+  credentialsSetupURL: "https://www.dropbox.com/developers/apps",
+  category: "storage",
+  authTemplates: [
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth app for user authorization. Create app at dropbox.com/developers/apps",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://www.dropbox.com/oauth2/authorize",
+        tokenUrl: "https://api.dropboxapi.com/oauth2/token",
+        usePKCE: true
+      },
+      scopes: ["files.content.read", "files.content.write", "files.metadata.read"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/box.ts
+var boxTemplate = {
+  id: "box",
+  name: "Box",
+  serviceType: "box",
+  baseURL: "https://api.box.com/2.0",
+  docsURL: "https://developer.box.com/reference/",
+  credentialsSetupURL: "https://developer.box.com/console",
+  category: "storage",
+  authTemplates: [
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth 2.0 for user authorization. Create app at developer.box.com/console",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://account.box.com/api/oauth2/authorize",
+        tokenUrl: "https://api.box.com/oauth2/token"
+      }
+    },
+    {
+      id: "client-credentials",
+      name: "Client Credentials (Server Auth)",
+      type: "oauth",
+      flow: "client_credentials",
+      description: "Server-to-server auth with Client Credentials Grant. Enable in app settings",
+      requiredFields: ["clientId", "clientSecret"],
+      optionalFields: ["subject"],
+      defaults: {
+        type: "oauth",
+        flow: "client_credentials",
+        tokenUrl: "https://api.box.com/oauth2/token"
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/email.ts
+var sendgridTemplate = {
+  id: "sendgrid",
+  name: "SendGrid",
+  serviceType: "sendgrid",
+  baseURL: "https://api.sendgrid.com/v3",
+  docsURL: "https://docs.sendgrid.com/api-reference",
+  credentialsSetupURL: "https://app.sendgrid.com/settings/api_keys",
+  category: "email",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API Key",
+      type: "api_key",
+      description: "API key for SendGrid access. Create at Settings > API Keys",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    }
+  ]
+};
+var mailchimpTemplate = {
+  id: "mailchimp",
+  name: "Mailchimp",
+  serviceType: "mailchimp",
+  baseURL: "https://server.api.mailchimp.com/3.0",
+  docsURL: "https://mailchimp.com/developer/marketing/api/",
+  credentialsSetupURL: "https://admin.mailchimp.com/account/api/",
+  category: "email",
+  notes: 'Replace "server" in baseURL with your datacenter (e.g., us1, us2)',
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API Key",
+      type: "api_key",
+      description: "API key for Mailchimp access. Create at Account > Extras > API keys",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth for multi-account access. Register app at mailchimp.com/developer",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://login.mailchimp.com/oauth2/authorize",
+        tokenUrl: "https://login.mailchimp.com/oauth2/token"
+      }
+    }
+  ]
+};
+var postmarkTemplate = {
+  id: "postmark",
+  name: "Postmark",
+  serviceType: "postmark",
+  baseURL: "https://api.postmarkapp.com",
+  docsURL: "https://postmarkapp.com/developer",
+  credentialsSetupURL: "https://account.postmarkapp.com/api_tokens",
+  category: "email",
+  authTemplates: [
+    {
+      id: "server-token",
+      name: "Server API Token",
+      type: "api_key",
+      description: "Server API token for sending emails. Find in server settings",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "X-Postmark-Server-Token",
+        headerPrefix: ""
+      }
+    },
+    {
+      id: "account-token",
+      name: "Account API Token",
+      type: "api_key",
+      description: "Account API token for account management. Find in account settings",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "X-Postmark-Account-Token",
+        headerPrefix: ""
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/monitoring.ts
+var datadogTemplate = {
+  id: "datadog",
+  name: "Datadog",
+  serviceType: "datadog",
+  baseURL: "https://api.datadoghq.com/api/v2",
+  docsURL: "https://docs.datadoghq.com/api/",
+  credentialsSetupURL: "https://app.datadoghq.com/organization-settings/api-keys",
+  category: "monitoring",
+  notes: "Use region-specific URL (e.g., api.datadoghq.eu for EU)",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API & Application Keys",
+      type: "api_key",
+      description: "API key + Application key for full access. Get from Organization Settings",
+      requiredFields: ["apiKey", "applicationKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "DD-API-KEY",
+        headerPrefix: ""
+      }
+    }
+  ]
+};
+var pagerdutyTemplate = {
+  id: "pagerduty",
+  name: "PagerDuty",
+  serviceType: "pagerduty",
+  baseURL: "https://api.pagerduty.com",
+  docsURL: "https://developer.pagerduty.com/api-reference/",
+  credentialsSetupURL: "https://support.pagerduty.com/main/docs/api-access-keys",
+  category: "monitoring",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API Token",
+      type: "api_key",
+      description: "REST API token. Create at User Settings > Create API Key or via Admin",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Token token="
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (App Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth app for multi-account access. Register at developer.pagerduty.com",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://app.pagerduty.com/oauth/authorize",
+        tokenUrl: "https://app.pagerduty.com/oauth/token"
+      }
+    }
+  ]
+};
+var sentryTemplate = {
+  id: "sentry",
+  name: "Sentry",
+  serviceType: "sentry",
+  baseURL: "https://sentry.io/api/0",
+  docsURL: "https://docs.sentry.io/api/",
+  credentialsSetupURL: "https://sentry.io/settings/account/api/auth-tokens/",
+  category: "monitoring",
+  authTemplates: [
+    {
+      id: "auth-token",
+      name: "Auth Token",
+      type: "api_key",
+      description: "Authentication token. Create at User Settings > Auth Tokens",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (Integration)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth integration. Create at Organization Settings > Integrations",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://sentry.io/oauth/authorize/",
+        tokenUrl: "https://sentry.io/oauth/token/"
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/search.ts
+var serperTemplate = {
+  id: "serper",
+  name: "Serper",
+  serviceType: "serper",
+  baseURL: "https://google.serper.dev",
+  docsURL: "https://serper.dev/docs",
+  credentialsSetupURL: "https://serper.dev/api-key",
+  category: "search",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API Key",
+      type: "api_key",
+      description: "Serper API key for Google search. Get at serper.dev dashboard",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "X-API-KEY",
+        headerPrefix: ""
+      }
+    }
+  ]
+};
+var braveSearchTemplate = {
+  id: "brave-search",
+  name: "Brave Search",
+  serviceType: "brave-search",
+  baseURL: "https://api.search.brave.com/res/v1",
+  docsURL: "https://brave.com/search/api/",
+  credentialsSetupURL: "https://brave.com/search/api/",
+  category: "search",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API Key",
+      type: "api_key",
+      description: "Brave Search API key. Sign up at brave.com/search/api",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "X-Subscription-Token",
+        headerPrefix: ""
+      }
+    }
+  ]
+};
+var tavilyTemplate = {
+  id: "tavily",
+  name: "Tavily",
+  serviceType: "tavily",
+  baseURL: "https://api.tavily.com",
+  docsURL: "https://tavily.com/docs",
+  credentialsSetupURL: "https://tavily.com/#api",
+  category: "search",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API Key",
+      type: "api_key",
+      description: "Tavily API key for AI-optimized search. Get at tavily.com",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    }
+  ]
+};
+var rapidapiSearchTemplate = {
+  id: "rapidapi-search",
+  name: "RapidAPI Web Search",
+  serviceType: "rapidapi-search",
+  baseURL: "https://real-time-web-search.p.rapidapi.com",
+  docsURL: "https://rapidapi.com/letscrape-6bRBa3QguO5/api/real-time-web-search",
+  credentialsSetupURL: "https://rapidapi.com/developer/dashboard",
+  category: "search",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "RapidAPI Key",
+      type: "api_key",
+      description: "RapidAPI key for web search. Subscribe at rapidapi.com",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "X-RapidAPI-Key",
+        headerPrefix: ""
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/scrape.ts
+var zenrowsTemplate = {
+  id: "zenrows",
+  name: "ZenRows",
+  serviceType: "zenrows",
+  baseURL: "https://api.zenrows.com/v1",
+  docsURL: "https://docs.zenrows.com/universal-scraper-api/api-reference",
+  credentialsSetupURL: "https://www.zenrows.com/register",
+  category: "scrape",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "API Key",
+      type: "api_key",
+      description: "ZenRows API key for web scraping. Get at zenrows.com dashboard",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/other.ts
+var twilioTemplate = {
+  id: "twilio",
+  name: "Twilio",
+  serviceType: "twilio",
+  baseURL: "https://api.twilio.com/2010-04-01",
+  docsURL: "https://www.twilio.com/docs/usage/api",
+  credentialsSetupURL: "https://console.twilio.com/us1/account/keys-credentials/api-keys",
+  category: "other",
+  authTemplates: [
+    {
+      id: "api-key",
+      name: "Account SID + Auth Token",
+      type: "api_key",
+      description: "Account credentials for Basic Auth. Find at console.twilio.com",
+      requiredFields: ["apiKey", "accountId"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Basic"
+      }
+    },
+    {
+      id: "api-key-sid",
+      name: "API Key + Secret",
+      type: "api_key",
+      description: "API key credentials (recommended). Create at Console > API Keys",
+      requiredFields: ["apiKey", "applicationKey", "accountId"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Basic"
+      }
+    }
+  ]
+};
+var zendeskTemplate = {
+  id: "zendesk",
+  name: "Zendesk",
+  serviceType: "zendesk",
+  baseURL: "https://your-subdomain.zendesk.com/api/v2",
+  docsURL: "https://developer.zendesk.com/api-reference/",
+  credentialsSetupURL: "https://support.zendesk.com/hc/en-us/articles/4408889192858",
+  category: "other",
+  notes: 'Replace "your-subdomain" in baseURL with your Zendesk subdomain',
+  authTemplates: [
+    {
+      id: "api-token",
+      name: "API Token",
+      type: "api_key",
+      description: "API token with email/token for Basic Auth. Create at Admin > Channels > API",
+      requiredFields: ["apiKey", "username"],
+      optionalFields: ["subdomain"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Basic"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (User Authorization)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth client for user authorization. Create at Admin > Channels > API > OAuth Clients",
+      requiredFields: ["clientId", "clientSecret", "redirectUri", "subdomain"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://{subdomain}.zendesk.com/oauth/authorizations/new",
+        tokenUrl: "https://{subdomain}.zendesk.com/oauth/tokens"
+      },
+      scopes: ["read", "write", "tickets:read", "tickets:write"]
+    }
+  ]
+};
+var intercomTemplate = {
+  id: "intercom",
+  name: "Intercom",
+  serviceType: "intercom",
+  baseURL: "https://api.intercom.io",
+  docsURL: "https://developers.intercom.com/docs/",
+  credentialsSetupURL: "https://developers.intercom.com/docs/build-an-integration",
+  category: "other",
+  authTemplates: [
+    {
+      id: "access-token",
+      name: "Access Token",
+      type: "api_key",
+      description: "Access token for API access. Create app at app.intercom.com/developers",
+      requiredFields: ["apiKey"],
+      defaults: {
+        type: "api_key",
+        headerName: "Authorization",
+        headerPrefix: "Bearer"
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (App Installation)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth for Intercom app marketplace distribution",
+      requiredFields: ["clientId", "clientSecret", "redirectUri"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://app.intercom.com/oauth",
+        tokenUrl: "https://api.intercom.io/auth/eagle/token"
+      }
+    }
+  ]
+};
+var shopifyTemplate = {
+  id: "shopify",
+  name: "Shopify",
+  serviceType: "shopify",
+  baseURL: "https://your-store.myshopify.com/admin/api/2024-01",
+  docsURL: "https://shopify.dev/docs/api",
+  credentialsSetupURL: "https://partners.shopify.com/",
+  category: "other",
+  notes: 'Replace "your-store" in baseURL with your store name',
+  authTemplates: [
+    {
+      id: "access-token",
+      name: "Admin API Access Token",
+      type: "api_key",
+      description: "Private app access token. Create custom app at your-store.myshopify.com/admin/apps",
+      requiredFields: ["apiKey"],
+      optionalFields: ["subdomain"],
+      defaults: {
+        type: "api_key",
+        headerName: "X-Shopify-Access-Token",
+        headerPrefix: ""
+      }
+    },
+    {
+      id: "oauth-user",
+      name: "OAuth (Public/Custom App)",
+      type: "oauth",
+      flow: "authorization_code",
+      description: "OAuth for public apps or per-store custom apps. Create at partners.shopify.com",
+      requiredFields: ["clientId", "clientSecret", "redirectUri", "subdomain"],
+      optionalFields: ["scope"],
+      defaults: {
+        type: "oauth",
+        flow: "authorization_code",
+        authorizationUrl: "https://{subdomain}.myshopify.com/admin/oauth/authorize",
+        tokenUrl: "https://{subdomain}.myshopify.com/admin/oauth/access_token"
+      },
+      scopes: ["read_products", "write_products", "read_orders", "write_orders"]
+    }
+  ]
+};
+
+// src/connectors/vendors/templates/index.ts
+var allVendorTemplates = [
+  // Major Vendors (first for visibility)
+  microsoftTemplate,
+  googleTemplate,
+  // Communication
+  slackTemplate,
+  discordTemplate,
+  telegramTemplate,
+  // Development
+  githubTemplate,
+  gitlabTemplate,
+  bitbucketTemplate,
+  jiraTemplate,
+  linearTemplate,
+  asanaTemplate,
+  trelloTemplate,
+  // Productivity
+  notionTemplate,
+  airtableTemplate,
+  confluenceTemplate,
+  // CRM
+  salesforceTemplate,
+  hubspotTemplate,
+  pipedriveTemplate,
+  // Payments
+  stripeTemplate,
+  paypalTemplate,
+  // Cloud
+  awsTemplate,
+  // Storage
+  dropboxTemplate,
+  boxTemplate,
+  // Email
+  sendgridTemplate,
+  mailchimpTemplate,
+  postmarkTemplate,
+  // Monitoring
+  datadogTemplate,
+  pagerdutyTemplate,
+  sentryTemplate,
+  // Search
+  serperTemplate,
+  braveSearchTemplate,
+  tavilyTemplate,
+  rapidapiSearchTemplate,
+  // Scrape
+  zenrowsTemplate,
+  // Other
+  twilioTemplate,
+  zendeskTemplate,
+  intercomTemplate,
+  shopifyTemplate
+];
+var VENDOR_ICON_MAP = {
+  // Major Vendors (unified)
+  microsoft: "microsoft",
+  google: "google",
+  // Cloud
+  aws: "amazonwebservices",
+  azure: "microsoftazure",
+  gcp: "googlecloud",
+  // Communication
+  discord: "discord",
+  slack: "slack",
+  telegram: "telegram",
+  "microsoft-teams": "microsoftteams",
+  // CRM
+  salesforce: "salesforce",
+  hubspot: "hubspot",
+  pipedrive: "pipedrive",
+  // Development
+  github: "github",
+  gitlab: "gitlab",
+  bitbucket: "bitbucket",
+  jira: "jira",
+  confluence: "confluence",
+  trello: "trello",
+  linear: "linear",
+  asana: "asana",
+  // Productivity
+  notion: "notion",
+  airtable: "airtable",
+  "google-workspace": "google",
+  "google-drive": "googledrive",
+  "microsoft-365": "microsoft365",
+  onedrive: "onedrive",
+  // Payments
+  stripe: "stripe",
+  paypal: "paypal",
+  // Email
+  sendgrid: "sendgrid",
+  mailchimp: "mailchimp",
+  postmark: "postmark",
+  // Storage
+  dropbox: "dropbox",
+  box: "box",
+  // Monitoring
+  datadog: "datadog",
+  pagerduty: "pagerduty",
+  sentry: "sentry",
+  // Search
+  serper: null,
+  // No Simple Icon available
+  "brave-search": "brave",
+  tavily: null,
+  // No Simple Icon available
+  rapidapi: "rapidapi",
+  // Scrape
+  zenrows: null,
+  // No Simple Icon available
+  // Other
+  twilio: "twilio",
+  zendesk: "zendesk",
+  intercom: "intercom",
+  shopify: "shopify"
+};
+var FALLBACK_PLACEHOLDERS = {
+  // Major Vendors (fallbacks in case Simple Icons doesn't work)
+  microsoft: { color: "#00A4EF", letter: "M" },
+  google: { color: "#4285F4", letter: "G" },
+  // Cloud (trademark removed from Simple Icons)
+  aws: { color: "#FF9900", letter: "A" },
+  azure: { color: "#0078D4", letter: "A" },
+  // Communication (trademark removed)
+  slack: { color: "#4A154B", letter: "S" },
+  "microsoft-teams": { color: "#6264A7", letter: "T" },
+  // CRM (trademark removed)
+  salesforce: { color: "#00A1E0", letter: "S" },
+  pipedrive: { color: "#1A1F26", letter: "P" },
+  // Productivity (trademark removed)
+  "microsoft-365": { color: "#D83B01", letter: "M" },
+  onedrive: { color: "#0078D4", letter: "O" },
+  // Email (trademark removed)
+  sendgrid: { color: "#1A82E2", letter: "S" },
+  postmark: { color: "#FFDE00", letter: "P" },
+  // Search (no Simple Icon available)
+  serper: { color: "#4A90A4", letter: "S" },
+  tavily: { color: "#7C3AED", letter: "T" },
+  rapidapi: { color: "#0055DA", letter: "R" },
+  // Scrape (no Simple Icon available)
+  zenrows: { color: "#00D4AA", letter: "Z" },
+  // Other (trademark removed)
+  twilio: { color: "#F22F46", letter: "T" }
+};
+function slugToKey(slug) {
+  return `si${slug.charAt(0).toUpperCase()}${slug.slice(1)}`;
+}
+function getSimpleIcon(slug) {
+  const key = slugToKey(slug);
+  return simpleIcons__namespace[key];
+}
+function generatePlaceholderSvg(letter, color) {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="4" fill="${color}"/><text x="12" y="17" font-family="system-ui, sans-serif" font-size="14" font-weight="600" fill="white" text-anchor="middle">${letter}</text></svg>`;
+}
+function hasVendorLogo(vendorId) {
+  const slug = VENDOR_ICON_MAP[vendorId];
+  if (slug === void 0) {
+    return false;
+  }
+  if (slug !== null && getSimpleIcon(slug)) {
+    return true;
+  }
+  return vendorId in FALLBACK_PLACEHOLDERS;
+}
+function getVendorLogo(vendorId) {
+  const slug = VENDOR_ICON_MAP[vendorId];
+  if (slug === void 0) {
+    return void 0;
+  }
+  if (slug !== null) {
+    const icon = getSimpleIcon(slug);
+    if (icon) {
+      return {
+        vendorId,
+        svg: icon.svg,
+        hex: icon.hex,
+        isPlaceholder: false,
+        simpleIconsSlug: slug
+      };
+    }
+  }
+  const fallback = FALLBACK_PLACEHOLDERS[vendorId];
+  if (fallback) {
+    return {
+      vendorId,
+      svg: generatePlaceholderSvg(fallback.letter, fallback.color),
+      hex: fallback.color.replace("#", ""),
+      isPlaceholder: true
+    };
+  }
+  return void 0;
+}
+function getVendorLogoSvg(vendorId, color) {
+  const logo = getVendorLogo(vendorId);
+  if (!logo) return void 0;
+  if (color && !logo.isPlaceholder) {
+    return logo.svg.replace(/fill="[^"]*"/g, `fill="#${color}"`);
+  }
+  return logo.svg;
+}
+function getVendorColor(vendorId) {
+  const logo = getVendorLogo(vendorId);
+  return logo?.hex;
+}
+function getAllVendorLogos() {
+  const logos = /* @__PURE__ */ new Map();
+  for (const vendorId of Object.keys(VENDOR_ICON_MAP)) {
+    const logo = getVendorLogo(vendorId);
+    if (logo) {
+      logos.set(vendorId, logo);
+    }
+  }
+  return logos;
+}
+function listVendorsWithLogos() {
+  return Object.keys(VENDOR_ICON_MAP).filter(hasVendorLogo);
+}
+var SIMPLE_ICONS_CDN = "https://cdn.simpleicons.org";
+function getVendorLogoCdnUrl(vendorId, color) {
+  const slug = VENDOR_ICON_MAP[vendorId];
+  if (!slug) return void 0;
+  if (color) {
+    return `${SIMPLE_ICONS_CDN}/${slug}/${color}`;
+  }
+  return `${SIMPLE_ICONS_CDN}/${slug}`;
+}
+
+// src/connectors/vendors/index.ts
+initVendorRegistry(allVendorTemplates);
 
 // src/infrastructure/observability/index.ts
 init_Logger();
@@ -51907,6 +53697,7 @@ exports.RollingWindowStrategy = RollingWindowStrategy;
 exports.SERVICE_DEFINITIONS = SERVICE_DEFINITIONS;
 exports.SERVICE_INFO = SERVICE_INFO;
 exports.SERVICE_URL_PATTERNS = SERVICE_URL_PATTERNS;
+exports.SIMPLE_ICONS_CDN = SIMPLE_ICONS_CDN;
 exports.STT_MODELS = STT_MODELS;
 exports.STT_MODEL_REGISTRY = STT_MODEL_REGISTRY;
 exports.ScrapeProvider = ScrapeProvider;
@@ -51941,6 +53732,7 @@ exports.ToolTimeoutError = ToolTimeoutError;
 exports.TruncateCompactor = TruncateCompactor;
 exports.UniversalAgent = UniversalAgent;
 exports.VENDORS = VENDORS;
+exports.VENDOR_ICON_MAP = VENDOR_ICON_MAP;
 exports.VIDEO_MODELS = VIDEO_MODELS;
 exports.VIDEO_MODEL_REGISTRY = VIDEO_MODEL_REGISTRY;
 exports.Vendor = Vendor;
@@ -51949,11 +53741,13 @@ exports.WORKING_MEMORY_INSTRUCTIONS = WORKING_MEMORY_INSTRUCTIONS;
 exports.WebSearchSource = WebSearchSource;
 exports.WorkingMemory = WorkingMemory;
 exports.addJitter = addJitter;
+exports.allVendorTemplates = allVendorTemplates;
 exports.assertNotDestroyed = assertNotDestroyed;
 exports.authenticatedFetch = authenticatedFetch;
 exports.backoffSequence = backoffSequence;
 exports.backoffWait = backoffWait;
 exports.bash = bash;
+exports.buildAuthConfig = buildAuthConfig;
 exports.buildEndpointWithQuery = buildEndpointWithQuery;
 exports.buildFeatureInstructions = buildFeatureInstructions;
 exports.buildQueryString = buildQueryString;
@@ -51968,6 +53762,7 @@ exports.canTaskExecute = canTaskExecute;
 exports.createAgentStorage = createAgentStorage;
 exports.createAuthenticatedFetch = createAuthenticatedFetch;
 exports.createBashTool = createBashTool;
+exports.createConnectorFromTemplate = createConnectorFromTemplate;
 exports.createContextTools = createContextTools;
 exports.createEditFileTool = createEditFileTool;
 exports.createEstimator = createEstimator;
@@ -52020,8 +53815,13 @@ exports.getAgentContextTools = getAgentContextTools;
 exports.getAllBuiltInTools = getAllBuiltInTools;
 exports.getAllInstructions = getAllInstructions;
 exports.getAllServiceIds = getAllServiceIds;
+exports.getAllVendorLogos = getAllVendorLogos;
+exports.getAllVendorTemplates = getAllVendorTemplates;
 exports.getBackgroundOutput = getBackgroundOutput;
 exports.getBasicIntrospectionTools = getBasicIntrospectionTools;
+exports.getConnectorTools = getConnectorTools;
+exports.getCredentialsSetupURL = getCredentialsSetupURL;
+exports.getDocsURL = getDocsURL;
 exports.getImageModelInfo = getImageModelInfo;
 exports.getImageModelsByVendor = getImageModelsByVendor;
 exports.getImageModelsWithFeature = getImageModelsWithFeature;
@@ -52047,6 +53847,13 @@ exports.getToolCategories = getToolCategories;
 exports.getToolRegistry = getToolRegistry;
 exports.getToolsByCategory = getToolsByCategory;
 exports.getToolsRequiringConnector = getToolsRequiringConnector;
+exports.getVendorAuthTemplate = getVendorAuthTemplate;
+exports.getVendorColor = getVendorColor;
+exports.getVendorInfo = getVendorInfo;
+exports.getVendorLogo = getVendorLogo;
+exports.getVendorLogoCdnUrl = getVendorLogoCdnUrl;
+exports.getVendorLogoSvg = getVendorLogoSvg;
+exports.getVendorTemplate = getVendorTemplate;
 exports.getVideoModelInfo = getVideoModelInfo;
 exports.getVideoModelsByVendor = getVideoModelsByVendor;
 exports.getVideoModelsWithAudio = getVideoModelsWithAudio;
@@ -52055,6 +53862,7 @@ exports.glob = glob2;
 exports.globalErrorHandler = globalErrorHandler;
 exports.grep = grep;
 exports.hasClipboardImage = hasClipboardImage;
+exports.hasVendorLogo = hasVendorLogo;
 exports.isBlockedCommand = isBlockedCommand;
 exports.isErrorEvent = isErrorEvent;
 exports.isExcludedExtension = isExcludedExtension;
@@ -52075,6 +53883,11 @@ exports.isVendor = isVendor;
 exports.killBackgroundProcess = killBackgroundProcess;
 exports.listConnectorsByServiceTypes = listConnectorsByServiceTypes;
 exports.listDirectory = listDirectory;
+exports.listVendorIds = listVendorIds;
+exports.listVendors = listVendors;
+exports.listVendorsByAuthType = listVendorsByAuthType;
+exports.listVendorsByCategory = listVendorsByCategory;
+exports.listVendorsWithLogos = listVendorsWithLogos;
 exports.readClipboardImage = readClipboardImage;
 exports.readFile = readFile5;
 exports.registerScrapeProvider = registerScrapeProvider;
