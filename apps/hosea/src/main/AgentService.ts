@@ -7,13 +7,16 @@
 import { readdir, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import {
   Connector,
   Vendor,
   Agent,
-  TaskAgent,
-  ResearchAgent,
-  UniversalAgent,
+  // NextGen context (replaces old AgentContext)
+  AgentContextNextGen,
+  // NextGen plugins for inspector
+  InContextMemoryPluginNextGen,
+  PersistentInstructionsPluginNextGen,
   ImageGeneration,
   VideoGeneration,
   getModelsByVendor,
@@ -53,8 +56,6 @@ import {
   type ITTSModelDescription,
   type IVoiceInfo,
   type ToolFunction,
-  type UniversalAgentConfig,
-  type UniversalEvent,
   type IContextStorage,
   type IAgentDefinitionStorage,
   type StoredAgentDefinition,
@@ -65,8 +66,10 @@ import {
   type IImageModelDescription,
   type IVideoModelDescription,
   type AgentConfig,
-  type TaskAgentConfig,
-  type ResearchAgentConfig,
+  type ContextFeatures,
+  type ContextBudget,
+  type CompactionStrategyName,
+  type AgentContextNextGenConfig,
 } from '@oneringai/agents';
 
 interface StoredConnectorConfig {
@@ -83,22 +86,52 @@ interface StoredConnectorConfig {
 }
 
 /**
+ * NextGen strategy type (replaces old strategies)
+ */
+type NextGenStrategy = 'proactive' | 'balanced' | 'lazy';
+
+/**
+ * Map old strategies to NextGen strategies
+ */
+function mapToNextGenStrategy(oldStrategy: string): NextGenStrategy {
+  switch (oldStrategy) {
+    case 'proactive':
+      return 'proactive';
+    case 'aggressive':
+      return 'proactive'; // Map aggressive → proactive
+    case 'lazy':
+      return 'lazy';
+    case 'rolling-window':
+      return 'lazy'; // Map rolling-window → lazy
+    case 'adaptive':
+      return 'balanced'; // Map adaptive → balanced
+    case 'balanced':
+      return 'balanced';
+    default:
+      return 'balanced'; // Default to balanced
+  }
+}
+
+/**
  * Stored Agent Configuration
+ *
+ * Note: As of NextGen migration, only 'basic' agent type is supported.
+ * TaskAgent, UniversalAgent, ResearchAgent are deprecated.
  */
 export interface StoredAgentConfig {
   id: string;
   name: string;
   connector: string;
   model: string;
-  agentType: 'basic' | 'task' | 'research' | 'universal';
+  agentType: 'basic'; // Only 'basic' supported in NextGen
   instructions: string;
   temperature: number;
-  // Context settings
-  contextStrategy: string;
+  // Context settings (NextGen strategies only)
+  contextStrategy: NextGenStrategy;
   maxContextTokens: number;
   responseReserve: number;
-  // Memory settings
-  memoryEnabled: boolean;
+  // Working Memory settings (renamed from 'memory' for NextGen clarity)
+  workingMemoryEnabled: boolean;
   maxMemorySizeBytes: number;
   maxMemoryIndexEntries: number;
   memorySoftLimitPercent: number;
@@ -109,11 +142,11 @@ export interface StoredAgentConfig {
   maxInContextTokens: number;
   // Persistent instructions
   persistentInstructionsEnabled: boolean;
-  // History settings
+  // History settings (Note: managed by conversation in NextGen)
   historyEnabled: boolean;
   maxHistoryMessages: number;
   preserveRecent: number;
-  // Cache settings
+  // Cache settings (Note: may not be in NextGen)
   cacheEnabled: boolean;
   cacheTtlMs: number;
   cacheMaxEntries: number;
@@ -439,7 +472,7 @@ const DEFAULT_CONFIG: HoseaConfig = {
 export interface AgentInstance {
   instanceId: string;
   agentConfigId: string;
-  agent: Agent | TaskAgent | ResearchAgent | UniversalAgent;
+  agent: Agent; // Only Agent type in NextGen
   sessionStorage: IContextStorage;
   createdAt: number;
 }
@@ -450,7 +483,7 @@ const MAX_INSTANCES = 10;
 export class AgentService {
   private dataDir: string;
   private isDev: boolean;
-  private agent: UniversalAgent | null = null;
+  private agent: Agent | null = null;
   private config: HoseaConfig = DEFAULT_CONFIG;
   private connectors: Map<string, StoredConnectorConfig> = new Map();
   private apiConnectors: Map<string, StoredAPIConnectorConfig> = new Map();
@@ -475,7 +508,7 @@ export class AgentService {
       version: 1,
       agentId: config.id,
       name: config.name,
-      agentType: config.agentType === 'basic' ? 'agent' : `${config.agentType}-agent`,
+      agentType: 'agent', // Always 'agent' in NextGen (no other types)
       createdAt: new Date(config.createdAt).toISOString(),
       updatedAt: new Date(config.updatedAt).toISOString(),
       connector: {
@@ -484,11 +517,11 @@ export class AgentService {
       },
       instructions: config.instructions,
       features: {
-        memory: config.memoryEnabled,
+        workingMemory: config.workingMemoryEnabled,
         inContextMemory: config.inContextMemoryEnabled,
         persistentInstructions: config.persistentInstructionsEnabled,
-        history: config.historyEnabled,
-        permissions: config.permissionsEnabled,
+        // Note: history and permissions are Hosea-specific, not part of NextGen ContextFeatures
+        // They are stored in typeConfig instead
       },
       // Store all Hosea-specific settings in typeConfig
       typeConfig: {
@@ -502,6 +535,9 @@ export class AgentService {
         contextAllocationPercent: config.contextAllocationPercent,
         maxInContextEntries: config.maxInContextEntries,
         maxInContextTokens: config.maxInContextTokens,
+        // History and permissions are Hosea-specific features (not in NextGen)
+        historyEnabled: config.historyEnabled,
+        permissionsEnabled: config.permissionsEnabled,
         maxHistoryMessages: config.maxHistoryMessages,
         preserveRecent: config.preserveRecent,
         cacheTtlMs: config.cacheTtlMs,
@@ -521,17 +557,15 @@ export class AgentService {
     const typeConfig = definition.typeConfig ?? {};
     const features = definition.features ?? {};
 
-    // Map agent type back to Hosea's format
-    let agentType: StoredAgentConfig['agentType'] = 'universal';
-    if (definition.agentType === 'agent') {
-      agentType = 'basic';
-    } else if (definition.agentType === 'task-agent') {
-      agentType = 'task';
-    } else if (definition.agentType === 'research-agent') {
-      agentType = 'research';
-    } else if (definition.agentType === 'universal-agent') {
-      agentType = 'universal';
-    }
+    // Always convert to 'basic' type - all other agent types are deprecated in NextGen
+    const agentType: StoredAgentConfig['agentType'] = 'basic';
+
+    // Map old strategies to NextGen strategies
+    const contextStrategy = mapToNextGenStrategy((typeConfig.contextStrategy as string) ?? 'proactive');
+
+    // Handle backward compatibility for feature names:
+    // Old stored definitions use 'memory', new ones use 'workingMemory'
+    const workingMemoryEnabled = Boolean(features.workingMemory ?? (features as Record<string, unknown>).memory ?? true);
 
     return {
       id: definition.agentId,
@@ -541,10 +575,10 @@ export class AgentService {
       agentType,
       instructions: definition.instructions ?? '',
       temperature: (typeConfig.temperature as number) ?? 0.7,
-      contextStrategy: (typeConfig.contextStrategy as string) ?? 'proactive',
+      contextStrategy,
       maxContextTokens: (typeConfig.maxContextTokens as number) ?? 128000,
       responseReserve: (typeConfig.responseReserve as number) ?? 4096,
-      memoryEnabled: features.memory ?? true,
+      workingMemoryEnabled,
       maxMemorySizeBytes: (typeConfig.maxMemorySizeBytes as number) ?? 25 * 1024 * 1024,
       maxMemoryIndexEntries: (typeConfig.maxMemoryIndexEntries as number) ?? 30,
       memorySoftLimitPercent: (typeConfig.memorySoftLimitPercent as number) ?? 80,
@@ -553,13 +587,14 @@ export class AgentService {
       maxInContextEntries: (typeConfig.maxInContextEntries as number) ?? 20,
       maxInContextTokens: (typeConfig.maxInContextTokens as number) ?? 4000,
       persistentInstructionsEnabled: features.persistentInstructions ?? false,
-      historyEnabled: features.history ?? true,
+      // History and permissions are Hosea-specific (not in NextGen), stored in typeConfig
+      historyEnabled: (typeConfig.historyEnabled as boolean) ?? true,
       maxHistoryMessages: (typeConfig.maxHistoryMessages as number) ?? 100,
       preserveRecent: (typeConfig.preserveRecent as number) ?? 10,
       cacheEnabled: (typeConfig.cacheEnabled as boolean) ?? true,
       cacheTtlMs: (typeConfig.cacheTtlMs as number) ?? 300000,
       cacheMaxEntries: (typeConfig.cacheMaxEntries as number) ?? 1000,
-      permissionsEnabled: features.permissions ?? true,
+      permissionsEnabled: (typeConfig.permissionsEnabled as boolean) ?? true,
       tools: (typeConfig.tools as string[]) ?? [],
       createdAt: new Date(definition.createdAt).getTime(),
       updatedAt: new Date(definition.updatedAt).getTime(),
@@ -603,6 +638,7 @@ export class AgentService {
     await this.loadUniversalConnectors();
     await this.migrateAPIConnectorsToUniversal();
     await this.loadAgents();
+    await this.migrateAgentsToNextGen(); // Migrate existing agents to NextGen format
     await this.loadMCPServers();
     this.initializeLogLevel();
   }
@@ -748,6 +784,56 @@ export class AgentService {
     }
   }
 
+  /**
+   * Migrate existing agents to NextGen format:
+   * - Convert all agent types to 'basic'
+   * - Convert old strategies to new strategies (aggressive→proactive, rolling-window→lazy, adaptive→balanced)
+   * - Rename memoryEnabled to workingMemoryEnabled (if needed)
+   */
+  private async migrateAgentsToNextGen(): Promise<void> {
+    try {
+      for (const [id, config] of this.agents.entries()) {
+        let needsSave = false;
+        const updates: Partial<StoredAgentConfig> = {};
+
+        // Convert agent type to 'basic' if it was something else
+        if (config.agentType !== 'basic') {
+          updates.agentType = 'basic';
+          needsSave = true;
+          console.log(`NextGen migration: Converted agent "${config.name}" from "${config.agentType}" to "basic"`);
+        }
+
+        // Convert old strategies to NextGen strategies
+        const oldStrategy = config.contextStrategy;
+        const newStrategy = mapToNextGenStrategy(oldStrategy);
+        if (oldStrategy !== newStrategy) {
+          updates.contextStrategy = newStrategy;
+          needsSave = true;
+          console.log(`NextGen migration: Converted agent "${config.name}" strategy from "${oldStrategy}" to "${newStrategy}"`);
+        }
+
+        // Handle legacy memoryEnabled field if present (backwards compatibility)
+        const legacyConfig = config as unknown as Record<string, unknown>;
+        if ('memoryEnabled' in legacyConfig && !('workingMemoryEnabled' in legacyConfig)) {
+          updates.workingMemoryEnabled = legacyConfig.memoryEnabled as boolean;
+          needsSave = true;
+          console.log(`NextGen migration: Renamed memoryEnabled to workingMemoryEnabled for agent "${config.name}"`);
+        }
+
+        // Save if any changes were made
+        if (needsSave) {
+          const updatedConfig = { ...config, ...updates, updatedAt: Date.now() };
+          this.agents.set(id, updatedConfig);
+          // Persist to storage
+          const definition = this.toStoredDefinition(updatedConfig);
+          await this.agentDefinitionStorage.save(definition);
+        }
+      }
+    } catch (error) {
+      console.warn('Error during NextGen agent migration:', error);
+    }
+  }
+
   async initialize(connectorName: string, model: string): Promise<{ success: boolean; error?: string }> {
     try {
       // Get connector config
@@ -776,17 +862,18 @@ export class AgentService {
         baseDirectory: join(this.dataDir, '..'),
       });
 
-      // Create agent with UI capabilities prompt
-      const agentConfig: UniversalAgentConfig = {
+      // Create agent with UI capabilities prompt (NextGen)
+      const agentConfig: AgentConfig = {
         connector: connectorName,
         model,
         instructions: HOSEA_UI_CAPABILITIES_PROMPT,
-        session: {
+        context: {
+          model,
           storage: this.sessionStorage,
         },
       };
 
-      this.agent = UniversalAgent.create(agentConfig);
+      this.agent = Agent.create(agentConfig);
 
       // Update config
       this.config.activeConnector = connectorName;
@@ -805,8 +892,9 @@ export class AgentService {
     }
 
     try {
-      const response = await this.agent.chat(message);
-      return { success: true, response: response.text };
+      // NextGen uses run() instead of chat()
+      const response = await this.agent.run(message);
+      return { success: true, response: response.output_text || '' };
     } catch (error) {
       return { success: false, error: String(error) };
     }
@@ -824,17 +912,18 @@ export class AgentService {
 
     try {
       for await (const event of this.agent.stream(message)) {
-        const e = event as UniversalEvent;
+        // Cast through unknown to any for flexible event handling
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const e = event as any;
 
         // Detect plan mode transitions to control text suppression
         if (e.type === 'plan:analyzing' || e.type === 'plan:created') {
           suppressText = true;
         } else if (e.type === 'plan:approved' || e.type === 'mode:changed') {
           // Resume text when plan is approved or mode changes
-          const modeEvent = e as any;
-          if (e.type === 'mode:changed' && modeEvent.to === 'executing') {
+          if (e.type === 'mode:changed' && e.to === 'executing') {
             // Keep suppressing during execution - task events will show progress
-          } else if (e.type === 'mode:changed' && modeEvent.to === 'interactive') {
+          } else if (e.type === 'mode:changed' && e.to === 'interactive') {
             suppressText = false;
           } else if (e.type === 'plan:approved') {
             // Suppress during execution, resume when we get results
@@ -847,12 +936,13 @@ export class AgentService {
         if (e.type === 'text:delta') {
           // Only forward text if we're not in plan mode
           if (!suppressText) {
-            yield { type: 'text', content: e.delta };
+            yield { type: 'text', content: String(e.delta || '') };
           }
         } else if (e.type === 'tool:start') {
           // Get tool description using describeCall or defaultDescribeCall
           const args = (e.args || {}) as Record<string, unknown>;
-          const tool = this.agent?.tools?.get(e.name);
+          const toolName = String(e.name || 'unknown');
+          const tool = this.agent?.tools?.get(toolName);
           let description = '';
           if (tool?.describeCall) {
             try {
@@ -866,28 +956,28 @@ export class AgentService {
 
           yield {
             type: 'tool_start',
-            tool: e.name,
+            tool: toolName,
             args,
             description,
           };
         } else if (e.type === 'tool:complete') {
           yield {
             type: 'tool_end',
-            tool: e.name,
-            durationMs: e.durationMs,
+            tool: String(e.name || 'unknown'),
+            durationMs: typeof e.durationMs === 'number' ? e.durationMs : undefined,
           };
         } else if (e.type === 'tool:error') {
           yield {
             type: 'tool_error',
-            tool: e.name,
-            error: e.error,
+            tool: String(e.name || 'unknown'),
+            error: String(e.error || 'Unknown error'),
           };
         } else if (e.type === 'text:done') {
           yield { type: 'done' };
         } else if (e.type === 'error') {
-          yield { type: 'error', content: e.error };
+          yield { type: 'error', content: String(e.error || e.message || 'Unknown error') };
         }
-        // Plan events from UniversalAgent
+        // Plan events (legacy - may not be emitted in NextGen)
         else if (e.type === 'plan:created') {
           yield { type: 'plan:created', plan: this.serializePlan((e as any).plan) };
         } else if (e.type === 'plan:awaiting_approval') {
@@ -966,7 +1056,7 @@ export class AgentService {
     if (!this.agent) {
       return { success: false, error: 'Agent not initialized' };
     }
-    // UniversalAgent accepts approval via stream - send approval message
+    // Agent accepts approval via stream - send approval message
     // This will be picked up by the agent's intent analysis as an approval
     try {
       // Return success - the actual approval happens via stream when user sends approval message
@@ -1008,7 +1098,8 @@ export class AgentService {
       initialized: this.agent !== null,
       connector: this.config.activeConnector,
       model: this.config.activeModel,
-      mode: this.agent?.getMode() || null,
+      // Mode concept removed in NextGen (was UniversalAgent-specific)
+      mode: null,
     };
   }
 
@@ -2009,68 +2100,51 @@ export class AgentService {
       // Combine user instructions with UI capabilities prompt (user instructions first)
       const fullInstructions = (agentConfig.instructions || '') + '\n\n' + HOSEA_UI_CAPABILITIES_PROMPT;
 
-      // Create agent with full configuration including context features
-      // NOTE: All context settings (features, memory, cache, etc.) are passed through
-      // the `context` property, which is passed to AgentContext.create()
-      const config: UniversalAgentConfig = {
+      // Create agent with NextGen context configuration
+      // NOTE: NextGen simplifies context management - no history/permissions/cache options
+      const config: AgentConfig = {
         connector: agentConfig.connector,
         model: agentConfig.model,
         name: agentConfig.name,
         tools,
         instructions: fullInstructions,
         temperature: agentConfig.temperature,
-        session: {
-          storage: this.sessionStorage,
-        },
-        // Context configuration - this is the SINGLE source of truth for all context settings
+        // NextGen context configuration
         context: {
-          // Agent ID - CRITICAL for persistent instructions to work across restarts
+          model: agentConfig.model,
           agentId: agentConfig.id,
-          // Feature toggles - controls which components are created and which tools are registered
+          maxContextTokens: agentConfig.maxContextTokens,
+          responseReserve: agentConfig.responseReserve,
+          strategy: agentConfig.contextStrategy, // Already NextGen type from StoredAgentConfig
+          storage: this.sessionStorage,
+          // Feature toggles (NextGen only has these 3)
           features: {
-            memory: agentConfig.memoryEnabled,
+            workingMemory: agentConfig.workingMemoryEnabled,
             inContextMemory: agentConfig.inContextMemoryEnabled,
             persistentInstructions: agentConfig.persistentInstructionsEnabled ?? false,
-            history: agentConfig.historyEnabled,
-            permissions: agentConfig.permissionsEnabled,
           },
-          // Context management
-          strategy: agentConfig.contextStrategy as 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive',
-          maxContextTokens: agentConfig.maxContextTokens,
-          // Working memory config (only used if features.memory is true)
-          memory: agentConfig.memoryEnabled
-            ? {
-                maxSizeBytes: agentConfig.maxMemorySizeBytes,
-                maxIndexEntries: agentConfig.maxMemoryIndexEntries,
-                descriptionMaxLength: 150, // Default value
-                softLimitPercent: agentConfig.memorySoftLimitPercent,
-                contextAllocationPercent: agentConfig.contextAllocationPercent,
-              }
-            : undefined,
-          // In-context memory config (only used if features.inContextMemory is true)
-          inContextMemory: agentConfig.inContextMemoryEnabled
-            ? {
-                maxEntries: agentConfig.maxInContextEntries,
-                maxTotalTokens: agentConfig.maxInContextTokens,
-              }
-            : undefined,
-          // History config (only used if features.history is true)
-          history: agentConfig.historyEnabled
-            ? {
-                maxMessages: agentConfig.maxHistoryMessages,
-                preserveRecent: agentConfig.preserveRecent,
-              }
-            : undefined,
-          // Cache config
-          cache: {
-            enabled: agentConfig.cacheEnabled,
-            defaultTtlMs: agentConfig.cacheTtlMs,
-            maxEntries: agentConfig.cacheMaxEntries,
+          // Plugin-specific configurations
+          plugins: {
+            workingMemory: agentConfig.workingMemoryEnabled
+              ? {
+                  maxSizeBytes: agentConfig.maxMemorySizeBytes,
+                  maxIndexEntries: agentConfig.maxMemoryIndexEntries,
+                  descriptionMaxLength: 150,
+                  softLimitPercent: agentConfig.memorySoftLimitPercent,
+                  contextAllocationPercent: agentConfig.contextAllocationPercent,
+                }
+              : undefined,
+            inContextMemory: agentConfig.inContextMemoryEnabled
+              ? {
+                  maxEntries: agentConfig.maxInContextEntries,
+                  maxTotalTokens: agentConfig.maxInContextTokens,
+                }
+              : undefined,
           },
         },
       };
 
-      this.agent = UniversalAgent.create(config);
+      this.agent = Agent.create(config);
 
       // Update global config
       this.config.activeConnector = agentConfig.connector;
@@ -2108,13 +2182,13 @@ export class AgentService {
       name: 'Default Assistant',
       connector: connectorName,
       model,
-      agentType: 'universal' as const,
+      agentType: 'basic' as const,
       instructions: 'You are a helpful AI assistant. Use the rich formatting capabilities available to you (charts, diagrams, tables, code highlighting) to provide clear and visually informative responses when appropriate.',
       temperature: 0.7,
-      contextStrategy: 'proactive',
+      contextStrategy: 'proactive' as NextGenStrategy,
       maxContextTokens: 128000,
       responseReserve: 4096,
-      memoryEnabled: true,
+      workingMemoryEnabled: true,
       maxMemorySizeBytes: 25 * 1024 * 1024,
       maxMemoryIndexEntries: 30,
       memorySoftLimitPercent: 80,
@@ -2201,11 +2275,15 @@ export class AgentService {
       // Destroy current agent
       this.agent?.destroy();
 
-      // Resume from session with UI capabilities
-      this.agent = await UniversalAgent.resume(sessionId, {
+      // Resume from session with UI capabilities (NextGen)
+      this.agent = await Agent.resume(sessionId, {
         connector: this.config.activeConnector!,
         model: this.config.activeModel!,
         instructions: HOSEA_UI_CAPABILITIES_PROMPT,
+        context: {
+          model: this.config.activeModel!,
+          storage: this.sessionStorage,
+        },
         session: {
           storage: this.sessionStorage,
         },
@@ -2419,101 +2497,53 @@ export class AgentService {
       // Combine user instructions with UI capabilities prompt
       const fullInstructions = (agentConfig.instructions || '') + '\n\n' + HOSEA_UI_CAPABILITIES_PROMPT;
 
-      // Build context configuration
-      const contextConfig = {
-        agentId: instanceId,
+      // Build NextGen context configuration
+      // Note: Use agentConfigId (not instanceId) for persistent instructions so they're
+      // shared across all instances of the same agent. Instance ID is only for session storage.
+      logger.debug(`[createInstance] Creating agent with features: workingMemory=${agentConfig.workingMemoryEnabled}, inContextMemory=${agentConfig.inContextMemoryEnabled}, persistentInstructions=${agentConfig.persistentInstructionsEnabled}`);
+      logger.debug(`[createInstance] Agent ID for persistent instructions: ${agentConfigId}`);
+
+      const contextConfig: AgentContextNextGenConfig = {
+        model: agentConfig.model,
+        agentId: agentConfigId, // Use agent config ID for persistent instructions path
+        maxContextTokens: agentConfig.maxContextTokens,
+        responseReserve: agentConfig.responseReserve,
+        strategy: agentConfig.contextStrategy, // Already NextGen type
+        storage: sessionStorage,
         features: {
-          memory: agentConfig.memoryEnabled,
+          workingMemory: agentConfig.workingMemoryEnabled,
           inContextMemory: agentConfig.inContextMemoryEnabled,
           persistentInstructions: agentConfig.persistentInstructionsEnabled ?? false,
-          history: agentConfig.historyEnabled,
-          permissions: agentConfig.permissionsEnabled,
         },
-        strategy: agentConfig.contextStrategy as 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive',
-        maxContextTokens: agentConfig.maxContextTokens,
-        memory: agentConfig.memoryEnabled
-          ? {
-              maxSizeBytes: agentConfig.maxMemorySizeBytes,
-              maxIndexEntries: agentConfig.maxMemoryIndexEntries,
-              descriptionMaxLength: 150,
-              softLimitPercent: agentConfig.memorySoftLimitPercent,
-              contextAllocationPercent: agentConfig.contextAllocationPercent,
-            }
-          : undefined,
-        inContextMemory: agentConfig.inContextMemoryEnabled
-          ? {
-              maxEntries: agentConfig.maxInContextEntries,
-              maxTotalTokens: agentConfig.maxInContextTokens,
-            }
-          : undefined,
-        history: agentConfig.historyEnabled
-          ? {
-              maxMessages: agentConfig.maxHistoryMessages,
-              preserveRecent: agentConfig.preserveRecent,
-            }
-          : undefined,
-        cache: {
-          enabled: agentConfig.cacheEnabled,
-          defaultTtlMs: agentConfig.cacheTtlMs,
-          maxEntries: agentConfig.cacheMaxEntries,
+        plugins: {
+          workingMemory: agentConfig.workingMemoryEnabled
+            ? {
+                maxSizeBytes: agentConfig.maxMemorySizeBytes,
+                maxIndexEntries: agentConfig.maxMemoryIndexEntries,
+                descriptionMaxLength: 150,
+                softLimitPercent: agentConfig.memorySoftLimitPercent,
+                contextAllocationPercent: agentConfig.contextAllocationPercent,
+              }
+            : undefined,
+          inContextMemory: agentConfig.inContextMemoryEnabled
+            ? {
+                maxEntries: agentConfig.maxInContextEntries,
+                maxTotalTokens: agentConfig.maxInContextTokens,
+              }
+            : undefined,
         },
       };
 
-      // Create the appropriate agent type based on config
-      let agent: Agent | TaskAgent | ResearchAgent | UniversalAgent;
-
-      switch (agentConfig.agentType) {
-        case 'basic':
-          agent = Agent.create({
-            connector: agentConfig.connector,
-            model: agentConfig.model,
-            name: agentConfig.name,
-            tools,
-            instructions: fullInstructions,
-            temperature: agentConfig.temperature,
-            context: contextConfig,
-          } as AgentConfig);
-          break;
-
-        case 'task':
-          agent = TaskAgent.create({
-            connector: agentConfig.connector,
-            model: agentConfig.model,
-            name: agentConfig.name,
-            tools,
-            instructions: fullInstructions,
-            temperature: agentConfig.temperature,
-            context: contextConfig,
-          } as TaskAgentConfig);
-          break;
-
-        case 'research':
-          agent = ResearchAgent.create({
-            connector: agentConfig.connector,
-            model: agentConfig.model,
-            name: agentConfig.name,
-            tools,
-            instructions: fullInstructions,
-            temperature: agentConfig.temperature,
-            context: contextConfig,
-            sources: [], // Research sources would need to be configured separately
-          } as ResearchAgentConfig);
-          break;
-
-        case 'universal':
-        default:
-          agent = UniversalAgent.create({
-            connector: agentConfig.connector,
-            model: agentConfig.model,
-            name: agentConfig.name,
-            tools,
-            instructions: fullInstructions,
-            temperature: agentConfig.temperature,
-            session: { storage: sessionStorage },
-            context: contextConfig,
-          } as UniversalAgentConfig);
-          break;
-      }
+      // Create agent (only basic Agent type in NextGen - other types deprecated)
+      const agent = Agent.create({
+        connector: agentConfig.connector,
+        model: agentConfig.model,
+        name: agentConfig.name,
+        tools,
+        instructions: fullInstructions,
+        temperature: agentConfig.temperature,
+        context: contextConfig,
+      });
 
       // Register MCP tools with the agent if configured
       if (agentConfig.mcpServers && agentConfig.mcpServers.length > 0) {
@@ -2537,10 +2567,15 @@ export class AgentService {
       };
       this.instances.set(instanceId, agentInstance);
 
-      console.log(`Created agent instance ${instanceId} for config ${agentConfigId} (${agentConfig.name})`);
+      // Log plugin status for debugging
+      const ctx = agent.context as AgentContextNextGen;
+      const hasPI = ctx.hasPlugin('persistent_instructions');
+      logger.debug(`[createInstance] Persistent instructions plugin registered: ${hasPI}`);
+
+      logger.info(`Created agent instance ${instanceId} for config ${agentConfigId} (${agentConfig.name})`);
       return { success: true, instanceId };
     } catch (error) {
-      console.error('Error creating instance:', error);
+      logger.error(`Error creating instance: ${error instanceof Error ? error.message : String(error)}`);
       return { success: false, error: String(error) };
     }
   }
@@ -2603,15 +2638,15 @@ export class AgentService {
       return;
     }
 
-    // Track when we're in plan mode to suppress text output (for UniversalAgent)
+    // Track when we're in plan mode to suppress text output
     let suppressText = false;
 
     try {
-      // Check if the agent has a stream method (UniversalAgent, TaskAgent)
+      // Check if the agent has a stream method
       if ('stream' in instance.agent && typeof instance.agent.stream === 'function') {
-        for await (const event of (instance.agent as UniversalAgent).stream(message)) {
-          // Cast to any to support both StreamEventType and UniversalEvent formats
-          const e = event as { type: string; [key: string]: unknown };
+        for await (const event of instance.agent.stream(message)) {
+          // Cast through unknown to support various event type formats
+          const e = event as unknown as { type: string; [key: string]: unknown };
 
           // Detect plan mode transitions to control text suppression
           if (e.type === 'plan:analyzing' || e.type === 'plan:created') {
@@ -2625,7 +2660,7 @@ export class AgentService {
             suppressText = false;
           }
 
-          // Handle BOTH StreamEventType format (base Agent) and legacy format (UniversalAgent)
+          // Handle StreamEventType format from Agent.stream()
           // StreamEventType: response.output_text.delta, response.tool_execution.start, etc.
           // Legacy: text:delta, tool:start, etc.
 
@@ -2664,7 +2699,7 @@ export class AgentService {
               yield { type: 'tool_end', tool: toolName, durationMs };
             }
           }
-          // Legacy tool error (UniversalAgent only)
+          // Legacy tool error format
           else if (e.type === 'tool:error') {
             yield { type: 'tool_error', tool: (e as any).name, error: (e as any).error };
           }
@@ -2764,9 +2799,7 @@ export class AgentService {
       initialized: true,
       connector: agentConfig?.connector || null,
       model: agentConfig?.model || null,
-      mode: 'getMode' in instance.agent && typeof instance.agent.getMode === 'function'
-        ? (instance.agent as UniversalAgent).getMode()
-        : null,
+      mode: null, // Mode concept removed in NextGen (was UniversalAgent-specific)
       agentConfigId: instance.agentConfigId,
     };
   }
@@ -2850,7 +2883,7 @@ export class AgentService {
     } | null;
   }> {
     // Get the agent - either from instance or legacy single agent
-    let agent: Agent | TaskAgent | ResearchAgent | UniversalAgent | null = null;
+    let agent: Agent | null = null;
     let agentConfigId: string | null = null;
 
     if (instanceId) {
@@ -2889,7 +2922,7 @@ export class AgentService {
    * Get memory value for a specific instance
    */
   async getMemoryValueForInstance(instanceId: string | null, key: string): Promise<unknown> {
-    let agent: Agent | TaskAgent | ResearchAgent | UniversalAgent | null = null;
+    let agent: Agent | null = null;
 
     if (instanceId) {
       const instance = this.instances.get(instanceId);
@@ -2915,7 +2948,7 @@ export class AgentService {
    * Force compaction for a specific instance
    */
   async forceCompactionForInstance(instanceId: string | null): Promise<{ success: boolean; tokensFreed: number; error?: string }> {
-    let agent: Agent | TaskAgent | ResearchAgent | UniversalAgent | null = null;
+    let agent: Agent | null = null;
 
     if (instanceId) {
       const instance = this.instances.get(instanceId);
@@ -2931,14 +2964,16 @@ export class AgentService {
     }
 
     try {
-      const ctx = agent.context;
-      const beforeBudget = ctx.getLastBudget();
-      const beforeUsed = beforeBudget?.used ?? 0;
+      // NextGen uses calculateBudget() and prepare() for compaction
+      const ctx = agent.context as AgentContextNextGen;
+      const beforeBudget = await ctx.calculateBudget();
+      const beforeUsed = beforeBudget.totalUsed;
 
+      // prepare() triggers compaction if above threshold
       await ctx.prepare();
 
-      const afterBudget = ctx.getLastBudget();
-      const afterUsed = afterBudget?.used ?? 0;
+      const afterBudget = await ctx.calculateBudget();
+      const afterUsed = afterBudget.totalUsed;
       const tokensFreed = Math.max(0, beforeUsed - afterUsed);
 
       return { success: true, tokensFreed };
@@ -2948,10 +2983,10 @@ export class AgentService {
   }
 
   /**
-   * Helper to get internals from an agent
+   * Helper to get internals from an agent (NextGen)
    */
   private async getInternalsForAgent(
-    agent: Agent | TaskAgent | ResearchAgent | UniversalAgent,
+    agent: Agent,
     agentConfigId: string | null
   ): Promise<{
     available: boolean;
@@ -3028,53 +3063,49 @@ export class AgentService {
     } | null;
   }> {
     try {
-      const ctx = agent.context;
-      const metrics = await ctx.getMetrics();
-      const state = await ctx.getState();
+      // NextGen context uses AgentContextNextGen
+      const ctx = agent.context as AgentContextNextGen;
+
+      // Calculate budget using NextGen API
+      const budget = await ctx.calculateBudget();
 
       // Get context stats
-      const lastBudget = ctx.getLastBudget();
       const contextStats = {
-        totalTokens: lastBudget?.used ?? Math.round((metrics.utilizationPercent / 100) * (state.config?.maxContextTokens || 128000)),
-        maxTokens: state.config?.maxContextTokens || 128000,
-        utilizationPercent: metrics.utilizationPercent,
-        messagesCount: metrics.historyMessageCount,
-        toolCallsCount: metrics.toolCallCount,
-        strategy: state.config?.strategy || 'proactive',
+        totalTokens: budget.totalUsed,
+        maxTokens: budget.maxTokens,
+        utilizationPercent: budget.utilizationPercent,
+        messagesCount: ctx.getConversationLength(),
+        toolCallsCount: 0, // NextGen doesn't track tool calls in context
+        strategy: ctx.strategy,
       };
 
-      // Get cache stats
-      const cacheStats = metrics.cacheStats ? {
-        entries: metrics.cacheStats.entries,
-        hits: metrics.cacheStats.hits,
-        misses: metrics.cacheStats.misses,
-        hitRate: metrics.cacheStats.hitRate,
-        ttlMs: 300000,
-      } : null;
+      // Cache is not available in NextGen - return null
+      const cacheStats = null;
 
-      // Get memory stats
+      // Get working memory via NextGen plugin API
       let memoryData = null;
-      if (ctx.memory) {
-        const memStats = await ctx.memory.getStats();
-        const memIndex = await ctx.memory.getIndex();
+      if (ctx.features.workingMemory && ctx.memory) {
+        const memState = await ctx.memory.getStateAsync();
+        const totalSizeBytes = memState.entries.reduce((sum, e) => sum + (e.sizeBytes || 0), 0);
+        const maxSizeBytes = 25 * 1024 * 1024; // Default max
         memoryData = {
-          totalEntries: memStats.totalEntries,
-          totalSizeBytes: memStats.totalSizeBytes,
-          utilizationPercent: memStats.utilizationPercent,
-          entries: memIndex.entries.map((e) => ({
+          totalEntries: memState.entries.length,
+          totalSizeBytes,
+          utilizationPercent: (totalSizeBytes / maxSizeBytes) * 100,
+          entries: memState.entries.map((e) => ({
             key: e.key,
             description: e.description,
             scope: String(typeof e.scope === 'object' ? JSON.stringify(e.scope) : e.scope),
-            priority: e.effectivePriority,
-            sizeBytes: 0,
+            priority: e.basePriority || 'normal',
+            sizeBytes: e.sizeBytes || 0,
             updatedAt: Date.now(),
           })),
         };
       }
 
-      // Get in-context memory
-      const inContextEnabled = ctx.isFeatureEnabled('inContextMemory');
-      const inContextPlugin = ctx.inContextMemory;
+      // Get in-context memory via NextGen plugin API
+      const inContextEnabled = ctx.features.inContextMemory;
+      const inContextPlugin = ctx.getPlugin<InContextMemoryPluginNextGen>('in_context_memory');
       let inContextData: {
         enabled: boolean;
         entries: Array<{
@@ -3095,7 +3126,6 @@ export class AgentService {
 
       if (inContextPlugin) {
         const entries = inContextPlugin.list();
-        const pluginConfig = (inContextPlugin as unknown as { config?: { maxEntries?: number; maxTotalTokens?: number } }).config;
         inContextData = {
           enabled: true,
           entries: entries.map((e) => ({
@@ -3105,8 +3135,8 @@ export class AgentService {
             updatedAt: e.updatedAt,
             value: inContextPlugin.get(e.key),
           })),
-          maxEntries: pluginConfig?.maxEntries ?? 20,
-          maxTokens: pluginConfig?.maxTotalTokens ?? 4000,
+          maxEntries: 20, // Default
+          maxTokens: 4000, // Default
         };
       }
 
@@ -3125,16 +3155,16 @@ export class AgentService {
         };
       });
 
-      // Get tool call history
-      const toolCalls = state.core.toolCalls.map((tc: { id: string; name: string; args: unknown; result?: unknown; error?: string; durationMs?: number; timestamp?: number }, index: number) => ({
-        id: tc.id || `tc_${index}`,
-        name: tc.name,
-        args: tc.args,
-        result: tc.result,
-        error: tc.error,
-        durationMs: tc.durationMs || 0,
-        timestamp: tc.timestamp || Date.now(),
-      }));
+      // Tool calls history is not tracked in NextGen context
+      const toolCalls: Array<{
+        id: string;
+        name: string;
+        args: unknown;
+        result?: unknown;
+        error?: string;
+        durationMs: number;
+        timestamp: number;
+      }> = [];
 
       // Get agent config for name
       const agentConfig = agentConfigId ? this.agents.get(agentConfigId) : null;
@@ -3142,58 +3172,70 @@ export class AgentService {
       // Get system prompt
       const systemPrompt = ctx.systemPrompt || null;
 
-      // Get persistent instructions
+      // Get persistent instructions via NextGen plugin API
+      // Note: PersistentInstructionsPluginNextGen stores at ~/.oneringai/agents/<agentId>/custom_instructions.md
       const effectiveAgentId = agentConfigId || 'default';
+      const persistentInstructionsPath = join(homedir(), '.oneringai', 'agents', effectiveAgentId, 'custom_instructions.md');
       let persistentInstructionsData: {
         content: string;
         path: string;
         length: number;
         enabled: boolean;
       };
-      if (ctx.persistentInstructions) {
-        const component = await ctx.persistentInstructions.getComponent();
-        const contentStr = typeof component?.content === 'string' ? component.content : '';
+      const persistentPlugin = ctx.getPlugin<PersistentInstructionsPluginNextGen>('persistent_instructions');
+      if (persistentPlugin) {
+        const content = await persistentPlugin.getContent();
+        const contentStr = content || '';
         persistentInstructionsData = {
           content: contentStr,
-          path: join(this.dataDir, 'agents', `${effectiveAgentId}-instructions.md`),
+          path: persistentInstructionsPath,
           length: contentStr.length,
           enabled: true,
         };
       } else {
         persistentInstructionsData = {
           content: '',
-          path: join(this.dataDir, 'agents', `${effectiveAgentId}-instructions.md`),
+          path: persistentInstructionsPath,
           length: 0,
           enabled: false,
         };
       }
 
-      // Build token breakdown
-      let tokenBreakdown: {
-        total: number;
-        reserved: number;
-        used: number;
-        available: number;
-        components: Array<{ name: string; tokens: number; percent: number }>;
-      } | null = null;
-
-      if (lastBudget && lastBudget.breakdown) {
-        const components = Object.entries(lastBudget.breakdown)
-          .map(([name, tokens]) => ({
-            name: name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-            tokens,
-            percent: lastBudget.used > 0 ? (tokens / lastBudget.used) * 100 : 0,
-          }))
-          .sort((a, b) => b.tokens - a.tokens);
-
-        tokenBreakdown = {
-          total: lastBudget.total,
-          reserved: lastBudget.reserved,
-          used: lastBudget.used,
-          available: lastBudget.available,
-          components,
-        };
+      // Build token breakdown from NextGen budget
+      // Note: pluginContents is a Record<string, number>, so we need to flatten it
+      const flatBreakdown: Array<{ name: string; tokens: number }> = [];
+      for (const [name, value] of Object.entries(budget.breakdown)) {
+        if (name === 'pluginContents' && typeof value === 'object' && value !== null) {
+          // Flatten plugin contents into individual entries
+          for (const [pluginName, pluginTokens] of Object.entries(value as Record<string, number>)) {
+            if (typeof pluginTokens === 'number' && pluginTokens > 0) {
+              flatBreakdown.push({
+                name: `Plugin: ${pluginName.split(/(?=[A-Z])|_/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')}`,
+                tokens: pluginTokens,
+              });
+            }
+          }
+        } else if (typeof value === 'number' && value > 0) {
+          flatBreakdown.push({
+            name: name.split(/(?=[A-Z])|_/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' '),
+            tokens: value,
+          });
+        }
       }
+      const components = flatBreakdown
+        .map((item) => ({
+          ...item,
+          percent: budget.totalUsed > 0 ? (item.tokens / budget.totalUsed) * 100 : 0,
+        }))
+        .sort((a, b) => b.tokens - a.tokens);
+
+      const tokenBreakdown = {
+        total: budget.maxTokens,
+        reserved: budget.responseReserve,
+        used: budget.totalUsed,
+        available: budget.available,
+        components,
+      };
 
       return {
         available: true,
@@ -3203,7 +3245,7 @@ export class AgentService {
         memory: memoryData,
         inContextMemory: inContextData,
         tools: toolsWithStats,
-        toolCalls: toolCalls.slice(-50),
+        toolCalls,
         systemPrompt,
         persistentInstructions: persistentInstructionsData,
         tokenBreakdown,
@@ -3311,6 +3353,7 @@ export class AgentService {
       components: Array<{ name: string; tokens: number; percent: number }>;
     } | null;
   }> {
+    // Delegate to the helper method (NextGen refactored to avoid duplication)
     if (!this.agent) {
       return {
         available: false,
@@ -3327,208 +3370,8 @@ export class AgentService {
       };
     }
 
-    try {
-      const ctx = this.agent.context;
-      const metrics = await ctx.getMetrics();
-      const state = await ctx.getState();
-
-      // Get context stats - use actual budget from context
-      const lastBudget = ctx.getLastBudget();
-      const contextStats = {
-        totalTokens: lastBudget?.used ?? Math.round((metrics.utilizationPercent / 100) * (state.config?.maxContextTokens || 128000)),
-        maxTokens: state.config?.maxContextTokens || 128000,
-        utilizationPercent: metrics.utilizationPercent,
-        messagesCount: metrics.historyMessageCount,
-        toolCallsCount: metrics.toolCallCount,
-        strategy: state.config?.strategy || 'proactive',
-      };
-
-      // Get cache stats
-      const cacheStats = metrics.cacheStats ? {
-        entries: metrics.cacheStats.entries,
-        hits: metrics.cacheStats.hits,
-        misses: metrics.cacheStats.misses,
-        hitRate: metrics.cacheStats.hitRate,
-        ttlMs: 300000, // Default TTL from CACHE_DEFAULTS
-      } : null;
-
-      // Get memory stats and entries
-      let memoryData = null;
-      if (ctx.memory) {
-        const memStats = await ctx.memory.getStats();
-        const memIndex = await ctx.memory.getIndex();
-        memoryData = {
-          totalEntries: memStats.totalEntries,
-          totalSizeBytes: memStats.totalSizeBytes,
-          utilizationPercent: memStats.utilizationPercent,
-          entries: memIndex.entries.map((e) => ({
-            key: e.key,
-            description: e.description,
-            scope: String(typeof e.scope === 'object' ? JSON.stringify(e.scope) : e.scope),
-            priority: e.effectivePriority,
-            sizeBytes: 0, // Size is in human format in index, we don't have bytes
-            updatedAt: Date.now(), // Index doesn't have updatedAt
-          })),
-        };
-      }
-
-      // Get in-context memory - always return data so UI can show status
-      // Check if feature is enabled via context
-      const inContextEnabled = ctx.isFeatureEnabled('inContextMemory');
-      const inContextPlugin = ctx.inContextMemory;
-
-      let inContextData: {
-        enabled: boolean;
-        entries: Array<{
-          key: string;
-          description: string;
-          priority: string;
-          updatedAt: number;
-          value: unknown;
-        }>;
-        maxEntries: number;
-        maxTokens: number;
-      } = {
-        enabled: inContextEnabled,
-        entries: [],
-        maxEntries: 20,
-        maxTokens: 4000,
-      };
-
-      if (inContextPlugin) {
-        const entries = inContextPlugin.list();
-        // Try to get config from plugin if available
-        const pluginConfig = (inContextPlugin as unknown as { config?: { maxEntries?: number; maxTotalTokens?: number } }).config;
-        inContextData = {
-          enabled: true,
-          entries: entries.map((e) => ({
-            key: e.key,
-            description: e.description,
-            priority: e.priority,
-            updatedAt: e.updatedAt,
-            value: inContextPlugin.get(e.key),
-          })),
-          maxEntries: pluginConfig?.maxEntries ?? 20,
-          maxTokens: pluginConfig?.maxTotalTokens ?? 4000,
-        };
-      }
-
-      // Get tools with stats
-      const toolStats = this.agent.tools.getStats();
-      const allTools = this.agent.tools.getAll();
-      const toolsWithStats = allTools.map((tool: ToolFunction) => {
-        const name = tool.definition.function.name;
-        const usageInfo = toolStats.mostUsed.find((u: { name: string; count: number }) => u.name === name);
-        return {
-          name,
-          description: tool.definition.function.description || '',
-          enabled: this.agent!.tools.isEnabled(name),
-          callCount: usageInfo?.count || 0,
-          namespace: undefined, // Could be extracted from registry if needed
-        };
-      });
-
-      // Get tool call history from context state
-      const toolCalls = state.core.toolCalls.map((tc: { id: string; name: string; args: unknown; result?: unknown; error?: string; durationMs?: number; timestamp?: number }, index: number) => ({
-        id: tc.id || `tc_${index}`,
-        name: tc.name,
-        args: tc.args,
-        result: tc.result,
-        error: tc.error,
-        durationMs: tc.durationMs || 0,
-        timestamp: tc.timestamp || Date.now(),
-      }));
-
-      // Get active agent config for name
-      const activeAgent = this.getActiveAgent();
-
-      // Get system prompt from context
-      const systemPrompt = ctx.systemPrompt || null;
-
-      // Get persistent instructions - always return data for the UI to show status
-      const agentId = activeAgent?.id || 'default';
-      let persistentInstructionsData: {
-        content: string;
-        path: string;
-        length: number;
-        enabled: boolean;
-      };
-      if (ctx.persistentInstructions) {
-        const component = await ctx.persistentInstructions.getComponent();
-        // Component content can be string or unknown, ensure we get a string
-        const contentStr = typeof component?.content === 'string' ? component.content : '';
-        persistentInstructionsData = {
-          content: contentStr,
-          path: join(this.dataDir, 'agents', `${agentId}-instructions.md`),
-          length: contentStr.length,
-          enabled: true,
-        };
-      } else {
-        // Feature is disabled - still return data so UI can show "disabled" status
-        persistentInstructionsData = {
-          content: '',
-          path: join(this.dataDir, 'agents', `${agentId}-instructions.md`),
-          length: 0,
-          enabled: false,
-        };
-      }
-
-      // Build token breakdown from budget
-      let tokenBreakdown: {
-        total: number;
-        reserved: number;
-        used: number;
-        available: number;
-        components: Array<{ name: string; tokens: number; percent: number }>;
-      } | null = null;
-
-      if (lastBudget && lastBudget.breakdown) {
-        const components = Object.entries(lastBudget.breakdown)
-          .map(([name, tokens]) => ({
-            name: name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
-            tokens,
-            percent: lastBudget.used > 0 ? (tokens / lastBudget.used) * 100 : 0,
-          }))
-          .sort((a, b) => b.tokens - a.tokens);
-
-        tokenBreakdown = {
-          total: lastBudget.total,
-          reserved: lastBudget.reserved,
-          used: lastBudget.used,
-          available: lastBudget.available,
-          components,
-        };
-      }
-
-      return {
-        available: true,
-        agentName: activeAgent?.name || 'Default Assistant',
-        context: contextStats,
-        cache: cacheStats,
-        memory: memoryData,
-        inContextMemory: inContextData,
-        tools: toolsWithStats,
-        toolCalls: toolCalls.slice(-50), // Last 50 tool calls
-        systemPrompt,
-        persistentInstructions: persistentInstructionsData,
-        tokenBreakdown,
-      };
-    } catch (error) {
-      console.error('Error getting internals:', error);
-      return {
-        available: false,
-        agentName: null,
-        context: null,
-        cache: null,
-        memory: null,
-        inContextMemory: null,
-        tools: [],
-        toolCalls: [],
-        systemPrompt: null,
-        persistentInstructions: null,
-        tokenBreakdown: null,
-      };
-    }
+    const activeAgent = this.getActiveAgent();
+    return this.getInternalsForAgent(this.agent, activeAgent?.id || null);
   }
 
   /**
@@ -3548,18 +3391,18 @@ export class AgentService {
     }
 
     try {
-      const ctx = this.agent.context;
-      const metrics = await ctx.getMetrics();
-      const state = await ctx.getState();
+      // NextGen uses calculateBudget() instead of getMetrics()
+      const ctx = this.agent.context as AgentContextNextGen;
+      const budget = await ctx.calculateBudget();
 
       return {
         available: true,
-        totalTokens: Math.round((metrics.utilizationPercent / 100) * (state.config?.maxContextTokens || 128000)),
-        maxTokens: state.config?.maxContextTokens || 128000,
-        utilizationPercent: metrics.utilizationPercent,
-        messagesCount: metrics.historyMessageCount,
-        toolCallsCount: metrics.toolCallCount,
-        strategy: state.config?.strategy || 'proactive',
+        totalTokens: budget.totalUsed,
+        maxTokens: budget.maxTokens,
+        utilizationPercent: budget.utilizationPercent,
+        messagesCount: ctx.getConversationLength(),
+        toolCallsCount: 0, // NextGen doesn't track tool calls in context
+        strategy: ctx.strategy,
       };
     } catch {
       return null;
@@ -3578,24 +3421,24 @@ export class AgentService {
     updatedAt: number;
     value?: unknown;
   }>> {
-    if (!this.agent?.context.memory) {
+    // NextGen uses memory.getStateAsync() instead of getIndex()
+    const ctx = this.agent?.context as AgentContextNextGen | undefined;
+    if (!ctx?.memory) {
       return [];
     }
 
     try {
-      const memIndex = await this.agent.context.memory.getIndex();
+      const memState = await ctx.memory.getStateAsync();
       const result = [];
-      for (const entry of memIndex.entries) {
-        // Optionally get the value (may be expensive for large entries)
-        const value = await this.agent.context.memory.retrieve(entry.key);
+      for (const entry of memState.entries) {
         result.push({
           key: entry.key,
           description: entry.description,
           scope: String(typeof entry.scope === 'object' ? JSON.stringify(entry.scope) : entry.scope),
-          priority: entry.effectivePriority,
-          sizeBytes: 0, // Not available from index
+          priority: entry.basePriority || 'normal',
+          sizeBytes: entry.sizeBytes || 0,
           updatedAt: Date.now(),
-          value,
+          value: entry.value,
         });
       }
       return result;
@@ -3621,7 +3464,7 @@ export class AgentService {
 
   /**
    * Get the full prepared context as it would be sent to the LLM
-   * This shows all components assembled: system prompt, plugins, memory index, history, etc.
+   * NextGen returns the actual InputItem[] array that goes to the LLM
    */
   async getPreparedContext(): Promise<{
     available: boolean;
@@ -3643,39 +3486,68 @@ export class AgentService {
     }
 
     try {
-      const ctx = this.agent.context;
+      // NextGen context - prepare() returns { input: InputItem[], budget, ... }
+      const ctx = this.agent.context as AgentContextNextGen;
+      const prepared = await ctx.prepare();
 
-      // Prepare context (this assembles all components exactly as sent to LLM)
-      const prepared = await ctx.prepare({ returnFormat: 'components' });
-
-      // Get individual components for detailed view
-      // NOTE: prepared.components already contains everything in the correct order:
-      // system_prompt, instructions, feature_instructions, conversation_history, memory_index, plugins, etc.
+      // Build components from the actual InputItem[] array
       const components: Array<{ name: string; content: string; tokenEstimate: number }> = [];
 
-      // Map component names to more user-friendly display names
-      const displayNames: Record<string, string> = {
-        'system_prompt': 'System Prompt',
-        'instructions': 'Instructions',
-        'feature_instructions': 'Feature Instructions',
-        'conversation_history': 'Conversation History',
-        'memory_index': 'Memory Index',
-        'in_context_memory': 'In-Context Memory',
-        'persistent_instructions': 'Persistent Instructions',
-        'plan': 'Current Plan',
-        'current_input': 'Current Input',
-      };
+      for (let i = 0; i < prepared.input.length; i++) {
+        const item = prepared.input[i];
+        let name = `Item ${i + 1}`;
+        let content = '';
 
-      for (const component of prepared.components || []) {
-        // Component content can be string or unknown
-        const contentStr = typeof component.content === 'string'
-          ? component.content
-          : JSON.stringify(component.content, null, 2);
-        if (contentStr) {
+        // InputItem can be Message or other types
+        if ('role' in item) {
+          const role = (item as { role: string }).role;
+          name = role === 'developer' ? 'System Message' :
+                 role === 'user' ? 'User Message' :
+                 role === 'assistant' ? 'Assistant Message' :
+                 `${role} Message`;
+
+          // Get content from the item
+          if ('content' in item) {
+            const itemContent = (item as { content: unknown }).content;
+            if (typeof itemContent === 'string') {
+              content = itemContent;
+            } else if (Array.isArray(itemContent)) {
+              // Content blocks array (NextGen uses input_text, output_text, tool_use, tool_result)
+              content = itemContent.map((block: unknown) => {
+                if (typeof block === 'string') return block;
+                if (typeof block === 'object' && block !== null) {
+                  const b = block as Record<string, unknown>;
+                  // Handle NextGen content types
+                  if ((b.type === 'text' || b.type === 'input_text' || b.type === 'output_text') && typeof b.text === 'string') {
+                    return b.text;
+                  }
+                  if (b.type === 'tool_use') {
+                    const args = b.arguments || b.input || '{}';
+                    return `[Tool Call: ${b.name}]\nArguments: ${typeof args === 'string' ? args : JSON.stringify(args, null, 2)}`;
+                  }
+                  if (b.type === 'tool_result') {
+                    const resultContent = typeof b.content === 'string' ? b.content : JSON.stringify(b.content, null, 2);
+                    const truncated = resultContent.length > 500 ? resultContent.substring(0, 500) + '... [truncated]' : resultContent;
+                    return `[Tool Result: ${b.tool_use_id}]\n${truncated}`;
+                  }
+                  return JSON.stringify(b, null, 2);
+                }
+                return String(block);
+              }).join('\n\n');
+            } else if (itemContent && typeof itemContent === 'object') {
+              content = JSON.stringify(itemContent, null, 2);
+            }
+          }
+        } else {
+          // Other input item types
+          content = JSON.stringify(item, null, 2);
+        }
+
+        if (content) {
           components.push({
-            name: displayNames[component.name] || component.name || 'Component',
-            content: contentStr,
-            tokenEstimate: Math.ceil(contentStr.length / 4),
+            name,
+            content,
+            tokenEstimate: Math.ceil(content.length / 4),
           });
         }
       }
@@ -3686,7 +3558,7 @@ export class AgentService {
         return `${separator}\n## ${c.name} (~${c.tokenEstimate} tokens)\n${separator}\n\n${c.content}`;
       }).join('\n\n');
 
-      const totalTokens = components.reduce((sum, c) => sum + c.tokenEstimate, 0);
+      const totalTokens = prepared.budget.totalUsed;
 
       return {
         available: true,
@@ -3706,6 +3578,121 @@ export class AgentService {
   }
 
   /**
+   * Get prepared context for a specific instance (multi-tab support)
+   */
+  async getPreparedContextForInstance(instanceId: string): Promise<{
+    available: boolean;
+    components: Array<{
+      name: string;
+      content: string;
+      tokenEstimate: number;
+    }>;
+    totalTokens: number;
+    rawContext: string;
+  }> {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      return {
+        available: false,
+        components: [],
+        totalTokens: 0,
+        rawContext: `Instance "${instanceId}" not found`,
+      };
+    }
+
+    try {
+      // NextGen context - prepare() returns { input: InputItem[], budget, ... }
+      const ctx = instance.agent.context as AgentContextNextGen;
+      const prepared = await ctx.prepare();
+
+      // Build components from the actual InputItem[] array
+      const components: Array<{ name: string; content: string; tokenEstimate: number }> = [];
+
+      for (let i = 0; i < prepared.input.length; i++) {
+        const item = prepared.input[i];
+        let name = `Item ${i + 1}`;
+        let content = '';
+
+        // InputItem can be Message or other types
+        if ('role' in item) {
+          const role = (item as { role: string }).role;
+          name = role === 'developer' ? 'System Message' :
+                 role === 'user' ? 'User Message' :
+                 role === 'assistant' ? 'Assistant Message' :
+                 `${role} Message`;
+
+          // Get content from the item
+          if ('content' in item) {
+            const itemContent = (item as { content: unknown }).content;
+            if (typeof itemContent === 'string') {
+              content = itemContent;
+            } else if (Array.isArray(itemContent)) {
+              // Content blocks array (NextGen uses input_text, output_text, tool_use, tool_result)
+              content = itemContent.map((block: unknown) => {
+                if (typeof block === 'string') return block;
+                if (typeof block === 'object' && block !== null) {
+                  const b = block as Record<string, unknown>;
+                  // Handle NextGen content types
+                  if ((b.type === 'text' || b.type === 'input_text' || b.type === 'output_text') && typeof b.text === 'string') {
+                    return b.text;
+                  }
+                  if (b.type === 'tool_use') {
+                    const args = b.arguments || b.input || '{}';
+                    return `[Tool Call: ${b.name}]\nArguments: ${typeof args === 'string' ? args : JSON.stringify(args, null, 2)}`;
+                  }
+                  if (b.type === 'tool_result') {
+                    const resultContent = typeof b.content === 'string' ? b.content : JSON.stringify(b.content, null, 2);
+                    const truncated = resultContent.length > 500 ? resultContent.substring(0, 500) + '... [truncated]' : resultContent;
+                    return `[Tool Result: ${b.tool_use_id}]\n${truncated}`;
+                  }
+                  return JSON.stringify(b, null, 2);
+                }
+                return String(block);
+              }).join('\n\n');
+            } else if (itemContent && typeof itemContent === 'object') {
+              content = JSON.stringify(itemContent, null, 2);
+            }
+          }
+        } else {
+          // Other input item types
+          content = JSON.stringify(item, null, 2);
+        }
+
+        if (content) {
+          components.push({
+            name,
+            content,
+            tokenEstimate: Math.ceil(content.length / 4),
+          });
+        }
+      }
+
+      // Build raw context representation
+      const rawContext = components.map(c => {
+        const separator = '='.repeat(60);
+        return `${separator}\n## ${c.name} (~${c.tokenEstimate} tokens)\n${separator}\n\n${c.content}`;
+      }).join('\n\n');
+
+      const totalTokens = prepared.budget.totalUsed;
+
+      return {
+        available: true,
+        components,
+        totalTokens,
+        rawContext,
+      };
+    } catch (error) {
+      console.error('Error getting prepared context for instance:', error);
+      return {
+        available: false,
+        components: [],
+        totalTokens: 0,
+        rawContext: `Error: ${error}`,
+      };
+    }
+  }
+
+  /**
    * Force compaction of the context
    * Useful when auto-compaction hasn't triggered but context is high
    */
@@ -3715,20 +3702,16 @@ export class AgentService {
     }
 
     try {
-      const ctx = this.agent.context;
-      // Get current budget before compaction
-      const beforeBudget = ctx.getLastBudget();
-      const beforeUsed = beforeBudget?.used ?? 0;
+      // NextGen uses calculateBudget() instead of getLastBudget()
+      const ctx = this.agent.context as AgentContextNextGen;
+      const beforeBudget = await ctx.calculateBudget();
+      const beforeUsed = beforeBudget.totalUsed;
 
-      // Force prepare which will trigger compaction if needed
-      // We use prepare() with autoCompact enabled - but let's manually call compactConversation
-      // Actually, we need to access the internal compact method. Let's use prepare()
-      // and check if compaction happened
-      const result = await ctx.prepare();
+      // prepare() triggers compaction if above threshold
+      await ctx.prepare();
 
-      // Get budget after
-      const afterBudget = ctx.getLastBudget();
-      const afterUsed = afterBudget?.used ?? 0;
+      const afterBudget = await ctx.calculateBudget();
+      const afterUsed = afterBudget.totalUsed;
       const tokensFreed = Math.max(0, beforeUsed - afterUsed);
 
       return {

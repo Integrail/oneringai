@@ -27,13 +27,52 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
   const { navigate } = useNavigation();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [planLoading, setPlanLoading] = useState<'approving' | 'rejecting' | null>(null);
+  const [userHasScrolled, setUserHasScrolled] = useState(false);
+  const lastMessageCount = useRef(tab.messages.length);
 
-  // Auto-scroll to bottom
+  // Check if user is near the bottom of the scroll container
+  const isNearBottom = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return true;
+    const threshold = 100; // pixels from bottom
+    return container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+  }, []);
+
+  // Handle user scroll - detect if they scrolled up manually
+  const handleScroll = useCallback(() => {
+    if (isNearBottom()) {
+      setUserHasScrolled(false);
+    } else {
+      setUserHasScrolled(true);
+    }
+  }, [isNearBottom]);
+
+  // Auto-scroll to bottom only when:
+  // 1. User sends a new message → always scroll
+  // 2. New assistant message starts → scroll if user was near bottom
+  // 3. Streaming updates → only scroll if user hasn't scrolled up
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [tab.messages]);
+    const isNewMessage = tab.messages.length > lastMessageCount.current;
+    lastMessageCount.current = tab.messages.length;
+
+    const lastMessage = tab.messages[tab.messages.length - 1];
+    const isUserMessage = lastMessage?.role === 'user';
+
+    // Always scroll to bottom when user sends a message
+    if (isNewMessage && isUserMessage) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setUserHasScrolled(false);
+      return;
+    }
+
+    // For new assistant messages or streaming, only scroll if user is near bottom
+    if (!userHasScrolled || isNearBottom()) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [tab.messages, userHasScrolled, isNearBottom]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -194,7 +233,11 @@ function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactEl
         </div>
       )}
 
-      <div className={`chat__messages ${tab.messages.length === 0 ? 'chat__messages--empty' : ''}`}>
+      <div
+        ref={messagesContainerRef}
+        className={`chat__messages ${tab.messages.length === 0 ? 'chat__messages--empty' : ''}`}
+        onScroll={handleScroll}
+      >
         {tab.messages.length === 0 ? (
           <div className="chat__welcome">
             <div className="chat__welcome-icon">

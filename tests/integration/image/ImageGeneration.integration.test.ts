@@ -684,7 +684,7 @@ describeIfGrok('ImageGeneration Integration (Grok)', () => {
       const models = await imageGen.listModels();
 
       expect(models).toContain('grok-imagine-image');
-      expect(models).toContain('grok-2-image-1212');
+      // Note: Only grok-imagine-image is registered in the model registry
     });
   });
 

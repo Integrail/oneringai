@@ -128,9 +128,9 @@ describeIfGoogle('Google Converter - thought_signature handling', () => {
     it('should handle multi-turn tool calls with thought_signature preservation', async () => {
       const agent = Agent.create({
         connector: 'google-converter-test',
-        model: 'gemini-3.0-flash-preview-05-20',
+        model: 'gemini-3-flash-preview',
         tools: [sequentialTool],
-        context: { features: { memory: false } },
+        context: { features: { workingMemory: false } },
       });
       // Disable built-in tools to reduce confusion
       agent.context.tools.disable('context_stats');
@@ -149,9 +149,9 @@ describeIfGoogle('Google Converter - thought_signature handling', () => {
     it('should handle counter tool with multiple invocations', async () => {
       const agent = Agent.create({
         connector: 'google-converter-test',
-        model: 'gemini-3.0-flash-preview-05-20',
+        model: 'gemini-3-flash-preview',
         tools: [counterTool],
-        context: { features: { memory: false } },
+        context: { features: { workingMemory: false } },
       });
       agent.context.tools.disable('context_stats');
 
@@ -174,7 +174,7 @@ describeIfGoogle('Google Converter - thought_signature handling', () => {
         connector: 'google-converter-test',
         model: 'gemini-2.0-flash',
         tools: [sequentialTool],
-        context: { features: { memory: false } },
+        context: { features: { workingMemory: false } },
       });
       agent.context.tools.disable('context_stats');
 

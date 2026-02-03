@@ -194,14 +194,15 @@ export interface HoseaAPI {
       name: string;
       connector: string;
       model: string;
-      agentType: 'basic' | 'task' | 'research' | 'universal';
+      agentType: 'basic';
       instructions: string;
       temperature: number;
       contextStrategy: string;
       maxContextTokens: number;
       responseReserve: number;
-      memoryEnabled: boolean;
+      workingMemoryEnabled: boolean;
       maxMemorySizeBytes: number;
+      maxMemoryIndexEntries: number;
       memorySoftLimitPercent: number;
       contextAllocationPercent: number;
       inContextMemoryEnabled: boolean;
@@ -216,6 +217,7 @@ export interface HoseaAPI {
       cacheMaxEntries: number;
       permissionsEnabled: boolean;
       tools: string[];
+      mcpServers?: Array<{ serverName: string; selectedTools?: string[] }>;
       createdAt: number;
       updatedAt: number;
       lastUsedAt?: number;
@@ -226,14 +228,15 @@ export interface HoseaAPI {
       name: string;
       connector: string;
       model: string;
-      agentType: 'basic' | 'task' | 'research' | 'universal';
+      agentType: 'basic';
       instructions: string;
       temperature: number;
       contextStrategy: string;
       maxContextTokens: number;
       responseReserve: number;
-      memoryEnabled: boolean;
+      workingMemoryEnabled: boolean;
       maxMemorySizeBytes: number;
+      maxMemoryIndexEntries: number;
       memorySoftLimitPercent: number;
       contextAllocationPercent: number;
       inContextMemoryEnabled: boolean;
@@ -248,6 +251,7 @@ export interface HoseaAPI {
       cacheMaxEntries: number;
       permissionsEnabled: boolean;
       tools: string[];
+      mcpServers?: Array<{ serverName: string; selectedTools?: string[] }>;
       createdAt: number;
       updatedAt: number;
       lastUsedAt?: number;
@@ -262,7 +266,7 @@ export interface HoseaAPI {
       name: string;
       connector: string;
       model: string;
-      agentType: 'basic' | 'task' | 'research' | 'universal';
+      agentType: 'basic';
       isActive: boolean;
     } | null>;
     createDefault: (connectorName: string, model: string) => Promise<{ success: boolean; id?: string; error?: string }>;
@@ -364,7 +368,7 @@ export interface HoseaAPI {
       updatedAt: number;
       value?: unknown;
     }>>;
-    getPreparedContext: () => Promise<{
+    getPreparedContext: (instanceId?: string) => Promise<{
       available: boolean;
       components: Array<{
         name: string;
@@ -1052,7 +1056,7 @@ const api: HoseaAPI = {
     getAll: () => ipcRenderer.invoke('internals:get-all'),
     getContextStats: () => ipcRenderer.invoke('internals:get-context-stats'),
     getMemoryEntries: () => ipcRenderer.invoke('internals:get-memory-entries'),
-    getPreparedContext: () => ipcRenderer.invoke('internals:get-prepared-context'),
+    getPreparedContext: (instanceId?: string) => ipcRenderer.invoke('internals:get-prepared-context', instanceId),
     getMemoryValue: (key: string) => ipcRenderer.invoke('internals:get-memory-value', key),
     forceCompact: () => ipcRenderer.invoke('internals:force-compact'),
     // Instance-aware methods

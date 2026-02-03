@@ -20,33 +20,10 @@ import { ArrowLeft, Save, Trash2, HelpCircle, AlertCircle, ChevronDown, ChevronR
 import { PageHeader } from '../components/layout';
 import { useNavigation } from '../hooks/useNavigation';
 
-// Agent types available in oneringai
-type AgentType = 'basic' | 'task' | 'research' | 'universal';
+// Agent type - NextGen only supports 'basic' (other types deprecated)
+type AgentType = 'basic';
 
-const AGENT_TYPES: { value: AgentType; label: string; description: string }[] = [
-  {
-    value: 'basic',
-    label: 'Basic',
-    description: 'Simple agent for single-turn interactions with tool support',
-  },
-  {
-    value: 'task',
-    label: 'Task',
-    description: 'Task-based agent with planning, memory, and checkpoints',
-  },
-  {
-    value: 'research',
-    label: 'Research',
-    description: 'Research agent with pluggable sources (web, file, vector, etc.)',
-  },
-  {
-    value: 'universal',
-    label: 'Universal',
-    description: 'Interactive agent with multiple modes (chat, planning, executing)',
-  },
-];
-
-// Context strategies with descriptions
+// Context strategies (NextGen)
 const CONTEXT_STRATEGIES: {
   value: string;
   label: string;
@@ -56,16 +33,16 @@ const CONTEXT_STRATEGIES: {
   {
     value: 'proactive',
     label: 'Proactive',
-    threshold: '75%',
+    threshold: '70%',
     description:
-      'Balanced strategy. Compacts context when 75% full. Good default for most use cases.',
+      'Early compaction at 70%. Good for memory-constrained use cases.',
   },
   {
-    value: 'aggressive',
-    label: 'Aggressive',
-    threshold: '60%',
+    value: 'balanced',
+    label: 'Balanced',
+    threshold: '80%',
     description:
-      'Memory-constrained strategy. Compacts early at 60% to ensure space for long conversations.',
+      'Default strategy. Compacts at 80% - balanced between context preservation and memory.',
   },
   {
     value: 'lazy',
@@ -73,20 +50,6 @@ const CONTEXT_STRATEGIES: {
     threshold: '90%',
     description:
       'Preserves maximum context. Only compacts at 90% - best when you need full conversation history.',
-  },
-  {
-    value: 'rolling-window',
-    label: 'Rolling Window',
-    threshold: 'N messages',
-    description:
-      'Fixed window approach. Keeps only the last N messages regardless of token count.',
-  },
-  {
-    value: 'adaptive',
-    label: 'Adaptive',
-    threshold: 'Learns',
-    description:
-      'Machine learning-based. Auto-adjusts threshold based on conversation patterns.',
   },
 ];
 
@@ -149,15 +112,15 @@ interface AgentFormData {
   name: string;
   connector: string;
   model: string;
-  agentType: AgentType;
+  agentType: AgentType; // Always 'basic' in NextGen
   instructions: string;
   temperature: number;
   // Context settings
-  contextStrategy: string;
+  contextStrategy: string; // 'proactive' | 'balanced' | 'lazy'
   maxContextTokens: number;
   responseReserve: number;
-  // Memory settings
-  memoryEnabled: boolean;
+  // Memory settings (renamed to workingMemory for NextGen)
+  workingMemoryEnabled: boolean;
   maxMemorySizeBytes: number;
   maxMemoryIndexEntries: number;
   memorySoftLimitPercent: number;
@@ -188,15 +151,15 @@ const defaultFormData: AgentFormData = {
   name: '',
   connector: '',
   model: '',
-  agentType: 'universal',
+  agentType: 'basic', // Only 'basic' supported in NextGen
   instructions: '',
   temperature: 0.7,
   // Context settings
-  contextStrategy: 'proactive',
+  contextStrategy: 'balanced', // NextGen default
   maxContextTokens: 128000,
   responseReserve: 4096,
-  // Memory settings
-  memoryEnabled: true,
+  // Memory settings (workingMemory in NextGen)
+  workingMemoryEnabled: true,
   maxMemorySizeBytes: 25 * 1024 * 1024, // 25MB
   maxMemoryIndexEntries: 30, // Limit memory index entries in context
   memorySoftLimitPercent: 80,
@@ -274,7 +237,7 @@ export function AgentEditorPage(): React.ReactElement {
               contextStrategy: existingAgent.contextStrategy,
               maxContextTokens: existingAgent.maxContextTokens,
               responseReserve: existingAgent.responseReserve,
-              memoryEnabled: existingAgent.memoryEnabled,
+              workingMemoryEnabled: existingAgent.workingMemoryEnabled,
               maxMemorySizeBytes: existingAgent.maxMemorySizeBytes,
               maxMemoryIndexEntries: existingAgent.maxMemoryIndexEntries ?? 30,
               memorySoftLimitPercent: existingAgent.memorySoftLimitPercent,
@@ -707,35 +670,7 @@ export function AgentEditorPage(): React.ReactElement {
                   </Form.Group>
                 </Col>
 
-                <Col md={6}>
-                  <Form.Group>
-                    <Form.Label>
-                      Agent Type
-                      <InfoTooltip
-                        id="agent-type-info"
-                        content="Determines agent capabilities and behavior patterns"
-                      />
-                    </Form.Label>
-                    <Form.Select
-                      value={formData.agentType}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          agentType: e.target.value as AgentType,
-                        })
-                      }
-                    >
-                      {AGENT_TYPES.map((type) => (
-                        <option key={type.value} value={type.value}>
-                          {type.label}
-                        </option>
-                      ))}
-                    </Form.Select>
-                    <Form.Text className="text-muted">
-                      {AGENT_TYPES.find((t) => t.value === formData.agentType)?.description}
-                    </Form.Text>
-                  </Form.Group>
-                </Col>
+                {/* Agent type is always 'basic' in NextGen - removed selection UI */}
 
                 <Col md={6}>
                   <Form.Group>
@@ -1384,9 +1319,9 @@ export function AgentEditorPage(): React.ReactElement {
                       type="switch"
                       id="memory-enabled"
                       label="Working Memory"
-                      checked={formData.memoryEnabled}
+                      checked={formData.workingMemoryEnabled}
                       onChange={(e) =>
-                        setFormData({ ...formData, memoryEnabled: e.target.checked })
+                        setFormData({ ...formData, workingMemoryEnabled: e.target.checked })
                       }
                     />
                     <Form.Text className="text-muted d-block">
@@ -1430,44 +1365,13 @@ export function AgentEditorPage(): React.ReactElement {
                     </Form.Text>
                   </Col>
 
-                  <Col md={4} lg={3}>
-                    <Form.Check
-                      type="switch"
-                      id="history-enabled"
-                      label="History Management"
-                      checked={formData.historyEnabled}
-                      onChange={(e) =>
-                        setFormData({ ...formData, historyEnabled: e.target.checked })
-                      }
-                    />
-                    <Form.Text className="text-muted d-block">
-                      Conversation history tracking
-                    </Form.Text>
-                  </Col>
-
-                  <Col md={4} lg={2}>
-                    <Form.Check
-                      type="switch"
-                      id="permissions-enabled"
-                      label="Tool Permissions"
-                      checked={formData.permissionsEnabled}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          permissionsEnabled: e.target.checked,
-                        })
-                      }
-                    />
-                    <Form.Text className="text-muted d-block">
-                      Require approval for tools
-                    </Form.Text>
-                  </Col>
+                  {/* History Management and Tool Permissions removed - not in NextGen */}
                 </Row>
               </Card.Body>
             </Card>
 
             {/* Working Memory Settings */}
-            {formData.memoryEnabled && (
+            {formData.workingMemoryEnabled && (
               <Card className="mb-4">
                 <Card.Header>
                   <strong>Working Memory Settings</strong>

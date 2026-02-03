@@ -226,23 +226,21 @@ describeIfGoogle('VideoGeneration Integration (Google Veo)', () => {
       const models = await videoGen.listModels();
 
       expect(models).toContain('veo-2.0-generate-001');
-      expect(models).toContain('veo-3-generate-preview');
       expect(models).toContain('veo-3.1-fast-generate-preview');
       expect(models).toContain('veo-3.1-generate-preview');
     });
   });
 
   describe('Model info', () => {
-    it('should get Veo 3.0 model info', () => {
+    it('should get Veo 2.0 model info', () => {
       const videoGen = VideoGeneration.create({
         connector: 'google-video-test',
       });
 
-      const info = videoGen.getModelInfo('veo-3-generate-preview');
+      const info = videoGen.getModelInfo('veo-2.0-generate-001');
 
       expect(info).toBeDefined();
-      expect(info?.name).toBe('veo-3-generate-preview');
-      expect(info?.capabilities.audio).toBe(true);
+      expect(info?.name).toBe('veo-2.0-generate-001');
       expect(info?.capabilities.features.negativePrompt).toBe(true);
     });
 

@@ -20489,6 +20489,58 @@ ${content}`);
     }
   }
   // ============================================================================
+  // Inspection / Monitoring
+  // ============================================================================
+  /**
+   * Calculate current token budget without triggering compaction.
+   *
+   * Use this method to inspect the current context state for monitoring/debugging.
+   * Unlike prepare(), this does NOT:
+   * - Trigger compaction
+   * - Modify any state
+   * - Emit any events
+   *
+   * @returns Current token budget breakdown
+   */
+  async calculateBudget() {
+    this.assertNotDestroyed();
+    const toolsTokens = this.calculateToolsTokens();
+    const { systemTokens, breakdown } = await this.buildSystemMessage();
+    const conversationTokens = this.calculateConversationTokens();
+    const currentInputTokens = this.calculateInputTokens(this._currentInput);
+    const totalUsed = systemTokens + conversationTokens + currentInputTokens + toolsTokens;
+    const availableForContent = this._maxContextTokens - this._config.responseReserve;
+    return {
+      maxTokens: this._maxContextTokens,
+      responseReserve: this._config.responseReserve,
+      systemMessageTokens: systemTokens,
+      toolsTokens,
+      conversationTokens,
+      currentInputTokens,
+      totalUsed,
+      available: availableForContent - totalUsed,
+      utilizationPercent: totalUsed / availableForContent * 100,
+      breakdown: {
+        ...breakdown,
+        tools: toolsTokens,
+        conversation: conversationTokens,
+        currentInput: currentInputTokens
+      }
+    };
+  }
+  /**
+   * Get the current strategy threshold (percentage at which compaction triggers).
+   */
+  get strategyThreshold() {
+    return this._strategyThreshold;
+  }
+  /**
+   * Get the current strategy name.
+   */
+  get strategy() {
+    return this._config.strategy;
+  }
+  // ============================================================================
   // Utilities
   // ============================================================================
   /**
@@ -24949,12 +25001,12 @@ var Agent = class _Agent extends BaseAgent {
         arguments: tc.function.arguments
       });
     }
-    const assistantMessage = {
+    const outputItem = {
       type: "message",
       role: "assistant" /* ASSISTANT */,
       content: assistantContent
     };
-    this._agentContext.addInputItems([assistantMessage]);
+    this._agentContext.addAssistantResponse([outputItem]);
   }
   /**
    * Build placeholder response for streaming finalization
@@ -24998,6 +25050,7 @@ var Agent = class _Agent extends BaseAgent {
         globalStreamState.accumulateUsage(iterationStreamState.usage);
         const toolCalls = this._buildToolCallsFromMap(toolCallsMap);
         if (toolCalls.length === 0) {
+          this._addStreamingAssistantMessage(iterationStreamState, []);
           yield {
             type: "response.iteration.complete" /* ITERATION_COMPLETE */,
             response_id: executionId,

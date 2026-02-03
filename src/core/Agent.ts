@@ -648,13 +648,16 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
       });
     }
 
-    const assistantMessage: InputItem = {
+    // Build output format for addAssistantResponse (which properly moves _currentInput to _conversation)
+    const outputItem: OutputItem = {
       type: 'message',
       role: MessageRole.ASSISTANT,
       content: assistantContent,
     };
 
-    this._agentContext.addInputItems([assistantMessage]);
+    // Use addAssistantResponse instead of addInputItems to ensure user message
+    // in _currentInput is moved to _conversation first (critical for history preservation)
+    this._agentContext.addAssistantResponse([outputItem]);
   }
 
   /**
@@ -721,8 +724,12 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
         // Build tool calls from accumulated map
         const toolCalls = this._buildToolCallsFromMap(toolCallsMap);
 
-        // No tool calls? We're done
+        // No tool calls? We're done - add assistant message and exit
         if (toolCalls.length === 0) {
+          // Add the final assistant response to conversation history
+          // (this also moves user message from _currentInput to _conversation)
+          this._addStreamingAssistantMessage(iterationStreamState, []);
+
           yield {
             type: StreamEventType.ITERATION_COMPLETE,
             response_id: executionId,

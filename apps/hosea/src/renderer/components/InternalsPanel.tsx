@@ -175,18 +175,19 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange, instance
     }
   }, [instanceId]);
 
-  // Fetch prepared context for modal
+  // Fetch prepared context for modal (instance-aware)
   const fetchPreparedContext = useCallback(async () => {
     try {
       setIsLoadingContext(true);
-      const context = await window.hosea.internals.getPreparedContext();
+      // Use instance-aware API if instanceId is provided
+      const context = await window.hosea.internals.getPreparedContext(instanceId ?? undefined);
       setPreparedContext(context);
     } catch (error) {
       console.error('Failed to fetch prepared context:', error);
     } finally {
       setIsLoadingContext(false);
     }
-  }, []);
+  }, [instanceId]);
 
   // Fetch memory value for a specific key (instance-aware)
   const fetchMemoryValue = useCallback(async (key: string) => {

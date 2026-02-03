@@ -724,7 +724,7 @@ describeIfAllKeys('Cross-vendor consistency', () => {
         ...config,
         tools: [calculatorTool],
         // Disable memory features to reduce tool clutter
-        context: { features: { memory: false } },
+        context: { features: { workingMemory: false } },
       });
       // Disable the context_stats tool to avoid LLM confusion
       agent.context.tools.disable('context_stats');

@@ -11,7 +11,7 @@ interface AgentConfig {
   name: string;
   connector: string;
   model: string;
-  agentType: 'basic' | 'task' | 'research' | 'universal';
+  agentType: 'basic'; // Only 'basic' supported in NextGen
   isActive: boolean;
 }
 
@@ -81,15 +81,7 @@ export function NewTabModal({ show, onHide, onSelectAgent }: NewTabModalProps): 
     agent.model.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const getAgentTypeBadge = (type: string) => {
-    const colors: Record<string, string> = {
-      basic: 'secondary',
-      task: 'info',
-      research: 'success',
-      universal: 'primary',
-    };
-    return <Badge bg={colors[type] || 'secondary'}>{type}</Badge>;
-  };
+  // Agent type badge removed - all agents are 'basic' in NextGen
 
   return (
     <Modal show={show} onHide={onHide} centered size="lg">
@@ -153,9 +145,7 @@ export function NewTabModal({ show, onHide, onSelectAgent }: NewTabModalProps): 
                       <small className="text-muted">{agent.model}</small>
                     </div>
                   </div>
-                  <div className="d-flex align-items-center gap-2">
-                    {getAgentTypeBadge(agent.agentType)}
-                  </div>
+                  {/* Agent type badge removed - all agents are 'basic' */}
                 </ListGroup.Item>
               ))}
             </ListGroup>

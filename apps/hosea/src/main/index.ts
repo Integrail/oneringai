@@ -368,7 +368,10 @@ async function setupIPC(): Promise<void> {
     return agentService!.getMemoryEntries();
   });
 
-  ipcMain.handle('internals:get-prepared-context', async () => {
+  ipcMain.handle('internals:get-prepared-context', async (_event, instanceId?: string) => {
+    if (instanceId) {
+      return agentService!.getPreparedContextForInstance(instanceId);
+    }
     return agentService!.getPreparedContext();
   });
 

@@ -1347,6 +1347,75 @@ export class AgentContextNextGen extends EventEmitter<ContextEvents> {
   }
 
   // ============================================================================
+  // Inspection / Monitoring
+  // ============================================================================
+
+  /**
+   * Calculate current token budget without triggering compaction.
+   *
+   * Use this method to inspect the current context state for monitoring/debugging.
+   * Unlike prepare(), this does NOT:
+   * - Trigger compaction
+   * - Modify any state
+   * - Emit any events
+   *
+   * @returns Current token budget breakdown
+   */
+  async calculateBudget(): Promise<ContextBudget> {
+    this.assertNotDestroyed();
+
+    // Calculate tool tokens (never compacted)
+    const toolsTokens = this.calculateToolsTokens();
+
+    // Calculate system message tokens
+    const { systemTokens, breakdown } = await this.buildSystemMessage();
+
+    // Calculate conversation tokens
+    const conversationTokens = this.calculateConversationTokens();
+
+    // Calculate current input tokens
+    const currentInputTokens = this.calculateInputTokens(this._currentInput);
+
+    // Total used (includes tools for accurate reporting)
+    const totalUsed = systemTokens + conversationTokens + currentInputTokens + toolsTokens;
+
+    // Calculate available
+    const availableForContent = this._maxContextTokens - this._config.responseReserve;
+
+    return {
+      maxTokens: this._maxContextTokens,
+      responseReserve: this._config.responseReserve,
+      systemMessageTokens: systemTokens,
+      toolsTokens,
+      conversationTokens,
+      currentInputTokens,
+      totalUsed,
+      available: availableForContent - totalUsed,
+      utilizationPercent: (totalUsed / availableForContent) * 100,
+      breakdown: {
+        ...breakdown,
+        tools: toolsTokens,
+        conversation: conversationTokens,
+        currentInput: currentInputTokens,
+      },
+    };
+  }
+
+  /**
+   * Get the current strategy threshold (percentage at which compaction triggers).
+   */
+  get strategyThreshold(): number {
+    return this._strategyThreshold;
+  }
+
+  /**
+   * Get the current strategy name.
+   */
+  get strategy(): string {
+    return this._config.strategy;
+  }
+
+  // ============================================================================
   // Utilities
   // ============================================================================
 
