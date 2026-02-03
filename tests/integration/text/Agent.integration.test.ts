@@ -411,6 +411,7 @@ describeIfGoogle('Agent Integration - Google (Gemini)', () => {
       const agent = Agent.create({
         connector: 'google-test',
         model: 'gemini-2.0-flash',
+        context: { features: { workingMemory: false } },
       });
 
       const deltas: string[] = [];
@@ -527,6 +528,7 @@ describeIfAnthropic('Agent Integration - Anthropic (Claude)', () => {
       const agent = Agent.create({
         connector: 'anthropic-test',
         model: 'claude-sonnet-4-20250514',
+        context: { features: { workingMemory: false } },
       });
 
       const response = await agent.run([

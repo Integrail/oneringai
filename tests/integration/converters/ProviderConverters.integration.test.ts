@@ -192,7 +192,7 @@ describeIfGoogle('Google Converter - thought_signature handling', () => {
       const agent = Agent.create({
         connector: 'google-converter-test',
         model: 'gemini-2.0-flash',
-        context: { features: { memory: false } },
+        context: { features: { workingMemory: false } },
       });
 
       const response = await agent.runDirect('What is 2 + 2? Answer with just the number.');
@@ -252,7 +252,7 @@ describeIfOpenAI('OpenAI Converter - multi-turn tool calls', () => {
       connector: 'openai-converter-test',
       model: 'gpt-4o-mini',
       tools: [sequentialTool],
-      context: { features: { memory: false } },
+      context: { features: { workingMemory: false } },
     });
     agent.context.tools.disable('context_stats');
 
@@ -271,7 +271,7 @@ describeIfOpenAI('OpenAI Converter - multi-turn tool calls', () => {
       connector: 'openai-converter-test',
       model: 'gpt-4o-mini',
       tools: [counterTool],
-      context: { features: { memory: false } },
+      context: { features: { workingMemory: false } },
     });
     agent.context.tools.disable('context_stats');
 
@@ -290,7 +290,7 @@ describeIfOpenAI('OpenAI Converter - multi-turn tool calls', () => {
     const agent = Agent.create({
       connector: 'openai-converter-test',
       model: 'gpt-4o-mini',
-      context: { features: { memory: false } },
+      context: { features: { workingMemory: false } },
     });
 
     const response = await agent.runDirect('What is 2 + 2? Answer with just the number.');
@@ -331,7 +331,7 @@ describeIfAnthropic('Anthropic Converter - multi-turn tool calls', () => {
       connector: 'anthropic-converter-test',
       model: 'claude-3-5-haiku-20241022',
       tools: [sequentialTool],
-      context: { features: { memory: false } },
+      context: { features: { workingMemory: false } },
     });
     agent.context.tools.disable('context_stats');
 
@@ -350,7 +350,7 @@ describeIfAnthropic('Anthropic Converter - multi-turn tool calls', () => {
       connector: 'anthropic-converter-test',
       model: 'claude-3-5-haiku-20241022',
       tools: [counterTool],
-      context: { features: { memory: false } },
+      context: { features: { workingMemory: false } },
     });
     agent.context.tools.disable('context_stats');
 
@@ -369,7 +369,7 @@ describeIfAnthropic('Anthropic Converter - multi-turn tool calls', () => {
     const agent = Agent.create({
       connector: 'anthropic-converter-test',
       model: 'claude-3-5-haiku-20241022',
-      context: { features: { memory: false } },
+      context: { features: { workingMemory: false } },
     });
 
     const response = await agent.runDirect('What is 2 + 2? Answer with just the number.');
@@ -423,7 +423,7 @@ describeIfAllKeys('Cross-Provider Converter Consistency', () => {
         connector: config.connector,
         model: config.model,
         tools: [counterTool],
-        context: { features: { memory: false } },
+        context: { features: { workingMemory: false } },
       });
       agent.context.tools.disable('context_stats');
 
@@ -450,7 +450,7 @@ describeIfAllKeys('Cross-Provider Converter Consistency', () => {
         connector: config.connector,
         model: config.model,
         tools: [sequentialTool],
-        context: { features: { memory: false } },
+        context: { features: { workingMemory: false } },
       });
       agent.context.tools.disable('context_stats');
 

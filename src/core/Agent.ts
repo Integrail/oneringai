@@ -66,7 +66,10 @@ export interface AgentConfig extends BaseAgentConfig {
    */
   context?: AgentContextNextGen | AgentContextNextGenConfig;
 
-  /** Tool execution timeout in milliseconds. @default 30000 */
+  /**
+   * @deprecated Tool timeouts are now handled by ToolManager per-tool.
+   * Configure timeouts in individual tool definitions instead.
+   */
   toolTimeout?: number;
 
   // Enterprise features
@@ -1251,13 +1254,9 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     this.emit('tool:start', { executionId, iteration, toolCall, timestamp: new Date() });
 
     try {
-      // Execute with timeout
+      // Execute tool (timeout is handled by ToolManager per-tool)
       const args = JSON.parse(toolCall.function.arguments);
-      const timeout = this._config.toolTimeout ?? 30000;
-      const result = await this.executeWithTimeout(
-        () => this._agentContext.tools.execute(toolCall.function.name, args),
-        timeout
-      );
+      const result = await this._agentContext.tools.execute(toolCall.function.name, args);
 
       toolCall.state = ToolCallState.COMPLETED;
       toolCall.endTime = new Date();
@@ -1313,7 +1312,7 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
           executionId,
           iteration,
           toolCall,
-          timeout: this._config.toolTimeout ?? 30000,
+          timeout: error.timeoutMs,
           timestamp: new Date(),
         });
       } else {
@@ -1379,27 +1378,6 @@ export class Agent extends BaseAgent<AgentConfig, AgentEvents> implements IDispo
     }
 
     return false;
-  }
-
-  /**
-   * Execute function with timeout
-   */
-  private async executeWithTimeout<T>(fn: () => Promise<T>, timeoutMs: number): Promise<T> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(new ToolTimeoutError('tool', timeoutMs));
-      }, timeoutMs);
-
-      fn()
-        .then((result) => {
-          clearTimeout(timer);
-          resolve(result);
-        })
-        .catch((error) => {
-          clearTimeout(timer);
-          reject(error);
-        });
-    });
   }
 
   // ===== Pause/Resume/Cancel =====

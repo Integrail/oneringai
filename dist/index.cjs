@@ -25450,11 +25450,7 @@ var Agent = class _Agent extends BaseAgent {
     this.emit("tool:start", { executionId, iteration, toolCall, timestamp: /* @__PURE__ */ new Date() });
     try {
       const args = JSON.parse(toolCall.function.arguments);
-      const timeout = this._config.toolTimeout ?? 3e4;
-      const result = await this.executeWithTimeout(
-        () => this._agentContext.tools.execute(toolCall.function.name, args),
-        timeout
-      );
+      const result = await this._agentContext.tools.execute(toolCall.function.name, args);
       toolCall.state = "completed" /* COMPLETED */;
       toolCall.endTime = /* @__PURE__ */ new Date();
       let toolResult = {
@@ -25495,7 +25491,7 @@ var Agent = class _Agent extends BaseAgent {
           executionId,
           iteration,
           toolCall,
-          timeout: this._config.toolTimeout ?? 3e4,
+          timeout: error.timeoutMs,
           timestamp: /* @__PURE__ */ new Date()
         });
       } else {
@@ -25541,23 +25537,6 @@ var Agent = class _Agent extends BaseAgent {
       return true;
     }
     return false;
-  }
-  /**
-   * Execute function with timeout
-   */
-  async executeWithTimeout(fn, timeoutMs) {
-    return new Promise((resolve4, reject) => {
-      const timer = setTimeout(() => {
-        reject(new ToolTimeoutError("tool", timeoutMs));
-      }, timeoutMs);
-      fn().then((result) => {
-        clearTimeout(timer);
-        resolve4(result);
-      }).catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-    });
   }
   // ===== Pause/Resume/Cancel =====
   /**
