@@ -37,6 +37,7 @@ import { ToolManager } from './ToolManager.js';
 const logger: FrameworkLogger = baseLogger.child({ component: 'AgentContext' });
 import type { ToolFunction, ToolResult } from '../domain/entities/Tool.js';
 import type { ToolContext } from '../domain/interfaces/IToolContext.js';
+import type { ITextProvider } from '../domain/interfaces/ITextProvider.js';
 import type { SerializedToolState } from './ToolManager.js';
 import { ToolPermissionManager } from './permissions/ToolPermissionManager.js';
 import type { AgentPermissionsConfig, SerializedApprovalState } from './permissions/types.js';
@@ -80,6 +81,8 @@ import { ToolResultEvictionPlugin } from './context/plugins/ToolResultEvictionPl
 import type { ToolResultEvictionConfig } from './context/plugins/ToolResultEvictionPlugin.js';
 import { ContextGuardian } from './context/ContextGuardian.js';
 import type { ContextGuardianConfig, GuardianValidation } from './context/ContextGuardian.js';
+import { SmartCompactor } from './context/SmartCompactor.js';
+import type { SmartCompactionResult } from './context/SmartCompactor.js';
 
 // Memory & Context introspection tool creators
 // These are registered automatically based on enabled features for ALL agent types
@@ -89,9 +92,11 @@ import {
   createMemoryDeleteTool,
   createMemoryQueryTool,
   createMemoryCleanupRawTool,
+  createAutoSpillProcessTool,
 } from '../capabilities/taskAgent/memoryTools.js';
 import {
   createContextStatsTool,
+  createContextCompactTool,
 } from '../capabilities/taskAgent/contextTools.js';
 import { buildFeatureInstructions } from './context/FeatureInstructions.js';
 
@@ -499,6 +504,25 @@ export interface AgentContextConfig {
   guardian?: ContextGuardianConfig;
 
   /**
+   * SmartCompaction configuration - LLM-powered intelligent context compaction.
+   * When enabled, provides the context_compact tool and automatic smart compaction.
+   * Requires an ITextProvider to be set via setSmartCompactorProvider().
+   * @default undefined (disabled)
+   */
+  smartCompaction?: {
+    /** Enable smart compaction (default: false - must be explicitly enabled) */
+    enabled?: boolean;
+    /** Model to use for compaction analysis (default: 'gpt-4o-mini') */
+    model?: string;
+    /** Maximum tokens for the analysis call (default: 2000) */
+    maxAnalysisTokens?: number;
+    /** Enable spilling data to memory (default: true if memory enabled) */
+    enableSpillToMemory?: boolean;
+    /** Minimum messages before allowing compaction (default: 10) */
+    minMessagesToCompact?: number;
+  };
+
+  /**
    * Agent ID - used for persistent storage paths and identification
    * If not provided, will be auto-generated
    */
@@ -571,7 +595,7 @@ export interface AgentContextConfig {
 /**
  * Default configuration
  */
-const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'toolOutputTracking' | 'autoSpill' | 'toolResultEviction' | 'guardian' | 'agentId' | 'storage' | 'sessionId' | 'sessionMetadata' | 'mcpServers'>> & {
+const DEFAULT_AGENT_CONTEXT_CONFIG: Required<Omit<AgentContextConfig, 'tools' | 'permissions' | 'memory' | 'cache' | 'taskType' | 'autoDetectTaskType' | 'features' | 'inContextMemory' | 'persistentInstructions' | 'toolOutputTracking' | 'autoSpill' | 'toolResultEviction' | 'guardian' | 'smartCompaction' | 'agentId' | 'storage' | 'sessionId' | 'sessionMetadata' | 'mcpServers'>> & {
   history: Required<NonNullable<AgentContextConfig['history']>>;
 } = {
   model: 'gpt-4',
@@ -691,6 +715,8 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
   private _autoSpillPlugin: AutoSpillPlugin | null = null;
   private _toolResultEvictionPlugin: ToolResultEvictionPlugin | null = null;
   private readonly _guardian: ContextGuardian;
+  private _smartCompactor: SmartCompactor | null = null;
+  private _smartCompactionConfig: AgentContextConfig['smartCompaction'] = undefined;
   private readonly _agentId: string;
 
   // ===== Feature Configuration =====
@@ -919,6 +945,18 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       }, 'ToolResultEvictionPlugin NOT created (feature disabled or no memory)');
     }
 
+    // SmartCompaction - LLM-powered intelligent compaction (opt-in)
+    // Note: SmartCompactor is created lazily when provider is set via setSmartCompactorProvider()
+    // This is because Agent creates AgentContext before it has access to the provider
+    this._smartCompactionConfig = config.smartCompaction;
+    if (config.smartCompaction?.enabled) {
+      logger.debug({
+        enabled: true,
+        model: config.smartCompaction.model,
+        memoryEnabled: !!this._memory,
+      }, 'SmartCompaction configured (waiting for provider)');
+    }
+
     // Register feature-aware tools (memory, cache, introspection)
     // This ensures ALL agent types have consistent tool availability
     this._registerFeatureTools();
@@ -1041,6 +1079,79 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    */
   get mcpInitializationPending(): boolean {
     return this._mcpInitializationPending;
+  }
+
+  /** SmartCompactor for LLM-powered context compaction (null if not configured or no provider) */
+  get smartCompactor(): SmartCompactor | null {
+    return this._smartCompactor;
+  }
+
+  /**
+   * Set the text provider for SmartCompactor.
+   * This must be called to enable smart compaction (typically by Agent after provider is created).
+   *
+   * @param provider - The ITextProvider to use for compaction analysis
+   */
+  setSmartCompactorProvider(provider: ITextProvider): void {
+    // Create SmartCompactor if config says it's enabled
+    if (this._smartCompactionConfig?.enabled && provider) {
+      const strategy = this._config.strategy as import('../core/constants.js').StrategyName;
+
+      this._smartCompactor = new SmartCompactor(provider, this._memory, {
+        strategy,
+        maxContextTokens: this._maxContextTokens,
+        model: this._smartCompactionConfig.model,
+        maxAnalysisTokens: this._smartCompactionConfig.maxAnalysisTokens,
+        enableSpillToMemory: this._smartCompactionConfig.enableSpillToMemory ?? (this._memory !== null),
+        minMessagesToCompact: this._smartCompactionConfig.minMessagesToCompact,
+      });
+
+      // Register the context_compact tool now that we have a compactor
+      this._tools.register(createContextCompactTool());
+
+      logger.info({
+        model: this._smartCompactionConfig.model ?? 'gpt-4o-mini',
+        strategy,
+      }, 'SmartCompactor initialized');
+    }
+  }
+
+  /**
+   * Trigger smart compaction of the context.
+   * Returns the compaction result with details about what was done.
+   *
+   * @param targetReduction - Optional target reduction percentage (0-100)
+   * @throws Error if SmartCompactor is not configured
+   */
+  async triggerSmartCompaction(targetReduction?: number): Promise<SmartCompactionResult> {
+    if (!this._smartCompactor) {
+      throw new Error('SmartCompactor is not configured. Enable it via smartCompaction config and call setSmartCompactorProvider().');
+    }
+
+    // Prepare context to get current state
+    const preparedResult = await this.prepare({ returnFormat: 'components' });
+
+    if (!preparedResult.components) {
+      throw new Error('Failed to prepare context for compaction');
+    }
+
+    // Create a PreparedContext object for SmartCompactor
+    const preparedContext: PreparedContext = {
+      components: preparedResult.components,
+      budget: preparedResult.budget,
+      compacted: preparedResult.compacted,
+      compactionLog: preparedResult.compactionLog,
+    };
+
+    // Run smart compaction
+    const result = await this._smartCompactor.compact(preparedContext, targetReduction);
+
+    // Emit event
+    if (result.tokensFreed > 0) {
+      this.emit('compacted', { log: result.log, tokensFreed: result.tokensFreed });
+    }
+
+    return result;
   }
 
   // ============================================================================
@@ -1739,6 +1850,7 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
    * Consolidated tools (Phase 1):
    * - Always: context_stats (unified introspection - gracefully handles disabled features)
    * - When memory feature enabled: memory_store, memory_retrieve, memory_delete, memory_query, memory_cleanup_raw
+   * - When autoSpill feature enabled: autospill_process (CRITICAL for breaking infinite loops)
    * - InContextMemory (context_set, context_delete, context_list) & PersistentInstructions tools
    *   are registered separately in the constructor when those features are enabled.
    */
@@ -1756,6 +1868,13 @@ export class AgentContext extends EventEmitter<AgentContextEvents> {
       this._tools.register(createMemoryDeleteTool());
       this._tools.register(createMemoryQueryTool());
       this._tools.register(createMemoryCleanupRawTool());
+    }
+
+    // AutoSpill feature: register autospill_process tool (CRITICAL for breaking infinite loops)
+    // This tool allows the agent to mark auto-spilled entries as consumed, preventing them
+    // from reappearing in context indefinitely
+    if (this._features.autoSpill && this._memory) {
+      this._tools.register(createAutoSpillProcessTool());
     }
   }
 

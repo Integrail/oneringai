@@ -70,6 +70,15 @@ export type { AutoSpillConfig, SpilledEntry } from './context/plugins/AutoSpillP
 export { ToolResultEvictionPlugin } from './context/plugins/ToolResultEvictionPlugin.js';
 export type { ToolResultEvictionConfig, TrackedResult, EvictionResult } from './context/plugins/ToolResultEvictionPlugin.js';
 
+// SmartCompactor - LLM-powered intelligent context compaction (Phase 4)
+export { SmartCompactor, createSmartCompactor } from './context/SmartCompactor.js';
+export type {
+  SmartCompactorConfig,
+  SmartCompactionResult,
+  CompactionSummary,
+  SpilledData,
+} from './context/SmartCompactor.js';
+
 // IdempotencyCache - Tool result caching (moved from taskAgent to core)
 export { IdempotencyCache, DEFAULT_IDEMPOTENCY_CONFIG } from './IdempotencyCache.js';
 export type { IdempotencyCacheConfig, CacheStats } from './IdempotencyCache.js';
@@ -102,7 +111,12 @@ export {
   TOOL_RESULT_EVICTION_DEFAULTS,
   DEFAULT_TOOL_RETENTION,
   GUARDIAN_DEFAULTS,
+  // Strategy-dependent thresholds (NEW)
+  STRATEGY_THRESHOLDS,
+  SAFETY_CAPS,
+  TOOL_RETENTION_MULTIPLIERS,
 } from './constants.js';
+export type { StrategyName } from './constants.js';
 
 // Global configuration
 export { Config } from './Config.js';

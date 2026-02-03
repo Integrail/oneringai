@@ -157,6 +157,16 @@ export interface HoseaAPI {
     setLevel: (level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'silent') => Promise<{ success: boolean }>;
   };
 
+  // Dialog
+  dialog: {
+    showOpenDialog: (options: {
+      properties?: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles'>;
+      title?: string;
+      defaultPath?: string;
+      filters?: Array<{ name: string; extensions: string[] }>;
+    }) => Promise<{ canceled: boolean; filePaths: string[] }>;
+  };
+
   // Agent configurations (saved agent presets)
   agentConfig: {
     list: () => Promise<Array<{
@@ -926,6 +936,10 @@ const api: HoseaAPI = {
   log: {
     getLevel: () => ipcRenderer.invoke('log:get-level'),
     setLevel: (level) => ipcRenderer.invoke('log:set-level', level),
+  },
+
+  dialog: {
+    showOpenDialog: (options) => ipcRenderer.invoke('dialog:show-open-dialog', options),
   },
 };
 

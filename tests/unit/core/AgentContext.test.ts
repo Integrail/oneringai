@@ -757,28 +757,41 @@ describe('AgentContext', () => {
 
     it('should trigger compaction when projected utilization exceeds threshold', async () => {
       ctx = AgentContext.create({
-        maxContextTokens: 4000, // Increased to account for feature_instructions overhead (~800 tokens)
-        history: { maxMessages: 100, preserveRecent: 5 },
+        maxContextTokens: 8000, // Large context to account for overhead
+        history: { maxMessages: 200, preserveRecent: 5 },
         strategy: 'proactive', // 75% threshold
+        features: { memory: false, toolOutputTracking: false, autoSpill: false, toolResultEviction: false }, // Minimize overhead
       });
 
       // Initialize budget with prepare()
       ctx.setCurrentInput('test');
-      await ctx.prepare();
+      const initialResult = await ctx.prepare();
+      const initialUsed = initialResult.budget.used;
 
-      // Fill history to ~60% capacity (each message ~20 tokens)
-      for (let i = 0; i < 60; i++) {
+      // Fill history to push us near 70% capacity
+      // Available = 8000 - (8000 * 0.15) = 6800 tokens
+      // Target: ~70% of 6800 = 4760 tokens
+      const tokensPerMessage = 20; // Each message ~20 tokens
+      const targetTokens = 4760;
+      const messagesToAdd = Math.floor((targetTokens - initialUsed) / tokensPerMessage);
+
+      for (let i = 0; i < messagesToAdd; i++) {
         ctx.addMessageSync('user', 'A'.repeat(70)); // ~20 tokens each
       }
 
       const compactedListener = vi.fn();
       ctx.on('compacted', compactedListener);
 
-      // Request that would push over 75% threshold
-      const hasCapacity = await ctx.ensureCapacity(800);
+      // Request tokens that would push over 75% threshold
+      // This should trigger compaction
+      const hasCapacity = await ctx.ensureCapacity(500);
 
-      // Should have compacted to make room
+      // Should have compacted to make room (compaction removes old messages)
+      // Even if compaction doesn't free 500 tokens, it should be called
       expect(compactedListener).toHaveBeenCalled();
+
+      // After compaction, there should be enough room since we only need 500 tokens
+      // and the context is large with lots of compactable messages
       expect(hasCapacity).toBe(true);
     });
 

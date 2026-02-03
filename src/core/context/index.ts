@@ -63,3 +63,15 @@ export type {
   AutoSpillEvents,
 } from './plugins/index.js';
 
+// ============================================================================
+// SmartCompactor - LLM-powered intelligent context compaction
+// ============================================================================
+
+export { SmartCompactor, createSmartCompactor } from './SmartCompactor.js';
+export type {
+  SmartCompactorConfig,
+  SmartCompactionResult,
+  CompactionSummary,
+  SpilledData,
+} from './SmartCompactor.js';
+

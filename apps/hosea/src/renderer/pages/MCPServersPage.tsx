@@ -5,12 +5,13 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Button, Modal, Form, Alert, ListGroup } from 'react-bootstrap';
-import { Plus, Server, Wrench } from 'lucide-react';
+import { Button, Modal, Form, Alert } from 'react-bootstrap';
+import { Plus, Server, Wrench, Library } from 'lucide-react';
 import { PageHeader } from '../components/layout';
-import { MCPServerCard, MCPServerToolList, TransportConfigForm } from '../components/mcp';
+import { MCPServerCard, MCPServerToolList, TransportConfigForm, MCPTemplateSelector, TemplateRequiredFields } from '../components/mcp';
 import type { StoredMCPServerConfig } from '../components/mcp';
 import type { TransportType, TransportConfig } from '../components/mcp/TransportConfigForm';
+import type { MCPServerTemplate } from '../../shared/mcpTemplates';
 import { useNavigation } from '../hooks/useNavigation';
 
 interface MCPTool {
@@ -48,6 +49,10 @@ export function MCPServersPage(): React.ReactElement {
   const [serverTools, setServerTools] = useState<MCPTool[]>([]);
   const [loadingTools, setLoadingTools] = useState(false);
 
+  // Template selector state
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<MCPServerTemplate | null>(null);
+
   // Load servers
   const loadServers = useCallback(async () => {
     try {
@@ -68,6 +73,7 @@ export function MCPServersPage(): React.ReactElement {
   const handleAddServer = () => {
     setIsCreateMode(true);
     setEditingServer(null);
+    setSelectedTemplate(null);
     setEditName('');
     setEditDisplayName('');
     setEditDescription('');
@@ -78,9 +84,54 @@ export function MCPServersPage(): React.ReactElement {
     setShowEditModal(true);
   };
 
+  const handleBrowseTemplates = () => {
+    setShowTemplateSelector(true);
+  };
+
+  const handleSelectTemplate = (template: MCPServerTemplate) => {
+    setShowTemplateSelector(false);
+    setSelectedTemplate(template);
+    setIsCreateMode(true);
+    setEditingServer(null);
+
+    // Pre-fill form with template data
+    setEditName(template.name);
+    setEditDisplayName(template.displayName);
+    setEditDescription(template.description);
+    setEditTransport(template.transport);
+
+    // Build initial transport config
+    // For args with placeholders, keep them as placeholders for now
+    // The user will fill them in via the form
+    const config: TransportConfig = {};
+    if (template.transportConfig.command) {
+      config.command = template.transportConfig.command;
+    }
+    if (template.transportConfig.args) {
+      config.args = [...template.transportConfig.args];
+    }
+    if (template.transportConfig.url) {
+      config.url = template.transportConfig.url;
+    }
+
+    // Pre-populate env object with required env keys (empty values)
+    if (template.requiredEnv && template.requiredEnv.length > 0) {
+      config.env = {};
+      for (const envField of template.requiredEnv) {
+        config.env[envField.key] = '';
+      }
+    }
+
+    setEditTransportConfig(config);
+    setEditToolNamespace('');
+    setEditError(null);
+    setShowEditModal(true);
+  };
+
   const handleEditServer = (server: StoredMCPServerConfig) => {
     setIsCreateMode(false);
     setEditingServer(server);
+    setSelectedTemplate(null); // Clear template when editing existing server
     setEditName(server.name);
     setEditDisplayName(server.displayName || '');
     setEditDescription(server.description || '');
@@ -106,6 +157,36 @@ export function MCPServersPage(): React.ReactElement {
     if ((editTransport === 'http' || editTransport === 'https') && !editTransportConfig.url?.trim()) {
       setEditError('URL is required for HTTP transport');
       return;
+    }
+
+    // Validate template required fields when creating from template
+    if (selectedTemplate && isCreateMode) {
+      // Check required env vars
+      if (selectedTemplate.requiredEnv) {
+        for (const envField of selectedTemplate.requiredEnv) {
+          if (envField.required && !editTransportConfig.env?.[envField.key]?.trim()) {
+            setEditError(`${envField.label} is required`);
+            return;
+          }
+        }
+      }
+
+      // Check required args (ensure placeholders are replaced)
+      if (selectedTemplate.requiredArgs) {
+        for (const argField of selectedTemplate.requiredArgs) {
+          if (argField.required) {
+            const idx = selectedTemplate.transportConfig.args?.indexOf(argField.key);
+            if (idx !== undefined && idx >= 0) {
+              const argValue = editTransportConfig.args?.[idx];
+              // Check if still a placeholder or empty
+              if (!argValue || argValue === argField.key || argValue.startsWith('{')) {
+                setEditError(`${argField.label} is required`);
+                return;
+              }
+            }
+          }
+        }
+      }
     }
 
     setSaving(true);
@@ -256,6 +337,10 @@ export function MCPServersPage(): React.ReactElement {
         title="MCP Servers"
         subtitle={`${servers.length} server${servers.length !== 1 ? 's' : ''} configured`}
       >
+        <Button variant="outline-primary" onClick={handleBrowseTemplates} className="me-2">
+          <Library size={16} className="me-2" />
+          Browse Templates
+        </Button>
         <Button variant="primary" onClick={handleAddServer}>
           <Plus size={16} className="me-2" />
           Add Server
@@ -271,10 +356,16 @@ export function MCPServersPage(): React.ReactElement {
               MCP (Model Context Protocol) servers provide additional tools and capabilities for your agents.
               Add a server to extend your agent's functionality.
             </p>
-            <Button variant="primary" onClick={handleAddServer}>
-              <Plus size={16} className="me-2" />
-              Add MCP Server
-            </Button>
+            <div className="mcp-servers-page__empty-actions">
+              <Button variant="primary" onClick={handleBrowseTemplates}>
+                <Library size={16} className="me-2" />
+                Browse Templates
+              </Button>
+              <Button variant="outline-secondary" onClick={handleAddServer}>
+                <Plus size={16} className="me-2" />
+                Add Manually
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="mcp-servers-page__grid">
@@ -345,6 +436,19 @@ export function MCPServersPage(): React.ReactElement {
             </Form.Group>
 
             <hr />
+
+            {/* Template Required Fields (shown when using a template) */}
+            {selectedTemplate && isCreateMode && (
+              <>
+                <TemplateRequiredFields
+                  template={selectedTemplate}
+                  config={editTransportConfig}
+                  onConfigChange={setEditTransportConfig}
+                  disabled={saving}
+                />
+                <hr />
+              </>
+            )}
 
             <TransportConfigForm
               transport={editTransport}
@@ -424,6 +528,13 @@ export function MCPServersPage(): React.ReactElement {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* Template Selector Modal */}
+      <MCPTemplateSelector
+        show={showTemplateSelector}
+        onHide={() => setShowTemplateSelector(false)}
+        onSelect={handleSelectTemplate}
+      />
     </div>
   );
 }

@@ -1,8 +1,9 @@
 /**
- * Context inspection tools for TaskAgent
+ * Context inspection and management tools for TaskAgent
  *
- * Consolidated tool (Phase 1):
+ * Consolidated tools:
  * - context_stats: Unified context introspection with configurable sections
+ * - context_compact: Trigger smart LLM-powered context compaction (Phase 4)
  *
  * Legacy tools preserved for backward compatibility but not actively registered:
  * - context_inspect → context_stats({ sections: ["budget"] })
@@ -14,10 +15,51 @@
 import { ToolFunction, FunctionToolDefinition } from '../../domain/entities/Tool.js';
 import type { ToolContext } from '../../domain/interfaces/IToolContext.js';
 import { getTierFromKey } from '../../domain/entities/Memory.js';
+import type { SmartCompactionResult } from '../../core/context/SmartCompactor.js';
 
 // ============================================================================
-// Consolidated Tool Definition
+// Consolidated Tool Definitions
 // ============================================================================
+
+/**
+ * Tool definition for context_compact (smart LLM-powered compaction)
+ */
+export const contextCompactDefinition: FunctionToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'context_compact',
+    description: `Trigger smart context compaction using LLM analysis.
+
+Use this when:
+- Context is getting full (check with context_stats first)
+- You want to consolidate findings before starting a new phase
+- You have many old messages/tool results that are no longer needed
+
+The system will:
+- Summarize older conversation segments
+- Move large data blobs to Working Memory
+- Remove low-value exchanges (acknowledgments, greetings)
+- Preserve recent tool calls and critical context
+
+Example: context_compact({ target_reduction: 30 }) - Reduce context by ~30%`,
+    parameters: {
+      type: 'object',
+      properties: {
+        target_reduction: {
+          type: 'number',
+          description: 'Target percentage to reduce (e.g., 30 for 30% reduction). Default: uses strategy threshold.',
+          minimum: 10,
+          maximum: 70,
+        },
+        dry_run: {
+          type: 'boolean',
+          description: 'If true, analyze but do not execute compaction. Returns what would be done.',
+        },
+      },
+      required: [],
+    },
+  },
+};
 
 /**
  * Tool definition for context_stats (consolidated introspection)
@@ -193,6 +235,97 @@ export function createContextStatsTool(): ToolFunction {
       if (!sections || sections.length === 0) return 'budget';
       if (sections.includes('all')) return 'all';
       return sections.join('+');
+    },
+  };
+}
+
+/**
+ * Create context_compact tool (smart LLM-powered compaction)
+ *
+ * This tool allows agents to proactively trigger context compaction when:
+ * - Context is getting full
+ * - Starting a new phase and want to consolidate
+ * - Many old tool results are no longer needed
+ *
+ * Requires SmartCompactor to be configured on AgentContext.
+ */
+export function createContextCompactTool(): ToolFunction {
+  return {
+    definition: contextCompactDefinition,
+    execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+      const agentCtx = context?.agentContext;
+      if (!agentCtx) {
+        return {
+          error: 'AgentContext not available',
+          message: 'Tool context missing agentContext',
+        };
+      }
+
+      // Check if SmartCompactor is available
+      if (!agentCtx.smartCompactor) {
+        return {
+          error: 'Smart compaction not available',
+          message: 'SmartCompactor is not configured. Enable it via AgentContext config.',
+          suggestion: 'You can still manually consolidate by storing summaries in memory and continuing.',
+        };
+      }
+
+      const targetReduction = args.target_reduction as number | undefined;
+      const dryRun = args.dry_run as boolean | undefined;
+
+      // For dry run, we'd need to implement preview logic in SmartCompactor
+      // For now, just run the actual compaction
+      if (dryRun) {
+        const budget = agentCtx.getLastBudget();
+        return {
+          dry_run: true,
+          current_budget: budget ? {
+            used: budget.used,
+            available: budget.available,
+            utilization: budget.utilizationPercent,
+          } : null,
+          message: 'Dry run not fully implemented yet. Would analyze and compact context.',
+          target_reduction: targetReduction ?? 'strategy default',
+        };
+      }
+
+      try {
+        // Trigger smart compaction
+        const result: SmartCompactionResult = await agentCtx.triggerSmartCompaction(targetReduction);
+
+        return {
+          success: result.success,
+          tokens_freed: result.tokensFreed,
+          summaries_created: result.summaries.length,
+          data_spilled: result.spilled.length,
+          messages_removed: result.removed.length,
+          details: {
+            summaries: result.summaries.map(s => ({
+              key: s.key,
+              importance: s.importance,
+              message_count: s.messageIds.length,
+            })),
+            spilled: result.spilled.map(s => ({
+              key: s.key,
+              reason: s.reason,
+            })),
+          },
+          error: result.error,
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          error: 'Compaction failed',
+          message: errorMsg,
+          suggestion: 'Try manual cleanup: store important findings in memory, then continue.',
+        };
+      }
+    },
+    idempotency: { safe: false }, // Modifies context
+    output: { expectedSize: 'small' },
+    describeCall: (args) => {
+      const reduction = args.target_reduction as number | undefined;
+      return reduction ? `reduce ${reduction}%` : 'auto';
     },
   };
 }
@@ -413,16 +546,25 @@ export function createMemoryStatsTool(): ToolFunction {
 // ============================================================================
 
 /**
- * Create all context inspection tools (backward compatibility)
+ * Create all context inspection and management tools
  *
- * Consolidated tools (Phase 1):
+ * Tools:
  * - context_stats: Unified context introspection with configurable sections
+ * - context_compact: Smart LLM-powered context compaction (Phase 4)
  *
  * Note: For feature-aware tool registration, AgentContext._registerFeatureTools()
- * now registers context_stats directly.
+ * now registers these tools directly based on enabled features.
+ *
+ * @param includeCompact - Include context_compact tool (default: true)
  */
-export function createContextTools(): ToolFunction[] {
-  return [
+export function createContextTools(includeCompact = true): ToolFunction[] {
+  const tools = [
     createContextStatsTool(),
   ];
+
+  if (includeCompact) {
+    tools.push(createContextCompactTool());
+  }
+
+  return tools;
 }

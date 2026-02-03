@@ -50,19 +50,25 @@ export {
   createMemoryDeleteTool,
   createMemoryQueryTool,
   createMemoryCleanupRawTool,
+  createAutoSpillProcessTool,
   memoryStoreDefinition,
   memoryRetrieveDefinition,
   memoryDeleteDefinition,
   memoryQueryDefinition,
   memoryCleanupRawDefinition,
+  autospillProcessDefinition,
 } from './memoryTools.js';
 
-// Context inspection tools (individual creators for feature-aware registration)
-// Consolidated tools (Phase 1): context_stats replaces context_inspect + context_breakdown + cache_stats + memory_stats
+// Context inspection and management tools (individual creators for feature-aware registration)
+// Consolidated tools:
+//   - context_stats: unified introspection (replaces context_inspect + context_breakdown + cache_stats + memory_stats)
+//   - context_compact: LLM-powered smart compaction (Phase 4)
 export {
   createContextTools,
   createContextStatsTool,
+  createContextCompactTool,
   contextStatsDefinition,
+  contextCompactDefinition,
   // Legacy tools (deprecated but kept for backward compatibility)
   createContextInspectTool,
   createContextBreakdownTool,

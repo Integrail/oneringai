@@ -481,6 +481,136 @@ export function createMemoryCleanupRawTool(): ToolFunction {
 }
 
 // ============================================================================
+// AutoSpill Processing Tool (CRITICAL for breaking infinite loops)
+// ============================================================================
+
+/**
+ * Tool definition for autospill_process
+ * This tool is CRITICAL for preventing infinite loops when auto-spilled data
+ * keeps reappearing in context because it was never marked as consumed.
+ */
+export const autospillProcessDefinition: FunctionToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'autospill_process',
+    description: `Process an auto-spilled entry: retrieve the data, acknowledge you've seen it, and store a summary.
+This PREVENTS the entry from appearing repeatedly in your context.
+
+WORKFLOW:
+1. Call this tool with the autospill key and your summary
+2. The tool retrieves the full data, stores your summary, marks entry as consumed
+3. The entry will no longer appear in "Auto-Spilled Data" section
+
+IMPORTANT: Always process auto-spilled entries promptly to keep context clean.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description: 'The autospill key to process (e.g., "raw.autospill_web_scrape_...")',
+        },
+        summary: {
+          type: 'string',
+          description: 'A concise summary of the key findings/data from this entry (will be stored in findings tier)',
+        },
+        summary_key: {
+          type: 'string',
+          description: 'Optional: Key name for the summary. Defaults to "findings.<toolname>_summary_<timestamp>"',
+        },
+        retrieve_first: {
+          type: 'boolean',
+          description: 'Optional: If true, returns the full content before marking as consumed. Default: false (just mark consumed)',
+        },
+      },
+      required: ['key', 'summary'],
+    },
+  },
+};
+
+/**
+ * Create autospill_process tool
+ */
+export function createAutoSpillProcessTool(): ToolFunction {
+  return {
+    definition: autospillProcessDefinition,
+    execute: async (args: Record<string, unknown>, context?: ToolContext) => {
+      const agentCtx = context?.agentContext;
+      if (!agentCtx) {
+        return { error: 'AgentContext not available' };
+      }
+
+      const plugin = agentCtx.autoSpillPlugin;
+      const memory = context.memory;
+
+      if (!plugin) {
+        return { error: 'AutoSpill plugin not enabled. This tool requires features.autoSpill: true' };
+      }
+
+      const key = args.key as string;
+      const summary = args.summary as string;
+      const retrieveFirst = args.retrieve_first as boolean | undefined;
+
+      // 1. Get the entry metadata
+      const entry = plugin.getEntry(key);
+      if (!entry) {
+        return {
+          error: `Entry "${key}" not found in auto-spill tracker`,
+          hint: 'The entry may have already been consumed or cleaned up. Use memory_query({ pattern: "raw.*" }) to list available entries.',
+        };
+      }
+
+      // 2. Optionally retrieve the full content
+      let fullContent: unknown = undefined;
+      if (retrieveFirst && memory) {
+        fullContent = await memory.get(key);
+      }
+
+      // 3. Store summary in findings tier (using findings prefix for tier)
+      const baseKey = (args.summary_key as string) ||
+        `${entry.sourceTool}_summary_${Date.now()}`;
+      // Add findings tier prefix for proper tier-based storage
+      const summaryKey = addTierPrefix(baseKey.replace(/^findings\./, ''), 'findings');
+
+      if (memory) {
+        await memory.set(
+          summaryKey,
+          `Summary of ${entry.description}`,
+          summary,
+          { priority: 'high' as MemoryPriority, scope: { type: 'plan' } }  // Findings = high priority, plan scope
+        );
+      }
+
+      // 4. Mark as consumed - THIS IS THE KEY STEP that breaks the infinite loop
+      plugin.markConsumed(key, summaryKey);
+
+      const result: Record<string, unknown> = {
+        success: true,
+        message: `Processed "${key}" - entry will no longer appear in context`,
+        processed_entry: {
+          key: entry.key,
+          source_tool: entry.sourceTool,
+          description: entry.description,
+          size_bytes: entry.sizeBytes,
+        },
+        summary_stored_at: summaryKey,
+      };
+
+      if (fullContent !== undefined) {
+        result.content = fullContent;
+      }
+
+      return result;
+    },
+    idempotency: { safe: false }, // Has side effects (marks consumed)
+    output: { expectedSize: 'variable' },
+    describeCall: (args) => {
+      const key = args.key as string;
+      return key.replace('raw.autospill_', '').slice(0, 40);
+    },
+  };
+}
+
+// ============================================================================
 // Convenience Functions
 // ============================================================================
 
@@ -493,6 +623,7 @@ export function createMemoryCleanupRawTool(): ToolFunction {
  * - memory_delete: Delete entry by key
  * - memory_query: Query/list/batch retrieve (merged memory_list + memory_retrieve_batch)
  * - memory_cleanup_raw: Clean up raw tier data
+ * - autospill_process: Process auto-spilled entries (CRITICAL for breaking loops)
  */
 export function createMemoryTools(): ToolFunction[] {
   return [
@@ -501,5 +632,6 @@ export function createMemoryTools(): ToolFunction[] {
     createMemoryDeleteTool(),
     createMemoryQueryTool(),
     createMemoryCleanupRawTool(),
+    createAutoSpillProcessTool(),
   ];
 }

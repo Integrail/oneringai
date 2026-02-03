@@ -1249,6 +1249,335 @@ declare function defaultDescribeCall(args: Record<string, unknown>, maxLength?: 
 declare function getToolCallDescription<TArgs>(tool: ToolFunction<TArgs>, args: TArgs): string;
 
 /**
+ * Content types based on OpenAI Responses API format
+ */
+declare enum ContentType {
+    INPUT_TEXT = "input_text",
+    INPUT_IMAGE_URL = "input_image_url",
+    INPUT_FILE = "input_file",
+    OUTPUT_TEXT = "output_text",
+    TOOL_USE = "tool_use",
+    TOOL_RESULT = "tool_result"
+}
+interface BaseContent {
+    type: ContentType;
+}
+interface InputTextContent extends BaseContent {
+    type: ContentType.INPUT_TEXT;
+    text: string;
+}
+interface InputImageContent extends BaseContent {
+    type: ContentType.INPUT_IMAGE_URL;
+    image_url: {
+        url: string;
+        detail?: 'auto' | 'low' | 'high';
+    };
+}
+interface InputFileContent extends BaseContent {
+    type: ContentType.INPUT_FILE;
+    file_id: string;
+}
+interface OutputTextContent extends BaseContent {
+    type: ContentType.OUTPUT_TEXT;
+    text: string;
+    annotations?: any[];
+}
+interface ToolUseContent extends BaseContent {
+    type: ContentType.TOOL_USE;
+    id: string;
+    name: string;
+    arguments: string;
+}
+interface ToolResultContent extends BaseContent {
+    type: ContentType.TOOL_RESULT;
+    tool_use_id: string;
+    content: string | any;
+    error?: string;
+}
+type Content = InputTextContent | InputImageContent | InputFileContent | OutputTextContent | ToolUseContent | ToolResultContent;
+
+/**
+ * Message entity based on OpenAI Responses API format
+ */
+
+declare enum MessageRole {
+    USER = "user",
+    ASSISTANT = "assistant",
+    DEVELOPER = "developer"
+}
+interface Message {
+    type: 'message';
+    id?: string;
+    role: MessageRole;
+    content: Content[];
+}
+interface CompactionItem {
+    type: 'compaction';
+    id: string;
+    encrypted_content: string;
+}
+interface ReasoningItem {
+    type: 'reasoning';
+    id: string;
+    effort?: 'low' | 'medium' | 'high';
+    summary?: string;
+    encrypted_content?: string;
+}
+type InputItem = Message | CompactionItem;
+type OutputItem = Message | CompactionItem | ReasoningItem;
+
+/**
+ * LLM Response entity based on OpenAI Responses API format
+ */
+
+/**
+ * Token usage statistics
+ */
+interface TokenUsage {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+    output_tokens_details?: {
+        reasoning_tokens: number;
+    };
+}
+interface LLMResponse {
+    id: string;
+    object: 'response';
+    created_at: number;
+    status: 'completed' | 'failed' | 'in_progress' | 'cancelled' | 'queued' | 'incomplete';
+    model: string;
+    output: OutputItem[];
+    output_text?: string;
+    usage: TokenUsage;
+    error?: {
+        type: string;
+        message: string;
+    };
+    metadata?: Record<string, string>;
+}
+type AgentResponse = LLMResponse;
+
+/**
+ * Streaming event types for real-time LLM responses
+ * Based on OpenAI Responses API event format as the internal standard
+ */
+
+/**
+ * Stream event type enum
+ */
+declare enum StreamEventType {
+    RESPONSE_CREATED = "response.created",
+    RESPONSE_IN_PROGRESS = "response.in_progress",
+    OUTPUT_TEXT_DELTA = "response.output_text.delta",
+    OUTPUT_TEXT_DONE = "response.output_text.done",
+    TOOL_CALL_START = "response.tool_call.start",
+    TOOL_CALL_ARGUMENTS_DELTA = "response.tool_call_arguments.delta",
+    TOOL_CALL_ARGUMENTS_DONE = "response.tool_call_arguments.done",
+    TOOL_EXECUTION_START = "response.tool_execution.start",
+    TOOL_EXECUTION_DONE = "response.tool_execution.done",
+    ITERATION_COMPLETE = "response.iteration.complete",
+    RESPONSE_COMPLETE = "response.complete",
+    ERROR = "response.error"
+}
+/**
+ * Base interface for all stream events
+ */
+interface BaseStreamEvent {
+    type: StreamEventType;
+    response_id: string;
+}
+/**
+ * Response created - first event in stream
+ */
+interface ResponseCreatedEvent extends BaseStreamEvent {
+    type: StreamEventType.RESPONSE_CREATED;
+    model: string;
+    created_at: number;
+}
+/**
+ * Response in progress
+ */
+interface ResponseInProgressEvent extends BaseStreamEvent {
+    type: StreamEventType.RESPONSE_IN_PROGRESS;
+}
+/**
+ * Text delta - incremental text output
+ */
+interface OutputTextDeltaEvent extends BaseStreamEvent {
+    type: StreamEventType.OUTPUT_TEXT_DELTA;
+    item_id: string;
+    output_index: number;
+    content_index: number;
+    delta: string;
+    sequence_number: number;
+}
+/**
+ * Text output complete for this item
+ */
+interface OutputTextDoneEvent extends BaseStreamEvent {
+    type: StreamEventType.OUTPUT_TEXT_DONE;
+    item_id: string;
+    output_index: number;
+    text: string;
+}
+/**
+ * Tool call detected and starting
+ */
+interface ToolCallStartEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_CALL_START;
+    item_id: string;
+    tool_call_id: string;
+    tool_name: string;
+}
+/**
+ * Tool call arguments delta - incremental JSON
+ */
+interface ToolCallArgumentsDeltaEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_CALL_ARGUMENTS_DELTA;
+    item_id: string;
+    tool_call_id: string;
+    tool_name: string;
+    delta: string;
+    sequence_number: number;
+}
+/**
+ * Tool call arguments complete
+ */
+interface ToolCallArgumentsDoneEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_CALL_ARGUMENTS_DONE;
+    tool_call_id: string;
+    tool_name: string;
+    arguments: string;
+    incomplete?: boolean;
+}
+/**
+ * Tool execution starting
+ */
+interface ToolExecutionStartEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_EXECUTION_START;
+    tool_call_id: string;
+    tool_name: string;
+    arguments: any;
+}
+/**
+ * Tool execution complete
+ */
+interface ToolExecutionDoneEvent extends BaseStreamEvent {
+    type: StreamEventType.TOOL_EXECUTION_DONE;
+    tool_call_id: string;
+    tool_name: string;
+    result: any;
+    execution_time_ms: number;
+    error?: string;
+}
+/**
+ * Iteration complete - end of agentic loop iteration
+ */
+interface IterationCompleteEvent$1 extends BaseStreamEvent {
+    type: StreamEventType.ITERATION_COMPLETE;
+    iteration: number;
+    tool_calls_count: number;
+    has_more_iterations: boolean;
+}
+/**
+ * Response complete - final event
+ */
+interface ResponseCompleteEvent extends BaseStreamEvent {
+    type: StreamEventType.RESPONSE_COMPLETE;
+    status: 'completed' | 'incomplete' | 'failed';
+    usage: TokenUsage;
+    iterations: number;
+    duration_ms?: number;
+}
+/**
+ * Error event
+ */
+interface ErrorEvent extends BaseStreamEvent {
+    type: StreamEventType.ERROR;
+    error: {
+        type: string;
+        message: string;
+        code?: string;
+    };
+    recoverable: boolean;
+}
+/**
+ * Union type of all stream events
+ * Discriminated by 'type' field for type narrowing
+ */
+type StreamEvent = ResponseCreatedEvent | ResponseInProgressEvent | OutputTextDeltaEvent | OutputTextDoneEvent | ToolCallStartEvent | ToolCallArgumentsDeltaEvent | ToolCallArgumentsDoneEvent | ToolExecutionStartEvent | ToolExecutionDoneEvent | IterationCompleteEvent$1 | ResponseCompleteEvent | ErrorEvent;
+/**
+ * Type guard to check if event is a specific type
+ */
+declare function isStreamEvent<T extends StreamEvent>(event: StreamEvent, type: StreamEventType): event is T;
+/**
+ * Type guards for specific events
+ */
+declare function isOutputTextDelta(event: StreamEvent): event is OutputTextDeltaEvent;
+declare function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent;
+declare function isToolCallArgumentsDelta(event: StreamEvent): event is ToolCallArgumentsDeltaEvent;
+declare function isToolCallArgumentsDone(event: StreamEvent): event is ToolCallArgumentsDoneEvent;
+declare function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent;
+declare function isErrorEvent(event: StreamEvent): event is ErrorEvent;
+
+/**
+ * Text generation provider interface
+ */
+
+interface TextGenerateOptions {
+    model: string;
+    input: string | InputItem[];
+    instructions?: string;
+    tools?: Tool[];
+    tool_choice?: 'auto' | 'required' | {
+        type: 'function';
+        function: {
+            name: string;
+        };
+    };
+    temperature?: number;
+    max_output_tokens?: number;
+    response_format?: {
+        type: 'text' | 'json_object' | 'json_schema';
+        json_schema?: any;
+    };
+    parallel_tool_calls?: boolean;
+    previous_response_id?: string;
+    metadata?: Record<string, string>;
+    /** Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) */
+    vendorOptions?: Record<string, any>;
+}
+interface ModelCapabilities {
+    supportsTools: boolean;
+    supportsVision: boolean;
+    supportsJSON: boolean;
+    supportsJSONSchema: boolean;
+    maxTokens: number;
+    maxInputTokens?: number;
+    maxOutputTokens?: number;
+}
+interface ITextProvider extends IProvider {
+    /**
+     * Generate text response
+     */
+    generate(options: TextGenerateOptions): Promise<LLMResponse>;
+    /**
+     * Stream text response with real-time events
+     * Returns an async iterator of streaming events
+     */
+    streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent>;
+    /**
+     * Get model capabilities
+     */
+    getModelCapabilities(model: string): ModelCapabilities;
+    /**
+     * List available models
+     */
+    listModels?(): Promise<string[]>;
+}
+
+/**
  * Tool Permission Types
  *
  * Defines permission scopes, risk levels, and approval state for tool execution control.
@@ -2230,84 +2559,6 @@ interface ContextStorageListOptions {
 }
 
 /**
- * Content types based on OpenAI Responses API format
- */
-declare enum ContentType {
-    INPUT_TEXT = "input_text",
-    INPUT_IMAGE_URL = "input_image_url",
-    INPUT_FILE = "input_file",
-    OUTPUT_TEXT = "output_text",
-    TOOL_USE = "tool_use",
-    TOOL_RESULT = "tool_result"
-}
-interface BaseContent {
-    type: ContentType;
-}
-interface InputTextContent extends BaseContent {
-    type: ContentType.INPUT_TEXT;
-    text: string;
-}
-interface InputImageContent extends BaseContent {
-    type: ContentType.INPUT_IMAGE_URL;
-    image_url: {
-        url: string;
-        detail?: 'auto' | 'low' | 'high';
-    };
-}
-interface InputFileContent extends BaseContent {
-    type: ContentType.INPUT_FILE;
-    file_id: string;
-}
-interface OutputTextContent extends BaseContent {
-    type: ContentType.OUTPUT_TEXT;
-    text: string;
-    annotations?: any[];
-}
-interface ToolUseContent extends BaseContent {
-    type: ContentType.TOOL_USE;
-    id: string;
-    name: string;
-    arguments: string;
-}
-interface ToolResultContent extends BaseContent {
-    type: ContentType.TOOL_RESULT;
-    tool_use_id: string;
-    content: string | any;
-    error?: string;
-}
-type Content = InputTextContent | InputImageContent | InputFileContent | OutputTextContent | ToolUseContent | ToolResultContent;
-
-/**
- * Message entity based on OpenAI Responses API format
- */
-
-declare enum MessageRole {
-    USER = "user",
-    ASSISTANT = "assistant",
-    DEVELOPER = "developer"
-}
-interface Message {
-    type: 'message';
-    id?: string;
-    role: MessageRole;
-    content: Content[];
-}
-interface CompactionItem {
-    type: 'compaction';
-    id: string;
-    encrypted_content: string;
-}
-interface ReasoningItem {
-    type: 'reasoning';
-    id: string;
-    effort?: 'low' | 'medium' | 'high';
-    summary?: string;
-    encrypted_content?: string;
-}
-type InputItem = Message | CompactionItem;
-type OutputItem = Message | CompactionItem | ReasoningItem;
-
-/**
  * ToolOutputPlugin - Tracks recent tool outputs for context
  *
  * Tool outputs are the most expendable context - they can be truncated
@@ -2419,6 +2670,10 @@ interface SpilledEntry {
     key: string;
     /** Tool that produced the output */
     sourceTool: string;
+    /** Human-readable description of what this entry contains */
+    description: string;
+    /** Original tool arguments (for context) */
+    toolArgs?: Record<string, unknown>;
     /** Original size in bytes */
     sizeBytes: number;
     /** When the entry was spilled */
@@ -2516,9 +2771,19 @@ declare class AutoSpillPlugin extends BaseContextPlugin {
      *
      * @param toolName - Name of the tool
      * @param output - Tool output
+     * @param toolArgs - Optional tool arguments for better descriptions
+     * @param describeCall - Optional describeCall function from the tool
      * @returns The memory key if spilled, undefined otherwise
      */
-    onToolOutput(toolName: string, output: unknown): Promise<string | undefined>;
+    onToolOutput(toolName: string, output: unknown, toolArgs?: Record<string, unknown>, describeCall?: (args: Record<string, unknown>) => string): Promise<string | undefined>;
+    /**
+     * Generate a human-readable description for the spilled entry
+     */
+    private generateDescription;
+    /**
+     * Sanitize a string for use in a memory key
+     */
+    private sanitizeKeyPart;
     /**
      * Mark a spilled entry as consumed (summarized)
      * Call this when the agent creates a summary from raw data
@@ -2565,6 +2830,10 @@ declare class AutoSpillPlugin extends BaseContextPlugin {
      * Get spill info for a specific key
      */
     getSpillInfo(key: string): SpilledEntry | undefined;
+    /**
+     * Get entry by key (alias for getSpillInfo for cleaner API)
+     */
+    getEntry(key: string): SpilledEntry | undefined;
     getComponent(): Promise<IContextComponent | null>;
     compact(_targetTokens: number, _estimator: ITokenEstimator): Promise<number>;
     getState(): SerializedAutoSpillState;
@@ -2572,6 +2841,49 @@ declare class AutoSpillPlugin extends BaseContextPlugin {
     destroy(): void;
     private pruneOldEntries;
 }
+
+/**
+ * Strategy-specific thresholds (percentages of maxContextTokens).
+ * These adapt context management behavior to the chosen compaction strategy.
+ */
+declare const STRATEGY_THRESHOLDS: {
+    readonly proactive: {
+        readonly compactionTrigger: 0.75;
+        readonly compactionTarget: 0.65;
+        readonly smartCompactionTrigger: 0.7;
+        readonly maxToolResultsPercent: 0.3;
+        readonly protectedContextPercent: 0.1;
+    };
+    readonly aggressive: {
+        readonly compactionTrigger: 0.6;
+        readonly compactionTarget: 0.5;
+        readonly smartCompactionTrigger: 0.55;
+        readonly maxToolResultsPercent: 0.25;
+        readonly protectedContextPercent: 0.08;
+    };
+    readonly lazy: {
+        readonly compactionTrigger: 0.9;
+        readonly compactionTarget: 0.85;
+        readonly smartCompactionTrigger: 0.85;
+        readonly maxToolResultsPercent: 0.4;
+        readonly protectedContextPercent: 0.15;
+    };
+    readonly adaptive: {
+        readonly compactionTrigger: 0.75;
+        readonly compactionTarget: 0.65;
+        readonly smartCompactionTrigger: 0.7;
+        readonly maxToolResultsPercent: 0.3;
+        readonly protectedContextPercent: 0.1;
+    };
+    readonly 'rolling-window': {
+        readonly compactionTrigger: 0.85;
+        readonly compactionTarget: 0.75;
+        readonly smartCompactionTrigger: 0.8;
+        readonly maxToolResultsPercent: 0.35;
+        readonly protectedContextPercent: 0.12;
+    };
+};
+type StrategyName = keyof typeof STRATEGY_THRESHOLDS;
 
 /**
  * ToolResultEvictionPlugin - Smart eviction of old tool results from context
@@ -2629,15 +2941,29 @@ interface TrackedResult {
  */
 interface ToolResultEvictionConfig {
     /**
+     * Compaction strategy - determines thresholds and retention multipliers.
+     * Uses STRATEGY_THRESHOLDS for percentage-based limits.
+     * @default 'proactive'
+     */
+    strategy?: StrategyName;
+    /**
+     * Maximum context tokens (used for percentage-based calculations).
+     * If not provided, falls back to legacy count-based limits.
+     * @default undefined (uses legacy limits)
+     */
+    maxContextTokens?: number;
+    /**
      * Maximum number of full tool result pairs to keep in conversation.
      * Beyond this, oldest pairs are evicted to memory.
-     * @default 5
+     * NOTE: This is a SAFETY CAP. Prefer strategy-based percentage limits.
+     * @default 10
      */
     maxFullResults?: number;
     /**
      * Maximum age in iterations before eviction.
      * Results older than this are evicted regardless of count.
-     * @default 3
+     * NOTE: This is multiplied by TOOL_RETENTION_MULTIPLIERS[strategy].
+     * @default 5
      */
     maxAgeIterations?: number;
     /**
@@ -2654,6 +2980,7 @@ interface ToolResultEvictionConfig {
     maxTotalSizeBytes?: number;
     /**
      * Per-tool iteration retention overrides.
+     * These are base values, multiplied by TOOL_RETENTION_MULTIPLIERS[strategy].
      * Tools not in this map use maxAgeIterations.
      * @example { 'read_file': 10, 'web_fetch': 3 }
      */
@@ -2730,6 +3057,14 @@ declare class ToolResultEvictionPlugin extends BaseContextPlugin {
     private removeToolPairCallback;
     constructor(memory: WorkingMemory, config?: ToolResultEvictionConfig);
     /**
+     * Get effective retention for a tool, considering strategy multiplier
+     */
+    private getEffectiveRetention;
+    /**
+     * Get effective max results, considering strategy and token-based limits
+     */
+    private getEffectiveMaxResults;
+    /**
      * Subscribe to events
      */
     on<K extends keyof ToolResultEvictionEvents>(event: K, listener: (...args: any[]) => void): this;
@@ -2745,7 +3080,7 @@ declare class ToolResultEvictionPlugin extends BaseContextPlugin {
     /**
      * Get current configuration
      */
-    getConfig(): Readonly<Required<ToolResultEvictionConfig>>;
+    getConfig(): Readonly<typeof this.config>;
     /**
      * Track a new tool result.
      * Called by AgentContext when tool results are added to conversation.
@@ -2770,11 +3105,13 @@ declare class ToolResultEvictionPlugin extends BaseContextPlugin {
     /**
      * Check if eviction is needed based on current state.
      * Returns true if any eviction trigger is met.
+     * Uses strategy-dependent thresholds for more balanced behavior.
      */
     shouldEvict(): boolean;
     /**
      * Get candidates for eviction, sorted by priority.
      * Candidates are selected to bring the system under all thresholds.
+     * Uses strategy-dependent thresholds for more balanced behavior.
      */
     private getEvictionCandidates;
     /**
@@ -2893,17 +3230,35 @@ interface ContextGuardianConfig {
     minSystemPromptTokens?: number;
     /** Number of recent messages to always protect from compaction */
     protectedRecentMessages?: number;
+    /** Maximum context tokens (used for percentage-based protection calculations) */
+    maxContextTokens?: number;
+    /** Strategy name (affects protected message percentage) */
+    strategy?: StrategyName;
 }
 /**
  * ContextGuardian - Ensures context never exceeds model limits
+ *
+ * The guardian acts as a LAST RESORT after smart compaction and strategy-based
+ * eviction have already been attempted. It uses strategy-aware thresholds
+ * to avoid overly aggressive data loss.
  */
 declare class ContextGuardian {
     private readonly _enabled;
     private readonly _maxToolResultTokens;
     private readonly _minSystemPromptTokens;
-    private readonly _protectedRecentMessages;
+    private readonly _configuredProtectedMessages;
+    private readonly _maxContextTokens;
+    private readonly _strategy;
     private readonly _estimator;
     constructor(estimator: ITokenEstimator, config?: ContextGuardianConfig);
+    /**
+     * Get effective protected message count, considering strategy and context size.
+     * Uses percentage-based calculation if maxContextTokens is available.
+     *
+     * NOTE: If an explicit value was configured (not using default), it's honored
+     * without applying minimum caps - this allows tests and special cases to work.
+     */
+    private get _protectedRecentMessages();
     /**
      * Check if guardian is enabled
      */
@@ -2953,6 +3308,139 @@ declare class ContextGuardian {
      * Truncate a message to target token count
      */
     private truncateMessage;
+}
+
+/**
+ * SmartCompactor - LLM-powered intelligent context compaction
+ *
+ * Unlike traditional compaction that blindly truncates or removes messages,
+ * SmartCompactor uses an LLM to intelligently:
+ * - Summarize older conversation segments
+ * - Spill large data blobs to working memory
+ * - Remove low-value exchanges (acknowledgments, greetings)
+ * - Preserve critical context and recent messages
+ *
+ * This is Phase 4 of the Context Management Balance Fix Plan.
+ */
+
+/**
+ * Configuration for SmartCompactor
+ */
+interface SmartCompactorConfig {
+    /** Strategy name for threshold lookup */
+    strategy: StrategyName;
+    /** Maximum context tokens for the model */
+    maxContextTokens: number;
+    /** Model to use for compaction analysis (uses same provider as agent) */
+    model?: string;
+    /** Maximum tokens for compaction analysis call */
+    maxAnalysisTokens?: number;
+    /** Whether to spill data to memory (requires memory to be enabled) */
+    enableSpillToMemory?: boolean;
+    /** Minimum message count to attempt compaction on */
+    minMessagesToCompact?: number;
+}
+/**
+ * Summary generated by smart compaction
+ */
+interface CompactionSummary {
+    /** Key for the summary (if stored in memory) */
+    key?: string;
+    /** The summary text */
+    summary: string;
+    /** Message IDs that were summarized */
+    messageIds: string[];
+    /** Importance level */
+    importance: 'high' | 'medium' | 'low';
+}
+/**
+ * Data spilled to memory
+ */
+interface SpilledData {
+    /** Memory key where data was stored */
+    key: string;
+    /** Original message ID */
+    messageId: string;
+    /** Reason for spilling */
+    reason: string;
+}
+/**
+ * Result of smart compaction
+ */
+interface SmartCompactionResult {
+    /** Summaries created */
+    summaries: CompactionSummary[];
+    /** Data spilled to memory */
+    spilled: SpilledData[];
+    /** Message IDs removed */
+    removed: string[];
+    /** Tokens freed by compaction */
+    tokensFreed: number;
+    /** Compaction log entries */
+    log: string[];
+    /** Whether compaction was successful */
+    success: boolean;
+    /** Error message if failed */
+    error?: string;
+}
+/**
+ * SmartCompactor - Uses LLM to intelligently compact context
+ *
+ * Key features:
+ * - Strategy-aware thresholds
+ * - Preserves recent messages (protected by strategy)
+ * - Creates summaries of older conversation segments
+ * - Spills large data to WorkingMemory
+ * - Removes low-value messages
+ */
+declare class SmartCompactor {
+    private readonly provider;
+    private readonly memory;
+    private readonly config;
+    constructor(provider: ITextProvider, memory: WorkingMemory | null, config: SmartCompactorConfig);
+    /**
+     * Check if smart compaction should trigger based on current context usage
+     */
+    shouldTrigger(currentTokens: number): boolean;
+    /**
+     * Get target token count after compaction (strategy-dependent)
+     */
+    getTargetTokens(): number;
+    /**
+     * Get the number of protected messages based on strategy
+     */
+    getProtectedMessageCount(): number;
+    /**
+     * Run smart compaction on the provided context
+     *
+     * @param context - The prepared context to compact
+     * @param targetReduction - Optional target reduction percentage (0-100)
+     */
+    compact(context: PreparedContext, targetReduction?: number): Promise<SmartCompactionResult>;
+    /**
+     * Parse messages from a context component
+     */
+    private parseMessages;
+    /**
+     * Build the analysis prompt for LLM decision-making
+     */
+    private buildAnalysisPrompt;
+    /**
+     * Parse LLM response into compaction decisions
+     */
+    private parseDecisions;
+    /**
+     * Execute the compaction decisions
+     */
+    private executeDecisions;
+    /**
+     * Get compactor configuration
+     */
+    getConfig(): Readonly<Required<SmartCompactorConfig>>;
+    /**
+     * Extract text content from LLM response output
+     */
+    private extractTextFromResponse;
 }
 
 /**
@@ -3588,6 +4076,24 @@ interface AgentContextConfig {
      */
     guardian?: ContextGuardianConfig;
     /**
+     * SmartCompaction configuration - LLM-powered intelligent context compaction.
+     * When enabled, provides the context_compact tool and automatic smart compaction.
+     * Requires an ITextProvider to be set via setSmartCompactorProvider().
+     * @default undefined (disabled)
+     */
+    smartCompaction?: {
+        /** Enable smart compaction (default: false - must be explicitly enabled) */
+        enabled?: boolean;
+        /** Model to use for compaction analysis (default: 'gpt-4o-mini') */
+        model?: string;
+        /** Maximum tokens for the analysis call (default: 2000) */
+        maxAnalysisTokens?: number;
+        /** Enable spilling data to memory (default: true if memory enabled) */
+        enableSpillToMemory?: boolean;
+        /** Minimum messages before allowing compaction (default: 10) */
+        minMessagesToCompact?: number;
+    };
+    /**
      * Agent ID - used for persistent storage paths and identification
      * If not provided, will be auto-generated
      */
@@ -3764,6 +4270,8 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
     private _autoSpillPlugin;
     private _toolResultEvictionPlugin;
     private readonly _guardian;
+    private _smartCompactor;
+    private _smartCompactionConfig;
     private readonly _agentId;
     private readonly _features;
     private _systemPrompt;
@@ -3848,6 +4356,23 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * If true, call ensureMCPInitialized() to wait for completion.
      */
     get mcpInitializationPending(): boolean;
+    /** SmartCompactor for LLM-powered context compaction (null if not configured or no provider) */
+    get smartCompactor(): SmartCompactor | null;
+    /**
+     * Set the text provider for SmartCompactor.
+     * This must be called to enable smart compaction (typically by Agent after provider is created).
+     *
+     * @param provider - The ITextProvider to use for compaction analysis
+     */
+    setSmartCompactorProvider(provider: ITextProvider): void;
+    /**
+     * Trigger smart compaction of the context.
+     * Returns the compaction result with details about what was done.
+     *
+     * @param targetReduction - Optional target reduction percentage (0-100)
+     * @throws Error if SmartCompactor is not configured
+     */
+    triggerSmartCompaction(targetReduction?: number): Promise<SmartCompactionResult>;
     /**
      * Ensure MCP servers are initialized before proceeding.
      * Call this if you need MCP tools to be available immediately.
@@ -4009,6 +4534,7 @@ declare class AgentContext extends EventEmitter<AgentContextEvents> {
      * Consolidated tools (Phase 1):
      * - Always: context_stats (unified introspection - gracefully handles disabled features)
      * - When memory feature enabled: memory_store, memory_retrieve, memory_delete, memory_query, memory_cleanup_raw
+     * - When autoSpill feature enabled: autospill_process (CRITICAL for breaking infinite loops)
      * - InContextMemory (context_set, context_delete, context_list) & PersistentInstructions tools
      *   are registered separately in the constructor when those features are enabled.
      */
@@ -4847,257 +5373,6 @@ declare class ToolManager extends EventEmitter implements IToolExecutor, IDispos
     private moveToNamespace;
     private filterByTokenBudget;
     private estimateToolTokens;
-}
-
-/**
- * LLM Response entity based on OpenAI Responses API format
- */
-
-/**
- * Token usage statistics
- */
-interface TokenUsage {
-    input_tokens: number;
-    output_tokens: number;
-    total_tokens: number;
-    output_tokens_details?: {
-        reasoning_tokens: number;
-    };
-}
-interface LLMResponse {
-    id: string;
-    object: 'response';
-    created_at: number;
-    status: 'completed' | 'failed' | 'in_progress' | 'cancelled' | 'queued' | 'incomplete';
-    model: string;
-    output: OutputItem[];
-    output_text?: string;
-    usage: TokenUsage;
-    error?: {
-        type: string;
-        message: string;
-    };
-    metadata?: Record<string, string>;
-}
-type AgentResponse = LLMResponse;
-
-/**
- * Streaming event types for real-time LLM responses
- * Based on OpenAI Responses API event format as the internal standard
- */
-
-/**
- * Stream event type enum
- */
-declare enum StreamEventType {
-    RESPONSE_CREATED = "response.created",
-    RESPONSE_IN_PROGRESS = "response.in_progress",
-    OUTPUT_TEXT_DELTA = "response.output_text.delta",
-    OUTPUT_TEXT_DONE = "response.output_text.done",
-    TOOL_CALL_START = "response.tool_call.start",
-    TOOL_CALL_ARGUMENTS_DELTA = "response.tool_call_arguments.delta",
-    TOOL_CALL_ARGUMENTS_DONE = "response.tool_call_arguments.done",
-    TOOL_EXECUTION_START = "response.tool_execution.start",
-    TOOL_EXECUTION_DONE = "response.tool_execution.done",
-    ITERATION_COMPLETE = "response.iteration.complete",
-    RESPONSE_COMPLETE = "response.complete",
-    ERROR = "response.error"
-}
-/**
- * Base interface for all stream events
- */
-interface BaseStreamEvent {
-    type: StreamEventType;
-    response_id: string;
-}
-/**
- * Response created - first event in stream
- */
-interface ResponseCreatedEvent extends BaseStreamEvent {
-    type: StreamEventType.RESPONSE_CREATED;
-    model: string;
-    created_at: number;
-}
-/**
- * Response in progress
- */
-interface ResponseInProgressEvent extends BaseStreamEvent {
-    type: StreamEventType.RESPONSE_IN_PROGRESS;
-}
-/**
- * Text delta - incremental text output
- */
-interface OutputTextDeltaEvent extends BaseStreamEvent {
-    type: StreamEventType.OUTPUT_TEXT_DELTA;
-    item_id: string;
-    output_index: number;
-    content_index: number;
-    delta: string;
-    sequence_number: number;
-}
-/**
- * Text output complete for this item
- */
-interface OutputTextDoneEvent extends BaseStreamEvent {
-    type: StreamEventType.OUTPUT_TEXT_DONE;
-    item_id: string;
-    output_index: number;
-    text: string;
-}
-/**
- * Tool call detected and starting
- */
-interface ToolCallStartEvent extends BaseStreamEvent {
-    type: StreamEventType.TOOL_CALL_START;
-    item_id: string;
-    tool_call_id: string;
-    tool_name: string;
-}
-/**
- * Tool call arguments delta - incremental JSON
- */
-interface ToolCallArgumentsDeltaEvent extends BaseStreamEvent {
-    type: StreamEventType.TOOL_CALL_ARGUMENTS_DELTA;
-    item_id: string;
-    tool_call_id: string;
-    tool_name: string;
-    delta: string;
-    sequence_number: number;
-}
-/**
- * Tool call arguments complete
- */
-interface ToolCallArgumentsDoneEvent extends BaseStreamEvent {
-    type: StreamEventType.TOOL_CALL_ARGUMENTS_DONE;
-    tool_call_id: string;
-    tool_name: string;
-    arguments: string;
-    incomplete?: boolean;
-}
-/**
- * Tool execution starting
- */
-interface ToolExecutionStartEvent extends BaseStreamEvent {
-    type: StreamEventType.TOOL_EXECUTION_START;
-    tool_call_id: string;
-    tool_name: string;
-    arguments: any;
-}
-/**
- * Tool execution complete
- */
-interface ToolExecutionDoneEvent extends BaseStreamEvent {
-    type: StreamEventType.TOOL_EXECUTION_DONE;
-    tool_call_id: string;
-    tool_name: string;
-    result: any;
-    execution_time_ms: number;
-    error?: string;
-}
-/**
- * Iteration complete - end of agentic loop iteration
- */
-interface IterationCompleteEvent$1 extends BaseStreamEvent {
-    type: StreamEventType.ITERATION_COMPLETE;
-    iteration: number;
-    tool_calls_count: number;
-    has_more_iterations: boolean;
-}
-/**
- * Response complete - final event
- */
-interface ResponseCompleteEvent extends BaseStreamEvent {
-    type: StreamEventType.RESPONSE_COMPLETE;
-    status: 'completed' | 'incomplete' | 'failed';
-    usage: TokenUsage;
-    iterations: number;
-    duration_ms?: number;
-}
-/**
- * Error event
- */
-interface ErrorEvent extends BaseStreamEvent {
-    type: StreamEventType.ERROR;
-    error: {
-        type: string;
-        message: string;
-        code?: string;
-    };
-    recoverable: boolean;
-}
-/**
- * Union type of all stream events
- * Discriminated by 'type' field for type narrowing
- */
-type StreamEvent = ResponseCreatedEvent | ResponseInProgressEvent | OutputTextDeltaEvent | OutputTextDoneEvent | ToolCallStartEvent | ToolCallArgumentsDeltaEvent | ToolCallArgumentsDoneEvent | ToolExecutionStartEvent | ToolExecutionDoneEvent | IterationCompleteEvent$1 | ResponseCompleteEvent | ErrorEvent;
-/**
- * Type guard to check if event is a specific type
- */
-declare function isStreamEvent<T extends StreamEvent>(event: StreamEvent, type: StreamEventType): event is T;
-/**
- * Type guards for specific events
- */
-declare function isOutputTextDelta(event: StreamEvent): event is OutputTextDeltaEvent;
-declare function isToolCallStart(event: StreamEvent): event is ToolCallStartEvent;
-declare function isToolCallArgumentsDelta(event: StreamEvent): event is ToolCallArgumentsDeltaEvent;
-declare function isToolCallArgumentsDone(event: StreamEvent): event is ToolCallArgumentsDoneEvent;
-declare function isResponseComplete(event: StreamEvent): event is ResponseCompleteEvent;
-declare function isErrorEvent(event: StreamEvent): event is ErrorEvent;
-
-/**
- * Text generation provider interface
- */
-
-interface TextGenerateOptions {
-    model: string;
-    input: string | InputItem[];
-    instructions?: string;
-    tools?: Tool[];
-    tool_choice?: 'auto' | 'required' | {
-        type: 'function';
-        function: {
-            name: string;
-        };
-    };
-    temperature?: number;
-    max_output_tokens?: number;
-    response_format?: {
-        type: 'text' | 'json_object' | 'json_schema';
-        json_schema?: any;
-    };
-    parallel_tool_calls?: boolean;
-    previous_response_id?: string;
-    metadata?: Record<string, string>;
-    /** Vendor-specific options (e.g., Google's thinkingLevel, OpenAI's reasoning_effort) */
-    vendorOptions?: Record<string, any>;
-}
-interface ModelCapabilities {
-    supportsTools: boolean;
-    supportsVision: boolean;
-    supportsJSON: boolean;
-    supportsJSONSchema: boolean;
-    maxTokens: number;
-    maxInputTokens?: number;
-    maxOutputTokens?: number;
-}
-interface ITextProvider extends IProvider {
-    /**
-     * Generate text response
-     */
-    generate(options: TextGenerateOptions): Promise<LLMResponse>;
-    /**
-     * Stream text response with real-time events
-     * Returns an async iterator of streaming events
-     */
-    streamGenerate(options: TextGenerateOptions): AsyncIterableIterator<StreamEvent>;
-    /**
-     * Get model capabilities
-     */
-    getModelCapabilities(model: string): ModelCapabilities;
-    /**
-     * List available models
-     */
-    listModels?(): Promise<string[]>;
 }
 
 /**

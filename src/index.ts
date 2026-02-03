@@ -208,6 +208,8 @@ export {
   CheckpointManager,
   createMemoryTools,
   createContextTools,
+  createContextCompactTool,
+  contextCompactDefinition,
   PlanningAgent,
   generateSimplePlan,
 } from './capabilities/taskAgent/index.js';

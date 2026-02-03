@@ -4,7 +4,7 @@
  * Electron main process - handles window management and IPC with the agent.
  */
 
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -432,6 +432,19 @@ async function setupIPC(): Promise<void> {
       speed?: number;
       vendorOptions?: Record<string, unknown>;
     });
+  });
+
+  // Dialog operations
+  ipcMain.handle('dialog:show-open-dialog', async (_event, options: {
+    properties?: Array<'openFile' | 'openDirectory' | 'multiSelections' | 'showHiddenFiles'>;
+    title?: string;
+    defaultPath?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+  }) => {
+    if (!mainWindow) {
+      return { canceled: true, filePaths: [] };
+    }
+    return dialog.showOpenDialog(mainWindow, options);
   });
 }
 

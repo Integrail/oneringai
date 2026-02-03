@@ -26,6 +26,10 @@ export interface SpilledEntry {
   key: string;
   /** Tool that produced the output */
   sourceTool: string;
+  /** Human-readable description of what this entry contains */
+  description: string;
+  /** Original tool arguments (for context) */
+  toolArgs?: Record<string, unknown>;
   /** Original size in bytes */
   sizeBytes: number;
   /** When the entry was spilled */
@@ -169,9 +173,16 @@ export class AutoSpillPlugin extends BaseContextPlugin {
    *
    * @param toolName - Name of the tool
    * @param output - Tool output
+   * @param toolArgs - Optional tool arguments for better descriptions
+   * @param describeCall - Optional describeCall function from the tool
    * @returns The memory key if spilled, undefined otherwise
    */
-  async onToolOutput(toolName: string, output: unknown): Promise<string | undefined> {
+  async onToolOutput(
+    toolName: string,
+    output: unknown,
+    toolArgs?: Record<string, unknown>,
+    describeCall?: (args: Record<string, unknown>) => string
+  ): Promise<string | undefined> {
     // Calculate size
     const outputStr = typeof output === 'string' ? output : JSON.stringify(output);
     const sizeBytes = Buffer.byteLength(outputStr, 'utf8');
@@ -180,14 +191,16 @@ export class AutoSpillPlugin extends BaseContextPlugin {
       return undefined;
     }
 
-    // Generate unique key
-    const key = `${this.config.keyPrefix}_${toolName}_${Date.now()}_${this.entryCounter++}`;
+    // Generate descriptive key based on tool call
+    const description = this.generateDescription(toolName, output, sizeBytes, toolArgs, describeCall);
+    const sanitizedDesc = this.sanitizeKeyPart(description);
+    const key = `${this.config.keyPrefix}_${toolName}_${sanitizedDesc}_${this.entryCounter++}`;
     const fullKey = addTierPrefix(key, 'raw');
 
-    // Store in memory's raw tier
+    // Store in memory's raw tier with descriptive description
     await this.memory.storeRaw(
       key,
-      `Auto-spilled output from ${toolName} (${formatBytes(sizeBytes)})`,
+      description,
       output
     );
 
@@ -195,6 +208,8 @@ export class AutoSpillPlugin extends BaseContextPlugin {
     const entry: SpilledEntry = {
       key: fullKey,
       sourceTool: toolName,
+      description,
+      toolArgs,
       sizeBytes,
       timestamp: Date.now(),
       consumed: false,
@@ -208,6 +223,84 @@ export class AutoSpillPlugin extends BaseContextPlugin {
     this.pruneOldEntries();
 
     return fullKey;
+  }
+
+  /**
+   * Generate a human-readable description for the spilled entry
+   */
+  private generateDescription(
+    toolName: string,
+    _output: unknown,  // Reserved for future use (e.g., extracting titles from content)
+    sizeBytes: number,
+    toolArgs?: Record<string, unknown>,
+    describeCall?: (args: Record<string, unknown>) => string
+  ): string {
+    // 1. Try tool's describeCall if available
+    if (describeCall && toolArgs) {
+      try {
+        const desc = describeCall(toolArgs);
+        return `${toolName}: ${desc} (${formatBytes(sizeBytes)})`;
+      } catch {
+        // Fall through
+      }
+    }
+
+    // 2. Built-in descriptions for common tools
+    if (toolArgs) {
+      switch (toolName) {
+        case 'web_scrape':
+        case 'web_fetch':
+        case 'web_fetch_js': {
+          const url = String(toolArgs['url'] || '');
+          try {
+            const u = new URL(url);
+            return `${toolName}: ${u.hostname}${u.pathname.slice(0, 40)} (${formatBytes(sizeBytes)})`;
+          } catch {
+            return `${toolName}: ${url.slice(0, 50)} (${formatBytes(sizeBytes)})`;
+          }
+        }
+
+        case 'web_search': {
+          const query = String(toolArgs['query'] || '').slice(0, 40);
+          return `${toolName}: "${query}" (${formatBytes(sizeBytes)})`;
+        }
+
+        case 'read_file': {
+          const path = String(toolArgs['file_path'] || toolArgs['path'] || '');
+          const file = path.split('/').pop() ?? path;
+          return `${toolName}: ${file.slice(0, 50)} (${formatBytes(sizeBytes)})`;
+        }
+
+        case 'bash': {
+          const cmd = (String(toolArgs['command'] || '').split('\n')[0] ?? '').slice(0, 40);
+          return `${toolName}: \`${cmd}\` (${formatBytes(sizeBytes)})`;
+        }
+
+        default: {
+          // Try common arg keys
+          for (const key of ['query', 'url', 'path', 'command', 'pattern', 'key']) {
+            if (toolArgs[key]) {
+              return `${toolName}: ${key}="${String(toolArgs[key]).slice(0, 40)}" (${formatBytes(sizeBytes)})`;
+            }
+          }
+        }
+      }
+    }
+
+    // 3. Fallback: just size
+    return `Auto-spilled ${toolName} output (${formatBytes(sizeBytes)})`;
+  }
+
+  /**
+   * Sanitize a string for use in a memory key
+   */
+  private sanitizeKeyPart(str: string): string {
+    return str
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 30);
   }
 
   /**
@@ -341,6 +434,13 @@ export class AutoSpillPlugin extends BaseContextPlugin {
     return this.entries.get(key);
   }
 
+  /**
+   * Get entry by key (alias for getSpillInfo for cleaner API)
+   */
+  getEntry(key: string): SpilledEntry | undefined {
+    return this.entries.get(key);
+  }
+
   // ============================================================================
   // IContextPlugin implementation
   // ============================================================================
@@ -353,19 +453,31 @@ export class AutoSpillPlugin extends BaseContextPlugin {
 
     // Provide info about spilled data to help the agent
     const lines = [
-      '## Auto-Spilled Data',
+      '## Auto-Spilled Data (Awaiting Processing)',
       '',
-      `The following tool outputs were auto-stored in memory (${unconsumed.length} entries):`,
+      `${unconsumed.length} large tool output(s) were auto-stored in memory:`,
       '',
     ];
 
     for (const entry of unconsumed) {
-      lines.push(`- **${entry.key}**: from \`${entry.sourceTool}\` (${formatBytes(entry.sizeBytes)})`);
+      lines.push(`- **${entry.key}**`);
+      lines.push(`  - Description: ${entry.description}`);
+      lines.push(`  - Size: ${formatBytes(entry.sizeBytes)}`);
+      lines.push(`  - Status: ⏳ Awaiting processing`);
     }
 
     lines.push('');
-    lines.push('Use `memory_retrieve(key)` to access this data when needed.');
-    lines.push('After summarizing, use `memory_store(...)` with tier="summary" or tier="findings".');
+    lines.push('### How to Process');
+    lines.push('Use `autospill_process()` to retrieve, summarize, and mark as consumed:');
+    lines.push('```');
+    lines.push('autospill_process({');
+    lines.push('  key: "raw.autospill_...",');
+    lines.push('  summary: "Key findings from this data...",');
+    lines.push('  summary_key: "findings.topic_name"  // optional');
+    lines.push('})');
+    lines.push('```');
+    lines.push('');
+    lines.push('**IMPORTANT:** Process these entries to prevent them from reappearing.');
 
     return {
       name: this.name,

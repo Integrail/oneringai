@@ -75,7 +75,7 @@ describe('ToolResultEvictionPlugin', () => {
 
       const config = plugin.getConfig();
       expect(config.toolRetention.my_custom_tool).toBe(15);
-      expect(config.toolRetention.read_file).toBe(10); // Default retained
+      expect(config.toolRetention.read_file).toBe(20); // Default retained (increased in context balance fix)
     });
   });
 

@@ -13,19 +13,33 @@ import type { ToolContext } from '@/domain/interfaces/IToolContext.js';
 
 describe('Context Tools', () => {
   describe('createContextTools', () => {
-    it('should create one context tool (context_stats)', () => {
+    it('should create two context tools by default (context_stats and context_compact)', () => {
       const tools = createContextTools();
+
+      expect(tools).toHaveLength(2);
+      expect(tools[0].definition.function.name).toBe('context_stats');
+      expect(tools[1].definition.function.name).toBe('context_compact');
+    });
+
+    it('should create only context_stats when includeCompact is false', () => {
+      const tools = createContextTools(false);
 
       expect(tools).toHaveLength(1);
       expect(tools[0].definition.function.name).toBe('context_stats');
     });
 
-    it('should mark all tools as safe (idempotent)', () => {
+    it('should mark context_stats as safe (idempotent)', () => {
       const tools = createContextTools();
+      const contextStats = tools.find(t => t.definition.function.name === 'context_stats');
 
-      tools.forEach((tool) => {
-        expect(tool.idempotency?.safe).toBe(true);
-      });
+      expect(contextStats?.idempotency?.safe).toBe(true);
+    });
+
+    it('should mark context_compact as NOT safe (modifies context)', () => {
+      const tools = createContextTools();
+      const contextCompact = tools.find(t => t.definition.function.name === 'context_compact');
+
+      expect(contextCompact?.idempotency?.safe).toBe(false);
     });
   });
 

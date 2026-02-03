@@ -6430,13 +6430,13 @@ var require_core = __commonJS({
     }, warn() {
     }, error() {
     } };
-    function getLogger(logger5) {
-      if (logger5 === false)
+    function getLogger(logger6) {
+      if (logger6 === false)
         return noLogs;
-      if (logger5 === void 0)
+      if (logger6 === void 0)
         return console;
-      if (logger5.log && logger5.warn && logger5.error)
-        return logger5;
+      if (logger6.log && logger6.warn && logger6.error)
+        return logger6;
       throw new Error("logger must implement log, warn and error methods");
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -12255,13 +12255,13 @@ var require_core3 = __commonJS({
     }, warn() {
     }, error() {
     } };
-    function getLogger(logger5) {
-      if (logger5 === false)
+    function getLogger(logger6) {
+      if (logger6 === false)
         return noLogs;
-      if (logger5 === void 0)
+      if (logger6 === void 0)
         return console;
-      if (logger5.log && logger5.warn && logger5.error)
-        return logger5;
+      if (logger6.log && logger6.warn && logger6.error)
+        return logger6;
       throw new Error("logger must implement log, warn and error methods");
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -17975,11 +17975,73 @@ var ROLLING_WINDOW_DEFAULTS = {
   /** Default maximum messages to keep */
   MAX_MESSAGES: 20
 };
+var STRATEGY_THRESHOLDS = {
+  proactive: {
+    // Most balanced - good for general use
+    compactionTrigger: 0.75,
+    // Start compaction at 75%
+    compactionTarget: 0.65,
+    // Reduce to 65%
+    smartCompactionTrigger: 0.7,
+    // Trigger smart compaction at 70%
+    maxToolResultsPercent: 0.3,
+    // Tool results can use up to 30% of context
+    protectedContextPercent: 0.1
+    // Protect at least 10% of context (recent messages)
+  },
+  aggressive: {
+    // Memory-constrained - compact early and often
+    compactionTrigger: 0.6,
+    compactionTarget: 0.5,
+    smartCompactionTrigger: 0.55,
+    maxToolResultsPercent: 0.25,
+    protectedContextPercent: 0.08
+  },
+  lazy: {
+    // Preserve context - only compact when critical
+    compactionTrigger: 0.9,
+    compactionTarget: 0.85,
+    smartCompactionTrigger: 0.85,
+    maxToolResultsPercent: 0.4,
+    // Allow more tool results
+    protectedContextPercent: 0.15
+    // Protect more recent context
+  },
+  adaptive: {
+    // Starts with proactive, adjusts based on performance
+    compactionTrigger: 0.75,
+    compactionTarget: 0.65,
+    smartCompactionTrigger: 0.7,
+    maxToolResultsPercent: 0.3,
+    protectedContextPercent: 0.1
+  },
+  "rolling-window": {
+    // Fixed window, similar to lazy but with message count focus
+    compactionTrigger: 0.85,
+    compactionTarget: 0.75,
+    smartCompactionTrigger: 0.8,
+    maxToolResultsPercent: 0.35,
+    protectedContextPercent: 0.12
+  }
+};
+var SAFETY_CAPS = {
+  /** Safety cap for max tool results (only triggers if percentage doesn't) */
+  MAX_FULL_RESULTS: 100,
+  /** Always keep at least this many messages */
+  MIN_PROTECTED_MESSAGES: 10
+};
+var TOOL_RETENTION_MULTIPLIERS = {
+  proactive: 1,
+  aggressive: 0.7,
+  lazy: 1.5,
+  adaptive: 1,
+  "rolling-window": 1.2
+};
 var TOOL_RESULT_EVICTION_DEFAULTS = {
-  /** Keep last N tool result pairs in conversation (default: 5) */
-  MAX_FULL_RESULTS: 5,
-  /** Evict results after N iterations (default: 3) */
-  MAX_AGE_ITERATIONS: 3,
+  /** Keep last N tool result pairs in conversation (LEGACY - use SAFETY_CAPS instead) */
+  MAX_FULL_RESULTS: 10,
+  /** Evict results after N iterations (LEGACY - use percentage-based) */
+  MAX_AGE_ITERATIONS: 5,
   /** Only evict results larger than this (bytes, default: 1KB) */
   MIN_SIZE_TO_EVICT: 1024,
   /** Trigger size-based eviction when total exceeds this (bytes, default: 100KB) */
@@ -17987,28 +18049,30 @@ var TOOL_RESULT_EVICTION_DEFAULTS = {
 };
 var DEFAULT_TOOL_RETENTION = {
   // Long retention - outputs often referenced later
-  read_file: 10,
-  bash: 8,
-  grep: 8,
-  glob: 6,
-  edit_file: 6,
+  read_file: 20,
+  bash: 15,
+  grep: 15,
+  glob: 12,
+  edit_file: 12,
   // Medium retention
-  memory_retrieve: 5,
-  list_directory: 5,
+  memory_retrieve: 10,
+  list_directory: 10,
+  autospill_process: 8,
   // Short retention - web content can be re-fetched
-  web_fetch: 3,
-  web_search: 3,
-  web_scrape: 3
+  web_fetch: 6,
+  web_search: 6,
+  web_scrape: 6,
+  web_fetch_js: 6
 };
 var GUARDIAN_DEFAULTS = {
   /** Enable guardian validation (can be disabled for testing) */
   ENABLED: true,
-  /** Maximum tool result size in tokens before truncation (1KB ≈ 250 tokens) */
-  MAX_TOOL_RESULT_TOKENS: 1e3,
+  /** Maximum tool result size in tokens before truncation (4KB ≈ 1000 tokens) */
+  MAX_TOOL_RESULT_TOKENS: 2e3,
   /** Minimum system prompt tokens to preserve during emergency compaction */
-  MIN_SYSTEM_PROMPT_TOKENS: 2e3,
-  /** Number of most recent messages to always protect */
-  PROTECTED_RECENT_MESSAGES: 4,
+  MIN_SYSTEM_PROMPT_TOKENS: 3e3,
+  /** Number of most recent messages to always protect (increased from 4) */
+  PROTECTED_RECENT_MESSAGES: 20,
   /** Truncation suffix for oversized content */
   TRUNCATION_SUFFIX: "\n\n[Content truncated by ContextGuardian - original data may be available in memory]"
 };
@@ -20859,24 +20923,30 @@ var AutoSpillPlugin = class extends BaseContextPlugin {
    *
    * @param toolName - Name of the tool
    * @param output - Tool output
+   * @param toolArgs - Optional tool arguments for better descriptions
+   * @param describeCall - Optional describeCall function from the tool
    * @returns The memory key if spilled, undefined otherwise
    */
-  async onToolOutput(toolName, output) {
+  async onToolOutput(toolName, output, toolArgs, describeCall) {
     const outputStr = typeof output === "string" ? output : JSON.stringify(output);
     const sizeBytes = Buffer.byteLength(outputStr, "utf8");
     if (!this.shouldSpill(toolName, sizeBytes)) {
       return void 0;
     }
-    const key = `${this.config.keyPrefix}_${toolName}_${Date.now()}_${this.entryCounter++}`;
+    const description = this.generateDescription(toolName, output, sizeBytes, toolArgs, describeCall);
+    const sanitizedDesc = this.sanitizeKeyPart(description);
+    const key = `${this.config.keyPrefix}_${toolName}_${sanitizedDesc}_${this.entryCounter++}`;
     const fullKey = addTierPrefix(key, "raw");
     await this.memory.storeRaw(
       key,
-      `Auto-spilled output from ${toolName} (${formatBytes(sizeBytes)})`,
+      description,
       output
     );
     const entry = {
       key: fullKey,
       sourceTool: toolName,
+      description,
+      toolArgs,
       sizeBytes,
       timestamp: Date.now(),
       consumed: false,
@@ -20886,6 +20956,60 @@ var AutoSpillPlugin = class extends BaseContextPlugin {
     this.events.emit("spilled", { key: fullKey, tool: toolName, sizeBytes });
     this.pruneOldEntries();
     return fullKey;
+  }
+  /**
+   * Generate a human-readable description for the spilled entry
+   */
+  generateDescription(toolName, _output, sizeBytes, toolArgs, describeCall) {
+    if (describeCall && toolArgs) {
+      try {
+        const desc = describeCall(toolArgs);
+        return `${toolName}: ${desc} (${formatBytes(sizeBytes)})`;
+      } catch {
+      }
+    }
+    if (toolArgs) {
+      switch (toolName) {
+        case "web_scrape":
+        case "web_fetch":
+        case "web_fetch_js": {
+          const url2 = String(toolArgs["url"] || "");
+          try {
+            const u = new URL(url2);
+            return `${toolName}: ${u.hostname}${u.pathname.slice(0, 40)} (${formatBytes(sizeBytes)})`;
+          } catch {
+            return `${toolName}: ${url2.slice(0, 50)} (${formatBytes(sizeBytes)})`;
+          }
+        }
+        case "web_search": {
+          const query = String(toolArgs["query"] || "").slice(0, 40);
+          return `${toolName}: "${query}" (${formatBytes(sizeBytes)})`;
+        }
+        case "read_file": {
+          const path6 = String(toolArgs["file_path"] || toolArgs["path"] || "");
+          const file = path6.split("/").pop() ?? path6;
+          return `${toolName}: ${file.slice(0, 50)} (${formatBytes(sizeBytes)})`;
+        }
+        case "bash": {
+          const cmd = (String(toolArgs["command"] || "").split("\n")[0] ?? "").slice(0, 40);
+          return `${toolName}: \`${cmd}\` (${formatBytes(sizeBytes)})`;
+        }
+        default: {
+          for (const key of ["query", "url", "path", "command", "pattern", "key"]) {
+            if (toolArgs[key]) {
+              return `${toolName}: ${key}="${String(toolArgs[key]).slice(0, 40)}" (${formatBytes(sizeBytes)})`;
+            }
+          }
+        }
+      }
+    }
+    return `Auto-spilled ${toolName} output (${formatBytes(sizeBytes)})`;
+  }
+  /**
+   * Sanitize a string for use in a memory key
+   */
+  sanitizeKeyPart(str) {
+    return str.toLowerCase().replace(/[^a-z0-9_-]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").slice(0, 30);
   }
   /**
    * Mark a spilled entry as consumed (summarized)
@@ -20998,6 +21122,12 @@ var AutoSpillPlugin = class extends BaseContextPlugin {
   getSpillInfo(key) {
     return this.entries.get(key);
   }
+  /**
+   * Get entry by key (alias for getSpillInfo for cleaner API)
+   */
+  getEntry(key) {
+    return this.entries.get(key);
+  }
   // ============================================================================
   // IContextPlugin implementation
   // ============================================================================
@@ -21007,17 +21137,29 @@ var AutoSpillPlugin = class extends BaseContextPlugin {
       return null;
     }
     const lines = [
-      "## Auto-Spilled Data",
+      "## Auto-Spilled Data (Awaiting Processing)",
       "",
-      `The following tool outputs were auto-stored in memory (${unconsumed.length} entries):`,
+      `${unconsumed.length} large tool output(s) were auto-stored in memory:`,
       ""
     ];
     for (const entry of unconsumed) {
-      lines.push(`- **${entry.key}**: from \`${entry.sourceTool}\` (${formatBytes(entry.sizeBytes)})`);
+      lines.push(`- **${entry.key}**`);
+      lines.push(`  - Description: ${entry.description}`);
+      lines.push(`  - Size: ${formatBytes(entry.sizeBytes)}`);
+      lines.push(`  - Status: \u23F3 Awaiting processing`);
     }
     lines.push("");
-    lines.push("Use `memory_retrieve(key)` to access this data when needed.");
-    lines.push('After summarizing, use `memory_store(...)` with tier="summary" or tier="findings".');
+    lines.push("### How to Process");
+    lines.push("Use `autospill_process()` to retrieve, summarize, and mark as consumed:");
+    lines.push("```");
+    lines.push("autospill_process({");
+    lines.push('  key: "raw.autospill_...",');
+    lines.push('  summary: "Key findings from this data...",');
+    lines.push('  summary_key: "findings.topic_name"  // optional');
+    lines.push("})");
+    lines.push("```");
+    lines.push("");
+    lines.push("**IMPORTANT:** Process these entries to prevent them from reappearing.");
     return {
       name: this.name,
       content: lines.join("\n"),
@@ -21100,7 +21242,10 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
   constructor(memory, config = {}) {
     super();
     this.memory = memory;
+    const strategy = config.strategy ?? "proactive";
     this.config = {
+      strategy,
+      maxContextTokens: config.maxContextTokens,
       maxFullResults: config.maxFullResults ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_FULL_RESULTS,
       maxAgeIterations: config.maxAgeIterations ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_AGE_ITERATIONS,
       minSizeToEvict: config.minSizeToEvict ?? TOOL_RESULT_EVICTION_DEFAULTS.MIN_SIZE_TO_EVICT,
@@ -21109,8 +21254,29 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
       keyPrefix: config.keyPrefix ?? "tool_result"
     };
     logger2.debug({
-      config: this.config
+      config: this.config,
+      strategyThresholds: STRATEGY_THRESHOLDS[strategy]
     }, "ToolResultEvictionPlugin created");
+  }
+  /**
+   * Get effective retention for a tool, considering strategy multiplier
+   */
+  getEffectiveRetention(toolName) {
+    const baseRetention = this.config.toolRetention[toolName] ?? this.config.maxAgeIterations;
+    const multiplier = TOOL_RETENTION_MULTIPLIERS[this.config.strategy] ?? 1;
+    return Math.ceil(baseRetention * multiplier);
+  }
+  /**
+   * Get effective max results, considering strategy and token-based limits
+   */
+  getEffectiveMaxResults() {
+    if (this.config.maxContextTokens) {
+      const thresholds = STRATEGY_THRESHOLDS[this.config.strategy];
+      const maxTokensForResults = Math.floor(this.config.maxContextTokens * thresholds.maxToolResultsPercent);
+      const percentageBased = Math.floor(maxTokensForResults / 500);
+      return Math.min(Math.max(percentageBased, this.config.maxFullResults), SAFETY_CAPS.MAX_FULL_RESULTS);
+    }
+    return Math.min(this.config.maxFullResults, SAFETY_CAPS.MAX_FULL_RESULTS);
   }
   // ============================================================================
   // Event Handling
@@ -21223,24 +21389,28 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
   /**
    * Check if eviction is needed based on current state.
    * Returns true if any eviction trigger is met.
+   * Uses strategy-dependent thresholds for more balanced behavior.
    */
   shouldEvict() {
-    const { maxFullResults, maxTotalSizeBytes, maxAgeIterations, minSizeToEvict } = this.config;
+    const { maxTotalSizeBytes, minSizeToEvict } = this.config;
+    const effectiveMaxResults = this.getEffectiveMaxResults();
     const sizePressure = this.totalTrackedSize > maxTotalSizeBytes;
-    const countPressure = this.tracked.size > maxFullResults;
+    const countPressure = this.tracked.size > effectiveMaxResults;
     if (sizePressure) {
       logger2.debug({
         totalTrackedSize: this.totalTrackedSize,
         maxTotalSizeBytes,
-        trackedCount: this.tracked.size
+        trackedCount: this.tracked.size,
+        strategy: this.config.strategy
       }, "shouldEvict: TRUE - size pressure");
       return true;
     }
     if (countPressure) {
       logger2.debug({
         trackedCount: this.tracked.size,
-        maxFullResults,
-        totalTrackedSize: this.totalTrackedSize
+        effectiveMaxResults,
+        totalTrackedSize: this.totalTrackedSize,
+        strategy: this.config.strategy
       }, "shouldEvict: TRUE - count pressure");
       return true;
     }
@@ -21255,42 +21425,47 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
         continue;
       }
       const age = this.currentIteration - r.addedAtIteration;
-      const toolMaxAge = this.config.toolRetention[r.toolName] ?? maxAgeIterations;
+      const toolMaxAge = this.getEffectiveRetention(r.toolName);
       if (age >= toolMaxAge) {
         logger2.debug({
           toolUseId: r.toolUseId,
           toolName: r.toolName,
           age,
-          toolMaxAge
+          toolMaxAge,
+          strategy: this.config.strategy
         }, "shouldEvict: TRUE - staleness");
         return true;
       }
     }
     logger2.debug({
       trackedCount: this.tracked.size,
-      maxFullResults,
+      effectiveMaxResults,
       totalTrackedSize: this.totalTrackedSize,
       maxTotalSizeBytes,
-      currentIteration: this.currentIteration
+      currentIteration: this.currentIteration,
+      strategy: this.config.strategy
     }, "shouldEvict: FALSE - no triggers");
     return false;
   }
   /**
    * Get candidates for eviction, sorted by priority.
    * Candidates are selected to bring the system under all thresholds.
+   * Uses strategy-dependent thresholds for more balanced behavior.
    */
   getEvictionCandidates() {
-    const { maxFullResults, maxTotalSizeBytes, maxAgeIterations, minSizeToEvict } = this.config;
+    const { maxTotalSizeBytes, minSizeToEvict } = this.config;
+    const effectiveMaxResults = this.getEffectiveMaxResults();
     const allTracked = [...this.tracked.values()];
-    const countPressure = this.tracked.size > maxFullResults;
+    const countPressure = this.tracked.size > effectiveMaxResults;
     const sizePressure = this.totalTrackedSize > maxTotalSizeBytes;
     logger2.debug({
       totalTracked: allTracked.length,
       countPressure,
       sizePressure,
       minSizeToEvict,
-      maxFullResults,
-      maxTotalSizeBytes
+      effectiveMaxResults,
+      maxTotalSizeBytes,
+      strategy: this.config.strategy
     }, "getEvictionCandidates: starting");
     const evictable = allTracked.filter(
       (r) => r.sizeBytes >= minSizeToEvict
@@ -21323,9 +21498,9 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
     let projectedCount = this.tracked.size;
     for (const r of evictable) {
       const underSizeLimit = projectedSize <= maxTotalSizeBytes;
-      const underCountLimit = projectedCount <= maxFullResults;
+      const underCountLimit = projectedCount <= effectiveMaxResults;
       const age = this.currentIteration - r.addedAtIteration;
-      const toolMaxAge = this.config.toolRetention[r.toolName] ?? maxAgeIterations;
+      const toolMaxAge = this.getEffectiveRetention(r.toolName);
       const isStale = age >= toolMaxAge;
       logger2.debug({
         toolUseId: r.toolUseId,
@@ -21334,11 +21509,12 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
         toolMaxAge,
         isStale,
         projectedCount,
-        maxFullResults,
+        effectiveMaxResults,
         underCountLimit,
         projectedSize,
         maxTotalSizeBytes,
-        underSizeLimit
+        underSizeLimit,
+        strategy: this.config.strategy
       }, `getEvictionCandidates: evaluating ${r.toolName}`);
       if (!isStale && underSizeLimit && underCountLimit) {
         logger2.debug({
@@ -21353,7 +21529,8 @@ var ToolResultEvictionPlugin = class extends BaseContextPlugin {
     }
     logger2.debug({
       candidateCount: candidates.length,
-      candidates: candidates.map((c) => ({ tool: c.toolName, size: c.sizeBytes }))
+      candidates: candidates.map((c) => ({ tool: c.toolName, size: c.sizeBytes })),
+      strategy: this.config.strategy
     }, `getEvictionCandidates: returning ${candidates.length} candidates`);
     return candidates;
   }
@@ -21628,14 +21805,38 @@ var ContextGuardian = class {
   _enabled;
   _maxToolResultTokens;
   _minSystemPromptTokens;
-  _protectedRecentMessages;
+  _configuredProtectedMessages;
+  _maxContextTokens;
+  _strategy;
   _estimator;
   constructor(estimator, config = {}) {
     this._estimator = estimator;
     this._enabled = config.enabled ?? GUARDIAN_DEFAULTS.ENABLED;
     this._maxToolResultTokens = config.maxToolResultTokens ?? GUARDIAN_DEFAULTS.MAX_TOOL_RESULT_TOKENS;
     this._minSystemPromptTokens = config.minSystemPromptTokens ?? GUARDIAN_DEFAULTS.MIN_SYSTEM_PROMPT_TOKENS;
-    this._protectedRecentMessages = config.protectedRecentMessages ?? GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES;
+    this._configuredProtectedMessages = config.protectedRecentMessages ?? GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES;
+    this._maxContextTokens = config.maxContextTokens;
+    this._strategy = config.strategy ?? "proactive";
+  }
+  /**
+   * Get effective protected message count, considering strategy and context size.
+   * Uses percentage-based calculation if maxContextTokens is available.
+   *
+   * NOTE: If an explicit value was configured (not using default), it's honored
+   * without applying minimum caps - this allows tests and special cases to work.
+   */
+  get _protectedRecentMessages() {
+    if (this._configuredProtectedMessages !== GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES) {
+      return this._configuredProtectedMessages;
+    }
+    if (this._maxContextTokens) {
+      const thresholds = STRATEGY_THRESHOLDS[this._strategy];
+      const percentBasedTokens = Math.floor(this._maxContextTokens * thresholds.protectedContextPercent);
+      const percentBasedMessages = Math.floor(percentBasedTokens / 100);
+      const calculated = Math.max(percentBasedMessages, this._configuredProtectedMessages);
+      return Math.max(calculated, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
+    }
+    return Math.max(this._configuredProtectedMessages, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
   }
   /**
    * Check if guardian is enabled
@@ -21981,6 +22182,361 @@ var ContextGuardian = class {
       return c;
     });
     return { ...msg, content: newContent };
+  }
+};
+
+// src/core/context/SmartCompactor.ts
+init_Logger();
+var logger4 = logger.child({ component: "SmartCompactor" });
+var SmartCompactor = class {
+  constructor(provider, memory, config) {
+    this.provider = provider;
+    this.memory = memory;
+    this.config = {
+      strategy: config.strategy,
+      maxContextTokens: config.maxContextTokens,
+      model: config.model ?? "gpt-4o-mini",
+      // Use a fast model for compaction
+      maxAnalysisTokens: config.maxAnalysisTokens ?? 2e3,
+      enableSpillToMemory: config.enableSpillToMemory ?? memory !== null,
+      minMessagesToCompact: config.minMessagesToCompact ?? 10
+    };
+  }
+  config;
+  /**
+   * Check if smart compaction should trigger based on current context usage
+   */
+  shouldTrigger(currentTokens) {
+    const thresholds = STRATEGY_THRESHOLDS[this.config.strategy] ?? STRATEGY_THRESHOLDS.proactive;
+    const triggerAt = this.config.maxContextTokens * thresholds.smartCompactionTrigger;
+    return currentTokens >= triggerAt;
+  }
+  /**
+   * Get target token count after compaction (strategy-dependent)
+   */
+  getTargetTokens() {
+    const thresholds = STRATEGY_THRESHOLDS[this.config.strategy] ?? STRATEGY_THRESHOLDS.proactive;
+    return Math.floor(this.config.maxContextTokens * thresholds.compactionTarget);
+  }
+  /**
+   * Get the number of protected messages based on strategy
+   */
+  getProtectedMessageCount() {
+    const thresholds = STRATEGY_THRESHOLDS[this.config.strategy] ?? STRATEGY_THRESHOLDS.proactive;
+    const estimatedProtected = Math.floor(
+      this.config.maxContextTokens * thresholds.protectedContextPercent / 100
+    );
+    return Math.max(estimatedProtected, 10);
+  }
+  /**
+   * Run smart compaction on the provided context
+   *
+   * @param context - The prepared context to compact
+   * @param targetReduction - Optional target reduction percentage (0-100)
+   */
+  async compact(context, targetReduction) {
+    const log = [];
+    log.push(`[SmartCompactor] Starting compaction with strategy: ${this.config.strategy}`);
+    const conversationComponent = context.components.find(
+      (c) => c.name === "conversation_history" || c.name === "conversation"
+    );
+    if (!conversationComponent) {
+      log.push("[SmartCompactor] No conversation component found - skipping");
+      return {
+        summaries: [],
+        spilled: [],
+        removed: [],
+        tokensFreed: 0,
+        log,
+        success: true
+      };
+    }
+    const messages = this.parseMessages(conversationComponent);
+    if (messages.length < this.config.minMessagesToCompact) {
+      log.push(`[SmartCompactor] Only ${messages.length} messages, min ${this.config.minMessagesToCompact} required`);
+      return {
+        summaries: [],
+        spilled: [],
+        removed: [],
+        tokensFreed: 0,
+        log,
+        success: true
+      };
+    }
+    const targetTokens = targetReduction ? Math.floor(context.budget.used * (1 - targetReduction / 100)) : this.getTargetTokens();
+    const tokensToFree = context.budget.used - targetTokens;
+    if (tokensToFree <= 0) {
+      log.push("[SmartCompactor] No tokens need to be freed");
+      return {
+        summaries: [],
+        spilled: [],
+        removed: [],
+        tokensFreed: 0,
+        log,
+        success: true
+      };
+    }
+    log.push(`[SmartCompactor] Target: free ${tokensToFree} tokens (${Math.round(tokensToFree / context.budget.used * 100)}%)`);
+    try {
+      const analysisPrompt = this.buildAnalysisPrompt(
+        messages,
+        context.budget,
+        targetTokens
+      );
+      const response = await this.provider.generate({
+        model: this.config.model,
+        input: analysisPrompt,
+        max_output_tokens: this.config.maxAnalysisTokens,
+        response_format: { type: "json_object" },
+        temperature: 0.3
+        // More deterministic for analysis
+      });
+      const responseText = this.extractTextFromResponse(response.output);
+      const decisions = this.parseDecisions(responseText);
+      log.push(`[SmartCompactor] LLM reasoning: ${decisions.reasoning}`);
+      return await this.executeDecisions(decisions, messages, log);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      log.push(`[SmartCompactor] Error: ${errorMsg}`);
+      logger4.error({ error: errorMsg }, "Smart compaction failed");
+      return {
+        summaries: [],
+        spilled: [],
+        removed: [],
+        tokensFreed: 0,
+        log,
+        success: false,
+        error: errorMsg
+      };
+    }
+  }
+  /**
+   * Parse messages from a context component
+   */
+  parseMessages(component) {
+    const content = component.content;
+    if (typeof content === "string") {
+      try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          return parsed.map((m, i) => ({
+            id: m.id || `msg_${i}`,
+            role: m.role || "unknown",
+            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+            timestamp: m.timestamp,
+            tokens: m.tokens
+          }));
+        }
+      } catch {
+        return [{
+          id: "msg_0",
+          role: "unknown",
+          content
+        }];
+      }
+    }
+    if (Array.isArray(content)) {
+      return content.map((m, i) => ({
+        id: m.id || `msg_${i}`,
+        role: m.role || "unknown",
+        content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+        timestamp: m.timestamp,
+        tokens: m.tokens
+      }));
+    }
+    return [];
+  }
+  /**
+   * Build the analysis prompt for LLM decision-making
+   */
+  buildAnalysisPrompt(messages, budget, targetTokens) {
+    const thresholds = STRATEGY_THRESHOLDS[this.config.strategy] ?? STRATEGY_THRESHOLDS.proactive;
+    const protectedPercent = Math.round(thresholds.protectedContextPercent * 100);
+    const protectedCount = this.getProtectedMessageCount();
+    const messageSummaries = messages.map((m) => {
+      const truncatedContent = m.content.length > 500 ? m.content.slice(0, 500) + "...[truncated]" : m.content;
+      return `[${m.id}] ${m.role}: ${truncatedContent}`;
+    });
+    return `You are a context compaction assistant. Analyze this conversation and decide how to reduce context size while preserving important information.
+
+## Current State
+- Current tokens: ${budget.used}
+- Target tokens: ${targetTokens} (${Math.round(targetTokens / this.config.maxContextTokens * 100)}% of max)
+- Need to free: ${budget.used - targetTokens} tokens
+- Strategy: ${this.config.strategy}
+- Protected messages: last ${protectedCount} messages (~${protectedPercent}% of context)
+
+## Messages (${messages.length} total)
+${messageSummaries.join("\n\n")}
+
+## Your Task
+Respond with JSON only:
+
+{
+  "summaries": [
+    { "messageIds": ["id1", "id2"], "summary": "Concise summary of these messages", "importance": "high|medium|low" }
+  ],
+  "spill_to_memory": [
+    { "messageId": "id3", "key": "findings.topic_name", "reason": "Large data block that can be retrieved later" }
+  ],
+  "safe_to_remove": ["id4", "id5"],
+  "must_keep": ["id6", "id7"],
+  "reasoning": "Brief explanation of your decisions"
+}
+
+## Guidelines
+- ALWAYS keep the last ${protectedCount} messages (they are protected)
+- Summarize older conversation segments that established context
+- Spill large data blobs (tool outputs, code blocks >500 chars) to memory with descriptive keys
+- Remove acknowledgments ("Got it", "Sure", "OK"), greetings, and low-value exchanges
+- NEVER remove system prompts, current task context, or recent tool results
+- When summarizing, preserve: key decisions, important findings, action items
+- Use meaningful memory keys like "findings.api_research" or "summary.user_requirements"`;
+  }
+  /**
+   * Parse LLM response into compaction decisions
+   */
+  parseDecisions(output) {
+    try {
+      const jsonMatch = output.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("No JSON found in response");
+      }
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        summaries: parsed.summaries || [],
+        spill_to_memory: parsed.spill_to_memory || [],
+        safe_to_remove: parsed.safe_to_remove || [],
+        must_keep: parsed.must_keep || [],
+        reasoning: parsed.reasoning || "No reasoning provided"
+      };
+    } catch (error) {
+      logger4.warn({ error, output }, "Failed to parse compaction decisions");
+      return {
+        summaries: [],
+        spill_to_memory: [],
+        safe_to_remove: [],
+        must_keep: [],
+        reasoning: "Failed to parse LLM response"
+      };
+    }
+  }
+  /**
+   * Execute the compaction decisions
+   */
+  async executeDecisions(decisions, messages, log) {
+    const summaries = [];
+    const spilled = [];
+    const removed = [];
+    let tokensFreed = 0;
+    const messageMap = new Map(messages.map((m) => [m.id, m]));
+    for (const summaryDecision of decisions.summaries) {
+      let summaryTokens = 0;
+      for (const msgId of summaryDecision.messageIds) {
+        const msg = messageMap.get(msgId);
+        if (msg) {
+          summaryTokens += msg.tokens ?? Math.ceil(msg.content.length / 4);
+        }
+      }
+      let summaryKey;
+      if (this.memory && this.config.enableSpillToMemory) {
+        summaryKey = `summary.compacted_${Date.now()}`;
+        try {
+          await this.memory.store(
+            summaryKey,
+            `Summary of ${summaryDecision.messageIds.length} messages`,
+            summaryDecision.summary,
+            { priority: summaryDecision.importance === "high" ? "high" : "normal" }
+          );
+          log.push(`[SmartCompactor] Stored summary at ${summaryKey}`);
+        } catch (error) {
+          logger4.warn({ error, key: summaryKey }, "Failed to store summary in memory");
+        }
+      }
+      summaries.push({
+        key: summaryKey,
+        summary: summaryDecision.summary,
+        messageIds: summaryDecision.messageIds,
+        importance: summaryDecision.importance
+      });
+      const summarySize = Math.ceil(summaryDecision.summary.length / 4);
+      tokensFreed += Math.max(0, summaryTokens - summarySize);
+    }
+    for (const spillDecision of decisions.spill_to_memory) {
+      if (!this.memory || !this.config.enableSpillToMemory) {
+        log.push(`[SmartCompactor] Memory not available, skipping spill for ${spillDecision.messageId}`);
+        continue;
+      }
+      const msg = messageMap.get(spillDecision.messageId);
+      if (!msg) {
+        continue;
+      }
+      try {
+        await this.memory.store(
+          spillDecision.key,
+          spillDecision.reason,
+          msg.content,
+          { priority: "normal" }
+        );
+        spilled.push({
+          key: spillDecision.key,
+          messageId: spillDecision.messageId,
+          reason: spillDecision.reason
+        });
+        const msgTokens = msg.tokens ?? Math.ceil(msg.content.length / 4);
+        tokensFreed += msgTokens;
+        log.push(`[SmartCompactor] Spilled ${spillDecision.messageId} to ${spillDecision.key} (${msgTokens} tokens)`);
+      } catch (error) {
+        logger4.warn({ error, key: spillDecision.key }, "Failed to spill to memory");
+      }
+    }
+    for (const msgId of decisions.safe_to_remove) {
+      const msg = messageMap.get(msgId);
+      if (msg) {
+        removed.push(msgId);
+        const msgTokens = msg.tokens ?? Math.ceil(msg.content.length / 4);
+        tokensFreed += msgTokens;
+      }
+    }
+    log.push(`[SmartCompactor] Completed: ${summaries.length} summaries, ${spilled.length} spilled, ${removed.length} removed, ${tokensFreed} tokens freed`);
+    return {
+      summaries,
+      spilled,
+      removed,
+      tokensFreed,
+      log,
+      success: true
+    };
+  }
+  /**
+   * Get compactor configuration
+   */
+  getConfig() {
+    return this.config;
+  }
+  /**
+   * Extract text content from LLM response output
+   */
+  extractTextFromResponse(output) {
+    if (typeof output === "string") {
+      return output;
+    }
+    if (Array.isArray(output)) {
+      const texts = [];
+      for (const item of output) {
+        if (typeof item === "string") {
+          texts.push(item);
+        } else if (item && typeof item === "object") {
+          if ("text" in item && typeof item.text === "string") {
+            texts.push(item.text);
+          } else if ("content" in item && typeof item.content === "string") {
+            texts.push(item.content);
+          }
+        }
+      }
+      return texts.join("\n");
+    }
+    return JSON.stringify(output);
   }
 };
 
@@ -22359,17 +22915,155 @@ function createMemoryCleanupRawTool() {
     describeCall: (args) => `${args.keys.length} keys`
   };
 }
+var autospillProcessDefinition = {
+  type: "function",
+  function: {
+    name: "autospill_process",
+    description: `Process an auto-spilled entry: retrieve the data, acknowledge you've seen it, and store a summary.
+This PREVENTS the entry from appearing repeatedly in your context.
+
+WORKFLOW:
+1. Call this tool with the autospill key and your summary
+2. The tool retrieves the full data, stores your summary, marks entry as consumed
+3. The entry will no longer appear in "Auto-Spilled Data" section
+
+IMPORTANT: Always process auto-spilled entries promptly to keep context clean.`,
+    parameters: {
+      type: "object",
+      properties: {
+        key: {
+          type: "string",
+          description: 'The autospill key to process (e.g., "raw.autospill_web_scrape_...")'
+        },
+        summary: {
+          type: "string",
+          description: "A concise summary of the key findings/data from this entry (will be stored in findings tier)"
+        },
+        summary_key: {
+          type: "string",
+          description: 'Optional: Key name for the summary. Defaults to "findings.<toolname>_summary_<timestamp>"'
+        },
+        retrieve_first: {
+          type: "boolean",
+          description: "Optional: If true, returns the full content before marking as consumed. Default: false (just mark consumed)"
+        }
+      },
+      required: ["key", "summary"]
+    }
+  }
+};
+function createAutoSpillProcessTool() {
+  return {
+    definition: autospillProcessDefinition,
+    execute: async (args, context) => {
+      const agentCtx = context?.agentContext;
+      if (!agentCtx) {
+        return { error: "AgentContext not available" };
+      }
+      const plugin = agentCtx.autoSpillPlugin;
+      const memory = context.memory;
+      if (!plugin) {
+        return { error: "AutoSpill plugin not enabled. This tool requires features.autoSpill: true" };
+      }
+      const key = args.key;
+      const summary = args.summary;
+      const retrieveFirst = args.retrieve_first;
+      const entry = plugin.getEntry(key);
+      if (!entry) {
+        return {
+          error: `Entry "${key}" not found in auto-spill tracker`,
+          hint: 'The entry may have already been consumed or cleaned up. Use memory_query({ pattern: "raw.*" }) to list available entries.'
+        };
+      }
+      let fullContent = void 0;
+      if (retrieveFirst && memory) {
+        fullContent = await memory.get(key);
+      }
+      const baseKey = args.summary_key || `${entry.sourceTool}_summary_${Date.now()}`;
+      const summaryKey = addTierPrefix(baseKey.replace(/^findings\./, ""), "findings");
+      if (memory) {
+        await memory.set(
+          summaryKey,
+          `Summary of ${entry.description}`,
+          summary,
+          { priority: "high", scope: { type: "plan" } }
+          // Findings = high priority, plan scope
+        );
+      }
+      plugin.markConsumed(key, summaryKey);
+      const result = {
+        success: true,
+        message: `Processed "${key}" - entry will no longer appear in context`,
+        processed_entry: {
+          key: entry.key,
+          source_tool: entry.sourceTool,
+          description: entry.description,
+          size_bytes: entry.sizeBytes
+        },
+        summary_stored_at: summaryKey
+      };
+      if (fullContent !== void 0) {
+        result.content = fullContent;
+      }
+      return result;
+    },
+    idempotency: { safe: false },
+    // Has side effects (marks consumed)
+    output: { expectedSize: "variable" },
+    describeCall: (args) => {
+      const key = args.key;
+      return key.replace("raw.autospill_", "").slice(0, 40);
+    }
+  };
+}
 function createMemoryTools() {
   return [
     createMemoryStoreTool(),
     createMemoryRetrieveTool(),
     createMemoryDeleteTool(),
     createMemoryQueryTool(),
-    createMemoryCleanupRawTool()
+    createMemoryCleanupRawTool(),
+    createAutoSpillProcessTool()
   ];
 }
 
 // src/capabilities/taskAgent/contextTools.ts
+var contextCompactDefinition = {
+  type: "function",
+  function: {
+    name: "context_compact",
+    description: `Trigger smart context compaction using LLM analysis.
+
+Use this when:
+- Context is getting full (check with context_stats first)
+- You want to consolidate findings before starting a new phase
+- You have many old messages/tool results that are no longer needed
+
+The system will:
+- Summarize older conversation segments
+- Move large data blobs to Working Memory
+- Remove low-value exchanges (acknowledgments, greetings)
+- Preserve recent tool calls and critical context
+
+Example: context_compact({ target_reduction: 30 }) - Reduce context by ~30%`,
+    parameters: {
+      type: "object",
+      properties: {
+        target_reduction: {
+          type: "number",
+          description: "Target percentage to reduce (e.g., 30 for 30% reduction). Default: uses strategy threshold.",
+          minimum: 10,
+          maximum: 70
+        },
+        dry_run: {
+          type: "boolean",
+          description: "If true, analyze but do not execute compaction. Returns what would be done."
+        }
+      },
+      required: []
+    }
+  }
+};
 var contextStatsDefinition = {
   type: "function",
   function: {
@@ -22506,10 +23200,86 @@ function createContextStatsTool() {
     }
   };
 }
-function createContextTools() {
-  return [
+function createContextCompactTool() {
+  return {
+    definition: contextCompactDefinition,
+    execute: async (args, context) => {
+      const agentCtx = context?.agentContext;
+      if (!agentCtx) {
+        return {
+          error: "AgentContext not available",
+          message: "Tool context missing agentContext"
+        };
+      }
+      if (!agentCtx.smartCompactor) {
+        return {
+          error: "Smart compaction not available",
+          message: "SmartCompactor is not configured. Enable it via AgentContext config.",
+          suggestion: "You can still manually consolidate by storing summaries in memory and continuing."
+        };
+      }
+      const targetReduction = args.target_reduction;
+      const dryRun = args.dry_run;
+      if (dryRun) {
+        const budget = agentCtx.getLastBudget();
+        return {
+          dry_run: true,
+          current_budget: budget ? {
+            used: budget.used,
+            available: budget.available,
+            utilization: budget.utilizationPercent
+          } : null,
+          message: "Dry run not fully implemented yet. Would analyze and compact context.",
+          target_reduction: targetReduction ?? "strategy default"
+        };
+      }
+      try {
+        const result = await agentCtx.triggerSmartCompaction(targetReduction);
+        return {
+          success: result.success,
+          tokens_freed: result.tokensFreed,
+          summaries_created: result.summaries.length,
+          data_spilled: result.spilled.length,
+          messages_removed: result.removed.length,
+          details: {
+            summaries: result.summaries.map((s) => ({
+              key: s.key,
+              importance: s.importance,
+              message_count: s.messageIds.length
+            })),
+            spilled: result.spilled.map((s) => ({
+              key: s.key,
+              reason: s.reason
+            }))
+          },
+          error: result.error
+        };
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        return {
+          error: "Compaction failed",
+          message: errorMsg,
+          suggestion: "Try manual cleanup: store important findings in memory, then continue."
+        };
+      }
+    },
+    idempotency: { safe: false },
+    // Modifies context
+    output: { expectedSize: "small" },
+    describeCall: (args) => {
+      const reduction = args.target_reduction;
+      return reduction ? `reduce ${reduction}%` : "auto";
+    }
+  };
+}
+function createContextTools(includeCompact = true) {
+  const tools = [
     createContextStatsTool()
   ];
+  if (includeCompact) {
+    tools.push(createContextCompactTool());
+  }
+  return tools;
 }
 
 // src/core/context/FeatureInstructions.ts
@@ -22625,20 +23395,34 @@ var AUTO_SPILL_INSTRUCTIONS = `## Auto-Spill (Large Output Management)
 
 Large tool outputs (>10KB) are automatically stored in Working Memory's raw tier.
 
-### What Happens
-- Large outputs from web_fetch, read_file, research_* tools are auto-stored
-- You'll see: "[Large output spilled to memory: key]"
-- Use \`memory_retrieve(key)\` to access the full content
+### What You'll See
+When a tool returns large output, you'll see it listed in "Auto-Spilled Data (Awaiting Processing)":
+\`\`\`
+- **raw.autospill_web_scrape_example_com_0**
+  - Description: web_scrape: example.com/page (45.2 KB)
+  - Status: \u23F3 Awaiting processing
+\`\`\`
 
-### Workflow
-1. Tool returns large output \u2192 auto-stored as \`raw.autospill.*\`
-2. Retrieve when needed: \`memory_retrieve({ key: "raw.autospill.*" })\`
-3. Process and summarize the content
-4. Store summary: \`memory_store({ key: "summary.*", tier: "summary", value: "..." })\`
-5. Cleanup raw: \`memory_cleanup_raw()\`
+### REQUIRED Workflow (CRITICAL)
+Use \`autospill_process()\` to handle these entries:
+\`\`\`
+autospill_process({
+  key: "raw.autospill_web_scrape_example_com_0",
+  summary: "Key findings: 1) Topic A discussed, 2) Topic B mentioned, 3) Conclusion C"
+})
+\`\`\`
 
-### Note
-Auto-spilled entries are automatically cleaned up after being consumed (summarized).`;
+This does THREE things:
+1. Retrieves the full data (you can add \`retrieve_first: true\` to see it)
+2. Stores your summary in findings tier
+3. **Marks entry as consumed** - it will no longer appear in context
+
+### Why This Matters
+**If you don't process entries**, they will keep appearing in your context repeatedly,
+causing you to re-process the same data in an infinite loop.
+
+### Best Practice
+Process auto-spilled entries AS SOON as you've extracted what you need from them.`;
 var TOOL_RESULT_EVICTION_INSTRUCTIONS = `## Tool Result Eviction
 
 Old tool results are automatically moved to memory to save context space.
@@ -28311,7 +29095,7 @@ var MCPRegistry = class {
 };
 
 // src/core/AgentContext.ts
-var logger4 = logger.child({ component: "AgentContext" });
+var logger5 = logger.child({ component: "AgentContext" });
 var PRIORITY_PROFILES = {
   research: {
     memory_index: 3,
@@ -28420,6 +29204,8 @@ var AgentContext = class _AgentContext extends EventEmitter {
   _autoSpillPlugin = null;
   _toolResultEvictionPlugin = null;
   _guardian;
+  _smartCompactor = null;
+  _smartCompactionConfig = void 0;
   _agentId;
   // ===== Feature Configuration =====
   _features;
@@ -28561,7 +29347,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
       this.registerPlugin(this._autoSpillPlugin);
     }
     if (this._features.toolResultEviction && this._memory) {
-      logger4.debug({
+      logger5.debug({
         toolResultEviction: this._features.toolResultEviction,
         memoryEnabled: !!this._memory,
         config: config.toolResultEviction
@@ -28573,15 +29359,23 @@ var AgentContext = class _AgentContext extends EventEmitter {
         return this.removeToolPair(toolUseId);
       });
       this.registerPlugin(this._toolResultEvictionPlugin);
-      logger4.debug({
+      logger5.debug({
         pluginName: this._toolResultEvictionPlugin.name,
         pluginConfig: this._toolResultEvictionPlugin.getConfig()
       }, "ToolResultEvictionPlugin created and registered");
     } else {
-      logger4.debug({
+      logger5.debug({
         toolResultEviction: this._features.toolResultEviction,
         memoryEnabled: !!this._memory
       }, "ToolResultEvictionPlugin NOT created (feature disabled or no memory)");
+    }
+    this._smartCompactionConfig = config.smartCompaction;
+    if (config.smartCompaction?.enabled) {
+      logger5.debug({
+        enabled: true,
+        model: config.smartCompaction.model,
+        memoryEnabled: !!this._memory
+      }, "SmartCompaction configured (waiting for provider)");
     }
     this._registerFeatureTools();
     this._explicitTaskType = config.taskType;
@@ -28593,7 +29387,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
     if (this._mcpServerRefs.length > 0) {
       this._mcpInitializationPending = true;
       this._initializeMCPServers().catch((err) => {
-        logger4.error({ error: err }, "Failed to initialize MCP servers");
+        logger5.error({ error: err }, "Failed to initialize MCP servers");
       });
     }
   }
@@ -28677,6 +29471,61 @@ var AgentContext = class _AgentContext extends EventEmitter {
    */
   get mcpInitializationPending() {
     return this._mcpInitializationPending;
+  }
+  /** SmartCompactor for LLM-powered context compaction (null if not configured or no provider) */
+  get smartCompactor() {
+    return this._smartCompactor;
+  }
+  /**
+   * Set the text provider for SmartCompactor.
+   * This must be called to enable smart compaction (typically by Agent after provider is created).
+   *
+   * @param provider - The ITextProvider to use for compaction analysis
+   */
+  setSmartCompactorProvider(provider) {
+    if (this._smartCompactionConfig?.enabled && provider) {
+      const strategy = this._config.strategy;
+      this._smartCompactor = new SmartCompactor(provider, this._memory, {
+        strategy,
+        maxContextTokens: this._maxContextTokens,
+        model: this._smartCompactionConfig.model,
+        maxAnalysisTokens: this._smartCompactionConfig.maxAnalysisTokens,
+        enableSpillToMemory: this._smartCompactionConfig.enableSpillToMemory ?? this._memory !== null,
+        minMessagesToCompact: this._smartCompactionConfig.minMessagesToCompact
+      });
+      this._tools.register(createContextCompactTool());
+      logger5.info({
+        model: this._smartCompactionConfig.model ?? "gpt-4o-mini",
+        strategy
+      }, "SmartCompactor initialized");
+    }
+  }
+  /**
+   * Trigger smart compaction of the context.
+   * Returns the compaction result with details about what was done.
+   *
+   * @param targetReduction - Optional target reduction percentage (0-100)
+   * @throws Error if SmartCompactor is not configured
+   */
+  async triggerSmartCompaction(targetReduction) {
+    if (!this._smartCompactor) {
+      throw new Error("SmartCompactor is not configured. Enable it via smartCompaction config and call setSmartCompactorProvider().");
+    }
+    const preparedResult = await this.prepare({ returnFormat: "components" });
+    if (!preparedResult.components) {
+      throw new Error("Failed to prepare context for compaction");
+    }
+    const preparedContext = {
+      components: preparedResult.components,
+      budget: preparedResult.budget,
+      compacted: preparedResult.compacted,
+      compactionLog: preparedResult.compactionLog
+    };
+    const result = await this._smartCompactor.compact(preparedContext, targetReduction);
+    if (result.tokensFreed > 0) {
+      this.emit("compacted", { log: result.log, tokensFreed: result.tokensFreed });
+    }
+    return result;
   }
   // ============================================================================
   // MCP Server Management
@@ -28785,7 +29634,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
         let client;
         if (typeof ref.server === "string") {
           if (!MCPRegistry.has(ref.server)) {
-            logger4.warn({ server: ref.server }, "MCP server not found in registry, skipping");
+            logger5.warn({ server: ref.server }, "MCP server not found in registry, skipping");
             continue;
           }
           client = MCPRegistry.get(ref.server);
@@ -28797,11 +29646,11 @@ var AgentContext = class _AgentContext extends EventEmitter {
           }
         }
         if (ref.autoConnect !== false && !client.isConnected()) {
-          logger4.debug({ server: client.name }, "Connecting to MCP server");
+          logger5.debug({ server: client.name }, "Connecting to MCP server");
           try {
             await client.connect();
           } catch (connectError) {
-            logger4.warn(
+            logger5.warn(
               { server: client.name, error: connectError },
               "Failed to connect to MCP server, tools will not be available"
             );
@@ -28811,13 +29660,13 @@ var AgentContext = class _AgentContext extends EventEmitter {
         if (client.isConnected()) {
           client.registerToolsSelective(this._tools, ref.tools);
           this._mcpClients.push(client);
-          logger4.debug(
+          logger5.debug(
             { server: client.name, toolCount: ref.tools?.length ?? client.tools.length },
             "Registered MCP tools"
           );
         }
       } catch (error) {
-        logger4.warn({ server: ref.server, error }, "Failed to initialize MCP server");
+        logger5.warn({ server: ref.server, error }, "Failed to initialize MCP server");
       }
     }
     this._mcpInitializationPending = false;
@@ -28946,7 +29795,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
           content = content.slice(0, MAX_RESULT_CHARS) + `
 
 [Safety truncated from ${Math.round(originalSize / 1024)}KB - use memory_retrieve if available]`;
-          logger4.warn({
+          logger5.warn({
             toolName: r.tool_name,
             originalSize,
             truncatedTo: MAX_RESULT_CHARS
@@ -28978,7 +29827,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
     const index = this._conversation.length - 1;
     this.emit("message:added", { item: message, index });
     if (this._toolResultEvictionPlugin) {
-      logger4.debug({
+      logger5.debug({
         resultsCount: results.length,
         messageIndex: index,
         pluginTrackedBefore: this._toolResultEvictionPlugin.getTracked().length
@@ -28988,7 +29837,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
         const toolArgs = r.tool_args || {};
         const toolFn = this._tools.get(toolName);
         const describeCall = toolFn?.describeCall;
-        logger4.debug({
+        logger5.debug({
           toolUseId: r.tool_use_id,
           toolName,
           hasArgs: Object.keys(toolArgs).length > 0,
@@ -29004,12 +29853,12 @@ var AgentContext = class _AgentContext extends EventEmitter {
           describeCall
         );
       }
-      logger4.debug({
+      logger5.debug({
         pluginTrackedAfter: this._toolResultEvictionPlugin.getTracked().length,
         pluginStats: this._toolResultEvictionPlugin.getStats()
       }, "addToolResults: tracking complete");
     } else {
-      logger4.debug({
+      logger5.debug({
         resultsCount: results.length,
         pluginEnabled: !!this._toolResultEvictionPlugin
       }, "addToolResults: NOT tracking (plugin not enabled)");
@@ -29077,20 +29926,20 @@ var AgentContext = class _AgentContext extends EventEmitter {
     this.protectFromCompaction();
     if (this._toolResultEvictionPlugin) {
       const statsBefore = this._toolResultEvictionPlugin.getStats();
-      logger4.debug({
+      logger5.debug({
         statsBefore,
         conversationLength: this._conversation.length
       }, "prepare: before tool result eviction");
       this._toolResultEvictionPlugin.onIteration();
       const shouldEvict = this._toolResultEvictionPlugin.shouldEvict();
-      logger4.debug({
+      logger5.debug({
         shouldEvict,
         trackedCount: statsBefore.count,
         config: this._toolResultEvictionPlugin.getConfig()
       }, `prepare: shouldEvict=${shouldEvict}`);
       if (shouldEvict) {
         const evictionResult = await this._toolResultEvictionPlugin.evictOldResults();
-        logger4.debug({
+        logger5.debug({
           evictionResult: {
             evicted: evictionResult.evicted,
             tokensFreed: evictionResult.tokensFreed,
@@ -29105,11 +29954,11 @@ var AgentContext = class _AgentContext extends EventEmitter {
         }
       }
       const statsAfter = this._toolResultEvictionPlugin.getStats();
-      logger4.debug({
+      logger5.debug({
         statsAfter
       }, "prepare: after tool result eviction");
     } else {
-      logger4.debug({
+      logger5.debug({
         pluginEnabled: false
       }, "prepare: tool result eviction plugin not enabled");
     }
@@ -29147,7 +29996,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
       const availableTokens = this._maxContextTokens - budget.reserved;
       const validation = this._guardian.validate(input, availableTokens);
       if (!validation.valid) {
-        logger4.warn({
+        logger5.warn({
           actualTokens: validation.actualTokens,
           targetTokens: validation.targetTokens,
           overageTokens: validation.overageTokens,
@@ -29167,7 +30016,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
           breakdown: finalValidation.breakdown
         };
         this._lastBudget = budget;
-        logger4.info({
+        logger5.info({
           finalTokens: finalValidation.actualTokens,
           tokensFreed: degradation.tokensFreed,
           degradationSteps: degradation.log.length
@@ -29247,6 +30096,7 @@ var AgentContext = class _AgentContext extends EventEmitter {
    * Consolidated tools (Phase 1):
    * - Always: context_stats (unified introspection - gracefully handles disabled features)
    * - When memory feature enabled: memory_store, memory_retrieve, memory_delete, memory_query, memory_cleanup_raw
+   * - When autoSpill feature enabled: autospill_process (CRITICAL for breaking infinite loops)
    * - InContextMemory (context_set, context_delete, context_list) & PersistentInstructions tools
    *   are registered separately in the constructor when those features are enabled.
    */
@@ -29258,6 +30108,9 @@ var AgentContext = class _AgentContext extends EventEmitter {
       this._tools.register(createMemoryDeleteTool());
       this._tools.register(createMemoryQueryTool());
       this._tools.register(createMemoryCleanupRawTool());
+    }
+    if (this._features.autoSpill && this._memory) {
+      this._tools.register(createAutoSpillProcessTool());
     }
   }
   /**
@@ -54199,6 +55052,6 @@ Currently working on: ${progress.current.name}`;
   }
 };
 
-export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, AUTO_SPILL_INSTRUCTIONS, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, AutoSpillPlugin, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextGuardian, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FilePersistentInstructionsStorage, FileSearchSource, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, INTROSPECTION_INSTRUCTIONS, IN_CONTEXT_MEMORY_INSTRUCTIONS, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PERSISTENT_INSTRUCTIONS_INSTRUCTIONS, ParallelTasksError, PersistentInstructionsPlugin, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TOOL_OUTPUT_TRACKING_INSTRUCTIONS, TOOL_RESULT_EVICTION_INSTRUCTIONS, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolOutputPlugin, ToolPermissionManager, ToolRegistry, ToolResultEvictionPlugin, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WORKING_MEMORY_INSTRUCTIONS, WebSearchSource, WorkingMemory, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildFeatureInstructions, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createContextTools, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllInstructions, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getBasicIntrospectionTools, getConnectorTools, getCredentialsSetupURL, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
+export { AGENT_DEFINITION_FORMAT_VERSION, AIError, APPROVAL_STATE_VERSION, AUTO_SPILL_INSTRUCTIONS, AdaptiveStrategy, Agent, AgentContext, AggressiveCompactionStrategy, ApproximateTokenEstimator, AutoSpillPlugin, BaseMediaProvider, BaseProvider, BaseTextProvider, BraveProvider, CONNECTOR_CONFIG_VERSION, CONTEXT_SESSION_FORMAT_VERSION, CheckpointManager, CircuitBreaker, CircuitOpenError, Connector, ConnectorConfigStore, ConnectorTools, ConsoleMetrics, ContentType, ContextGuardian, ContextOverflowError, DEFAULT_ALLOWLIST, DEFAULT_BACKOFF_CONFIG, DEFAULT_BASE_DELAY_MS, DEFAULT_CHECKPOINT_STRATEGY, DEFAULT_CIRCUIT_BREAKER_CONFIG, DEFAULT_CONNECTOR_TIMEOUT, DEFAULT_CONTEXT_CONFIG, DEFAULT_FEATURES, DEFAULT_FILESYSTEM_CONFIG, DEFAULT_HISTORY_MANAGER_CONFIG, DEFAULT_IDEMPOTENCY_CONFIG, DEFAULT_MAX_DELAY_MS, DEFAULT_MAX_RETRIES, DEFAULT_MEMORY_CONFIG, DEFAULT_PERMISSION_CONFIG, DEFAULT_RATE_LIMITER_CONFIG, DEFAULT_RETRYABLE_STATUSES, DEFAULT_SHELL_CONFIG, DependencyCycleError, ErrorHandler, ExecutionContext, ExternalDependencyHandler, FileAgentDefinitionStorage, FileConnectorStorage, FileContextStorage, FilePersistentInstructionsStorage, FileSearchSource, FileStorage, FrameworkLogger, HookManager, IMAGE_MODELS, IMAGE_MODEL_REGISTRY, INTROSPECTION_INSTRUCTIONS, IN_CONTEXT_MEMORY_INSTRUCTIONS, IdempotencyCache, ImageGeneration, InContextMemoryPlugin, InMemoryAgentStateStorage, InMemoryHistoryStorage, InMemoryMetrics, InMemoryPlanStorage, InMemoryStorage, InvalidConfigError, InvalidToolArgumentsError, LLM_MODELS, LazyCompactionStrategy, MCPClient, MCPConnectionError, MCPError, MCPProtocolError, MCPRegistry, MCPResourceError, MCPTimeoutError, MCPToolError, MEMORY_PRIORITY_VALUES, META_TOOL_NAMES, MODEL_REGISTRY, MemoryConnectorStorage, MemoryEvictionCompactor, MemoryStorage, MessageBuilder, MessageRole, ModeManager, ModelNotSupportedError, NoOpMetrics, OAuthManager, PERSISTENT_INSTRUCTIONS_INSTRUCTIONS, ParallelTasksError, PersistentInstructionsPlugin, PlanExecutor, PlanningAgent, ProactiveCompactionStrategy, ProviderAuthError, ProviderConfigAgent, ProviderContextLengthError, ProviderError, ProviderErrorMapper, ProviderNotFoundError, ProviderRateLimitError, RapidAPIProvider, RateLimitError, ResearchAgent, RollingWindowStrategy, SERVICE_DEFINITIONS, SERVICE_INFO, SERVICE_URL_PATTERNS, SIMPLE_ICONS_CDN, STT_MODELS, STT_MODEL_REGISTRY, ScrapeProvider, SearchProvider, SerperProvider, Services, SpeechToText, StreamEventType, StreamHelpers, StreamState, SummarizeCompactor, TERMINAL_TASK_STATUSES, TOOL_OUTPUT_TRACKING_INSTRUCTIONS, TOOL_RESULT_EVICTION_INSTRUCTIONS, TTS_MODELS, TTS_MODEL_REGISTRY, TaskAgent, TaskTimeoutError, TaskValidationError, TavilyProvider, TextToSpeech, TokenBucketRateLimiter, ToolCallState, ToolExecutionError, ToolManager, ToolNotFoundError, ToolOutputPlugin, ToolPermissionManager, ToolRegistry, ToolResultEvictionPlugin, ToolTimeoutError, TruncateCompactor, UniversalAgent, VENDORS, VENDOR_ICON_MAP, VIDEO_MODELS, VIDEO_MODEL_REGISTRY, Vendor, VideoGeneration, WORKING_MEMORY_INSTRUCTIONS, WebSearchSource, WorkingMemory, addJitter, allVendorTemplates, assertNotDestroyed, authenticatedFetch, backoffSequence, backoffWait, bash, buildAuthConfig, buildEndpointWithQuery, buildFeatureInstructions, buildQueryString, calculateBackoff, calculateCost, calculateEntrySize, calculateImageCost, calculateSTTCost, calculateTTSCost, calculateVideoCost, canTaskExecute, contextCompactDefinition, createAgentStorage, createAuthenticatedFetch, createBashTool, createConnectorFromTemplate, createContextCompactTool, createContextTools, createEditFileTool, createEstimator, createExecuteJavaScriptTool, createFileAgentDefinitionStorage, createFileContextStorage, createFileSearchSource, createGlobTool, createGrepTool, createImageProvider, createInContextMemory, createInContextMemoryTools, createListDirectoryTool, createMemoryTools, createMessageWithImages, createMetricsCollector, createPersistentInstructions, createPersistentInstructionsTools, createPlan, createProvider, createReadFileTool, createResearchTools, createStrategy, createTask, createTextMessage, createVideoProvider, createWebSearchSource, createWriteFileTool, defaultDescribeCall, detectDependencyCycle, detectServiceFromURL, developerTools, editFile, evaluateCondition, extractJSON, extractJSONField, extractNumber, findConnectorByServiceTypes, forPlan, forTasks, generateEncryptionKey, generateSimplePlan, generateWebAPITool, getActiveImageModels, getActiveModels, getActiveSTTModels, getActiveTTSModels, getActiveVideoModels, getAgentContextTools, getAllBuiltInTools, getAllInstructions, getAllServiceIds, getAllVendorLogos, getAllVendorTemplates, getBackgroundOutput, getBasicIntrospectionTools, getConnectorTools, getCredentialsSetupURL, getDocsURL, getImageModelInfo, getImageModelsByVendor, getImageModelsWithFeature, getMemoryTools, getMetaTools, getModelInfo, getModelsByVendor, getNextExecutableTasks, getRegisteredScrapeProviders, getSTTModelInfo, getSTTModelsByVendor, getSTTModelsWithFeature, getServiceDefinition, getServiceInfo, getServicesByCategory, getTTSModelInfo, getTTSModelsByVendor, getTTSModelsWithFeature, getTaskDependencies, getToolByName, getToolCallDescription, getToolCategories, getToolRegistry, getToolsByCategory, getToolsRequiringConnector, getVendorAuthTemplate, getVendorColor, getVendorInfo, getVendorLogo, getVendorLogoCdnUrl, getVendorLogoSvg, getVendorTemplate, getVideoModelInfo, getVideoModelsByVendor, getVideoModelsWithAudio, getVideoModelsWithFeature, glob2 as glob, globalErrorHandler, grep, hasClipboardImage, hasVendorLogo, isBlockedCommand, isErrorEvent, isExcludedExtension, isKnownService, isMetaTool, isOutputTextDelta, isResponseComplete, isSimpleScope, isStreamEvent, isTaskAwareScope, isTaskBlocked, isTerminalMemoryStatus, isTerminalStatus, isToolCallArgumentsDelta, isToolCallArgumentsDone, isToolCallStart, isVendor, killBackgroundProcess, listConnectorsByServiceTypes, listDirectory, listVendorIds, listVendors, listVendorsByAuthType, listVendorsByCategory, listVendorsWithLogos, logger, metrics, readClipboardImage, readFile5 as readFile, registerScrapeProvider, resolveConnector, resolveDependencies, retryWithBackoff, scopeEquals, scopeMatches, setMetricsCollector, setupInContextMemory, setupPersistentInstructions, toConnectorOptions, toolRegistry, tools_exports as tools, updateTaskStatus, validatePath, writeFile4 as writeFile };
 //# sourceMappingURL=index.js.map
 //# sourceMappingURL=index.js.map

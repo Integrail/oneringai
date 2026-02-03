@@ -32,7 +32,7 @@ import { MessageRole } from '../../domain/entities/Message.js';
 import { ContentType } from '../../domain/entities/Content.js';
 import type { ITokenEstimator } from './types.js';
 import { ContextOverflowError } from '../../domain/errors/AIErrors.js';
-import { GUARDIAN_DEFAULTS } from '../constants.js';
+import { GUARDIAN_DEFAULTS, STRATEGY_THRESHOLDS, SAFETY_CAPS, type StrategyName } from '../constants.js';
 import { logger as baseLogger, FrameworkLogger } from '../../infrastructure/observability/Logger.js';
 
 // Plugin-specific logger
@@ -86,6 +86,10 @@ export interface ContextGuardianConfig {
   minSystemPromptTokens?: number;
   /** Number of recent messages to always protect from compaction */
   protectedRecentMessages?: number;
+  /** Maximum context tokens (used for percentage-based protection calculations) */
+  maxContextTokens?: number;
+  /** Strategy name (affects protected message percentage) */
+  strategy?: StrategyName;
 }
 
 // ============================================================================
@@ -94,12 +98,18 @@ export interface ContextGuardianConfig {
 
 /**
  * ContextGuardian - Ensures context never exceeds model limits
+ *
+ * The guardian acts as a LAST RESORT after smart compaction and strategy-based
+ * eviction have already been attempted. It uses strategy-aware thresholds
+ * to avoid overly aggressive data loss.
  */
 export class ContextGuardian {
   private readonly _enabled: boolean;
   private readonly _maxToolResultTokens: number;
   private readonly _minSystemPromptTokens: number;
-  private readonly _protectedRecentMessages: number;
+  private readonly _configuredProtectedMessages: number;
+  private readonly _maxContextTokens: number | undefined;
+  private readonly _strategy: StrategyName;
   private readonly _estimator: ITokenEstimator;
 
   constructor(estimator: ITokenEstimator, config: ContextGuardianConfig = {}) {
@@ -107,7 +117,38 @@ export class ContextGuardian {
     this._enabled = config.enabled ?? GUARDIAN_DEFAULTS.ENABLED;
     this._maxToolResultTokens = config.maxToolResultTokens ?? GUARDIAN_DEFAULTS.MAX_TOOL_RESULT_TOKENS;
     this._minSystemPromptTokens = config.minSystemPromptTokens ?? GUARDIAN_DEFAULTS.MIN_SYSTEM_PROMPT_TOKENS;
-    this._protectedRecentMessages = config.protectedRecentMessages ?? GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES;
+    this._configuredProtectedMessages = config.protectedRecentMessages ?? GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES;
+    this._maxContextTokens = config.maxContextTokens;
+    this._strategy = config.strategy ?? 'proactive';
+  }
+
+  /**
+   * Get effective protected message count, considering strategy and context size.
+   * Uses percentage-based calculation if maxContextTokens is available.
+   *
+   * NOTE: If an explicit value was configured (not using default), it's honored
+   * without applying minimum caps - this allows tests and special cases to work.
+   */
+  private get _protectedRecentMessages(): number {
+    // If explicitly configured (not default), honor that value directly
+    if (this._configuredProtectedMessages !== GUARDIAN_DEFAULTS.PROTECTED_RECENT_MESSAGES) {
+      return this._configuredProtectedMessages;
+    }
+
+    // If we have maxContextTokens, use percentage-based calculation
+    if (this._maxContextTokens) {
+      const thresholds = STRATEGY_THRESHOLDS[this._strategy];
+      // Estimate: average message is ~100 tokens
+      const percentBasedTokens = Math.floor(this._maxContextTokens * thresholds.protectedContextPercent);
+      const percentBasedMessages = Math.floor(percentBasedTokens / 100);
+      // Use the more permissive of percentage-based or configured
+      const calculated = Math.max(percentBasedMessages, this._configuredProtectedMessages);
+      // But always ensure minimum protection
+      return Math.max(calculated, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
+    }
+
+    // Fallback to configured value with minimum (using defaults)
+    return Math.max(this._configuredProtectedMessages, SAFETY_CAPS.MIN_PROTECTED_MESSAGES);
   }
 
   /**

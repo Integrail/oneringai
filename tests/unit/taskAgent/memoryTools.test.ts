@@ -58,7 +58,7 @@ describe('Memory Tools', () => {
       const tools = createMemoryTools();
 
       expect(tools).toBeInstanceOf(Array);
-      expect(tools.length).toBe(5); // store, retrieve, delete, query, cleanup_raw
+      expect(tools.length).toBe(6); // store, retrieve, delete, query, cleanup_raw, autospill_process
       expect(tools.every((t) => t.definition && t.execute)).toBe(true);
     });
 

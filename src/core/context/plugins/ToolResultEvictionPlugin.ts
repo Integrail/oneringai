@@ -33,6 +33,10 @@ import type { WorkingMemory } from '../../../capabilities/taskAgent/WorkingMemor
 import {
   TOOL_RESULT_EVICTION_DEFAULTS,
   DEFAULT_TOOL_RETENTION,
+  STRATEGY_THRESHOLDS,
+  TOOL_RETENTION_MULTIPLIERS,
+  SAFETY_CAPS,
+  type StrategyName,
 } from '../../constants.js';
 import { logger as baseLogger, FrameworkLogger } from '../../../infrastructure/observability/Logger.js';
 
@@ -72,16 +76,32 @@ export interface TrackedResult {
  */
 export interface ToolResultEvictionConfig {
   /**
+   * Compaction strategy - determines thresholds and retention multipliers.
+   * Uses STRATEGY_THRESHOLDS for percentage-based limits.
+   * @default 'proactive'
+   */
+  strategy?: StrategyName;
+
+  /**
+   * Maximum context tokens (used for percentage-based calculations).
+   * If not provided, falls back to legacy count-based limits.
+   * @default undefined (uses legacy limits)
+   */
+  maxContextTokens?: number;
+
+  /**
    * Maximum number of full tool result pairs to keep in conversation.
    * Beyond this, oldest pairs are evicted to memory.
-   * @default 5
+   * NOTE: This is a SAFETY CAP. Prefer strategy-based percentage limits.
+   * @default 10
    */
   maxFullResults?: number;
 
   /**
    * Maximum age in iterations before eviction.
    * Results older than this are evicted regardless of count.
-   * @default 3
+   * NOTE: This is multiplied by TOOL_RETENTION_MULTIPLIERS[strategy].
+   * @default 5
    */
   maxAgeIterations?: number;
 
@@ -101,6 +121,7 @@ export interface ToolResultEvictionConfig {
 
   /**
    * Per-tool iteration retention overrides.
+   * These are base values, multiplied by TOOL_RETENTION_MULTIPLIERS[strategy].
    * Tools not in this map use maxAgeIterations.
    * @example { 'read_file': 10, 'web_fetch': 3 }
    */
@@ -163,7 +184,10 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
   readonly compactable = true;
 
   private memory: WorkingMemory;
-  private config: Required<ToolResultEvictionConfig>;
+  private config: Required<Omit<ToolResultEvictionConfig, 'strategy' | 'maxContextTokens'>> & {
+    strategy: StrategyName;
+    maxContextTokens: number | undefined;
+  };
   private tracked: Map<string, TrackedResult> = new Map();
   private currentIteration = 0;
   private totalTrackedSize = 0;
@@ -180,7 +204,12 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
   constructor(memory: WorkingMemory, config: ToolResultEvictionConfig = {}) {
     super();
     this.memory = memory;
+
+    const strategy = config.strategy ?? 'proactive';
+
     this.config = {
+      strategy,
+      maxContextTokens: config.maxContextTokens,
       maxFullResults: config.maxFullResults ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_FULL_RESULTS,
       maxAgeIterations: config.maxAgeIterations ?? TOOL_RESULT_EVICTION_DEFAULTS.MAX_AGE_ITERATIONS,
       minSizeToEvict: config.minSizeToEvict ?? TOOL_RESULT_EVICTION_DEFAULTS.MIN_SIZE_TO_EVICT,
@@ -191,7 +220,34 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
 
     logger.debug({
       config: this.config,
+      strategyThresholds: STRATEGY_THRESHOLDS[strategy],
     }, 'ToolResultEvictionPlugin created');
+  }
+
+  /**
+   * Get effective retention for a tool, considering strategy multiplier
+   */
+  private getEffectiveRetention(toolName: string): number {
+    const baseRetention = this.config.toolRetention[toolName] ?? this.config.maxAgeIterations;
+    const multiplier = TOOL_RETENTION_MULTIPLIERS[this.config.strategy] ?? 1.0;
+    return Math.ceil(baseRetention * multiplier);
+  }
+
+  /**
+   * Get effective max results, considering strategy and token-based limits
+   */
+  private getEffectiveMaxResults(): number {
+    // If we have maxContextTokens, use percentage-based limit
+    if (this.config.maxContextTokens) {
+      const thresholds = STRATEGY_THRESHOLDS[this.config.strategy];
+      // Estimate: each tool result pair ≈ 500 tokens on average
+      const maxTokensForResults = Math.floor(this.config.maxContextTokens * thresholds.maxToolResultsPercent);
+      const percentageBased = Math.floor(maxTokensForResults / 500);
+      // Use the more permissive of percentage-based or configured, but cap at safety limit
+      return Math.min(Math.max(percentageBased, this.config.maxFullResults), SAFETY_CAPS.MAX_FULL_RESULTS);
+    }
+    // Fallback to configured value with safety cap
+    return Math.min(this.config.maxFullResults, SAFETY_CAPS.MAX_FULL_RESULTS);
   }
 
   // ============================================================================
@@ -235,7 +291,7 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
   /**
    * Get current configuration
    */
-  getConfig(): Readonly<Required<ToolResultEvictionConfig>> {
+  getConfig(): Readonly<typeof this.config> {
     return this.config;
   }
 
@@ -338,13 +394,14 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
   /**
    * Check if eviction is needed based on current state.
    * Returns true if any eviction trigger is met.
+   * Uses strategy-dependent thresholds for more balanced behavior.
    */
   shouldEvict(): boolean {
-    const { maxFullResults, maxTotalSizeBytes, maxAgeIterations, minSizeToEvict } =
-      this.config;
+    const { maxTotalSizeBytes, minSizeToEvict } = this.config;
+    const effectiveMaxResults = this.getEffectiveMaxResults();
 
     const sizePressure = this.totalTrackedSize > maxTotalSizeBytes;
-    const countPressure = this.tracked.size > maxFullResults;
+    const countPressure = this.tracked.size > effectiveMaxResults;
 
     // Trigger 1: Size pressure - total tracked results exceed threshold
     if (sizePressure) {
@@ -352,6 +409,7 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
         totalTrackedSize: this.totalTrackedSize,
         maxTotalSizeBytes,
         trackedCount: this.tracked.size,
+        strategy: this.config.strategy,
       }, 'shouldEvict: TRUE - size pressure');
       return true;
     }
@@ -360,8 +418,9 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
     if (countPressure) {
       logger.debug({
         trackedCount: this.tracked.size,
-        maxFullResults,
+        effectiveMaxResults,
         totalTrackedSize: this.totalTrackedSize,
+        strategy: this.config.strategy,
       }, 'shouldEvict: TRUE - count pressure');
       return true;
     }
@@ -379,13 +438,14 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
       }
 
       const age = this.currentIteration - r.addedAtIteration;
-      const toolMaxAge = this.config.toolRetention[r.toolName] ?? maxAgeIterations;
+      const toolMaxAge = this.getEffectiveRetention(r.toolName);
       if (age >= toolMaxAge) {
         logger.debug({
           toolUseId: r.toolUseId,
           toolName: r.toolName,
           age,
           toolMaxAge,
+          strategy: this.config.strategy,
         }, 'shouldEvict: TRUE - staleness');
         return true;
       }
@@ -393,10 +453,11 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
 
     logger.debug({
       trackedCount: this.tracked.size,
-      maxFullResults,
+      effectiveMaxResults,
       totalTrackedSize: this.totalTrackedSize,
       maxTotalSizeBytes,
       currentIteration: this.currentIteration,
+      strategy: this.config.strategy,
     }, 'shouldEvict: FALSE - no triggers');
     return false;
   }
@@ -404,13 +465,14 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
   /**
    * Get candidates for eviction, sorted by priority.
    * Candidates are selected to bring the system under all thresholds.
+   * Uses strategy-dependent thresholds for more balanced behavior.
    */
   private getEvictionCandidates(): TrackedResult[] {
-    const { maxFullResults, maxTotalSizeBytes, maxAgeIterations, minSizeToEvict } =
-      this.config;
+    const { maxTotalSizeBytes, minSizeToEvict } = this.config;
+    const effectiveMaxResults = this.getEffectiveMaxResults();
 
     const allTracked = [...this.tracked.values()];
-    const countPressure = this.tracked.size > maxFullResults;
+    const countPressure = this.tracked.size > effectiveMaxResults;
     const sizePressure = this.totalTrackedSize > maxTotalSizeBytes;
 
     logger.debug({
@@ -418,17 +480,17 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
       countPressure,
       sizePressure,
       minSizeToEvict,
-      maxFullResults,
+      effectiveMaxResults,
       maxTotalSizeBytes,
+      strategy: this.config.strategy,
     }, 'getEvictionCandidates: starting');
 
     // Filter to only evictable results (meet size minimum)
-    // BUG: This filter ALWAYS applies, even when count/size pressure exists
     const evictable = allTracked.filter(
       (r) => r.sizeBytes >= minSizeToEvict
     );
 
-    // Log filtered vs total to show the issue
+    // Log filtered vs total
     const filteredOut = allTracked.filter((r) => r.sizeBytes < minSizeToEvict);
     logger.debug({
       evictableCount: evictable.length,
@@ -463,11 +525,11 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
     for (const r of evictable) {
       // Stop if we're under ALL thresholds
       const underSizeLimit = projectedSize <= maxTotalSizeBytes;
-      const underCountLimit = projectedCount <= maxFullResults;
+      const underCountLimit = projectedCount <= effectiveMaxResults;
 
-      // Check if this specific result is stale
+      // Check if this specific result is stale (using strategy-aware retention)
       const age = this.currentIteration - r.addedAtIteration;
-      const toolMaxAge = this.config.toolRetention[r.toolName] ?? maxAgeIterations;
+      const toolMaxAge = this.getEffectiveRetention(r.toolName);
       const isStale = age >= toolMaxAge;
 
       logger.debug({
@@ -477,11 +539,12 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
         toolMaxAge,
         isStale,
         projectedCount,
-        maxFullResults,
+        effectiveMaxResults,
         underCountLimit,
         projectedSize,
         maxTotalSizeBytes,
         underSizeLimit,
+        strategy: this.config.strategy,
       }, `getEvictionCandidates: evaluating ${r.toolName}`);
 
       // Continue evicting if:
@@ -503,6 +566,7 @@ export class ToolResultEvictionPlugin extends BaseContextPlugin {
     logger.debug({
       candidateCount: candidates.length,
       candidates: candidates.map((c) => ({ tool: c.toolName, size: c.sizeBytes })),
+      strategy: this.config.strategy,
     }, `getEvictionCandidates: returning ${candidates.length} candidates`);
 
     return candidates;

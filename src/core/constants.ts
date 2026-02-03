@@ -208,18 +208,98 @@ export const TOKEN_ESTIMATION = {
   DEFAULT_CHARS_PER_TOKEN: 4,
 } as const;
 
+// ============ Strategy-Dependent Thresholds ============
+
+/**
+ * Strategy-specific thresholds (percentages of maxContextTokens).
+ * These adapt context management behavior to the chosen compaction strategy.
+ */
+export const STRATEGY_THRESHOLDS = {
+  proactive: {
+    // Most balanced - good for general use
+    compactionTrigger: 0.75,        // Start compaction at 75%
+    compactionTarget: 0.65,         // Reduce to 65%
+    smartCompactionTrigger: 0.70,   // Trigger smart compaction at 70%
+    maxToolResultsPercent: 0.30,    // Tool results can use up to 30% of context
+    protectedContextPercent: 0.10,  // Protect at least 10% of context (recent messages)
+  },
+  aggressive: {
+    // Memory-constrained - compact early and often
+    compactionTrigger: 0.60,
+    compactionTarget: 0.50,
+    smartCompactionTrigger: 0.55,
+    maxToolResultsPercent: 0.25,
+    protectedContextPercent: 0.08,
+  },
+  lazy: {
+    // Preserve context - only compact when critical
+    compactionTrigger: 0.90,
+    compactionTarget: 0.85,
+    smartCompactionTrigger: 0.85,
+    maxToolResultsPercent: 0.40,    // Allow more tool results
+    protectedContextPercent: 0.15,  // Protect more recent context
+  },
+  adaptive: {
+    // Starts with proactive, adjusts based on performance
+    compactionTrigger: 0.75,
+    compactionTarget: 0.65,
+    smartCompactionTrigger: 0.70,
+    maxToolResultsPercent: 0.30,
+    protectedContextPercent: 0.10,
+  },
+  'rolling-window': {
+    // Fixed window, similar to lazy but with message count focus
+    compactionTrigger: 0.85,
+    compactionTarget: 0.75,
+    smartCompactionTrigger: 0.80,
+    maxToolResultsPercent: 0.35,
+    protectedContextPercent: 0.12,
+  },
+} as const;
+
+export type StrategyName = keyof typeof STRATEGY_THRESHOLDS;
+
+/**
+ * High count caps as safety limits (not primary triggers).
+ * These act as last-resort limits when percentage-based thresholds aren't enough.
+ */
+export const SAFETY_CAPS = {
+  /** Safety cap for max tool results (only triggers if percentage doesn't) */
+  MAX_FULL_RESULTS: 100,
+  /** Safety cap for max age iterations */
+  MAX_AGE_ITERATIONS: 50,
+  /** Always keep at least this many messages */
+  MIN_PROTECTED_MESSAGES: 10,
+} as const;
+
+/**
+ * Tool retention multipliers by strategy (base iterations × multiplier).
+ * Allows strategy to influence how long tool results are kept.
+ */
+export const TOOL_RETENTION_MULTIPLIERS: Record<StrategyName, number> = {
+  proactive: 1.0,
+  aggressive: 0.7,
+  lazy: 1.5,
+  adaptive: 1.0,
+  'rolling-window': 1.2,
+};
+
 // ============ Tool Result Eviction Defaults ============
 
 /**
  * Tool result eviction configuration.
  * Controls when and how old tool results are moved from context to memory.
+ *
+ * NOTE: These are LEGACY defaults. The newer STRATEGY_THRESHOLDS provide
+ * percentage-based limits that adapt to different context sizes and strategies.
+ * ToolResultEvictionPlugin should prefer percentage-based limits when available.
  */
 export const TOOL_RESULT_EVICTION_DEFAULTS = {
-  /** Keep last N tool result pairs in conversation (default: 5) */
-  MAX_FULL_RESULTS: 5,
+  /** Keep last N tool result pairs in conversation (LEGACY - use SAFETY_CAPS instead) */
+  MAX_FULL_RESULTS: 10,
 
-  /** Evict results after N iterations (default: 3) */
-  MAX_AGE_ITERATIONS: 3,
+  /** Evict results after N iterations (LEGACY - use percentage-based) */
+  MAX_AGE_ITERATIONS: 5,
 
   /** Only evict results larger than this (bytes, default: 1KB) */
   MIN_SIZE_TO_EVICT: 1024,
@@ -229,30 +309,34 @@ export const TOOL_RESULT_EVICTION_DEFAULTS = {
 } as const;
 
 /**
- * Per-tool iteration retention overrides.
+ * Base per-tool iteration retention (before strategy multiplier).
  * Tools not listed use TOOL_RESULT_EVICTION_DEFAULTS.MAX_AGE_ITERATIONS.
  *
  * Higher values = keep results longer in conversation.
+ * Final retention = base × TOOL_RETENTION_MULTIPLIERS[strategy]
+ *
  * Common patterns:
  * - File/code tools: Keep longer (often referenced later)
  * - Web tools: Keep shorter (can re-fetch if needed)
  */
 export const DEFAULT_TOOL_RETENTION: Record<string, number> = {
   // Long retention - outputs often referenced later
-  read_file: 10,
-  bash: 8,
-  grep: 8,
-  glob: 6,
-  edit_file: 6,
+  read_file: 20,
+  bash: 15,
+  grep: 15,
+  glob: 12,
+  edit_file: 12,
 
   // Medium retention
-  memory_retrieve: 5,
-  list_directory: 5,
+  memory_retrieve: 10,
+  list_directory: 10,
+  autospill_process: 8,
 
   // Short retention - web content can be re-fetched
-  web_fetch: 3,
-  web_search: 3,
-  web_scrape: 3,
+  web_fetch: 6,
+  web_search: 6,
+  web_scrape: 6,
+  web_fetch_js: 6,
 };
 
 // ============ Context Guardian Defaults ============
@@ -260,19 +344,23 @@ export const DEFAULT_TOOL_RETENTION: Record<string, number> = {
 /**
  * ContextGuardian configuration - mandatory hard limit enforcement
  * before LLM calls to prevent context overflow.
+ *
+ * NOTE: The guardian acts as a LAST RESORT after smart compaction and strategy-based
+ * eviction have already been attempted. Its thresholds should be more permissive
+ * to avoid aggressive data loss.
  */
 export const GUARDIAN_DEFAULTS = {
   /** Enable guardian validation (can be disabled for testing) */
   ENABLED: true,
 
-  /** Maximum tool result size in tokens before truncation (1KB ≈ 250 tokens) */
-  MAX_TOOL_RESULT_TOKENS: 1000,
+  /** Maximum tool result size in tokens before truncation (4KB ≈ 1000 tokens) */
+  MAX_TOOL_RESULT_TOKENS: 2000,
 
   /** Minimum system prompt tokens to preserve during emergency compaction */
-  MIN_SYSTEM_PROMPT_TOKENS: 2000,
+  MIN_SYSTEM_PROMPT_TOKENS: 3000,
 
-  /** Number of most recent messages to always protect */
-  PROTECTED_RECENT_MESSAGES: 4,
+  /** Number of most recent messages to always protect (increased from 4) */
+  PROTECTED_RECENT_MESSAGES: 20,
 
   /** Truncation suffix for oversized content */
   TRUNCATION_SUFFIX: '\n\n[Content truncated by ContextGuardian - original data may be available in memory]',

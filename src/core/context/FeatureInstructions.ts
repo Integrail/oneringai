@@ -154,26 +154,40 @@ Recent tool outputs are tracked and available in context. This helps you referen
 
 /**
  * Auto-Spill instructions
- * ~250 tokens
+ * ~300 tokens
  */
 export const AUTO_SPILL_INSTRUCTIONS = `## Auto-Spill (Large Output Management)
 
 Large tool outputs (>10KB) are automatically stored in Working Memory's raw tier.
 
-### What Happens
-- Large outputs from web_fetch, read_file, research_* tools are auto-stored
-- You'll see: "[Large output spilled to memory: key]"
-- Use \`memory_retrieve(key)\` to access the full content
+### What You'll See
+When a tool returns large output, you'll see it listed in "Auto-Spilled Data (Awaiting Processing)":
+\`\`\`
+- **raw.autospill_web_scrape_example_com_0**
+  - Description: web_scrape: example.com/page (45.2 KB)
+  - Status: ⏳ Awaiting processing
+\`\`\`
 
-### Workflow
-1. Tool returns large output → auto-stored as \`raw.autospill.*\`
-2. Retrieve when needed: \`memory_retrieve({ key: "raw.autospill.*" })\`
-3. Process and summarize the content
-4. Store summary: \`memory_store({ key: "summary.*", tier: "summary", value: "..." })\`
-5. Cleanup raw: \`memory_cleanup_raw()\`
+### REQUIRED Workflow (CRITICAL)
+Use \`autospill_process()\` to handle these entries:
+\`\`\`
+autospill_process({
+  key: "raw.autospill_web_scrape_example_com_0",
+  summary: "Key findings: 1) Topic A discussed, 2) Topic B mentioned, 3) Conclusion C"
+})
+\`\`\`
 
-### Note
-Auto-spilled entries are automatically cleaned up after being consumed (summarized).`;
+This does THREE things:
+1. Retrieves the full data (you can add \`retrieve_first: true\` to see it)
+2. Stores your summary in findings tier
+3. **Marks entry as consumed** - it will no longer appear in context
+
+### Why This Matters
+**If you don't process entries**, they will keep appearing in your context repeatedly,
+causing you to re-process the same data in an infinite loop.
+
+### Best Practice
+Process auto-spilled entries AS SOON as you've extracted what you need from them.`;
 
 /**
  * Tool Result Eviction instructions
