@@ -1,0 +1,24 @@
+/**
+ * NextGen Context Plugins - Clean implementations
+ */
+
+export { WorkingMemoryPluginNextGen } from './WorkingMemoryPluginNextGen.js';
+export type {
+  WorkingMemoryPluginConfig,
+  SerializedWorkingMemoryState,
+  EvictionStrategy,
+} from './WorkingMemoryPluginNextGen.js';
+
+export { InContextMemoryPluginNextGen } from './InContextMemoryPluginNextGen.js';
+export type {
+  InContextMemoryConfig,
+  InContextEntry,
+  InContextPriority,
+  SerializedInContextMemoryState,
+} from './InContextMemoryPluginNextGen.js';
+
+export { PersistentInstructionsPluginNextGen } from './PersistentInstructionsPluginNextGen.js';
+export type {
+  PersistentInstructionsConfig,
+  SerializedPersistentInstructionsState,
+} from './PersistentInstructionsPluginNextGen.js';
