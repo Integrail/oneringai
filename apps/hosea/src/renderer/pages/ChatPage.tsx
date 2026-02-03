@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Spinner } from 'react-bootstrap';
-import { Send, Square, Bot, User, Copy, Share, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { Send, Square, Bot, User, Copy, Share } from 'lucide-react';
 import { MarkdownRenderer } from '../components/markdown';
 import { ToolCallDisplay, type ToolCallInfo } from '../components/ToolCallDisplay';
 import { InternalsPanel, INTERNALS_PANEL_DEFAULT_WIDTH } from '../components/InternalsPanel';
@@ -322,17 +322,12 @@ function ChatPageContent(): React.ReactElement {
         className="chat"
         style={{ width: showInternals ? `calc(100% - ${internalsWidth}px)` : '100%' }}
       >
-        {/* Tab Bar */}
-        <TabBar onNewTabClick={handleNewTabClick} />
-
-        {/* Internals toggle button */}
-        <button
-          className={`chat__internals-toggle ${showInternals ? 'chat__internals-toggle--active' : ''}`}
-          onClick={() => setShowInternals(!showInternals)}
-          title={showInternals ? 'Hide internals panel' : 'Show internals panel (Look Inside)'}
-        >
-          {showInternals ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
-        </button>
+        {/* Tab Bar with toolbar actions */}
+        <TabBar
+          onNewTabClick={handleNewTabClick}
+          showInternals={showInternals}
+          onToggleInternals={() => setShowInternals(!showInternals)}
+        />
 
         {/* Chat content */}
         {activeTab ? (

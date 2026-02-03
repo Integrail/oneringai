@@ -2610,7 +2610,8 @@ export class AgentService {
       // Check if the agent has a stream method (UniversalAgent, TaskAgent)
       if ('stream' in instance.agent && typeof instance.agent.stream === 'function') {
         for await (const event of (instance.agent as UniversalAgent).stream(message)) {
-          const e = event as UniversalEvent;
+          // Cast to any to support both StreamEventType and UniversalEvent formats
+          const e = event as { type: string; [key: string]: unknown };
 
           // Detect plan mode transitions to control text suppression
           if (e.type === 'plan:analyzing' || e.type === 'plan:created') {
@@ -2624,13 +2625,22 @@ export class AgentService {
             suppressText = false;
           }
 
-          if (e.type === 'text:delta') {
+          // Handle BOTH StreamEventType format (base Agent) and legacy format (UniversalAgent)
+          // StreamEventType: response.output_text.delta, response.tool_execution.start, etc.
+          // Legacy: text:delta, tool:start, etc.
+
+          // Text events
+          if (e.type === 'text:delta' || e.type === 'response.output_text.delta') {
             if (!suppressText) {
-              yield { type: 'text', content: e.delta };
+              const delta = (e as any).delta || '';
+              yield { type: 'text', content: delta };
             }
-          } else if (e.type === 'tool:start') {
-            const args = (e.args || {}) as Record<string, unknown>;
-            const tool = instance.agent.tools?.get(e.name);
+          }
+          // Tool start events
+          else if (e.type === 'tool:start' || e.type === 'response.tool_execution.start') {
+            const toolName = (e as any).name || (e as any).tool_name || 'unknown';
+            const args = ((e as any).args || (e as any).arguments || {}) as Record<string, unknown>;
+            const tool = instance.agent.tools?.get(toolName);
             let description = '';
             if (tool?.describeCall) {
               try {
@@ -2641,15 +2651,30 @@ export class AgentService {
             } else {
               description = defaultDescribeCall(args);
             }
-            yield { type: 'tool_start', tool: e.name, args, description };
-          } else if (e.type === 'tool:complete') {
-            yield { type: 'tool_end', tool: e.name, durationMs: e.durationMs };
-          } else if (e.type === 'tool:error') {
-            yield { type: 'tool_error', tool: e.name, error: e.error };
-          } else if (e.type === 'text:done') {
+            yield { type: 'tool_start', tool: toolName, args, description };
+          }
+          // Tool complete events
+          else if (e.type === 'tool:complete' || e.type === 'response.tool_execution.done') {
+            const toolName = (e as any).name || (e as any).tool_name || 'unknown';
+            const durationMs = (e as any).durationMs || (e as any).execution_time_ms || 0;
+            // Check for error in tool execution done
+            if ((e as any).error) {
+              yield { type: 'tool_error', tool: toolName, error: (e as any).error };
+            } else {
+              yield { type: 'tool_end', tool: toolName, durationMs };
+            }
+          }
+          // Legacy tool error (UniversalAgent only)
+          else if (e.type === 'tool:error') {
+            yield { type: 'tool_error', tool: (e as any).name, error: (e as any).error };
+          }
+          // Done events
+          else if (e.type === 'text:done' || e.type === 'response.complete') {
             yield { type: 'done' };
-          } else if (e.type === 'error') {
-            yield { type: 'error', content: e.error };
+          }
+          // Error events
+          else if (e.type === 'error' || e.type === 'response.error') {
+            yield { type: 'error', content: (e as any).error || (e as any).message || 'Unknown error' };
           }
           // Plan events
           else if (e.type === 'plan:created') {

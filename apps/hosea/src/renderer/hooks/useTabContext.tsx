@@ -91,8 +91,8 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
     // Set up stream chunk handler
     window.hosea.agent.onStreamChunkInstance((instanceId: string, chunk: StreamChunk) => {
       setTabs(prevTabs => {
-        // Find the tab with this instanceId
-        const tab = Array.from(prevTabs.values()).find(t => t.instanceId === instanceId);
+        // Direct lookup - Map key IS the instanceId
+        const tab = prevTabs.get(instanceId);
         if (!tab) return prevTabs;
 
         const newTabs = new Map(prevTabs);
@@ -222,21 +222,22 @@ export function TabProvider({ children, defaultAgentConfigId, defaultAgentName }
     // Set up stream end handler
     window.hosea.agent.onStreamEndInstance((instanceId: string) => {
       setTabs(prevTabs => {
-        const tab = Array.from(prevTabs.values()).find(t => t.instanceId === instanceId);
+        // Direct lookup - Map key IS the instanceId
+        const tab = prevTabs.get(instanceId);
         if (!tab) return prevTabs;
 
         const newTabs = new Map(prevTabs);
         const updatedTab = { ...tab };
 
-        // Finalize the streaming message
-        if (updatedTab.streamingContent) {
-          const lastMsg = updatedTab.messages[updatedTab.messages.length - 1];
-          if (lastMsg?.isStreaming) {
-            updatedTab.messages = [
-              ...updatedTab.messages.slice(0, -1),
-              { ...lastMsg, content: updatedTab.streamingContent, isStreaming: false },
-            ];
-          }
+        // Finalize the streaming message - ALWAYS mark as not streaming
+        const lastMsg = updatedTab.messages[updatedTab.messages.length - 1];
+        if (lastMsg?.isStreaming) {
+          // Use streaming content if available, otherwise keep existing content
+          const finalContent = updatedTab.streamingContent || lastMsg.content || '';
+          updatedTab.messages = [
+            ...updatedTab.messages.slice(0, -1),
+            { ...lastMsg, content: finalContent, isStreaming: false },
+          ];
         }
 
         updatedTab.streamingContent = '';

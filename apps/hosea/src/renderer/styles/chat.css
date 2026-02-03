@@ -1242,6 +1242,15 @@
   background-color: var(--color-gray-100);
 }
 
+/* Toolbar Actions Container */
+.chat-tabs__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 /* New Tab Button */
 .chat-tabs__add {
   display: flex;
@@ -1269,6 +1278,50 @@
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+
+.chat-tabs__add:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Toolbar Action Button (internals toggle, etc.) */
+.chat-tabs__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background-color: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-lg);
+  color: var(--color-gray-500);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.chat-tabs__action:hover {
+  background-color: var(--color-gray-50);
+  color: var(--color-gray-700);
+  border-color: var(--color-gray-300);
+}
+
+.chat-tabs__action:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-light);
+}
+
+.chat-tabs__action--active {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-white);
+}
+
+.chat-tabs__action--active:hover {
+  background-color: var(--color-primary-hover);
+  color: var(--color-white);
 }
 
 /* New Tab Modal - Agent List */
