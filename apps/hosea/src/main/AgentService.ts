@@ -213,6 +213,12 @@ export interface StoredMCPServerConfig {
   };
   /** Tool namespace prefix (default: 'mcp:{name}') */
   toolNamespace?: string;
+  /**
+   * Map environment variable keys to connector names for runtime auth resolution.
+   * When connecting, the connector's token will be injected into the env var.
+   * Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' }
+   */
+  connectorBindings?: Record<string, string>;
   /** Connection status */
   status: 'connected' | 'disconnected' | 'error' | 'connecting';
   /** Last error message if status is 'error' */
@@ -247,6 +253,8 @@ export interface CreateMCPServerInput {
   transport: 'stdio' | 'http' | 'https';
   transportConfig: StoredMCPServerConfig['transportConfig'];
   toolNamespace?: string;
+  /** Map environment variable keys to connector names for runtime auth resolution */
+  connectorBindings?: Record<string, string>;
 }
 
 interface HoseaConfig {
@@ -1570,6 +1578,7 @@ export class AgentService {
         transport: input.transport,
         transportConfig: input.transportConfig,
         toolNamespace: input.toolNamespace ?? `mcp:${input.name}`,
+        connectorBindings: input.connectorBindings,
         status: 'disconnected',
         createdAt: now,
         updatedAt: now,
@@ -1657,6 +1666,26 @@ export class AgentService {
       config.status = 'connecting';
       this.mcpServers.set(name, config);
 
+      // Resolve connector bindings to actual tokens
+      const resolvedEnv = { ...config.transportConfig.env };
+      if (config.connectorBindings) {
+        for (const [envKey, connectorName] of Object.entries(config.connectorBindings)) {
+          if (Connector.has(connectorName)) {
+            try {
+              const connector = Connector.get(connectorName);
+              const token = await connector.getToken();
+              resolvedEnv[envKey] = token;
+              logger.debug(`Resolved connector binding: ${envKey} <- ${connectorName}`);
+            } catch (err) {
+              logger.warn(`Failed to get token from connector "${connectorName}" for ${envKey}: ${err}`);
+              // Continue with existing env value if present
+            }
+          } else {
+            logger.warn(`Connector "${connectorName}" not found for binding ${envKey}`);
+          }
+        }
+      }
+
       // Build MCPServerConfig for the library
       const mcpConfig: MCPServerConfig = {
         name: config.name,
@@ -1667,7 +1696,7 @@ export class AgentService {
           ? {
               command: config.transportConfig.command!,
               args: config.transportConfig.args,
-              env: config.transportConfig.env,
+              env: resolvedEnv,
               cwd: config.transportConfig.cwd,
             }
           : {

@@ -2,14 +2,25 @@
  * TemplateRequiredFields Component
  *
  * Displays and handles required fields from an MCP template (env vars and args).
+ * Supports unified auth via connector references.
  */
 
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Form, InputGroup, Button, Alert } from 'react-bootstrap';
-import { Key, FolderOpen, AlertCircle, ExternalLink, Box } from 'lucide-react';
+import { Key, FolderOpen, AlertCircle, ExternalLink, Box, Link2, Edit3 } from 'lucide-react';
 import type { MCPServerTemplate, EnvFieldConfig, ArgFieldConfig, MCPPrerequisite } from '../../../shared/mcpTemplates';
 import { PREREQUISITE_INFO } from '../../../shared/mcpTemplates';
 import type { TransportConfig } from './TransportConfigForm';
+
+/** Universal connector info from the API */
+interface UniversalConnector {
+  name: string;
+  vendorId: string;
+  vendorName: string;
+  displayName?: string;
+  status: 'active' | 'error' | 'untested';
+  legacyServiceType?: string;
+}
 
 interface TemplateRequiredFieldsProps {
   /** The selected template */
@@ -18,6 +29,10 @@ interface TemplateRequiredFieldsProps {
   config: TransportConfig;
   /** Handler for config changes */
   onConfigChange: (config: TransportConfig) => void;
+  /** Handler for connector binding changes */
+  onConnectorBindingsChange?: (bindings: Record<string, string>) => void;
+  /** Current connector bindings */
+  connectorBindings?: Record<string, string>;
   /** Whether form is disabled */
   disabled?: boolean;
 }
@@ -26,6 +41,8 @@ export function TemplateRequiredFields({
   template,
   config,
   onConfigChange,
+  onConnectorBindingsChange,
+  connectorBindings = {},
   disabled = false,
 }: TemplateRequiredFieldsProps): React.ReactElement | null {
   const hasRequiredEnv = template.requiredEnv && template.requiredEnv.length > 0;
@@ -33,15 +50,85 @@ export function TemplateRequiredFields({
   const hasPrerequisites = template.prerequisites && template.prerequisites.length > 0;
   const hasSetupInstructions = template.setupInstructions || template.setupUrl;
 
+  // State for available connectors
+  const [connectors, setConnectors] = useState<UniversalConnector[]>([]);
+  // Track which fields use connector vs manual input
+  const [useConnectorFor, setUseConnectorFor] = useState<Record<string, boolean>>({});
+
+  // Load available connectors on mount
+  useEffect(() => {
+    const loadConnectors = async () => {
+      try {
+        const list = await window.hosea.universalConnector.list();
+        setConnectors(list);
+
+        // Initialize useConnectorFor based on existing bindings
+        const initial: Record<string, boolean> = {};
+        if (template.requiredEnv) {
+          for (const envField of template.requiredEnv) {
+            // If there's an existing binding, use connector mode
+            initial[envField.key] = !!connectorBindings[envField.key];
+          }
+        }
+        setUseConnectorFor(initial);
+      } catch (err) {
+        console.error('Failed to load connectors:', err);
+      }
+    };
+    loadConnectors();
+  }, [template.requiredEnv, connectorBindings]);
+
+  // Get connectors that match a given service type
+  const getMatchingConnectors = useCallback((serviceType: string): UniversalConnector[] => {
+    return connectors.filter(c =>
+      c.vendorId === serviceType ||
+      c.legacyServiceType === serviceType
+    );
+  }, [connectors]);
+
   // Always show if there are prerequisites or setup instructions, even without env/args
   if (!hasRequiredEnv && !hasRequiredArgs && !hasPrerequisites && !hasSetupInstructions) {
     return null;
   }
 
-  // Handle environment variable change
+  // Handle environment variable change (manual input)
   const handleEnvChange = (key: string, value: string) => {
     const newEnv = { ...config.env, [key]: value };
     onConfigChange({ ...config, env: newEnv });
+    // Clear any connector binding for this key when entering manually
+    if (connectorBindings[key] && onConnectorBindingsChange) {
+      const newBindings = { ...connectorBindings };
+      delete newBindings[key];
+      onConnectorBindingsChange(newBindings);
+    }
+  };
+
+  // Handle connector selection for an env field
+  const handleConnectorSelect = (envKey: string, connectorName: string) => {
+    if (onConnectorBindingsChange) {
+      if (connectorName) {
+        onConnectorBindingsChange({ ...connectorBindings, [envKey]: connectorName });
+        // Clear manual env value when using connector
+        const newEnv = { ...config.env };
+        delete newEnv[envKey];
+        onConfigChange({ ...config, env: newEnv });
+      } else {
+        const newBindings = { ...connectorBindings };
+        delete newBindings[envKey];
+        onConnectorBindingsChange(newBindings);
+      }
+    }
+  };
+
+  // Toggle between connector and manual input mode
+  const toggleInputMode = (envKey: string, useConnector: boolean) => {
+    setUseConnectorFor(prev => ({ ...prev, [envKey]: useConnector }));
+    if (!useConnector && connectorBindings[envKey] && onConnectorBindingsChange) {
+      // Switching to manual - clear connector binding
+      const newBindings = { ...connectorBindings };
+      delete newBindings[envKey];
+      onConnectorBindingsChange(newBindings);
+    }
   };
 
   // Handle argument placeholder replacement
@@ -147,23 +234,98 @@ export function TemplateRequiredFields({
       {/* Required Environment Variables */}
       {hasRequiredEnv && (
         <div className="template-required-fields__section">
-          {template.requiredEnv!.map((envField: EnvFieldConfig) => (
-            <Form.Group key={envField.key} className="mb-3">
-              <Form.Label>
-                <Key size={14} className="me-1" />
-                {envField.label}
-                {envField.required && <span className="text-danger ms-1">*</span>}
-              </Form.Label>
-              <Form.Control
-                type={envField.secret ? 'password' : 'text'}
-                placeholder={envField.placeholder || `Enter ${envField.label.toLowerCase()}`}
-                value={config.env?.[envField.key] || ''}
-                onChange={(e) => handleEnvChange(envField.key, e.target.value)}
-                disabled={disabled}
-              />
-              <Form.Text className="text-muted">{envField.description}</Form.Text>
-            </Form.Group>
-          ))}
+          {template.requiredEnv!.map((envField: EnvFieldConfig) => {
+            const hasConnectorRef = !!envField.connectorRef;
+            const matchingConnectors = hasConnectorRef
+              ? getMatchingConnectors(envField.connectorRef!.serviceType)
+              : [];
+            const hasMatchingConnectors = matchingConnectors.length > 0;
+            const useConnector = useConnectorFor[envField.key] ?? false;
+            const selectedConnector = connectorBindings[envField.key] || '';
+
+            return (
+              <Form.Group key={envField.key} className="mb-3">
+                <Form.Label>
+                  <Key size={14} className="me-1" />
+                  {envField.label}
+                  {envField.required && <span className="text-danger ms-1">*</span>}
+                </Form.Label>
+
+                {/* Show connector/manual toggle if connectorRef exists */}
+                {hasConnectorRef && (
+                  <div className="connector-auth-toggle mb-2">
+                    <Form.Check
+                      type="radio"
+                      id={`${envField.key}-use-connector`}
+                      name={`${envField.key}-auth-mode`}
+                      label={
+                        <span className="connector-auth-toggle__label">
+                          <Link2 size={14} />
+                          Use existing connector
+                          {hasMatchingConnectors && <span className="badge bg-success ms-1">Recommended</span>}
+                        </span>
+                      }
+                      checked={useConnector}
+                      onChange={() => toggleInputMode(envField.key, true)}
+                      disabled={disabled || !hasMatchingConnectors}
+                    />
+                    <Form.Check
+                      type="radio"
+                      id={`${envField.key}-use-manual`}
+                      name={`${envField.key}-auth-mode`}
+                      label={
+                        <span className="connector-auth-toggle__label">
+                          <Edit3 size={14} />
+                          Enter manually
+                        </span>
+                      }
+                      checked={!useConnector}
+                      onChange={() => toggleInputMode(envField.key, false)}
+                      disabled={disabled}
+                    />
+                  </div>
+                )}
+
+                {/* Connector dropdown or manual input based on mode */}
+                {hasConnectorRef && useConnector ? (
+                  <div className="connector-select-wrapper">
+                    <Form.Select
+                      value={selectedConnector}
+                      onChange={(e) => handleConnectorSelect(envField.key, e.target.value)}
+                      disabled={disabled || !hasMatchingConnectors}
+                      className="connector-select"
+                    >
+                      <option value="">Select a connector...</option>
+                      {matchingConnectors.map(c => (
+                        <option key={c.name} value={c.name}>
+                          {c.displayName || c.name} ({c.vendorName})
+                          {c.status !== 'active' && ` - ${c.status}`}
+                        </option>
+                      ))}
+                    </Form.Select>
+                    {!hasMatchingConnectors && (
+                      <Form.Text className="text-warning">
+                        No {envField.connectorRef!.serviceType} connectors found.{' '}
+                        <a href="#" onClick={(e) => { e.preventDefault(); /* TODO: Navigate to connector creation */ }}>
+                          Create one
+                        </a>
+                      </Form.Text>
+                    )}
+                  </div>
+                ) : (
+                  <Form.Control
+                    type={envField.secret ? 'password' : 'text'}
+                    placeholder={envField.placeholder || `Enter ${envField.label.toLowerCase()}`}
+                    value={config.env?.[envField.key] || ''}
+                    onChange={(e) => handleEnvChange(envField.key, e.target.value)}
+                    disabled={disabled}
+                  />
+                )}
+
+                <Form.Text className="text-muted">{envField.description}</Form.Text>
+              </Form.Group>
+            );
+          })}
         </div>
       )}
 

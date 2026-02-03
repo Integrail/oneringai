@@ -18,6 +18,17 @@ export type MCPTemplateCategory =
   | 'utility';    // Test, reference servers
 
 /**
+ * Connector reference for unified auth
+ * Allows MCP server env vars to be populated from existing connectors
+ */
+export interface ConnectorRef {
+  /** Service type that matches (e.g., 'github', 'slack', 'google') */
+  serviceType: string;
+  /** What to extract from connector: 'apiKey' or 'accessToken' (OAuth) */
+  tokenField: 'apiKey' | 'accessToken';
+}
+
+/**
  * Configuration for environment variable fields
  */
 export interface EnvFieldConfig {
@@ -33,6 +44,8 @@ export interface EnvFieldConfig {
   secret?: boolean;
   /** Placeholder text */
   placeholder?: string;
+  /** Optional connector reference for unified auth */
+  connectorRef?: ConnectorRef;
 }
 
 /**
@@ -305,6 +318,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         required: true,
         secret: true,
         placeholder: 'ghp_xxxxxxxxxxxxxxxxxxxx',
+        connectorRef: { serviceType: 'github', tokenField: 'apiKey' },
       },
     ],
     prerequisites: ['node'],
@@ -333,6 +347,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         required: true,
         secret: true,
         placeholder: 'glpat-xxxxxxxxxxxxxxxxxxxx',
+        connectorRef: { serviceType: 'gitlab', tokenField: 'apiKey' },
       },
       {
         key: 'GITLAB_API_URL',
@@ -527,6 +542,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         description: 'Google Drive OAuth credentials JSON',
         required: true,
         secret: true,
+        connectorRef: { serviceType: 'google', tokenField: 'accessToken' },
       },
     ],
     prerequisites: ['node'],
@@ -554,6 +570,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         description: 'Google Maps Platform API key',
         required: true,
         secret: true,
+        connectorRef: { serviceType: 'google-maps', tokenField: 'apiKey' },
       },
     ],
     prerequisites: ['node'],
@@ -582,6 +599,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         required: true,
         secret: true,
         placeholder: 'xoxb-xxxxxxxxxxxx-xxxxxxxxxxxx',
+        connectorRef: { serviceType: 'slack', tokenField: 'accessToken' },
       },
       {
         key: 'SLACK_TEAM_ID',
@@ -619,6 +637,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         required: true,
         secret: true,
         placeholder: 'secret_xxxxxxxxxxxxxxxxxxxx',
+        connectorRef: { serviceType: 'notion', tokenField: 'apiKey' },
       },
     ],
     prerequisites: ['node'],
@@ -646,6 +665,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         description: 'Sentry authentication token',
         required: true,
         secret: true,
+        connectorRef: { serviceType: 'sentry', tokenField: 'apiKey' },
       },
     ],
     prerequisites: ['node'],
@@ -673,6 +693,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         description: 'Linear API key',
         required: true,
         secret: true,
+        connectorRef: { serviceType: 'linear', tokenField: 'apiKey' },
       },
     ],
     prerequisites: ['node'],
@@ -702,6 +723,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         description: 'Brave Search API key',
         required: true,
         secret: true,
+        connectorRef: { serviceType: 'brave', tokenField: 'apiKey' },
       },
     ],
     prerequisites: ['node'],
@@ -729,6 +751,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         description: 'Exa API key',
         required: true,
         secret: true,
+        connectorRef: { serviceType: 'exa', tokenField: 'apiKey' },
       },
     ],
     prerequisites: ['node'],
@@ -756,6 +779,7 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         description: 'Tavily API key',
         required: true,
         secret: true,
+        connectorRef: { serviceType: 'tavily', tokenField: 'apiKey' },
       },
     ],
     prerequisites: ['node'],

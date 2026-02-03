@@ -525,6 +525,7 @@ export interface HoseaAPI {
         timeoutMs?: number;
       };
       toolNamespace?: string;
+      connectorBindings?: Record<string, string>;
       status: 'connected' | 'disconnected' | 'error' | 'connecting';
       lastError?: string;
       toolCount?: number;
@@ -550,6 +551,7 @@ export interface HoseaAPI {
         timeoutMs?: number;
       };
       toolNamespace?: string;
+      connectorBindings?: Record<string, string>;
       status: 'connected' | 'disconnected' | 'error' | 'connecting';
       lastError?: string;
       toolCount?: number;
@@ -575,6 +577,7 @@ export interface HoseaAPI {
         timeoutMs?: number;
       };
       toolNamespace?: string;
+      connectorBindings?: Record<string, string>;
     }) => Promise<{ success: boolean; error?: string }>;
     /** Update an existing MCP server configuration */
     update: (name: string, updates: {
@@ -592,6 +595,7 @@ export interface HoseaAPI {
         timeoutMs?: number;
       };
       toolNamespace?: string;
+      connectorBindings?: Record<string, string>;
     }) => Promise<{ success: boolean; error?: string }>;
     /** Delete an MCP server configuration */
     delete: (name: string) => Promise<{ success: boolean; error?: string }>;

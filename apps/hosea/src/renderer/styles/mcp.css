@@ -798,6 +798,80 @@
   margin-top: 0.5rem;
 }
 
+/* ============ Connector Auth Toggle ============ */
+
+.connector-auth-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.connector-auth-toggle .form-check {
+  margin: 0;
+  padding-left: 1.5rem;
+}
+
+.connector-auth-toggle .form-check-input {
+  margin-top: 0.25rem;
+}
+
+.connector-auth-toggle__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.connector-auth-toggle__label svg {
+  color: var(--color-text-secondary);
+}
+
+.connector-auth-toggle .badge {
+  font-size: 0.65rem;
+  font-weight: 500;
+  padding: 0.2rem 0.4rem;
+}
+
+/* Connector select wrapper */
+.connector-select-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.connector-select {
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+}
+
+.connector-select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-bg);
+}
+
+/* Connector field with icon */
+.connector-field-with-icon {
+  position: relative;
+}
+
+.connector-field-with-icon__icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
+
+.connector-field-with-icon .form-select,
+.connector-field-with-icon .form-control {
+  padding-left: 2.25rem;
+}
+
 /* Animation for spinner */
 @keyframes spin {
   from { transform: rotate(0deg); }

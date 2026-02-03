@@ -90,6 +90,12 @@ export interface MCPServerConfig {
     /** Default risk level */
     defaultRiskLevel?: 'low' | 'medium' | 'high' | 'critical';
   };
+  /**
+   * Map environment variable keys to connector names for runtime auth resolution.
+   * When connecting, the connector's token will be injected into the env var.
+   * Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' }
+   */
+  connectorBindings?: Record<string, string>;
 }
 
 /**
@@ -159,11 +165,12 @@ export interface OneRingAIConfig {
 export function applyServerDefaults(
   config: MCPServerConfig,
   defaults?: MCPConfiguration['defaults']
-): Required<Omit<MCPServerConfig, 'displayName' | 'description' | 'permissions' | 'toolNamespace'>> & {
+): Required<Omit<MCPServerConfig, 'displayName' | 'description' | 'permissions' | 'toolNamespace' | 'connectorBindings'>> & {
   displayName?: string;
   description?: string;
   permissions?: MCPServerConfig['permissions'];
   toolNamespace: string;
+  connectorBindings?: Record<string, string>;
 } {
   return {
     name: config.name,
@@ -179,5 +186,6 @@ export function applyServerDefaults(
     healthCheckIntervalMs: config.healthCheckIntervalMs ?? defaults?.healthCheckIntervalMs ?? 60000,
     toolNamespace: config.toolNamespace ?? `mcp:${config.name}`,
     permissions: config.permissions,
+    connectorBindings: config.connectorBindings,
   };
 }

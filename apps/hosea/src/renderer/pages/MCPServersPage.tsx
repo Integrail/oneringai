@@ -35,6 +35,7 @@ export function MCPServersPage(): React.ReactElement {
   const [editTransport, setEditTransport] = useState<TransportType>('stdio');
   const [editTransportConfig, setEditTransportConfig] = useState<TransportConfig>({});
   const [editToolNamespace, setEditToolNamespace] = useState('');
+  const [editConnectorBindings, setEditConnectorBindings] = useState<Record<string, string>>({});
   const [editError, setEditError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [isCreateMode, setIsCreateMode] = useState(false);
@@ -80,6 +81,7 @@ export function MCPServersPage(): React.ReactElement {
     setEditTransport('stdio');
     setEditTransportConfig({});
     setEditToolNamespace('');
+    setEditConnectorBindings({});
     setEditError(null);
     setShowEditModal(true);
   };
@@ -124,6 +126,7 @@ export function MCPServersPage(): React.ReactElement {
 
     setEditTransportConfig(config);
     setEditToolNamespace('');
+    setEditConnectorBindings({});
     setEditError(null);
     setShowEditModal(true);
   };
@@ -138,6 +141,7 @@ export function MCPServersPage(): React.ReactElement {
     setEditTransport(server.transport);
     setEditTransportConfig({ ...server.transportConfig });
     setEditToolNamespace(server.toolNamespace || '');
+    setEditConnectorBindings(server.connectorBindings || {});
     setEditError(null);
     setShowEditModal(true);
   };
@@ -161,11 +165,13 @@ export function MCPServersPage(): React.ReactElement {
 
     // Validate template required fields when creating from template
     if (selectedTemplate && isCreateMode) {
-      // Check required env vars
+      // Check required env vars (either env value or connector binding must be provided)
       if (selectedTemplate.requiredEnv) {
         for (const envField of selectedTemplate.requiredEnv) {
-          if (envField.required && !editTransportConfig.env?.[envField.key]?.trim()) {
-            setEditError(`${envField.label} is required`);
+          const hasEnvValue = !!editTransportConfig.env?.[envField.key]?.trim();
+          const hasConnectorBinding = !!editConnectorBindings[envField.key];
+          if (envField.required && !hasEnvValue && !hasConnectorBinding) {
+            setEditError(`${envField.label} is required (provide a value or select a connector)`);
             return;
           }
         }
@@ -201,6 +207,7 @@ export function MCPServersPage(): React.ReactElement {
           transport: editTransport,
           transportConfig: editTransportConfig,
           toolNamespace: editToolNamespace.trim() || undefined,
+          connectorBindings: Object.keys(editConnectorBindings).length > 0 ? editConnectorBindings : undefined,
         });
 
         if (result.success) {
@@ -216,6 +223,7 @@ export function MCPServersPage(): React.ReactElement {
           transport: editTransport,
           transportConfig: editTransportConfig,
           toolNamespace: editToolNamespace.trim() || undefined,
+          connectorBindings: Object.keys(editConnectorBindings).length > 0 ? editConnectorBindings : undefined,
         });
 
         if (result.success) {
@@ -444,6 +452,8 @@ export function MCPServersPage(): React.ReactElement {
                   template={selectedTemplate}
                   config={editTransportConfig}
                   onConfigChange={setEditTransportConfig}
+                  connectorBindings={editConnectorBindings}
+                  onConnectorBindingsChange={setEditConnectorBindings}
                   disabled={saving}
                 />
                 <hr />

@@ -38,6 +38,8 @@ export interface StoredMCPServerConfig {
     timeoutMs?: number;
   };
   toolNamespace?: string;
+  /** Map environment variable keys to connector names for runtime auth resolution */
+  connectorBindings?: Record<string, string>;
   status: 'connected' | 'disconnected' | 'error' | 'connecting';
   lastError?: string;
   toolCount?: number;
