@@ -522,6 +522,16 @@
   border-radius: var(--radius-sm);
 }
 
+.mcp-template-card__requirement--prereq {
+  color: #6366f1;
+  background: #eef2ff;
+}
+
+.mcp-template-card__requirement--env {
+  color: #f59e0b;
+  background: #fffbeb;
+}
+
 .mcp-template-card__tags {
   display: flex;
   flex-wrap: wrap;
@@ -718,6 +728,74 @@
   font-size: 0.8rem;
   color: var(--color-text-secondary);
   margin-bottom: 1rem;
+}
+
+/* Prerequisites Section */
+.template-required-fields__prerequisites {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.template-required-fields__prereq-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.template-required-fields__prereq-list {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.template-required-fields__prereq-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: #6366f1;
+  background: #eef2ff;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.template-required-fields__prereq-badge:hover {
+  background: #e0e7ff;
+  color: #4f46e5;
+}
+
+/* Setup Instructions */
+.template-required-fields__instructions {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.template-required-fields__instructions-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.template-required-fields__instructions-text {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.template-required-fields__section {
+  margin-top: 0.5rem;
 }
 
 /* Animation for spinner */

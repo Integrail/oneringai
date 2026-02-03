@@ -56,6 +56,37 @@ export interface ArgFieldConfig {
 }
 
 /**
+ * Runtime prerequisite for an MCP server
+ */
+export type MCPPrerequisite = 'node' | 'python' | 'uv' | 'docker';
+
+/**
+ * Prerequisite metadata
+ */
+export const PREREQUISITE_INFO: Record<MCPPrerequisite, { label: string; description: string; installUrl: string }> = {
+  node: {
+    label: 'Node.js',
+    description: 'JavaScript runtime (v18+)',
+    installUrl: 'https://nodejs.org/',
+  },
+  python: {
+    label: 'Python',
+    description: 'Python runtime (v3.10+)',
+    installUrl: 'https://www.python.org/downloads/',
+  },
+  uv: {
+    label: 'uv',
+    description: 'Python package manager',
+    installUrl: 'https://docs.astral.sh/uv/getting-started/installation/',
+  },
+  docker: {
+    label: 'Docker',
+    description: 'Container runtime',
+    installUrl: 'https://www.docker.com/get-started/',
+  },
+};
+
+/**
  * MCP Server Template definition
  */
 export interface MCPServerTemplate {
@@ -84,6 +115,12 @@ export interface MCPServerTemplate {
   requiredEnv?: EnvFieldConfig[];
   /** Required user-configurable arguments */
   requiredArgs?: ArgFieldConfig[];
+  /** Runtime prerequisites (Node.js, Python, etc.) */
+  prerequisites?: MCPPrerequisite[];
+  /** URL to get API keys/credentials */
+  setupUrl?: string;
+  /** Brief setup instructions */
+  setupInstructions?: string;
   /** Link to documentation */
   docsUrl?: string;
   /** GitHub/source repository URL */
@@ -146,6 +183,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: '/path/to/directory',
       },
     ],
+    prerequisites: ['node'],
+    setupInstructions: 'No external setup required. Just select the directory you want the agent to access.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem',
     tags: ['files', 'read', 'write'],
     popularity: 5,
@@ -161,6 +200,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-memory'],
     },
+    prerequisites: ['node'],
+    setupInstructions: 'No external setup required. Memory is stored locally in a knowledge graph.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/memory',
     tags: ['memory', 'knowledge', 'persistence'],
     popularity: 5,
@@ -186,6 +227,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: '/path/to/repo',
       },
     ],
+    prerequisites: ['python', 'uv'],
+    setupInstructions: 'Requires Python and uv package manager. Install uv with: curl -LsSf https://astral.sh/uv/install.sh | sh',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/git',
     tags: ['git', 'version control', 'repository'],
     popularity: 5,
@@ -201,6 +244,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-fetch'],
     },
+    prerequisites: ['node'],
+    setupInstructions: 'No external setup required. Fetches and converts web pages to markdown.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/fetch',
     tags: ['web', 'http', 'scraping'],
     popularity: 4,
@@ -216,6 +261,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-time'],
     },
+    prerequisites: ['node'],
+    setupInstructions: 'No external setup required.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/time',
     tags: ['time', 'timezone', 'date'],
     popularity: 3,
@@ -231,6 +278,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-sequentialthinking'],
     },
+    prerequisites: ['node'],
+    setupInstructions: 'No external setup required. Provides structured thinking tools for complex problems.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sequentialthinking',
     tags: ['thinking', 'reasoning', 'planning'],
     popularity: 4,
@@ -258,6 +307,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: 'ghp_xxxxxxxxxxxxxxxxxxxx',
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://github.com/settings/tokens',
+    setupInstructions: '1. Go to GitHub Settings > Developer settings > Personal access tokens\n2. Click "Generate new token (classic)"\n3. Select scopes: repo, read:org, read:user\n4. Copy the token (starts with ghp_)',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/github',
     tags: ['github', 'git', 'repository', 'code'],
     popularity: 5,
@@ -290,6 +342,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: 'https://gitlab.com',
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://gitlab.com/-/user_settings/personal_access_tokens',
+    setupInstructions: '1. Go to GitLab > User Settings > Access Tokens\n2. Create a new token with api, read_user scopes\n3. Copy the token (starts with glpat-)',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/gitlab',
     tags: ['gitlab', 'git', 'repository'],
     popularity: 3,
@@ -305,6 +360,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
       command: 'npx',
       args: ['-y', '@executeautomation/playwright-mcp-server'],
     },
+    prerequisites: ['node'],
+    setupInstructions: 'No external setup required. Playwright browsers will be downloaded automatically on first use.',
     docsUrl: 'https://github.com/executeautomation/playwright-mcp-server',
     tags: ['browser', 'automation', 'testing', 'web'],
     popularity: 5,
@@ -320,6 +377,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-puppeteer'],
     },
+    prerequisites: ['node'],
+    setupInstructions: 'No external setup required. Chrome/Chromium will be downloaded automatically on first use.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/puppeteer',
     tags: ['browser', 'automation', 'scraping'],
     popularity: 4,
@@ -347,6 +406,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: 'postgresql://user:pass@localhost/db',
       },
     ],
+    prerequisites: ['node'],
+    setupInstructions: 'Requires a running PostgreSQL database. Connection string format:\npostgresql://username:password@hostname:port/database',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/postgres',
     tags: ['database', 'sql', 'postgres'],
     popularity: 4,
@@ -372,6 +433,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: '/path/to/database.db',
       },
     ],
+    prerequisites: ['node'],
+    setupInstructions: 'Point to an existing SQLite database file (.db, .sqlite, .sqlite3) or a new path to create one.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sqlite',
     tags: ['database', 'sql', 'sqlite'],
     popularity: 4,
@@ -396,6 +459,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: 'redis://localhost:6379',
       },
     ],
+    prerequisites: ['node'],
+    setupInstructions: 'Requires a running Redis server. Defaults to localhost:6379 if no URL is provided.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/redis',
     tags: ['database', 'redis', 'cache'],
     popularity: 3,
@@ -437,6 +502,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: 'us-east-1',
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://console.aws.amazon.com/iam/home#/security_credentials',
+    setupInstructions: '1. Go to AWS Console > IAM > Security Credentials\n2. Create an access key under "Access keys"\n3. Ensure the IAM user has Bedrock permissions\n4. Note the region where your Knowledge Base is deployed',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/aws-kb-retrieval',
     tags: ['aws', 'bedrock', 'knowledge base'],
     popularity: 3,
@@ -461,6 +529,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         secret: true,
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://console.cloud.google.com/apis/credentials',
+    setupInstructions: '1. Go to Google Cloud Console > APIs & Services > Credentials\n2. Create OAuth 2.0 Client ID (Desktop app type)\n3. Download the JSON credentials file\n4. Paste the entire JSON content as the credentials',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/gdrive',
     tags: ['google', 'drive', 'files', 'cloud'],
     popularity: 4,
@@ -485,6 +556,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         secret: true,
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://console.cloud.google.com/google/maps-apis/credentials',
+    setupInstructions: '1. Go to Google Cloud Console > Google Maps Platform > Credentials\n2. Create an API key\n3. Enable Maps JavaScript API, Places API, Directions API\n4. Optionally restrict the key to specific APIs',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/google-maps',
     tags: ['google', 'maps', 'location', 'directions'],
     popularity: 3,
@@ -517,6 +591,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: 'T01234567',
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://api.slack.com/apps',
+    setupInstructions: '1. Go to api.slack.com/apps and create a new app\n2. Add Bot Token Scopes: channels:read, chat:write, users:read\n3. Install to workspace and copy the Bot User OAuth Token\n4. Find Team ID in workspace settings or URL',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/slack',
     tags: ['slack', 'messaging', 'communication'],
     popularity: 4,
@@ -544,6 +621,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         placeholder: 'secret_xxxxxxxxxxxxxxxxxxxx',
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://www.notion.so/my-integrations',
+    setupInstructions: '1. Go to notion.so/my-integrations\n2. Create a new integration\n3. Copy the Internal Integration Token (starts with secret_)\n4. Share specific pages/databases with your integration',
     docsUrl: 'https://github.com/makenotion/notion-mcp-server',
     tags: ['notion', 'notes', 'wiki', 'database'],
     popularity: 4,
@@ -568,6 +648,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         secret: true,
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://sentry.io/settings/account/api/auth-tokens/',
+    setupInstructions: '1. Go to Sentry > Settings > Auth Tokens\n2. Create a new token with project:read, org:read scopes\n3. Copy the token',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/sentry',
     tags: ['sentry', 'errors', 'monitoring', 'debugging'],
     popularity: 3,
@@ -592,6 +675,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         secret: true,
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://linear.app/settings/api',
+    setupInstructions: '1. Go to Linear > Settings > API\n2. Create a new Personal API Key\n3. Copy the key (starts with lin_api_)',
     sourceUrl: 'https://github.com/jerhadf/linear-mcp-server',
     tags: ['linear', 'issues', 'project management'],
     popularity: 3,
@@ -618,6 +704,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         secret: true,
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://brave.com/search/api/',
+    setupInstructions: '1. Go to brave.com/search/api\n2. Sign up for Brave Search API (free tier available)\n3. Create an API key in the dashboard\n4. Copy the API key',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/brave-search',
     tags: ['search', 'web', 'brave'],
     popularity: 4,
@@ -642,6 +731,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         secret: true,
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://dashboard.exa.ai/api-keys',
+    setupInstructions: '1. Go to dashboard.exa.ai\n2. Sign up for an Exa account\n3. Navigate to API Keys section\n4. Create and copy an API key',
     sourceUrl: 'https://github.com/exa-labs/exa-mcp-server',
     tags: ['search', 'web', 'neural'],
     popularity: 3,
@@ -666,6 +758,9 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
         secret: true,
       },
     ],
+    prerequisites: ['node'],
+    setupUrl: 'https://app.tavily.com/home',
+    setupInstructions: '1. Go to app.tavily.com\n2. Sign up for a Tavily account (free tier available)\n3. Copy your API key from the dashboard',
     tags: ['search', 'web', 'ai'],
     popularity: 3,
   },
@@ -682,6 +777,8 @@ export const MCP_TEMPLATES: MCPServerTemplate[] = [
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-everything'],
     },
+    prerequisites: ['node'],
+    setupInstructions: 'No setup required. This is a test/demo server that showcases all MCP features.',
     docsUrl: 'https://github.com/modelcontextprotocol/servers/tree/main/src/everything',
     tags: ['test', 'reference', 'demo'],
     popularity: 2,

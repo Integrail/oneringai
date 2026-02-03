@@ -5,9 +5,10 @@
  */
 
 import React from 'react';
-import { Form, InputGroup, Button } from 'react-bootstrap';
-import { Key, FolderOpen, AlertCircle } from 'lucide-react';
-import type { MCPServerTemplate, EnvFieldConfig, ArgFieldConfig } from '../../../shared/mcpTemplates';
+import { Form, InputGroup, Button, Alert } from 'react-bootstrap';
+import { Key, FolderOpen, AlertCircle, ExternalLink, Box } from 'lucide-react';
+import type { MCPServerTemplate, EnvFieldConfig, ArgFieldConfig, MCPPrerequisite } from '../../../shared/mcpTemplates';
+import { PREREQUISITE_INFO } from '../../../shared/mcpTemplates';
 import type { TransportConfig } from './TransportConfigForm';
 
 interface TemplateRequiredFieldsProps {
@@ -29,8 +30,11 @@ export function TemplateRequiredFields({
 }: TemplateRequiredFieldsProps): React.ReactElement | null {
   const hasRequiredEnv = template.requiredEnv && template.requiredEnv.length > 0;
   const hasRequiredArgs = template.requiredArgs && template.requiredArgs.length > 0;
+  const hasPrerequisites = template.prerequisites && template.prerequisites.length > 0;
+  const hasSetupInstructions = template.setupInstructions || template.setupUrl;
 
-  if (!hasRequiredEnv && !hasRequiredArgs) {
+  // Always show if there are prerequisites or setup instructions, even without env/args
+  if (!hasRequiredEnv && !hasRequiredArgs && !hasPrerequisites && !hasSetupInstructions) {
     return null;
   }
 
@@ -90,11 +94,55 @@ export function TemplateRequiredFields({
     <div className="template-required-fields">
       <div className="template-required-fields__header">
         <AlertCircle size={16} />
-        Required Configuration
+        Setup & Configuration
       </div>
-      <p className="template-required-fields__description">
-        This template requires the following configuration to work properly.
-      </p>
+
+      {/* Prerequisites */}
+      {hasPrerequisites && (
+        <div className="template-required-fields__prerequisites">
+          <div className="template-required-fields__prereq-label">Prerequisites:</div>
+          <div className="template-required-fields__prereq-list">
+            {template.prerequisites!.map((prereq: MCPPrerequisite) => (
+              <a
+                key={prereq}
+                href={PREREQUISITE_INFO[prereq].installUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="template-required-fields__prereq-badge"
+                title={`Install ${PREREQUISITE_INFO[prereq].label}`}
+              >
+                <Box size={12} />
+                {PREREQUISITE_INFO[prereq].label}
+                <ExternalLink size={10} />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Setup Instructions */}
+      {hasSetupInstructions && (
+        <Alert variant="info" className="template-required-fields__instructions">
+          <div className="template-required-fields__instructions-header">
+            {template.setupUrl && (
+              <a
+                href={template.setupUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-sm btn-outline-primary"
+              >
+                <ExternalLink size={12} className="me-1" />
+                Get Credentials
+              </a>
+            )}
+          </div>
+          {template.setupInstructions && (
+            <pre className="template-required-fields__instructions-text">
+              {template.setupInstructions}
+            </pre>
+          )}
+        </Alert>
+      )}
 
       {/* Required Environment Variables */}
       {hasRequiredEnv && (

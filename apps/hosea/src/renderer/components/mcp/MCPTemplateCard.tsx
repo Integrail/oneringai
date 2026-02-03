@@ -6,9 +6,9 @@
 
 import React from 'react';
 import { Badge } from 'react-bootstrap';
-import { Star, ExternalLink, Terminal, Key, FolderOpen } from 'lucide-react';
-import type { MCPServerTemplate, MCPTemplateCategory } from '../../../shared/mcpTemplates';
-import { CATEGORY_INFO } from '../../../shared/mcpTemplates';
+import { Star, ExternalLink, Terminal, Key, FolderOpen, Box } from 'lucide-react';
+import type { MCPServerTemplate, MCPTemplateCategory, MCPPrerequisite } from '../../../shared/mcpTemplates';
+import { CATEGORY_INFO, PREREQUISITE_INFO } from '../../../shared/mcpTemplates';
 
 interface MCPTemplateCardProps {
   /** The template to display */
@@ -70,6 +70,7 @@ export function MCPTemplateCard({
   const categoryInfo = CATEGORY_INFO[template.category];
   const hasRequiredEnv = template.requiredEnv && template.requiredEnv.length > 0;
   const hasRequiredArgs = template.requiredArgs && template.requiredArgs.length > 0;
+  const hasPrerequisites = template.prerequisites && template.prerequisites.length > 0;
 
   const handleClick = () => {
     onClick?.(template);
@@ -113,8 +114,18 @@ export function MCPTemplateCard({
 
         {/* Requirements indicators */}
         <div className="mcp-template-card__requirements">
+          {hasPrerequisites && template.prerequisites!.map((prereq: MCPPrerequisite) => (
+            <span
+              key={prereq}
+              className="mcp-template-card__requirement mcp-template-card__requirement--prereq"
+              title={PREREQUISITE_INFO[prereq].description}
+            >
+              <Box size={12} />
+              <span>{PREREQUISITE_INFO[prereq].label}</span>
+            </span>
+          ))}
           {hasRequiredEnv && (
-            <span className="mcp-template-card__requirement" title="Requires API key or token">
+            <span className="mcp-template-card__requirement mcp-template-card__requirement--env" title="Requires API key or token">
               <Key size={12} />
               <span>API Key</span>
             </span>
