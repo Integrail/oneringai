@@ -1,4 +1,4 @@
-import { I as IProvider } from './IProvider-BP49c93d.js';
+import { I as IProvider } from './IProvider-BP49c93d.cjs';
 import { EventEmitter } from 'eventemitter3';
 
 /**
@@ -3766,6 +3766,12 @@ interface MCPServerConfig {
         /** Default risk level */
         defaultRiskLevel?: 'low' | 'medium' | 'high' | 'critical';
     };
+    /**
+     * Map environment variable keys to connector names for runtime auth resolution.
+     * When connecting, the connector's token will be injected into the env var.
+     * Example: { 'GITHUB_PERSONAL_ACCESS_TOKEN': 'my-github-connector' }
+     */
+    connectorBindings?: Record<string, string>;
 }
 /**
  * MCP global configuration

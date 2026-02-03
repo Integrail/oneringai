@@ -1,5 +1,5 @@
 /**
- * Chat Page - Main chat interface with the agent
+ * Chat Page - Main chat interface with multi-tab support
  * Features rich markdown rendering with support for code, diagrams, charts, and math
  */
 
@@ -10,239 +10,30 @@ import { MarkdownRenderer } from '../components/markdown';
 import { ToolCallDisplay, type ToolCallInfo } from '../components/ToolCallDisplay';
 import { InternalsPanel, INTERNALS_PANEL_DEFAULT_WIDTH } from '../components/InternalsPanel';
 import { PlanDisplay } from '../components/plan';
-import type { Plan, PlanTask } from '../../preload/index';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: number;
-  isStreaming?: boolean;
-  toolCalls?: ToolCallInfo[];
-}
-
-interface AgentStatus {
-  initialized: boolean;
-  connector: string | null;
-  model: string | null;
-  mode: string | null;
-}
-
+import { TabBar, NewTabModal } from '../components/tabs';
+import { TabProvider, useTabContext, type Message, type TabState } from '../hooks/useTabContext';
+import type { Plan } from '../../preload/index';
 import { useNavigation } from '../hooks/useNavigation';
 
-export function ChatPage(): React.ReactElement {
+// ============ Chat Content Component (for active tab) ============
+
+interface ChatContentProps {
+  tab: TabState;
+  onSend: (content: string) => void;
+  onCancel: () => void;
+}
+
+function ChatContent({ tab, onSend, onCancel }: ChatContentProps): React.ReactElement {
   const { navigate } = useNavigation();
-  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [status, setStatus] = useState<AgentStatus>({
-    initialized: false,
-    connector: null,
-    model: null,
-    mode: null,
-  });
-  const [isLoading, setIsLoading] = useState(false);
-  const [streamingContent, setStreamingContent] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Internals panel state
-  const [showInternals, setShowInternals] = useState(false);
-  const [internalsWidth, setInternalsWidth] = useState(INTERNALS_PANEL_DEFAULT_WIDTH);
-
-  // Plan state
-  const [activePlan, setActivePlan] = useState<Plan | null>(null);
   const [planLoading, setPlanLoading] = useState<'approving' | 'rejecting' | null>(null);
-
-  // Check agent status on mount and when returning to this page
-  useEffect(() => {
-    const checkStatus = async () => {
-      const s = await window.hosea.agent.status();
-      setStatus(s);
-    };
-    checkStatus();
-  }, []);
-
-  // Track active tool calls for the current streaming message
-  const [activeToolCalls, setActiveToolCalls] = useState<Map<string, ToolCallInfo>>(new Map());
-
-  // Set up streaming listeners
-  useEffect(() => {
-    window.hosea.agent.onStreamChunk((chunk) => {
-
-      if (chunk.type === 'text' && chunk.content) {
-        setStreamingContent((prev) => prev + chunk.content);
-      } else if (chunk.type === 'tool_start') {
-        const toolCall: ToolCallInfo = {
-          id: `${chunk.tool}-${Date.now()}`,
-          name: chunk.tool,
-          args: chunk.args,
-          description: chunk.description,
-          status: 'running',
-        };
-
-        setActiveToolCalls((prev) => {
-          const newMap = new Map(prev);
-          newMap.set(toolCall.id, toolCall);
-          return newMap;
-        });
-
-        // Update the streaming message to include tool calls
-        setMessages((msgs) => {
-          const lastMsg = msgs[msgs.length - 1];
-          if (lastMsg?.isStreaming) {
-            const existingToolCalls = lastMsg.toolCalls || [];
-            return [
-              ...msgs.slice(0, -1),
-              { ...lastMsg, toolCalls: [...existingToolCalls, toolCall] },
-            ];
-          }
-          return msgs;
-        });
-      } else if (chunk.type === 'tool_end') {
-        // Update the tool call status to complete
-        setMessages((msgs) => {
-          const lastMsg = msgs[msgs.length - 1];
-          if (lastMsg?.isStreaming && lastMsg.toolCalls) {
-            const updatedToolCalls = lastMsg.toolCalls.map((tc) =>
-              tc.name === chunk.tool && tc.status === 'running'
-                ? { ...tc, status: 'complete' as const, durationMs: chunk.durationMs }
-                : tc
-            );
-            return [
-              ...msgs.slice(0, -1),
-              { ...lastMsg, toolCalls: updatedToolCalls },
-            ];
-          }
-          return msgs;
-        });
-      } else if (chunk.type === 'tool_error') {
-        // Update the tool call status to error
-        setMessages((msgs) => {
-          const lastMsg = msgs[msgs.length - 1];
-          if (lastMsg?.isStreaming && lastMsg.toolCalls) {
-            const updatedToolCalls = lastMsg.toolCalls.map((tc) =>
-              tc.name === chunk.tool && tc.status === 'running'
-                ? { ...tc, status: 'error' as const, error: chunk.error }
-                : tc
-            );
-            return [
-              ...msgs.slice(0, -1),
-              { ...lastMsg, toolCalls: updatedToolCalls },
-            ];
-          }
-          return msgs;
-        });
-      }
-      // Plan events
-      else if (chunk.type === 'plan:created' || chunk.type === 'plan:awaiting_approval' || chunk.type === 'needs:approval') {
-        const plan = (chunk as { plan: Plan }).plan;
-        if (plan) {
-          setActivePlan(plan);
-          setPlanLoading(null);
-        }
-      } else if (chunk.type === 'plan:approved') {
-        setActivePlan((prev) => prev ? { ...prev, status: 'running' } : null);
-        setPlanLoading(null);
-      }
-      // Task events - update plan state
-      else if (chunk.type === 'task:started') {
-        setActivePlan((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            tasks: prev.tasks.map((t) =>
-              t.id === chunk.task.id ? { ...t, status: 'in_progress', startedAt: chunk.task.startedAt } : t
-            ),
-          };
-        });
-      } else if (chunk.type === 'task:completed') {
-        setActivePlan((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            tasks: prev.tasks.map((t) =>
-              t.id === chunk.task.id
-                ? { ...t, status: 'completed', completedAt: chunk.task.completedAt, result: chunk.task.result }
-                : t
-            ),
-          };
-        });
-      } else if (chunk.type === 'task:failed') {
-        setActivePlan((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            tasks: prev.tasks.map((t) =>
-              t.id === chunk.task.id
-                ? { ...t, status: 'failed', result: { success: false, error: chunk.error } }
-                : t
-            ),
-          };
-        });
-      }
-      // Execution events
-      else if (chunk.type === 'execution:done') {
-        setActivePlan((prev) => {
-          if (!prev) return null;
-          return {
-            ...prev,
-            status: chunk.result.status === 'completed' ? 'completed' : 'failed',
-            completedAt: Date.now(),
-          };
-        });
-      } else if (chunk.type === 'mode:changed') {
-        // If returning to interactive mode, we can optionally clear the plan
-        if (chunk.to === 'interactive') {
-          // Keep the plan visible for reference, user can dismiss it
-        }
-      }
-    });
-
-    window.hosea.agent.onStreamEnd(() => {
-      setStreamingContent((prev) => {
-        if (prev) {
-          setMessages((msgs) => {
-            const lastMsg = msgs[msgs.length - 1];
-            if (lastMsg?.isStreaming) {
-              return [
-                ...msgs.slice(0, -1),
-                { ...lastMsg, content: prev, isStreaming: false },
-              ];
-            }
-            return msgs;
-          });
-        }
-        return '';
-      });
-      setActiveToolCalls(new Map());
-      setIsLoading(false);
-    });
-
-    return () => {
-      window.hosea.agent.removeStreamListeners();
-    };
-  }, []);
-
-  // Update streaming message
-  useEffect(() => {
-    if (streamingContent) {
-      setMessages((msgs) => {
-        const lastMsg = msgs[msgs.length - 1];
-        if (lastMsg?.isStreaming) {
-          return [
-            ...msgs.slice(0, -1),
-            { ...lastMsg, content: streamingContent },
-          ];
-        }
-        return msgs;
-      });
-    }
-  }, [streamingContent]);
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [tab.messages]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -253,41 +44,13 @@ export function ChatPage(): React.ReactElement {
     }
   }, [input]);
 
-  const handleSend = useCallback(async () => {
-    if (!input.trim() || !status.initialized || isLoading) return;
+  const handleSend = useCallback(() => {
+    if (!input.trim() || !tab.status.initialized || tab.isLoading) return;
 
     const content = input.trim();
     setInput('');
-
-    // Add user message
-    const userMessage: Message = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content,
-      timestamp: Date.now(),
-    };
-    setMessages((prev) => [...prev, userMessage]);
-
-    // Add placeholder for assistant response
-    const assistantMessage: Message = {
-      id: `assistant-${Date.now()}`,
-      role: 'assistant',
-      content: '',
-      timestamp: Date.now(),
-      isStreaming: true,
-    };
-    setMessages((prev) => [...prev, assistantMessage]);
-
-    setIsLoading(true);
-    setStreamingContent('');
-
-    await window.hosea.agent.stream(content);
-  }, [input, status.initialized, isLoading]);
-
-  const handleCancel = useCallback(async () => {
-    await window.hosea.agent.cancel();
-    setIsLoading(false);
-  }, []);
+    onSend(content);
+  }, [input, tab.status.initialized, tab.isLoading, onSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -311,112 +74,27 @@ export function ChatPage(): React.ReactElement {
     });
   };
 
-  // Plan approval/rejection handlers
-  const handleApprovePlan = useCallback(async () => {
-    if (!activePlan) return;
+  // Plan handlers that send messages
+  const handleApprovePlan = useCallback(() => {
+    if (!tab.activePlan) return;
     setPlanLoading('approving');
+    onSend('Yes, proceed with the plan.');
+    // Reset after a delay (the tab state will be updated by the context)
+    setTimeout(() => setPlanLoading(null), 500);
+  }, [tab.activePlan, onSend]);
 
-    try {
-      // Send approval message to the agent
-      // The agent handles approval via its intent analysis
-      const userMessage: Message = {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        content: 'Yes, proceed with the plan.',
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, userMessage]);
-
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-        isStreaming: true,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      setIsLoading(true);
-      setStreamingContent('');
-      await window.hosea.agent.stream('Yes, proceed with the plan.');
-    } catch (error) {
-      console.error('Failed to approve plan:', error);
-      setPlanLoading(null);
-    }
-  }, [activePlan]);
-
-  const handleRejectPlan = useCallback(async (reason?: string) => {
-    if (!activePlan) return;
+  const handleRejectPlan = useCallback((reason?: string) => {
+    if (!tab.activePlan) return;
     setPlanLoading('rejecting');
+    const message = reason ? `No, please change the plan: ${reason}` : 'No, please change the plan.';
+    onSend(message);
+    setTimeout(() => setPlanLoading(null), 500);
+  }, [tab.activePlan, onSend]);
 
-    try {
-      // Send rejection message to the agent
-      const rejectMessage = reason
-        ? `No, please change the plan: ${reason}`
-        : 'No, please change the plan.';
-
-      const userMessage: Message = {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        content: rejectMessage,
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, userMessage]);
-
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-        isStreaming: true,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      setIsLoading(true);
-      setStreamingContent('');
-      await window.hosea.agent.stream(rejectMessage);
-    } catch (error) {
-      console.error('Failed to reject plan:', error);
-      setPlanLoading(null);
-    }
-  }, [activePlan]);
-
-  const handleDismissPlan = useCallback(() => {
-    setActivePlan(null);
-  }, []);
-
-  // Handle feedback on the plan - sends feedback to agent for plan modification
-  const handlePlanFeedback = useCallback(async (feedback: string) => {
-    if (!activePlan) return;
-
-    try {
-      // Send feedback as a message to the agent
-      const feedbackMessage = `Feedback on the plan: ${feedback}`;
-
-      const userMessage: Message = {
-        id: `user-${Date.now()}`,
-        role: 'user',
-        content: feedbackMessage,
-        timestamp: Date.now(),
-      };
-      setMessages((prev) => [...prev, userMessage]);
-
-      const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-        isStreaming: true,
-      };
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      setIsLoading(true);
-      setStreamingContent('');
-      await window.hosea.agent.stream(feedbackMessage);
-    } catch (error) {
-      console.error('Failed to send plan feedback:', error);
-    }
-  }, [activePlan]);
+  const handlePlanFeedback = useCallback((feedback: string) => {
+    if (!tab.activePlan) return;
+    onSend(`Feedback on the plan: ${feedback}`);
+  }, [tab.activePlan, onSend]);
 
   const renderUserMessage = (message: Message) => (
     <div key={message.id} className="message message--user">
@@ -501,11 +179,152 @@ export function ChatPage(): React.ReactElement {
   };
 
   return (
+    <>
+      {/* Fixed Plan Display - outside scrollable area */}
+      {tab.activePlan && tab.messages.length > 0 && (
+        <div className="chat__plan-fixed">
+          <PlanDisplay
+            plan={tab.activePlan}
+            onApprove={tab.activePlan.status === 'pending' ? handleApprovePlan : undefined}
+            onReject={tab.activePlan.status === 'pending' ? handleRejectPlan : undefined}
+            onFeedback={tab.activePlan.status === 'pending' ? handlePlanFeedback : undefined}
+            isApproving={planLoading === 'approving'}
+            isRejecting={planLoading === 'rejecting'}
+          />
+        </div>
+      )}
+
+      <div className={`chat__messages ${tab.messages.length === 0 ? 'chat__messages--empty' : ''}`}>
+        {tab.messages.length === 0 ? (
+          <div className="chat__welcome">
+            <div className="chat__welcome-icon">
+              <Bot size={40} />
+            </div>
+            <h2 className="chat__welcome-title">Welcome to HOSEA</h2>
+            <p className="chat__welcome-subtitle">
+              {tab.status.initialized
+                ? `Connected to ${tab.agentName}. Start a conversation!`
+                : 'Configure an LLM provider to get started.'}
+            </p>
+            {!tab.status.initialized && (
+              <Button variant="primary" className="mt-4" onClick={() => navigate('llm-connectors')}>
+                Add LLM Provider
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="chat__messages-inner">
+            {tab.messages.map(renderMessage)}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
+      </div>
+
+      <div className="chat__input">
+        <div className="chat__input-wrapper">
+          <div className="chat__input-form">
+            <textarea
+              ref={textareaRef}
+              className="chat__input-field"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                tab.status.initialized
+                  ? 'Type a message... (Shift+Enter for new line)'
+                  : 'Connect to an agent first...'
+              }
+              disabled={!tab.status.initialized || tab.isLoading}
+              rows={1}
+            />
+            {tab.isLoading ? (
+              <button
+                className="chat__send-btn chat__send-btn--danger"
+                onClick={onCancel}
+              >
+                <Square size={18} />
+              </button>
+            ) : (
+              <button
+                className="chat__send-btn"
+                onClick={handleSend}
+                disabled={!input.trim() || !tab.status.initialized}
+              >
+                <Send size={18} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ============ Empty State (no tabs) ============
+
+function EmptyTabsState({ onCreateTab }: { onCreateTab: () => void }): React.ReactElement {
+  const { navigate } = useNavigation();
+
+  return (
+    <div className="chat__welcome">
+      <div className="chat__welcome-icon">
+        <Bot size={40} />
+      </div>
+      <h2 className="chat__welcome-title">Welcome to HOSEA</h2>
+      <p className="chat__welcome-subtitle">
+        Create a new tab to start chatting with an agent.
+      </p>
+      <div className="d-flex gap-2 mt-4">
+        <Button variant="primary" onClick={onCreateTab}>
+          New Chat
+        </Button>
+        <Button variant="outline-secondary" onClick={() => navigate('agents')}>
+          Configure Agents
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ============ Main Chat Page Content ============
+
+function ChatPageContent(): React.ReactElement {
+  const { tabs, activeTabId, getActiveTab, sendMessage, cancelStream, createTab, tabCount } = useTabContext();
+
+  // Internals panel state
+  const [showInternals, setShowInternals] = useState(false);
+  const [internalsWidth, setInternalsWidth] = useState(INTERNALS_PANEL_DEFAULT_WIDTH);
+
+  // New tab modal
+  const [showNewTabModal, setShowNewTabModal] = useState(false);
+
+  const activeTab = getActiveTab();
+
+  const handleNewTabClick = () => {
+    setShowNewTabModal(true);
+  };
+
+  const handleSelectAgent = async (agentConfigId: string, agentName: string) => {
+    await createTab(agentConfigId, agentName);
+  };
+
+  const handleSend = useCallback((content: string) => {
+    sendMessage(content);
+  }, [sendMessage]);
+
+  const handleCancel = useCallback(() => {
+    cancelStream();
+  }, [cancelStream]);
+
+  return (
     <div className="chat-container">
       <div
         className="chat"
         style={{ width: showInternals ? `calc(100% - ${internalsWidth}px)` : '100%' }}
       >
+        {/* Tab Bar */}
+        <TabBar onNewTabClick={handleNewTabClick} />
+
         {/* Internals toggle button */}
         <button
           className={`chat__internals-toggle ${showInternals ? 'chat__internals-toggle--active' : ''}`}
@@ -515,91 +334,77 @@ export function ChatPage(): React.ReactElement {
           {showInternals ? <PanelRightClose size={18} /> : <PanelRightOpen size={18} />}
         </button>
 
-        {/* Fixed Plan Display - outside scrollable area */}
-        {activePlan && messages.length > 0 && (
-          <div className="chat__plan-fixed">
-            <PlanDisplay
-              plan={activePlan}
-              onApprove={activePlan.status === 'pending' ? handleApprovePlan : undefined}
-              onReject={activePlan.status === 'pending' ? handleRejectPlan : undefined}
-              onFeedback={activePlan.status === 'pending' ? handlePlanFeedback : undefined}
-              isApproving={planLoading === 'approving'}
-              isRejecting={planLoading === 'rejecting'}
-            />
+        {/* Chat content */}
+        {activeTab ? (
+          <ChatContent
+            tab={activeTab}
+            onSend={handleSend}
+            onCancel={handleCancel}
+          />
+        ) : tabCount === 0 ? (
+          <div className="chat__messages chat__messages--empty">
+            <EmptyTabsState onCreateTab={handleNewTabClick} />
           </div>
-        )}
-
-        <div className={`chat__messages ${messages.length === 0 ? 'chat__messages--empty' : ''}`}>
-          {messages.length === 0 ? (
-            <div className="chat__welcome">
-              <div className="chat__welcome-icon">
-                <Bot size={40} />
-              </div>
-              <h2 className="chat__welcome-title">Welcome to HOSEA</h2>
-              <p className="chat__welcome-subtitle">
-                {status.initialized
-                  ? `Connected to ${status.model}. Start a conversation!`
-                  : 'Configure an LLM provider to get started.'}
-              </p>
-              {!status.initialized && (
-                <Button variant="primary" className="mt-4" onClick={() => navigate('llm-connectors')}>
-                  Add LLM Provider
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="chat__messages-inner">
-              {messages.map(renderMessage)}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
-        </div>
-
-        <div className="chat__input">
-          <div className="chat__input-wrapper">
-            <div className="chat__input-form">
-              <textarea
-                ref={textareaRef}
-                className="chat__input-field"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  status.initialized
-                    ? 'Type a message... (Shift+Enter for new line)'
-                    : 'Connect to an agent first...'
-                }
-                disabled={!status.initialized || isLoading}
-                rows={1}
-              />
-              {isLoading ? (
-                <button
-                  className="chat__send-btn chat__send-btn--danger"
-                  onClick={handleCancel}
-                >
-                  <Square size={18} />
-                </button>
-              ) : (
-                <button
-                  className="chat__send-btn"
-                  onClick={handleSend}
-                  disabled={!input.trim() || !status.initialized}
-                >
-                  <Send size={18} />
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        ) : null}
       </div>
 
-      {/* Internals Panel */}
+      {/* Internals Panel - pass instanceId */}
       <InternalsPanel
         isOpen={showInternals}
         onClose={() => setShowInternals(false)}
         width={internalsWidth}
         onWidthChange={setInternalsWidth}
+        instanceId={activeTab?.instanceId || null}
+      />
+
+      {/* New Tab Modal */}
+      <NewTabModal
+        show={showNewTabModal}
+        onHide={() => setShowNewTabModal(false)}
+        onSelectAgent={handleSelectAgent}
       />
     </div>
+  );
+}
+
+// ============ Main Export (with Provider) ============
+
+export function ChatPage(): React.ReactElement {
+  const [defaultAgentConfig, setDefaultAgentConfig] = useState<{ id: string; name: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Load the active agent on mount
+  useEffect(() => {
+    const loadActiveAgent = async () => {
+      try {
+        const activeAgent = await window.hosea.agentConfig.getActive();
+        if (activeAgent) {
+          setDefaultAgentConfig({ id: activeAgent.id, name: activeAgent.name });
+        }
+      } catch (error) {
+        console.error('Failed to load active agent:', error);
+      }
+      setIsLoading(false);
+    };
+    loadActiveAgent();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="chat-container">
+        <div className="chat d-flex align-items-center justify-content-center">
+          <Spinner animation="border" variant="primary" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <TabProvider
+      defaultAgentConfigId={defaultAgentConfig?.id}
+      defaultAgentName={defaultAgentConfig?.name}
+    >
+      <ChatPageContent />
+    </TabProvider>
   );
 }

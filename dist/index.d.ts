@@ -1,7 +1,7 @@
 import { C as Connector, A as AudioFormat, I as IBaseModelDescription, V as VendorOptionSchema, a as Vendor, b as IImageProvider, c as ConnectorFetchOptions, d as ITokenStorage, S as StoredToken$1, e as ConnectorConfig, f as ConnectorAuth, g as ConnectorConfigResult } from './ImageModel-C7EyUfU0.js';
 export { m as APIKeyConnectorAuth, D as AspectRatio, L as DEFAULT_BASE_DELAY_MS, G as DEFAULT_CONNECTOR_TIMEOUT, M as DEFAULT_MAX_DELAY_MS, H as DEFAULT_MAX_RETRIES, K as DEFAULT_RETRYABLE_STATUSES, n as IImageModelDescription, q as IMAGE_MODELS, r as IMAGE_MODEL_REGISTRY, F as ISourceLinks, y as ImageEditOptions, x as ImageGenerateOptions, j as ImageGeneration, k as ImageGenerationCreateOptions, o as ImageModelCapabilities, p as ImageModelPricing, B as ImageResponse, z as ImageVariationOptions, J as JWTConnectorAuth, O as OAuthConnectorAuth, E as OutputFormat, Q as QualityLevel, l as SimpleGenerateOptions, h as VENDORS, w as calculateImageCost, u as getActiveImageModels, s as getImageModelInfo, t as getImageModelsByVendor, v as getImageModelsWithFeature, i as isVendor } from './ImageModel-C7EyUfU0.js';
-import { T as ToolFunction, a as ToolManager, I as IContextStorage, A as AgentPermissionsConfig, b as AgentContext, c as AgentContextConfig, d as ToolPermissionManager, e as ITextProvider, C as ContextSessionMetadata, S as SerializedAgentContextState, F as FunctionToolDefinition, f as InputItem, L as LLMResponse, g as StreamEvent, h as AgentContextFeatures, H as HookConfig, i as HistoryMode, j as AgentEvents, k as IDisposable, l as AgentResponse, E as ExecutionContext, m as ExecutionMetrics, n as AuditEntry, o as CircuitState, p as CircuitBreakerMetrics, q as IContextComponent, r as IMCPClient, M as MCPServerConfig, s as MCPConfiguration, t as MCPClientConnectionState, u as MCPServerCapabilities, v as MCPTool, w as MCPToolResult, x as MCPResource, y as MCPResourceContent, z as MCPPrompt, B as MCPPromptResult, D as MCPClientState, G as IMemoryStorage, J as MemoryEntry, K as MemoryScope, N as BaseContextPlugin, W as WorkingMemory, O as ITokenEstimator, P as StaleEntryInfo, Q as IdempotencyCache, R as WorkingMemoryConfig, U as AutoSpillConfig, V as IContextStrategy, X as ContextBudget, Y as ContextManagerConfig, Z as IContextCompactor, _ as TokenContentType, $ as IPersistentInstructionsStorage, a0 as StoredContextSession, a1 as ContextStorageListOptions, a2 as ContextSessionSummary, a3 as TokenUsage, a4 as ToolCall, a5 as StreamEventType, a6 as CircuitBreaker, a7 as TextGenerateOptions, a8 as ModelCapabilities, a9 as ToolPermissionConfig, aa as MessageRole, ab as InContextMemoryConfig, ac as InContextMemoryPlugin, ad as PersistentInstructionsConfig, ae as PersistentInstructionsPlugin } from './index-URfEaWrE.js';
-export { aS as APPROVAL_STATE_VERSION, c4 as AfterToolContext, ag as AgentContextEvents, ai as AgentContextHistoryMessage, ah as AgentContextMetrics, bY as AgentEventName, b$ as AgenticLoopEventName, b_ as AgenticLoopEvents, aL as ApprovalCacheEntry, aP as ApprovalDecision, c7 as ApprovalResult, c5 as ApproveToolContext, ao as AutoSpillPlugin, c3 as BeforeToolContext, bA as BuiltInTool, aW as CONTEXT_SESSION_FORMAT_VERSION, a_ as CacheStats, cc as CircuitBreakerConfig, cd as CircuitBreakerEvents, cb as CircuitOpenError, bu as CompactionItem, bm as Content, bl as ContentType, aw as ContextGuardian, ax as ContextGuardianConfig, aU as DEFAULT_ALLOWLIST, ce as DEFAULT_CIRCUIT_BREAKER_CONFIG, b1 as DEFAULT_CONTEXT_CONFIG, af as DEFAULT_FEATURES, a$ as DEFAULT_IDEMPOTENCY_CONFIG, b9 as DEFAULT_MEMORY_CONFIG, aT as DEFAULT_PERMISSION_CONFIG, aV as DefaultAllowlistedTool, az as DegradationResult, bP as ErrorEvent, av as EvictionResult, aY as EvictionStrategy, bZ as ExecutionConfig, ay as GuardianValidation, ch as HTTPTransportConfig, c1 as Hook, bX as HookManager, c0 as HookName, c9 as IAsyncDisposable, c8 as IToolExecutor, aZ as IdempotencyCacheConfig, cj as InContextEntry, ck as InContextPriority, bo as InputImageContent, bn as InputTextContent, bN as IterationCompleteEvent, bD as JSONSchema, am as MCPServerReference, cf as MCPTransportType, bi as MEMORY_PRIORITY_VALUES, b2 as MemoryEntryInput, b3 as MemoryIndex, b4 as MemoryIndexEntry, b5 as MemoryPriority, bs as Message, c2 as ModifyingHook, bt as OutputItem, bp as OutputTextContent, bG as OutputTextDeltaEvent, bH as OutputTextDoneEvent, aQ as PermissionCheckContext, aO as PermissionCheckResult, aR as PermissionManagerEvent, aI as PermissionScope, ak as PrepareOptions, b0 as PreparedContext, al as PreparedResult, bv as ReasoningItem, bO as ResponseCompleteEvent, bE as ResponseCreatedEvent, bF as ResponseInProgressEvent, aJ as RiskLevel, aN as SerializedApprovalEntry, aM as SerializedApprovalState, cl as SerializedInContextMemoryState, cm as SerializedPersistentInstructionsState, aG as SerializedToolState, b7 as SimpleScope, as as SpilledEntry, cg as StdioTransportConfig, b6 as TaskAwareScope, b8 as TaskStatusForMemory, bj as TaskToolContext, bz as Tool, bJ as ToolCallArgumentsDeltaEvent, bK as ToolCallArgumentsDoneEvent, aj as ToolCallRecord, bI as ToolCallStartEvent, bw as ToolCallState, aB as ToolCondition, bj as ToolContext, bC as ToolExecutionContext, bM as ToolExecutionDoneEvent, bL as ToolExecutionStartEvent, aH as ToolManagerEvent, aF as ToolManagerStats, aE as ToolMetadata, c6 as ToolModification, aA as ToolOptions, ar as ToolOutput, an as ToolOutputPlugin, aq as ToolOutputPluginConfig, aK as ToolPermissionConfig, aD as ToolRegistration, bB as ToolResult, br as ToolResultContent, at as ToolResultEvictionConfig, ap as ToolResultEvictionPlugin, aC as ToolSelectionContext, bq as ToolUseContent, au as TrackedResult, ci as TransportConfig, bk as WorkingMemoryAccess, aX as WorkingMemoryEvents, ca as assertNotDestroyed, bh as calculateEntrySize, bx as defaultDescribeCall, bb as forPlan, ba as forTasks, by as getToolCallDescription, bW as isErrorEvent, bR as isOutputTextDelta, bV as isResponseComplete, be as isSimpleScope, bQ as isStreamEvent, bf as isTaskAwareScope, bg as isTerminalMemoryStatus, bT as isToolCallArgumentsDelta, bU as isToolCallArgumentsDone, bS as isToolCallStart, bc as scopeEquals, bd as scopeMatches } from './index-URfEaWrE.js';
+import { T as ToolFunction, a as ToolManager, I as IContextStorage, A as AgentPermissionsConfig, b as AgentContext, c as AgentContextConfig, d as ToolPermissionManager, e as ITextProvider, C as ContextSessionMetadata, S as SerializedAgentContextState, F as FunctionToolDefinition, f as InputItem, L as LLMResponse, g as StreamEvent, h as AgentContextFeatures, H as HookConfig, i as HistoryMode, j as AgentEvents, k as IDisposable, l as AgentResponse, E as ExecutionContext, m as ExecutionMetrics, n as AuditEntry, o as CircuitState, p as CircuitBreakerMetrics, q as IContextComponent, r as IMCPClient, M as MCPServerConfig, s as MCPConfiguration, t as MCPClientConnectionState, u as MCPServerCapabilities, v as MCPTool, w as MCPToolResult, x as MCPResource, y as MCPResourceContent, z as MCPPrompt, B as MCPPromptResult, D as MCPClientState, G as IMemoryStorage, J as MemoryEntry, K as MemoryScope, N as BaseContextPlugin, W as WorkingMemory, O as ITokenEstimator, P as StaleEntryInfo, Q as IdempotencyCache, R as WorkingMemoryConfig, U as AutoSpillConfig, V as IContextStrategy, X as ContextBudget, Y as ContextManagerConfig, Z as IContextCompactor, _ as TokenContentType, $ as IPersistentInstructionsStorage, a0 as StoredContextSession, a1 as ContextStorageListOptions, a2 as ContextSessionSummary, a3 as TokenUsage, a4 as ToolCall, a5 as StreamEventType, a6 as CircuitBreaker, a7 as TextGenerateOptions, a8 as ModelCapabilities, a9 as ToolPermissionConfig, aa as MessageRole, ab as InContextMemoryConfig, ac as InContextMemoryPlugin, ad as PersistentInstructionsConfig, ae as PersistentInstructionsPlugin } from './index-a0aQtoFp.js';
+export { aS as APPROVAL_STATE_VERSION, c4 as AfterToolContext, ag as AgentContextEvents, ai as AgentContextHistoryMessage, ah as AgentContextMetrics, bY as AgentEventName, b$ as AgenticLoopEventName, b_ as AgenticLoopEvents, aL as ApprovalCacheEntry, aP as ApprovalDecision, c7 as ApprovalResult, c5 as ApproveToolContext, ao as AutoSpillPlugin, c3 as BeforeToolContext, bA as BuiltInTool, aW as CONTEXT_SESSION_FORMAT_VERSION, a_ as CacheStats, cc as CircuitBreakerConfig, cd as CircuitBreakerEvents, cb as CircuitOpenError, bu as CompactionItem, bm as Content, bl as ContentType, aw as ContextGuardian, ax as ContextGuardianConfig, aU as DEFAULT_ALLOWLIST, ce as DEFAULT_CIRCUIT_BREAKER_CONFIG, b1 as DEFAULT_CONTEXT_CONFIG, af as DEFAULT_FEATURES, a$ as DEFAULT_IDEMPOTENCY_CONFIG, b9 as DEFAULT_MEMORY_CONFIG, aT as DEFAULT_PERMISSION_CONFIG, aV as DefaultAllowlistedTool, az as DegradationResult, bP as ErrorEvent, av as EvictionResult, aY as EvictionStrategy, bZ as ExecutionConfig, ay as GuardianValidation, ch as HTTPTransportConfig, c1 as Hook, bX as HookManager, c0 as HookName, c9 as IAsyncDisposable, c8 as IToolExecutor, aZ as IdempotencyCacheConfig, cj as InContextEntry, ck as InContextPriority, bo as InputImageContent, bn as InputTextContent, bN as IterationCompleteEvent, bD as JSONSchema, am as MCPServerReference, cf as MCPTransportType, bi as MEMORY_PRIORITY_VALUES, b2 as MemoryEntryInput, b3 as MemoryIndex, b4 as MemoryIndexEntry, b5 as MemoryPriority, bs as Message, c2 as ModifyingHook, bt as OutputItem, bp as OutputTextContent, bG as OutputTextDeltaEvent, bH as OutputTextDoneEvent, aQ as PermissionCheckContext, aO as PermissionCheckResult, aR as PermissionManagerEvent, aI as PermissionScope, ak as PrepareOptions, b0 as PreparedContext, al as PreparedResult, bv as ReasoningItem, bO as ResponseCompleteEvent, bE as ResponseCreatedEvent, bF as ResponseInProgressEvent, aJ as RiskLevel, aN as SerializedApprovalEntry, aM as SerializedApprovalState, cl as SerializedInContextMemoryState, cm as SerializedPersistentInstructionsState, aG as SerializedToolState, b7 as SimpleScope, as as SpilledEntry, cg as StdioTransportConfig, b6 as TaskAwareScope, b8 as TaskStatusForMemory, bj as TaskToolContext, bz as Tool, bJ as ToolCallArgumentsDeltaEvent, bK as ToolCallArgumentsDoneEvent, aj as ToolCallRecord, bI as ToolCallStartEvent, bw as ToolCallState, aB as ToolCondition, bj as ToolContext, bC as ToolExecutionContext, bM as ToolExecutionDoneEvent, bL as ToolExecutionStartEvent, aH as ToolManagerEvent, aF as ToolManagerStats, aE as ToolMetadata, c6 as ToolModification, aA as ToolOptions, ar as ToolOutput, an as ToolOutputPlugin, aq as ToolOutputPluginConfig, aK as ToolPermissionConfig, aD as ToolRegistration, bB as ToolResult, br as ToolResultContent, at as ToolResultEvictionConfig, ap as ToolResultEvictionPlugin, aC as ToolSelectionContext, bq as ToolUseContent, au as TrackedResult, ci as TransportConfig, bk as WorkingMemoryAccess, aX as WorkingMemoryEvents, ca as assertNotDestroyed, bh as calculateEntrySize, bx as defaultDescribeCall, bb as forPlan, ba as forTasks, by as getToolCallDescription, bW as isErrorEvent, bR as isOutputTextDelta, bV as isResponseComplete, be as isSimpleScope, bQ as isStreamEvent, bf as isTaskAwareScope, bg as isTerminalMemoryStatus, bT as isToolCallArgumentsDelta, bU as isToolCallArgumentsDone, bS as isToolCallStart, bc as scopeEquals, bd as scopeMatches } from './index-a0aQtoFp.js';
 import { EventEmitter } from 'eventemitter3';
 import { I as IProvider, P as ProviderCapabilities } from './IProvider-BP49c93d.js';
 
@@ -837,9 +837,49 @@ declare class Agent extends BaseAgent<AgentConfig$1, AgentEvents> implements IDi
      */
     hasContext(): boolean;
     /**
+     * Prepare execution - shared setup for run() and stream()
+     */
+    private _prepareExecution;
+    /**
+     * Check iteration preconditions - pause, cancel, limits, hooks
+     */
+    private _checkIterationPreconditions;
+    /**
+     * Record iteration metrics and store iteration record
+     */
+    private _recordIterationMetrics;
+    /**
+     * Finalize successful execution - hooks, events, metrics
+     */
+    private _finalizeExecution;
+    /**
+     * Handle execution error - events, metrics, logging
+     */
+    private _handleExecutionError;
+    /**
+     * Cleanup execution resources
+     */
+    private _cleanupExecution;
+    /**
+     * Emit iteration complete event (helper for run loop)
+     */
+    private _emitIterationComplete;
+    /**
      * Run the agent with input
      */
     run(input: string | InputItem[]): Promise<AgentResponse>;
+    /**
+     * Build tool calls array from accumulated map
+     */
+    private _buildToolCallsFromMap;
+    /**
+     * Build and add streaming assistant message to context
+     */
+    private _addStreamingAssistantMessage;
+    /**
+     * Build placeholder response for streaming finalization
+     */
+    private _buildPlaceholderResponse;
     /**
      * Stream response from the agent
      */
@@ -8496,7 +8536,7 @@ declare const executeJavaScript: ToolFunction<ExecuteJSArgs, ExecuteJSResult>;
  * AUTO-GENERATED FILE - DO NOT EDIT MANUALLY
  *
  * Generated by: scripts/generate-tool-registry.ts
- * Generated at: 2026-02-03T15:26:13.620Z
+ * Generated at: 2026-02-03T16:45:42.001Z
  *
  * To regenerate: npm run generate:tools
  */

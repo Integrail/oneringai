@@ -70,6 +70,7 @@ export type StreamChunk =
 export interface HoseaAPI {
   // Agent
   agent: {
+    // Legacy single-agent methods (for backwards compatibility)
     initialize: (connectorName: string, model: string) => Promise<{ success: boolean; error?: string }>;
     send: (message: string) => Promise<{ success: boolean; response?: string; error?: string }>;
     stream: (message: string) => Promise<{ success: boolean }>;
@@ -86,6 +87,25 @@ export interface HoseaAPI {
     // Plan approval/rejection
     approvePlan: (planId: string) => Promise<{ success: boolean; error?: string }>;
     rejectPlan: (planId: string, reason?: string) => Promise<{ success: boolean; error?: string }>;
+
+    // Multi-tab instance methods
+    createInstance: (agentConfigId: string) => Promise<{ success: boolean; instanceId?: string; error?: string }>;
+    destroyInstance: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
+    streamInstance: (instanceId: string, message: string) => Promise<{ success: boolean }>;
+    cancelInstance: (instanceId: string) => Promise<{ success: boolean; error?: string }>;
+    statusInstance: (instanceId: string) => Promise<{
+      found: boolean;
+      initialized: boolean;
+      connector: string | null;
+      model: string | null;
+      mode: string | null;
+      agentConfigId: string | null;
+    }>;
+    listInstances: () => Promise<Array<{ instanceId: string; agentConfigId: string; createdAt: number }>>;
+    // Instance-aware streaming listeners
+    onStreamChunkInstance: (callback: (instanceId: string, chunk: StreamChunk) => void) => void;
+    onStreamEndInstance: (callback: (instanceId: string) => void) => void;
+    removeStreamInstanceListeners: () => void;
   };
 
   // Connectors
@@ -356,6 +376,83 @@ export interface HoseaAPI {
     }>;
     getMemoryValue: (key: string) => Promise<unknown>;
     forceCompact: () => Promise<{ success: boolean; tokensFreed: number; error?: string }>;
+    // Instance-aware methods (optional instanceId - if null, uses legacy single agent)
+    getAllForInstance: (instanceId: string | null) => Promise<{
+      available: boolean;
+      agentName: string | null;
+      context: {
+        totalTokens: number;
+        maxTokens: number;
+        utilizationPercent: number;
+        messagesCount: number;
+        toolCallsCount: number;
+        strategy: string;
+      } | null;
+      cache: {
+        entries: number;
+        hits: number;
+        misses: number;
+        hitRate: number;
+        ttlMs: number;
+      } | null;
+      memory: {
+        totalEntries: number;
+        totalSizeBytes: number;
+        utilizationPercent: number;
+        entries: Array<{
+          key: string;
+          description: string;
+          scope: string;
+          priority: string;
+          sizeBytes: number;
+          updatedAt: number;
+        }>;
+      } | null;
+      inContextMemory: {
+        enabled: boolean;
+        entries: Array<{
+          key: string;
+          description: string;
+          priority: string;
+          updatedAt: number;
+          value: unknown;
+        }>;
+        maxEntries: number;
+        maxTokens: number;
+      } | null;
+      tools: Array<{
+        name: string;
+        description: string;
+        enabled: boolean;
+        callCount: number;
+        namespace?: string;
+      }>;
+      toolCalls: Array<{
+        id: string;
+        name: string;
+        args: unknown;
+        result?: unknown;
+        error?: string;
+        durationMs: number;
+        timestamp: number;
+      }>;
+      systemPrompt: string | null;
+      persistentInstructions: {
+        content: string;
+        path: string;
+        length: number;
+        enabled: boolean;
+      } | null;
+      tokenBreakdown: {
+        total: number;
+        reserved: number;
+        used: number;
+        available: number;
+        components: Array<{ name: string; tokens: number; percent: number }>;
+      } | null;
+    }>;
+    getMemoryValueForInstance: (instanceId: string | null, key: string) => Promise<unknown>;
+    forceCompactForInstance: (instanceId: string | null) => Promise<{ success: boolean; tokensFreed: number; error?: string }>;
   };
 
   // API Connectors (for tools like web_search, web_scrape)
@@ -806,6 +903,7 @@ export interface HoseaAPI {
 // Expose to renderer
 const api: HoseaAPI = {
   agent: {
+    // Legacy single-agent methods
     initialize: (connectorName, model) => ipcRenderer.invoke('agent:initialize', connectorName, model),
     send: (message) => ipcRenderer.invoke('agent:send', message),
     stream: (message) => ipcRenderer.invoke('agent:stream', message),
@@ -827,6 +925,27 @@ const api: HoseaAPI = {
     },
     approvePlan: (planId) => ipcRenderer.invoke('agent:approve-plan', planId),
     rejectPlan: (planId, reason) => ipcRenderer.invoke('agent:reject-plan', planId, reason),
+
+    // Multi-tab instance methods
+    createInstance: (agentConfigId) => ipcRenderer.invoke('agent:create-instance', agentConfigId),
+    destroyInstance: (instanceId) => ipcRenderer.invoke('agent:destroy-instance', instanceId),
+    streamInstance: (instanceId, message) => ipcRenderer.invoke('agent:stream-instance', instanceId, message),
+    cancelInstance: (instanceId) => ipcRenderer.invoke('agent:cancel-instance', instanceId),
+    statusInstance: (instanceId) => ipcRenderer.invoke('agent:status-instance', instanceId),
+    listInstances: () => ipcRenderer.invoke('agent:list-instances'),
+    // Instance-aware streaming listeners (include instanceId in callback)
+    onStreamChunkInstance: (callback) => {
+      ipcRenderer.removeAllListeners('agent:stream-chunk');
+      ipcRenderer.on('agent:stream-chunk', (_event, instanceId, chunk) => callback(instanceId, chunk));
+    },
+    onStreamEndInstance: (callback) => {
+      ipcRenderer.removeAllListeners('agent:stream-end');
+      ipcRenderer.on('agent:stream-end', (_event, instanceId) => callback(instanceId));
+    },
+    removeStreamInstanceListeners: () => {
+      ipcRenderer.removeAllListeners('agent:stream-chunk');
+      ipcRenderer.removeAllListeners('agent:stream-end');
+    },
   },
 
   connector: {
@@ -929,12 +1048,17 @@ const api: HoseaAPI = {
   },
 
   internals: {
+    // Legacy methods (use single agent)
     getAll: () => ipcRenderer.invoke('internals:get-all'),
     getContextStats: () => ipcRenderer.invoke('internals:get-context-stats'),
     getMemoryEntries: () => ipcRenderer.invoke('internals:get-memory-entries'),
     getPreparedContext: () => ipcRenderer.invoke('internals:get-prepared-context'),
     getMemoryValue: (key: string) => ipcRenderer.invoke('internals:get-memory-value', key),
     forceCompact: () => ipcRenderer.invoke('internals:force-compact'),
+    // Instance-aware methods
+    getAllForInstance: (instanceId: string | null) => ipcRenderer.invoke('internals:get-all', instanceId),
+    getMemoryValueForInstance: (instanceId: string | null, key: string) => ipcRenderer.invoke('internals:get-memory-value', instanceId, key),
+    forceCompactForInstance: (instanceId: string | null) => ipcRenderer.invoke('internals:force-compact', instanceId),
   },
 
   log: {

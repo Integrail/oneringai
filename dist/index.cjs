@@ -28430,7 +28430,8 @@ function applyServerDefaults(config, defaults) {
     requestTimeoutMs: config.requestTimeoutMs ?? defaults?.requestTimeoutMs ?? 3e4,
     healthCheckIntervalMs: config.healthCheckIntervalMs ?? defaults?.healthCheckIntervalMs ?? 6e4,
     toolNamespace: config.toolNamespace ?? `mcp:${config.name}`,
-    permissions: config.permissions
+    permissions: config.permissions,
+    connectorBindings: config.connectorBindings
   };
 }
 
@@ -35573,16 +35574,16 @@ var Agent = class _Agent extends BaseAgent {
     return true;
   }
   // getContextState() and restoreContextState() are inherited from BaseAgent
-  // ===== Main API =====
+  // ===== Shared Execution Helpers =====
   /**
-   * Run the agent with input
+   * Prepare execution - shared setup for run() and stream()
    */
-  async run(input) {
-    assertNotDestroyed(this, "run agent");
+  async _prepareExecution(input, methodName) {
+    assertNotDestroyed(this, `${methodName} agent`);
     await this.ensureSessionLoaded();
     const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
-    this._logger.info({ inputPreview, toolCount: this._config.tools?.length || 0 }, "Agent run started");
-    exports.metrics.increment("agent.run.started", 1, { model: this.model, connector: this.connector.name });
+    this._logger.info({ inputPreview, toolCount: this._config.tools?.length || 0 }, `Agent ${methodName} started`);
+    exports.metrics.increment(`agent.${methodName}.started`, 1, { model: this.model, connector: this.connector.name });
     const startTime = Date.now();
     const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
     this._agentContext.setCurrentInput(userContent);
@@ -35594,6 +35595,10 @@ var Agent = class _Agent extends BaseAgent {
     });
     this._paused = false;
     this._cancelled = false;
+    if (methodName === "stream") {
+      this._pausePromise = null;
+      this._resumeCallback = null;
+    }
     if (typeof input === "string") {
       this._agentContext.addUserMessage(input);
     } else {
@@ -35609,28 +35614,140 @@ var Agent = class _Agent extends BaseAgent {
       config: { model: this.model },
       timestamp: /* @__PURE__ */ new Date()
     }, void 0);
+    return {
+      executionId,
+      startTime,
+      maxIterations: this._config.maxIterations || 10
+    };
+  }
+  /**
+   * Check iteration preconditions - pause, cancel, limits, hooks
+   */
+  async _checkIterationPreconditions(executionId, iteration) {
+    await this.checkPause();
+    if (this._cancelled) {
+      return { shouldExit: true, exitReason: "cancelled" };
+    }
+    if (this.executionContext) {
+      this.executionContext.checkLimits(this._config.limits);
+    }
+    const pauseCheck = await this.hookManager.executeHooks("pause:check", {
+      executionId,
+      iteration,
+      context: this.executionContext,
+      timestamp: /* @__PURE__ */ new Date()
+    }, { shouldPause: false });
+    if (pauseCheck.shouldPause) {
+      this.pause(pauseCheck.reason || "Hook requested pause");
+      await this.checkPause();
+    }
+    if (this.executionContext) {
+      this.executionContext.iteration = iteration;
+    }
+    this.emit("iteration:start", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
+    return { shouldExit: false };
+  }
+  /**
+   * Record iteration metrics and store iteration record
+   */
+  _recordIterationMetrics(iteration, iterationStartTime, response, toolCalls, toolResults, prepared) {
+    if (!this.executionContext) return;
+    this.executionContext.addIteration({
+      iteration,
+      request: {
+        model: this.model,
+        input: prepared.input,
+        instructions: this._config.instructions,
+        tools: this.getEnabledToolDefinitions(),
+        temperature: this._config.temperature
+      },
+      response,
+      toolCalls,
+      toolResults,
+      startTime: new Date(iterationStartTime),
+      endTime: /* @__PURE__ */ new Date()
+    });
+    this.executionContext.updateMetrics({
+      iterationCount: iteration + 1,
+      inputTokens: this.executionContext.metrics.inputTokens + (response.usage?.input_tokens || 0),
+      outputTokens: this.executionContext.metrics.outputTokens + (response.usage?.output_tokens || 0),
+      totalTokens: this.executionContext.metrics.totalTokens + (response.usage?.total_tokens || 0)
+    });
+  }
+  /**
+   * Finalize successful execution - hooks, events, metrics
+   */
+  async _finalizeExecution(executionId, startTime, response, methodName) {
+    const totalDuration = this.executionContext ? Date.now() - this.executionContext.startTime.getTime() : Date.now() - startTime;
+    if (this.executionContext) {
+      this.executionContext.updateMetrics({ totalDuration });
+    }
+    await this.hookManager.executeHooks("after:execution", {
+      executionId,
+      response,
+      context: this.executionContext,
+      timestamp: /* @__PURE__ */ new Date(),
+      duration: totalDuration
+    }, void 0);
+    this.emit("execution:complete", {
+      executionId,
+      response,
+      timestamp: /* @__PURE__ */ new Date(),
+      duration: totalDuration
+    });
+    const duration = Date.now() - startTime;
+    this._logger.info({ duration }, `Agent ${methodName} completed`);
+    exports.metrics.timing(`agent.${methodName}.duration`, duration, { model: this.model, connector: this.connector.name });
+    exports.metrics.increment(`agent.${methodName}.completed`, 1, { model: this.model, connector: this.connector.name, status: "success" });
+  }
+  /**
+   * Handle execution error - events, metrics, logging
+   */
+  _handleExecutionError(executionId, error, startTime, methodName) {
+    this.emit("execution:error", { executionId, error, timestamp: /* @__PURE__ */ new Date() });
+    this.executionContext?.metrics.errors.push({
+      type: "execution_error",
+      message: error.message,
+      timestamp: /* @__PURE__ */ new Date()
+    });
+    const duration = Date.now() - startTime;
+    this._logger.error({ error: error.message, duration }, `Agent ${methodName} failed`);
+    exports.metrics.increment(`agent.${methodName}.completed`, 1, { model: this.model, connector: this.connector.name, status: "error" });
+  }
+  /**
+   * Cleanup execution resources
+   */
+  _cleanupExecution(streamState) {
+    streamState?.clear();
+    this.executionContext?.cleanup();
+    this.hookManager.clear();
+  }
+  /**
+   * Emit iteration complete event (helper for run loop)
+   */
+  _emitIterationComplete(executionId, iteration, response, iterationStartTime) {
+    this.emit("iteration:complete", {
+      executionId,
+      iteration,
+      response,
+      timestamp: /* @__PURE__ */ new Date(),
+      duration: Date.now() - iterationStartTime
+    });
+  }
+  // ===== Main API =====
+  /**
+   * Run the agent with input
+   */
+  async run(input) {
+    const { executionId, startTime, maxIterations } = await this._prepareExecution(input, "run");
     let iteration = 0;
     let finalResponse = null;
     try {
-      const maxIterations = this._config.maxIterations || 10;
       while (iteration < maxIterations) {
-        await this.checkPause();
-        if (this._cancelled) {
+        const { shouldExit } = await this._checkIterationPreconditions(executionId, iteration);
+        if (shouldExit) {
           throw new Error("Execution cancelled");
         }
-        this.executionContext.checkLimits(this._config.limits);
-        const pauseCheck = await this.hookManager.executeHooks("pause:check", {
-          executionId,
-          iteration,
-          context: this.executionContext,
-          timestamp: /* @__PURE__ */ new Date()
-        }, { shouldPause: false });
-        if (pauseCheck.shouldPause) {
-          this.pause(pauseCheck.reason || "Hook requested pause");
-          await this.checkPause();
-        }
-        this.executionContext.iteration = iteration;
-        this.emit("iteration:start", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
         const iterationStartTime = Date.now();
         const prepared = await this._agentContext.prepareConversation({
           instructionOverride: this._config.instructions
@@ -35642,149 +35759,105 @@ var Agent = class _Agent extends BaseAgent {
           this.emit("tool:detected", { executionId, iteration, toolCalls, timestamp: /* @__PURE__ */ new Date() });
         }
         if (toolCalls.length === 0) {
-          this.emit("iteration:complete", {
-            executionId,
-            iteration,
-            response,
-            timestamp: /* @__PURE__ */ new Date(),
-            duration: Date.now() - iterationStartTime
-          });
+          this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
           finalResponse = response;
           break;
         }
         const toolResults = await this.executeToolsWithHooks(toolCalls, iteration, executionId);
         this._agentContext.addToolResults(toolResults);
-        this.executionContext.addIteration({
-          iteration,
-          request: {
-            model: this.model,
-            input: prepared.input,
-            instructions: this._config.instructions,
-            tools: this.getEnabledToolDefinitions(),
-            temperature: this._config.temperature
-          },
-          response,
-          toolCalls,
-          toolResults,
-          startTime: new Date(iterationStartTime),
-          endTime: /* @__PURE__ */ new Date()
-        });
-        this.executionContext.updateMetrics({
-          iterationCount: iteration + 1,
-          inputTokens: this.executionContext.metrics.inputTokens + (response.usage?.input_tokens || 0),
-          outputTokens: this.executionContext.metrics.outputTokens + (response.usage?.output_tokens || 0),
-          totalTokens: this.executionContext.metrics.totalTokens + (response.usage?.total_tokens || 0)
-        });
-        this.emit("iteration:complete", {
-          executionId,
-          iteration,
-          response,
-          timestamp: /* @__PURE__ */ new Date(),
-          duration: Date.now() - iterationStartTime
-        });
+        this._recordIterationMetrics(iteration, iterationStartTime, response, toolCalls, toolResults, prepared);
+        this._emitIterationComplete(executionId, iteration, response, iterationStartTime);
         await this._agentContext.autoSpillPlugin?.onIteration();
         iteration++;
       }
       if (iteration >= maxIterations && !finalResponse) {
         throw new Error(`Max iterations (${maxIterations}) reached without completion`);
       }
-      const totalDuration = Date.now() - this.executionContext.startTime.getTime();
-      this.executionContext.updateMetrics({ totalDuration });
-      await this.hookManager.executeHooks("after:execution", {
-        executionId,
-        response: finalResponse,
-        context: this.executionContext,
-        timestamp: /* @__PURE__ */ new Date(),
-        duration: totalDuration
-      }, void 0);
-      this.emit("execution:complete", {
-        executionId,
-        response: finalResponse,
-        timestamp: /* @__PURE__ */ new Date(),
-        duration: totalDuration
-      });
-      const duration = Date.now() - startTime;
-      this._logger.info({ duration }, "Agent run completed");
-      exports.metrics.timing("agent.run.duration", duration, { model: this.model, connector: this.connector.name });
-      exports.metrics.increment("agent.run.completed", 1, { model: this.model, connector: this.connector.name, status: "success" });
+      await this._finalizeExecution(executionId, startTime, finalResponse, "run");
       return finalResponse;
     } catch (error) {
-      this.emit("execution:error", { executionId, error, timestamp: /* @__PURE__ */ new Date() });
-      this.executionContext?.metrics.errors.push({
-        type: "execution_error",
-        message: error.message,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      const duration = Date.now() - startTime;
-      this._logger.error({ error: error.message, duration }, "Agent run failed");
-      exports.metrics.increment("agent.run.completed", 1, { model: this.model, connector: this.connector.name, status: "error" });
+      this._handleExecutionError(executionId, error, startTime, "run");
       throw error;
     } finally {
-      this.executionContext?.cleanup();
-      this.hookManager.clear();
+      this._cleanupExecution();
     }
+  }
+  // ===== Stream-Specific Helpers =====
+  /**
+   * Build tool calls array from accumulated map
+   */
+  _buildToolCallsFromMap(toolCallsMap) {
+    const toolCalls = [];
+    for (const [toolCallId, buffer] of toolCallsMap) {
+      toolCalls.push({
+        id: toolCallId,
+        type: "function",
+        function: {
+          name: buffer.name,
+          arguments: buffer.args
+        },
+        blocking: true,
+        state: "pending" /* PENDING */
+      });
+    }
+    return toolCalls;
+  }
+  /**
+   * Build and add streaming assistant message to context
+   */
+  _addStreamingAssistantMessage(streamState, toolCalls) {
+    const assistantText = streamState.getAllText();
+    const assistantContent = [];
+    if (assistantText && assistantText.trim()) {
+      assistantContent.push({
+        type: "output_text" /* OUTPUT_TEXT */,
+        text: assistantText
+      });
+    }
+    for (const tc of toolCalls) {
+      assistantContent.push({
+        type: "tool_use" /* TOOL_USE */,
+        id: tc.id,
+        name: tc.function.name,
+        arguments: tc.function.arguments
+      });
+    }
+    const assistantMessage = {
+      type: "message",
+      role: "assistant" /* ASSISTANT */,
+      content: assistantContent
+    };
+    this._agentContext.addInputItems([assistantMessage]);
+  }
+  /**
+   * Build placeholder response for streaming finalization
+   */
+  _buildPlaceholderResponse(executionId, startTime, streamState) {
+    return {
+      id: executionId,
+      object: "response",
+      created_at: Math.floor(startTime / 1e3),
+      status: "completed",
+      model: this.model,
+      output: [],
+      usage: streamState.usage
+    };
   }
   /**
    * Stream response from the agent
    */
   async *stream(input) {
-    assertNotDestroyed(this, "stream from agent");
-    await this.ensureSessionLoaded();
-    const inputPreview = typeof input === "string" ? input.substring(0, 100) : `${input.length} messages`;
-    this._logger.info({ inputPreview, toolCount: this._config.tools?.length || 0 }, "Agent stream started");
-    exports.metrics.increment("agent.stream.started", 1, { model: this.model, connector: this.connector.name });
-    const startTime = Date.now();
-    const userContent = typeof input === "string" ? input : input.map((i) => JSON.stringify(i)).join("\n");
-    this._agentContext.setCurrentInput(userContent);
-    const executionId = `exec_${crypto2.randomUUID()}`;
-    this.executionContext = new ExecutionContext(executionId, {
-      maxHistorySize: 10,
-      historyMode: this._config.historyMode || "summary",
-      maxAuditTrailSize: 1e3
-    });
-    this._paused = false;
-    this._cancelled = false;
-    this._pausePromise = null;
-    this._resumeCallback = null;
-    if (typeof input === "string") {
-      this._agentContext.addUserMessage(input);
-    } else {
-      this._agentContext.addInputItems(input);
-    }
+    const { executionId, startTime, maxIterations } = await this._prepareExecution(input, "stream");
     const globalStreamState = new StreamState(executionId, this.model);
     let iteration = 0;
     try {
-      this.emit("execution:start", {
-        executionId,
-        model: this.model,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      await this.hookManager.executeHooks("before:execution", {
-        executionId,
-        config: { model: this.model },
-        timestamp: /* @__PURE__ */ new Date()
-      }, void 0);
-      const maxIterations = this._config.maxIterations || 10;
       while (iteration < maxIterations) {
         iteration++;
-        await this.checkPause();
-        if (this._cancelled) {
+        const { shouldExit } = await this._checkIterationPreconditions(executionId, iteration);
+        if (shouldExit) {
           this.emit("execution:cancelled", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
           break;
         }
-        if (this.executionContext) {
-          this.executionContext.checkLimits(this._config.limits);
-        }
-        const pauseCheck = await this.hookManager.executeHooks("pause:check", {
-          executionId,
-          iteration,
-          context: this.executionContext,
-          timestamp: /* @__PURE__ */ new Date()
-        }, { shouldPause: false });
-        if (pauseCheck.shouldPause) {
-          this.pause();
-        }
-        this.emit("iteration:start", { executionId, iteration, timestamp: /* @__PURE__ */ new Date() });
         const prepared = await this._agentContext.prepareConversation({
           instructionOverride: this._config.instructions
         });
@@ -35798,19 +35871,7 @@ var Agent = class _Agent extends BaseAgent {
           toolCallsMap
         );
         globalStreamState.accumulateUsage(iterationStreamState.usage);
-        const toolCalls = [];
-        for (const [toolCallId, buffer] of toolCallsMap) {
-          toolCalls.push({
-            id: toolCallId,
-            type: "function",
-            function: {
-              name: buffer.name,
-              arguments: buffer.args
-            },
-            blocking: true,
-            state: "pending" /* PENDING */
-          });
-        }
+        const toolCalls = this._buildToolCallsFromMap(toolCallsMap);
         if (toolCalls.length === 0) {
           yield {
             type: "response.iteration.complete" /* ITERATION_COMPLETE */,
@@ -35889,28 +35950,7 @@ var Agent = class _Agent extends BaseAgent {
             });
           }
         }
-        const assistantText = iterationStreamState.getAllText();
-        const assistantContent = [];
-        if (assistantText && assistantText.trim()) {
-          assistantContent.push({
-            type: "output_text" /* OUTPUT_TEXT */,
-            text: assistantText
-          });
-        }
-        for (const tc of toolCalls) {
-          assistantContent.push({
-            type: "tool_use" /* TOOL_USE */,
-            id: tc.id,
-            name: tc.function.name,
-            arguments: tc.function.arguments
-          });
-        }
-        const assistantMessage = {
-          type: "message",
-          role: "assistant" /* ASSISTANT */,
-          content: assistantContent
-        };
-        this._agentContext.addInputItems([assistantMessage]);
+        this._addStreamingAssistantMessage(iterationStreamState, toolCalls);
         this._agentContext.addToolResults(toolResults);
         await this._agentContext.autoSpillPlugin?.onIteration();
         yield {
@@ -35920,9 +35960,7 @@ var Agent = class _Agent extends BaseAgent {
           tool_calls_count: toolCalls.length,
           has_more_iterations: true
         };
-        if (this.executionContext) {
-          globalStreamState.incrementIteration();
-        }
+        globalStreamState.incrementIteration();
         iterationStreamState.clear();
         toolCallsMap.clear();
       }
@@ -35936,34 +35974,10 @@ var Agent = class _Agent extends BaseAgent {
           duration_ms: Date.now() - startTime
         };
       }
-      const streamingResponse = {
-        id: executionId,
-        object: "response",
-        created_at: Math.floor(startTime / 1e3),
-        status: "completed",
-        model: this.model,
-        output: [],
-        usage: globalStreamState.usage
-      };
-      await this.hookManager.executeHooks("after:execution", {
-        executionId,
-        response: streamingResponse,
-        context: this.executionContext,
-        timestamp: /* @__PURE__ */ new Date(),
-        duration: Date.now() - startTime
-      }, void 0);
-      this.emit("execution:complete", {
-        executionId,
-        iterations: iteration,
-        duration: Date.now() - startTime,
-        timestamp: /* @__PURE__ */ new Date()
-      });
-      const duration = Date.now() - startTime;
-      this._logger.info({ duration }, "Agent stream completed");
-      exports.metrics.timing("agent.stream.duration", duration, { model: this.model, connector: this.connector.name });
-      exports.metrics.increment("agent.stream.completed", 1, { model: this.model, connector: this.connector.name, status: "success" });
+      const placeholderResponse = this._buildPlaceholderResponse(executionId, startTime, globalStreamState);
+      await this._finalizeExecution(executionId, startTime, placeholderResponse, "stream");
     } catch (error) {
-      this.emit("execution:error", { executionId, error, timestamp: /* @__PURE__ */ new Date() });
+      this._handleExecutionError(executionId, error, startTime, "stream");
       yield {
         type: "response.error" /* ERROR */,
         response_id: executionId,
@@ -35973,14 +35987,9 @@ var Agent = class _Agent extends BaseAgent {
         },
         recoverable: false
       };
-      const duration = Date.now() - startTime;
-      this._logger.error({ error: error.message, duration }, "Agent stream failed");
-      exports.metrics.increment("agent.stream.completed", 1, { model: this.model, connector: this.connector.name, status: "error" });
       throw error;
     } finally {
-      globalStreamState.clear();
-      this.executionContext?.cleanup();
-      this.hookManager.clear();
+      this._cleanupExecution(globalStreamState);
     }
   }
   // ===== LLM Generation with Hooks =====

@@ -133,13 +133,15 @@ interface InternalsPanelProps {
   onClose: () => void;
   width: number;
   onWidthChange: (width: number) => void;
+  /** Optional instanceId for multi-tab support. If null, uses legacy single agent. */
+  instanceId?: string | null;
 }
 
 const MIN_WIDTH = 280;
 const MAX_WIDTH = 800;
 const DEFAULT_WIDTH = 400;
 
-export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: InternalsPanelProps): React.ReactElement | null {
+export function InternalsPanel({ isOpen, onClose, width, onWidthChange, instanceId }: InternalsPanelProps): React.ReactElement | null {
   const [data, setData] = useState<InternalsData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
@@ -157,18 +159,21 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
   const panelRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
-  // Fetch internals data
+  // Fetch internals data (instance-aware if instanceId provided)
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const internals = await window.hosea.internals.getAll();
+      // Use instance-aware API if instanceId is provided
+      const internals = instanceId !== undefined
+        ? await window.hosea.internals.getAllForInstance(instanceId)
+        : await window.hosea.internals.getAll();
       setData(internals);
     } catch (error) {
       console.error('Failed to fetch internals:', error);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [instanceId]);
 
   // Fetch prepared context for modal
   const fetchPreparedContext = useCallback(async () => {
@@ -183,14 +188,17 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
     }
   }, []);
 
-  // Fetch memory value for a specific key
+  // Fetch memory value for a specific key (instance-aware)
   const fetchMemoryValue = useCallback(async (key: string) => {
     // Don't fetch if already have it
     if (memoryValues.has(key)) return;
 
     try {
       setLoadingMemoryKey(key);
-      const value = await window.hosea.internals.getMemoryValue(key);
+      // Use instance-aware API if instanceId is provided
+      const value = instanceId !== undefined
+        ? await window.hosea.internals.getMemoryValueForInstance(instanceId, key)
+        : await window.hosea.internals.getMemoryValue(key);
       setMemoryValues((prev) => {
         const next = new Map(prev);
         next.set(key, value);
@@ -201,7 +209,7 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
     } finally {
       setLoadingMemoryKey(null);
     }
-  }, [memoryValues]);
+  }, [memoryValues, instanceId]);
 
   // Handle memory entry click - toggle expansion and fetch value
   const handleMemoryEntryClick = useCallback((key: string) => {
@@ -219,11 +227,14 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
     fetchPreparedContext();
   }, [fetchPreparedContext]);
 
-  // Force compaction
+  // Force compaction (instance-aware)
   const handleForceCompact = useCallback(async () => {
     try {
       setIsCompacting(true);
-      const result = await window.hosea.internals.forceCompact();
+      // Use instance-aware API if instanceId is provided
+      const result = instanceId !== undefined
+        ? await window.hosea.internals.forceCompactForInstance(instanceId)
+        : await window.hosea.internals.forceCompact();
       if (result.success) {
         // Refresh data to show updated stats
         fetchData();
@@ -235,7 +246,7 @@ export function InternalsPanel({ isOpen, onClose, width, onWidthChange }: Intern
     } finally {
       setIsCompacting(false);
     }
-  }, [fetchData]);
+  }, [fetchData, instanceId]);
 
   // Fetch on mount and set up auto-refresh
   useEffect(() => {

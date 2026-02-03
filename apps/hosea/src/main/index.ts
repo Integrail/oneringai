@@ -108,6 +108,37 @@ async function setupIPC(): Promise<void> {
     return agentService!.rejectPlan(planId, reason);
   });
 
+  // Multi-tab instance operations
+  ipcMain.handle('agent:create-instance', async (_event, agentConfigId: string) => {
+    return agentService!.createInstance(agentConfigId);
+  });
+
+  ipcMain.handle('agent:destroy-instance', async (_event, instanceId: string) => {
+    return agentService!.destroyInstance(instanceId);
+  });
+
+  ipcMain.handle('agent:stream-instance', async (_event, instanceId: string, message: string) => {
+    // For streaming, we send chunks via the main window with instanceId
+    const stream = agentService!.streamInstance(instanceId, message);
+    for await (const chunk of stream) {
+      mainWindow?.webContents.send('agent:stream-chunk', instanceId, chunk);
+    }
+    mainWindow?.webContents.send('agent:stream-end', instanceId);
+    return { success: true };
+  });
+
+  ipcMain.handle('agent:cancel-instance', async (_event, instanceId: string) => {
+    return agentService!.cancelInstance(instanceId);
+  });
+
+  ipcMain.handle('agent:status-instance', async (_event, instanceId: string) => {
+    return agentService!.getInstanceStatus(instanceId);
+  });
+
+  ipcMain.handle('agent:list-instances', async () => {
+    return agentService!.listInstances();
+  });
+
   // Connector operations
   ipcMain.handle('connector:list', async () => {
     return agentService!.listConnectors();
@@ -323,8 +354,10 @@ async function setupIPC(): Promise<void> {
   });
 
   // Internals monitoring (Look Inside)
-  ipcMain.handle('internals:get-all', async () => {
-    return agentService!.getInternals();
+  // Legacy handlers (no instanceId) - for backwards compatibility
+  ipcMain.handle('internals:get-all', async (_event, instanceId?: string) => {
+    // Support optional instanceId parameter
+    return agentService!.getInternalsForInstance(instanceId || null);
   });
 
   ipcMain.handle('internals:get-context-stats', async () => {
@@ -339,11 +372,18 @@ async function setupIPC(): Promise<void> {
     return agentService!.getPreparedContext();
   });
 
-  ipcMain.handle('internals:get-memory-value', async (_event, key: string) => {
-    return agentService!.getMemoryValue(key);
+  ipcMain.handle('internals:get-memory-value', async (_event, keyOrInstanceId: string, keyIfInstance?: string) => {
+    // Support both old signature (key) and new signature (instanceId, key)
+    if (keyIfInstance !== undefined) {
+      return agentService!.getMemoryValueForInstance(keyOrInstanceId, keyIfInstance);
+    }
+    return agentService!.getMemoryValue(keyOrInstanceId);
   });
 
-  ipcMain.handle('internals:force-compact', async () => {
+  ipcMain.handle('internals:force-compact', async (_event, instanceId?: string) => {
+    if (instanceId) {
+      return agentService!.forceCompactionForInstance(instanceId);
+    }
     return agentService!.forceCompaction();
   });
 

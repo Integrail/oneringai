@@ -10,6 +10,9 @@ import { existsSync } from 'node:fs';
 import {
   Connector,
   Vendor,
+  Agent,
+  TaskAgent,
+  ResearchAgent,
   UniversalAgent,
   ImageGeneration,
   VideoGeneration,
@@ -61,6 +64,9 @@ import {
   type LogLevel,
   type IImageModelDescription,
   type IVideoModelDescription,
+  type AgentConfig,
+  type TaskAgentConfig,
+  type ResearchAgentConfig,
 } from '@oneringai/agents';
 
 interface StoredConnectorConfig {
@@ -426,6 +432,21 @@ const DEFAULT_CONFIG: HoseaConfig = {
   },
 };
 
+/**
+ * Agent instance for multi-tab support
+ * Each tab has its own agent instance with independent state
+ */
+export interface AgentInstance {
+  instanceId: string;
+  agentConfigId: string;
+  agent: Agent | TaskAgent | ResearchAgent | UniversalAgent;
+  sessionStorage: IContextStorage;
+  createdAt: number;
+}
+
+/** Maximum concurrent agent instances (memory limit) */
+const MAX_INSTANCES = 10;
+
 export class AgentService {
   private dataDir: string;
   private isDev: boolean;
@@ -441,6 +462,8 @@ export class AgentService {
   private activeVideoJobs: Map<string, { connectorName: string; videoGen: VideoGeneration }> = new Map();
   // MCP servers storage
   private mcpServers: Map<string, StoredMCPServerConfig> = new Map();
+  // Multi-tab agent instances (instanceId -> AgentInstance)
+  private instances: Map<string, AgentInstance> = new Map();
 
   // ============ Conversion Helpers ============
 
@@ -2313,8 +2336,869 @@ export class AgentService {
   }
 
   destroy(): void {
+    // Destroy the legacy single agent
     this.agent?.destroy();
     this.agent = null;
+
+    // Destroy all instances
+    for (const instance of this.instances.values()) {
+      try {
+        instance.agent.destroy();
+      } catch (error) {
+        console.warn(`Error destroying instance ${instance.instanceId}:`, error);
+      }
+    }
+    this.instances.clear();
+  }
+
+  // ============ Multi-Tab Instance Management ============
+
+  /**
+   * Create a new agent instance for a tab
+   * @param agentConfigId - The ID of the agent configuration to use
+   * @returns instanceId if successful
+   */
+  async createInstance(agentConfigId: string): Promise<{ success: boolean; instanceId?: string; error?: string }> {
+    try {
+      // Check instance limit
+      if (this.instances.size >= MAX_INSTANCES) {
+        return { success: false, error: `Maximum number of instances (${MAX_INSTANCES}) reached` };
+      }
+
+      // Get agent config
+      const agentConfig = this.agents.get(agentConfigId);
+      if (!agentConfig) {
+        return { success: false, error: `Agent configuration "${agentConfigId}" not found` };
+      }
+
+      // Get connector config
+      const connectorConfig = this.connectors.get(agentConfig.connector);
+      if (!connectorConfig) {
+        return { success: false, error: `Connector "${agentConfig.connector}" not found` };
+      }
+
+      // Register connector with library if not already
+      if (!Connector.has(agentConfig.connector)) {
+        Connector.create({
+          name: agentConfig.connector,
+          vendor: connectorConfig.vendor as Vendor,
+          auth: connectorConfig.auth,
+          baseURL: connectorConfig.baseURL,
+        });
+      }
+
+      // Generate unique instance ID
+      const instanceId = `inst_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      // Create instance-specific session storage
+      const sessionStorage = new FileContextStorage({
+        agentId: instanceId, // Unique per instance
+        baseDirectory: join(this.dataDir, '..'),
+      });
+
+      // Resolve tool names to actual ToolFunction objects
+      const tools: ToolFunction[] = [];
+      for (const toolName of agentConfig.tools) {
+        const toolEntry = getToolByName(toolName);
+        if (toolEntry) {
+          tools.push(toolEntry.tool);
+        }
+      }
+
+      // Connect MCP servers and register their tools if configured
+      if (agentConfig.mcpServers && agentConfig.mcpServers.length > 0) {
+        for (const mcpRef of agentConfig.mcpServers) {
+          const serverConfig = this.mcpServers.get(mcpRef.serverName);
+          if (serverConfig && serverConfig.status !== 'connected') {
+            await this.connectMCPServer(mcpRef.serverName);
+          }
+          // MCP tools are registered to the agent's tool manager below
+        }
+      }
+
+      // Combine user instructions with UI capabilities prompt
+      const fullInstructions = (agentConfig.instructions || '') + '\n\n' + HOSEA_UI_CAPABILITIES_PROMPT;
+
+      // Build context configuration
+      const contextConfig = {
+        agentId: instanceId,
+        features: {
+          memory: agentConfig.memoryEnabled,
+          inContextMemory: agentConfig.inContextMemoryEnabled,
+          persistentInstructions: agentConfig.persistentInstructionsEnabled ?? false,
+          history: agentConfig.historyEnabled,
+          permissions: agentConfig.permissionsEnabled,
+        },
+        strategy: agentConfig.contextStrategy as 'proactive' | 'aggressive' | 'lazy' | 'rolling-window' | 'adaptive',
+        maxContextTokens: agentConfig.maxContextTokens,
+        memory: agentConfig.memoryEnabled
+          ? {
+              maxSizeBytes: agentConfig.maxMemorySizeBytes,
+              maxIndexEntries: agentConfig.maxMemoryIndexEntries,
+              descriptionMaxLength: 150,
+              softLimitPercent: agentConfig.memorySoftLimitPercent,
+              contextAllocationPercent: agentConfig.contextAllocationPercent,
+            }
+          : undefined,
+        inContextMemory: agentConfig.inContextMemoryEnabled
+          ? {
+              maxEntries: agentConfig.maxInContextEntries,
+              maxTotalTokens: agentConfig.maxInContextTokens,
+            }
+          : undefined,
+        history: agentConfig.historyEnabled
+          ? {
+              maxMessages: agentConfig.maxHistoryMessages,
+              preserveRecent: agentConfig.preserveRecent,
+            }
+          : undefined,
+        cache: {
+          enabled: agentConfig.cacheEnabled,
+          defaultTtlMs: agentConfig.cacheTtlMs,
+          maxEntries: agentConfig.cacheMaxEntries,
+        },
+      };
+
+      // Create the appropriate agent type based on config
+      let agent: Agent | TaskAgent | ResearchAgent | UniversalAgent;
+
+      switch (agentConfig.agentType) {
+        case 'basic':
+          agent = Agent.create({
+            connector: agentConfig.connector,
+            model: agentConfig.model,
+            name: agentConfig.name,
+            tools,
+            instructions: fullInstructions,
+            temperature: agentConfig.temperature,
+            context: contextConfig,
+          } as AgentConfig);
+          break;
+
+        case 'task':
+          agent = TaskAgent.create({
+            connector: agentConfig.connector,
+            model: agentConfig.model,
+            name: agentConfig.name,
+            tools,
+            instructions: fullInstructions,
+            temperature: agentConfig.temperature,
+            context: contextConfig,
+          } as TaskAgentConfig);
+          break;
+
+        case 'research':
+          agent = ResearchAgent.create({
+            connector: agentConfig.connector,
+            model: agentConfig.model,
+            name: agentConfig.name,
+            tools,
+            instructions: fullInstructions,
+            temperature: agentConfig.temperature,
+            context: contextConfig,
+            sources: [], // Research sources would need to be configured separately
+          } as ResearchAgentConfig);
+          break;
+
+        case 'universal':
+        default:
+          agent = UniversalAgent.create({
+            connector: agentConfig.connector,
+            model: agentConfig.model,
+            name: agentConfig.name,
+            tools,
+            instructions: fullInstructions,
+            temperature: agentConfig.temperature,
+            session: { storage: sessionStorage },
+            context: contextConfig,
+          } as UniversalAgentConfig);
+          break;
+      }
+
+      // Register MCP tools with the agent if configured
+      if (agentConfig.mcpServers && agentConfig.mcpServers.length > 0) {
+        for (const mcpRef of agentConfig.mcpServers) {
+          if (MCPRegistry.has(mcpRef.serverName)) {
+            const client = MCPRegistry.get(mcpRef.serverName);
+            if (client.isConnected()) {
+              client.registerTools(agent.tools);
+            }
+          }
+        }
+      }
+
+      // Store the instance
+      const agentInstance: AgentInstance = {
+        instanceId,
+        agentConfigId,
+        agent,
+        sessionStorage,
+        createdAt: Date.now(),
+      };
+      this.instances.set(instanceId, agentInstance);
+
+      console.log(`Created agent instance ${instanceId} for config ${agentConfigId} (${agentConfig.name})`);
+      return { success: true, instanceId };
+    } catch (error) {
+      console.error('Error creating instance:', error);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Destroy an agent instance
+   * @param instanceId - The instance ID to destroy
+   */
+  async destroyInstance(instanceId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const instance = this.instances.get(instanceId);
+      if (!instance) {
+        return { success: false, error: `Instance "${instanceId}" not found` };
+      }
+
+      // Cancel any ongoing operations
+      if ('cancel' in instance.agent && typeof instance.agent.cancel === 'function') {
+        instance.agent.cancel();
+      }
+
+      // Destroy the agent
+      instance.agent.destroy();
+
+      // Remove from instances map
+      this.instances.delete(instanceId);
+
+      console.log(`Destroyed agent instance ${instanceId}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`Error destroying instance ${instanceId}:`, error);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * Get an agent instance by ID
+   */
+  getInstance(instanceId: string): AgentInstance | null {
+    return this.instances.get(instanceId) || null;
+  }
+
+  /**
+   * List all active instances
+   */
+  listInstances(): Array<{ instanceId: string; agentConfigId: string; createdAt: number }> {
+    return Array.from(this.instances.values()).map(inst => ({
+      instanceId: inst.instanceId,
+      agentConfigId: inst.agentConfigId,
+      createdAt: inst.createdAt,
+    }));
+  }
+
+  /**
+   * Stream a message to a specific agent instance
+   */
+  async *streamInstance(instanceId: string, message: string): AsyncGenerator<StreamChunk> {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      yield { type: 'error', content: `Instance "${instanceId}" not found` };
+      return;
+    }
+
+    // Track when we're in plan mode to suppress text output (for UniversalAgent)
+    let suppressText = false;
+
+    try {
+      // Check if the agent has a stream method (UniversalAgent, TaskAgent)
+      if ('stream' in instance.agent && typeof instance.agent.stream === 'function') {
+        for await (const event of (instance.agent as UniversalAgent).stream(message)) {
+          const e = event as UniversalEvent;
+
+          // Detect plan mode transitions to control text suppression
+          if (e.type === 'plan:analyzing' || e.type === 'plan:created') {
+            suppressText = true;
+          } else if (e.type === 'plan:approved' || e.type === 'mode:changed') {
+            const modeEvent = e as { type: string; to?: string };
+            if (e.type === 'mode:changed' && modeEvent.to === 'interactive') {
+              suppressText = false;
+            }
+          } else if (e.type === 'execution:done') {
+            suppressText = false;
+          }
+
+          if (e.type === 'text:delta') {
+            if (!suppressText) {
+              yield { type: 'text', content: e.delta };
+            }
+          } else if (e.type === 'tool:start') {
+            const args = (e.args || {}) as Record<string, unknown>;
+            const tool = instance.agent.tools?.get(e.name);
+            let description = '';
+            if (tool?.describeCall) {
+              try {
+                description = tool.describeCall(args);
+              } catch {
+                description = defaultDescribeCall(args);
+              }
+            } else {
+              description = defaultDescribeCall(args);
+            }
+            yield { type: 'tool_start', tool: e.name, args, description };
+          } else if (e.type === 'tool:complete') {
+            yield { type: 'tool_end', tool: e.name, durationMs: e.durationMs };
+          } else if (e.type === 'tool:error') {
+            yield { type: 'tool_error', tool: e.name, error: e.error };
+          } else if (e.type === 'text:done') {
+            yield { type: 'done' };
+          } else if (e.type === 'error') {
+            yield { type: 'error', content: e.error };
+          }
+          // Plan events
+          else if (e.type === 'plan:created') {
+            yield { type: 'plan:created', plan: this.serializePlan((e as any).plan) };
+          } else if (e.type === 'plan:awaiting_approval') {
+            yield { type: 'plan:awaiting_approval', plan: this.serializePlan((e as any).plan) };
+          } else if (e.type === 'plan:approved') {
+            yield { type: 'plan:approved', plan: this.serializePlan((e as any).plan) };
+          } else if (e.type === 'plan:analyzing') {
+            yield { type: 'plan:analyzing', goal: (e as any).goal };
+          } else if (e.type === 'mode:changed') {
+            yield { type: 'mode:changed', from: (e as any).from, to: (e as any).to, reason: (e as any).reason };
+          } else if (e.type === 'needs:approval') {
+            yield { type: 'needs:approval', plan: this.serializePlan((e as any).plan) };
+          }
+          // Task events
+          else if (e.type === 'task:started') {
+            yield { type: 'task:started', task: this.serializeTask((e as any).task) };
+          } else if (e.type === 'task:progress') {
+            yield { type: 'task:progress', task: this.serializeTask((e as any).task), status: (e as any).status };
+          } else if (e.type === 'task:completed') {
+            yield { type: 'task:completed', task: this.serializeTask((e as any).task), result: (e as any).result };
+          } else if (e.type === 'task:failed') {
+            yield { type: 'task:failed', task: this.serializeTask((e as any).task), error: (e as any).error };
+          }
+          // Execution events
+          else if (e.type === 'execution:done') {
+            yield { type: 'execution:done', result: (e as any).result };
+          } else if (e.type === 'execution:paused') {
+            yield { type: 'execution:paused', reason: (e as any).reason };
+          }
+        }
+      } else if ('run' in instance.agent && typeof instance.agent.run === 'function') {
+        // Fallback for basic Agent that doesn't have stream - use run
+        const response = await (instance.agent as Agent).run(message);
+        yield { type: 'text', content: response.output_text || '' };
+        yield { type: 'done' };
+      } else {
+        yield { type: 'error', content: 'Agent does not support streaming or run methods' };
+      }
+    } catch (error) {
+      yield { type: 'error', content: String(error) };
+    }
+  }
+
+  /**
+   * Cancel an operation on a specific instance
+   */
+  cancelInstance(instanceId: string): { success: boolean; error?: string } {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      return { success: false, error: `Instance "${instanceId}" not found` };
+    }
+
+    if ('cancel' in instance.agent && typeof instance.agent.cancel === 'function') {
+      instance.agent.cancel();
+    }
+    return { success: true };
+  }
+
+  /**
+   * Get status of a specific instance
+   */
+  getInstanceStatus(instanceId: string): {
+    found: boolean;
+    initialized: boolean;
+    connector: string | null;
+    model: string | null;
+    mode: string | null;
+    agentConfigId: string | null;
+  } {
+    const instance = this.instances.get(instanceId);
+    if (!instance) {
+      return {
+        found: false,
+        initialized: false,
+        connector: null,
+        model: null,
+        mode: null,
+        agentConfigId: null,
+      };
+    }
+
+    const agentConfig = this.agents.get(instance.agentConfigId);
+    return {
+      found: true,
+      initialized: true,
+      connector: agentConfig?.connector || null,
+      model: agentConfig?.model || null,
+      mode: 'getMode' in instance.agent && typeof instance.agent.getMode === 'function'
+        ? (instance.agent as UniversalAgent).getMode()
+        : null,
+      agentConfigId: instance.agentConfigId,
+    };
+  }
+
+  /**
+   * Get internals for a specific instance
+   * If instanceId is null, falls back to legacy single agent behavior
+   */
+  async getInternalsForInstance(instanceId: string | null): Promise<{
+    available: boolean;
+    agentName: string | null;
+    context: {
+      totalTokens: number;
+      maxTokens: number;
+      utilizationPercent: number;
+      messagesCount: number;
+      toolCallsCount: number;
+      strategy: string;
+    } | null;
+    cache: {
+      entries: number;
+      hits: number;
+      misses: number;
+      hitRate: number;
+      ttlMs: number;
+    } | null;
+    memory: {
+      totalEntries: number;
+      totalSizeBytes: number;
+      utilizationPercent: number;
+      entries: Array<{
+        key: string;
+        description: string;
+        scope: string;
+        priority: string;
+        sizeBytes: number;
+        updatedAt: number;
+      }>;
+    } | null;
+    inContextMemory: {
+      enabled: boolean;
+      entries: Array<{
+        key: string;
+        description: string;
+        priority: string;
+        updatedAt: number;
+        value: unknown;
+      }>;
+      maxEntries: number;
+      maxTokens: number;
+    } | null;
+    tools: Array<{
+      name: string;
+      description: string;
+      enabled: boolean;
+      callCount: number;
+      namespace?: string;
+    }>;
+    toolCalls: Array<{
+      id: string;
+      name: string;
+      args: unknown;
+      result?: unknown;
+      error?: string;
+      durationMs: number;
+      timestamp: number;
+    }>;
+    systemPrompt: string | null;
+    persistentInstructions: {
+      content: string;
+      path: string;
+      length: number;
+      enabled: boolean;
+    } | null;
+    tokenBreakdown: {
+      total: number;
+      reserved: number;
+      used: number;
+      available: number;
+      components: Array<{ name: string; tokens: number; percent: number }>;
+    } | null;
+  }> {
+    // Get the agent - either from instance or legacy single agent
+    let agent: Agent | TaskAgent | ResearchAgent | UniversalAgent | null = null;
+    let agentConfigId: string | null = null;
+
+    if (instanceId) {
+      const instance = this.instances.get(instanceId);
+      if (instance) {
+        agent = instance.agent;
+        agentConfigId = instance.agentConfigId;
+      }
+    } else {
+      // Fallback to legacy single agent
+      agent = this.agent;
+      agentConfigId = this.getActiveAgent()?.id || null;
+    }
+
+    if (!agent) {
+      return {
+        available: false,
+        agentName: null,
+        context: null,
+        cache: null,
+        memory: null,
+        inContextMemory: null,
+        tools: [],
+        toolCalls: [],
+        systemPrompt: null,
+        persistentInstructions: null,
+        tokenBreakdown: null,
+      };
+    }
+
+    // Delegate to the common helper
+    return this.getInternalsForAgent(agent, agentConfigId);
+  }
+
+  /**
+   * Get memory value for a specific instance
+   */
+  async getMemoryValueForInstance(instanceId: string | null, key: string): Promise<unknown> {
+    let agent: Agent | TaskAgent | ResearchAgent | UniversalAgent | null = null;
+
+    if (instanceId) {
+      const instance = this.instances.get(instanceId);
+      if (instance) {
+        agent = instance.agent;
+      }
+    } else {
+      agent = this.agent;
+    }
+
+    if (!agent?.context?.memory) {
+      return null;
+    }
+
+    try {
+      return await agent.context.memory.retrieve(key);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Force compaction for a specific instance
+   */
+  async forceCompactionForInstance(instanceId: string | null): Promise<{ success: boolean; tokensFreed: number; error?: string }> {
+    let agent: Agent | TaskAgent | ResearchAgent | UniversalAgent | null = null;
+
+    if (instanceId) {
+      const instance = this.instances.get(instanceId);
+      if (instance) {
+        agent = instance.agent;
+      }
+    } else {
+      agent = this.agent;
+    }
+
+    if (!agent) {
+      return { success: false, tokensFreed: 0, error: 'No agent found' };
+    }
+
+    try {
+      const ctx = agent.context;
+      const beforeBudget = ctx.getLastBudget();
+      const beforeUsed = beforeBudget?.used ?? 0;
+
+      await ctx.prepare();
+
+      const afterBudget = ctx.getLastBudget();
+      const afterUsed = afterBudget?.used ?? 0;
+      const tokensFreed = Math.max(0, beforeUsed - afterUsed);
+
+      return { success: true, tokensFreed };
+    } catch (error) {
+      return { success: false, tokensFreed: 0, error: String(error) };
+    }
+  }
+
+  /**
+   * Helper to get internals from an agent
+   */
+  private async getInternalsForAgent(
+    agent: Agent | TaskAgent | ResearchAgent | UniversalAgent,
+    agentConfigId: string | null
+  ): Promise<{
+    available: boolean;
+    agentName: string | null;
+    context: {
+      totalTokens: number;
+      maxTokens: number;
+      utilizationPercent: number;
+      messagesCount: number;
+      toolCallsCount: number;
+      strategy: string;
+    } | null;
+    cache: {
+      entries: number;
+      hits: number;
+      misses: number;
+      hitRate: number;
+      ttlMs: number;
+    } | null;
+    memory: {
+      totalEntries: number;
+      totalSizeBytes: number;
+      utilizationPercent: number;
+      entries: Array<{
+        key: string;
+        description: string;
+        scope: string;
+        priority: string;
+        sizeBytes: number;
+        updatedAt: number;
+      }>;
+    } | null;
+    inContextMemory: {
+      enabled: boolean;
+      entries: Array<{
+        key: string;
+        description: string;
+        priority: string;
+        updatedAt: number;
+        value: unknown;
+      }>;
+      maxEntries: number;
+      maxTokens: number;
+    } | null;
+    tools: Array<{
+      name: string;
+      description: string;
+      enabled: boolean;
+      callCount: number;
+      namespace?: string;
+    }>;
+    toolCalls: Array<{
+      id: string;
+      name: string;
+      args: unknown;
+      result?: unknown;
+      error?: string;
+      durationMs: number;
+      timestamp: number;
+    }>;
+    systemPrompt: string | null;
+    persistentInstructions: {
+      content: string;
+      path: string;
+      length: number;
+      enabled: boolean;
+    } | null;
+    tokenBreakdown: {
+      total: number;
+      reserved: number;
+      used: number;
+      available: number;
+      components: Array<{ name: string; tokens: number; percent: number }>;
+    } | null;
+  }> {
+    try {
+      const ctx = agent.context;
+      const metrics = await ctx.getMetrics();
+      const state = await ctx.getState();
+
+      // Get context stats
+      const lastBudget = ctx.getLastBudget();
+      const contextStats = {
+        totalTokens: lastBudget?.used ?? Math.round((metrics.utilizationPercent / 100) * (state.config?.maxContextTokens || 128000)),
+        maxTokens: state.config?.maxContextTokens || 128000,
+        utilizationPercent: metrics.utilizationPercent,
+        messagesCount: metrics.historyMessageCount,
+        toolCallsCount: metrics.toolCallCount,
+        strategy: state.config?.strategy || 'proactive',
+      };
+
+      // Get cache stats
+      const cacheStats = metrics.cacheStats ? {
+        entries: metrics.cacheStats.entries,
+        hits: metrics.cacheStats.hits,
+        misses: metrics.cacheStats.misses,
+        hitRate: metrics.cacheStats.hitRate,
+        ttlMs: 300000,
+      } : null;
+
+      // Get memory stats
+      let memoryData = null;
+      if (ctx.memory) {
+        const memStats = await ctx.memory.getStats();
+        const memIndex = await ctx.memory.getIndex();
+        memoryData = {
+          totalEntries: memStats.totalEntries,
+          totalSizeBytes: memStats.totalSizeBytes,
+          utilizationPercent: memStats.utilizationPercent,
+          entries: memIndex.entries.map((e) => ({
+            key: e.key,
+            description: e.description,
+            scope: String(typeof e.scope === 'object' ? JSON.stringify(e.scope) : e.scope),
+            priority: e.effectivePriority,
+            sizeBytes: 0,
+            updatedAt: Date.now(),
+          })),
+        };
+      }
+
+      // Get in-context memory
+      const inContextEnabled = ctx.isFeatureEnabled('inContextMemory');
+      const inContextPlugin = ctx.inContextMemory;
+      let inContextData: {
+        enabled: boolean;
+        entries: Array<{
+          key: string;
+          description: string;
+          priority: string;
+          updatedAt: number;
+          value: unknown;
+        }>;
+        maxEntries: number;
+        maxTokens: number;
+      } = {
+        enabled: inContextEnabled,
+        entries: [],
+        maxEntries: 20,
+        maxTokens: 4000,
+      };
+
+      if (inContextPlugin) {
+        const entries = inContextPlugin.list();
+        const pluginConfig = (inContextPlugin as unknown as { config?: { maxEntries?: number; maxTotalTokens?: number } }).config;
+        inContextData = {
+          enabled: true,
+          entries: entries.map((e) => ({
+            key: e.key,
+            description: e.description,
+            priority: e.priority,
+            updatedAt: e.updatedAt,
+            value: inContextPlugin.get(e.key),
+          })),
+          maxEntries: pluginConfig?.maxEntries ?? 20,
+          maxTokens: pluginConfig?.maxTotalTokens ?? 4000,
+        };
+      }
+
+      // Get tools with stats
+      const toolStats = agent.tools.getStats();
+      const allTools = agent.tools.getAll();
+      const toolsWithStats = allTools.map((tool: ToolFunction) => {
+        const name = tool.definition.function.name;
+        const usageInfo = toolStats.mostUsed.find((u: { name: string; count: number }) => u.name === name);
+        return {
+          name,
+          description: tool.definition.function.description || '',
+          enabled: agent.tools.isEnabled(name),
+          callCount: usageInfo?.count || 0,
+          namespace: undefined,
+        };
+      });
+
+      // Get tool call history
+      const toolCalls = state.core.toolCalls.map((tc: { id: string; name: string; args: unknown; result?: unknown; error?: string; durationMs?: number; timestamp?: number }, index: number) => ({
+        id: tc.id || `tc_${index}`,
+        name: tc.name,
+        args: tc.args,
+        result: tc.result,
+        error: tc.error,
+        durationMs: tc.durationMs || 0,
+        timestamp: tc.timestamp || Date.now(),
+      }));
+
+      // Get agent config for name
+      const agentConfig = agentConfigId ? this.agents.get(agentConfigId) : null;
+
+      // Get system prompt
+      const systemPrompt = ctx.systemPrompt || null;
+
+      // Get persistent instructions
+      const effectiveAgentId = agentConfigId || 'default';
+      let persistentInstructionsData: {
+        content: string;
+        path: string;
+        length: number;
+        enabled: boolean;
+      };
+      if (ctx.persistentInstructions) {
+        const component = await ctx.persistentInstructions.getComponent();
+        const contentStr = typeof component?.content === 'string' ? component.content : '';
+        persistentInstructionsData = {
+          content: contentStr,
+          path: join(this.dataDir, 'agents', `${effectiveAgentId}-instructions.md`),
+          length: contentStr.length,
+          enabled: true,
+        };
+      } else {
+        persistentInstructionsData = {
+          content: '',
+          path: join(this.dataDir, 'agents', `${effectiveAgentId}-instructions.md`),
+          length: 0,
+          enabled: false,
+        };
+      }
+
+      // Build token breakdown
+      let tokenBreakdown: {
+        total: number;
+        reserved: number;
+        used: number;
+        available: number;
+        components: Array<{ name: string; tokens: number; percent: number }>;
+      } | null = null;
+
+      if (lastBudget && lastBudget.breakdown) {
+        const components = Object.entries(lastBudget.breakdown)
+          .map(([name, tokens]) => ({
+            name: name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+            tokens,
+            percent: lastBudget.used > 0 ? (tokens / lastBudget.used) * 100 : 0,
+          }))
+          .sort((a, b) => b.tokens - a.tokens);
+
+        tokenBreakdown = {
+          total: lastBudget.total,
+          reserved: lastBudget.reserved,
+          used: lastBudget.used,
+          available: lastBudget.available,
+          components,
+        };
+      }
+
+      return {
+        available: true,
+        agentName: agentConfig?.name || 'Default Assistant',
+        context: contextStats,
+        cache: cacheStats,
+        memory: memoryData,
+        inContextMemory: inContextData,
+        tools: toolsWithStats,
+        toolCalls: toolCalls.slice(-50),
+        systemPrompt,
+        persistentInstructions: persistentInstructionsData,
+        tokenBreakdown,
+      };
+    } catch (error) {
+      console.error('Error getting internals:', error);
+      return {
+        available: false,
+        agentName: null,
+        context: null,
+        cache: null,
+        memory: null,
+        inContextMemory: null,
+        tools: [],
+        toolCalls: [],
+        systemPrompt: null,
+        persistentInstructions: null,
+        tokenBreakdown: null,
+      };
+    }
   }
 
   // ============ Internals Monitoring (Look Inside) ============
