@@ -40,6 +40,7 @@ describe('Services', () => {
 
     it('should have valid categories', () => {
       const validCategories = [
+        'major-vendors',
         'communication',
         'development',
         'productivity',
@@ -82,9 +83,8 @@ describe('Services', () => {
     });
 
     it('should convert kebab-case to PascalCase', () => {
-      expect(Services.MicrosoftTeams).toBe('microsoft-teams');
-      expect(Services.GoogleWorkspace).toBe('google-workspace');
-      expect(Services.Microsoft365).toBe('microsoft-365');
+      expect(Services.BraveSearch).toBe('brave-search');
+      expect(Services.RapidapiSearch).toBe('rapidapi-search');
     });
   });
 

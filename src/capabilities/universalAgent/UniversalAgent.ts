@@ -360,22 +360,21 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
   // ============================================================================
 
   private async handleInteractive(input: string, intent: IntentAnalysis): Promise<UniversalResponse> {
-    // Add user input to conversation history
-    await this.addToConversationHistory('user', input);
-
     // Check if we should switch to planning
     const shouldPlan = this.shouldSwitchToPlanning(intent);
 
     if (shouldPlan) {
+      // Add user input before entering planning (planning doesn't use agent.run)
+      await this.addToConversationHistory('user', input);
       this.modeManager.enterPlanning('complex_task_detected');
       return this.handlePlanning(input, intent);
     }
 
-    // Build input with conversation context
-    const contextualInput = await this.buildFullContext(input);
-
-    // Execute directly with agent
-    const response = await this.agent.run(contextualInput);
+    // Execute directly with agent - it handles adding messages to shared AgentContext
+    // NOTE: Don't add user/assistant messages manually - agent.run() manages the
+    // conversation via the shared AgentContext (adds user message, prepares context,
+    // calls LLM, adds assistant response)
+    const response = await this.agent.run(input);
 
     // Check if agent used _start_planning meta-tool
     const planningToolCall = response.output.find(
@@ -389,9 +388,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       return this.createPlan(args.goal, args.reasoning);
     }
 
-    // Add assistant response to conversation history
     const responseText = response.output_text ?? '';
-    await this.addToConversationHistory('assistant', responseText);
 
     return {
       text: responseText,
@@ -494,11 +491,10 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
   // ============================================================================
 
   private async *streamInteractive(input: string, intent: IntentAnalysis): AsyncIterableIterator<UniversalEvent> {
-    // Add user input to conversation history
-    await this.addToConversationHistory('user', input);
-
     // Check if we should switch to planning
     if (this.shouldSwitchToPlanning(intent)) {
+      // Add user input before entering planning (planning doesn't use agent.stream)
+      await this.addToConversationHistory('user', input);
       const from = this.modeManager.getMode();
       this.modeManager.enterPlanning('complex_task_detected');
       yield { type: 'mode:changed', from, to: 'planning', reason: 'complex_task_detected' };
@@ -506,15 +502,15 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       return;
     }
 
-    // Build input with conversation context
-    const contextualInput = await this.buildFullContext(input);
-
-    // Stream from agent - track if _start_planning was called
+    // Stream from agent - it handles adding messages to shared AgentContext
+    // NOTE: Don't add user/assistant messages manually - agent.stream() manages the
+    // conversation via the shared AgentContext (adds user message, prepares context,
+    // calls LLM, adds assistant response)
     let fullText = '';
     let planningToolArgs: { goal: string; reasoning?: string } | null = null;
     let currentToolName = '';
 
-    for await (const event of this.agent.stream(contextualInput)) {
+    for await (const event of this.agent.stream(input)) {
       if (event.type === StreamEventType.OUTPUT_TEXT_DELTA) {
         const delta = (event as any).delta || '';
         fullText += delta;
@@ -542,6 +538,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       const plan = await this.createPlanInternal(planningToolArgs.goal);
       this.modeManager.setPendingPlan(plan);
       this.currentPlan = plan;
+      this._planPlugin.setPlan(plan);
 
       yield { type: 'plan:created', plan };
 
@@ -550,6 +547,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
         yield { type: 'needs:approval', plan };
 
         const summary = this.formatPlanSummary(plan);
+        // Add plan summary to history (this is UniversalAgent-specific, not from LLM)
         await this.addToConversationHistory('assistant', summary);
 
         // Yield the plan summary as text so user sees it
@@ -558,9 +556,6 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
       }
       return;
     }
-
-    // Add assistant response to conversation history
-    await this.addToConversationHistory('assistant', fullText);
 
     yield { type: 'text:done', text: fullText };
   }
@@ -593,6 +588,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     const plan = await this.createPlanInternal(input);
     this.modeManager.setPendingPlan(plan);
     this.currentPlan = plan;
+    this._planPlugin.setPlan(plan);
 
     yield { type: 'plan:created', plan };
 
@@ -770,6 +766,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
 
     this.modeManager.setPendingPlan(plan);
     this.currentPlan = plan;
+    this._planPlugin.setPlan(plan);
 
     this.emit('plan:created', { plan });
 
@@ -811,6 +808,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     this.modeManager.approvePlan();
     this.modeManager.enterExecuting(plan, 'user_approved');
     this.currentPlan = plan;
+    this._planPlugin.setPlan(plan);
 
     this.emit('plan:approved', { plan });
 
@@ -841,6 +839,7 @@ export class UniversalAgent extends BaseAgent<UniversalAgentConfig, UniversalAge
     const refined = await this.planningAgent.refinePlan(currentPlan, feedback);
     this.modeManager.setPendingPlan(refined.plan);
     this.currentPlan = refined.plan;
+    this._planPlugin.setPlan(refined.plan);
 
     this.emit('plan:modified', { plan: refined.plan, changes: [] });
 
@@ -1254,34 +1253,6 @@ Guidelines:
   private async addToConversationHistory(role: 'user' | 'assistant', content: string): Promise<void> {
     // Use async addMessage with capacity checking for potentially large content
     await this._agentContext.addMessage(role, content);
-  }
-
-  /**
-   * Build full context for the agent (via AgentContext.prepare())
-   * Returns formatted context string ready for LLM
-   */
-  private async buildFullContext(currentInput: string): Promise<string> {
-    // Update plan in plugin before preparing context
-    if (this.currentPlan) {
-      this._planPlugin.setPlan(this.currentPlan);
-    }
-
-    // Set current input and prepare context
-    this._agentContext.setCurrentInput(currentInput);
-    const prepared = await this._agentContext.prepare({ returnFormat: 'components' });
-
-    // Format components into context string
-    const parts: string[] = [];
-    for (const component of prepared.components!) {
-      if (component.content) {
-        const content = typeof component.content === 'string'
-          ? component.content
-          : JSON.stringify(component.content, null, 2);
-        parts.push(content);
-      }
-    }
-
-    return parts.join('\n\n');
   }
 
   // ============================================================================

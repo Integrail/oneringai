@@ -52646,14 +52646,13 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
   // Mode Handlers
   // ============================================================================
   async handleInteractive(input, intent) {
-    await this.addToConversationHistory("user", input);
     const shouldPlan = this.shouldSwitchToPlanning(intent);
     if (shouldPlan) {
+      await this.addToConversationHistory("user", input);
       this.modeManager.enterPlanning("complex_task_detected");
       return this.handlePlanning(input, intent);
     }
-    const contextualInput = await this.buildFullContext(input);
-    const response = await this.agent.run(contextualInput);
+    const response = await this.agent.run(input);
     const planningToolCall = response.output.find(
       (item) => item.type === "tool_use" && item.name === META_TOOL_NAMES.START_PLANNING
     );
@@ -52664,7 +52663,6 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
       return this.createPlan(args.goal, args.reasoning);
     }
     const responseText = response.output_text ?? "";
-    await this.addToConversationHistory("assistant", responseText);
     return {
       text: responseText,
       mode: "interactive",
@@ -52741,19 +52739,18 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
   // Streaming Handlers
   // ============================================================================
   async *streamInteractive(input, intent) {
-    await this.addToConversationHistory("user", input);
     if (this.shouldSwitchToPlanning(intent)) {
+      await this.addToConversationHistory("user", input);
       const from = this.modeManager.getMode();
       this.modeManager.enterPlanning("complex_task_detected");
       yield { type: "mode:changed", from, to: "planning", reason: "complex_task_detected" };
       yield* this.streamPlanning(input, intent);
       return;
     }
-    const contextualInput = await this.buildFullContext(input);
     let fullText = "";
     let planningToolArgs = null;
     let currentToolName = "";
-    for await (const event of this.agent.stream(contextualInput)) {
+    for await (const event of this.agent.stream(input)) {
       if (event.type === "response.output_text.delta" /* OUTPUT_TEXT_DELTA */) {
         const delta = event.delta || "";
         fullText += delta;
@@ -52775,6 +52772,7 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
       const plan = await this.createPlanInternal(planningToolArgs.goal);
       this.modeManager.setPendingPlan(plan);
       this.currentPlan = plan;
+      this._planPlugin.setPlan(plan);
       yield { type: "plan:created", plan };
       if (this._config.planning?.requireApproval !== false) {
         yield { type: "plan:awaiting_approval", plan };
@@ -52786,7 +52784,6 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
       }
       return;
     }
-    await this.addToConversationHistory("assistant", fullText);
     yield { type: "text:done", text: fullText };
   }
   async *streamPlanning(input, intent) {
@@ -52807,6 +52804,7 @@ var UniversalAgent = class _UniversalAgent extends BaseAgent {
     const plan = await this.createPlanInternal(input);
     this.modeManager.setPendingPlan(plan);
     this.currentPlan = plan;
+    this._planPlugin.setPlan(plan);
     yield { type: "plan:created", plan };
     if (this._config.planning?.requireApproval !== false) {
       yield { type: "plan:awaiting_approval", plan };
@@ -52928,6 +52926,7 @@ ${errors}`;
     const plan = await this.createPlanInternal(goal);
     this.modeManager.setPendingPlan(plan);
     this.currentPlan = plan;
+    this._planPlugin.setPlan(plan);
     this.emit("plan:created", { plan });
     const summary = this.formatPlanSummary(plan);
     const requireApproval = this._config.planning?.requireApproval !== false;
@@ -52961,6 +52960,7 @@ ${errors}`;
     this.modeManager.approvePlan();
     this.modeManager.enterExecuting(plan, "user_approved");
     this.currentPlan = plan;
+    this._planPlugin.setPlan(plan);
     this.emit("plan:approved", { plan });
     return this.continueExecution();
   }
@@ -52984,6 +52984,7 @@ ${errors}`;
     const refined = await this.planningAgent.refinePlan(currentPlan, feedback);
     this.modeManager.setPendingPlan(refined.plan);
     this.currentPlan = refined.plan;
+    this._planPlugin.setPlan(refined.plan);
     this.emit("plan:modified", { plan: refined.plan, changes: [] });
     return {
       text: this.formatPlanSummary(refined.plan),
@@ -53343,25 +53344,6 @@ Guidelines:
    */
   async addToConversationHistory(role, content) {
     await this._agentContext.addMessage(role, content);
-  }
-  /**
-   * Build full context for the agent (via AgentContext.prepare())
-   * Returns formatted context string ready for LLM
-   */
-  async buildFullContext(currentInput) {
-    if (this.currentPlan) {
-      this._planPlugin.setPlan(this.currentPlan);
-    }
-    this._agentContext.setCurrentInput(currentInput);
-    const prepared = await this._agentContext.prepare({ returnFormat: "components" });
-    const parts = [];
-    for (const component of prepared.components) {
-      if (component.content) {
-        const content = typeof component.content === "string" ? component.content : JSON.stringify(component.content, null, 2);
-        parts.push(content);
-      }
-    }
-    return parts.join("\n\n");
   }
   // ============================================================================
   // Helpers
